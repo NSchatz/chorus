@@ -114,7 +114,19 @@ So the filter now projects the sample it selects forward to the present, at a
 drift rate it estimates from the offsets themselves, and carries the previous
 smoothed estimate forward the same way before blending. With that, the
 remaining error is the drift estimate's own error times the sample age, which
-is small and does not scale with the skew.
+is small and does not scale with the skew:
+
+| scenario | relative skew | before | after | steady state after |
+|---|---|---|---|---|
+| wired-quiet | 40 ppm | 381 us | 116 us | 47 us |
+| wired-loaded | 50.5 ppm | 438 us | 159 us | 144 us |
+| worst-case-skew | 100 ppm | 872 us | 343 us | 110 us |
+
+"After" is the peak from the moment the run comes inside the bound, which
+still includes the tail of the acquisition transient. "Steady state" is the
+peak over the back half of the run. Both are printed by the regression on
+every CI run, so the next change to this code is measured against these
+numbers rather than against a passing assertion.
 
 **The drift rate is deliberately not taken from the servo's correction**, even
 though the servo has exactly that quantity and knows it far more precisely.
