@@ -97,6 +97,21 @@ fn every_scenario_drives_the_playout_error_below_its_bound_and_holds_it() {
             held,
             bound
         );
+
+        // Printed so the CI log carries the measured numbers, not just the
+        // fact that an assertion held.
+        println!(
+            "{}: settled at {} ms (deadline {} ms), peak |error| after settling {} ns \
+             (bound {} ns), {} exchanges, {} hard resyncs, final correction {:.2} ppm",
+            file,
+            settled / 1_000_000,
+            scenario.settle_deadline_ms,
+            held,
+            bound,
+            result.exchanges,
+            result.hard_resyncs,
+            result.final_correction_ppm,
+        );
     }
 }
 
