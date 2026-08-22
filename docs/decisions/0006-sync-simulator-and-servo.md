@@ -57,7 +57,10 @@ minimum-RTT sample in a sliding window, then smooth lightly.
 - **Minimum-RTT window**, 8 samples. The least-queued exchange is the one whose
   forward and return delays are closest to symmetric, so its offset estimate is
   the most trustworthy in the window.
-- **Exponential smoothing**, alpha 0.25, on the selected offset.
+- **Projection to now**, which BRIEF.md does not mention and the simulator
+  found the hard way. It has its own section below.
+- **Exponential smoothing**, alpha 0.25, on the projected offset, with the
+  previous estimate carried forward at the drift rate before it is blended.
 - **Two tiers**, as BRIEF.md 5.3 describes:
   - **Hard resync** when the observed error is at least 3 ms: step the playout
     pointer to the estimated server timeline and reset the servo. This is the
@@ -78,6 +81,60 @@ The +/- 500 ppm clamp is BRIEF.md 5.3's reference constant, and it bounds what
 the servo can correct: a relative skew above 500 ppm cannot be tracked. Real
 crystals are +/- 20 to 50 ppm each, so the committed scenarios stay inside
 +/- 100 ppm relative and the clamp is only exercised during acquisition.
+
+## A stale offset is a wrong offset, and it dominated everything else
+
+This is the one thing in this phase that measurement changed rather than
+confirmed, so it is written down at length.
+
+The first working version filtered exactly as BRIEF.md 5.3 describes: keep a
+window, pick the minimum-RTT sample, smooth it. The regression passed, and the
+numbers it printed were much worse than the model predicted:
+
+| scenario | relative skew | peak modelled error |
+|---|---|---|
+| wired-quiet | 40 ppm | 381 us |
+| wired-loaded | 50.5 ppm | 438 us |
+| worst-case-skew | 100 ppm | 872 us |
+
+Against a 1 ms bound, the worst case had 13% of margin left, and jitter was
+not what was eating it: the quiet scenario injects at most 60 us of queuing,
+and its error was six times that.
+
+The cause is that a sliding window hands back a measurement that was taken up
+to a window ago, and the offset between two crystals is moving the whole time.
+The minimum-RTT rule makes this worse rather than better, because it
+deliberately prefers an old clean sample over a fresh noisy one. The error
+term is `relative skew * age of the selected sample`: at 100 ppm and an
+8 second window that is 800 us, which is essentially the whole 872 us that was
+measured. The exponential smoother adds its own lag on top, `(1 - alpha) /
+alpha` intervals, which is another 3 seconds at alpha 0.25.
+
+So the filter now projects the sample it selects forward to the present, at a
+drift rate it estimates from the offsets themselves, and carries the previous
+smoothed estimate forward the same way before blending. With that, the
+remaining error is the drift estimate's own error times the sample age, which
+is small and does not scale with the skew.
+
+**The drift rate is deliberately not taken from the servo's correction**, even
+though the servo has exactly that quantity and knows it far more precisely.
+Doing so would close a loop: the correction changes the projected offset,
+which changes the observed error, which changes the correction. The gain
+around that loop is `kp * age / interval`, which at these gains and this
+window is about 1.6, and positive. It would not oscillate, it would run away.
+An estimate taken from the measurements is noisier and open loop, and open
+loop is the property that matters here.
+
+The estimator is the slope between the least-queued sample of the older half
+of the window and the least-queued sample of the newer half, which needs no
+history beyond the window that already exists. It is clamped to 2500 ppm,
+slightly more than two crystals at the extreme of the modelled range, so one
+unlucky pair cannot throw it.
+
+What this is worth outside the simulator: this is a real defect that a real
+implementation would have, and it is exactly the class of thing that would be
+diagnosed as "the servo is badly tuned" on hardware, where the true error is
+not observable. It cost nothing to find here.
 
 ## What this deliberately does not model
 

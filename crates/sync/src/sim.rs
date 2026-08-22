@@ -138,7 +138,7 @@ pub fn run(config: &SimConfig) -> Result<SimResult, ConfigError> {
 
             let offset_estimate = ((t1 - t0) + (t2 - t3)) / 2.0;
             let rtt = (t3 - t0) - (t2 - t1);
-            let filtered_offset = filter.push(rtt, offset_estimate);
+            let filtered_offset = filter.push(client_now_ns, rtt, offset_estimate);
 
             // What the client believes the server timeline reads right now.
             let server_estimate_ns = client_now_ns + filtered_offset;

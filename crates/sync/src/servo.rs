@@ -1,22 +1,46 @@
 //! Offset filtering and the two-tier correction law.
 //!
-//! Both pieces come straight from BRIEF.md 5.3: prefer the minimum-RTT sample
-//! in a sliding window, smooth it lightly, then correct with a proportional
-//! plus integral law clamped to a few hundred ppm, with a hard resync tier for
-//! when the error is too large to slew away. The reasoning and the gain
-//! derivation are in `docs/decisions/0006-sync-simulator-and-servo.md`.
+//! Both pieces come from BRIEF.md 5.3: prefer the minimum-RTT sample in a
+//! sliding window, smooth it lightly, then correct with a proportional plus
+//! integral law clamped to a few hundred ppm, with a hard resync tier for when
+//! the error is too large to slew away.
+//!
+//! One thing here is not in BRIEF.md, and the simulator is what found it. A
+//! sliding window hands back an offset that was measured up to a window ago,
+//! and the offset between two crystals is moving the whole time, so a stale
+//! sample is wrong by the relative skew times its age. At the reference
+//! cadence of one exchange per second and an eight deep window, that term
+//! alone was the dominant error in every scenario: 872 us of the modelled
+//! playout error at 100 ppm relative skew, against jitter contributions of
+//! tens of microseconds. The filter therefore projects the sample it selects
+//! forward to now, using a drift rate it estimates from the offsets
+//! themselves. The measurement and the reasoning are in
+//! `docs/decisions/0006-sync-simulator-and-servo.md`.
 
-/// Sliding window of offset estimates, filtered by minimum round trip time.
+/// Largest offset drift the filter will believe, in ppm.
+///
+/// Two crystals at the extremes of the modelled range are 2000 ppm apart.
+/// Past that an apparent drift is a measurement artefact rather than a
+/// crystal, and believing it would let one unlucky pair of samples throw the
+/// estimate a long way.
+pub const MAX_TRACKED_DRIFT_PPM: f64 = 2_500.0;
+
+/// Sliding window of offset estimates, filtered by minimum round trip time
+/// and projected forward to the present.
 #[derive(Debug, Clone)]
 pub struct OffsetFilter {
     capacity: usize,
     alpha: f64,
     window: Vec<Sample>,
-    smoothed: Option<f64>,
+    /// The estimate and the client time it is valid at.
+    smoothed: Option<(f64, f64)>,
+    /// Nanoseconds of offset per nanosecond of client time.
+    drift: f64,
 }
 
 #[derive(Debug, Clone, Copy)]
 struct Sample {
+    at_ns: f64,
     rtt_ns: f64,
     offset_ns: f64,
 }
@@ -31,41 +55,100 @@ impl OffsetFilter {
             alpha,
             window: Vec::new(),
             smoothed: None,
+            drift: 0.0,
         }
     }
 
-    /// Add one exchange and return the filtered offset estimate.
-    pub fn push(&mut self, rtt_ns: f64, offset_ns: f64) -> f64 {
+    /// Add one exchange and return the filtered offset estimate, as of
+    /// `at_ns` on the client clock.
+    pub fn push(&mut self, at_ns: f64, rtt_ns: f64, offset_ns: f64) -> f64 {
         if self.window.len() == self.capacity {
             self.window.remove(0);
         }
-        self.window.push(Sample { rtt_ns, offset_ns });
+        self.window.push(Sample {
+            at_ns,
+            rtt_ns,
+            offset_ns,
+        });
 
-        let mut best = self.window[0];
-        for sample in &self.window[1..] {
-            if sample.rtt_ns < best.rtt_ns {
-                best = *sample;
-            }
-        }
+        self.drift = self.estimate_drift();
 
+        // The least queued exchange in the window is the most trustworthy
+        // measurement, and it is also usually not the most recent one, so it
+        // is projected forward to now before it is used.
+        let best = best_of(&self.window);
+        let aged = best.offset_ns + self.drift * (at_ns - best.at_ns);
+
+        // Smoothing a quantity that is itself moving would reintroduce the
+        // same staleness through the back door, so the previous estimate is
+        // carried forward at the drift rate before it is blended.
         let next = match self.smoothed {
-            None => best.offset_ns,
-            Some(previous) => previous + self.alpha * (best.offset_ns - previous),
+            None => aged,
+            Some((previous, previous_at)) => {
+                let predicted = previous + self.drift * (at_ns - previous_at);
+                predicted + self.alpha * (aged - predicted)
+            }
         };
-        self.smoothed = Some(next);
+        self.smoothed = Some((next, at_ns));
         next
+    }
+
+    /// Estimated rate at which the offset is moving, in ppm.
+    ///
+    /// Taken from the offset samples alone. It is deliberately **not** taken
+    /// from the servo's current correction, which is the same quantity and
+    /// would be much less noisy: using it would close a loop through the
+    /// servo with gain `kp * age / interval`, which at the reference gains
+    /// and window is greater than one, and positive.
+    pub fn drift_ppm(&self) -> f64 {
+        self.drift * 1e6
     }
 
     /// The current filtered estimate, if any exchange has happened.
     pub fn estimate(&self) -> Option<f64> {
-        self.smoothed
+        self.smoothed.map(|(value, _)| value)
     }
 
     /// Forget everything. Used when a hard resync makes the history moot.
     pub fn reset(&mut self) {
         self.window.clear();
         self.smoothed = None;
+        self.drift = 0.0;
     }
+
+    /// Slope between the least queued sample of the older half of the window
+    /// and the least queued sample of the newer half.
+    ///
+    /// Zero until there are enough samples for the two halves to be a
+    /// baseline worth measuring across.
+    fn estimate_drift(&self) -> f64 {
+        if self.window.len() < 4 {
+            return 0.0;
+        }
+        let middle = self.window.len() / 2;
+        let older = best_of(&self.window[..middle]);
+        let newer = best_of(&self.window[middle..]);
+        let span_ns = newer.at_ns - older.at_ns;
+        if span_ns <= 0.0 {
+            return 0.0;
+        }
+        let drift = (newer.offset_ns - older.offset_ns) / span_ns;
+        drift.clamp(
+            -MAX_TRACKED_DRIFT_PPM * 1e-6,
+            MAX_TRACKED_DRIFT_PPM * 1e-6,
+        )
+    }
+}
+
+/// The least queued sample of a non-empty slice.
+fn best_of(samples: &[Sample]) -> Sample {
+    let mut best = samples[0];
+    for sample in &samples[1..] {
+        if sample.rtt_ns < best.rtt_ns {
+            best = *sample;
+        }
+    }
+    best
 }
 
 /// Gains and limits of the correction law.
@@ -192,34 +275,83 @@ impl Servo {
 mod tests {
     use super::{OffsetFilter, Servo, ServoAction, ServoConfig};
 
+    /// One second of client time, the reference exchange cadence.
+    const TICK: f64 = 1e9;
+
     #[test]
     fn the_filter_prefers_the_least_queued_exchange() {
         let mut filter = OffsetFilter::new(4, 1.0);
-        filter.push(900_000.0, 5_000.0);
-        filter.push(300_000.0, 1_000.0);
-        let estimate = filter.push(1_500_000.0, 90_000.0);
+        filter.push(TICK, 900_000.0, 5_000.0);
+        filter.push(2.0 * TICK, 300_000.0, 1_000.0);
+        let estimate = filter.push(3.0 * TICK, 1_500_000.0, 90_000.0);
         assert_eq!(
             estimate, 1_000.0,
             "the 300 us round trip is the trustworthy sample"
         );
+        assert_eq!(filter.drift_ppm(), 0.0, "three samples is not a baseline");
     }
 
     #[test]
     fn the_filter_window_slides() {
         let mut filter = OffsetFilter::new(2, 1.0);
-        filter.push(100.0, 1.0);
-        filter.push(200.0, 2.0);
+        filter.push(TICK, 100.0, 1.0);
+        filter.push(2.0 * TICK, 200.0, 2.0);
         // The 100 ns sample falls out of a two-deep window here.
-        let estimate = filter.push(300.0, 3.0);
+        let estimate = filter.push(3.0 * TICK, 300.0, 3.0);
         assert_eq!(estimate, 2.0);
     }
 
     #[test]
     fn smoothing_moves_part_of_the_way() {
         let mut filter = OffsetFilter::new(1, 0.25);
-        assert_eq!(filter.push(100.0, 0.0), 0.0);
-        assert_eq!(filter.push(100.0, 100.0), 25.0);
-        assert_eq!(filter.push(100.0, 100.0), 43.75);
+        assert_eq!(filter.push(TICK, 100.0, 0.0), 0.0);
+        assert_eq!(filter.push(2.0 * TICK, 100.0, 100.0), 25.0);
+        assert_eq!(filter.push(3.0 * TICK, 100.0, 100.0), 43.75);
+    }
+
+    #[test]
+    fn a_stale_sample_is_projected_forward_to_now() {
+        // Two crystals 100 ppm apart, so the offset between them walks 100 us
+        // every second, and every exchange is equally queued so the
+        // minimum-RTT rule keeps selecting the oldest sample in the window.
+        // That is the worst case for staleness: without projection the filter
+        // would report a value up to seven seconds, and 700 us, out of date.
+        let mut filter = OffsetFilter::new(8, 0.5);
+        let drift_ns_per_s = 100.0 * 1_000.0;
+        let offset_at = |exchange: i32| 10_000.0 + drift_ns_per_s * exchange as f64;
+
+        for exchange in 1..=16 {
+            filter.push(exchange as f64 * TICK, 900_000.0, offset_at(exchange));
+        }
+
+        let truth = offset_at(16);
+        let estimate = filter.estimate().expect("sixteen exchanges happened");
+        assert!(
+            (estimate - truth).abs() < 1_000.0,
+            "estimate {} ns against a true offset of {} ns",
+            estimate,
+            truth
+        );
+        assert!(
+            (filter.drift_ppm() - 100.0).abs() < 1.0,
+            "drift estimated at {} ppm against a true 100 ppm",
+            filter.drift_ppm()
+        );
+    }
+
+    #[test]
+    fn an_absurd_apparent_drift_is_not_believed() {
+        let mut filter = OffsetFilter::new(4, 1.0);
+        for exchange in 1..=4 {
+            // A microsecond apart, metres of offset apart: nothing about that
+            // is a crystal.
+            filter.push(exchange as f64 * 1_000.0, 100.0, exchange as f64 * 1e9);
+        }
+        assert!(
+            filter.drift_ppm().abs() <= super::MAX_TRACKED_DRIFT_PPM,
+            "drift of {} ppm was believed",
+            filter.drift_ppm()
+        );
     }
 
     #[test]
