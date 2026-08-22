@@ -1,0 +1,41 @@
+name: ci
+
+# Every change. The two regressions this repository exists to protect, the
+# golden-vector round trip and the simulator, run as separately named steps so
+# a red build says which one broke. Any failing step fails the build; nothing
+# here is allowed to continue on error.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: build and regressions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          cargo --version
+          rustc --version
+
+      - name: Build the workspace
+        run: cargo build --workspace --all-targets --verbose
+
+      - name: Golden-vector round trip
+        run: cargo test --package chorus-protocol -- --nocapture
+
+      - name: Simulator regression
+        run: cargo test --package chorus-sync -- --nocapture
+
+      - name: Whole workspace, including documentation examples
+        run: cargo test --workspace

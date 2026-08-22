@@ -1,0 +1,13 @@
+# Canonical input for the time_sync golden vector.
+#
+# Encoding these field values must produce exactly time_sync.hex, and decoding
+# time_sync.hex must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment.
+
+message_type = time_sync
+
+t0_ns = 1000000000
+t1_ns = 1000500000
+t2_ns = 1001000000
+t3_ns = 1001600000
