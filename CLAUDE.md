@@ -19,6 +19,11 @@ recommendations, and open decisions. It recommends; it does not dictate.
    Rust and C implementations cannot drift apart.
 6. Items marked "verify against the datasheet" are starting points, not truth.
 7. Finish a phase's "success looks like" before moving on, or say why not.
+8. A technology or toolchain choice here is justified on fitness for chorus's own
+   requirements alone. Which toolchains happen to be installed, on `PATH`, or
+   absent in any development container is never an admissible reason for or
+   against one (umbrella ADR-0035): an absent toolchain is installed, not
+   designed around. A decision record that cites availability is a defect.
 
 ## This repo is a submodule of the SDD umbrella
 
