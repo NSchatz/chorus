@@ -1,0 +1,5 @@
+# Build output.
+/target
+
+# No external dependencies yet, so the lock records nothing (docs/decisions/0002).
+Cargo.lock

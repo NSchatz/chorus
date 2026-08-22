@@ -1,0 +1,9 @@
+[package]
+name = "chorus-protocol"
+description = "chorus wire protocol: framing, message catalog, encoder and decoder"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]

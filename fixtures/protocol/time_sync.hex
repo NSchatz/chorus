@@ -1,0 +1,19 @@
+# chorus golden vector: time sync, message type 0x01.
+#
+# Hand written and committed. The test suite reads this file and never writes
+# it. Any implementation of the chorus protocol, in any language, must produce
+# these exact bytes from the canonical input in time_sync.fields.
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x01, payload length 32 (0x0020), big-endian
+01 00 20
+
+# t0_ns = 1000000000, client transmit
+00 00 00 00 3B 9A CA 00
+# t1_ns = 1000500000, server receive
+00 00 00 00 3B A2 6B 20
+# t2_ns = 1001000000, server transmit
+00 00 00 00 3B AA 0C 40
+# t3_ns = 1001600000, client receive
+00 00 00 00 3B B3 34 00

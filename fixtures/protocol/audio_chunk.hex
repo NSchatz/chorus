@@ -1,0 +1,30 @@
+# chorus golden vector: audio chunk, message type 0x02.
+#
+# Hand written and committed. The test suite reads this file and never writes
+# it. Any implementation of the chorus protocol, in any language, must produce
+# these exact bytes from the canonical input in audio_chunk.fields.
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x02, payload length 40 (0x0028), big-endian
+# 40 = 32 byte chunk header + 8 bytes of PCM
+02 00 28
+
+# sequence = 4096
+00 00 10 00
+# timestamp_ns = 2000000000, on the server timeline
+00 00 00 00 77 35 94 00
+# sample_rate_hz = 48000
+00 00 BB 80
+# channels = 2
+02
+# sample_format = 1 (pcm_s16le)
+01
+# reserved: 14 opaque bytes, no semantics this phase (decisions/0004)
+00 00 00 00 00 00 00 00 00 00 00 00 00 00
+
+# PCM: 2 stereo frames, signed 16-bit little-endian
+# frame 0: left 0x0123, right 0x4567
+23 01 67 45
+# frame 1: left 0x89AB, right 0xCDEF
+AB 89 EF CD

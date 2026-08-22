@@ -1,0 +1,17 @@
+# Canonical input for the audio_chunk golden vector.
+#
+# Encoding these field values must produce exactly audio_chunk.hex, and
+# decoding audio_chunk.hex must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Byte-string values
+# are hex with no separators.
+
+message_type = audio_chunk
+
+sequence = 4096
+timestamp_ns = 2000000000
+sample_rate_hz = 48000
+channels = 2
+sample_format = pcm_s16le
+reserved = 0000000000000000000000000000
+audio_data = 23016745AB89EFCD
