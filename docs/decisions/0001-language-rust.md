@@ -4,6 +4,12 @@
 - Decision owner: the owner (Noah), ruling recorded 2026-08-22
 - BRIEF.md section 12, decision 1
 - Recorded by: FOUNDATION-1 (spec S0001-chorus-foundation-1)
+- Evidence commit: `7e50d3fd0295c119efc122608b56460906354015` in this
+  repository, the squash merge of FOUNDATION-1. Everything this entry rests on
+  is present there: the `crates/protocol` and `crates/sync` libraries under
+  the virtual `Cargo.toml` workspace, both with an empty `[dependencies]`, and
+  the golden vectors under `fixtures/protocol/`. Check any of them with
+  `git show 7e50d3f:<path>`; the tree is `git ls-tree -r --name-only 7e50d3f`.
 
 ## Decision
 

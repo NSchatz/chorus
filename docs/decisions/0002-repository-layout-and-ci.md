@@ -3,6 +3,12 @@
 - Status: decided
 - BRIEF.md section 12, decision 2
 - Recorded by: FOUNDATION-1 (spec S0001-chorus-foundation-1)
+- Evidence commit: `7e50d3fd0295c119efc122608b56460906354015` in this
+  repository, the squash merge of FOUNDATION-1. The layout below is the tree
+  at that commit and the CI shape below is `.github/workflows/ci.yml` at that
+  commit. The whole check is two commands:
+  `git ls-tree -r --name-only 7e50d3f` for the layout and the absences, and
+  `git show 7e50d3f:.github/workflows/ci.yml` for the workflow.
 
 ## Decision
 
@@ -16,7 +22,7 @@ chorus/
   fixtures/protocol/       # golden vectors and their canonical inputs
   fixtures/sync/           # committed simulator scenarios
   docs/decisions/          # this log
-  docs/measurements/       # harness reports (empty until RIG-3)
+  docs/measurements/       # harness reports (none until RIG-3)
   .github/workflows/ci.yml # the one CI workflow
 ```
 
