@@ -110,44 +110,76 @@ fn introducing_one_settable_clock_read_into_a_listed_unit_turns_it_red() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
-/// The second demonstration: a first-party unit added under a listed one, and
-/// neither listed nor excluded, turns the check red.
-#[test]
-fn adding_an_unlisted_unit_under_a_listed_one_turns_it_red() {
-    let (root, list) = committed_list();
-    let scratch = scratch_copy(&root, "unlisted-unit");
+/// The body of the unit the second demonstration smuggles in: a first-party
+/// unit on the audio path that reads the settable wall clock, which is
+/// precisely what AC-23 exists to make impossible.
+const SMUGGLED: &str = "//! Introduced by the audio-path demonstration: a unit under a listed\n\
+                        //! one that the list does not account for.\n\
+                        pub fn now() -> u64 {\n\
+                        \x20   std::time::SystemTime::now()\n\
+                        \x20       .duration_since(std::time::UNIX_EPOCH)\n\
+                        \x20       .map(|d| d.as_secs())\n\
+                        \x20       .unwrap_or(0)\n\
+                        }\n";
 
-    std::fs::write(
-        scratch.join("crates/audio/src/smuggled.rs"),
-        "//! Introduced by the audio-path demonstration: a unit under a listed\n\
-         //! one that the list does not account for.\n\
-         pub fn now() -> u64 {\n\
-         \x20   std::time::SystemTime::now()\n\
-         \x20       .duration_since(std::time::UNIX_EPOCH)\n\
-         \x20       .map(|d| d.as_secs())\n\
-         \x20       .unwrap_or(0)\n\
-         }\n",
-    )
-    .unwrap();
+/// Declare `smuggled` under the listed `crates/audio/src/lib.rs` of a scratch
+/// copy of the tree, with `declaration`, and assert the check goes red and
+/// names the unit.
+fn declaring_an_unlisted_unit_turns_it_red(name: &str, declaration: &str) {
+    let (root, list) = committed_list();
+    let scratch = scratch_copy(&root, name);
+
+    std::fs::write(scratch.join("crates/audio/src/smuggled.rs"), SMUGGLED).unwrap();
     let lib = scratch.join("crates/audio/src/lib.rs");
     let mut source = std::fs::read_to_string(&lib).unwrap();
-    source.push_str("\npub mod smuggled;\n");
+    source.push_str(&format!("\n{}\n", declaration));
     std::fs::write(&lib, source).unwrap();
 
     let finding = scan(&scratch, &list);
     assert!(
         !finding.ok(),
-        "the check stayed green with an unaccounted-for unit under a listed one"
+        "the check stayed green with an unaccounted-for unit under a listed one, declared \
+         `{}`:\n{}",
+        declaration,
+        finding
     );
     assert!(
         finding
             .missing
             .iter()
             .any(|m| m.unit == "crates/audio/src/smuggled.rs"),
-        "{}",
+        "`{}` did not put crates/audio/src/smuggled.rs in the report:\n{}",
+        declaration,
         finding
     );
     let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// The second demonstration: a first-party unit added under a listed one, and
+/// neither listed nor excluded, turns the check red.
+#[test]
+fn adding_an_unlisted_unit_under_a_listed_one_turns_it_red() {
+    declaring_an_unlisted_unit_turns_it_red("unlisted-unit", "pub mod smuggled;");
+}
+
+/// The same demonstration in every other spelling Rust allows for a module
+/// declaration.
+///
+/// A restricted visibility is an ordinary way to write Rust and puts the file
+/// on the path exactly as `pub mod` does, so a completeness check that reads
+/// only two spellings is a check two words away from green. Delivered as its
+/// own demonstration because AC-23's evidence is the demonstrations.
+#[test]
+fn declaring_that_unit_with_a_restricted_visibility_turns_it_red_too() {
+    for (name, declaration) in [
+        ("pub-crate-mod", "pub(crate) mod smuggled;"),
+        ("pub-super-mod", "pub(super) mod smuggled;"),
+        ("pub-in-path-mod", "pub(in crate) mod smuggled;"),
+        ("bare-mod", "mod smuggled;"),
+        ("attributed-mod", "#[cfg(unix)] pub(crate) mod smuggled;"),
+    ] {
+        declaring_an_unlisted_unit_turns_it_red(name, declaration);
+    }
 }
 
 /// Copy the source tree into a scratch directory so a demonstration can mutate
