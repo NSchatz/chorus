@@ -33,7 +33,8 @@ What a decoder does when it cannot accept a frame:
 | 0x00 | unassigned, never used | an all-zero buffer is an unknown type, not a message |
 | 0x01 | `time_sync` | 32 bytes, fixed |
 | 0x02 | `audio_chunk` | 32-byte chunk header, then PCM |
-| 0x03 to 0xFF | unassigned | skipped by a decoder that meets one |
+| 0x03 | `stream_end` | 12 bytes, fixed |
+| 0x04 to 0xFF | unassigned | skipped by a decoder that meets one |
 
 ### 0x01 time sync
 
@@ -93,6 +94,27 @@ worth anything:
 - A decoder makes the raw bytes available to its caller rather than dropping
   them.
 
+### 0x03 stream end
+
+Sent once, after the final chunk of a stream and before the connection is
+closed. Minimum and canonical payload length is 12 bytes.
+
+| offset | size | field | notes |
+|---|---|---|---|
+| 0 | 4 | `final_sequence` | sequence of the final chunk |
+| 4 | 8 | `end_timestamp_ns` | one chunk duration past the final chunk's presentation timestamp, server timeline |
+
+This message exists because a transport close and a transport that broke look
+identical to the peer: both are a read returning zero. A receiver that saw
+`stream_end` knows the sender finished; one that did not knows it lost the
+sender. Timing cannot tell those apart, so a close is never the signal.
+
+It was added by SOUND-2, after `time_sync` and `audio_chunk` were already
+committed. That addition changed neither of their golden vectors, and a
+decoder built before it exists steps over type 0x03 with its length prefix and
+keeps the session open, which is rule 3 below. That is what the reservation of
+the unassigned type space is for.
+
 ## Decoder behaviour
 
 In order. The order is the contract: it decides which answer a frame gets.
@@ -131,8 +153,47 @@ So valid encoder output always decodes. That invariant is asserted in
 
 The session hello and capabilities exchange, the stream format announcement,
 control messages (volume, grouping, configuration) and client telemetry.
-BRIEF.md 5.2 lists all of them and this phase has no connection to carry any
-of them, so they arrive with the phase that does, as new type bytes that
-existing decoders already know how to skip.
+BRIEF.md 5.2 lists all of them, and they arrive with the phase that needs
+them, as new type bytes that existing decoders already know how to skip.
 
-Port numbers are deliberately unassigned. Nothing binds a socket yet.
+## Carrying this on a stream transport
+
+SOUND-2 puts these frames on TCP, which does not preserve message boundaries.
+The framing above is what restores them: a reader accumulates bytes, decodes
+whole frames from the front of its buffer, and keeps the tail. Two rules make
+that safe, and both are already in the decoder behaviour above:
+
+- A declared length longer than the bytes in hand consumes nothing, so the
+  reader waits for more rather than guessing where the next frame starts.
+- A frame whose type is in the catalog but whose payload is short for that
+  type, or whose fields are out of range, is rejected and stepped over by its
+  own length prefix. The stream stays aligned.
+
+Alignment is only lost if a length prefix itself is wrong, which on TCP means
+the peer is not speaking this protocol. A reader that finds the next header
+undecodable after a correctly consumed frame reports a framing error and stops;
+it never scans forward for something that looks like a header, because
+resynchronising by pattern search is how mis-framed bytes reach a DAC as noise.
+
+### Where the skip rule stops applying
+
+Rule 3 above, "skip an unassigned type using its length prefix", is a rule
+about a decoder handed one frame. It is exactly right when the transport
+preserved that frame's boundaries, and it is what makes adding a type byte a
+non-event for every existing implementation, including the future C mirror.
+
+On a stream transport it needs care, and this is a property of the transport
+rather than of the protocol. If alignment has already been lost, the byte a
+reader reads as a "type" is a PCM sample and the two bytes it reads as a
+"length" are two more, so stepping over that length is how a reader stays
+lost rather than how it recovers. A reader on a stream transport is therefore
+entitled to treat an unassigned type as lost alignment and stop, and the Linux
+client does exactly that, for the reason that it is the component holding a
+DAC. A reader whose transport preserves message boundaries skips, as rule 3
+says.
+
+Both readings are conformant. What is not conformant is stepping over an
+uncorroborated length and then playing what follows.
+
+Port numbers are still not assigned by this document. The server takes its
+listen address from configuration.

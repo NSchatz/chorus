@@ -1,0 +1,20 @@
+[package]
+name = "chorus-client-linux"
+description = "the minimal Linux client: receive, buffer, play out through ALSA, and log the delay the device reports"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+chorus-protocol = { path = "../protocol" }
+chorus-audio = { path = "../audio" }
+chorus-alsa = { path = "../alsa" }
+
+[[bin]]
+name = "chorus-client"
+path = "src/main.rs"
+
+[[bin]]
+name = "chorus-delaylog-check"
+path = "src/bin/delaylog_check.rs"

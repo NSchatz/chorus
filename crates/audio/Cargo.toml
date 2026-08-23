@@ -1,0 +1,10 @@
+[package]
+name = "chorus-audio"
+description = "PCM ingest and chunking: stream format, the chunker, and the monotonic server timeline"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+chorus-protocol = { path = "../protocol" }

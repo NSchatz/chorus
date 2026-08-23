@@ -9,6 +9,10 @@
 /// Payload length of a time sync message: four 64-bit timestamps.
 pub const TIME_SYNC_PAYLOAD_LEN: usize = 32;
 
+/// Payload length of a stream end message: the final sequence number and the
+/// timestamp one chunk duration past the final chunk.
+pub const STREAM_END_PAYLOAD_LEN: usize = 12;
+
 /// Length of the fixed audio chunk header that precedes the PCM bytes.
 pub const CHUNK_HEADER_LEN: usize = 32;
 
@@ -40,6 +44,8 @@ pub enum MessageType {
     TimeSync,
     /// 0x02, a chunk of PCM on the server timeline.
     AudioChunk,
+    /// 0x03, the in-band end of a stream.
+    StreamEnd,
 }
 
 impl MessageType {
@@ -49,14 +55,22 @@ impl MessageType {
     /// Wire byte for an audio chunk message.
     pub const AUDIO_CHUNK_BYTE: u8 = 0x02;
 
+    /// Wire byte for a stream end message.
+    pub const STREAM_END_BYTE: u8 = 0x03;
+
     /// Every type in the catalog, in wire order.
-    pub const ALL: [MessageType; 2] = [MessageType::TimeSync, MessageType::AudioChunk];
+    pub const ALL: [MessageType; 3] = [
+        MessageType::TimeSync,
+        MessageType::AudioChunk,
+        MessageType::StreamEnd,
+    ];
 
     /// The catalogued type for a wire byte, or `None` if it is unassigned.
     pub fn from_wire(byte: u8) -> Option<MessageType> {
         match byte {
             Self::TIME_SYNC_BYTE => Some(MessageType::TimeSync),
             Self::AUDIO_CHUNK_BYTE => Some(MessageType::AudioChunk),
+            Self::STREAM_END_BYTE => Some(MessageType::StreamEnd),
             _ => None,
         }
     }
@@ -66,6 +80,7 @@ impl MessageType {
         match self {
             MessageType::TimeSync => Self::TIME_SYNC_BYTE,
             MessageType::AudioChunk => Self::AUDIO_CHUNK_BYTE,
+            MessageType::StreamEnd => Self::STREAM_END_BYTE,
         }
     }
 
@@ -74,6 +89,7 @@ impl MessageType {
         match self {
             MessageType::TimeSync => "time_sync",
             MessageType::AudioChunk => "audio_chunk",
+            MessageType::StreamEnd => "stream_end",
         }
     }
 
@@ -91,6 +107,7 @@ impl MessageType {
         match self {
             MessageType::TimeSync => TIME_SYNC_PAYLOAD_LEN,
             MessageType::AudioChunk => CHUNK_HEADER_LEN + 1,
+            MessageType::StreamEnd => STREAM_END_PAYLOAD_LEN,
         }
     }
 }
@@ -230,6 +247,32 @@ impl AudioChunk {
     }
 }
 
+/// The end of a stream, sent in band after the final chunk.
+///
+/// # Why this is a message and not a closed socket
+///
+/// A transport close and a transport that broke look identical to the peer:
+/// both are a read returning zero. Telling them apart by timing is guesswork,
+/// and guessing wrong means either counting a clean end as a failure or
+/// treating a dead server as a tidy finish. So the end of a stream is data on
+/// the connection, sent before the close, and a close without it means the
+/// other thing.
+///
+/// An older decoder that does not know type 0x03 skips it and stays open,
+/// which is the forward-compatibility rule `docs/protocol.md` already states.
+/// Adding it changes no committed golden vector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StreamEnd {
+    /// Sequence number of the final chunk of the stream.
+    ///
+    /// A receiver that has not seen this sequence knows it is missing audio
+    /// that was sent, which is a different thing from the stream being over.
+    pub final_sequence: u32,
+    /// One chunk duration past the presentation timestamp of the final chunk,
+    /// on the server timeline: the instant the stream stops being audible.
+    pub end_timestamp_ns: u64,
+}
+
 /// Any message in the catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Message {
@@ -237,6 +280,8 @@ pub enum Message {
     TimeSync(TimeSync),
     /// A chunk of PCM.
     AudioChunk(AudioChunk),
+    /// The in-band end of a stream.
+    StreamEnd(StreamEnd),
 }
 
 impl Message {
@@ -245,6 +290,7 @@ impl Message {
         match self {
             Message::TimeSync(_) => MessageType::TimeSync,
             Message::AudioChunk(_) => MessageType::AudioChunk,
+            Message::StreamEnd(_) => MessageType::StreamEnd,
         }
     }
 }

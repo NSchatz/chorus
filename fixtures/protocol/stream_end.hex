@@ -1,0 +1,16 @@
+# chorus golden vector: stream end, message type 0x03.
+#
+# Hand written and committed. The test suite reads this file and never writes
+# it. Any implementation of the chorus protocol, in any language, must produce
+# these exact bytes from the canonical input in stream_end.fields.
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x03, payload length 12 (0x000C), big-endian
+03 00 0C
+
+# final_sequence = 41, the last chunk the server emitted
+00 00 00 29
+# end_timestamp_ns = 840000000, one chunk past the final chunk's presentation
+# timestamp on the server timeline
+00 00 00 00 32 11 62 00

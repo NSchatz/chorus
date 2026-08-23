@@ -1,9 +1,8 @@
 name: ci
 
-# Every change. The two regressions this repository exists to protect, the
-# golden-vector round trip and the simulator, run as separately named steps so
-# a red build says which one broke. Any failing step fails the build; nothing
-# here is allowed to continue on error.
+# Every change. The regressions this repository exists to protect run as
+# separately named steps so a red build says which one broke. Any failing step
+# fails the build; nothing here is allowed to continue on error.
 on:
   push:
   pull_request:
@@ -37,5 +36,25 @@ jobs:
       - name: Simulator regression
         run: cargo test --package chorus-sync -- --nocapture
 
+      # The clock guardrail, and the check that the list it rests on has no
+      # hole in it. Includes the two demonstrations that both go red.
+      - name: The audio path, and the settable-clock check
+        run: cargo test --package chorus-audio-path -- --nocapture
+
+      - name: Chunking, buffering and playout
+        run: |
+          cargo test --package chorus-audio
+          cargo test --package chorus-server
+          cargo test --package chorus-client-linux
+          cargo test --package chorus-hostctl
+          cargo test --package chorus-alsa
+
       - name: Whole workspace, including documentation examples
         run: cargo test --workspace
+
+      # Every refusal path, and the proof that a verification whose environment
+      # is absent exits non-zero naming what is missing rather than reporting
+      # green. This runner has no audio device and no real-time priority, which
+      # is exactly the environment that makes the second one meaningful.
+      - name: Refusals, and that unrun checks are visibly unrun
+        run: make verify

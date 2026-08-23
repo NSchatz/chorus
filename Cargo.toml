@@ -3,6 +3,12 @@ resolver = "2"
 members = [
     "crates/protocol",
     "crates/sync",
+    "crates/audio",
+    "crates/alsa",
+    "crates/hostctl",
+    "crates/audio-path",
+    "crates/server",
+    "crates/client-linux",
 ]
 
 [workspace.package]

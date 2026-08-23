@@ -1,0 +1,160 @@
+# The verification record for SOUND-2
+
+Which criterion each committed check answers, what actually ran when this work
+was built, and - for the checks whose environment was not there - the exact
+command, the prerequisite that was missing, the verbatim refusal, and where the
+instructions are for whoever can run it.
+
+This file is committed inside the repository on purpose. A record of what was
+and was not run is only useful to a reader who can read it, and a reader who
+picks up this tree later has no access to the notes the implementing session
+wrote elsewhere. If the two ever disagree, this file is the one attached to the
+code.
+
+## The machine this was written on
+
+```
+/dev/snd                  absent - no sound card of any kind
+libasound.so.2            present, and the ALSA `null` PCM opens
+ulimit -r (RLIMIT_RTPRIO) 0
+ulimit -l (RLIMIT_MEMLOCK) 8 MiB, below the 64 MiB the server asks for
+```
+
+So: everything that needs no device and no privilege ran; everything that needs
+only a device that OPENS ran against `null`; nothing that needs a device that
+paces, a real-time ceiling, or a device that can be pulled out mid-run ran, and
+none of it is claimed.
+
+## What ran here
+
+| criterion | what answers it | result |
+|---|---|---|
+| AC-1 | `cargo test -p chorus-audio` (chunker), and over a real TCP socket `-p chorus-server --test serving` | ten chunks plus 100 frames plus three bytes gives eleven chunks, only the last short and marked final, concatenation byte-identical to the input |
+| AC-2 | the same capture | the sequence column is a contiguous run |
+| AC-3 | the same capture | strictly increasing, constant 20 ms start-to-start delta including across the short final chunk |
+| AC-4 | `cargo test -p chorus-protocol` | the two FOUNDATION-1 vectors are untouched; the new type has its own committed vector; the live capture decodes with the committed decoder |
+| AC-5 | `tools/start-fill-and-log-shape.sh` on the ALSA `null` device, through the real binaries | the first write carried 120000 us of a configured 120000 us fill; the log names it; no sample before it is graded |
+| AC-7 | the same run | 594 samples in 60 s, all four columns on every one, the widest gap 102106 us, one config record carrying the bounds and start fill |
+| AC-9, AC-14, AC-24 | `-p chorus-client-linux --test playout`, against the modelled device described in `tests/common/mod.rs` | the crossing is reported, the overflow counter is its own, occupancy never exceeds max plus one chunk, a stalled feed moves the underrun counter without widening a bound. **A model is not a sound card**; `tools/overflow-run.sh` is the run on a device that paces |
+| AC-15 | `-p chorus-audio`, and over TCP | `bytes_discarded=3`, eleven chunks, sequence still contiguous |
+| AC-16 | `make verify` (`tools/refusals.sh`) | exit 2, the format named, `chunks_sent=0`; same for an unsupported rate |
+| AC-17 | `-p chorus-server --test serving`, on the chosen transport | a truncated chunk is a typed framing error and never becomes audio; a duplicate and a malformed frame are counted by reason with the session open and the underrun counter unmoved |
+| AC-18 | `-p chorus-client-linux --test playout` | `discarded_late=1`, the chunk that was due is not displaced |
+| AC-19 (first half) | `make verify` | exit 4, the device and the reason named, `usable=0 paces=0` |
+| AC-20, AC-21 | `make verify-null-device` (`tools/stream-end-and-loss.sh` on `null`), through the real binaries | clean end: exit 0, in-band signal after final sequence 100, 96480 frames sent and 96480 written, `underruns=0`. Lost server: exit 3, `reason=connection-lost`, `played=1`, `underruns=0` |
+| AC-22 (ceiling-zero half) | `make verify` | exit 3, both numbers named, nothing played; with the option, it starts and 4 of 4 status reports say so |
+| AC-23 | `cargo test -p chorus-audio-path` | the committed tree passes both checks; both red demonstrations go red, in every module-declaration spelling |
+| AC-25 | `make verify` (`tools/unrun-checks-are-visibly-unrun.sh`) | all 8 environment-dependent entry points exit non-zero naming prerequisite and criterion, and the list of 8 is derived from the tools rather than restated |
+| AC-26 (denial half) | `make verify` | exit 3, the limit read and the amount wanted both named, nothing played; with the option, 4 of 4 status reports say so |
+| AC-27 (start-up half) | `tools/start-fill-and-log-shape.sh` on `null`, and `make verify` | the three relations hold against the recorded config line: `min_us=60000 > 0`, `60000 < start_fill_us=120000 < 300000`, span 240000 us at 2000 ppm crosses in 120 s; a configuration that would not cross is refused at start |
+
+**What the `null` device does not buy.** It accepts every frame instantly and
+reports a delay of zero forever, so every sample in that one-minute log carries
+`delay_us=0`. The run above is evidence about the start fill, the record's
+shape and the bound relations, and about nothing whatever concerning the VALUE
+of a device-reported delay. That is why `tools/delay-log-shape.sh` and
+`tools/ten-minute-run.sh` refuse `null` by name.
+
+## What did not run here, and what is filed instead
+
+Every row below is a committed entry point that exits non-zero, naming the
+prerequisite and the criterion, rather than reporting green. The refusals are
+quoted verbatim from a run in this container.
+
+### AC-6, AC-8, AC-27 (the run-completion half): the ten-minute run
+
+```
+./tools/ten-minute-run.sh docs/measurements/ten-minute-run.log
+```
+with `CHORUS_CLIENT_DEVICE` pointed at real speakers. Missing here: an ALSA
+device that reports a delay.
+
+```
+MISSING PREREQUISITE
+  criterion:    ten continuous minutes with the reported delay inside its bounds and zero underruns
+  prerequisite: an ALSA playback device that reports a delay; 'chorus-no-such-device' does not (...)
+  how to get it: point CHORUS_CLIENT_DEVICE at a real card or a snd-aloop loopback; the ALSA 'null' device is not one, because it accepts every frame instantly and reports a delay of zero
+  this check is NOT passed, NOT skipped-green and NOT satisfied.
+```
+
+Instructions: `docs/sound-2.md`, "The ten-minute run". The log it writes IS the
+evidence and can be graded afterwards, on any machine, by someone who did not
+run it:
+
+```
+./target/debug/chorus-delaylog-check <log> --min-graded-seconds 600 \
+    --require-zero-underruns --require-no-rate-change
+```
+
+### AC-5, AC-7 graded against a real delay, and AC-9, AC-14, AC-24 on a device
+
+```
+./tools/delay-log-shape.sh          # one minute, graded the way the long run is
+./tools/overflow-run.sh             # the over-rate run, to the ceiling
+```
+
+Both need a device that paces; the refusal has the same shape as the one above,
+with their own criterion lines. AC-5, AC-7 and AC-27's start-up half are
+already answered above on `null`; what these two add is everything that rests
+on the delay a device actually reports. Instructions: `docs/sound-2.md`, "The
+client" and "The values this phase chose".
+
+### AC-10, AC-11, AC-12, AC-13, AC-26 (the locked half): the host contract
+
+```
+./tools/host-contract.sh
+./tools/spin-test.sh
+```
+
+Missing here: a granted rtprio ceiling above zero.
+
+```
+MISSING PREREQUISITE
+  criterion:    a real-time thread that runs without yielding past its CPU-time limit is terminated by that limit within one second, and a normal-priority process beside it keeps making progress
+  prerequisite: a granted rtprio ceiling above zero; RLIMIT_RTPRIO reads 0 here
+  how to get it: run in a container started with 'docker run --ulimit rtprio=<n>', as deploy/run-server.sh does
+  this check is NOT passed, NOT skipped-green and NOT satisfied.
+```
+
+Instructions: `deploy/README.md`, "Checking the contract holds", and
+`docs/sound-2.md`, "The spin test". What did run here: `-p chorus-hostctl`,
+which covers the limits being read, `/proc/self/task` parsing, the
+no-undeclared-real-time-thread check and both denial paths; and a grep-checked
+invariant that both real-time acquisitions in the tree apply the CPU-time bound
+before anything else.
+
+### AC-19 (the second half): a device removed mid-run
+
+```
+CHORUS_REMOVABLE_DEVICE=hw:Loopback,0 \
+CHORUS_REMOVE_COMMAND='sudo modprobe -r snd_aloop' \
+./tools/device-loss-run.sh
+```
+
+Missing here: a device that can be removed or made unusable mid-run.
+
+```
+MISSING PREREQUISITE
+  criterion:    a device that becomes unusable during a run is reported with its reason, the client exits non-zero, and it never reports itself as playing while producing no audio
+  prerequisite: a device that can be removed or made unusable mid-run
+  how to get it: set CHORUS_REMOVABLE_DEVICE to an ALSA device you can unplug or unbind, and CHORUS_REMOVE_COMMAND to the command that removes it
+  this check is NOT passed, NOT skipped-green and NOT satisfied.
+```
+
+Instructions: the script's own header. Nothing here guesses how to break a
+device on someone else's machine. What did run here: the mid-run sink failure
+against the modelled device, which exercises the client's half of it.
+
+## Running the lot, on a machine that has the environment
+
+```
+make test                 # the suite: no device, no privilege
+make verify               # the refusal paths, and that unrun checks are visibly unrun
+make verify-null-device   # the device checks that do not grade the delay
+make verify-device        # everything that needs a device (paces, for three of the four)
+make verify-host          # the scheduling contract and the spin test
+make ten-minute-run       # the evidence run
+```
+
+Each one either does the work or exits non-zero saying what it lacks. None of
+them reports green for a check it did not run.
