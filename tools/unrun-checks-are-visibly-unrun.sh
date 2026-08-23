@@ -15,17 +15,24 @@
 #
 #   ./tools/unrun-checks-are-visibly-unrun.sh
 
+# The claim that this list is EVERY environment-dependent entry point is
+# checked at the end against the tools directory itself, not left as prose: a
+# new entry point added without a line here would make this meta-check quietly
+# incomplete, which is the exact failure it exists to prevent.
+
 source "$(dirname "$0")/lib.sh"
 
 build_once
 
 FAILURES=0
+CHECKED=()
 
 # Run one entry point in an environment where its prerequisite is genuinely
 # absent, and check what it says.
 expect_missing_prerequisite() {
     local name="$1"
     shift
+    CHECKED+=("$name")
     local out status
     set +e
     out="$("$@" 2>&1)"
@@ -76,9 +83,19 @@ expect_missing_prerequisite "delay-log-shape.sh" \
     env CHORUS_SKIP_BUILD=1 CHORUS_CLIENT_DEVICE=chorus-no-such-device \
     bash "$REPO_ROOT/tools/delay-log-shape.sh"
 
+expect_missing_prerequisite "start-fill-and-log-shape.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_CLIENT_DEVICE=chorus-no-such-device \
+    bash "$REPO_ROOT/tools/start-fill-and-log-shape.sh"
+
 expect_missing_prerequisite "overflow-run.sh" \
     env CHORUS_SKIP_BUILD=1 CHORUS_CLIENT_DEVICE=chorus-no-such-device \
     bash "$REPO_ROOT/tools/overflow-run.sh"
+
+# This one needs a device that opens, not one that paces, so the ALSA `null`
+# device is enough for it. A name that does not exist is absent for it too.
+expect_missing_prerequisite "stream-end-and-loss.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_CLIENT_DEVICE=chorus-no-such-device \
+    bash "$REPO_ROOT/tools/stream-end-and-loss.sh"
 
 # No granted real-time priority. Genuinely absent: a soft limit can always be
 # lowered, so this is the real thing rather than a pretend one.
@@ -96,10 +113,29 @@ expect_missing_prerequisite "device-loss-run.sh" \
     env CHORUS_SKIP_BUILD=1 CHORUS_REMOVABLE_DEVICE= CHORUS_REMOVE_COMMAND= \
     bash "$REPO_ROOT/tools/device-loss-run.sh"
 
+# --- and the list above is the whole list ------------------------------------
+#
+# An entry point is environment-dependent exactly when it calls one of lib.sh's
+# require_* guards. Deriving the set from the scripts rather than restating it
+# is what keeps "every" true after the next one is written.
+say ""
+say "--- the list of entry points is complete"
+FOUND="$(grep -lE '^[[:space:]]*require_[a-z_]+ ' "$REPO_ROOT"/tools/*.sh \
+    | xargs -n1 basename | sort)"
+DECLARED="$(printf '%s\n' "${CHECKED[@]}" | sort)"
+MISSED="$(comm -23 <(printf '%s\n' "$FOUND") <(printf '%s\n' "$DECLARED") || true)"
+if [ -n "$MISSED" ]; then
+    say "FAIL these entry points guard on an environment and are not checked here:"
+    printf '%s\n' "$MISSED" | sed 's/^/    /'
+    FAILURES=$(( FAILURES + 1 ))
+else
+    say "pass all $(printf '%s\n' "$FOUND" | wc -l | tr -d ' ') environment-dependent entry points in tools/ are checked above"
+fi
+
 say ""
 if [ "$FAILURES" -eq 0 ]; then
     say "chorus: every environment-dependent entry point refuses visibly"
     exit 0
 fi
-say "chorus: $FAILURES entry points did not refuse properly"
+say "chorus: $FAILURES checks did not hold"
 exit 1

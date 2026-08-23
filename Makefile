@@ -28,6 +28,7 @@ tools-executable:
 # its missing prerequisite rather than reporting green.
 verify-device: tools-executable
 	bash tools/stream-end-and-loss.sh
+	bash tools/start-fill-and-log-shape.sh
 	bash tools/delay-log-shape.sh
 	bash tools/overflow-run.sh
 
@@ -43,3 +44,4 @@ ten-minute-run: tools-executable
 # cannot stand in for.
 verify-null-device: tools-executable
 	CHORUS_CLIENT_DEVICE=null bash tools/stream-end-and-loss.sh
+	CHORUS_CLIENT_DEVICE=null bash tools/start-fill-and-log-shape.sh

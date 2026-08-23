@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# A one-minute run, to check the shape of the record rather than the length of
-# the run.
+# A one-minute run, graded the way the ten-minute run is graded, to check the
+# shape of the record and the delay it carries rather than the length of the
+# run.
 #
 # Verifies: the client records, at an interval no coarser than once per second
 # and in a form a script can parse without the client running, the
@@ -8,16 +9,28 @@
 # timeline, and whether each sample is inside the graded interval; and records
 # the configured bounds and start fill in the same file. Also verifies that
 # output is withheld until the configured start fill and that the log names the
-# fill it started at, and that the three bound relations hold.
+# fill it started at, and that the three bound relations hold. It then grades
+# the log with `chorus-delaylog-check --min-graded-seconds 30`, which asserts
+# the reported delay is inside the configured bounds for the whole graded
+# interval.
 #
-# Prerequisite: a usable ALSA playback device, including a loopback or the
-# ALSA null device.
+# Prerequisite: an ALSA playback device that REPORTS A DELAY - a real card or a
+# snd-aloop loopback. The ALSA `null` device is not one: it accepts every frame
+# instantly and reports a delay of zero, which the grading above could only
+# fail. That is why the guard below is require_pacing_audio_device and not
+# require_audio_device, and it is stricter than "any usable ALSA playback
+# device" sounds.
+#
+# On a device that merely opens, `null` included, run
+# tools/start-fill-and-log-shape.sh instead: it grades the start fill, the
+# log's shape and the bound relations, and grades nothing that rests on the
+# delay a device reports.
 #
 #   ./tools/delay-log-shape.sh [output-log]
 
 source "$(dirname "$0")/lib.sh"
 
-CRITERION="the delay log's shape: at least 60 samples in a minute, four columns each, plus the bounds and start fill"
+CRITERION="the delay log's shape and the delay it carries: at least 60 samples in a minute, four columns each, the bounds and start fill, and the reported delay inside those bounds for the whole graded interval"
 LOG="${1:-${TMPDIR:-/tmp}/chorus-delay-log-shape.log}"
 
 build_once
