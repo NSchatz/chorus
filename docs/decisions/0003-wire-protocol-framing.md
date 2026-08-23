@@ -3,6 +3,14 @@
 - Status: decided (port numbers stay open, see below)
 - BRIEF.md section 12, decision 3
 - Recorded by: FOUNDATION-1 (spec S0001-chorus-foundation-1)
+- Evidence commit: `7e50d3fd0295c119efc122608b56460906354015` in this
+  repository, the squash merge of FOUNDATION-1. The framing below is
+  implemented there in `crates/protocol/src/codec.rs` (`HEADER_LEN`,
+  `MAX_PAYLOAD_LEN`, `decode_frame`) and `crates/protocol/src/message.rs`
+  (the catalog), specified in `docs/protocol.md`, and tested by
+  `crates/protocol/tests/golden_vectors.rs` against the committed vectors
+  under `fixtures/protocol/`. Read any of them with
+  `git show 7e50d3f:<path>`.
 
 ## Decision
 
