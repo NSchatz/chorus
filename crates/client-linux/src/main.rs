@@ -76,27 +76,58 @@ fn probe_device(config: &ClientConfig) -> ExitCode {
         status(&format!("device-probe device={} usable=0", config.device));
         return ExitCode::from(EXIT_DEVICE);
     }
-    match AlsaSink::open(
+    let mut sink = match AlsaSink::open(
         &config.device,
         chorus_protocol::SampleFormat::PcmS16Le,
         2,
         48_000,
         config.device_buffer_us() as u32,
     ) {
-        Ok(sink) => {
-            status(&format!(
-                "device-probe device={} usable=1 rate_hz=48000 frame_len={}",
-                config.device,
-                sink.frame_len()
-            ));
-            ExitCode::SUCCESS
-        }
+        Ok(s) => s,
         Err(e) => {
             report("no usable audio device", &e.to_string());
-            status(&format!("device-probe device={} usable=0", config.device));
-            ExitCode::from(EXIT_DEVICE)
+            status(&format!("device-probe device={} usable=0 paces=0", config.device));
+            return ExitCode::from(EXIT_DEVICE);
         }
+    };
+
+    // Does this device have a ring to report about? A device that accepts
+    // frames instantly and reports a delay of zero forever - the ALSA `null`
+    // device is exactly that - opens perfectly well and can verify nothing
+    // about a reported delay. Saying so here is what lets a verification that
+    // needs a real one refuse instead of reporting green.
+    let probe_frames = 48_000 / 5; // 200 ms
+    let silence = vec![0u8; probe_frames * sink.frame_len()];
+    let delay_us = match sink.write(&silence).and_then(|_| sink.delay_frames()) {
+        Ok(frames) => frames.max(0) * 1_000_000 / 48_000,
+        Err(e) => {
+            report("the audio device failed during the probe", &e.to_string());
+            status(&format!("device-probe device={} usable=0 paces=0", config.device));
+            return ExitCode::from(EXIT_DEVICE);
+        }
+    };
+    let paces = delay_us > 0;
+    let _ = sink.drain();
+
+    status(&format!(
+        "device-probe device={} usable=1 paces={} probe_delay_us={} frame_len={}",
+        config.device,
+        u8::from(paces),
+        delay_us,
+        sink.frame_len()
+    ));
+    if config.require_pacing && !paces {
+        report(
+            "the audio device reports no delay",
+            &format!(
+                "'{}' accepted 200 ms of audio and still reports a delay of {} us, so it has no \
+                 ring to report about and cannot verify anything about a reported delay",
+                config.device, delay_us
+            ),
+        );
+        return ExitCode::from(EXIT_DEVICE);
     }
+    ExitCode::SUCCESS
 }
 
 fn play(config: &ClientConfig) -> ExitCode {

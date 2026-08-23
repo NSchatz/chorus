@@ -24,8 +24,7 @@ use chorus_audio::{MonotonicTimeline, StreamFormat};
 use chorus_hostctl::ThreadRegistry;
 use chorus_server::config::ServerConfig;
 use chorus_server::hostreport::{
-    decide_memory_lock, register_ordinary_thread, scheduling_report, take_contract_for_this_thread,
-    RealTimeOutcome,
+    decide_memory_lock, scheduling_report, take_contract_for_this_thread, RealTimeOutcome,
 };
 use chorus_server::serve::{serve_stream, ServeParams};
 use chorus_server::source;
@@ -85,8 +84,11 @@ fn main() -> ExitCode {
         return ExitCode::from(EXIT_CONFIG);
     }
 
+    // This process has one thread and it does the audio work, so it is
+    // registered exactly once, by whichever of the two paths below it takes.
+    // Registering it twice, once as "main" and once as "audio", would put two
+    // rows in the report for one thread and make the count meaningless.
     let registry = ThreadRegistry::new();
-    register_ordinary_thread("main", &registry);
 
     let memory = match decide_memory_lock(
         config.lock_memory,

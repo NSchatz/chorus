@@ -52,6 +52,15 @@ pub struct ClientConfig {
     /// The rate difference the overflow verification applies, in ppm, which
     /// the third relation is checked against.
     pub overflow_skew_ppm: u64,
+    /// In probe mode, whether a device that reports no delay counts as
+    /// unusable.
+    ///
+    /// It is a real distinction. The ALSA `null` device opens, accepts every
+    /// frame instantly and reports a delay of zero forever. It is a perfectly
+    /// good device for asking "can this be opened", and it is no use at all
+    /// for verifying anything about the delay a device reports, because it
+    /// has no ring to report about.
+    pub require_pacing: bool,
 }
 
 impl Default for ClientConfig {
@@ -66,6 +75,7 @@ impl Default for ClientConfig {
             delay_log: "chorus-delay.log".to_string(),
             run_seconds: None,
             overflow_skew_ppm: DEFAULT_OVERFLOW_SKEW_PPM,
+            require_pacing: false,
         }
     }
 }
@@ -276,6 +286,7 @@ impl ClientConfig {
             };
             match arg.as_str() {
                 "--probe-device" => mode = ClientMode::ProbeDevice,
+                "--require-pacing" => config.require_pacing = true,
                 "--server" => config.server = value()?,
                 "--device" => config.device = value()?,
                 "--delay-log" => config.delay_log = value()?,

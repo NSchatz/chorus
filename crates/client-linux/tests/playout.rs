@@ -37,6 +37,7 @@ fn config(tmp: &std::path::Path, run_seconds: Option<u64>) -> ClientConfig {
         delay_log: tmp.to_string_lossy().into_owned(),
         run_seconds,
         overflow_skew_ppm: 2_000,
+        require_pacing: false,
     }
 }
 
