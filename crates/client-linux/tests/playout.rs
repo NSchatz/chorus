@@ -287,6 +287,26 @@ fn a_clean_end_of_stream_plays_the_short_final_chunk_out_and_exits_clean() {
         30 * FRAMES_PER_CHUNK as u64 + 100
     );
     assert_eq!(ran.outcome.summary.underruns, 0, "a drain is not an underrun");
+
+    // The graded interval closed when the end of stream arrived, not when the
+    // play-out that followed it finished.
+    let log = parse(&ran.log_text).expect("the log parses");
+    let close = log
+        .events
+        .iter()
+        .find(|e| e.kind == "graded-close")
+        .expect("the log says where the graded interval closed");
+    assert_eq!(
+        close.fields.get("reason").map(String::as_str),
+        Some("end-of-stream")
+    );
+    for sample in log.samples.iter().filter(|s| s.mono_us > close.mono_us) {
+        assert!(
+            !sample.graded,
+            "a sample at {} us, after the end of stream at {} us, is still marked graded",
+            sample.mono_us, close.mono_us
+        );
+    }
 }
 
 #[test]
@@ -316,6 +336,68 @@ fn a_connection_lost_without_the_signal_plays_out_what_is_held_and_exits_dirty()
     assert_eq!(
         ran.outcome.summary.underruns, 0,
         "the deliberate play-out is not counted as underruns"
+    );
+}
+
+/// Terms closes the graded interval at the EARLIEST of end of stream received,
+/// the connection detected as lost, the client beginning to exit for any other
+/// reason, and the end of the run. The play-out that follows a lost connection
+/// is outside it, however long it takes - so the flag has to go down when the
+/// connection is detected as lost, and not when the last held chunk has been
+/// written.
+#[test]
+fn the_graded_interval_closes_when_the_connection_is_lost_not_when_the_play_out_ends() {
+    let mut parts = Vec::new();
+    for i in 0..30u32 {
+        parts.push((
+            Duration::from_micros(u64::from(i) * CHUNK_US),
+            common::chunk_frame(i, u64::from(i) * CHUNK_US * 1_000, FRAMES_PER_CHUNK),
+        ));
+    }
+    // No end-of-stream frame: the reader simply closes, and what is held is
+    // played out afterwards.
+    let source = common::PacedReader::new(parts, true);
+
+    let ran = run("graded-close", source, None, 400_000);
+    let log = parse(&ran.log_text).expect("the log parses");
+
+    let close = log
+        .events
+        .iter()
+        .find(|e| e.kind == "graded-close")
+        .unwrap_or_else(|| panic!("the log never says where the graded interval closed:\n{}", ran.log_text));
+    assert_eq!(
+        close.fields.get("reason").map(String::as_str),
+        Some("connection-lost"),
+        "the interval closed for the wrong reason: {:?}",
+        close
+    );
+
+    let after: Vec<_> = log
+        .samples
+        .iter()
+        .filter(|s| s.mono_us > close.mono_us)
+        .collect();
+    assert!(
+        !after.is_empty(),
+        "the run recorded nothing after the connection was lost, so this asserts nothing:\n{}",
+        ran.log_text
+    );
+    for sample in &after {
+        assert!(
+            !sample.graded,
+            "a sample at {} us, after the connection was detected as lost at {} us, is still \
+             marked graded:\n{}",
+            sample.mono_us, close.mono_us, ran.log_text
+        );
+    }
+
+    // And the play-out that followed the close was real: everything held
+    // reached the device after the interval had already closed.
+    assert_eq!(
+        ran.outcome.summary.frames_written,
+        30 * FRAMES_PER_CHUNK as u64,
+        "everything held reached the device"
     );
 }
 

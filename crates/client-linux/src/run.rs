@@ -11,6 +11,13 @@
 //! That is what keeps the start fill and the deliberate drain from failing an
 //! assertion they were never about.
 //!
+//! "Earliest" is load-bearing and the code is written to it: the flag goes
+//! down where the reason is learned, which for the first three is the moment a
+//! stop reason is recorded, NOT the moment the play-out that follows finishes.
+//! The client keeps playing what it holds after a stream ends or a server
+//! disappears - the interval does not stay open for it, and the log says where
+//! it closed and why in a `graded-close` event.
+//!
 //! # The first write is the whole start fill
 //!
 //! Not one chunk of it. If output began with a single chunk, the device's
@@ -446,15 +453,44 @@ fn play<S: PcmSink>(
             if timeline.now_us() >= limit {
                 keep_going.store(false, Ordering::SeqCst);
                 record_stop(stop_slot, StopReason::RunLengthReached);
+                if graded {
+                    // The end of the run is the fourth of the four things that
+                    // close the interval. The flag is not lowered here because
+                    // nothing reads it again - the loop breaks, and phase 4
+                    // takes no graded sample - so the event is what records
+                    // where the interval closed and why.
+                    log.event(
+                        timeline.now_us(),
+                        "graded-close",
+                        "reason=run-length-reached graded=0",
+                    )?;
+                }
                 break;
             }
         }
-        let input_finished = match stop_slot.lock() {
-            Ok(g) => g.is_some(),
-            Err(p) => p.into_inner().is_some(),
+        // The graded interval closes at the EARLIEST of the four things Terms
+        // names, and three of them arrive here as a recorded stop reason: the
+        // end of stream, the connection detected as lost, and the client
+        // beginning to exit for any other reason. What follows is the play-out
+        // of what is already held, which is outside the interval however long
+        // it takes - so the flag goes down here, at the reason, and not at the
+        // start of the drain loop below.
+        let stopped_because = match stop_slot.lock() {
+            Ok(g) => g.as_ref().map(StopReason::name),
+            Err(p) => p.into_inner().as_ref().map(StopReason::name),
         };
-        if input_finished && buffer.queued_frames() == 0 {
-            break;
+        if let Some(reason) = stopped_because {
+            if graded {
+                graded = false;
+                log.event(
+                    timeline.now_us(),
+                    "graded-close",
+                    &format!("reason={} graded=0", reason),
+                )?;
+            }
+            if buffer.queued_frames() == 0 {
+                break;
+            }
         }
 
         let delay = match sink.delay_frames() {
