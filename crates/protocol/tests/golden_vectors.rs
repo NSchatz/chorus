@@ -17,7 +17,7 @@ use common::{fixture_dir, load_vector};
 fn every_catalogued_message_type_has_a_committed_vector() {
     assert_eq!(
         MessageType::ALL.len(),
-        2,
+        3,
         "the catalog changed; every type needs its own committed vector"
     );
     for message_type in MessageType::ALL {

@@ -1,0 +1,9 @@
+[package]
+name = "chorus-hostctl"
+description = "the container scheduling contract: rtprio ceiling, per-thread CPU-time bound, locked memory"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]

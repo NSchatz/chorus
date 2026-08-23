@@ -9,7 +9,9 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chorus_protocol::{AudioChunk, Message, MessageType, SampleFormat, TimeSync, RESERVED_LEN};
+use chorus_protocol::{
+    AudioChunk, Message, MessageType, SampleFormat, StreamEnd, TimeSync, RESERVED_LEN,
+};
 
 /// Directory holding the protocol golden vectors.
 pub fn fixture_dir() -> PathBuf {
@@ -144,6 +146,10 @@ pub fn message_from_fields(fields: &Fields) -> Message {
                 audio_data: fields.bytes("audio_data"),
             })
         }
+        MessageType::StreamEnd => Message::StreamEnd(StreamEnd {
+            final_sequence: fields.u64("final_sequence") as u32,
+            end_timestamp_ns: fields.u64("end_timestamp_ns"),
+        }),
     }
 }
 

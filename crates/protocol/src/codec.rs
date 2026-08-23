@@ -9,8 +9,8 @@
 use std::fmt;
 
 use crate::message::{
-    AudioChunk, Message, MessageType, SampleFormat, TimeSync, CHUNK_HEADER_LEN, MAX_CHANNELS,
-    MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ, RESERVED_LEN, RESERVED_OFFSET,
+    AudioChunk, Message, MessageType, SampleFormat, StreamEnd, TimeSync, CHUNK_HEADER_LEN,
+    MAX_CHANNELS, MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ, RESERVED_LEN, RESERVED_OFFSET,
 };
 
 /// Bytes in a frame header: one type byte plus a u16 length.
@@ -290,7 +290,15 @@ pub fn encode_payload(message: &Message) -> Result<Vec<u8>, EncodeError> {
     match message {
         Message::TimeSync(ts) => Ok(encode_time_sync(ts)),
         Message::AudioChunk(chunk) => encode_audio_chunk(chunk),
+        Message::StreamEnd(end) => Ok(encode_stream_end(end)),
     }
+}
+
+fn encode_stream_end(end: &StreamEnd) -> Vec<u8> {
+    let mut out = Vec::with_capacity(12);
+    out.extend_from_slice(&end.final_sequence.to_be_bytes());
+    out.extend_from_slice(&end.end_timestamp_ns.to_be_bytes());
+    out
 }
 
 fn encode_time_sync(ts: &TimeSync) -> Vec<u8> {
@@ -447,6 +455,10 @@ fn decode_payload(message_type: MessageType, payload: &[u8]) -> Result<Message, 
             t1_ns: read_u64_be(payload, 8),
             t2_ns: read_u64_be(payload, 16),
             t3_ns: read_u64_be(payload, 24),
+        })),
+        MessageType::StreamEnd => Ok(Message::StreamEnd(StreamEnd {
+            final_sequence: read_u32_be(payload, 0),
+            end_timestamp_ns: read_u64_be(payload, 4),
         })),
         MessageType::AudioChunk => {
             let sequence = read_u32_be(payload, 0);

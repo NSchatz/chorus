@@ -1,0 +1,22 @@
+[package]
+name = "chorus-server"
+description = "the chorus server: PCM ingest, chunking on one monotonic timeline, and the host contract it runs under"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+chorus-protocol = { path = "../protocol" }
+chorus-audio = { path = "../audio" }
+chorus-hostctl = { path = "../hostctl" }
+
+[dev-dependencies]
+# The end-to-end tests decode what the server put on a real socket with the
+# same receiver the client uses, so a framing decision is tested once rather
+# than modelled twice.
+chorus-client-linux = { path = "../client-linux" }
+
+[[bin]]
+name = "chorus-server"
+path = "src/main.rs"

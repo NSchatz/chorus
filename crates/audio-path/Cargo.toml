@@ -1,0 +1,9 @@
+[package]
+name = "chorus-audio-path"
+description = "the committed enumeration of the audio and timestamp path, and the checks that keep it honest"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]

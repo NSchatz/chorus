@@ -39,7 +39,8 @@ pub use codec::{
     InvalidField, HEADER_LEN, MAX_PAYLOAD_LEN,
 };
 pub use message::{
-    AudioChunk, Message, MessageType, SampleFormat, TimeSync, CHUNK_HEADER_LEN, MAX_CHANNELS,
-    MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ, RESERVED_LEN, RESERVED_OFFSET, TIME_SYNC_PAYLOAD_LEN,
+    AudioChunk, Message, MessageType, SampleFormat, StreamEnd, TimeSync, CHUNK_HEADER_LEN,
+    MAX_CHANNELS, MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ, RESERVED_LEN, RESERVED_OFFSET,
+    STREAM_END_PAYLOAD_LEN, TIME_SYNC_PAYLOAD_LEN,
 };
 pub use session::Session;
