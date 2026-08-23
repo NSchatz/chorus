@@ -16,6 +16,7 @@ that the phases after it inherit stated choices rather than discovered ones.
 | the audio-path enumeration and its checks | `audio-path.conf`, `crates/audio-path` |
 | grading a saved delay log | binary `chorus-delaylog-check` |
 | the verifications | `tools/` |
+| what ran when this was built, and what did not | `docs/verification-record.md` |
 
 ## Which half of the phase this delivers
 
@@ -70,6 +71,20 @@ command and `deploy/README.md` explains each `--ulimit`.
 
 `--device` is an ALSA PCM name. `default` is the machine's default card;
 `hw:Loopback,0` is a `snd-aloop` loopback; `null` opens and discards.
+
+Two one-minute checks sit behind that, and which one you can run depends on the
+device you have:
+
+```
+./tools/start-fill-and-log-shape.sh   # any device that OPENS, `null` included
+./tools/delay-log-shape.sh            # a device that PACES: a card or a loopback
+```
+
+The first grades the start fill, the shape of the delay log and the three bound
+relations, and deliberately grades nothing that rests on the delay a device
+reports. The second grades the log the way the ten-minute run is graded, which
+is why it refuses `null`: a device that reports a delay of zero forever could
+only fail it. Both refuse, visibly and non-zero, where their device is absent.
 
 ### The ten-minute run
 
@@ -268,3 +283,16 @@ verifying anything about a reported delay, because it has no ring to report
 about. The verifications that grade the delay require `paces=1` and refuse
 otherwise, naming the reason. The verifications that do not, such as the
 end-of-stream and connection-loss checks, run against `null` happily.
+
+So the checks split by what they grade, not by what they touch:
+
+| entry point | needs | grades |
+|---|---|---|
+| `tools/stream-end-and-loss.sh` | a device that opens | the two ways a stream stops |
+| `tools/start-fill-and-log-shape.sh` | a device that opens | the start fill, the record's shape, the bound relations |
+| `tools/delay-log-shape.sh` | a device that paces | the above plus the delay inside its bounds |
+| `tools/overflow-run.sh` | a device that paces | the behaviour at both bounds, and that no rate changed |
+| `tools/ten-minute-run.sh` | a device that paces, real speakers for the run that counts | ten continuous minutes, zero underruns, the extremes and margins |
+
+`docs/verification-record.md` says which of these ran when this work was built,
+and files the exact command and the verbatim refusal for each one that did not.

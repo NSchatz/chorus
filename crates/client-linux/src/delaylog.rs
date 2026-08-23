@@ -26,6 +26,13 @@
 //! event  mono_us=1234999 kind=zone zone=mid occupancy_us=140000
 //! summary graded_span_us=600123 delay_min_us=118000 ...
 //! ```
+//!
+//! The event kinds a run writes: `start-fill` (the first write, and the fill it
+//! carried), `zone` (occupancy moved between zones), `bound-crossing` (the
+//! maximum was reached), `underrun` (the device said so), `graded-close` (the
+//! graded interval closed, and why) and `drain-begin`. A reader that does not
+//! know a kind can ignore it: the grader keys on the ones it needs and passes
+//! the rest through, which is why a new kind is not a format version.
 
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
