@@ -22,10 +22,17 @@ This file records a decision that was already made. It does not reopen it.
 
 1. The server's job is soft-real-time. BRIEF.md 5.1 states the case directly: a
    garbage collector on the hot path is "a failure mode the project exists to
-   avoid", and the measured comparisons cited there show GC languages missing
-   modest tail-latency targets under memory pressure where Rust stays flat. The
+   avoid". 5.1 goes on to assert that "measured comparisons show GC languages
+   missing modest tail-latency targets under memory pressure where Rust stays
+   flat", and that assertion carries no source: it names no study, dataset,
+   link or number, and BRIEF.md section 11 lists no such reference, so there is
+   nothing there for a reader to go and consult. Treat it as the brief's
+   position and not as evidence. The decision does not rest on it either way,
+   because the load-bearing part is the failure mode named just above it: the
    whole point of the project is holding sub-millisecond playout sync, so the
-   language must not introduce a pause the servo then has to chase.
+   language must not introduce a pause the servo then has to chase. Under
+   BRIEF.md guardrail 3, the first tail-latency number this project actually
+   stands behind will be one its own harness measured.
 2. The protocol is implemented twice. CLAUDE.md working agreement item 5 says
    the protocol, sync and DSP cores are pure libraries with shared fixtures "so
    the Rust and C implementations cannot drift apart". FOUNDATION-1 commits the

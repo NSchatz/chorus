@@ -4,9 +4,11 @@
 - BRIEF.md section 12, decision 2
 - Recorded by: FOUNDATION-1 (spec S0001-chorus-foundation-1)
 - Evidence commit: `7e50d3fd0295c119efc122608b56460906354015` in this
-  repository, the squash merge of FOUNDATION-1. The layout below is the tree
-  at that commit and the CI shape below is `.github/workflows/ci.yml` at that
-  commit. The whole check is two commands:
+  repository, the squash merge of FOUNDATION-1. The layout below is the shape
+  this decision chooses, shown as it stands in the tree at that commit; it is
+  not the whole tree. Every path it shows is present at that commit, and the
+  paragraph after it names the rest. The CI shape below is
+  `.github/workflows/ci.yml` at that commit. The whole check is two commands:
   `git ls-tree -r --name-only 7e50d3f` for the layout and the absences, and
   `git show 7e50d3f:.github/workflows/ci.yml` for the workflow.
 
@@ -22,9 +24,20 @@ chorus/
   fixtures/protocol/       # golden vectors and their canonical inputs
   fixtures/sync/           # committed simulator scenarios
   docs/decisions/          # this log
-  docs/measurements/       # harness reports (none until RIG-3)
+  docs/measurements/       # placeholder README only at this commit
   .github/workflows/ci.yml # the one CI workflow
 ```
+
+`docs/measurements/` exists at that commit because `docs/measurements/README.md`
+does; it holds no measurement report, and the phase that first writes a report
+is what puts one there, which on the roadmap is RIG-3. Nothing in this phase
+measures anything.
+
+The block is a subset and not an inventory. Six further paths are in the tree
+at that commit and are deliberately not shown, because none of them is a layout
+choice this entry is making: `.gitignore`, `BRIEF.md`, `CLAUDE.md`,
+`README.md`, `docs/protocol.md` and `fixtures/README.md`. `docs/protocol.md` is
+the one worth naming twice, since 0003 cites it at this same commit.
 
 Directories BRIEF.md section 7 lists that this phase does **not** create:
 `crates/dsp`, `crates/server`, `crates/client-linux`, `firmware/esp32s3/`,
