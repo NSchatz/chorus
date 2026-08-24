@@ -58,7 +58,8 @@ It scans source text, one line at a time, and it inherits the limits
 `docs/decisions/0011` already records for its neighbour: a string literal that
 spans lines and a `/* */` block comment are not tracked across lines.
 
-Two limits are its own, and both are in the safe direction:
+Two limits are its own and run in the safe direction, where the check fires
+where it need not have:
 
 - A raw `sched_setscheduler` call that bypassed `chorus-hostctl` would not be
   seen as an acquisition. Every caller in this tree goes through the wrapper,
@@ -66,6 +67,22 @@ Two limits are its own, and both are in the safe direction:
 - A bound applied in one function for a policy taken in another is not
   credited. The check fires where it need not have, and the answer is to put
   the bound next to the acquisition, which is where it belongs.
+
+Two more run the other way, towards a green that is wrong, so they are written
+down here rather than left to be discovered:
+
+- The scan reads `.rs` files under `crates/` and nowhere else. An acquisition
+  in a Rust source elsewhere under the repository root would be neither graded
+  nor reported as unaccounted for, and the check would print `pass
+  real-time-ordering` and be wrong by omission. Nothing outside `crates/`
+  acquires a policy today, and this repository ships firmware, so a tree
+  outside `crates/` is a plausible future: adding one means widening the root
+  in `realtime::source_units` in the same change.
+- A site is credited to the nearest `fn` above it, so a bound written inside a
+  closure counts for an acquisition that sits outside the closure in the same
+  function, even though the closure may never run. The answer is the one the
+  limit above already gives: the bound belongs on the line before the
+  acquisition, not inside something whose execution is a separate question.
 
 Unlike its neighbour, this check reads a name inside a string literal as
 prose. It has to: this repository quotes the very function names it searches

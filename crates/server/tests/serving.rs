@@ -6,6 +6,8 @@
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -311,6 +313,46 @@ fn a_run_that_does_not_end_cleanly_emits_no_end_of_stream_at_all() {
     assert!(
         decode_all(&served.wire).is_empty(),
         "and there is no stream_end to decode"
+    );
+}
+
+#[test]
+fn a_run_stopped_with_chunks_already_on_the_wire_emits_no_end_of_stream_either() {
+    let format = format();
+    // Twenty chunks of input, so the run has plenty left when it is stopped.
+    let input = ramp(format.frames_in(CHUNK_US).unwrap() * 20 * format.frame_len());
+    // True for the first three passes of the serve loop and false afterwards.
+    // That is the half of this criterion the zero-chunk case cannot reach: here
+    // there IS a final chunk to name and a timestamp to end one chunk past, so
+    // the only thing suppressing the signal is that the run was stopped rather
+    // than the source ending. A check that only ever stopped a run before its
+    // first chunk would stay green if that suppression were deleted.
+    let passes = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&passes);
+    let served = serve_over_tcp_on(params(0), aged_timeline(2_000_000), input, move || {
+        counter.fetch_add(1, Ordering::SeqCst) < 3
+    });
+
+    assert!(
+        served.report.chunks_sent > 0,
+        "this case is only the interesting one if chunks reached the wire before the stop"
+    );
+    assert!(!served.report.ended_cleanly);
+    let messages = decode_all(&served.wire);
+    assert!(
+        !chunks_of(&messages).is_empty(),
+        "the client received chunks, so the server had a final chunk to name"
+    );
+    assert!(
+        !messages
+            .iter()
+            .any(|m| m.message_type() == MessageType::StreamEnd),
+        "a stopped run sends no end-of-stream signal even with a final chunk behind it: {:?}",
+        messages.iter().map(|m| m.message_type()).collect::<Vec<_>>()
+    );
+    assert!(
+        matches!(messages.last(), Some(Message::AudioChunk(_))),
+        "the last thing on the wire is a chunk, not an end of stream"
     );
 }
 

@@ -50,13 +50,26 @@
 //!
 //! This is a line scanner, like [`crate::scan`], and it inherits that module's
 //! limits: a multi-line string literal and a `/* */` block comment are not
-//! tracked across lines. Two limits are its own. A raw `sched_setscheduler`
-//! call that bypassed this repository's own entry point would not be seen as
-//! an acquisition - the entry point is where the wrapper lives, and every
-//! caller in this tree goes through it. And a bound applied in one function
-//! for a policy taken in another is not credited, which is the safe direction:
-//! the check fires where it need not have, and the answer is to move the bound
-//! next to the acquisition, which is where it belongs anyway.
+//! tracked across lines. Four limits are its own, and
+//! `docs/decisions/0012-the-cpu-time-bound-goes-on-first.md` carries the same
+//! list in the same order.
+//!
+//! Two are in the safe direction, where the check fires where it need not
+//! have. A raw `sched_setscheduler` call that bypassed this repository's own
+//! entry point would not be seen as an acquisition - the entry point is where
+//! the wrapper lives, and every caller in this tree goes through it. And a
+//! bound applied in one function for a policy taken in another is not
+//! credited: the answer is to move the bound next to the acquisition, which is
+//! where it belongs anyway.
+//!
+//! Two run the other way, towards a green that is wrong. `source_units` reads
+//! `.rs` files under `crates/` and nowhere else, so an acquisition in a Rust
+//! source elsewhere under the repository root would be neither graded nor
+//! reported as unaccounted for; nothing outside `crates/` acquires a policy
+//! today, and widening that root is the change to make when one does. And
+//! because a site is credited to the nearest `fn` above it, a bound written
+//! inside a closure counts for an acquisition outside that closure in the same
+//! function, though the closure may never run.
 
 use std::collections::BTreeMap;
 use std::fmt;
