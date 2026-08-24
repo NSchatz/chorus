@@ -123,6 +123,58 @@ no-undeclared-real-time-thread check and both denial paths; and a grep-checked
 invariant that both real-time acquisitions in the tree apply the CPU-time bound
 before anything else.
 
+#### What the suite now covers here with no privilege, and what still needs a ceiling
+
+AC-13 is "no thread is real-time without being reported", and that answer is
+only as good as the thread inventory it is read out of. The inventory is now
+either complete or an error, and each way it can fail has its own test that
+needs no privilege, no sound card and no real fault: the failure is injected at
+the seam the enumeration reads the kernel through, with the errno the kernel
+would have returned. **Covered here, by `cargo test -p chorus-hostctl`**
+(`crates/hostctl/tests/thread_inventory.rs`, nine tests):
+
+| behaviour | the test that holds it |
+|---|---|
+| one entry per live thread, carrying tid, name, policy and real-time priority, checked against a modelled listing, against a listing that LOSES a live thread on one pass (which `/proc/<pid>/task` was measured doing), and against this process's real `/proc/self/task` with four threads held alive on a barrier | `inventory_lists_every_live_thread` |
+| a thread that exited between the listing and the read is omitted, the run still succeeds, and the omission is COUNTED so a caller can tell it from "nothing was dropped" | `vanished_thread_is_omitted_and_counted` |
+| any other read failure fails the whole enumeration naming the thread and the reason, instead of shortening the list | `transient_read_failure_is_an_error_not_an_omission` |
+| a refusal to list the threads, or to read one of them, fails the enumeration and hands no caller a partial list | `permission_denial_fails_the_enumeration` |
+| a record that cannot be interpreted fails the enumeration naming that thread, rather than reading as a thread that is not there | `unreadable_scheduling_record_is_an_error` |
+| an empty record, and a listing entry that names no thread, fall under the same rule and are never reported with default or zero values | `an_empty_record_is_never_reported_as_defaults` |
+| an inventory with nothing in it is an error, because the thread doing the asking is itself a thread | `an_empty_inventory_is_an_error` |
+| a name that cannot be read costs the thread its name and not its place, and is never the empty string | `an_unreadable_thread_name_does_not_drop_the_thread` |
+| the undeclared-real-time-thread question is answered only from an inventory that completed, and an incomplete one is reported as the failure it is rather than as zero | `no_clean_answer_from_an_incomplete_inventory` |
+
+Also covered here, by `make verify` (`tools/refusals.sh`): the host-contract
+entry point, handed a report whose inventory did not complete, exits non-zero,
+names this criterion and the reason, and reports nothing as passed or
+skipped-green (`incomplete-inventory-*` checks), while still grading a complete
+report on its merits (`complete-inventory-still-grades-clean`). Repeat-run
+evidence for the suite is in
+`docs/measurements/hostctl-thread-inventory-repeat.md`, which records 30
+consecutive clean runs of `make test`, a 200-run before-and-after comparison
+that took a real flake in `-p chorus-hostctl --lib` from 3.5% to zero observed,
+the captured diagnosis of what was causing it, and a plain statement that a
+clean streak bounds a flake rate rather than proving a flake gone.
+
+**Still needs a granted rtprio ceiling above zero, and is NOT covered here.**
+Everything about a thread that is actually real-time on this machine, because
+no thread here can become one:
+
+- that the priority obtained sits inside the granted ceiling, and is the
+  running thread's actual scheduling priority (AC-10);
+- that every real-time thread the server created is reported carrying a
+  CPU-time bound, and that the bound FIRES rather than merely being configured
+  (AC-11, AC-12, `tools/spin-test.sh`);
+- that the count of real-time threads in the report matches the count the
+  process actually has, against a process that has one (AC-13's positive half).
+  The tests above establish that the inventory feeding that count is complete
+  or is a refusal; they do not and cannot establish what the count is on a host
+  that grants a ceiling.
+
+`tools/host-contract.sh` remains the entry point for all of those and remains
+in `tools/unrun-checks-are-visibly-unrun.sh`, so it still refuses visibly here.
+
 ### AC-19 (the second half): a device removed mid-run
 
 ```
