@@ -11,7 +11,7 @@ use std::fmt;
 
 use chorus_hostctl::{
     bound_real_time_cpu_time, lock_memory, memlock_limit, policy_name, rtprio_ceiling,
-    take_real_time_policy, thread_facts, thread_id, undeclared_real_time_threads, HostError,
+    take_real_time_policy, thread_id, thread_inventory, undeclared_real_time_threads_in, HostError,
     RegisteredThread, Rlimit, ThreadRegistry,
 };
 
@@ -233,20 +233,62 @@ pub fn decide_memory_lock(
     }
 }
 
+/// What the scheduling report concluded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SchedulingVerdict {
+    /// The inventory completed and no thread is real-time without having been
+    /// reported.
+    Agreed,
+    /// The inventory completed and some real-time thread was never declared.
+    Undeclared {
+        /// How many of them.
+        count: usize,
+    },
+    /// The inventory could not be completed, so the question was not answered.
+    ///
+    /// This is deliberately not "zero undeclared real-time threads". An
+    /// enumeration that lost a thread on the way answers that question clean
+    /// for the wrong reason, and a clean answer for the wrong reason is worse
+    /// than no answer, because the whole contract is graded on it.
+    InventoryIncomplete {
+        /// Why, in the enumeration's own words.
+        reason: String,
+    },
+}
+
+impl SchedulingVerdict {
+    /// Whether the contract holds and the server may go on.
+    pub fn is_clean(&self) -> bool {
+        matches!(self, SchedulingVerdict::Agreed)
+    }
+}
+
 /// The scheduling report: what the process says, and what the kernel says.
 ///
-/// Returns the lines to print and whether the two agree. Disagreement is a
-/// hard failure for the caller, not a warning: a real-time thread nobody
-/// declared is the thing the whole contract exists to prevent.
-pub fn scheduling_report(registry: &ThreadRegistry) -> (Vec<String>, bool) {
+/// Returns the lines to print and the verdict. Anything other than
+/// [`SchedulingVerdict::Agreed`] is a hard failure for the caller, not a
+/// warning: a real-time thread nobody declared is the thing the whole contract
+/// exists to prevent, and an inventory that did not complete cannot say
+/// whether there is one.
+pub fn scheduling_report(registry: &ThreadRegistry) -> (Vec<String>, SchedulingVerdict) {
     let mut lines = Vec::new();
-    let facts = match thread_facts() {
-        Ok(f) => f,
+    let inventory = match thread_inventory() {
+        Ok(inventory) => inventory,
         Err(e) => {
-            lines.push(format!("scheduling-report error=/proc/self/task: {}", e));
-            return (lines, false);
+            lines.push(format!("INCOMPLETE-THREAD-INVENTORY reason={}", e));
+            lines.push(format!(
+                "scheduling-report inventory=incomplete undeclared_real_time=unknown reason={}",
+                e
+            ));
+            return (
+                lines,
+                SchedulingVerdict::InventoryIncomplete {
+                    reason: e.to_string(),
+                },
+            );
         }
     };
+    let facts = inventory.threads();
 
     for declared in registry.snapshot() {
         let kernel = facts.iter().find(|f| f.tid == declared.tid);
@@ -273,7 +315,7 @@ pub fn scheduling_report(registry: &ThreadRegistry) -> (Vec<String>, bool) {
         ));
     }
 
-    for fact in &facts {
+    for fact in facts {
         if registry.snapshot().iter().all(|d| d.tid != fact.tid) {
             lines.push(format!(
                 "thread role=unregistered tid={} comm={} kernel_policy={} kernel_priority={}",
@@ -285,7 +327,7 @@ pub fn scheduling_report(registry: &ThreadRegistry) -> (Vec<String>, bool) {
         }
     }
 
-    let undeclared = undeclared_real_time_threads(registry, &facts);
+    let undeclared = undeclared_real_time_threads_in(registry, &inventory);
     for u in &undeclared {
         lines.push(format!(
             "UNDECLARED-REAL-TIME-THREAD tid={} comm={} policy={} priority={}",
@@ -295,9 +337,13 @@ pub fn scheduling_report(registry: &ThreadRegistry) -> (Vec<String>, bool) {
             u.facts.rt_priority
         ));
     }
+    // `vanished` is on the line because it is the difference between "nothing
+    // was dropped" and "something was dropped and it had exited", and a reader
+    // grading this report is entitled to know which one they are looking at.
     lines.push(format!(
-        "scheduling-report threads={} real_time_declared={} undeclared_real_time={}",
+        "scheduling-report threads={} vanished={} real_time_declared={} undeclared_real_time={}",
         facts.len(),
+        inventory.vanished(),
         registry
             .snapshot()
             .iter()
@@ -306,5 +352,12 @@ pub fn scheduling_report(registry: &ThreadRegistry) -> (Vec<String>, bool) {
         undeclared.len()
     ));
 
-    (lines, undeclared.is_empty())
+    let verdict = if undeclared.is_empty() {
+        SchedulingVerdict::Agreed
+    } else {
+        SchedulingVerdict::Undeclared {
+            count: undeclared.len(),
+        }
+    };
+    (lines, verdict)
 }

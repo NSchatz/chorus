@@ -13,6 +13,11 @@
 //! - `5`  the PCM source failed mid-stream. No end-of-stream signal is sent in
 //!        this case, on purpose.
 //! - `6`  a thread runs under a real-time policy that was not reported.
+//! - `7`  this process could not take a complete inventory of its own threads,
+//!        so it cannot say whether `6` holds. Refusing here rather than
+//!        starting is the point: the contract is graded on that report, and a
+//!        report built from a list that lost a thread reads clean for the
+//!        wrong reason.
 
 use std::io::Write;
 use std::net::TcpListener;
@@ -25,6 +30,7 @@ use chorus_hostctl::ThreadRegistry;
 use chorus_server::config::ServerConfig;
 use chorus_server::hostreport::{
     decide_memory_lock, scheduling_report, take_contract_for_this_thread, RealTimeOutcome,
+    SchedulingVerdict,
 };
 use chorus_server::serve::{serve_stream, ServeParams};
 use chorus_server::source;
@@ -34,6 +40,7 @@ const EXIT_CONTRACT: u8 = 3;
 const EXIT_TRANSPORT: u8 = 4;
 const EXIT_SOURCE: u8 = 5;
 const EXIT_UNDECLARED_THREAD: u8 = 6;
+const EXIT_INCOMPLETE_INVENTORY: u8 = 7;
 
 /// Every status line carries the contract phrases, so a run that is missing
 /// part of the contract says so every time it says anything.
@@ -140,16 +147,36 @@ fn main() -> ExitCode {
         memory: memory.phrase(),
     };
 
-    let (lines, agreed) = scheduling_report(&registry);
+    let (lines, verdict) = scheduling_report(&registry);
     for line in &lines {
         println!("chorus-server: {}", line);
     }
-    if !agreed {
-        report(
-            "the scheduling report and the kernel disagree",
-            "a thread runs under a real-time policy that was not reported",
-        );
-        return ExitCode::from(EXIT_UNDECLARED_THREAD);
+    match verdict {
+        SchedulingVerdict::Agreed => {}
+        SchedulingVerdict::Undeclared { count } => {
+            report(
+                "the scheduling report and the kernel disagree",
+                &format!(
+                    "{} threads run under a real-time policy that was not reported",
+                    count
+                ),
+            );
+            return ExitCode::from(EXIT_UNDECLARED_THREAD);
+        }
+        SchedulingVerdict::InventoryIncomplete { reason } => {
+            report(
+                "the thread inventory could not be completed",
+                &format!(
+                    "{}; so this run cannot say whether a thread is real-time without having \
+                     been reported, and it will not claim that it can",
+                    reason
+                ),
+            );
+            println!(
+                "chorus-server: stopped reason=incomplete-thread-inventory chunks_sent=0 played=0"
+            );
+            return ExitCode::from(EXIT_INCOMPLETE_INVENTORY);
+        }
     }
 
     status.say(&format!(

@@ -15,7 +15,10 @@
 #   - the client cannot open a device that does not exist, reports the device
 #     and the reason, exits non-zero, and does not report itself as playing;
 #   - the client cannot reach a server that is not there, says which of the two
-#     happened, and exits non-zero.
+#     happened, and exits non-zero;
+#   - the host-contract entry point, handed a report whose thread inventory did
+#     not complete, exits non-zero naming the criterion it was verifying and
+#     the reason it could not, and reports nothing as passed or skipped-green.
 #
 #   ./tools/refusals.sh
 
@@ -173,6 +176,59 @@ check "absent-server-says-which-of-the-two-happened" \
 check "absent-server-does-not-claim-playback" \
     "$(echo "$OUT" | grep -q 'played=0' && echo 1 || echo 0)" \
     "$(echo "$OUT" | grep 'stopped' | head -n 1)"
+
+# --- a host contract whose thread inventory did not complete ----------------
+#
+# The scheduling half of the host contract is graded from the server's own
+# inventory of its threads. An inventory that did not complete cannot say
+# whether a thread is real-time without having been reported, so the entry
+# point has to refuse rather than read the report for an answer that is not in
+# it. "Zero undeclared real-time threads" out of a list that lost a thread is
+# the failure this whole check exists to prevent, and it looks exactly like
+# success.
+INCOMPLETE_REPORT="${TMPDIR:-/tmp}/chorus-incomplete-inventory.report"
+INCOMPLETE_REASON="cannot read the scheduling record of thread 41: Permission denied (errno 13)"
+{
+    printf 'chorus-server: scheduling=real-time rtprio_ceiling=20 rtprio_obtained=20 rttime_us=200000\n'
+    printf 'chorus-server: INCOMPLETE-THREAD-INVENTORY reason=%s\n' "$INCOMPLETE_REASON"
+    printf 'chorus-server: scheduling-report inventory=incomplete undeclared_real_time=unknown reason=%s\n' \
+        "$INCOMPLETE_REASON"
+} > "$INCOMPLETE_REPORT"
+
+set +e
+OUT="$(CHORUS_HOST_CONTRACT_REPORT="$INCOMPLETE_REPORT" CHORUS_SKIP_BUILD=1 \
+    bash "$REPO_ROOT/tools/host-contract.sh" 2>&1)"
+STATUS=$?
+set -e
+check "incomplete-inventory-exits-non-zero" \
+    "$([ "$STATUS" -ne 0 ] && echo 1 || echo 0)" "exit $STATUS"
+check "incomplete-inventory-names-the-criterion" \
+    "$(echo "$OUT" | grep -q 'criterion:.*no thread is real-time without being reported' \
+        && echo 1 || echo 0)" \
+    "$(echo "$OUT" | grep 'criterion:' | head -n 1)"
+check "incomplete-inventory-names-the-reason" \
+    "$(echo "$OUT" | grep -q "reason:.*Permission denied" && echo 1 || echo 0)" \
+    "$(echo "$OUT" | grep 'reason:' | head -n 1)"
+check "incomplete-inventory-claims-nothing" \
+    "$(echo "$OUT" | grep -qiE '^(pass|ok|skipped|green)' && echo 0 || echo 1)" \
+    "$(echo "$OUT" | grep 'NOT passed' | head -n 1)"
+
+# And the same entry point still grades a complete report on its merits, so the
+# refusal above is about the inventory and not about the grading being broken.
+COMPLETE_REPORT="${TMPDIR:-/tmp}/chorus-complete-inventory.report"
+{
+    printf 'chorus-server: scheduling=real-time rtprio_ceiling=20 rtprio_obtained=20 rttime_us=200000\n'
+    printf 'chorus-server: thread role=audio tid=41 declared_real_time=1 declared_priority=20 declared_rttime_us=200000 kernel_policy=SCHED_FIFO kernel_priority=20\n'
+    printf 'chorus-server: scheduling-report threads=1 vanished=0 real_time_declared=1 undeclared_real_time=0\n'
+} > "$COMPLETE_REPORT"
+set +e
+OUT="$(CHORUS_HOST_CONTRACT_REPORT="$COMPLETE_REPORT" CHORUS_SKIP_BUILD=1 \
+    bash "$REPO_ROOT/tools/host-contract.sh" 2>&1)"
+STATUS=$?
+set -e
+check "complete-inventory-still-grades-clean" \
+    "$([ "$STATUS" -eq 0 ] && echo 1 || echo 0)" \
+    "exit $STATUS: $(echo "$OUT" | grep '^pass' | head -n 1)"
 
 # --- a configuration whose bounds no run could cross ------------------------
 run_client --min-us 60000 --max-us 60000000 --start-fill-us 120000 \
