@@ -40,7 +40,10 @@ roadmap outcome it delivers.
   granted `rtprio` ceiling, a CPU-time bound on every real-time thread, and the
   memory-locking decision (`docs/decisions/0010`).
 - `crates/audio-path` and `audio-path.conf` - the audio path enumerated, and
-  the two checks that keep the enumeration honest (`docs/decisions/0011`).
+  the two checks that keep the enumeration honest (`docs/decisions/0011`); plus
+  `real-time-acquisitions.conf` and the third check on it, that every
+  real-time acquisition applies the CPU-time bound before it takes the
+  scheduling policy (`docs/decisions/0012`).
 
 There is **no correction of any kind** yet. Two endpoints agreeing is a later
 phase, and this one asserts nothing about it.

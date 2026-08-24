@@ -268,8 +268,15 @@ pub struct StreamEnd {
     /// A receiver that has not seen this sequence knows it is missing audio
     /// that was sent, which is a different thing from the stream being over.
     pub final_sequence: u32,
-    /// One chunk duration past the presentation timestamp of the final chunk,
-    /// on the server timeline: the instant the stream stops being audible.
+    /// One configured chunk duration past the presentation timestamp of the
+    /// final chunk, on the server timeline.
+    ///
+    /// `docs/protocol.md` is the normative definition of this field; this
+    /// comment repeats its relation and does not extend it. The duration added
+    /// is the configured one, never the final chunk's own, so this is the
+    /// instant the stream stops being audible only when the final chunk is
+    /// full. Only the last chunk of a stream may be short, and when it is,
+    /// this instant is a little past the point the audio stops.
     pub end_timestamp_ns: u64,
 }
 

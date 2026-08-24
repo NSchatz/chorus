@@ -52,7 +52,9 @@ So the signal is data:
 | 4 | 8 | `end_timestamp_ns` |
 
 `final_sequence` lets a receiver notice it is missing audio that was sent,
-which is a different thing from the stream being over.
+which is a different thing from the stream being over. `end_timestamp_ns` is
+defined by `docs/protocol.md`, which is normative for it; this record chose
+that the signal exists and what it carries, not the arithmetic of the field.
 
 Adding it cost nothing that was already committed. Type 0x03 was unassigned;
 `fixtures/protocol/time_sync.hex` and `fixtures/protocol/audio_chunk.hex` are

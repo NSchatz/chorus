@@ -37,6 +37,7 @@
 
 #![warn(missing_docs)]
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
 use std::io;
@@ -459,41 +460,83 @@ impl ThreadFacts {
     }
 }
 
+/// How many times the task directory is walked before the snapshot is taken.
+///
+/// See [`thread_facts`] for why more than one.
+const TASK_DIR_PASSES: usize = 2;
+
 /// Every thread of this process, as the kernel sees it.
 ///
 /// Read from `/proc`, deliberately, rather than from a list the process keeps:
 /// the point of the check this feeds is to catch a thread the process did not
 /// know it had.
+///
+/// # Why the directory is walked more than once
+///
+/// `proc(5)` on `/proc/<pid>/task`: "this directory is superseded by the
+/// contents of the /proc/<pid>/task directory... note that this directory is
+/// visible only if the process is not a zombie", and the kernel walks it with
+/// the thread id as the cursor. A thread that exits under that cursor can take
+/// its neighbour's place in the next `getdents` batch, so a single walk can
+/// **skip** a live thread while others are exiting.
+///
+/// Missing a thread is the one failure mode the check this feeds cannot
+/// survive: [`undeclared_real_time_threads`] answers "is there a real-time
+/// thread nobody declared", and a thread the snapshot dropped answers it wrong
+/// and quietly. So the walk is repeated and the results are **unioned**, which
+/// can only ever add a thread, never lose one; and the calling thread, which
+/// cannot race itself out of existence, is read by name if neither pass saw
+/// it.
+///
+/// This costs one extra directory walk per report. The report is taken at
+/// start-up and on a status interval, never in the audio path.
 pub fn thread_facts() -> io::Result<Vec<ThreadFacts>> {
-    let mut out = Vec::new();
+    let mut by_tid: BTreeMap<i32, ThreadFacts> = BTreeMap::new();
+    for _ in 0..TASK_DIR_PASSES {
+        walk_task_dir(&mut by_tid)?;
+    }
+    let me = thread_id();
+    if let std::collections::btree_map::Entry::Vacant(slot) = by_tid.entry(me) {
+        if let Some(facts) = task_facts(me) {
+            slot.insert(facts);
+        }
+    }
+    Ok(by_tid.into_values().collect())
+}
+
+/// One walk of `/proc/self/task`, added into `by_tid`.
+fn walk_task_dir(by_tid: &mut BTreeMap<i32, ThreadFacts>) -> io::Result<()> {
     for entry in fs::read_dir("/proc/self/task")? {
         let entry = entry?;
-        let name = entry.file_name();
-        let tid: i32 = match name.to_string_lossy().parse() {
+        let tid: i32 = match entry.file_name().to_string_lossy().parse() {
             Ok(v) => v,
             Err(_) => continue,
         };
-        let stat = match fs::read_to_string(entry.path().join("stat")) {
-            Ok(s) => s,
-            // A thread that exited between the readdir and the read is not an
-            // error; it is simply not a thread any more.
-            Err(_) => continue,
-        };
-        let comm = fs::read_to_string(entry.path().join("comm"))
-            .unwrap_or_default()
-            .trim()
-            .to_string();
-        if let Some((policy, rt_priority)) = parse_stat_scheduling(&stat) {
-            out.push(ThreadFacts {
-                tid,
-                comm,
-                policy,
-                rt_priority,
-            });
+        if let Some(facts) = task_facts(tid) {
+            by_tid.insert(tid, facts);
         }
     }
-    out.sort_by_key(|t| t.tid);
-    Ok(out)
+    Ok(())
+}
+
+/// What the kernel says about one task of this process, or `None` when it is
+/// not a task any more.
+fn task_facts(tid: i32) -> Option<ThreadFacts> {
+    let dir = format!("/proc/self/task/{}", tid);
+    // A thread that exited between the readdir and the read is not an error;
+    // it is simply not a thread any more.
+    let stat = fs::read_to_string(format!("{}/stat", dir)).ok()?;
+    let comm = fs::read_to_string(format!("{}/comm", dir))
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let (policy, rt_priority) = parse_stat_scheduling(&stat)?;
+    Some(ThreadFacts {
+        tid,
+        comm,
+        policy,
+        rt_priority,
+    })
 }
 
 /// Pull `rt_priority` (field 40) and `policy` (field 41) out of a
@@ -629,6 +672,36 @@ mod tests {
         assert!(undeclared_real_time_threads(&registry, &facts).is_empty());
     }
 
+    /// The race `thread_facts` walks the task directory twice for: a thread
+    /// exiting under the kernel's cursor can push a live one out of the batch,
+    /// and a snapshot that lost a thread answers "is there a real-time thread
+    /// nobody declared" wrong, and quietly.
+    ///
+    /// Before the union, this tripped a few times in a hundred; the calling
+    /// thread falling out of its own snapshot is the visible half of it.
+    #[test]
+    fn the_snapshot_keeps_the_calling_thread_while_other_threads_come_and_go() {
+        let me = thread_id();
+        for round in 0..200 {
+            let churn: Vec<_> = (0..8)
+                .map(|_| std::thread::spawn(std::thread::yield_now))
+                .collect();
+            let facts = thread_facts().expect("/proc/self/task is readable");
+            assert!(
+                facts.iter().any(|f| f.tid == me),
+                "round {}: the calling thread fell out of its own snapshot",
+                round
+            );
+            let mut tids: Vec<i32> = facts.iter().map(|f| f.tid).collect();
+            let before = tids.len();
+            tids.dedup();
+            assert_eq!(before, tids.len(), "round {}: a thread was reported twice", round);
+            for handle in churn {
+                let _ = handle.join();
+            }
+        }
+    }
+
     #[test]
     fn the_reported_policy_of_this_thread_matches_proc() {
         let tid = thread_id();
@@ -647,6 +720,16 @@ mod tests {
         // request succeeds and there is nothing to assert here.
         let ceiling = rtprio_ceiling().unwrap();
         if ceiling.soft == 0 {
+            // The bound goes on first here as everywhere else in this tree.
+            // `crates/audio-path`'s ordering check grades this site beside the
+            // two real acquisitions, and it grades it rather than excusing it:
+            // a test that asked for the policy first would be a committed
+            // counter-example to the invariant it shares a tree with, and the
+            // ordering does not become safe for being in a test. Lowering
+            // RLIMIT_RTTIME needs no privilege and binds only real-time
+            // tasks, of which this process has none.
+            bound_real_time_cpu_time(200_000)
+                .expect("lowering RLIMIT_RTTIME needs no privilege");
             match take_real_time_policy(10) {
                 Err(HostError::CeilingIsZero { ceiling: c }) => assert_eq!(c, 0),
                 other => panic!("expected CeilingIsZero, got {:?}", other),

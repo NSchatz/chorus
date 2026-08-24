@@ -1,5 +1,7 @@
-//! The two checks: no settable clock on the path, and no unit missing from the
-//! list.
+//! The two audio-path checks: no settable clock on the path, and no unit
+//! missing from the list. The third check this crate runs, the CPU-time-bound
+//! ordering one, lives in [`crate::realtime`] and borrows this module's line
+//! reading.
 //!
 //! Both are textual. That is a deliberate limit and it is worth stating: this
 //! scans source, so a clock read reached through a macro this scanner cannot
@@ -226,6 +228,61 @@ fn code_only(line: &str) -> &str {
         }
     }
     line
+}
+
+/// The code of a line with the line comment dropped **and** every string and
+/// character literal blanked out.
+///
+/// The opposite treatment of literals from [`code_only`], on purpose, because
+/// the two checks want opposite things from them. A settable clock read hidden
+/// after a URL in a string is a real clock read, so `code_only` keeps literals.
+/// A name that occurs only inside a literal is prose, and the real-time
+/// ordering check has to see it that way: this repository names the very
+/// functions it searches for in doc comments, error messages and the checker's
+/// own constants, and a check that fired on those would fire on its own
+/// documentation.
+///
+/// A blanked literal keeps its length, so nothing about the rest of the line
+/// moves. A lifetime (`&'a str`, `'static`) is not a literal and is left
+/// alone.
+pub fn code_outside_literals(line: &str) -> String {
+    let code = code_only(line);
+    let bytes = code.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if let Some((body, hashes)) = raw_string_start(bytes, i) {
+            let end = skip_raw_string(bytes, body, hashes);
+            out.resize(out.len() + (end - i), b' ');
+            i = end;
+            continue;
+        }
+        match bytes[i] {
+            b'"' => {
+                let end = skip_quoted(bytes, i + 1);
+                out.resize(out.len() + (end - i), b' ');
+                i = end;
+            }
+            b'\'' => {
+                let end = skip_char_literal(bytes, i);
+                if end > i + 1 {
+                    out.resize(out.len() + (end - i), b' ');
+                    i = end;
+                } else {
+                    // A lifetime, not a literal: it is ordinary code.
+                    out.push(bytes[i]);
+                    i += 1;
+                }
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    // Every cut is at an ASCII quote byte, which cannot be part of a multi-byte
+    // UTF-8 sequence, so each copied region is whole.
+    String::from_utf8(out).unwrap_or_default()
 }
 
 fn is_ident_byte(b: u8) -> bool {

@@ -23,6 +23,15 @@
 //! more than the configured duration, and is followed by a `stream_end`
 //! message in band, on the connection, before the close. A source that failed
 //! mid-read gets no such signal, and the client will report the difference.
+//!
+//! `stream_end` carries `end_timestamp_ns`, and `docs/protocol.md` is the
+//! normative definition of it: the presentation timestamp of the final chunk
+//! plus one configured chunk duration, in nanoseconds on the server timeline.
+//! So it is derived here from the timestamp actually put on the final chunk,
+//! which carries this stream's timeline origin, and never from the number of
+//! chunks sent - that product is an elapsed duration and it is only an instant
+//! on the timeline when the origin happens to be zero, which outside a unit
+//! test it never is.
 
 use std::io::{self, Write};
 use std::thread;
@@ -113,7 +122,11 @@ where
     let mut scratch = vec![0u8; chunker.bytes_per_chunk().max(4096)];
     let interval_ns = params.emit_interval_ns();
     let mut next_emit_ns = timeline.now_ns();
-    let mut last_sequence: Option<u32> = None;
+    // The sequence and the presentation timestamp of the last chunk actually
+    // put on the wire. Both come off the chunk itself rather than being
+    // recomputed, because the end-of-stream message has to describe the bytes
+    // the client received.
+    let mut final_chunk: Option<(u32, u64)> = None;
     let mut source_ended = false;
 
     loop {
@@ -158,7 +171,7 @@ where
             sink.write_all(&frame).map_err(ServeError::Transport)?;
             report.chunks_sent += 1;
             report.frames_sent += chunk.frames as u64;
-            last_sequence = Some(chunk.message.sequence);
+            final_chunk = Some((chunk.message.sequence, chunk.message.timestamp_ns));
         }
 
         if source_ended {
@@ -169,10 +182,18 @@ where
     // The source ended cleanly, so the end of stream is announced in band,
     // after the final chunk and before the close. A client that sees this
     // knows the stream is over; one that does not knows it lost the server.
-    if let Some(sequence) = last_sequence {
+    // No chunk on the wire means there is nothing for a final sequence to name
+    // and no presentation timestamp to end one chunk past, so no signal is
+    // sent. A run stopped by `should_continue` returned above, for the other
+    // reason: the source did not end.
+    if let Some((sequence, final_timestamp_ns)) = final_chunk {
         let end = StreamEnd {
             final_sequence: sequence,
-            end_timestamp_ns: chunker.chunk_ns().saturating_mul(report.chunks_sent),
+            // The relation `docs/protocol.md` defines, and the CONFIGURED
+            // chunk duration rather than the final chunk's own: only the last
+            // chunk of a stream may be short, and when it is, this instant is
+            // a little past the point the audio stops.
+            end_timestamp_ns: final_timestamp_ns.saturating_add(chunker.chunk_ns()),
         };
         let frame = encode(&Message::StreamEnd(end))
             .map_err(|e| ServeError::Encode(e.to_string()))?;
@@ -248,8 +269,18 @@ mod tests {
 
         let messages = decode_all(&wire);
         assert_eq!(messages.len(), 12);
+        // The expectation comes off the wire: the final chunk this run decoded,
+        // plus one configured chunk duration. Recomputing it from the emitter's
+        // own arithmetic would assert that the server agrees with itself.
+        let final_stamp = match &messages[10] {
+            Message::AudioChunk(c) => c.timestamp_ns,
+            other => panic!("message 10 is {:?}, not the final chunk", other),
+        };
         match messages.last().unwrap() {
-            Message::StreamEnd(end) => assert_eq!(end.final_sequence, 10),
+            Message::StreamEnd(end) => {
+                assert_eq!(end.final_sequence, 10);
+                assert_eq!(end.end_timestamp_ns, final_stamp + 20_000_000);
+            }
             other => panic!("the last message is {:?}, not a stream end", other),
         }
         // Only the last chunk is short, and it is not empty.
