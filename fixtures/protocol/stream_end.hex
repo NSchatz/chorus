@@ -11,6 +11,8 @@
 
 # final_sequence = 41, the last chunk the server emitted
 00 00 00 29
-# end_timestamp_ns = 840000000, one chunk past the final chunk's presentation
-# timestamp on the server timeline
+# end_timestamp_ns = 840000000. The relation is the one docs/protocol.md
+# defines and is normative for: the final chunk's timestamp_ns plus one
+# configured chunk duration, in ns on the server timeline. Here that is
+# 820000000 + 20000000.
 00 00 00 00 32 11 62 00

@@ -185,6 +185,10 @@ pub enum Received {
 }
 
 /// Why the receive loop stopped.
+///
+/// The end-of-stream case renders `end_timestamp_ns` into its report line and
+/// computes nothing from it. `docs/protocol.md` is the normative definition of
+/// that field; nothing here restates the relation.
 #[derive(Debug)]
 pub enum ReceiveStop {
     /// The in-band end of the stream arrived.

@@ -14,6 +14,7 @@ that the phases after it inherit stated choices rather than discovered ones.
 | ALSA playback | `crates/alsa` |
 | the scheduling and memory contract | `crates/hostctl`, `deploy/` |
 | the audio-path enumeration and its checks | `audio-path.conf`, `crates/audio-path` |
+| the real-time acquisitions and their ordering check | `real-time-acquisitions.conf`, `crates/audio-path` |
 | grading a saved delay log | binary `chorus-delaylog-check` |
 | the verifications | `tools/` |
 | what ran when this was built, and what did not | `docs/verification-record.md` |
@@ -192,7 +193,10 @@ stream is supposed to look like. The rules, in full:
 ## The end-of-stream signal
 
 Message type `0x03`, `stream_end`, 12 bytes: a `u32` final sequence and a `u64`
-end timestamp on the server timeline. It is committed as a golden vector
+end timestamp on the server timeline. `docs/protocol.md` is the normative
+definition of `end_timestamp_ns` and gives its relation - the final chunk's
+`timestamp_ns` plus one configured chunk duration - and this phase asserts
+nothing about it that document does not say. It is committed as a golden vector
 (`fixtures/protocol/stream_end.hex`) like every other type, and adding it
 changed neither of FOUNDATION-1's two vectors.
 
@@ -221,6 +225,13 @@ NTP step can move it.
 if the list omits a first-party unit the listed ones reach. The one exclusion
 that reads a settable clock is the delay-log writer, once, for a header line a
 human reads.
+
+The same crate carries a third check, on a different invariant:
+`real-time-acquisitions.conf` enumerates every unit that takes a real-time
+scheduling policy, and `crates/audio-path --test real_time_ordering` fails the
+suite if any of those sites takes the policy before applying the CPU-time
+bound, or if an acquisition turns up in a unit the file does not name. See
+`docs/decisions/0012`.
 
 ## The memory-locking decision
 

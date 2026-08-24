@@ -9,6 +9,8 @@ message_type = stream_end
 
 # The final chunk of the stream was sequence 41.
 final_sequence = 41
-# Its presentation timestamp was 820000000 ns and the chunk lasted 20 ms, so
-# the stream stops being audible at 840000000 ns on the server timeline.
+# Its presentation timestamp was 820000000 ns and the configured chunk duration
+# is 20 ms. docs/protocol.md is the normative definition of this field and gives
+# the relation: the final chunk's timestamp_ns plus one configured chunk
+# duration, in ns on the server timeline.
 end_timestamp_ns = 840000000

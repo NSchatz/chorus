@@ -43,7 +43,7 @@ none of it is claimed.
 | AC-19 (first half) | `make verify` | exit 4, the device and the reason named, `usable=0 paces=0` |
 | AC-20, AC-21 | `make verify-null-device` (`tools/stream-end-and-loss.sh` on `null`), through the real binaries | clean end: exit 0, in-band signal after final sequence 100, 96480 frames sent and 96480 written, `underruns=0`. Lost server: exit 3, `reason=connection-lost`, `played=1`, `underruns=0` |
 | AC-22 (ceiling-zero half) | `make verify` | exit 3, both numbers named, nothing played; with the option, it starts and 4 of 4 status reports say so |
-| AC-23 | `cargo test -p chorus-audio-path` | the committed tree passes both checks; both red demonstrations go red, in every module-declaration spelling |
+| AC-23 | `cargo test -p chorus-audio-path` | the committed tree passes both audio-path checks; both red demonstrations go red, in every module-declaration spelling. The same crate's `--test real_time_ordering` is a separate invariant, recorded under the host contract below |
 | AC-25 | `make verify` (`tools/unrun-checks-are-visibly-unrun.sh`) | all 8 environment-dependent entry points exit non-zero naming prerequisite and criterion, and the list of 8 is derived from the tools rather than restated |
 | AC-26 (denial half) | `make verify` | exit 3, the limit read and the amount wanted both named, nothing played; with the option, 4 of 4 status reports say so |
 | AC-27 (start-up half) | `tools/start-fill-and-log-shape.sh` on `null`, and `make verify` | the three relations hold against the recorded config line: `min_us=60000 > 0`, `60000 < start_fill_us=120000 < 300000`, span 240000 us at 2000 ppm crosses in 120 s; a configuration that would not cross is refused at start |
@@ -119,9 +119,20 @@ MISSING PREREQUISITE
 Instructions: `deploy/README.md`, "Checking the contract holds", and
 `docs/sound-2.md`, "The spin test". What did run here: `-p chorus-hostctl`,
 which covers the limits being read, `/proc/self/task` parsing, the
-no-undeclared-real-time-thread check and both denial paths; and a grep-checked
-invariant that both real-time acquisitions in the tree apply the CPU-time bound
-before anything else.
+no-undeclared-real-time-thread check and both denial paths; and, in `make
+test`, `cargo test -p chorus-audio-path --test real_time_ordering`, which
+grades the CPU-time-bound ordering invariant against the committed
+`real-time-acquisitions.conf`: every real-time acquisition site in the tree
+applies `RLIMIT_RTTIME` earlier in the same function than it takes the
+scheduling policy, an acquisition in a unit the file does not name is reported
+as unaccounted for rather than skipped, and the three demonstrations go red for
+an acquisition taken before its bound, for an unlisted acquisition, and never
+for a name occurring only in prose.
+
+That is a source scan and not a run of the scheduler, which is why it needs no
+ceiling and appears here rather than in the rows above; what a granted ceiling
+would add is `tools/spin-test.sh`, which is the entry point that makes the
+bound fire.
 
 #### What the suite now covers here with no privilege, and what still needs a ceiling
 

@@ -104,6 +104,25 @@ closed. Minimum and canonical payload length is 12 bytes.
 | 0 | 4 | `final_sequence` | sequence of the final chunk |
 | 4 | 8 | `end_timestamp_ns` | one chunk duration past the final chunk's presentation timestamp, server timeline |
 
+**This document is the normative definition of `end_timestamp_ns`, and any
+other statement of it in this tree that disagrees with the row above is the
+defect.** That includes a doc comment, a fixture comment, a test and a line of
+server source: a formula living in one server's source cannot bind a
+third-party encoder written in another language, and this table is what such an
+encoder is told to satisfy. Written out, the relation is:
+
+```text
+end_timestamp_ns = the final chunk's timestamp_ns + one configured chunk duration, in ns
+```
+
+The duration added is always the **configured** chunk duration, never the final
+chunk's own. Only the last chunk of a stream may be short, so when it is short
+this instant is a little past the point the audio stops; the field is the end
+of the final chunk's nominal slot on the server timeline, which is what makes
+it a value a receiver can compute from what it was told. It is not an elapsed
+duration: the server's timeline has its own epoch, taken at process start, and
+every chunk on the wire carries that origin.
+
 This message exists because a transport close and a transport that broke look
 identical to the peer: both are a read returning zero. A receiver that saw
 `stream_end` knows the sender finished; one that did not knows it lost the

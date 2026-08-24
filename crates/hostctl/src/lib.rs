@@ -1071,6 +1071,16 @@ mod tests {
         // request succeeds and there is nothing to assert here.
         let ceiling = rtprio_ceiling().unwrap();
         if ceiling.soft == 0 {
+            // The bound goes on first here as everywhere else in this tree.
+            // `crates/audio-path`'s ordering check grades this site beside the
+            // two real acquisitions, and it grades it rather than excusing it:
+            // a test that asked for the policy first would be a committed
+            // counter-example to the invariant it shares a tree with, and the
+            // ordering does not become safe for being in a test. Lowering
+            // RLIMIT_RTTIME needs no privilege and binds only real-time
+            // tasks, of which this process has none.
+            bound_real_time_cpu_time(200_000)
+                .expect("lowering RLIMIT_RTTIME needs no privilege");
             match take_real_time_policy(10) {
                 Err(HostError::CeilingIsZero { ceiling: c }) => assert_eq!(c, 0),
                 other => panic!("expected CeilingIsZero, got {:?}", other),

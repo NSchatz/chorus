@@ -61,6 +61,10 @@ pub const SAMPLE_INTERVAL_US: u64 = 100_000;
 const IDLE_SLEEP: Duration = Duration::from_millis(2);
 
 /// Why the run ended.
+///
+/// The end-of-stream case renders `end_timestamp_ns` into its report line and
+/// computes nothing from it. `docs/protocol.md` is the normative definition of
+/// that field; nothing here restates the relation.
 #[derive(Debug)]
 pub enum StopReason {
     /// The server signalled the end of the stream in band.

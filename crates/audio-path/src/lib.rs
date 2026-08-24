@@ -1,5 +1,5 @@
-//! The committed enumeration of the audio or timestamp path, and the two
-//! checks that keep it honest.
+//! The committed enumerations of the audio or timestamp path and of the
+//! real-time acquisitions, and the three checks that keep them honest.
 //!
 //! # Why an enumeration and not a runtime property
 //!
@@ -20,6 +20,17 @@
 //! Third-party dependencies are outside this by definition. This repository
 //! has none, and auditing code it does not own is not something a green suite
 //! should ever depend on.
+//!
+//! # The third check, and why it lives here
+//!
+//! 3. **Every real-time acquisition applies the CPU-time bound first.** A
+//!    different invariant - scheduling rather than timestamps - and the same
+//!    shape of answer: a committed enumeration
+//!    (`real-time-acquisitions.conf`), a source scan that grades it, and red
+//!    demonstrations that are committed rather than described. It lives in
+//!    this crate because it is the same machinery, and a second crate that
+//!    scanned source the same way would drift from this one. See
+//!    [`realtime`].
 //!
 //! # What counts as a unit, and what counts as depending on one
 //!
@@ -44,7 +55,9 @@
 #![warn(missing_docs)]
 
 pub mod list;
+pub mod realtime;
 pub mod scan;
 
 pub use list::{AudioPathList, Excluded, ListError};
+pub use realtime::{Acquisition, AcquisitionList, RealTimeFinding, SiteListError};
 pub use scan::{ClockRead, Finding, MissingUnit};
