@@ -45,6 +45,23 @@ roadmap outcome it delivers.
   real-time acquisition applies the CPU-time bound before it takes the
   scheduling policy (`docs/decisions/0012`).
 
+**Phase 3, the measurement rig.** Built before the servo on purpose: guardrail 3
+says a sync claim without a measurement is not a claim, and a harness written
+after the servo tends to be written to agree with it. It measures; it corrects
+nothing and holds no view about whether a number is good.
+
+- `crates/measure` - a two-channel capture in, median, p95 and maximum
+  inter-device lag out, resolved finer than one capture sample; the free-run
+  drift of two uncorrected clients in ppm, published with its own confidence
+  bound or not published at all; and the saved report. Every threshold it
+  compares against is declared in `config/measure.conf`
+  (`docs/decisions/0013`).
+- `fixtures/measure` - the committed captures and offset series, each beside
+  the parameters it was generated from, including the degenerate ones. A reader
+  who did not take a capture can reproduce every published figure.
+- `tools/measure/` - the device-backed run, which needs two endpoints and an
+  audio interface, and the refusal it makes where there is none.
+
 There is **no correction of any kind** yet. Two endpoints agreeing is a later
 phase, and this one asserts nothing about it.
 
@@ -71,4 +88,8 @@ was verifying, rather than reporting itself green:
 ./tools/spin-test.sh             # needs a granted rtprio ceiling above zero
 ./tools/host-contract.sh         # needs a granted rtprio ceiling above zero
 ./tools/device-loss-run.sh       # needs a device you can remove mid-run
+./tools/measure/capture-run.sh   # needs two endpoints and an audio interface
 ```
+
+`docs/verification-record.md` says, per criterion, which of those actually ran
+where this was built and which did not, with the refusal quoted.

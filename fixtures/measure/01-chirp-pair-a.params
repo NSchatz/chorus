@@ -1,0 +1,25 @@
+# The reference capture: two channels carrying one chirp, the second delayed by
+# an amount that is deliberately NOT a whole number of capture samples.
+#
+# 254.0 us at 96 kHz is 24.384 samples. A whole-sample estimator cannot report
+# it: its own quantisation is 10.4 us, which is already coarser than the 10 us
+# budget the roadmap phase asks for. That is the point of this fixture.
+#
+# The noise is here so the per-window lags scatter. Without it every window
+# returns the same number and the p95 and the maximum say nothing that the
+# median has not already said.
+
+kind = chirp-pair
+output = 01-chirp-pair-a.wav
+
+sample_rate_hz = 96000
+duration_us = 100000
+
+chirp_start_hz = 1000
+chirp_end_hz = 8000
+chirp_period_us = 20000
+amplitude = 0.25
+
+delay_us = 254.0
+noise_amplitude = 0.02
+seed = 260001

@@ -97,6 +97,37 @@ require_pacing_audio_device() {
     fi
 }
 
+# The capture device a measurement run should use. `default` is whatever ALSA
+# calls the operator's interface; a machine with no interface at all has none
+# under any name, which is exactly the case the guard below exists for.
+capture_device() {
+    printf '%s' "${CHORUS_CAPTURE_DEVICE:-default}"
+}
+
+# Refuse to continue unless a capture device can be opened for two channels at
+# the rate config/measure.conf declares.
+#
+# The probe is the measurement binary's own, so this guard and the tool cannot
+# disagree about what "usable" means. Note that this is a CAPTURE device and
+# require_audio_device above is about a PLAYBACK one: a machine can have either
+# without the other, and a measurement run needs the capture side.
+require_capture_device() {
+    local criterion="$1"
+    local device
+    device="$(capture_device)"
+    if ! "$BIN_DIR/chorus-measure-capture" --probe-capture-device \
+        --capture-device "$device" >/dev/null 2>&1; then
+        local detail
+        detail="$({ "$BIN_DIR/chorus-measure-capture" --probe-capture-device \
+            --capture-device "$device" 2>&1 || true; } \
+            | grep -E 'capture-device-probe' | head -n 1 | tr '\n' ' ' || true)"
+        missing_prerequisite \
+            "$criterion" \
+            "an ALSA capture device that opens two channels at the declared rate; '$device' does not ($detail)" \
+            "connect both endpoints' line outputs to the L and R inputs of one audio interface and point CHORUS_CAPTURE_DEVICE at it"
+    fi
+}
+
 # Refuse to continue unless this container was granted a real-time priority.
 require_rtprio() {
     local criterion="$1"

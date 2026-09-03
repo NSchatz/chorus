@@ -5,6 +5,13 @@ writes to this directory. That is the point: these files are the contract that
 two independent implementations of the same protocol are held to, so they have
 to be reviewable in a diff and stable across languages.
 
+`measure/` holds the one exception to "reviewable in a diff", and it is
+deliberate: a capture is 38 KB of PCM, and hex would make it 115 KB of numbers
+nobody can read either. What stands in for a reviewable diff there is a
+`.params` file beside every input carrying every value it was made from, and a
+suite assertion that regenerating from those parameters reproduces the input
+byte for byte. The parameters are what a reviewer reads.
+
 ## `protocol/`
 
 One golden vector per message type in the catalog, as a pair of files:
@@ -41,3 +48,36 @@ the bound is.
 
 `crates/sync/tests/simulator_regression.rs` runs every file in this directory,
 so adding a scenario is adding a file. There is nothing to register.
+
+## `measure/`
+
+The measurement harness's inputs, in pairs: a `.params` file in the same
+`key = value` format as everything above, and the input it generates. Adding a
+fixture is adding a `.params` file; `chorus-measure fixtures` reads every one in
+the directory and there is nothing to register.
+
+```
+make measure-fixtures     # regenerate every input from its parameters
+```
+
+`crates/measure/tests/report_shape.rs` asserts that regenerating reproduces
+every committed input byte for byte, so that target is for changing a fixture's
+parameters and never for making a red assertion green.
+
+Three kinds of file come out of it:
+
+- `*.wav` - two-channel 16-bit PCM at 96 kHz, the capture the analysis takes.
+  01 to 03 are the ones with a known answer: a chirp pair at a sub-sample
+  delay, the same pair 10 us further apart, and the first pair with its
+  channels exchanged. 04 to 09 are the degenerate ones, one per refusal the rig
+  has to make.
+- `*.offsets` - a series of relative offset observations between two clients
+  running with correction disabled: `key = value` metadata, an
+  `[observations]` header, then one `t_ns offset_ns` pair per line. 10 and 11
+  have known rates; 12 and 13 are the two a run must refuse to fit.
+- `*.params` - what each of the above was made from, including the ground truth
+  a test checks the answer against. Read these first.
+
+`docs/decisions/0013-the-measurement-rig.md` records why the delays are the
+numbers they are, and why 06 exists when 05 looks as though it covers the same
+ground.

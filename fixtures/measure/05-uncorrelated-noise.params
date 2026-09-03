@@ -1,0 +1,16 @@
+# Degenerate: two channels of independent full-band noise.
+#
+# Energy everywhere and no chirp anywhere. Full-band noise puts about 0.15 of
+# its energy in the 1 kHz to 8 kHz band the run declares, against a floor of
+# 0.5, so the run refuses on "no chirp is present" rather than on the
+# correlation, which is the more precise thing to tell an operator: the capture
+# is not of a chirp at all.
+
+kind = noise
+output = 05-uncorrelated-noise.wav
+
+sample_rate_hz = 96000
+duration_us = 100000
+
+amplitude = 0.25
+seed = 260005

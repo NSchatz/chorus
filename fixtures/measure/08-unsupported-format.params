@@ -1,0 +1,19 @@
+# Degenerate container: 32-bit IEEE float where 16-bit signed PCM is required.
+#
+# Two channels, the right rate, a real chirp with a real delay in it, and a
+# sample layout this reader does not accept. The refusal has to name both
+# layouts: an operator whose interface is set to float needs to be told which
+# knob to turn, not that the file is bad.
+
+kind = float-chirp
+output = 08-unsupported-format.wav
+
+sample_rate_hz = 96000
+duration_us = 20000
+
+chirp_start_hz = 1000
+chirp_end_hz = 8000
+chirp_period_us = 20000
+amplitude = 0.25
+
+delay_us = 254.0

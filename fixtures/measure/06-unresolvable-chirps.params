@@ -1,0 +1,25 @@
+# Degenerate: the chirp on one channel and the same chirp reversed in time on
+# the other.
+#
+# This is the fixture that separates the three refusals from each other. Both
+# channels are loud, so it is not silence. Reversing a real signal in time
+# leaves its spectrum's magnitude untouched, so both channels carry a chirp's
+# worth of energy in the declared band and the presence check passes. What
+# fails is the correlation: an up-sweep against a down-sweep peaks at roughly
+# one over the square root of the time-bandwidth product, which for this sweep
+# is under a tenth, far under the 0.6 floor the run declares.
+#
+# Without this file, "the correlation peak falls below the confidence floor"
+# would have no committed input of its own, and the fail-safe would be a
+# behaviour nobody had run.
+
+kind = reversed-pair
+output = 06-unresolvable-chirps.wav
+
+sample_rate_hz = 96000
+duration_us = 100000
+
+chirp_start_hz = 1000
+chirp_end_hz = 8000
+chirp_period_us = 20000
+amplitude = 0.25

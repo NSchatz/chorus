@@ -1,0 +1,17 @@
+# Degenerate: a series too short to fit.
+#
+# 21 observations over 20 seconds, against a run that declares at least 30
+# observations over at least 60 seconds. An ordinary least-squares slope EXISTS
+# for this series; the refusal is the point. A number with no error bar is what
+# guardrail 3 calls not-evidence.
+
+kind = free-run
+output = 12-free-run-too-short.offsets
+
+label = free-run-too-short
+points = 21
+interval_s = 1.0
+rate_ppm = 37.5
+jitter_us = 0.0
+initial_offset_ns = 0
+seed = 260012

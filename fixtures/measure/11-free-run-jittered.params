@@ -1,0 +1,18 @@
+# The same drift, observed through jitter this file states: 20 us RMS,
+# Gaussian, on every observation.
+#
+# 20 us is about one 48 kHz frame, and it is a plausible figure for a wired
+# link with software timestamps. Over ten minutes it is nowhere near enough to
+# hide a 37.5 ppm slope, which is the point: the fit has to recover the rate
+# through it, and it has to say how tightly it bounded it.
+
+kind = free-run
+output = 11-free-run-jittered.offsets
+
+label = free-run-jittered
+points = 601
+interval_s = 1.0
+rate_ppm = 37.5
+jitter_us = 20.0
+initial_offset_ns = 0
+seed = 260011

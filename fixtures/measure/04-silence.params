@@ -1,0 +1,10 @@
+# Degenerate: both channels silent.
+#
+# The first thing a run checks, before anything is correlated, because
+# correlating against silence still produces a number.
+
+kind = silence
+output = 04-silence.wav
+
+sample_rate_hz = 96000
+duration_us = 100000

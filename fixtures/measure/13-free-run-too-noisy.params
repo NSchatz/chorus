@@ -1,0 +1,20 @@
+# Degenerate: a series long enough to fit and too noisy to bound.
+#
+# 121 observations over two minutes at 37.5 ppm, which is 4.5 ms of total
+# drift, seen through 3 ms RMS of jitter. The slope is there and the series
+# cannot say what it is to better than about 15 ppm, against a run that
+# declares it will publish nothing bounded worse than 1 ppm.
+#
+# This is the fixture that makes "too short" and "too noisy" two conditions
+# rather than one word. It is long enough that the length check passes.
+
+kind = free-run
+output = 13-free-run-too-noisy.offsets
+
+label = free-run-too-noisy
+points = 121
+interval_s = 1.0
+rate_ppm = 37.5
+jitter_us = 3000.0
+initial_offset_ns = 0
+seed = 260013

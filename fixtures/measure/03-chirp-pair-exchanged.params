@@ -1,0 +1,23 @@
+# Fixture 01 with the two channels exchanged, and nothing else changed.
+#
+# Same delay, same seed, same noise realisation: the generator produces 01 and
+# then swaps the two channels, so this file's samples are 01's samples in the
+# other order. The rig has to report the same magnitude with the opposite sign,
+# which is what makes the declared sign convention checkable rather than
+# asserted.
+
+kind = chirp-pair
+output = 03-chirp-pair-exchanged.wav
+
+sample_rate_hz = 96000
+duration_us = 100000
+
+chirp_start_hz = 1000
+chirp_end_hz = 8000
+chirp_period_us = 20000
+amplitude = 0.25
+
+delay_us = 254.0
+noise_amplitude = 0.02
+seed = 260001
+exchange_channels = true
