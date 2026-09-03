@@ -49,20 +49,49 @@ pub struct BuildIdentity {
     pub commit: String,
     /// Whether that tree carried no uncommitted change.
     pub clean: bool,
+    /// The paths that made it unclean, as `git status --porcelain` names them.
+    ///
+    /// Carried because "dirty" on its own is not useful to a reader and is
+    /// almost always true here: a run writes its report INTO the repository it
+    /// measured, so by the time a second run of the same batch asks, the first
+    /// run's report is an uncommitted path. Naming the paths is what lets a
+    /// reader tell that from "the code that produced this number was
+    /// modified", without this rig deciding on their behalf which uncommitted
+    /// changes are the harmless ones.
+    pub dirty_paths: Vec<String>,
+}
+
+/// How many uncommitted paths a report lists before it summarises the rest.
+const DIRTY_PATHS_SHOWN: usize = 12;
+
+impl BuildIdentity {
+    /// The tree's state, in the sentence a report prints.
+    pub fn tree_state(&self) -> String {
+        if self.clean {
+            return "clean".to_string();
+        }
+        let shown: Vec<&str> = self
+            .dirty_paths
+            .iter()
+            .take(DIRTY_PATHS_SHOWN)
+            .map(String::as_str)
+            .collect();
+        let rest = self.dirty_paths.len().saturating_sub(shown.len());
+        let mut out = format!(
+            "carried {} uncommitted path(s) when this run was taken: {}",
+            self.dirty_paths.len(),
+            shown.join(", ")
+        );
+        if rest > 0 {
+            out.push_str(&format!(", and {} more", rest));
+        }
+        out
+    }
 }
 
 impl fmt::Display for BuildIdentity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{} ({})",
-            self.commit,
-            if self.clean {
-                "clean tree"
-            } else {
-                "tree had uncommitted changes"
-            }
-        )
+        write!(f, "{} ({})", self.commit, self.tree_state())
     }
 }
 
@@ -182,9 +211,16 @@ pub fn build_identity(root: &Path) -> Result<BuildIdentity, ReportError> {
         });
     }
     let status = git(root, &["status", "--porcelain"])?;
+    let dirty_paths: Vec<String> = status
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| line.to_string())
+        .collect();
     Ok(BuildIdentity {
         commit,
-        clean: status.trim().is_empty(),
+        clean: dirty_paths.is_empty(),
+        dirty_paths,
     })
 }
 
@@ -461,11 +497,7 @@ pub fn render_lag_report(run: &LagRun<'_>) -> String {
     out.push_str(&format!("Build measured: `{}`\n", run.build.commit));
     out.push_str(&format!(
         "Tree at that commit: {}\n",
-        if run.build.clean {
-            "clean"
-        } else {
-            "carried uncommitted changes when this run was taken"
-        }
+        run.build.tree_state()
     ));
     out.push_str(&format!("Reproduce with: `{}`\n\n", run.command));
 
@@ -617,11 +649,7 @@ pub fn render_free_run_report(run: &FreeRunRun<'_>) -> String {
     out.push_str(&format!("Build measured: `{}`\n", run.build.commit));
     out.push_str(&format!(
         "Tree at that commit: {}\n",
-        if run.build.clean {
-            "clean"
-        } else {
-            "carried uncommitted changes when this run was taken"
-        }
+        run.build.tree_state()
     ));
     out.push_str(&format!("Reproduce with: `{}`\n\n", run.command));
 

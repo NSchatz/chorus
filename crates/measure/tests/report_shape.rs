@@ -48,6 +48,7 @@ fn pinned_build() -> BuildIdentity {
     BuildIdentity {
         commit: "0".repeat(40),
         clean: true,
+        dirty_paths: Vec::new(),
     }
 }
 
@@ -135,14 +136,37 @@ fn a_report_says_when_the_tree_it_measured_was_not_clean() {
     let dirty = BuildIdentity {
         commit: "a".repeat(40),
         clean: false,
+        dirty_paths: vec![
+            "M crates/measure/src/lag.rs".to_string(),
+            "?? docs/measurements/rig3-free-run-noiseless-fixture.md".to_string(),
+        ],
     };
     let body = lag_report(&analysed, &dirty, None);
     assert!(
-        body.contains("carried uncommitted changes"),
+        body.contains("carried 2 uncommitted path(s)"),
         "a dirty tree has to be visible in the report: {}",
         body
     );
+    // And it names them. "Dirty" on its own cannot tell a reader whether the
+    // code that produced the number was modified or whether a previous report
+    // in the same batch was simply not committed yet, and those are very
+    // different things to know about a measurement.
+    assert!(body.contains("M crates/measure/src/lag.rs"), "{}", body);
     assert!(!body.contains("Tree at that commit: clean"));
+}
+
+/// Enough uncommitted paths to overflow the list, and the report says how many
+/// it did not show rather than silently truncating.
+#[test]
+fn a_report_that_cannot_list_every_uncommitted_path_says_how_many_it_left_out() {
+    let dirty = BuildIdentity {
+        commit: "a".repeat(40),
+        clean: false,
+        dirty_paths: (0..30).map(|n| format!("M file-{}.rs", n)).collect(),
+    };
+    let state = dirty.tree_state();
+    assert!(state.contains("carried 30 uncommitted path(s)"), "{}", state);
+    assert!(state.contains("and 18 more"), "{}", state);
 }
 
 /// AC-8. A free-run analysis records its slope as the baseline in a committed
