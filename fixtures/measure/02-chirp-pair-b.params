@@ -1,0 +1,25 @@
+# The same capture with the delay moved by exactly 10 microseconds.
+#
+# 264.0 us against 01's 254.0 us. Ten microseconds is 0.96 of a sample at
+# 96 kHz, so an estimator quantised to whole samples reports the same median for
+# both files. This fixture and 01 together are what say the reported figure is
+# not quantised more coarsely than 10 us; accuracy against a known delay is a
+# different question and 01 answers that one.
+#
+# Same seed as 01, so the noise realisation is identical and the only thing that
+# has changed between the two captures is the delay.
+
+kind = chirp-pair
+output = 02-chirp-pair-b.wav
+
+sample_rate_hz = 96000
+duration_us = 100000
+
+chirp_start_hz = 1000
+chirp_end_hz = 8000
+chirp_period_us = 20000
+amplitude = 0.25
+
+delay_us = 264.0
+noise_amplitude = 0.02
+seed = 260001

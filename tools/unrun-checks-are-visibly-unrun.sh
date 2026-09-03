@@ -113,14 +113,23 @@ expect_missing_prerequisite "device-loss-run.sh" \
     env CHORUS_SKIP_BUILD=1 CHORUS_REMOVABLE_DEVICE= CHORUS_REMOVE_COMMAND= \
     bash "$REPO_ROOT/tools/device-loss-run.sh"
 
+# No capture device. Genuinely absent: the name does not exist, and a machine
+# with no sound card has none under any name.
+expect_missing_prerequisite "capture-run.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_CAPTURE_DEVICE=chorus-no-such-capture-device \
+    bash "$REPO_ROOT/tools/measure/capture-run.sh"
+
 # --- and the list above is the whole list ------------------------------------
 #
 # An entry point is environment-dependent exactly when it calls one of lib.sh's
 # require_* guards. Deriving the set from the scripts rather than restating it
 # is what keeps "every" true after the next one is written.
+#
+# Searched recursively, so a subdirectory of tools/ cannot be a place an entry
+# point hides from this check. tools/measure/ is the first one.
 say ""
 say "--- the list of entry points is complete"
-FOUND="$(grep -lE '^[[:space:]]*require_[a-z_]+ ' "$REPO_ROOT"/tools/*.sh \
+FOUND="$(grep -rlE '^[[:space:]]*require_[a-z_]+ ' --include='*.sh' "$REPO_ROOT/tools" \
     | xargs -n1 basename | sort)"
 DECLARED="$(printf '%s\n' "${CHECKED[@]}" | sort)"
 MISSED="$(comm -23 <(printf '%s\n' "$FOUND") <(printf '%s\n' "$DECLARED") || true)"

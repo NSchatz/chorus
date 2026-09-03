@@ -42,6 +42,16 @@ pub const LIBASOUND_SONAME: &str = "libasound.so.2";
 /// `SND_PCM_STREAM_PLAYBACK`.
 const STREAM_PLAYBACK: c_int = 0;
 
+/// `SND_PCM_STREAM_CAPTURE`.
+///
+/// The measurement harness records two endpoint line outputs through one
+/// interface, which is the one thing this crate is asked for that playback
+/// alone cannot give. It reaches the device through the same `dlopen`ed
+/// library and the same handful of entry points, so a machine with no audio
+/// stack still builds and still starts; it simply refuses at the point the
+/// device is opened.
+const STREAM_CAPTURE: c_int = 1;
+
 /// `SND_PCM_ACCESS_RW_INTERLEAVED`.
 const ACCESS_RW_INTERLEAVED: c_int = 3;
 
@@ -71,6 +81,7 @@ type SndPcmClose = unsafe extern "C" fn(*mut c_void) -> c_int;
 type SndPcmSetParams =
     unsafe extern "C" fn(*mut c_void, c_int, c_int, c_uint, c_uint, c_int, c_uint) -> c_int;
 type SndPcmWritei = unsafe extern "C" fn(*mut c_void, *const c_void, c_ulong) -> c_long;
+type SndPcmReadi = unsafe extern "C" fn(*mut c_void, *mut c_void, c_ulong) -> c_long;
 type SndPcmDelay = unsafe extern "C" fn(*mut c_void, *mut c_long) -> c_int;
 type SndPcmPrepare = unsafe extern "C" fn(*mut c_void) -> c_int;
 type SndPcmRecover = unsafe extern "C" fn(*mut c_void, c_int, c_int) -> c_int;
@@ -89,6 +100,7 @@ struct Lib {
     close: SndPcmClose,
     set_params: SndPcmSetParams,
     writei: SndPcmWritei,
+    readi: SndPcmReadi,
     delay: SndPcmDelay,
     prepare: SndPcmPrepare,
     recover: SndPcmRecover,
@@ -294,6 +306,10 @@ fn load_lib() -> Result<Lib, AlsaError> {
                 handle,
                 "snd_pcm_writei",
             )?),
+            readi: std::mem::transmute::<*mut c_void, SndPcmReadi>(load_symbol(
+                handle,
+                "snd_pcm_readi",
+            )?),
             delay: std::mem::transmute::<*mut c_void, SndPcmDelay>(load_symbol(
                 handle,
                 "snd_pcm_delay",
@@ -380,6 +396,34 @@ impl Pcm {
         rate_hz: u32,
         buffer_us: u32,
     ) -> Result<Pcm, AlsaError> {
+        Pcm::open_stream(device, STREAM_PLAYBACK, format, channels, rate_hz, buffer_us)
+    }
+
+    /// Open `device` for capture and configure it for this stream.
+    ///
+    /// The measurement harness's only use of a device: two endpoint line
+    /// outputs arrive as the two channels of one interface, and the harness
+    /// reads them. Everything else about this crate is unchanged, including
+    /// that the library is loaded at run time, so a machine with no audio stack
+    /// still builds and still starts.
+    pub fn open_capture(
+        device: &str,
+        format: Format,
+        channels: u16,
+        rate_hz: u32,
+        buffer_us: u32,
+    ) -> Result<Pcm, AlsaError> {
+        Pcm::open_stream(device, STREAM_CAPTURE, format, channels, rate_hz, buffer_us)
+    }
+
+    fn open_stream(
+        device: &str,
+        stream: c_int,
+        format: Format,
+        channels: u16,
+        rate_hz: u32,
+        buffer_us: u32,
+    ) -> Result<Pcm, AlsaError> {
         let lib = lib()?;
         let c_device =
             CString::new(device).map_err(|_| AlsaError::DeviceNameNotRepresentable {
@@ -388,7 +432,7 @@ impl Pcm {
 
         let mut handle: *mut c_void = std::ptr::null_mut();
         // SAFETY: c_device outlives the call; ALSA copies the name.
-        let rc = unsafe { (lib.open)(&mut handle, c_device.as_ptr(), STREAM_PLAYBACK, 0) };
+        let rc = unsafe { (lib.open)(&mut handle, c_device.as_ptr(), stream, 0) };
         if rc < 0 || handle.is_null() {
             return Err(Pcm::error(lib, "snd_pcm_open", device, rc));
         }
@@ -537,6 +581,72 @@ impl Pcm {
         })
     }
 
+    /// Fill `pcm` from a capture device, blocking until every frame arrives.
+    ///
+    /// Recovers from an overrun the same way the playback path recovers from
+    /// an underrun, and reports whether it happened rather than swallowing it:
+    /// a capture with a hole in it would put a step in the middle of a
+    /// correlation window and read as a lag.
+    pub fn read(&mut self, pcm: &mut [u8]) -> Result<WriteReport, AlsaError> {
+        let lib = lib()?;
+        let frame_len = self.frame_len();
+        debug_assert!(frame_len > 0);
+
+        let mut offset = 0usize;
+        let mut frames_read = 0u64;
+        let mut overran = false;
+
+        while offset < pcm.len() {
+            let frames_left = ((pcm.len() - offset) / frame_len) as c_ulong;
+            if frames_left == 0 {
+                break;
+            }
+            // SAFETY: the slice is live for the call and has room for exactly
+            // frames_left frames of the configured format.
+            let rc = unsafe {
+                (lib.readi)(
+                    self.handle,
+                    pcm[offset..].as_mut_ptr() as *mut c_void,
+                    frames_left,
+                )
+            };
+            if rc >= 0 {
+                let n = rc as usize;
+                if n == 0 {
+                    return Err(Pcm::error(lib, "snd_pcm_readi", &self.device, NEG_EPIPE));
+                }
+                offset += n * frame_len;
+                frames_read += n as u64;
+                continue;
+            }
+
+            let code = rc as c_int;
+            if code == NEG_ENODEV {
+                return Err(AlsaError::Disconnected {
+                    device: self.device.clone(),
+                });
+            }
+            if code == NEG_EPIPE {
+                overran = true;
+            }
+            // SAFETY: handle is live.
+            let recovered = unsafe { (lib.recover)(self.handle, code, 1) };
+            if recovered < 0 {
+                if recovered as c_int == NEG_ENODEV {
+                    return Err(AlsaError::Disconnected {
+                        device: self.device.clone(),
+                    });
+                }
+                return Err(Pcm::error(lib, "snd_pcm_readi", &self.device, code));
+            }
+        }
+
+        Ok(WriteReport {
+            frames_written: frames_read,
+            underran: overran,
+        })
+    }
+
     /// Frames the device still has to play before the next frame written
     /// becomes audible.
     ///
@@ -652,6 +762,29 @@ mod tests {
             AlsaError::DeviceNameNotRepresentable { device } => assert_eq!(device, "nu\0ll"),
             // On a machine with no ALSA runtime at all the load fails first,
             // which is also a refusal rather than a truncation.
+            AlsaError::RuntimeMissing { .. } => {}
+            other => panic!("unexpected error {:?}", other),
+        }
+    }
+
+    #[test]
+    fn a_capture_device_that_is_not_there_is_a_refusal_and_never_a_silent_success() {
+        // The whole point of the capture path for the measurement harness: on
+        // a machine with no capture device, opening one fails and says so. It
+        // never hands back a handle that would read silence.
+        let err = Pcm::open_capture(
+            "chorus-no-such-capture-device",
+            Format::S16Le,
+            2,
+            96_000,
+            100_000,
+        )
+        .unwrap_err();
+        match err {
+            AlsaError::Call { call, device, .. } => {
+                assert_eq!(call, "snd_pcm_open");
+                assert_eq!(device, "chorus-no-such-capture-device");
+            }
             AlsaError::RuntimeMissing { .. } => {}
             other => panic!("unexpected error {:?}", other),
         }

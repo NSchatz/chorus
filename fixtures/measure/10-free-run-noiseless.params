@@ -1,0 +1,22 @@
+# The free-run drift series: two clients with correction disabled, observed
+# once a second for ten minutes, with no jitter at all.
+#
+# 37.5 ppm is inside the 20 to 50 ppm per device BRIEF.md section 6 expects, so
+# the fixture is a plausible relative rate rather than a round one. Nothing
+# anywhere compares a measured slope against that range; the roadmap phase is
+# explicit that the baseline is what the rig MEASURES.
+#
+# The degenerate case is the sharpest one: with no noise the fit has an exact
+# answer available, and an estimator that cannot be exact where exactness is on
+# offer has a leak in it.
+
+kind = free-run
+output = 10-free-run-noiseless.offsets
+
+label = free-run-noiseless
+points = 601
+interval_s = 1.0
+rate_ppm = 37.5
+jitter_us = 0.0
+initial_offset_ns = 0
+seed = 260010

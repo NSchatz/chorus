@@ -1,0 +1,24 @@
+# Degenerate container: the data chunk header promises more than the file holds.
+#
+# What a capture interrupted mid-recording looks like. The generator makes a
+# whole 7724-byte capture and keeps the first 4000 bytes, so the header still
+# declares 7680 bytes of audio and 3956 are present. A reader that simply took
+# whatever was there would analyse a shortened capture and report a number for
+# it.
+
+kind = truncated-chirp-pair
+output = 09-truncated-body.wav
+
+sample_rate_hz = 96000
+duration_us = 20000
+
+chirp_start_hz = 1000
+chirp_end_hz = 8000
+chirp_period_us = 20000
+amplitude = 0.25
+
+delay_us = 254.0
+noise_amplitude = 0.0
+seed = 260009
+
+keep_bytes = 4000

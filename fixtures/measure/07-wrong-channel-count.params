@@ -1,0 +1,16 @@
+# Degenerate container: one channel where two are required.
+#
+# A perfectly well formed WAVE file that is not a capture of two endpoint line
+# outputs. Short on purpose: the refusal is at the container, so nothing past
+# the header is ever looked at.
+
+kind = mono-chirp
+output = 07-wrong-channel-count.wav
+
+sample_rate_hz = 96000
+duration_us = 20000
+
+chirp_start_hz = 1000
+chirp_end_hz = 8000
+chirp_period_us = 20000
+amplitude = 0.25
