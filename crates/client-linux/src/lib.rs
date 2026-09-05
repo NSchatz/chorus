@@ -8,13 +8,20 @@
 //! that plays is easy, and one that can prove what it played is the thing a
 //! sync engine can later be built on.
 //!
-//! # What it deliberately does not do
+//! # What it corrects, and what it will not
 //!
-//! Correct anything. No offset filtering, no rate correction, no resampling,
-//! no hard resync, no servo. When the buffer drifts, this client reports the
-//! drift and keeps playing at the rate it was given. Two endpoints agreeing is
-//! the next phase's job, and a client that quietly corrected would make that
-//! phase impossible to measure.
+//! It runs the RFC 5905 exchange against the server on the connection already
+//! carrying audio, filters a window of those exchanges by minimum round trip,
+//! forms its error from the delay the audio DEVICE reports to its DAC, and
+//! disciplines its playout with `chorus_sync`'s servo: a fine correction that
+//! inserts or drops frames, and a hard resync that mutes, steps and resumes.
+//! It publishes the offset in use and half the round trip of the exchange that
+//! offset came from, as the bound on it.
+//!
+//! It will not infer audibility from the return of a write call, and it will
+//! not carry on with a guess when the device refuses to report its delay. Both
+//! are the same refusal: a loop disciplined against the wrong signal converges,
+//! and converges onto the wrong target.
 //!
 //! # The modules
 //!
@@ -23,6 +30,8 @@
 //!   that keeps mis-framed bytes off the device.
 //! - [`buffer`]: occupancy, the counters, and what happens at each bound.
 //! - [`sink`]: where frames go. One implementation, [`sink::AlsaSink`].
+//! - [`sync`]: the exchange, the filter, the error signal, and turning a
+//!   correction into frames.
 //! - [`run`]: the graded interval, the priming write, the playout loop, the
 //!   drain.
 //! - [`delaylog`]: the record a run leaves behind. Excluded from the audio
@@ -38,8 +47,10 @@ pub mod logcheck;
 pub mod receive;
 pub mod run;
 pub mod sink;
+pub mod sync;
 
 pub use buffer::{Buffer, Counters};
 pub use config::{ClientConfig, ClientMode, ConfigError};
 pub use run::{run_session, RunOutcome, StopReason};
 pub use sink::{AlsaSink, PcmSink, SinkError, SinkWrite};
+pub use sync::{Correction, PlayoutCorrector, SyncConfig, SyncLoop, Telemetry};

@@ -293,6 +293,15 @@ impl Buffer {
         }
     }
 
+    /// The presentation timestamp of the chunk at the front, if there is one.
+    ///
+    /// That is the timestamp of the next frame the client will write, on the
+    /// server timeline, which is one of the two things the sync loop's error
+    /// signal is formed from.
+    pub fn front_timestamp_ns(&self) -> Option<u64> {
+        self.lock().queue.front().map(|q| q.chunk.timestamp_ns)
+    }
+
     /// Take the chunk at the front, if there is one.
     pub fn pop(&self) -> Option<Queued> {
         let mut inner = self.lock();

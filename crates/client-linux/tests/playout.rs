@@ -38,6 +38,7 @@ fn config(tmp: &std::path::Path, run_seconds: Option<u64>) -> ClientConfig {
         run_seconds,
         overflow_skew_ppm: 2_000,
         require_pacing: false,
+        sync: chorus_client_linux::SyncConfig::default(),
     }
 }
 
@@ -82,6 +83,10 @@ fn run<R: std::io::Read + Send + 'static>(
         &mut log,
         MonotonicTimeline::new(),
         Arc::clone(&counters),
+        // No write half: these tests are about the playout path, and a loop
+        // with nobody to exchange with has no offset and corrects nothing,
+        // which is exactly the behaviour they were written against.
+        None,
     )
     .expect("the run writes its log");
     drop(log);
@@ -516,12 +521,20 @@ fn a_device_that_goes_away_mid_run_stops_the_run_and_does_not_claim_playback() {
         &mut log,
         MonotonicTimeline::new(),
         counters,
+        None,
     )
     .expect("the run writes its log");
     drop(log);
     let _ = std::fs::remove_file(&path);
 
+    // A device that has gone refuses the first thing the playout loop asks it,
+    // which is how far it is from its DAC. That is its own stop reason and it
+    // names the device; see `StopReason::DelayRefused`.
     match &outcome.stop {
+        StopReason::DelayRefused(refused) => {
+            assert_eq!(refused.device, "modelled");
+            assert!(refused.cause.to_string().contains("removed"), "{:?}", refused);
+        }
         StopReason::DeviceFailed(e) => {
             assert!(e.to_string().contains("removed"), "{}", e);
         }

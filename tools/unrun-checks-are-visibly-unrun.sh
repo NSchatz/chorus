@@ -119,6 +119,16 @@ expect_missing_prerequisite "capture-run.sh" \
     env CHORUS_SKIP_BUILD=1 CHORUS_CAPTURE_DEVICE=chorus-no-such-capture-device \
     bash "$REPO_ROOT/tools/measure/capture-run.sh"
 
+# No second endpoint, no capture device and no playback device that paces.
+# Genuinely absent: this machine has one of itself and no sound card at all,
+# and nothing has told this script where a second endpoint would be. This is
+# the entry point for AC-1, the one criterion of SYNC-4 that needs hardware.
+expect_missing_prerequisite "sync-hour-run.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_SECOND_ENDPOINT= \
+    CHORUS_CLIENT_DEVICE=chorus-no-such-device \
+    CHORUS_CAPTURE_DEVICE=chorus-no-such-capture-device \
+    bash "$REPO_ROOT/tools/sync-hour-run.sh"
+
 # --- and the list above is the whole list ------------------------------------
 #
 # An entry point is environment-dependent exactly when it calls one of lib.sh's

@@ -20,10 +20,12 @@
 //!        wrong reason.
 
 use std::io::Write;
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 use chorus_audio::{MonotonicTimeline, StreamFormat};
 use chorus_hostctl::ThreadRegistry;
@@ -34,6 +36,7 @@ use chorus_server::hostreport::{
 };
 use chorus_server::serve::{serve_stream, ServeParams};
 use chorus_server::source;
+use chorus_server::stream::{read_requests, write_outbound, Fanout, FanoutSink};
 
 const EXIT_CONFIG: u8 = 2;
 const EXIT_CONTRACT: u8 = 3;
@@ -213,67 +216,162 @@ fn main() -> ExitCode {
         .unwrap_or_else(|_| config.listen.clone());
     status.say(&format!("listening on={}", bound));
 
-    loop {
-        let (stream, peer) = match listener.accept() {
-            Ok(v) => v,
-            Err(e) => {
-                report("a client connection failed", &e.to_string());
-                return ExitCode::from(EXIT_TRANSPORT);
-            }
-        };
-        let _ = stream.set_nodelay(true);
-        status.say(&format!("client connected peer={}", peer));
+    // ONE source, ONE chunker, ONE timeline, fanned out. Two clients attached
+    // at the same time are on the same timeline and get the same presentation
+    // timestamp for the same content; a chunker each would give them two
+    // streams that merely sound alike.
+    let mut pcm = match source::open(&config.source, format, config.tone_ms) {
+        Ok(s) => s,
+        Err(e) => {
+            report(
+                "the PCM source could not be opened",
+                &format!("{}: {}", config.source, e),
+            );
+            return ExitCode::from(EXIT_SOURCE);
+        }
+    };
+    status.say(&format!("source {}", pcm.describe()));
 
-        let mut pcm = match source::open(&config.source, format, config.tone_ms) {
-            Ok(s) => s,
-            Err(e) => {
-                report(
-                    "the PCM source could not be opened",
-                    &format!("{}: {}", config.source, e),
-                );
-                return ExitCode::from(EXIT_SOURCE);
-            }
-        };
-        status.say(&format!("source {}", pcm.describe()));
+    let timeline = MonotonicTimeline::new();
+    let fanout = Arc::new(Fanout::new());
+    let keep = Arc::new(AtomicBool::new(true));
+    let params = ServeParams {
+        format,
+        chunk_us: config.chunk_us,
+        rate_skew_ppm: config.rate_skew_ppm,
+    };
 
-        let keep = Arc::new(AtomicBool::new(true));
-        let go = {
-            let keep = Arc::clone(&keep);
-            move || keep.load(Ordering::SeqCst)
-        };
+    // The first client is waited for before a chunk is cut, so that nothing is
+    // produced into an empty room and the stream a listener joins starts where
+    // the audio does.
+    let (first, peer) = match listener.accept() {
+        Ok(v) => v,
+        Err(e) => {
+            report("a client connection failed", &e.to_string());
+            return ExitCode::from(EXIT_TRANSPORT);
+        }
+    };
+    attach(first, peer, &timeline, &fanout, &keep, &status);
+
+    let producer = {
+        let fanout = Arc::clone(&fanout);
+        let keep = Arc::clone(&keep);
+        let go = move || keep.load(Ordering::SeqCst);
         let mut read = move |buf: &mut [u8]| pcm.read(buf);
-        let mut sink = stream;
-        let params = ServeParams {
-            format,
-            chunk_us: config.chunk_us,
-            rate_skew_ppm: config.rate_skew_ppm,
-        };
-        let outcome = serve_stream(params, MonotonicTimeline::new(), &mut read, &mut sink, &go);
+        let mut sink = FanoutSink::new(fanout);
+        thread::spawn(move || serve_stream(params, timeline, &mut read, &mut sink, &go))
+    };
 
-        match outcome {
-            Ok(served) => {
-                status.say(&format!(
-                    "stream done chunks_sent={} frames_sent={} bytes_discarded={} \
-                     ended_cleanly={} final_sequence={}",
-                    served.chunks_sent,
-                    served.frames_sent,
-                    served.bytes_discarded,
-                    u8::from(served.ended_cleanly),
-                    served.final_sequence
-                ));
-                if config.once {
-                    status.say("stopped reason=stream-ended");
-                    return ExitCode::SUCCESS;
+    // Everything else that arrives joins the stream already running.
+    let acceptor = {
+        let fanout = Arc::clone(&fanout);
+        let keep = Arc::clone(&keep);
+        let status_real_time = status.real_time.clone();
+        let status_memory = status.memory.clone();
+        thread::spawn(move || {
+            let status = Status {
+                real_time: status_real_time,
+                memory: status_memory,
+            };
+            while keep.load(Ordering::SeqCst) {
+                match listener.accept() {
+                    Ok((stream, peer)) => attach(stream, peer, &timeline, &fanout, &keep, &status),
+                    Err(e) => {
+                        report("a client connection failed", &e.to_string());
+                        return;
+                    }
                 }
             }
-            Err(e) => {
-                report("the stream stopped", &e.to_string());
-                status.say("stopped reason=stream-failed");
-                return match e {
-                    chorus_server::serve::ServeError::Source(_) => ExitCode::from(EXIT_SOURCE),
-                    _ => ExitCode::from(EXIT_TRANSPORT),
-                };
+        })
+    };
+
+    let outcome = match producer.join() {
+        Ok(o) => o,
+        Err(_) => {
+            report("the stream stopped", "the chunk emitter panicked");
+            status.say("stopped reason=stream-failed");
+            return ExitCode::from(EXIT_TRANSPORT);
+        }
+    };
+    keep.store(false, Ordering::SeqCst);
+
+    match outcome {
+        Ok(served) => {
+            status.say(&format!(
+                "stream done chunks_sent={} frames_sent={} bytes_discarded={} \
+                 ended_cleanly={} final_sequence={} clients={}",
+                served.chunks_sent,
+                served.frames_sent,
+                served.bytes_discarded,
+                u8::from(served.ended_cleanly),
+                served.final_sequence,
+                fanout.subscribers()
+            ));
+            status.say("stopped reason=stream-ended");
+            // The acceptor is parked in `accept`, which nothing here can
+            // interrupt without a shutdown syscall this server does not
+            // otherwise need; the process is exiting, so it is left to go with
+            // it rather than joined.
+            drop(acceptor);
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            report("the stream stopped", &e.to_string());
+            status.say("stopped reason=stream-failed");
+            drop(acceptor);
+            match e {
+                chorus_server::serve::ServeError::Source(_) => ExitCode::from(EXIT_SOURCE),
+                _ => ExitCode::from(EXIT_TRANSPORT),
             }
         }
+    }
+}
+
+/// Attach one connection to the stream: audio out, requests in, replies back.
+fn attach(
+    stream: TcpStream,
+    peer: std::net::SocketAddr,
+    timeline: &MonotonicTimeline,
+    fanout: &Arc<Fanout>,
+    keep: &Arc<AtomicBool>,
+    status: &Status,
+) {
+    let _ = stream.set_nodelay(true);
+    let reader = match stream.try_clone() {
+        Ok(r) => r,
+        Err(e) => {
+            report(
+                "a client connection could not be split",
+                &format!("{}: {}", peer, e),
+            );
+            return;
+        }
+    };
+    // A read timeout is what lets the request reader notice a stopped run
+    // rather than sit in a blocking read forever.
+    let _ = reader.set_read_timeout(Some(Duration::from_millis(200)));
+
+    let (tx, rx) = fanout.subscribe();
+    status.say(&format!(
+        "client connected peer={} clients={}",
+        peer,
+        fanout.subscribers()
+    ));
+
+    {
+        let timeline = *timeline;
+        let mut sink = stream;
+        thread::spawn(move || {
+            let _ = write_outbound(&mut sink, timeline, &rx);
+        });
+    }
+    {
+        let timeline = *timeline;
+        let keep = Arc::clone(keep);
+        let mut reader = reader;
+        thread::spawn(move || {
+            let go = move || keep.load(Ordering::SeqCst);
+            read_requests(&mut reader, timeline, &tx, &go);
+        });
     }
 }

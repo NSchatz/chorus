@@ -56,6 +56,17 @@ trusting one.
 The two clocks have unrelated epochs. Comparing a `t0` with a `t1` as if they
 were the same timeline is the mistake this whole exchange exists to avoid.
 
+**Who fills in which field.** A client sends a request with `t0` stamped and
+the other three zero. The server answers on the same connection, echoing `t0`
+untouched and filling `t1` and `t2` from its own monotonic timeline: `t1` when
+it decoded the request off the socket and `t2` when it encoded the reply, so
+its own queueing is inside `t2 - t1` and is subtracted out rather than being
+counted as network time. `t3` stays zero on the wire. It is the client's
+receive stamp on the client's clock, the server cannot know it, and a server
+that invented one would be handing the client a round trip it made up. The
+client stamps `t3` where the reply arrives, and only then is the exchange four
+timestamps.
+
 ### 0x02 audio chunk
 
 A 32-byte chunk header followed by PCM. Minimum payload length is 33 bytes: a

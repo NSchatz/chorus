@@ -8,7 +8,10 @@
 //! - `2`  the configuration was refused.
 //! - `3`  the server could not be reached at start, or the connection was lost
 //!        during the run with no end-of-stream signal. The report says which.
-//! - `4`  the audio device could not be opened, or failed during the run.
+//! - `4`  the audio device could not be opened, failed during the run, or
+//!        refused to report its delay to the DAC. The last is its own reported
+//!        reason, `delay-refused`, because it is the one signal the sync loop
+//!        is entitled to use and there is no substitute for it.
 //! - `5`  the client closed the session on a framing error.
 //! - `6`  the delay log could not be written.
 //!
@@ -222,6 +225,20 @@ fn play(config: &ClientConfig) -> ExitCode {
         }
     };
 
+    // The exchange goes back up the connection the audio came down, which is
+    // the criterion's own wording and is also the only way the round trip it
+    // measures is the round trip the audio takes.
+    let sync_out: Option<Box<dyn std::io::Write>> = match stream.try_clone() {
+        Ok(w) => Some(Box::new(w)),
+        Err(e) => {
+            report(
+                "the connection could not be shared with the sync loop",
+                &format!("{}; this run will have no offset and will say so", e),
+            );
+            None
+        }
+    };
+
     let counters = Arc::new(Counters::new());
     let outcome = match run_session(
         config,
@@ -231,6 +248,7 @@ fn play(config: &ClientConfig) -> ExitCode {
         &mut log,
         timeline,
         Arc::clone(&counters),
+        sync_out,
     ) {
         Ok(o) => o,
         Err(e) => {
@@ -254,6 +272,11 @@ fn play(config: &ClientConfig) -> ExitCode {
         outcome.summary.frames_played,
         outcome.summary.nominal_frames
     ));
+    status(&format!("sync {}", outcome.telemetry.line()));
+    status(&format!(
+        "sync-frames inserted_frames={} dropped_frames={}",
+        outcome.inserted_frames, outcome.dropped_frames
+    ));
     status(&format!(
         "stopped reason={} played={} delay_log={}",
         outcome.stop.name(),
@@ -266,6 +289,6 @@ fn play(config: &ClientConfig) -> ExitCode {
         StopReason::EndOfStream(_) | StopReason::RunLengthReached => ExitCode::SUCCESS,
         StopReason::ConnectionLost { .. } | StopReason::NoStream => ExitCode::from(EXIT_SERVER),
         StopReason::Framing(_) => ExitCode::from(EXIT_FRAMING),
-        StopReason::DeviceFailed(_) => ExitCode::from(EXIT_DEVICE),
+        StopReason::DeviceFailed(_) | StopReason::DelayRefused(_) => ExitCode::from(EXIT_DEVICE),
     }
 }

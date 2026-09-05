@@ -17,7 +17,8 @@
 //! this stream is supposed to look like, and the rules are:
 //!
 //! - The server sends a run of `audio_chunk` frames, then one `stream_end`,
-//!   then closes. That is the whole grammar.
+//!   then closes, and answers a `time_sync` request with a `time_sync` reply
+//!   at any point in between. That is the whole grammar.
 //! - **The stream shape is fixed by the first chunk.** A later chunk that
 //!   disagrees about rate, channels or sample format did not come from where
 //!   it claims to, and that is a framing error rather than a bad chunk.
@@ -51,7 +52,7 @@
 use std::fmt;
 use std::io::{self, Read};
 
-use chorus_protocol::{decode_frame, AudioChunk, FrameOutcome, Message, StreamEnd};
+use chorus_protocol::{decode_frame, AudioChunk, FrameOutcome, Message, StreamEnd, TimeSync};
 
 /// Largest buffer the reader will accumulate before declaring the stream
 /// nonsense: one maximum frame, plus one read.
@@ -175,12 +176,20 @@ pub enum Received {
     },
     /// The in-band end of the stream.
     End(StreamEnd),
+    /// A time-sync reply, on the same connection as the audio.
+    ///
+    /// It arrives with `t0`, `t1` and `t2` filled in and `t3` still zero: `t3`
+    /// is the client's receive stamp and only the client can take it. The
+    /// caller stamps it at receipt, which is where this event is delivered.
+    TimeSync(TimeSync),
     /// A frame the decoder rejected. One bad frame, session stays open.
     Malformed,
     /// A catalogued message this phase's grammar has no place for.
     ///
     /// It fully decoded, so alignment is proven and the session is fine; it
-    /// simply is not part of what this client is here to play.
+    /// simply is not part of what this client is here to play. Every type in
+    /// the catalog is in the grammar as of SYNC-4, so this is what a type
+    /// added to the catalog later arrives as, rather than as lost alignment.
     NotInThisGrammar,
 }
 
@@ -285,10 +294,8 @@ impl Receiver {
                 FrameOutcome::Decoded(Message::StreamEnd(end)) => {
                     out.push(Received::End(end));
                 }
-                FrameOutcome::Decoded(Message::TimeSync(_)) => {
-                    // In the catalog, fully decoded, so alignment is proven.
-                    // It just has no place in this phase's grammar.
-                    out.push(Received::NotInThisGrammar);
+                FrameOutcome::Decoded(Message::TimeSync(reply)) => {
+                    out.push(Received::TimeSync(reply));
                 }
                 FrameOutcome::SkippedUnknownType {
                     message_type,
@@ -603,10 +610,10 @@ mod tests {
     }
 
     #[test]
-    fn a_catalogued_message_outside_this_grammar_proves_alignment_and_is_kept() {
-        // A time sync frame fully decodes, so where the next frame starts is
-        // known rather than assumed. It has no place in this phase, and that
-        // is not the same as being lost.
+    fn a_time_sync_reply_interleaved_with_audio_reaches_the_caller() {
+        // The exchange shares the connection with the audio, which is the
+        // whole point of AC-9: the reply arrives between two chunks, both
+        // chunks still decode, and the reply is handed up rather than dropped.
         let mut r = Receiver::new();
         let mut stream = chunk_bytes(0, 0, 960);
         stream.extend_from_slice(
@@ -614,14 +621,22 @@ mod tests {
                 t0_ns: 1,
                 t1_ns: 2,
                 t2_ns: 3,
-                t3_ns: 4,
+                t3_ns: 0,
             }))
             .unwrap(),
         );
         stream.extend_from_slice(&chunk_bytes(1, 20_000_000, 960));
         let out = r.push(&stream).unwrap();
         assert_eq!(out.len(), 3);
-        assert_eq!(out[1], Received::NotInThisGrammar);
+        match out[1] {
+            Received::TimeSync(reply) => {
+                assert_eq!(reply.t0_ns, 1);
+                assert_eq!(reply.t1_ns, 2);
+                assert_eq!(reply.t2_ns, 3);
+                assert_eq!(reply.t3_ns, 0, "only the client can stamp t3");
+            }
+            ref other => panic!("expected a time sync reply, got {:?}", other),
+        }
         assert!(matches!(out[2], Received::Chunk { .. }));
     }
 

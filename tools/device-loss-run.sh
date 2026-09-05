@@ -69,7 +69,13 @@ if ! printf '%s' "$OUT" | grep -q "$DEVICE"; then
     say "chorus: FAIL the report does not name the device"
     exit 1
 fi
-if ! printf '%s' "$OUT" | grep -qE 'reason=device-failed|reason=device-unusable'; then
+# `delay-refused` is the third accepted reason and is usually the one a removed
+# device produces: the first thing the playout loop asks a device is how far it
+# is from its DAC, so that is the call that fails first. All three say the same
+# thing about this check - the client stopped, named the device, and did not
+# claim to be playing.
+if ! printf '%s' "$OUT" \
+    | grep -qE 'reason=device-failed|reason=device-unusable|reason=delay-refused'; then
     say "chorus: FAIL the final report does not say the device failed"
     exit 1
 fi

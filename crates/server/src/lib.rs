@@ -8,6 +8,12 @@
 //! timeline, and puts them on a connection. Nothing in it reads a settable
 //! clock and nothing in it corrects anything.
 //!
+//! **The group half** ([`stream`]) is what makes that one stream rather than
+//! one stream per client: the chunks are produced once and fanned out, so two
+//! clients see the same presentation timestamp for the same content, and each
+//! client's connection also carries the time-sync exchange it uses to find
+//! that timeline.
+//!
 //! **The host half** ([`hostreport`], and `chorus_hostctl` under it) reads the
 //! real-time priority ceiling the container was granted, takes a priority no
 //! greater than it, bounds every real-time thread with a CPU-time limit before
@@ -33,7 +39,9 @@ pub mod config;
 pub mod hostreport;
 pub mod serve;
 pub mod source;
+pub mod stream;
 
 pub use config::{ServerConfig, ServerConfigError};
 pub use hostreport::{ContractRefused, MemoryLockOutcome, RealTimeOutcome};
 pub use serve::{serve_stream, ServeError, ServeParams, ServeReport};
+pub use stream::{read_requests, write_outbound, Fanout, FanoutSink, Outbound};

@@ -11,10 +11,191 @@ picks up this tree later has no access to the notes the implementing session
 wrote elsewhere. If the two ever disagree, this file is the one attached to the
 code.
 
-Two phases are recorded here, most recent first:
+Three phases are recorded here, most recent first:
 
+- [SYNC-4, the sync loop on the real path](#sync-4-the-sync-loop-on-the-real-path)
 - [RIG-3, the measurement harness](#rig-3-the-measurement-harness)
 - [SOUND-2, first sound](#sound-2-first-sound)
+
+## SYNC-4: the sync loop on the real path
+
+### The machine this was written on
+
+```
+kernel                    Linux 6.12.90+deb13.1-amd64 x86_64
+toolchain                 rustc 1.98.1 (48a229cea 2026-09-01)
+/dev/snd                  absent - no sound card of any kind
+capture device            none. There is no audio interface of any kind here
+second endpoint           none. There is one machine and it is this container
+loudspeakers              none
+ulimit -r (RLIMIT_RTPRIO) 0
+container                 a disposable Linux container, not the deploy target
+```
+
+### AC-1 IS NOT PASSED
+
+**Stated first, and plainly, because it is the criterion the phase is named
+for and because everything below could otherwise be mistaken for it.**
+
+> **AC-1.** WHEN two wired Linux endpoints play one grouped stream for at least
+> one hour THE SYSTEM SHALL hold median inter-device error below 0.5 ms as
+> measured by the RIG-3 harness and SHALL perform no hard resync after the
+> first minute.
+
+**This criterion is NOT passed, NOT skipped-green and NOT satisfied. Nothing in
+this repository claims it.** It needs two wired Linux endpoints, an audio
+interface with two channels of capture, and real loudspeakers. This machine has
+one endpoint, no capture device and no loudspeakers, and this pipeline has no
+route to acquire them. RIG-3, the harness AC-1 is measured by, is itself
+blocked on exactly that hardware.
+
+What the repository has instead is the committed entry point, which refuses.
+`make verify` runs it, and this is what it printed here, verbatim:
+
+```
+--- sync-hour-run.sh (exit 3)
+    chorus: the hour-long grouped-stream run
+      criterion:     AC-1, the one criterion of this phase that needs hardware
+      run:           3900s, captured 30s at a time
+      local device:  chorus-no-such-device
+      capture:       chorus-no-such-capture-device
+      second endpoint: <unset>
+    MISSING PREREQUISITE
+      criterion:    two wired Linux endpoints playing one grouped stream for at least one hour hold median inter-device error below 0.5 ms as measured by the RIG-3 harness, with no hard resync after the first minute
+      prerequisite: a second wired Linux endpoint to play the same grouped stream; CHORUS_SECOND_ENDPOINT names none
+      how to get it: set CHORUS_SECOND_ENDPOINT to 'user@host' for a second wired Linux machine with an ALSA output, wire both endpoints' line outputs into one audio interface, and point CHORUS_CAPTURE_DEVICE at it
+      this check is NOT passed, NOT skipped-green and NOT satisfied.
+pass sync-hour-run.sh refuses, names both, and claims nothing
+```
+
+What an operator with the environment runs:
+
+```
+CHORUS_SECOND_ENDPOINT=user@endpoint-b \
+CHORUS_CAPTURE_DEVICE=hw:1,0 CHORUS_CLIENT_DEVICE=hw:0,0 \
+    ./tools/sync-hour-run.sh          # or: make verify-sync-hour
+```
+
+Instructions: the script's own header, and
+`docs/decisions/0014-the-sync-loop-on-the-real-path.md` for what every constant
+it passes in means. The capture and the two delay logs it writes ARE the
+evidence and can be graded afterwards, on any machine, by someone who did not
+take them:
+
+```
+cargo run -p chorus-measure --bin chorus-measure -- lag <capture.wav> --label <name>
+./target/debug/chorus-delaylog-check <log> --min-graded-seconds 3600 \
+    --require-zero-underruns --require-no-rate-change
+```
+
+### The other four adopted criteria
+
+AC-2 to AC-5 are the roadmap phase's own text, adopted verbatim. Each of them
+describes something the client's logic does, so each is gradeable here against
+a modelled device with no sound card.
+
+| criterion | what answers it | result |
+|---|---|---|
+| AC-2, the offset comes from the minimum-delay sample and not the newest | `cargo test -p chorus-client-linux --test sync_loop` | three exchanges reporting the same true 1 000 000 ns offset, one of them queued at 20 us and the other two at 900 us and 1500 us in one direction. The published round trip is 20 000 ns, the offset is within 20 us of the truth, and the counterfactual is asserted in the same test: the newest sample's own estimate is out by more than 700 us, so a filter that took it would be visibly wrong. Over a modelled run the published round trip settles at 240 to 300 us against a modelled 240 us floor |
+| AC-3, the error is the delay the device reports to the DAC | the same target | two runs handed the same audio and the same timestamps, differing only in what the DEVICE says: 48 000 more frames of reported delay moves the error by 1 000 000 000 ns, to within 1 ns. Both runs wrote 1920 frames and had every frame accepted, so an error derived from the return of the write call could not tell them apart. Structurally: `crates/client-linux/src/sync.rs` contains no `SinkWrite`, `frames_written`, `underran` or `.write(` outside its documentation, asserted by reading the source |
+| AC-4, the bound is half the round trip of the sample the offset came from | `--test sync_telemetry` | round trips of 3 ms, 400 us and 1.2 ms in a window; the published round trip is 400 000 ns and the published bound is exactly 200 000 ns. A newer, worse exchange does not become the bound by being newer; a better one does. Over a real client session on a loopback socket, `bound_ns == round_trip_ns / 2` and both are in the delay log |
+| AC-5, past the threshold it mutes, realigns and resumes | `--test sync_loop` | a 40 ms error against a 2 ms threshold returns a step and not a slew, the correction in force goes to zero, the splice is muted for the configured 20 ms, the playout pointer moves by the whole step to within 25 us, and output resumes when the mute runs out. The mute silences frames in place and inserts none, so it costs nothing in alignment |
+
+### This spec's own criteria
+
+| criterion | what answers it | result |
+|---|---|---|
+| AC-6, the rig run refuses visibly | `make verify` | `tools/sync-hour-run.sh` exits 3 naming the criterion and the prerequisite, quoted in full above. `tools/unrun-checks-are-visibly-unrun.sh` derives its list recursively from `tools/`, finds 10 environment-dependent entry points and checks all 10 |
+| AC-7, the record says what ran and what did not | this file | the section you are reading. AC-1 is recorded as NOT passed with the verbatim refusal, the exact command, and the missing prerequisite |
+| AC-8, two clients, one timeline, contiguous runs | `cargo test -p chorus-server --test grouped_stream` | two clients attached before the first chunk is cut receive at least 120 chunks each, share at least 100 sequence numbers, and for every shared sequence the presentation timestamp and the audio bytes are identical. Each client's sequence numbers are a contiguous run. Timestamps are exactly one chunk duration apart, start to start, and the stream's origin is the server's own monotonic reading rather than zero. A client that joins late starts partway into the run, not at sequence 0, and is on the same timestamps for the content it shares |
+| AC-9, the exchange is answered on the audio connection | the same target | six requests sent up the connection the audio comes down, six replies, and at least 150 chunks received in the same window with their sequence run unbroken. Each reply echoes the client's own `t0` untouched, carries a nonzero `t1` and a `t2` at or after it, both from the server's `MonotonicTimeline` and both inside the run, never going backwards between exchanges. `t3` is zero on the wire, because it is the client's receive stamp on the client's clock and the server will not invent it; the client stamps it and the completed exchange is four monotonic-nanosecond timestamps. Two clients exchange independently on their own connections against the same server timeline |
+| AC-10, the modelled hour | `--test sync_loop` | see below |
+| AC-11, every constant with what it was chosen from | `docs/decisions/0014-the-sync-loop-on-the-real-path.md` | the filter window, the smoothing weight, the exchange cadence, the hard-resync threshold, the correction clamp, the staleness limit, the round-trip ceiling, the playout latency and the mute, each with its provenance, and the three inherited values named as inherited. `--test sync_loop` asserts every number in `config/sync.conf` equals the compiled constant of the same name |
+| AC-12, the audio-path scan accounts for every new unit | `cargo test -p chorus-audio-path` | `crates/client-linux/src/sync.rs`, `crates/server/src/stream.rs`, `crates/sync/src/lib.rs`, `crates/sync/src/servo.rs` and `crates/sync/src/config.rs` are listed on the path; the simulator's four units are excluded with reasons. All 7 audio-path tests pass, including both red demonstrations, and the check went red first on the unlisted `sync.rs`, which is how the enrolment was found rather than remembered |
+| AC-13, a nonsensical exchange is discarded | `--test sync_loop` | three shapes that cannot be a round trip - the server holding a request longer than the whole exchange took, a round trip above the configured ceiling, and a reply that arrived before it was sent - are each discarded by name, the accepted count does not move, and the offset, round trip and bound are exactly what they were before. Over a modelled run with every exchange corrupted from minute two, more than 60 are discarded, not one is admitted, and the underrun count stays at zero |
+| AC-14, no exchange means no offset and no bound | `--test sync_telemetry` | `offset_ns`, `round_trip_ns` and `bound_ns` are all absent and the published line reads `offset_ns=none round_trip_ns=none bound_ns=none`; the test asserts the string `bound_ns=0` does not appear. A client whose every exchange was discarded is in the same state and answers the same way. A real client session against a server that answers nothing publishes `none` for all three, inserts zero frames, drops zero frames, applies no correction, writes no `correction` event to its log, and still plays audio |
+| AC-15, a silent server leaves audio playing and the offset stale | `--test sync_loop` | after the server stops answering, the loop keeps correcting until the newest accepted sample is older than the 10 s staleness limit, then reports stale and runs the servo not once over the following three modelled minutes. The correction in force is held rather than reset; the offset is still published, with a stale flag on it rather than absent; the underrun count stays at zero and the run keeps producing playout samples. A server that comes back is not a special case: the offset goes fresh again and the servo resumes |
+| AC-16, a device that refuses its delay stops the run | `--test sync_loop` | the loop returns a refusal naming `hw:CARD=sulky,DEV=0`, quoting what the device said, and saying that the return of a write call is not a substitute. The servo was never run and nothing was corrected, even though that device would have accepted every frame handed to it. In the client session this is `StopReason::DelayRefused`, which reports `reason=delay-refused` and exits 4 |
+| AC-17, a clamped correction is applied clamped and reported | `--test sync_loop` | a 1 ms error asks for far more than the 300 ppm clamp; the correction applied is exactly -300 ppm, `clamped` is true, and the published line reads `clamped=1`. The clamped value reaches the frames: a second of it at 48 kHz inserts 14 whole frames of silence and carries the remaining 0.4 of a frame. A correction inside the clamp is not reported as clamped |
+
+### AC-10 in full: the modelled hour, and what a model is not
+
+**This is a MODELLED result. It is not a measurement and it is not AC-1.**
+
+`crates/client-linux/tests/common/mod.rs` builds a modelled endpoint: two
+modelled crystals, a modelled network drawing from the jitter distributions
+`crates/sync/src/jitter.rs` already models, and a modelled DAC draining on a
+virtual clock. The `SyncLoop` and `PlayoutCorrector` inside it are the same
+types `crates/client-linux/src/run.rs` uses on the real path; what is modelled
+is everything around them. Ground truth - how far the content about to become
+audible is from where the server timeline says it should be - is computed
+outside the loop from state no participant in the model can see.
+
+Over 60 modelled minutes, peak absolute error after the first modelled minute:
+
+| modelled scenario | ground truth | the loop's own error | hard resyncs | after minute 1 | underruns | exchanges |
+|---|---|---|---|---|---|---|
+| quiet wired, 0 and +40 ppm, uniform 60 us | 69.8 us | 42.0 us | 1 | 0 | 0 | 7200 accepted, 0 discarded |
+| worst crystal pair, +50 and -50 ppm, exponential 150 us | 158.7 us | 90.7 us | 1 | 0 | 0 | 7129 accepted, 0 discarded |
+
+Both hold below the 0.25 ms bound, and the one hard resync in each is the
+acquisition in the first modelled minute, which the run is deliberately started
+outside the bound to produce. The counterfactual is asserted in the same test:
+the same run with the slew switched off and only the step tier left walks past
+four times the bound and keeps stepping, more than five times after the first
+minute, which is exactly what the second half of the criterion forbids.
+
+**What this does not say.** That two loudspeakers in a room are inaudibly
+apart. That `libasound` reports a delay the way this model does. That a real
+crystal drifts like a straight line. Every one of those needs the hardware AC-1
+needs, and this record does not pretend otherwise.
+
+### What the ALSA `null` device did establish, and what it cannot
+
+`make verify-null-device` runs the REAL server and the REAL client binaries
+against the ALSA `null` device, which opens and accepts frames and reports a
+delay of zero for ever. Both runs completed and both published timing health,
+so the exchange itself is exercised end to end through the shipped binaries and
+not only in a test harness:
+
+```
+chorus-client: sync offset_ns=998498213 round_trip_ns=189182 bound_ns=94591 stale=0 \
+    age_ns=896560781 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=3 discarded=0
+```
+
+Three exchanges answered by the server on the connection carrying the audio, an
+offset published, and a bound that is exactly half the published round trip.
+
+**What it cannot establish is anything about the correction**, and the run says
+so rather than pretending: `correction_ppm=0.000` and zero hard resyncs,
+because a device reporting a delay of zero is not reporting a distance to a
+DAC, and the loop answers that with `Correction::NoDeviceDelay` and corrects
+nothing. `docs/decisions/0014` records why that is a refusal and not a
+fallback. The delay log carries a `sync-no-device-delay` event naming the
+device. Everything about the correction on a device that paces still needs the
+hardware AC-1 needs.
+
+### What did NOT run here, and is not claimed
+
+Beyond AC-1 above, nothing new. SOUND-2's and RIG-3's hardware-blocked rows are
+unchanged by this phase and stay blocked on the same missing hardware; this
+work does not claim them. `tools/device-loss-run.sh` gained one accepted stop
+reason (`delay-refused`, alongside the two it already accepted) because a
+device that has gone away now refuses the first thing the playout loop asks it,
+which is how far it is from its DAC. It still needs a device that can be
+removed mid-run and still refuses by name here.
+
+### Running the lot, on a machine that has the environment
+
+```
+make test                    # the suite: no device, no privilege
+make verify                  # every refusal path, including this phase's
+make verify-null-device      # the device checks that do not grade the delay
+make verify-device           # everything that needs a device that paces
+make verify-host             # the scheduling contract and the spin test
+make verify-measure-device   # the capture run: needs an interface
+make verify-sync-hour        # AC-1: needs a SECOND endpoint as well
+```
 
 ## RIG-3: the measurement harness
 

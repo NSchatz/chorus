@@ -55,6 +55,22 @@ conf() {
     printf '%s' "$value"
 }
 
+# A value from config/sync.conf. The constants SYNC-4 fixed live there and are
+# passed to the client from there, so a check and the thing it checks cannot
+# drift apart; crates/client-linux/tests/sync_loop.rs asserts the file and the
+# compiled constants agree.
+sync_conf() {
+    local key="$1"
+    local value
+    value="$(sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*\\([^#]*\\).*/\\1/p" \
+        "$REPO_ROOT/config/sync.conf" | head -n 1 | tr -d '[:space:]')"
+    if [ -z "$value" ]; then
+        printf 'config/sync.conf has no %s\n' "$key" >&2
+        exit 2
+    fi
+    printf '%s' "$value"
+}
+
 # The device a run should use. `default` is the operator's real card; CI and a
 # container without one pass something else, and get told when it is not there.
 audio_device() {
@@ -160,6 +176,18 @@ require_memlock() {
             "$criterion" \
             "a locked-memory limit of at least $wanted_bytes bytes; RLIMIT_MEMLOCK reads $limit_bytes bytes here" \
             "run in a container started with 'docker run --ulimit memlock=<bytes>', as deploy/run-server.sh does"
+    fi
+}
+
+# Refuse to continue unless the operator named a SECOND endpoint to play the
+# grouped stream on. One endpoint cannot be inaudibly apart from anything.
+require_second_endpoint() {
+    local criterion="$1"
+    if [ -z "${CHORUS_SECOND_ENDPOINT:-}" ]; then
+        missing_prerequisite \
+            "$criterion" \
+            "a second wired Linux endpoint to play the same grouped stream; CHORUS_SECOND_ENDPOINT names none" \
+            "set CHORUS_SECOND_ENDPOINT to 'user@host' for a second wired Linux machine with an ALSA output, wire both endpoints' line outputs into one audio interface, and point CHORUS_CAPTURE_DEVICE at it"
     fi
 }
 
