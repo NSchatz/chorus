@@ -30,9 +30,17 @@
 //! The event kinds a run writes: `start-fill` (the first write, and the fill it
 //! carried), `zone` (occupancy moved between zones), `bound-crossing` (the
 //! maximum was reached), `underrun` (the device said so), `graded-close` (the
-//! graded interval closed, and why) and `drain-begin`. A reader that does not
-//! know a kind can ignore it: the grader keys on the ones it needs and passes
-//! the rest through, which is why a new kind is not a format version.
+//! graded interval closed, and why) and `drain-begin`; and, from the sync loop,
+//! `sync` (the telemetry line: the offset in use, the round trip of the sample
+//! it came from, half that round trip as the bound, and whether it is stale),
+//! `sync-exchange` (one admitted), `sync-discard` (one thrown away, with the
+//! reason), `correction` (a fine correction, and whether the clamp bit),
+//! `hard-resync` (a step, with the error it answered), `sync-stale` (the offset
+//! aged past its limit), `sync-no-device-delay` (the device answered zero,
+//! which is not a distance to a DAC, so nothing was corrected) and
+//! `sync-resume` (a mute ran out). A reader that does
+//! not know a kind can ignore it: the grader keys on the ones it needs and
+//! passes the rest through, which is why a new kind is not a format version.
 
 use std::fs::File;
 use std::io::{self, BufWriter, Write};

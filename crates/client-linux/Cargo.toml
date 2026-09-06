@@ -10,6 +10,7 @@ publish.workspace = true
 chorus-protocol = { path = "../protocol" }
 chorus-audio = { path = "../audio" }
 chorus-alsa = { path = "../alsa" }
+chorus-sync = { path = "../sync" }
 
 [[bin]]
 name = "chorus-client"

@@ -27,15 +27,26 @@
 //! the reported delay at the start fill immediately, which is inside the
 //! bounds by configuration.
 //!
-//! # Nothing here corrects anything
+//! # Two jobs that look like one, and are not
 //!
-//! No offset filter, no rate correction, no resampling, no resync. The
-//! playout loop holds the device's delay near a configured target by choosing
-//! **when** to write, never by changing what it writes or how fast the device
-//! consumes it. Two endpoints agreeing is a later phase's subject; this one
-//! delivers the path that phase will correct.
+//! **Pacing** chooses WHEN to write, which holds the device's reported delay
+//! near a configured target. It moves nothing: a DAC plays the frames it holds
+//! in order at its own rate, so writing a chunk later shortens the ring by
+//! exactly as much as it delays the write, and the instant a given frame
+//! becomes audible does not move at all.
+//!
+//! **Correction** changes WHAT is written, which is the only thing that can
+//! move that instant. The sync loop in [`crate::sync`] forms its error from
+//! the delay the device reports to its DAC and hands back either a rate
+//! correction, applied as frames inserted or dropped, or a step, applied under
+//! a mute. This module is where those frames reach the device.
+//!
+//! The two are deliberately not merged. Pacing is about how much audio the
+//! ring holds and is a property of this endpoint alone; correction is about
+//! when content is audible and is the only thing two endpoints have to agree
+//! on.
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver as ChannelReceiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -43,7 +54,7 @@ use std::thread;
 use std::time::Duration;
 
 use chorus_audio::MonotonicTimeline;
-use chorus_protocol::StreamEnd;
+use chorus_protocol::{encode, Message, StreamEnd, TimeSync};
 
 use crate::buffer::{frames_to_us, us_to_frames, Accepted, Buffer, Counters, Zone};
 use crate::config::ClientConfig;
@@ -52,6 +63,9 @@ use crate::receive::{
     receive_loop, FramingError, Handshake, ReceiveStop, Received, Receiver, StreamShape,
 };
 use crate::sink::{PcmSink, SinkError};
+use crate::sync::{
+    Correction, DelayRefused, ExchangeVerdict, PlayoutCorrector, SyncLoop, Telemetry,
+};
 
 /// How often the run writes a sample. Well under the once-per-second the log
 /// format requires, so a coarse scheduler cannot make the log non-compliant.
@@ -80,6 +94,14 @@ pub enum StopReason {
     RunLengthReached,
     /// The audio device failed or went away.
     DeviceFailed(SinkError),
+    /// The audio device would not say how far it is from its DAC.
+    ///
+    /// Its own stop reason, and not a flavour of [`StopReason::DeviceFailed`],
+    /// because the thing that is missing is the one signal the sync loop is
+    /// entitled to use. There is no second estimate of when a frame becomes
+    /// audible and the client will not invent one, so the run ends here and
+    /// names the device that refused.
+    DelayRefused(DelayRefused),
     /// The stream never started: no chunk ever arrived.
     NoStream,
 }
@@ -106,6 +128,7 @@ impl StopReason {
             StopReason::Framing(_) => "framing-error",
             StopReason::RunLengthReached => "run-length-reached",
             StopReason::DeviceFailed(_) => "device-failed",
+            StopReason::DelayRefused(_) => "delay-refused",
             StopReason::NoStream => "no-stream",
         }
     }
@@ -131,6 +154,7 @@ impl StopReason {
             StopReason::Framing(e) => format!("the client closed the session: {}", e),
             StopReason::RunLengthReached => "the configured run length was reached".to_string(),
             StopReason::DeviceFailed(e) => format!("the audio device failed: {}", e),
+            StopReason::DelayRefused(e) => e.to_string(),
             StopReason::NoStream => "the connection carried no audio chunk at all".to_string(),
         }
     }
@@ -145,6 +169,13 @@ pub struct RunOutcome {
     pub summary: LogSummary,
     /// Whether any audio was played.
     pub played_anything: bool,
+    /// What the client publishes about its own timing health, as it stood
+    /// when the run ended.
+    pub telemetry: Telemetry,
+    /// Frames of silence the fine correction and the resyncs inserted.
+    pub inserted_frames: u64,
+    /// Frames of audio they dropped.
+    pub dropped_frames: u64,
 }
 
 /// A log line the receiving thread wants written.
@@ -171,6 +202,12 @@ fn record_stop(slot: &StopSlot, reason: StopReason) {
 /// `handshake` carries the framing state and everything already decoded while
 /// the stream's shape was being learned, so nothing read before the device was
 /// opened is lost.
+///
+/// `sync_out` is the write half of the same connection `source` reads, which is
+/// how the time-sync request goes back to the server. `None` runs the playout
+/// path with no exchange at all: the loop then has no offset, applies no
+/// correction, and says so, which is exactly what it must do against a peer
+/// that never answers.
 pub fn run_session<R: Read + Send + 'static, S: PcmSink>(
     config: &ClientConfig,
     mut source: R,
@@ -179,11 +216,13 @@ pub fn run_session<R: Read + Send + 'static, S: PcmSink>(
     log: &mut DelayLog,
     timeline: MonotonicTimeline,
     counters: Arc<Counters>,
+    sync_out: Option<Box<dyn Write>>,
 ) -> Result<RunOutcome, std::io::Error> {
     let rate_hz = sink.rate_hz();
     let buffer = Arc::new(Buffer::new(config.min_us, config.max_us, rate_hz));
     let keep_going = Arc::new(AtomicBool::new(true));
     let (events_tx, events_rx) = mpsc::channel::<PendingEvent>();
+    let (replies_tx, replies_rx) = mpsc::channel::<TimeSync>();
     let stop_slot: StopSlot = Arc::new(Mutex::new(None));
 
     let Handshake {
@@ -204,6 +243,7 @@ pub fn run_session<R: Read + Send + 'static, S: PcmSink>(
                 Arc::clone(&buffer),
                 Arc::clone(&counters),
                 events_tx,
+                replies_tx,
                 timeline,
                 min_us,
                 max_us,
@@ -248,6 +288,8 @@ pub fn run_session<R: Read + Send + 'static, S: PcmSink>(
         &counters,
         &keep_going,
         &events_rx,
+        &replies_rx,
+        sync_out,
         &stop_slot,
     );
 
@@ -256,10 +298,12 @@ pub fn run_session<R: Read + Send + 'static, S: PcmSink>(
     outcome
 }
 
+#[allow(clippy::too_many_arguments)]
 fn make_absorber(
     buffer: Arc<Buffer>,
     counters: Arc<Counters>,
     events: Sender<PendingEvent>,
+    replies: Sender<TimeSync>,
     timeline: MonotonicTimeline,
     min_us: u64,
     max_us: u64,
@@ -310,6 +354,12 @@ fn make_absorber(
                 });
             }
         }
+        Received::TimeSync(reply) => {
+            // t3 is taken HERE, where the reply arrived, and not later in the
+            // playout thread: a stamp taken after a queue is a measurement of
+            // the queue.
+            let _ = replies.send(SyncLoop::complete(&reply, timeline.now_ns()));
+        }
         Received::Malformed => {
             counters.discarded_malformed.fetch_add(1, Ordering::Relaxed);
         }
@@ -330,6 +380,8 @@ fn play<S: PcmSink>(
     counters: &Arc<Counters>,
     keep_going: &Arc<AtomicBool>,
     events: &ChannelReceiver<PendingEvent>,
+    replies: &ChannelReceiver<TimeSync>,
+    mut sync_out: Option<Box<dyn Write>>,
     stop_slot: &StopSlot,
 ) -> Result<RunOutcome, std::io::Error> {
     let rate_hz = sink.rate_hz();
@@ -347,7 +399,35 @@ fn play<S: PcmSink>(
     let mut first_write_us = 0u64;
     let mut played_anything = false;
     let mut device_error: Option<SinkError> = None;
+    let mut delay_refused: Option<DelayRefused> = None;
     let mut chunk_frames = 0u64;
+
+    let mut sync = SyncLoop::new(config.sync);
+    let mut corrector = PlayoutCorrector::new(rate_hz, sink.frame_len());
+    let sync_interval_us = config.sync.interval_ms.max(1) * 1_000;
+    let mut next_sync_us = 0u64;
+    let mut last_advance_ns = 0u64;
+    // The presentation timestamp of the next frame to write, on the server
+    // timeline, carried for the moments the queue is momentarily empty.
+    let mut next_write_ts_ns = 0u64;
+    let mut was_stale = false;
+    let mut was_muted = false;
+    let mut was_undelayed = false;
+
+    macro_rules! read_delay {
+        () => {
+            match sink.delay_frames() {
+                Ok(d) => Some(d),
+                Err(cause) => {
+                    delay_refused = Some(DelayRefused {
+                        device: sink.device().to_string(),
+                        cause,
+                    });
+                    None
+                }
+            }
+        };
+    }
 
     macro_rules! sample_if_due {
         ($delay_us:expr, $graded:expr) => {{
@@ -437,20 +517,28 @@ fn play<S: PcmSink>(
                 graded = true;
                 first_write_us = timeline.now_us();
                 next_sample_us = 0;
+                last_advance_ns = timeline.now_ns();
                 if let Some((chunk, frames)) = &last_primed {
                     buffer.note_played(chunk, *frames);
+                    next_write_ts_ns = chunk
+                        .timestamp_ns
+                        .saturating_add(frames * 1_000_000_000 / u64::from(rate_hz));
                 }
-                let delay = sink.delay_frames().unwrap_or(0);
-                buffer.set_device_delay_frames(delay);
-                sample_if_due!(frames_to_us(delay.max(0) as u64, rate_hz) as i64, true);
+                match read_delay!() {
+                    Some(delay) => {
+                        buffer.set_device_delay_frames(delay);
+                        sample_if_due!(frames_to_us(delay.max(0) as u64, rate_hz) as i64, true);
+                    }
+                    None => {}
+                }
             }
             Err(e) => device_error = Some(e),
         }
     }
 
-    // Phase 3: hold the device's delay near its target by choosing when to
-    // write. Nothing here changes the rate or the samples.
-    while device_error.is_none() {
+    // Phase 3: pace the writes to hold the device's delay near its target, and
+    // run the sync loop, which is what decides WHAT is written.
+    while device_error.is_none() && delay_refused.is_none() {
         drain_events!();
 
         if let Some(limit) = run_limit_us {
@@ -497,12 +585,128 @@ fn play<S: PcmSink>(
             }
         }
 
-        let delay = match sink.delay_frames() {
-            Ok(d) => d,
-            Err(e) => {
-                device_error = Some(e);
-                break;
+        // One tick of the sync loop: take in whatever replies arrived, ask for
+        // another exchange, form the error from the delay the DEVICE reports,
+        // and apply whatever the servo decided.
+        let now_us = timeline.now_us();
+        if now_us >= next_sync_us {
+            next_sync_us = now_us + sync_interval_us;
+            let now_ns = timeline.now_ns();
+
+            while let Ok(exchange) = replies.try_recv() {
+                match sync.offer(&exchange) {
+                    ExchangeVerdict::Accepted { rtt_ns, offset_ns } => log.event(
+                        now_us,
+                        "sync-exchange",
+                        &format!("accepted=1 rtt_ns={} offset_ns={}", rtt_ns, offset_ns),
+                    )?,
+                    ExchangeVerdict::Discarded(reason) => log.event(
+                        now_us,
+                        "sync-discard",
+                        &format!("reason={} detail={}", reason.name(), reason),
+                    )?,
+                }
             }
+
+            if let Some(out) = sync_out.as_mut() {
+                let request = sync.request(timeline.now_ns());
+                if let Ok(frame) = encode(&Message::TimeSync(request)) {
+                    // A server that has gone away is not a client-side error:
+                    // the loop goes stale and says so, which is the behaviour
+                    // that criterion asks for.
+                    let _ = out.write_all(&frame).and_then(|()| out.flush());
+                }
+            }
+
+            let ts_now = buffer.front_timestamp_ns().unwrap_or(next_write_ts_ns);
+            match sync.observe(sink, now_ns, ts_now, rate_hz) {
+                Err(refused) => {
+                    delay_refused = Some(refused);
+                    break;
+                }
+                Ok(Correction::NoDeviceDelay) => {
+                    if !was_undelayed {
+                        was_undelayed = true;
+                        log.event(
+                            now_us,
+                            "sync-no-device-delay",
+                            &format!(
+                                "device={} corrected=0 detail=the device reports a delay of zero, \
+                                 which is not a distance to a DAC",
+                                sink.device()
+                            ),
+                        )?;
+                    }
+                }
+                Ok(Correction::NoOffset) => {}
+                // Nothing to do: the correction in force stays in force. The
+                // event that records staleness is written below, from the
+                // published telemetry, because how old the newest accepted
+                // sample is does not depend on which arm this tick took.
+                Ok(Correction::Stale { .. }) => {}
+                Ok(Correction::Fine {
+                    correction_ppm,
+                    clamped,
+                    error_ns,
+                }) => {
+                    corrector.advance(now_ns.saturating_sub(last_advance_ns));
+                    last_advance_ns = now_ns;
+                    corrector.set_rate_correction(correction_ppm);
+                    log.event(
+                        now_us,
+                        "correction",
+                        &format!(
+                            "tier=fine correction_ppm={:.3} clamped={} max_correction_ppm={:.3} \
+                             error_ns={:.0}",
+                            correction_ppm,
+                            u8::from(clamped),
+                            config.sync.max_correction_ppm,
+                            error_ns
+                        ),
+                    )?;
+                }
+                Ok(Correction::HardResync { step_ns, error_ns }) => {
+                    corrector.advance(now_ns.saturating_sub(last_advance_ns));
+                    last_advance_ns = now_ns;
+                    corrector.hard_resync(step_ns, config.sync.mute_ns);
+                    was_muted = true;
+                    log.event(
+                        now_us,
+                        "hard-resync",
+                        &format!(
+                            "step_ns={:.0} error_ns={:.0} threshold_ns={:.0} mute_ns={} \
+                             correction_ppm=0.000",
+                            step_ns,
+                            error_ns,
+                            config.sync.hard_resync_threshold_ns,
+                            config.sync.mute_ns
+                        ),
+                    )?;
+                }
+            }
+            let telemetry = sync.telemetry(now_ns);
+            let stale_age_ns = telemetry.age_ns.filter(|_| telemetry.stale);
+            if let Some(age_ns) = stale_age_ns {
+                if !was_stale {
+                    log.event(
+                        now_us,
+                        "sync-stale",
+                        &format!(
+                            "age_ns={} staleness_limit_ns={} correction_ppm={:.3} held=1",
+                            age_ns,
+                            config.sync.staleness_limit_ns,
+                            corrector.correction_ppm()
+                        ),
+                    )?;
+                }
+            }
+            was_stale = stale_age_ns.is_some();
+            log.event(now_us, "sync", &telemetry.line())?;
+        }
+
+        let delay = match read_delay!() {
+            Some(d) => d,
+            None => break,
         };
         buffer.set_device_delay_frames(delay);
         let delay_us = frames_to_us(delay.max(0) as u64, rate_hz) as i64;
@@ -529,7 +733,14 @@ fn play<S: PcmSink>(
                     if chunk_frames == 0 {
                         chunk_frames = queued.frames;
                     }
-                    match sink.write(&queued.chunk.audio_data) {
+                    // The correction is applied HERE, to the frames about to
+                    // be written, because frames are the only thing that moves
+                    // when audio becomes audible.
+                    let now_ns = timeline.now_ns();
+                    corrector.advance(now_ns.saturating_sub(last_advance_ns));
+                    last_advance_ns = now_ns;
+                    let shaped = corrector.shape(&queued.chunk.audio_data);
+                    match sink.write(&shaped) {
                         Ok(report) => {
                             counters
                                 .frames_written
@@ -545,6 +756,22 @@ fn play<S: PcmSink>(
                                 )?;
                             }
                             buffer.note_played(&queued.chunk, queued.frames);
+                            next_write_ts_ns = queued.chunk.timestamp_ns.saturating_add(
+                                queued.frames * 1_000_000_000 / u64::from(rate_hz),
+                            );
+                            if was_muted && !corrector.muted() {
+                                was_muted = false;
+                                log.event(
+                                    timeline.now_us(),
+                                    "sync-resume",
+                                    &format!(
+                                        "muted_frames={} inserted_frames={} dropped_frames={}",
+                                        corrector.muted_frames(),
+                                        corrector.inserted_frames(),
+                                        corrector.dropped_frames()
+                                    ),
+                                )?;
+                            }
                         }
                         Err(e) => {
                             device_error = Some(e);
@@ -574,10 +801,14 @@ fn play<S: PcmSink>(
     graded = false;
     let _ = graded;
     keep_going.store(false, Ordering::SeqCst);
-    if device_error.is_none() && played_anything {
+    if device_error.is_none() && delay_refused.is_none() && played_anything {
         log.event(timeline.now_us(), "drain-begin", "graded=0")?;
         while let Some(queued) = buffer.pop() {
-            match sink.write(&queued.chunk.audio_data) {
+            let now_ns = timeline.now_ns();
+            corrector.advance(now_ns.saturating_sub(last_advance_ns));
+            last_advance_ns = now_ns;
+            let shaped = corrector.shape(&queued.chunk.audio_data);
+            match sink.write(&shaped) {
                 Ok(report) => {
                     counters
                         .frames_written
@@ -589,11 +820,15 @@ fn play<S: PcmSink>(
                     break;
                 }
             }
-            let delay = sink.delay_frames().unwrap_or(0);
-            buffer.set_device_delay_frames(delay);
-            sample_if_due!(frames_to_us(delay.max(0) as u64, rate_hz) as i64, false);
+            match read_delay!() {
+                Some(delay) => {
+                    buffer.set_device_delay_frames(delay);
+                    sample_if_due!(frames_to_us(delay.max(0) as u64, rate_hz) as i64, false);
+                }
+                None => break,
+            }
         }
-        if device_error.is_none() {
+        if device_error.is_none() && delay_refused.is_none() {
             if let Err(e) = sink.drain() {
                 device_error = Some(e);
             }
@@ -614,9 +849,13 @@ fn play<S: PcmSink>(
         0
     };
 
-    let stop = match device_error {
-        Some(e) => StopReason::DeviceFailed(e),
-        None => {
+    // A device that would not report its delay outranks every other reason:
+    // it is the reason the run could not go on, and a later failure of the
+    // same dead device would otherwise rename it.
+    let stop = match (delay_refused, device_error) {
+        (Some(refused), _) => StopReason::DelayRefused(refused),
+        (None, Some(e)) => StopReason::DeviceFailed(e),
+        (None, None) => {
             let mut guard = match stop_slot.lock() {
                 Ok(g) => g,
                 Err(p) => p.into_inner(),
@@ -656,6 +895,9 @@ fn play<S: PcmSink>(
         stop,
         summary,
         played_anything,
+        telemetry: sync.telemetry(end_us.saturating_mul(1_000)),
+        inserted_frames: corrector.inserted_frames(),
+        dropped_frames: corrector.dropped_frames(),
     })
 }
 

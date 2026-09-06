@@ -18,6 +18,8 @@
 
 use std::fmt;
 
+use crate::sync::SyncConfig;
+
 /// The deliberate rate difference the overflow verification applies, in parts
 /// per million.
 ///
@@ -30,7 +32,7 @@ pub const DEFAULT_OVERFLOW_SKEW_PPM: u64 = 2_000;
 pub const MAX_SECONDS_TO_CROSS: u64 = 600;
 
 /// How a client run is configured.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClientConfig {
     /// Where the server is.
     pub server: String,
@@ -61,6 +63,12 @@ pub struct ClientConfig {
     /// for verifying anything about the delay a device reports, because it
     /// has no ring to report about.
     pub require_pacing: bool,
+    /// The sync loop's cadence, window, thresholds and clamp.
+    ///
+    /// Committed in `config/sync.conf` and passed in from there by the
+    /// verification entry points, so a check and the thing it checks cannot
+    /// drift apart.
+    pub sync: SyncConfig,
 }
 
 impl Default for ClientConfig {
@@ -76,6 +84,7 @@ impl Default for ClientConfig {
             run_seconds: None,
             overflow_skew_ppm: DEFAULT_OVERFLOW_SKEW_PPM,
             require_pacing: false,
+            sync: SyncConfig::default(),
         }
     }
 }
@@ -108,6 +117,16 @@ pub enum ConfigError {
         /// The minimum that was configured.
         min_us: u64,
         /// The maximum that was configured.
+        max_us: u64,
+    },
+    /// The fixed playout latency is not strictly between the device target and
+    /// the maximum bound.
+    PlayoutLatencyOutsideBounds {
+        /// The latency that was configured, in microseconds.
+        playout_latency_us: u64,
+        /// The device delay target it has to sit above.
+        device_target_us: u64,
+        /// The maximum bound it has to sit below.
         max_us: u64,
     },
     /// The span is so wide that the overflow test could not cross it inside a
@@ -174,6 +193,18 @@ impl fmt::Display for ConfigError {
                 "the device delay target {} us is not strictly between the bounds {} us and {} us",
                 device_target_us, min_us, max_us
             ),
+            ConfigError::PlayoutLatencyOutsideBounds {
+                playout_latency_us,
+                device_target_us,
+                max_us,
+            } => write!(
+                f,
+                "the playout latency {} us is not strictly between the device delay target {} us \
+                 and the maximum bound {} us; below the target there is no queue left to hold the \
+                 difference, and at or above the maximum the buffer is discarding what the loop \
+                 is waiting for",
+                playout_latency_us, device_target_us, max_us
+            ),
             ConfigError::SpanNotCrossableInTenMinutes {
                 span_us,
                 skew_ppm,
@@ -228,6 +259,14 @@ impl ClientConfig {
             return Err(ConfigError::DeviceTargetOutsideBounds {
                 device_target_us: self.device_target_us,
                 min_us: self.min_us,
+                max_us: self.max_us,
+            });
+        }
+        let playout_latency_us = self.sync.playout_latency_ns / 1_000;
+        if playout_latency_us <= self.device_target_us || playout_latency_us >= self.max_us {
+            return Err(ConfigError::PlayoutLatencyOutsideBounds {
+                playout_latency_us,
+                device_target_us: self.device_target_us,
                 max_us: self.max_us,
             });
         }
@@ -296,6 +335,26 @@ impl ClientConfig {
                 "--device-target-us" => config.device_target_us = number(&arg, &value()?)?,
                 "--overflow-skew-ppm" => config.overflow_skew_ppm = number(&arg, &value()?)?,
                 "--run-seconds" => config.run_seconds = Some(number(&arg, &value()?)?),
+                "--sync-interval-ms" => config.sync.interval_ms = number(&arg, &value()?)?,
+                "--filter-window" => {
+                    config.sync.filter_window = number(&arg, &value()?)? as usize
+                }
+                "--smoothing-alpha" => config.sync.smoothing_alpha = decimal(&arg, &value()?)?,
+                "--hard-resync-threshold-us" => {
+                    config.sync.hard_resync_threshold_ns =
+                        number(&arg, &value()?)? as f64 * 1_000.0
+                }
+                "--max-correction-ppm" => {
+                    config.sync.max_correction_ppm = decimal(&arg, &value()?)?
+                }
+                "--staleness-limit-ms" => {
+                    config.sync.staleness_limit_ns = number(&arg, &value()?)? * 1_000_000
+                }
+                "--max-rtt-us" => config.sync.max_rtt_ns = number(&arg, &value()?)? * 1_000,
+                "--playout-latency-us" => {
+                    config.sync.playout_latency_ns = number(&arg, &value()?)? * 1_000
+                }
+                "--mute-us" => config.sync.mute_ns = number(&arg, &value()?)? * 1_000,
                 other => {
                     return Err(ConfigError::UnknownArgument {
                         argument: other.to_string(),
@@ -312,6 +371,19 @@ fn number(argument: &str, value: &str) -> Result<u64, ConfigError> {
         argument: argument.to_string(),
         value: value.to_string(),
     })
+}
+
+/// A finite decimal. `NaN` and the infinities parse as `f64` and are not
+/// numbers this configuration can mean anything with, so they are refused
+/// here rather than turned into a servo that never corrects.
+fn decimal(argument: &str, value: &str) -> Result<f64, ConfigError> {
+    match value.parse::<f64>() {
+        Ok(v) if v.is_finite() => Ok(v),
+        _ => Err(ConfigError::NotANumber {
+            argument: argument.to_string(),
+            value: value.to_string(),
+        }),
+    }
 }
 
 /// What this invocation is for.

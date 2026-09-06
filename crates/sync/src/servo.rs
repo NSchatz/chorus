@@ -36,13 +36,19 @@ pub struct OffsetFilter {
     smoothed: Option<(f64, f64)>,
     /// Nanoseconds of offset per nanosecond of client time.
     drift: f64,
+    /// The sample the last `push` selected out of the window.
+    selected: Option<Sample>,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct Sample {
-    at_ns: f64,
-    rtt_ns: f64,
-    offset_ns: f64,
+/// One exchange in the window.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Sample {
+    /// Client time the exchange completed at, in nanoseconds.
+    pub at_ns: f64,
+    /// Round trip time of the exchange, in nanoseconds.
+    pub rtt_ns: f64,
+    /// Offset estimate the exchange produced, in nanoseconds.
+    pub offset_ns: f64,
 }
 
 impl OffsetFilter {
@@ -56,6 +62,7 @@ impl OffsetFilter {
             window: Vec::new(),
             smoothed: None,
             drift: 0.0,
+            selected: None,
         }
     }
 
@@ -77,6 +84,7 @@ impl OffsetFilter {
         // measurement, and it is also usually not the most recent one, so it
         // is projected forward to now before it is used.
         let best = best_of(&self.window);
+        self.selected = Some(best);
         let aged = best.offset_ns + self.drift * (at_ns - best.at_ns);
 
         // Smoothing a quantity that is itself moving would reintroduce the
@@ -109,11 +117,23 @@ impl OffsetFilter {
         self.smoothed.map(|(value, _)| value)
     }
 
+    /// The sample out of the window the last [`OffsetFilter::push`] selected.
+    ///
+    /// The estimate is that sample's offset, projected forward and smoothed, so
+    /// this is the exchange the offset in use came FROM. A caller publishing
+    /// the error bound on its offset needs that exchange's round trip and not
+    /// the newest one's, which is why this is exposed rather than left for a
+    /// caller to guess at by repeating the selection rule.
+    pub fn selected(&self) -> Option<Sample> {
+        self.selected
+    }
+
     /// Forget everything. Used when a hard resync makes the history moot.
     pub fn reset(&mut self) {
         self.window.clear();
         self.smoothed = None;
         self.drift = 0.0;
+        self.selected = None;
     }
 
     /// Slope between the least queued sample of the older half of the window
@@ -204,6 +224,7 @@ pub struct Servo {
     correction_ppm: f64,
     hard_resyncs: u32,
     updates: u32,
+    clamped: bool,
 }
 
 impl Servo {
@@ -215,12 +236,23 @@ impl Servo {
             correction_ppm: 0.0,
             hard_resyncs: 0,
             updates: 0,
+            clamped: false,
         }
     }
 
     /// The correction currently being applied, in ppm.
     pub fn correction_ppm(&self) -> f64 {
         self.correction_ppm
+    }
+
+    /// Whether the last fine correction was cut down by the clamp.
+    ///
+    /// The clamped value is what [`Servo::update`] returns and what a caller
+    /// applies; this says the raw value was larger, so a caller can report that
+    /// the excess was discarded rather than leave the difference invisible. A
+    /// hard resync leaves this false: nothing was clamped, the tier changed.
+    pub fn last_correction_was_clamped(&self) -> bool {
+        self.clamped
     }
 
     /// How many times this servo has had to step rather than slew.
@@ -245,6 +277,7 @@ impl Servo {
         if error_ns.abs() >= self.config.hard_resync_threshold_ns {
             self.integral_ppm = 0.0;
             self.correction_ppm = 0.0;
+            self.clamped = false;
             self.hard_resyncs += 1;
             return ServoAction::HardResync { step_ns: -error_ns };
         }
@@ -258,7 +291,8 @@ impl Servo {
             -self.config.max_correction_ppm,
             self.config.max_correction_ppm,
         );
-        if clamped != raw {
+        self.clamped = clamped != raw;
+        if self.clamped {
             // Anti-windup: while the output is pinned, the integral does not
             // get to keep charging.
             self.integral_ppm -= normalised_ppm;
@@ -275,6 +309,7 @@ impl Servo {
 mod tests {
     use super::{OffsetFilter, Servo, ServoAction, ServoConfig};
 
+
     /// One second of client time, the reference exchange cadence.
     const TICK: f64 = 1e9;
 
@@ -289,6 +324,36 @@ mod tests {
             "the 300 us round trip is the trustworthy sample"
         );
         assert_eq!(filter.drift_ppm(), 0.0, "three samples is not a baseline");
+    }
+
+    #[test]
+    fn the_filter_says_which_exchange_the_estimate_came_from() {
+        // A caller that has to publish the error bound on its offset needs the
+        // round trip of the SELECTED sample, which here is neither the newest
+        // nor the oldest.
+        let mut filter = OffsetFilter::new(4, 1.0);
+        assert_eq!(filter.selected(), None, "nothing has been pushed");
+        filter.push(TICK, 900_000.0, 5_000.0);
+        filter.push(2.0 * TICK, 300_000.0, 1_000.0);
+        filter.push(3.0 * TICK, 1_500_000.0, 90_000.0);
+        let selected = filter.selected().expect("three exchanges happened");
+        assert_eq!(selected.rtt_ns, 300_000.0);
+        assert_eq!(selected.offset_ns, 1_000.0);
+        assert_eq!(selected.at_ns, 2.0 * TICK);
+        filter.reset();
+        assert_eq!(filter.selected(), None, "a reset forgets the selection too");
+    }
+
+    #[test]
+    fn the_servo_says_when_it_clamped() {
+        let mut servo = Servo::new(ServoConfig::default());
+        servo.update(50_000.0, 1.0);
+        assert!(!servo.last_correction_was_clamped());
+        servo.update(2_999_999.0, 1.0);
+        assert!(servo.last_correction_was_clamped());
+        // A hard resync clamps nothing: the tier changed.
+        servo.update(12_345_000.0, 1.0);
+        assert!(!servo.last_correction_was_clamped());
     }
 
     #[test]

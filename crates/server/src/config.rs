@@ -46,6 +46,13 @@ pub struct ServerConfig {
     /// Serve one client and exit, rather than serving one client after
     /// another.
     pub once: bool,
+    /// How many clients may be attached at once.
+    ///
+    /// A ceiling rather than a target. Two threads exist for each of these
+    /// from the moment the process starts, so this number is also what fixes
+    /// the process's thread population: a client is served by a thread that
+    /// already existed when the scheduling report was taken, or it is refused.
+    pub max_clients: usize,
 }
 
 impl Default for ServerConfig {
@@ -66,6 +73,7 @@ impl Default for ServerConfig {
             memlock_wanted_bytes: 64 * 1024 * 1024,
             allow_unlocked_memory: false,
             once: true,
+            max_clients: 4,
         }
     }
 }
@@ -94,6 +102,8 @@ pub enum ServerConfigError {
     },
     /// A CPU-time bound of zero would kill a real-time thread immediately.
     RtTimeIsZero,
+    /// A ceiling of zero clients would refuse every connection.
+    NoClientsAllowed,
 }
 
 impl fmt::Display for ServerConfigError {
@@ -115,6 +125,11 @@ impl fmt::Display for ServerConfigError {
                 f,
                 "a CPU-time bound of 0 us would terminate a real-time thread the instant it \
                  started"
+            ),
+            ServerConfigError::NoClientsAllowed => write!(
+                f,
+                "a ceiling of 0 clients would bind a socket and refuse every connection that \
+                 arrived on it"
             ),
         }
     }
@@ -158,6 +173,7 @@ impl ServerConfig {
                 "--memlock-wanted-bytes" => config.memlock_wanted_bytes = number(&arg, &value()?)?,
                 "--allow-unlocked-memory" => config.allow_unlocked_memory = true,
                 "--serve-forever" => config.once = false,
+                "--max-clients" => config.max_clients = number(&arg, &value()?)? as usize,
                 other => {
                     return Err(ServerConfigError::UnknownArgument {
                         argument: other.to_string(),
@@ -167,6 +183,9 @@ impl ServerConfig {
         }
         if config.rttime_us == 0 {
             return Err(ServerConfigError::RtTimeIsZero);
+        }
+        if config.max_clients == 0 {
+            return Err(ServerConfigError::NoClientsAllowed);
         }
         Ok(config)
     }
@@ -213,5 +232,20 @@ mod tests {
         let err =
             ServerConfig::from_args(["--rttime-us".to_string(), "0".to_string()]).unwrap_err();
         assert_eq!(err, ServerConfigError::RtTimeIsZero);
+    }
+
+    #[test]
+    fn a_client_ceiling_of_zero_is_refused_rather_than_bound_to_a_socket() {
+        let err =
+            ServerConfig::from_args(["--max-clients".to_string(), "0".to_string()]).unwrap_err();
+        assert_eq!(err, ServerConfigError::NoClientsAllowed);
+    }
+
+    #[test]
+    fn the_client_ceiling_is_what_fixes_the_thread_population() {
+        let c = ServerConfig::default();
+        assert_eq!(c.max_clients, 4, "docs/decisions/0014 records why 4");
+        let c = ServerConfig::from_args(["--max-clients".to_string(), "2".to_string()]).unwrap();
+        assert_eq!(c.max_clients, 2);
     }
 }

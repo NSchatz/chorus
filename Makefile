@@ -43,6 +43,13 @@ verify-host: tools-executable
 verify-measure-device: tools-executable
 	bash tools/measure/capture-run.sh
 
+# SYNC-4's AC-1: an hour of two wired endpoints playing one grouped stream,
+# measured by the rig. Needs a second endpoint on top of everything
+# verify-measure-device needs, and refuses by name without one. AC-1 is NOT
+# passed in this repository and docs/verification-record.md says so.
+verify-sync-hour: tools-executable
+	bash tools/sync-hour-run.sh
+
 # Regenerate the committed measurement fixtures from their committed
 # parameters. `cargo test -p chorus-measure --test report_shape` asserts the
 # result is byte-identical to what is committed, so this target is for changing

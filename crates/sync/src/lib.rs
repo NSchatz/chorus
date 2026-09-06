@@ -38,5 +38,5 @@ pub use config::{
 pub use jitter::JitterModel;
 pub use rng::Rng;
 pub use scenario::{Scenario, ScenarioError};
-pub use servo::{OffsetFilter, Servo, ServoAction, ServoConfig};
+pub use servo::{OffsetFilter, Sample, Servo, ServoAction, ServoConfig};
 pub use sim::{run, PlayoutSample, SimResult};
