@@ -12,7 +12,10 @@
 //! one stream per client: the chunks are produced once and fanned out, so two
 //! clients see the same presentation timestamp for the same content, and each
 //! client's connection also carries the time-sync exchange it uses to find
-//! that timeline.
+//! that timeline. [`clients`] is who runs it: a fixed pool of connection
+//! threads, created before the socket is bound so that the process's thread
+//! population is a declared quantity rather than a function of how many
+//! endpoints are switched on.
 //!
 //! **The host half** ([`hostreport`], and `chorus_hostctl` under it) reads the
 //! real-time priority ceiling the container was granted, takes a priority no
@@ -35,12 +38,14 @@
 
 #![warn(missing_docs)]
 
+pub mod clients;
 pub mod config;
 pub mod hostreport;
 pub mod serve;
 pub mod source;
 pub mod stream;
 
+pub use clients::ClientPool;
 pub use config::{ServerConfig, ServerConfigError};
 pub use hostreport::{ContractRefused, MemoryLockOutcome, RealTimeOutcome};
 pub use serve::{serve_stream, ServeError, ServeParams, ServeReport};

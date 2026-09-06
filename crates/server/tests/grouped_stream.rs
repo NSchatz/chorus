@@ -79,9 +79,11 @@ impl GroupedServer {
                     let (tx, rx) = fanout.subscribe();
                     let attached = fanout.subscribers();
                     {
+                        let keep = Arc::clone(&keep);
                         let mut sink = stream;
                         thread::spawn(move || {
-                            let _ = write_outbound(&mut sink, timeline, &rx);
+                            let go = move || keep.load(Ordering::SeqCst);
+                            let _ = write_outbound(&mut sink, timeline, &rx, &go);
                         });
                     }
                     {

@@ -304,6 +304,30 @@ nothing: the splice it covers is a single sample boundary. The mute silences
 frames in place and inserts none, so its length costs nothing in alignment and
 is a purely audible choice.
 
+### `max_clients = 4`
+
+**Chosen from the thread shape it fixes, not from a load estimate.** Two
+threads exist for every one of these from the moment the process starts (see
+"The threads this process runs" below), so this number is what makes the
+process's thread population a declared quantity: 3 + 2N, 11 threads at 4, known
+before the socket is bound. It is a ceiling and not a target. The phase needs
+two endpoints on one stream; four leaves room for a household to add a pair
+without a rebuild, and holds the parked cost to eight threads that are blocked
+on a channel or a socket and consume no CPU. A connection arriving when all
+four slots are busy is closed and named in the log
+(`client refused ... reason=no-free-client-slot`), which is the same argument
+`SUBSCRIBER_QUEUE_LIMIT` makes one level down: a server that grows a resource
+per client has no bound on that resource at all. `--max-clients` moves it, and
+zero is refused at start rather than binding a socket that refuses everything
+that arrives on it.
+
+A slot is held for as long as its connection lives. A client that stops reading
+entirely holds its slot and one bounded queue (500 kB) until it disconnects or
+its socket errors; it does not hold the stream, which is what the fanout's lack
+of back pressure is for. That is the trade this ceiling makes, and four is
+chosen wide enough that it costs an operator nothing to be twice the size of
+the group this phase measures.
+
 ### The gains: `kp = 0.4`, `ki = 0.08`, unchanged
 
 **Inherited from `docs/decisions/0006-sync-simulator-and-servo.md`, and named
@@ -380,6 +404,61 @@ timestamps backwards while the `t1`/`t2` they are answered with came from the
 epoch they attached on, which is two clocks inside one connection. Monotonic
 time already gives the next stream a later origin than the last one's, so
 nothing is bought by restarting it.
+
+### The threads this process runs, and which one is real-time
+
+Before this phase the server was one thread: it took the real-time policy for
+itself, accepted one connection, served it, and spawned nothing. On the Proxmox
+host `deploy/run-server.sh` starts it with `--ulimit rtprio=20`,
+`--rt-priority 20` and `--serve-forever`, so that one thread was the whole
+process and the scheduling report described all of it.
+
+Serving two clients from one stream needs concurrency, and concurrency here is
+a scheduling question before it is a design question. `std::thread::spawn` uses
+the default `pthread_attr_t`, whose `inheritsched` is `PTHREAD_INHERIT_SCHED`,
+so a thread created by one holding `SCHED_FIFO` is `SCHED_FIFO` too, at the
+same priority. A server that took the real-time policy on its main thread and
+then spawned an acceptor, a producer and two threads per client would be
+running six real-time threads at priority 20 on that host, five of them socket
+handlers that have no business being real-time, and `sched(7)` says what that
+risks: "A nonblocking infinite loop in a thread scheduled under the SCHED_FIFO,
+SCHED_RR, or SCHED_DEADLINE policy can potentially block all other threads from
+accessing the CPU forever." Worse, the report the host contract is graded on is
+taken once, and a thread that did not exist when it was taken is a thread
+`EXIT_UNDECLARED_THREAD` and `tools/host-contract.sh` cannot see. A check that
+answers clean because it was asked too early is what `crates/hostctl` calls
+worse than no answer at all.
+
+So the shape is fixed and declared instead:
+
+| role | how many | real-time | creates threads |
+|---|---|---|---|
+| supervisor (the main thread) | 1 | no | every one below |
+| audio | 1 | **yes**, and the only one | none |
+| acceptor | 1 | no | none |
+| client-writer-N, client-reader-N | 2 per `max_clients` | no | none |
+
+Three properties hold and each is checked. **The real-time policy is taken by
+the thread that does the audio work**, which is the producer, and it is taken
+by that thread for itself: the supervisor never holds one, so nothing it
+creates can inherit one. On Linux the main thread's tid is the process id,
+which makes that checkable with no privilege at all
+(`crates/server/tests/thread_shape.rs`). **The audio thread creates nothing**,
+so the policy it holds reaches no other thread. **Every thread exists before
+the report is taken**: the supervisor waits until each has registered itself
+and reported ready before it calls `scheduling_report`, and no thread is
+created afterwards however many clients come and go, so one report describes
+the whole run. `crates/server/tests/regress_0031_f6.rs` compares the count the
+report published against `/proc/<pid>/task` with a client attached, and
+`thread_shape.rs` compares the tids themselves.
+
+That is what fixes `max_clients`: connection threads cannot be created on
+demand without breaking all three properties, so they are created in advance
+and a client past the ceiling is refused by name. The cost of the trade is
+eight parked threads in the default shape, each blocked on a channel or a
+socket; the alternative was a process whose thread count on the deployment host
+is a function of how many endpoints are switched on and whose safety report
+described one thread of eleven.
 
 ### The fanout has no back pressure, and therefore needs a ceiling
 

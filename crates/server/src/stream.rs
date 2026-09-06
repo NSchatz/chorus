@@ -46,11 +46,19 @@
 //!
 //! Every stamp here is nanoseconds from [`MonotonicTimeline`], which is
 //! `Instant` and its own epoch. There is no wall clock anywhere on this path.
+//!
+//! # Who runs these two functions
+//!
+//! [`crate::clients`]: a fixed pool of threads created before the socket is
+//! bound, not a thread per connection. Both functions therefore have to be able
+//! to finish with a client and hand their thread back, which is what
+//! `keep_going` is for in each of them.
 
 use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use chorus_audio::MonotonicTimeline;
 use chorus_protocol::{decode_frame, encode, FrameOutcome, Message, TimeSync};
@@ -277,17 +285,42 @@ pub fn read_requests<R: Read>(
     }
 }
 
+/// How long the writer waits on an empty queue before it looks up to see
+/// whether it is still wanted.
+///
+/// The same interval the request reader's socket timeout uses, and for the same
+/// reason: a thread that is served by a fixed pool has to be able to finish
+/// with a connection that has nothing more to say, or the slot it holds never
+/// comes back. It costs one wakeup per idle client per interval.
+const IDLE_WAKE: Duration = Duration::from_millis(200);
+
 /// Write one client's connection until it goes away.
 ///
 /// `t2` is taken here, at the moment the reply is built, which is the latest
 /// point the server can honestly say it transmitted one.
+///
+/// `keep_going` is only consulted when the queue is empty, so everything
+/// already queued for this client is written before the writer stops. That is
+/// what makes a stream's final chunks and its end-of-stream signal reach a
+/// client whose server is shutting down.
 pub fn write_outbound<W: Write>(
     sink: &mut W,
     timeline: MonotonicTimeline,
     inbox: &Receiver<Outbound>,
+    keep_going: &dyn Fn() -> bool,
 ) -> io::Result<u64> {
     let mut written = 0u64;
-    for item in inbox {
+    loop {
+        let item = match inbox.recv_timeout(IDLE_WAKE) {
+            Ok(item) => item,
+            Err(RecvTimeoutError::Timeout) => {
+                if keep_going() {
+                    continue;
+                }
+                return Ok(written);
+            }
+            Err(RecvTimeoutError::Disconnected) => return Ok(written),
+        };
         match item {
             Outbound::Frame(bytes) => {
                 sink.write_all(&bytes)?;
@@ -310,7 +343,6 @@ pub fn write_outbound<W: Write>(
         }
         sink.flush()?;
     }
-    Ok(written)
 }
 
 #[cfg(test)]
@@ -361,6 +393,38 @@ mod tests {
     }
 
     #[test]
+    fn the_writer_gives_its_thread_back_when_it_is_no_longer_wanted() {
+        let timeline = MonotonicTimeline::new();
+        // The sender is deliberately held: the writer has to stop because it
+        // was told to, not because the queue disconnected.
+        let (_tx, rx) = mpsc::sync_channel::<Outbound>(SUBSCRIBER_QUEUE_LIMIT);
+        let started = std::time::Instant::now();
+        let written = write_outbound(&mut Vec::new(), timeline, &rx, &|| false).unwrap();
+        assert_eq!(written, 0);
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "a writer that cannot notice it is unwanted holds its slot for ever"
+        );
+    }
+
+    #[test]
+    fn everything_already_queued_is_written_before_the_writer_stops() {
+        let timeline = MonotonicTimeline::new();
+        let (tx, rx) = mpsc::sync_channel::<Outbound>(SUBSCRIBER_QUEUE_LIMIT);
+        for byte in [7u8, 8, 9] {
+            tx.send(Outbound::Frame(Arc::new(vec![byte]))).unwrap();
+        }
+        let mut wire = Vec::new();
+        let written = write_outbound(&mut wire, timeline, &rx, &|| false).unwrap();
+        assert_eq!(written, 3, "a stop is not a reason to drop queued audio");
+        assert_eq!(
+            wire,
+            vec![7u8, 8, 9],
+            "the end of a stream is queued like anything else, so it has to go out"
+        );
+    }
+
+    #[test]
     fn a_client_that_has_gone_is_dropped_and_the_stream_carries_on() {
         let fanout = Fanout::new();
         let (_a_tx, a) = fanout.subscribe();
@@ -388,7 +452,7 @@ mod tests {
         drop(tx);
 
         let mut wire = Vec::new();
-        write_outbound(&mut wire, timeline, &rx).unwrap();
+        write_outbound(&mut wire, timeline, &rx, &|| true).unwrap();
 
         let decoded = decode_frame(&wire);
         match decoded.outcome {

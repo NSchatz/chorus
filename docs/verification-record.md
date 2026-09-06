@@ -110,7 +110,7 @@ a modelled device with no sound card.
 |---|---|---|
 | AC-6, the rig run refuses visibly | `make verify` | `tools/sync-hour-run.sh` exits 3 naming the criterion and the prerequisite, quoted in full above. `tools/unrun-checks-are-visibly-unrun.sh` derives its list recursively from `tools/`, finds 10 environment-dependent entry points and checks all 10 |
 | AC-7, the record says what ran and what did not | this file | the section you are reading. AC-1 is recorded as NOT passed with the verbatim refusal, the exact command, and the missing prerequisite |
-| AC-8, two clients, one timeline, contiguous runs | `cargo test -p chorus-server --test grouped_stream` | two clients attached before the first chunk is cut receive at least 120 chunks each, share at least 100 sequence numbers, and for every shared sequence the presentation timestamp and the audio bytes are identical. Each client's sequence numbers are a contiguous run. Timestamps are exactly one chunk duration apart, start to start, and the stream's origin is the server's own monotonic reading rather than zero. A client that joins late starts partway into the run, not at sequence 0, and is on the same timestamps for the content it shares. The fanout that makes this possible has no back pressure and therefore has a ceiling: `cargo test -p chorus-server --lib` asserts that a subscriber which stops draining holds exactly `SUBSCRIBER_QUEUE_LIMIT` items and not one more, that the dropped items are counted, and that the client beside it never misses one |
+| AC-8, two clients, one timeline, contiguous runs | `cargo test -p chorus-server --test grouped_stream` | two clients attached before the first chunk is cut receive at least 120 chunks each, share at least 100 sequence numbers, and for every shared sequence the presentation timestamp and the audio bytes are identical. Each client's sequence numbers are a contiguous run. Timestamps are exactly one chunk duration apart, start to start, and the stream's origin is the server's own monotonic reading rather than zero. A client that joins late starts partway into the run, not at sequence 0, and is on the same timestamps for the content it shares. The fanout that makes this possible has no back pressure and therefore has a ceiling: `cargo test -p chorus-server --lib` asserts that a subscriber which stops draining holds exactly `SUBSCRIBER_QUEUE_LIMIT` items and not one more, that the dropped items are counted, and that the client beside it never misses one. **Contiguity is claimed for a client that is draining, which is the condition the test asserts it under and the condition an endpoint playing audio is in.** A subscriber that has stopped draining for 2.56 s has items dropped for it alone, and a gap in the sequence it receives is what that looks like from its end; the alternative was an unbounded queue, the trade is deliberate, and `Fanout::dropped` on the `stream done` line is where it shows. A client arriving when all `max_clients` slots are busy is refused by name and closed, not served with gaps: `cargo test -p chorus-server --test thread_shape` asserts the refusal names the reason and the ceiling |
 | AC-9, the exchange is answered on the audio connection | the same target | six requests sent up the connection the audio comes down, six replies, and at least 150 chunks received in the same window with their sequence run unbroken. Each reply echoes the client's own `t0` untouched, carries a nonzero `t1` and a `t2` at or after it, both from the server's `MonotonicTimeline` and both inside the run, never going backwards between exchanges. `t3` is zero on the wire, because it is the client's receive stamp on the client's clock and the server will not invent it; the client stamps it and the completed exchange is four monotonic-nanosecond timestamps. Two clients exchange independently on their own connections against the same server timeline |
 | AC-10, the modelled hour | `--test sync_loop` | see below |
 | AC-11, every constant with what it was chosen from | `docs/decisions/0014-the-sync-loop-on-the-real-path.md` | the filter window, the smoothing weight, the exchange cadence, the hard-resync threshold, the correction clamp, the staleness limit, the round-trip ceiling, the playout latency and the mute, each with its provenance, and the three inherited values named as inherited. `--test sync_loop` asserts every number in `config/sync.conf` equals the compiled constant of the same name |
@@ -211,6 +211,62 @@ recorded above where it belongs, and the fifth needs the hardware AC-1 needs.
   the committed reproduction's seed and initial misalignment are not the ones
   the uncommitted original run used. The number in the record is now the number
   a reader gets.
+
+### What a second review changed: the shape of the process on the deploy host
+
+The same work was reviewed a second time, against the tree the first review's
+fixes produced. One finding was blocking and it is about a machine rather than
+about audio, so it is recorded here in its own words rather than folded into a
+criterion row.
+
+**The scheduling report was being taken while the process was still one
+thread.** Before this phase that was the whole truth: the server accepted one
+connection on its main thread and spawned nothing, so a report taken at startup
+described every thread the process would ever run. Serving two clients from one
+stream changed the process's shape and the report did not move with it. The
+first cut ran an acceptor, a producer and two threads per attached client, all
+created by the thread that had taken `SCHED_FIFO`, and `std::thread::spawn`
+inherits the creating thread's scheduling policy: on the Proxmox host, where
+`deploy/run-server.sh` passes `--ulimit rtprio=20`, that is six real-time
+threads with one client attached, five of which the report the host contract is
+graded on had never seen. `EXIT_UNDECLARED_THREAD` and `tools/host-contract.sh`
+both grade "no thread is real-time without being reported", and neither can see
+a thread that did not exist when the report was taken, so the check answered
+clean for exactly the reason `crates/hostctl` calls worse than no answer.
+
+What the process runs now is fixed and declared before the socket is bound:
+**3 + 2N threads**, eleven of them at the default `--max-clients 4`. One
+supervisor, one audio thread, one acceptor, and two per client slot. The audio
+thread is the only one that asks the host for a real-time policy, it takes it
+for itself rather than inheriting it, and it creates no thread; the supervisor,
+which creates all the others, never holds one. No thread is created after the
+report, however many clients come and go, so one report describes the whole run,
+and a client past the ceiling is refused by name rather than served by a thread
+nobody declared. `docs/decisions/0014` records the shape and why
+`max_clients = 4`.
+
+| what ran | what it establishes |
+|---|---|
+| `cargo test -p chorus-server --test regress_0031_f6` | the reviewer's own artifact, carried into the tree unchanged in its body. Two halves: that a spawned thread inherits its creator's scheduling policy, demonstrated here with `SCHED_BATCH`, which needs no privilege; and that the count the real binary's report published equals `/proc/<pid>/task` while it serves a client. It failed on the tree this finding was raised against and passes now |
+| `cargo test -p chorus-server --test thread_shape` | the tids the report names are exactly the tids the kernel lists, no row says `role=unregistered`, the population is 3 + 2N, the audio role is NOT on the main thread (whose tid is the process id, which is what makes this checkable with no privilege), and a client past the ceiling is refused with `reason=no-free-client-slot` without a thread being created |
+| `cargo test -p chorus-server --lib` | the pool creates every thread it will ever use before it serves anyone, each registers itself, none asks to be real-time, a slot comes back when its client goes away and serves the next one, and the writer gives its thread back when it is no longer wanted without dropping what is already queued for it |
+| `make verify-null-device` | the real binaries: `scheduling-report threads=11 vanished=0 real_time_declared=0 undeclared_real_time=0`, with a row per thread naming its role, on a run that then serves a client and ends its stream cleanly |
+
+**What could NOT be checked here, and is not claimed: the policies themselves.**
+This container's granted rtprio ceiling is zero, so every run above is
+`--allow-non-realtime` and no thread in any of them is real-time. What is shown
+here is that the report accounts for every thread and that the real-time role is
+not on the thread that creates the others, which are properties of the code.
+Whether the kernel agrees that exactly one thread is `SCHED_FIFO` on a host that
+grants a ceiling is `tools/host-contract.sh`'s question; it refuses by name on
+this machine, and it grades the granted case wherever one exists.
+
+Two smaller findings came with it. One new delay-log event kind,
+`sync-no-device-delay`, was missing from the list of kinds in
+`crates/client-linux/src/delaylog.rs` although the format carried it and this
+record named it; the list carries it now. And the qualifier AC-8's contiguity
+needs, since the fanout gained its ceiling, is stated in the AC-8 row above
+rather than left to be inferred.
 
 ### What did NOT run here, and is not claimed
 

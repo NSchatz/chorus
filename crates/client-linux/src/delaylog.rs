@@ -36,7 +36,9 @@
 //! `sync-exchange` (one admitted), `sync-discard` (one thrown away, with the
 //! reason), `correction` (a fine correction, and whether the clamp bit),
 //! `hard-resync` (a step, with the error it answered), `sync-stale` (the offset
-//! aged past its limit) and `sync-resume` (a mute ran out). A reader that does
+//! aged past its limit), `sync-no-device-delay` (the device answered zero,
+//! which is not a distance to a DAC, so nothing was corrected) and
+//! `sync-resume` (a mute ran out). A reader that does
 //! not know a kind can ignore it: the grader keys on the ones it needs and
 //! passes the rest through, which is why a new kind is not a format version.
 
