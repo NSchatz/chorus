@@ -586,7 +586,10 @@ fn play<S: PcmSink>(
             keep_going.store(false, Ordering::SeqCst);
             record_stop(stop_slot, StopReason::ZoneMoved { to: to.clone() });
             if graded {
-                graded = false;
+                // The flag is not lowered here because nothing reads it again:
+                // the loop breaks and phase 4 takes no graded sample. The event
+                // is what records where the interval closed and why, exactly as
+                // it is for the end of the run above.
                 log.event(
                     timeline.now_us(),
                     "graded-close",
