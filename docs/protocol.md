@@ -181,10 +181,21 @@ So valid encoder output always decodes. That invariant is asserted in
 
 ## Not in this catalog yet
 
-The session hello and capabilities exchange, the stream format announcement,
-control messages (volume, grouping, configuration) and client telemetry.
-BRIEF.md 5.2 lists all of them, and they arrive with the phase that needs
-them, as new type bytes that existing decoders already know how to skip.
+The session hello and capabilities exchange, the stream format announcement, and
+client telemetry. BRIEF.md 5.2 lists them, and they arrive with the phase that
+needs them, as new type bytes that existing decoders already know how to skip.
+
+**Control messages are NOT among them, and this catalog is unchanged by them.**
+BRIEF.md 5.2 lists volume, grouping and configuration beside the above, and
+PRODUCT-6 put them in a SECOND catalog rather than in this one:
+`docs/control-plane.md`, pinned by `fixtures/control/`, carried as JSON on its
+own connection. Nothing in this document changed to make room for it, no type
+byte was assigned to it, and no decoder of this catalog needs to know it exists.
+`docs/decisions/0016-the-control-catalog.md` records why they are apart - in
+short, that this catalog is decoded by a C endpoint with a fixed frame budget
+and takes the forward-compatible reading of an unknown type, while a control
+message that a decoder half-understands changes what a house is doing and has to
+be refused instead.
 
 ## Carrying this on a stream transport
 
