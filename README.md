@@ -62,22 +62,42 @@ nothing and holds no view about whether a number is good.
 - `tools/measure/` - the device-backed run, which needs two endpoints and an
   audio interface, and the refusal it makes where there is none.
 
-There is **no correction of any kind** yet. Two endpoints agreeing is a later
-phase, and this one asserts nothing about it.
+**Phase 5, the ESP32-S3 endpoint.** The second kind of endpoint the project
+exists to have: a microcontroller speaker that joins a group, disciplines its
+playout to the same server timeline, drives a TAS5825M-class I2S amplifier and
+comes back by itself after an outage.
+
+- `firmware/` - a C implementation of the protocol core and the sync core, held
+  to the same committed fixtures the Rust ones are and, exchange by exchange,
+  to what the Rust sync core actually did; the amplifier bring-up sequencer,
+  graded on the ORDER against a simulated part; the I2S clock and pin rules,
+  enforced at build time; the session supervisor, graded over a real socket
+  with a real server killed under it; and the safety scans
+  (`docs/decisions/0015`).
+- `firmware/config/endpoint.conf` - every value the endpoint needs, and every
+  value this phase deliberately does NOT fix. **The amplifier's register map is
+  DECLARED UNKNOWN**: the datasheet is normative and unread, so the phase
+  asserts the bring-up behaviour and names no address.
+- `tools/endpoint-rig-run.sh` - the hardware-attended run, and the refusal it
+  makes where there is no ESP32-S3.
+
+The endpoint has **never driven a pin**. Nothing here has been heard.
 
 ## Building and testing
 
-Stable Rust, no external dependencies. `libasound.so.2` is needed to play
-audio and is not needed to build or to run the suite.
+Stable Rust and a C compiler, no external dependencies. `libasound.so.2` is
+needed to play audio and is not needed to build or to run the suite.
 
 ```
 cargo build --workspace
 cargo test --workspace     # or: make test
 make verify                # refusal paths, and that unrun checks are visibly unrun
+make firmware-check        # the ESP32-S3 endpoint, on a host, with no ESP-IDF
 ```
 
 CI runs those on every change, with the golden-vector round trip, the simulator
-regression and the settable-clock check as separately named steps.
+regression, the settable-clock check and the endpoint's three regressions as
+separately named steps.
 
 The verifications that need an environment are in `tools/`, one per check.
 Each exits non-zero naming the prerequisite it is missing and the criterion it
@@ -89,6 +109,8 @@ was verifying, rather than reporting itself green:
 ./tools/host-contract.sh         # needs a granted rtprio ceiling above zero
 ./tools/device-loss-run.sh       # needs a device you can remove mid-run
 ./tools/measure/capture-run.sh   # needs two endpoints and an audio interface
+./tools/firmware-image.sh        # needs ESP-IDF at the declared version
+./tools/endpoint-rig-run.sh      # needs an ESP32-S3, an amplifier and the rig
 ```
 
 `docs/verification-record.md` says, per criterion, which of those actually ran

@@ -8,7 +8,7 @@
 
 use crate::config::{ConfigError, SimConfig, SERVER_TURNAROUND_NS};
 use crate::rng::Rng;
-use crate::servo::{OffsetFilter, Servo, ServoAction};
+use crate::servo::{OffsetFilter, Sample, Servo, ServoAction};
 
 /// One sample of the modelled playout error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,11 +86,45 @@ impl SimResult {
     }
 }
 
+/// What one time sync exchange did, from the inputs to the servo's decision.
+///
+/// The playout-error series says whether the loop converged; this says HOW,
+/// which is what a second implementation of the same arithmetic has to be held
+/// to. A C mirror that converged by a different route would agree with
+/// [`SimResult`] and disagree here, and disagreeing here is what the committed
+/// cross-check vectors under `fixtures/sync/crosscheck/` exist to catch.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ExchangeRecord {
+    /// Zero-based index of the exchange in the run.
+    pub index: u32,
+    /// Client time the exchange completed at, in nanoseconds.
+    pub at_ns: f64,
+    /// Round trip this exchange measured.
+    pub rtt_ns: f64,
+    /// The offset this one exchange estimated, before filtering.
+    pub offset_estimate_ns: f64,
+    /// What the filter returned once it had this exchange.
+    pub filtered_offset_ns: f64,
+    /// The sample the filter SELECTED out of its window for this exchange.
+    pub selected: Sample,
+    /// What the servo decided.
+    pub action: ServoAction,
+}
+
 /// Run one simulation.
 ///
 /// Refuses a configuration outside the modelled ranges rather than reporting a
 /// playout-error result for it.
 pub fn run(config: &SimConfig) -> Result<SimResult, ConfigError> {
+    run_recorded(config).map(|(result, _)| result)
+}
+
+/// The same run, with one [`ExchangeRecord`] per time sync exchange.
+///
+/// [`run`] is this function with the records dropped, so there is one loop and
+/// not two: a recording path that drifted from the graded one would be a
+/// cross-check against something nothing runs.
+pub fn run_recorded(config: &SimConfig) -> Result<(SimResult, Vec<ExchangeRecord>), ConfigError> {
     config.validate()?;
 
     let mut rng = Rng::new(config.seed);
@@ -115,6 +149,7 @@ pub fn run(config: &SimConfig) -> Result<SimResult, ConfigError> {
     let mut exchanges = 0u32;
 
     let mut samples = Vec::with_capacity(steps as usize);
+    let mut records: Vec<ExchangeRecord> = Vec::new();
 
     for step in 0..steps {
         let t_ns = (step + 1) as f64 * step_ns;
@@ -144,7 +179,21 @@ pub fn run(config: &SimConfig) -> Result<SimResult, ConfigError> {
             let server_estimate_ns = client_now_ns + filtered_offset;
             let observed_error_ns = playout_ns - server_estimate_ns;
 
-            match servo.update(observed_error_ns, interval_s) {
+            let action = servo.update(observed_error_ns, interval_s);
+
+            records.push(ExchangeRecord {
+                index: exchanges,
+                at_ns: client_now_ns,
+                rtt_ns: rtt,
+                offset_estimate_ns: offset_estimate,
+                filtered_offset_ns: filtered_offset,
+                selected: filter
+                    .selected()
+                    .expect("a push just happened, so a sample was selected"),
+                action,
+            });
+
+            match action {
                 ServoAction::Fine {
                     correction_ppm: correction,
                 } => correction_ppm = correction,
@@ -165,12 +214,15 @@ pub fn run(config: &SimConfig) -> Result<SimResult, ConfigError> {
         });
     }
 
-    Ok(SimResult {
-        samples,
-        exchanges,
-        hard_resyncs: servo.hard_resyncs(),
-        final_correction_ppm: servo.correction_ppm(),
-    })
+    Ok((
+        SimResult {
+            samples,
+            exchanges,
+            hard_resyncs: servo.hard_resyncs(),
+            final_correction_ppm: servo.correction_ppm(),
+        },
+        records,
+    ))
 }
 
 #[cfg(test)]

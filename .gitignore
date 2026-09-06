@@ -1,5 +1,11 @@
 # Build output.
 /target
 
+# The endpoint's host build and its image build. Both are outputs; every input
+# they read is committed.
+/firmware/build
+/firmware/sdkconfig
+/firmware/sdkconfig.old
+
 # No external dependencies yet, so the lock records nothing (docs/decisions/0002).
 Cargo.lock

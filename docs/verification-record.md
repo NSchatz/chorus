@@ -11,11 +11,170 @@ picks up this tree later has no access to the notes the implementing session
 wrote elsewhere. If the two ever disagree, this file is the one attached to the
 code.
 
-Three phases are recorded here, most recent first:
+Four phases are recorded here, most recent first:
 
+- [EMBEDDED-5, the ESP32-S3 endpoint](#embedded-5-the-esp32-s3-endpoint)
 - [SYNC-4, the sync loop on the real path](#sync-4-the-sync-loop-on-the-real-path)
 - [RIG-3, the measurement harness](#rig-3-the-measurement-harness)
 - [SOUND-2, first sound](#sound-2-first-sound)
+
+## EMBEDDED-5: the ESP32-S3 endpoint
+
+### The machine this was written on
+
+```
+kernel                    Linux 6.12.90+deb13.1-amd64 x86_64
+toolchain                 rustc 1.98.1, cc (GCC) for the endpoint's C
+ESP-IDF                   absent - IDF_PATH is unset and idf.py is not on PATH
+ESP32-S3                  none. There is no serial port and no board
+amplifier                 none. No TAS5825M, no I2C bus, no loudspeaker
+/dev/snd                  absent - no sound card of any kind
+capture device            none. There is no audio interface of any kind here
+second endpoint           none. There is one machine and it is this container
+container                 a disposable Linux container, not a bench
+```
+
+### AC-1 AND AC-3 ARE NOT PASSED
+
+**Stated first, and plainly, because they are the two criteria the phase is
+named for and because everything below could otherwise be mistaken for them.**
+
+> **AC-1.** WHEN an ESP32-S3 endpoint plays a grouped stream alongside a Linux
+> endpoint THE SYSTEM SHALL hold inter-device error within the bound SYNC-4 met.
+>
+> **AC-3.** WHEN the I2S slot width is 24 bits THE SYSTEM SHALL configure an
+> MCLK multiple divisible by three so the bit-clock division stays integral.
+
+**Neither criterion is passed, neither is skipped-green and neither is
+satisfied. Nothing in this repository claims either of them.**
+
+AC-1 needs an ESP32-S3 endpoint with a TAS5825M-class amplifier and a real
+loudspeaker, a Linux endpoint to play the same grouped stream, an audio
+interface with two channels of capture, and the RIG-3 harness. This machine has
+none of those and this pipeline has no route to acquire them. The bound AC-1
+names is SYNC-4's own first criterion, which is ITSELF blocked on the same
+hardware and is recorded below as not passed. **This phase does not claim it and
+does not unblock it.**
+
+AC-3 is graded by MEASURING THE PRODUCED SAMPLE RATE and not by reading the
+configuration back, which is the roadmap's explicit instruction for this
+assertion: "an MCLK multiple not divisible by three makes the rate imprecise
+(`espidf-i2s`), which the servo then spends its whole budget fighting while
+looking healthy." A configuration read back agrees with itself whatever the
+hardware does. What IS discharged here is the half a host can check, which is
+AC-11: the committed configuration is 24-bit slots at an MCLK multiple of 384,
+divisible by three, and the build refuses when it is not. **That is a rule
+enforced, not a rate measured, and it is not AC-3.**
+
+What the repository has instead is the committed entry point, which refuses.
+`make verify` runs it, and this is what it printed here, verbatim:
+
+```
+--- endpoint-rig-run.sh (exit 3)
+    chorus: the ESP32-S3 endpoint beside a Linux endpoint, on the rig
+      criterion:       AC-1 and AC-3, the two criteria of this phase that need hardware
+      run:             3900s, of which the first 60s is acquisition
+      captures:        6 of 30s, one every 640s
+      endpoint:        <unset>
+      linux endpoint:  <unset>
+      local device:    chorus-no-such-device
+      capture:         chorus-no-such-capture-device
+      i2s:             48000 Hz, 24-bit slots, MCLK x384
+    MISSING PREREQUISITE
+      criterion:    an ESP32-S3 endpoint playing a grouped stream alongside a Linux endpoint holds inter-device error within the bound SYNC-4 met, and the sample rate the 24-bit I2S configuration actually produces is measured rather than read back
+      prerequisite: an ESP32-S3 endpoint with a TAS5825M-class amplifier and a real loudspeaker attached; CHORUS_ESP32S3_PORT names no serial port
+      how to get it: flash the endpoint onto an ESP32-S3 board wired to the amplifier per firmware/config/endpoint.conf's pin map, and set CHORUS_ESP32S3_PORT to its serial port
+      this check is NOT passed, NOT skipped-green and NOT satisfied.
+pass endpoint-rig-run.sh refuses, names both, and claims nothing
+```
+
+The hardware it waits on, in full: an ESP32-S3 board with a TAS5825M-class
+amplifier wired to it per `firmware/config/endpoint.conf`'s pin map and a real
+loudspeaker on the amplifier; the TAS5825M register map, read off TI's
+datasheet and written into that same file, which this phase declares `unknown`
+and refuses without; a second machine running `chorus-client`; an audio
+interface with two channels of capture, with both endpoints' line outputs wired
+into it; and a local ALSA playback device that reports a delay. The script
+refuses on each of those in turn.
+
+What an operator with the environment runs:
+
+```
+CHORUS_ESP32S3_PORT=/dev/ttyACM0 CHORUS_SECOND_ENDPOINT=user@endpoint-b \
+CHORUS_CAPTURE_DEVICE=hw:1,0 CHORUS_CLIENT_DEVICE=hw:0,0 \
+    ./tools/endpoint-rig-run.sh          # or: make verify-endpoint-rig
+```
+
+Instructions: the script's own header, and
+`docs/decisions/0015-the-esp32-s3-endpoint.md` for what every constant it
+passes in means. The captures it writes ARE the evidence and can be graded
+afterwards, on any machine, by someone who did not take them.
+
+### The other three adopted criteria
+
+AC-2, AC-4 and AC-5 are the roadmap phase's own text, adopted verbatim. Each
+describes something the endpoint's logic does, so each is gradeable here.
+
+| criterion | what answers it | result |
+|---|---|---|
+| AC-2, identity and fault confirmed before output is enabled, and high impedance before any I2S clock change | `make firmware-check` (`firmware/tests/test_amp.c`) | Graded on the ORDER, and read off the SIMULATED HARDWARE's own event log rather than the driver's account of itself: `firmware/tests/fake_amp.c` is the part, the output stage and the I2S controller, all appending to one log the driver has no way to reach. In the healthy bring-up the device-id read and the fault read are both before the output enable, and the high-impedance command is before the FIRST clock change. The fake also records, independently of the log's order, whether the stage was in high impedance AT each clock change: "the output stage was in high impedance at every one of the 1 clock changes". The simulated part powers up in an UNKNOWN state and not a safe one, so a sequencer that assumed high impedance rather than commanding it would fail. The gain write is after the fault read and before the enable |
+| AC-4, the server or the network goes away and comes back, and it rejoins and resumes with no human action | `make firmware-check` (`firmware/tests/session-outage.sh`) | Over a REAL loopback socket against a REAL `chorus-server` process killed with SIGKILL and replaced. Not a mock and not a modelled network. Three shapes: an outage SHORTER THAN ONE CHUNK, measured by the endpoint's own monotonic clock at 100 223 556 ns against a 320 000 000 ns chunk, after which audio played on 2 separate connections; an outage OF MINUTES, 130 s of real wall clock, measured by the endpoint at 131 309 115 166 ns, 32 connection attempts across it (more than a couple, and not a busy loop), and audio again on 2 separate connections; and an outage where 6 connect attempts were REFUSED before a new server process answered, so the connect-refused path ran and not only the peer-closed one, with 25 time-sync exchanges completed across the two connections. Nothing touched the endpoint in any of the three but the passage of time |
+| AC-5, a fault is surfaced in telemetry rather than played through | `make firmware-check` (`test_amp.c` and `test_telemetry.c`) | Two halves, graded separately because they fail separately. At the pins: a fault read during playback stops the I2S clock and puts the output stage in high impedance, and the simulated stage records both. In the telemetry: the published line reads `amp=amplifier-reports-fault amp_fault_bits=0x21 audio=stopped-on-amp-fault`, and the test asserts the string `audio=running` does not appear in it. EVERY non-OK amplifier status stops the audio, not only the one called `fault`: all nine are enumerated and checked, including `amplifier-did-not-answer`, because a part that has gone quiet is not a part that is known to be healthy. `docs/decisions/0015` records the choice of stopping over escalating and why |
+
+### This spec's own criteria
+
+| criterion | what answers it | result |
+|---|---|---|
+| AC-6, the golden vectors, both directions | `make firmware-golden-vectors` | All three catalogued types (`time_sync`, `audio_chunk`, `stream_end`) encode to the committed `.hex` bytes exactly, and decode from them to the fields the committed `.fields` declares. 37 checks, 0 failed. The test asserts the catalog it covers has 3 types, matching `MessageType::ALL`, so a fourth type added on the Rust side without a C mirror fails here |
+| AC-7, an unrecognised type is skipped and the session stays open | the same target | An unassigned type byte `0x7f` carrying 4 bytes is skipped rather than rejected, the skip steps over exactly 7 bytes using the length prefix, and the committed `time_sync` frame that follows it decodes - so the session stayed open. A payload longer than the fields this decoder knows about is accepted and the excess ignored. Over a real socket the same rule holds: the endpoint counts skips in telemetry. `docs/decisions/0015` records the reading taken, which is the opposite of the Linux client's and is what AC-7 requires by name |
+| AC-8, every committed scenario, and the same sample as the Rust implementation | `make firmware-sync-scenarios` | Both halves. Each of the five committed scenarios drives the modelled error below its declared bound by its declared deadline and holds it for the whole rest of the run, checked sample by sample and not from the settle index: `01-wired-quiet` settled at 1000 ms with a peak of 115 995 ns after settling, `02-wired-loaded` at 1000 ms and 159 055 ns, `03-worst-case-skew` at 1000 ms and 343 183 ns, `04-fine-tier-acquisition` at 4400 ms and 998 000 ns, `05-noiseless-control` at 10 ms and exactly 0 ns, all against a 1 000 000 ns bound. And the selection: across all 360 exchanges of the five scenarios the endpoint selected the same sample as the Rust implementation, and every exchange matched the committed cross-check vector EXACTLY - the same round trip, the same raw estimate, the same filtered offset, the same servo tier and the same correction, bit for bit, including `02-wired-loaded` whose exponential jitter goes through `log`. 137 checks, 0 failed |
+| AC-9, an entry point that needs hardware refuses visibly | `make verify` | `tools/unrun-checks-are-visibly-unrun.sh` DERIVES its list recursively from `tools/`, and it now finds and checks 12 environment-dependent entry points where it found 10 before this phase. The two new ones are `tools/firmware-image.sh` and `tools/endpoint-rig-run.sh`; both exit non-zero, name the missing prerequisite AND the criterion, and report nothing as passed, skipped-green or satisfied. The endpoint-rig refusal is quoted in full above |
+| AC-10, the record says what ran and what did not | this file | the section you are reading. AC-1 and AC-3 are recorded as NOT passed with the verbatim refusal, the exact command, and the hardware they wait on |
+| AC-11, a reserved GPIO or a bad MCLK multiple refuses rather than builds | `make firmware-check` | `firmware/Makefile` compiles NOTHING until `chorus-endpoint-config-check` has passed over `firmware/config/endpoint.conf`, so this is a build that refuses and not a test that fails afterwards. Six smuggled configurations were shown making the entry point exit non-zero: an MCLK multiple of 256 at a 24-bit slot width, a pin in the flash and PSRAM range, a pin USB-JTAG reserves, a pin an octal part reserves, a DMA descriptor placed in external RAM, and a requested analog gain above the committed ceiling. Every refusal names the offending value AND quotes the rule: for the MCLK case, ESP-IDF's own "Please set the mclk_multiple to I2S_MCLK_MULTIPLE_384 while using 24 bits data width Otherwise the sample rate might be imprecise since the BCLK division is not a integer". Every multiple in ESP-IDF's own enum is decided one way or the other rather than the rule being tested at one point, and every reserved range is checked at both ends. 72 checks, 0 failed |
+| AC-12, a DMA descriptor in external RAM fails the suite naming the placement | `make firmware-safety-scans` | Two ways, because a runtime flag is easy to satisfy and easy to bypass. At configuration time `dma_descriptor_placement = external` is refused, quoting the platform: "DMA transaction descriptors cannot be placed in PSRAM." In the source, the scan refuses ANY external-RAM placement anywhere in the endpoint tree, and both spellings were shown going red on a smuggled instance naming `firmware/src/i2s.c`: a static `EXT_RAM_BSS_ATTR` declaration and a `heap_caps_malloc(64, MALLOC_CAP_SPIRAM)` call |
+| AC-13, an eFuse burn or an OTA activation fails the suite naming the file | the same target | The scan starts green - there is no eFuse or OTA code anywhere in this repository - so its value is that it stays green, and the demonstrations are what make that a check rather than a fact. Three were shown going red on a smuggled instance and naming the file: `esp_efuse_write_field_bit` in `firmware/src/monotonic.c`, `esp_ota_set_boot_partition` in `firmware/src/session.c`, and `esp_ota_mark_app_valid_cancel_rollback` in the same file - the last one because an image that confirms itself on boot has disarmed the only recovery there is. `firmware/main`, which is compiled only by ESP-IDF, is scanned too, for the strongest reason there is: it is the one place in the tree where either call would compile |
+| AC-14, a gain above the ceiling refuses to enable output | `make firmware-check` | A requested 6.000 dB against the committed 0.000 dB ceiling is refused with `analog-gain-above-ceiling`; output is NOT enabled, the output stage is left in high impedance, no clock is started, and the refusal names all three things the criterion asks for: "a requested analog gain of 6.000 dB is above the ceiling of 0.000 dB declared in firmware/config/endpoint.conf". The refusal happens with ZERO I2C transactions on the bus, which is stronger than the criterion asks: it is provably before any register write. A gain exactly AT the ceiling is inside it, so the committed configuration is bringable |
+| AC-15, a part that does not answer or reports a fault leaves the stage dead | the same target | Five conditions, each leaving the output stage in high impedance with no I2S clock started and output never enabled, each reported by name: a NACK (`amplifier-did-not-answer`), a timeout (`amplifier-i2c-timeout`), a bus error (`amplifier-i2c-bus-error`), a wrong device id (`amplifier-identity-mismatch`, and the fault register is not even read once the identity is wrong), and a fault at bring-up (`amplifier-reports-fault`, with the fault bits carried out for telemetry). A sixth, an output stage that refuses to go to high impedance, stops everything before the bus is touched at all. And the case the committed configuration actually produces: every amplifier register is DECLARED UNKNOWN, so the shipped endpoint refuses by name on each of the eight keys in turn with the bus untouched and no clock started |
+| AC-16, a settable wall-clock read on the endpoint path fails the suite | `make firmware-safety-scans` | The endpoint has ONE clock reader, `firmware/src/monotonic.c`, and it names `CLOCK_MONOTONIC`; every other unit takes the time it needs as an argument. Two ordinary spellings were shown going red on a smuggled instance and naming the file: `clock_gettime(CLOCK_REALTIME, ...)` in `firmware/src/session.c` and `gettimeofday` in `firmware/src/telemetry.c`. The completeness half is checked too: a first-party unit added under `firmware/src` that the list does not account for turns the scan red naming `firmware/src/smuggled.c`, which closes the obvious hole of moving a clock read one file down. An exclusion with no reason, or an empty one, is refused by the list parser. 42 checks, 0 failed |
+| AC-17, the image build refuses without the toolchain | `make firmware-image` | Exits 3 naming both: "the ESP-IDF toolchain at version v5.3; IDF_PATH is unset, so no toolchain is installed here". A DIFFERENT installed version is refused too, because an image built by a toolchain nobody chose looks exactly like an image that was. **No partial image**: the refusal comes before any output directory is created and before any object is compiled, and `firmware/build/` holds no `image/` directory after the run. That ordering is the assertion, not the message |
+| AC-18, CI runs the endpoint's regressions as separately named, fail-on-red steps | `.github/workflows/ci.yml` | Four new steps, each named for one regression so a red build says which one broke: "Endpoint golden-vector round trip", "Endpoint sync-core scenario regression", "Endpoint safety scans", and "Endpoint clocking, amplifier, telemetry and the rejoin". Nothing continues on error and nothing in the file is allowed to. The runner has no ESP32-S3, no amplifier, no ESP-IDF and no sound card, which is exactly the environment that makes the refusals in the `make verify` step meaningful |
+| AC-19, `make check` and `make verify` are unchanged in outcome | `make check` | Both still pass. `make check` builds the whole workspace and runs `cargo test --workspace`; the only Rust changes this phase made are additive (`crates/sync` gained `run_recorded`, an `ExchangeRecord`, a `crosscheck` module and a vector-generating binary, with `run` delegating to `run_recorded` so there is one loop and not two) and `crates/sync/tests/crosscheck_vectors.rs` asserts `run` and `run_recorded` produce identical results on every committed scenario. `crates/audio-path` found the new module before a human did - the suite went red on `crates/sync/src/crosscheck.rs` being neither listed nor excluded, which is exactly what that check exists for - and `audio-path.conf` now records the exclusion with a reason. `make verify` passes, with its entry-point count moved from 10 to 12 |
+
+### What the endpoint is, in one paragraph
+
+`firmware/` is a C implementation of the protocol core, the sync core, the
+amplifier bring-up sequencer, the I2S clock and pin rules, the session
+supervisor and the telemetry surface, plus an ESP-IDF component that binds them
+to real drivers. Everything except that last part is compiled and graded by a
+host C compiler with no ESP-IDF, no device and no privilege. The
+`firmware/src/` files are shared byte for byte between the host build and the
+image build, so the code that was graded is the code that would run.
+
+### What did NOT run here, and is not claimed
+
+- **AC-1 and AC-3**, above, in full.
+- **`firmware/main/app_main.c` and `firmware/main/esp_hal.c`.** They are
+  compiled only by ESP-IDF and NOTHING in this repository compiles them. They
+  are scanned as text by the safety scans, and that is the only thing said
+  about them. Everything they bind is graded; the wiring is not, and the
+  criteria that grade the wiring are the two operator ones.
+- **Any image.** None was built, none was flashed, and no device was touched.
+- **Any eFuse.** There is no eFuse code in this repository and the scan
+  enforces that there is none.
+- **Any OTA image or image state.** Same, and `chorus#FLEET-10` owns it.
+- **SOUND-2's, RIG-3's and SYNC-4's hardware-blocked rows are unchanged by this
+  phase and stay blocked on the same missing hardware. This work does not claim
+  them.**
+
+### Running the lot, on a machine that has the environment
+
+```
+make firmware-check          # everything above that needs no hardware
+make firmware-image          # needs ESP-IDF at the declared version
+CHORUS_ESP32S3_PORT=/dev/ttyACM0 CHORUS_SECOND_ENDPOINT=user@endpoint-b \
+CHORUS_CAPTURE_DEVICE=hw:1,0 CHORUS_CLIENT_DEVICE=hw:0,0 \
+    make verify-endpoint-rig # AC-1 and AC-3
+```
 
 ## SYNC-4: the sync loop on the real path
 

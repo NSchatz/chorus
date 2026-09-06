@@ -49,6 +49,33 @@ the bound is.
 `crates/sync/tests/simulator_regression.rs` runs every file in this directory,
 so adding a scenario is adding a file. There is nothing to register.
 
+### `sync/crosscheck/`
+
+One `.expected` file per scenario, holding what the Rust sync core did with it
+EXCHANGE BY EXCHANGE: the inputs, the sample the minimum-round-trip filter
+selected out of its window, the filtered offset it returned, and what the servo
+decided.
+
+These exist for the same reason the protocol vectors do. Every scenario above
+says whether a sync core converged; these say HOW, and two implementations can
+converge for different reasons while only one of them is a mirror. The ESP32-S3
+endpoint's C sync core is held to every value in them
+(`firmware/tests/test_sync.c`).
+
+Doubles are written as the shortest decimal that round-trips, so `strtod` on
+the C side recovers the identical bit pattern and the comparison is exact
+rather than approximate. The endpoint is compiled with `-ffp-contract=off` so a
+fused multiply-add cannot round differently from the two operations the Rust
+side compiles to.
+
+```
+make sync-vectors     # regenerate every vector from its scenario
+```
+
+`crates/sync/tests/crosscheck_vectors.rs` asserts that regenerating reproduces
+every committed file byte for byte, so that target is for changing a scenario
+and never for making a red assertion green.
+
 ## `measure/`
 
 The measurement harness's inputs, in pairs: a `.params` file in the same
