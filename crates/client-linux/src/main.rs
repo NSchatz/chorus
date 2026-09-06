@@ -490,7 +490,9 @@ fn play(
     status(&outcome.stop.describe());
 
     let code = match outcome.stop {
-        StopReason::EndOfStream(_) | StopReason::RunLengthReached => 0,
+        StopReason::EndOfStream(_)
+        | StopReason::RunLengthReached
+        | StopReason::ZoneMoved { .. } => 0,
         StopReason::ConnectionLost { .. } | StopReason::NoStream => EXIT_SERVER,
         StopReason::Framing(_) => EXIT_FRAMING,
         StopReason::DeviceFailed(_) | StopReason::DelayRefused(_) => EXIT_DEVICE,

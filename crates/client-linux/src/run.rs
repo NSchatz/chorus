@@ -106,6 +106,17 @@ pub enum StopReason {
     DelayRefused(DelayRefused),
     /// The stream never started: no chunk ever arrived.
     NoStream,
+    /// The server put this endpoint's zone into a group whose stream is
+    /// somewhere else.
+    ///
+    /// An orderly end, not a failure: the session finishes, what is already
+    /// held is played out, and the session supervisor opens the next one
+    /// against the address the state message named. It is a stop reason of its
+    /// own because it is the one end that is not a fault of anything.
+    ZoneMoved {
+        /// Where the zone's stream is now.
+        to: String,
+    },
 }
 
 impl StopReason {
@@ -117,7 +128,9 @@ impl StopReason {
     pub fn is_clean(&self) -> bool {
         matches!(
             self,
-            StopReason::EndOfStream(_) | StopReason::RunLengthReached
+            StopReason::EndOfStream(_)
+                | StopReason::RunLengthReached
+                | StopReason::ZoneMoved { .. }
         )
     }
 
@@ -132,6 +145,7 @@ impl StopReason {
             StopReason::DeviceFailed(_) => "device-failed",
             StopReason::DelayRefused(_) => "delay-refused",
             StopReason::NoStream => "no-stream",
+            StopReason::ZoneMoved { .. } => "zone-moved",
         }
     }
 
@@ -158,6 +172,11 @@ impl StopReason {
             StopReason::DeviceFailed(e) => format!("the audio device failed: {}", e),
             StopReason::DelayRefused(e) => e.to_string(),
             StopReason::NoStream => "the connection carried no audio chunk at all".to_string(),
+            StopReason::ZoneMoved { to } => format!(
+                "this endpoint's zone was put into a group whose stream is served at {}, so this \
+                 session ended and the next one is against that address",
+                to
+            ),
         }
     }
 }
@@ -554,8 +573,28 @@ fn play<S: PcmSink>(
 
     // Phase 3: pace the writes to hold the device's delay near its target, and
     // run the sync loop, which is what decides WHAT is written.
+    let moves_at_start = watch.moves();
     while device_error.is_none() && delay_refused.is_none() {
         drain_events!();
+
+        // The zone's stream has moved. This session is against the address it
+        // used to be at, so it ends here and the supervisor opens the next one
+        // against the address the state message named. What is already held is
+        // played out, in phase 4, exactly as it is at the end of a stream.
+        if watch.moves() != moves_at_start {
+            let to = watch.facts().audio;
+            keep_going.store(false, Ordering::SeqCst);
+            record_stop(stop_slot, StopReason::ZoneMoved { to: to.clone() });
+            if graded {
+                graded = false;
+                log.event(
+                    timeline.now_us(),
+                    "graded-close",
+                    &format!("reason=zone-moved to={} graded=0", to),
+                )?;
+            }
+            break;
+        }
 
         if let Some(limit) = run_limit_us {
             if timeline.now_us() >= limit {

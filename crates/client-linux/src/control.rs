@@ -262,7 +262,17 @@ impl ControlLink {
     pub fn follow(&self, watch: &Arc<ZoneWatch>, keep_going: &dyn Fn() -> bool) {
         while keep_going() {
             match self.open_event_stream() {
-                Ok(stream) => self.read_events(stream, watch, keep_going),
+                Ok(stream) => {
+                    // Say who this is, on every connection and not only the
+                    // first. A server that has restarted has the zone's name,
+                    // group, volume and mute back out of its state file, and
+                    // nothing about which endpoints are switched on: that is a
+                    // fact about now and is never read from a file. This is how
+                    // it learns it again, and it is the endpoint saying so
+                    // rather than anything being said to the endpoint.
+                    let _ = self.attach();
+                    self.read_events(stream, watch, keep_going)
+                }
                 Err(_) => {}
             }
             let mut waited = Duration::ZERO;

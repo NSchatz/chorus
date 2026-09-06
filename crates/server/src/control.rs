@@ -507,6 +507,16 @@ fn serve_connection(connection: TcpStream, state: &Arc<ControlState>, keep: &Arc
             "application/json",
             &state.encoded_state(),
         ),
+        // The bound's report half, over the wire. AC-11 asks that what a
+        // dropped subscriber lost is counted AND reported, and a count that
+        // only appears on the server's stdout at end of stream is not
+        // reportable to anything that is running.
+        ("GET", "/api/report") => respond(
+            &mut connection,
+            "200 OK",
+            "text/plain; charset=utf-8",
+            &format!("{}\n", state.report()),
+        ),
         ("GET", "/api/events") => serve_events(connection, state, keep),
         ("POST", "/api/command") => {
             match state.apply(request.body.trim()) {

@@ -280,6 +280,80 @@ require_amplifier_registers() {
     fi
 }
 
+# Refuse to continue unless there is a real browser engine AND a driver for it.
+#
+# Both halves matter and neither substitutes for the other. A criterion about a
+# RENDERED page is answered by rendering it: what a rule applies to, what wins
+# the cascade and what is actually painted are decided by an engine, and a check
+# that read the CSS instead would be a check on the stylesheet's text. So this
+# refuses rather than degrading, and the refusal names the exact install.
+require_browser_driver() {
+    local criterion="$1"
+    local browser="${CHORUS_BROWSER:-/usr/bin/chromium}"
+    if [ ! -x "$browser" ]; then
+        missing_prerequisite \
+            "$criterion" \
+            "a real browser engine to render the page in; '$browser' is not executable here" \
+            "install Chromium and point CHORUS_BROWSER at it. Reading the HTML or the CSS instead is not an option: the criterion is about the rendered box"
+    fi
+    if ! command -v node >/dev/null 2>&1; then
+        missing_prerequisite \
+            "$criterion" \
+            "node, to run the rendering driver; it is not on PATH" \
+            "mise use node@22"
+    fi
+    if [ ! -d "$REPO_ROOT/tools/ui/node_modules/@playwright/test" ]; then
+        missing_prerequisite \
+            "$criterion" \
+            "the @playwright/test driver under tools/ui; it is not installed" \
+            "cd tools/ui && pnpm install --ignore-scripts, with PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 since the browser is already here"
+    fi
+}
+
+# Refuse to continue unless the operator gave this run the three days of wall
+# clock the soak criterion asks for.
+#
+# There is no way to shorten this one and no way to model it: the criterion is
+# about a system left alone for three days, and a shorter run is a different
+# claim. What stands beside it is a MODELLED 72 hours, which the verification
+# record labels a modelled result and not a measurement.
+require_soak_window() {
+    local criterion="$1"
+    local wanted="$2"
+    local granted="${CHORUS_SOAK_SECONDS:-0}"
+    if ! printf '%s' "$granted" | grep -qE '^[0-9]+$' || [ "$granted" -lt "$wanted" ]; then
+        missing_prerequisite \
+            "$criterion" \
+            "at least $wanted seconds of wall clock to run in; CHORUS_SOAK_SECONDS grants ${granted:-0}" \
+            "run this on a host that can be left alone for three days and set CHORUS_SOAK_SECONDS=$wanted. A shorter run is a different claim and this will not make it"
+    fi
+}
+
+# Refuse to continue unless multicast is usable on this link.
+#
+# Whether multicast reaches a container and crosses this network's VLANs is an
+# open question in this deployment, which is why the endpoint has a static
+# fallback at all. This guard is what keeps the answer visible either way: the
+# live exchange runs where it can and refuses by name where it cannot, and
+# neither is reported as the other.
+require_multicast() {
+    local criterion="$1"
+    if [ "${CHORUS_NO_MULTICAST:-0}" = "1" ]; then
+        missing_prerequisite \
+            "$criterion" \
+            "a link that carries multicast DNS; CHORUS_NO_MULTICAST says this one does not" \
+            "run this where UDP port 5353 and the group 224.0.0.251 are reachable, then unset CHORUS_NO_MULTICAST"
+    fi
+    if ! "$BIN_DIR/chorus-mdns-probe" >/dev/null 2>&1; then
+        local detail
+        detail="$({ "$BIN_DIR/chorus-mdns-probe" 2>&1 || true; } | head -n 2 | tr '\n' ' ')"
+        missing_prerequisite \
+            "$criterion" \
+            "a link that carries multicast DNS; the probe could not use it ($detail)" \
+            "run this where UDP port 5353 can be bound and the group 224.0.0.251 joined. The endpoint's static fallback exists precisely because this cannot be assumed"
+    fi
+}
+
 # Refuse to continue unless the operator named a device that can be removed.
 require_removable_device() {
     local criterion="$1"

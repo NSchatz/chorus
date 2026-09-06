@@ -37,6 +37,41 @@ verify-host: tools-executable
 	bash tools/host-contract.sh
 	bash tools/spin-test.sh
 
+# PRODUCT-6's control plane, end to end: a real server, real endpoints and real
+# control subscribers on real sockets. Needs a playback device that OPENS; the
+# ALSA `null` device is enough, because what is graded is which stream an
+# endpoint is on and what every subscriber was told, not the value of any
+# reported delay.
+verify-control: tools-executable
+	bash tools/control-plane-run.sh
+
+# AC-3: four endpoints attached and playing, the server SIGKILLed and replaced,
+# every one back to advancing its played-frame counter with no operator action.
+verify-restart-storm: tools-executable
+	bash tools/restart-storm-run.sh
+
+# AC-5, AC-6 and AC-10: the served page RENDERED in a real browser engine.
+# Needs Chromium and the Playwright driver under tools/ui; refuses by name
+# without either, and reading the CSS instead is not an option.
+verify-ui: tools-executable
+	bash tools/ui-render-run.sh
+
+# AC-4: three days of wall clock and the RIG-3 capture rig. NOT PASSED in this
+# repository; this target exits non-zero naming both. What stands beside it is
+# the MODELLED 72 hours in `cargo test -p chorus-client-linux --test soak_72h`,
+# which docs/verification-record.md labels a modelled result and not a
+# measurement.
+verify-soak: tools-executable
+	bash tools/soak-run.sh
+
+# The live multicast half of AC-2. Whether multicast reaches a container and
+# crosses this network's VLANs is an open question, which is why the endpoint
+# has a static fallback; this runs the live exchange where it can and refuses
+# by name where it cannot. The packet-graded half needs none of it and is in
+# `make check`.
+verify-mdns: tools-executable
+	bash tools/mdns-live-run.sh
+
 # The measurement run that needs two endpoints, an audio interface and real
 # loudspeakers. Beside verify-device because it follows the same rule: it exits
 # non-zero naming its missing prerequisite rather than reporting green.
