@@ -1,0 +1,10 @@
+# Canonical input for the hello golden vector.
+#
+# Encoding these field values must produce exactly hello.json, and decoding
+# hello.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character, because a
+# detail string may contain one.
+
+message_type = hello

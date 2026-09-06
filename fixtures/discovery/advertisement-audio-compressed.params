@@ -1,0 +1,24 @@
+# The same advertisement, written with DNS name compression.
+#
+# This one exists because a resolver that cannot follow a compression pointer
+# cannot resolve anything on a real link: every responder in the wild emits
+# them, and the names in a DNS-SD answer share almost every label. The encoder
+# in crates/discovery/src/wire.rs deliberately never compresses, so that one
+# message has one spelling and a vector is a contract; this vector is what
+# holds the DECODER to the other case.
+#
+# Resolving it must produce exactly what advertisement-audio.hex produces, and
+# advertisement-audio-compressed.expected says so.
+#
+# Format: key = value, '#' starts a comment.
+
+kind = response
+compress = 1
+service = _chorus-audio._tcp.local.
+instance = chorus
+host = chorus.local.
+port = 4010
+address.0 = 192.168.1.40
+txt.0 = v=1
+txt.1 = group=downstairs
+txt.2 = ctl=4020

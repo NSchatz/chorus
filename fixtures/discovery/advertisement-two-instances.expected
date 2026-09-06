@@ -1,0 +1,13 @@
+# What a resolver must make of advertisement-two-instances.hex.
+#
+# Format: key = value, '#' starts a comment.
+
+service = _chorus-audio._tcp.local.
+instances = 1
+instance.0.name = spare._chorus-audio._tcp.local.
+instance.0.label = spare
+instance.0.host = spare.local.
+instance.0.port = 4110
+instance.0.address = 192.168.1.41:4110
+instance.0.txt.v = 1
+instance.0.txt.group = upstairs

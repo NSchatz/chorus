@@ -1,0 +1,21 @@
+# What a chorus server answers a browse for the audio service with.
+#
+# RFC 6763 section 4.1 and section 5: the PTR answer names the service
+# instance, its SRV record "gives the target host and port where the service
+# instance can be reached", and its TXT record carries the rest. Section 6:
+# every DNS-SD service MUST have a TXT record even when it has nothing to say.
+#
+# The SRV priority and weight are both zero, which section 5 says they SHOULD be
+# "in the overwhelmingly common case" of one instance described by one record.
+#
+# Format: key = value, '#' starts a comment.
+
+kind = response
+service = _chorus-audio._tcp.local.
+instance = chorus
+host = chorus.local.
+port = 4010
+address.0 = 192.168.1.40
+txt.0 = v=1
+txt.1 = group=downstairs
+txt.2 = ctl=4020

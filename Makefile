@@ -66,6 +66,14 @@ measure-fixtures:
 sync-vectors:
 	cargo run --quiet -p chorus-sync --bin chorus-sync-vectors
 
+# Regenerate the committed DNS-SD packet vectors from their committed
+# parameters. Same rule again: `cargo test -p chorus-discovery --test
+# dnssd_vectors` asserts the result is byte-identical to what is committed, so
+# this target is for changing a fixture's parameters and never for making a red
+# assertion green.
+discovery-vectors:
+	cargo run --quiet -p chorus-discovery --bin chorus-discovery-vectors
+
 # --- the ESP32-S3 endpoint ---------------------------------------------------
 #
 # The endpoint's host build and every verification of it that needs no device.

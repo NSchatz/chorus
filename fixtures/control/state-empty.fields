@@ -1,0 +1,13 @@
+# Canonical input for the empty-state golden vector.
+#
+# A server with no zone configured has a state message and not an error and not
+# an absence. This vector is what the UI's empty state is rendered from, and it
+# exists so that "no zones yet" is a shape the catalog declares rather than
+# something a client infers from a missing field.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = state
+serial = 0
+default_audio = 127.0.0.1:4010

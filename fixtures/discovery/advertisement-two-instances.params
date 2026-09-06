@@ -1,0 +1,20 @@
+# A second server on the same link, so that resolving is a choice and not a
+# lookup with one possible answer.
+#
+# The endpoint takes the first instance that resolves to an address. That is
+# recorded rather than clever: RFC 6763 section 4 is explicit that instances of
+# some services "are less easily interchangeable" and that picking one at random
+# "would probably not be what the user wanted", which is exactly why a chorus
+# endpoint that finds more than one server has a static address to be pointed at
+# instead.
+#
+# Format: key = value, '#' starts a comment.
+
+kind = response
+service = _chorus-audio._tcp.local.
+instance = spare
+host = spare.local.
+port = 4110
+address.0 = 192.168.1.41
+txt.0 = v=1
+txt.1 = group=upstairs

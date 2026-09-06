@@ -1,0 +1,1 @@
+{"v":1,"t":"state","serial":7,"zones":[{"id":"kitchen","name":"Kitchen","group":"downstairs","volume":0.375,"muted":false,"endpoints":["endpoint-a","endpoint-b"],"present":["endpoint-a"],"audio":"127.0.0.1:4011"},{"id":"study","name":"Study","group":"study","volume":1.000,"muted":true,"endpoints":[],"present":[],"audio":"127.0.0.1:4010"}]}

@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "crates/protocol",
+    "crates/control",
+    "crates/discovery",
     "crates/sync",
     "crates/audio",
     "crates/alsa",

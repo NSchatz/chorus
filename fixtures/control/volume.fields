@@ -1,0 +1,15 @@
+# Canonical input for the volume golden vector.
+#
+# Encoding these field values must produce exactly volume.json, and decoding
+# volume.json must recover exactly these field values.
+#
+# The volume is the AMPLITUDE FACTOR, written with exactly three fractional
+# digits. There is no other spelling of it: 0.5 and 0.50 are not this value on
+# the wire, which is what makes these bytes a contract.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = volume
+zone = kitchen
+volume = 0.500

@@ -1,0 +1,18 @@
+# What a resolver must make of advertisement-audio.hex.
+#
+# This is the half of AC-2 that is graded on the bytes: given this committed
+# packet a resolver produces this host and this port, so a second
+# implementation is held to the packet and not to the Rust code.
+#
+# Format: key = value, '#' starts a comment.
+
+service = _chorus-audio._tcp.local.
+instances = 1
+instance.0.name = chorus._chorus-audio._tcp.local.
+instance.0.label = chorus
+instance.0.host = chorus.local.
+instance.0.port = 4010
+instance.0.address = 192.168.1.40:4010
+instance.0.txt.v = 1
+instance.0.txt.group = downstairs
+instance.0.txt.ctl = 4020

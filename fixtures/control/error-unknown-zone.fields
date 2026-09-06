@@ -1,0 +1,16 @@
+# Canonical input for the unknown-zone refusal vector.
+#
+# This one is not a codec refusal: `input` decodes perfectly well and is
+# refused by the zone state, because the zone it names is not one this server
+# has. `zones` is the set configured on the server the refusal came from, and
+# the refusal names them so that an operator who mistyped a zone can see what
+# the choices were.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+zones = kitchen,study
+input = {"v":1,"t":"mute","zone":"bathroom","muted":true}
+ends_the_session = 0
+field = zone
