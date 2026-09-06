@@ -395,6 +395,126 @@ static void a_fault_during_playback_stops_the_audio(void)
                  chorus_amp_status_name(status));
 }
 
+/* The other half of AC-2's clock rule, on the paths the bring-up trigger does
+ * not reach: an unwind stops the I2S clock, and stopping a clock is a clock
+ * change like any other. chorus/amp.h's step 7 says "this and EVERY LATER clock
+ * change is made into a dead output", so the order is asserted here, again off
+ * the simulated hardware's own log and its independent record of what the stage
+ * was doing at each change - and not off the driver's account of itself. */
+static void every_unwind_kills_the_output_before_it_stops_the_clock(void)
+{
+    /* A fault read during playback: the stage is LIVE when the unwind starts,
+     * which is what makes this the dangerous one. */
+    fake_amp_t fake;
+    healthy_part(&fake);
+    chorus_amp_config_t config = configured();
+    chorus_amp_gain_t gain = gain_of(0.0);
+    chorus_i2s_clock_t clock = good_clock();
+    chorus_i2c_bus_t bus = fake_amp_bus(&fake);
+    chorus_output_stage_t stage = fake_amp_stage(&fake);
+    chorus_i2s_controller_t controller = fake_amp_controller(&fake);
+    chorus_amp_report_t report;
+    chorus_check(chorus_amp_bring_up(&config, &gain, &clock, &bus, &stage, &controller,
+                                     &report) == CHORUS_AMP_OK &&
+                     fake.stage == FAKE_STAGE_ENABLED,
+                 "the part is playing with the output stage live");
+
+    /* The log is cleared so the unwind is read on its own; the fake's record of
+     * what the stage was doing at each clock change is deliberately NOT. */
+    fake.event_count = 0;
+    fake.registers[TEST_REG_FAULT] = 0x21;
+    chorus_check(chorus_amp_poll_fault(&config, &bus, &stage, &controller, &report) ==
+                     CHORUS_AMP_REPORTS_FAULT,
+                 "a fault during playback unwinds");
+    fake_amp_print(&fake);
+    int hiz = fake_amp_first(&fake, FAKE_EV_HIGH_IMPEDANCE);
+    int stopped = fake_amp_first(&fake, FAKE_EV_CLOCK_STOPPED);
+    chorus_check(hiz >= 0 && stopped >= 0 && hiz < stopped,
+                 "high impedance (event %d) is commanded BEFORE the clock stops (event %d)", hiz,
+                 stopped);
+    chorus_check(fake.clock_changes == 2 && !fake.clock_changed_while_not_high_impedance,
+                 "the output stage was in high impedance at every one of the %zu clock changes, "
+                 "the stop included",
+                 fake.clock_changes);
+
+    /* A part that goes silent mid-run unwinds the same way. */
+    fake_amp_t silent;
+    healthy_part(&silent);
+    chorus_i2c_bus_t silent_bus = fake_amp_bus(&silent);
+    chorus_output_stage_t silent_stage = fake_amp_stage(&silent);
+    chorus_i2s_controller_t silent_controller = fake_amp_controller(&silent);
+    chorus_check(chorus_amp_bring_up(&config, &gain, &clock, &silent_bus, &silent_stage,
+                                     &silent_controller, &report) == CHORUS_AMP_OK,
+                 "a second part is playing");
+    silent.event_count = 0;
+    silent.answer = CHORUS_I2C_NACK;
+    chorus_check(chorus_amp_poll_fault(&config, &silent_bus, &silent_stage, &silent_controller,
+                                       &report) == CHORUS_AMP_DID_NOT_ANSWER,
+                 "a part that stops answering unwinds");
+    hiz = fake_amp_first(&silent, FAKE_EV_HIGH_IMPEDANCE);
+    stopped = fake_amp_first(&silent, FAKE_EV_CLOCK_STOPPED);
+    chorus_check(hiz >= 0 && stopped >= 0 && hiz < stopped,
+                 "a silent part: high impedance (event %d) before the clock stops (event %d)", hiz,
+                 stopped);
+    chorus_check(!silent.clock_changed_while_not_high_impedance,
+                 "a silent part: no clock change was made into a live output stage");
+
+    /* A fault poll on a configuration that declares the fault register unknown
+     * unwinds without ever touching the bus, and in the same order. */
+    fake_amp_t unconfigured;
+    healthy_part(&unconfigured);
+    chorus_i2c_bus_t unconfigured_bus = fake_amp_bus(&unconfigured);
+    chorus_output_stage_t unconfigured_stage = fake_amp_stage(&unconfigured);
+    chorus_i2s_controller_t unconfigured_controller = fake_amp_controller(&unconfigured);
+    chorus_check(chorus_amp_bring_up(&config, &gain, &clock, &unconfigured_bus,
+                                     &unconfigured_stage, &unconfigured_controller, &report) ==
+                     CHORUS_AMP_OK,
+                 "a third part is playing");
+    unconfigured.event_count = 0;
+    chorus_amp_config_t unknown_fault = config;
+    unknown_fault.reg_fault_known = 0;
+    chorus_check(chorus_amp_poll_fault(&unknown_fault, &unconfigured_bus, &unconfigured_stage,
+                                       &unconfigured_controller, &report) ==
+                     CHORUS_AMP_REGISTER_NOT_CONFIGURED,
+                 "a poll against an unknown fault register refuses by name");
+    hiz = fake_amp_first(&unconfigured, FAKE_EV_HIGH_IMPEDANCE);
+    stopped = fake_amp_first(&unconfigured, FAKE_EV_CLOCK_STOPPED);
+    chorus_check(hiz >= 0 && stopped >= 0 && hiz < stopped,
+                 "an unknown register: high impedance (event %d) before the clock stops "
+                 "(event %d)",
+                 hiz, stopped);
+    chorus_check(!unconfigured.clock_changed_while_not_high_impedance,
+                 "an unknown register: no clock change was made into a live output stage");
+
+    /* And the bring-up path that applies a clock and then has to take it back:
+     * an output stage that refuses to enable. */
+    fake_amp_t refuses;
+    healthy_part(&refuses);
+    refuses.stage_refuses_enable = 1;
+    chorus_i2c_bus_t refuses_bus = fake_amp_bus(&refuses);
+    chorus_output_stage_t refuses_stage = fake_amp_stage(&refuses);
+    chorus_i2s_controller_t refuses_controller = fake_amp_controller(&refuses);
+    chorus_check(chorus_amp_bring_up(&config, &gain, &clock, &refuses_bus, &refuses_stage,
+                                     &refuses_controller, &report) ==
+                     CHORUS_AMP_OUTPUT_STAGE_REFUSED,
+                 "an output stage that refuses to enable is reported by name");
+    int applied = fake_amp_first(&refuses, FAKE_EV_CLOCK_APPLIED);
+    stopped = fake_amp_first(&refuses, FAKE_EV_CLOCK_STOPPED);
+    hiz = -1;
+    for (size_t i = 0; i < refuses.event_count; i++) {
+        if ((int)i > applied && refuses.events[i].kind == FAKE_EV_HIGH_IMPEDANCE) {
+            hiz = (int)i;
+            break;
+        }
+    }
+    chorus_check(applied >= 0 && hiz > applied && stopped > hiz,
+                 "the unwind after the clock was applied (event %d) re-commands high impedance "
+                 "(event %d) before it stops the clock (event %d)",
+                 applied, hiz, stopped);
+    chorus_check(refuses.clock_changes == 2 && !refuses.clock_changed_while_not_high_impedance,
+                 "a refused enable: the stage was dead at both clock changes");
+}
+
 /* The one condition worse than every other: a stage that will not go dead. */
 static void a_stage_that_will_not_go_dead_stops_everything(void)
 {
@@ -440,6 +560,9 @@ int main(void)
 
     chorus_section("a fault during playback");
     a_fault_during_playback_stops_the_audio();
+
+    chorus_section("every unwind kills the output before it stops the clock");
+    every_unwind_kills_the_output_before_it_stops_the_clock();
 
     chorus_section("an output stage that will not go to high impedance");
     a_stage_that_will_not_go_dead_stops_everything();

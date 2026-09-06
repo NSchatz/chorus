@@ -4,7 +4,7 @@
  * every timestamp on this path is nanoseconds from a monotonic source, and a
  * stepped clock is what breaks playback. This is the ONLY unit in the endpoint
  * tree that reads a clock at all, which is what makes
- * firmware/check/endpoint-scan.c's settable-clock rule cheap to state and hard
+ * firmware/check/endpoint_scan.c's settable-clock rule cheap to state and hard
  * to evade: every other unit takes the time it needs as an argument.
  *
  * On the target this is `esp_timer_get_time()`, which counts microseconds since

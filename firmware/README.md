@@ -63,9 +63,9 @@ Graded on a host, with no hardware at all:
 
 | what | how |
 |---|---|
-| the protocol core | `fixtures/protocol/` in both directions, byte for byte and field for field, plus the decoder-behaviour order `docs/protocol.md` fixes |
+| the protocol core | every vector pair FOUND under `fixtures/protocol/`, in both directions, byte for byte and field for field, plus the decoder-behaviour order `docs/protocol.md` fixes. The directory is enumerated, so a committed pair with no C mirror goes red naming the type |
 | the sync core | every scenario under `fixtures/sync` drives the error below its bound and holds it, AND every exchange reproduces `fixtures/sync/crosscheck/` exactly |
-| the bring-up order | a simulated part, a simulated output stage and a simulated I2S controller writing one event log the driver cannot reach |
+| the bring-up order, and every unwind | a simulated part, a simulated output stage and a simulated I2S controller writing one event log the driver cannot reach. Stopping a clock counts as a clock change, so the teardown paths are held to the same rule as the first one: high impedance before it, always |
 | the gain ceiling, and every failure of the bus | the same simulated part |
 | the clock rules and the pin map | at build time. `make firmware-check` compiles nothing until `chorus-endpoint-config-check` has passed over `config/endpoint.conf` |
 | the safety scans | over the whole endpoint tree, with eight demonstrations that go red on a smuggled instance |

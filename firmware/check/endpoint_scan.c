@@ -459,8 +459,8 @@ static void walk(chorus_scan_result_t *out, const char *root, const char *relati
             continue;
         }
         add(out, "unit-missing-from-the-list", child_relative, 0, child_relative,
-            "is under firmware/src or firmware/include and is neither listed nor excluded with a "
-            "reason in firmware/endpoint-units.conf");
+            "is in a directory this scan walks (firmware/src, firmware/include or firmware/main) "
+            "and is neither listed nor excluded with a reason in firmware/endpoint-units.conf");
     }
     closedir(dir);
 }

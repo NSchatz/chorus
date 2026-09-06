@@ -14,7 +14,7 @@ CONFIG_SPIRAM_MODE_OCT=y
 
 # DMA descriptors stay out of external RAM. The carried ESP-IDF external-RAM
 # guide: "DMA transaction descriptors cannot be placed in PSRAM."
-# firmware/check/endpoint-scan.c fails the suite if any PSRAM placement appears
+# firmware/check/endpoint_scan.c fails the suite if any PSRAM placement appears
 # in the endpoint tree, and this keeps the allocator from putting one there by
 # default.
 CONFIG_SPIRAM_USE_MALLOC=n

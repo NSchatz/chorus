@@ -185,7 +185,7 @@ int chorus_esp_hal_init(const chorus_endpoint_config_t *config, chorus_i2c_bus_t
 
     /* DMA descriptors live in internal RAM. The platform forbids anything else
      * ("DMA transaction descriptors cannot be placed in PSRAM"), the committed
-     * configuration says internal, and firmware/check/endpoint-scan.c fails
+     * configuration says internal, and firmware/check/endpoint_scan.c fails
      * the suite if a PSRAM placement ever appears in this tree. */
     i2s_chan_config_t channel = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
     channel.dma_desc_num = config->clock.dma_desc_num;

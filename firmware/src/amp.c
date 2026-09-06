@@ -241,9 +241,9 @@ chorus_amp_status_t chorus_amp_bring_up(const chorus_amp_config_t *config,
 
     /* 8. Output. */
     if (stage->enable(stage->ctx) != 0) {
+        (void)go_high_impedance(stage, report);
         (void)controller->stop_clock(controller->ctx);
         report->clock_started = 0;
-        (void)go_high_impedance(stage, report);
         report_detail(report, "the output stage refused to enable");
         report->status = CHORUS_AMP_OUTPUT_STAGE_REFUSED;
         return report->status;
@@ -271,9 +271,9 @@ chorus_amp_status_t chorus_amp_poll_fault(const chorus_amp_config_t *config,
     if (!config->reg_fault_known || !config->fault_clear_value_known || !config->address_known) {
         chorus_amp_status_t configured = require_configured(config, report);
         report->status = configured;
+        (void)go_high_impedance(stage, report);
         (void)controller->stop_clock(controller->ctx);
         report->clock_started = 0;
-        (void)go_high_impedance(stage, report);
         return report->status;
     }
 
@@ -283,9 +283,9 @@ chorus_amp_status_t chorus_amp_poll_fault(const chorus_amp_config_t *config,
         /* An amplifier that has stopped answering during playback is not a
          * healthy amplifier. It is surfaced by name and the audio stops, for
          * the same reason a reported fault does. */
+        (void)go_high_impedance(stage, report);
         (void)controller->stop_clock(controller->ctx);
         report->clock_started = 0;
-        (void)go_high_impedance(stage, report);
         report_detail(report,
                       "the amplifier at I2C address 0x%02x answered %s to a fault read during "
                       "playback. Audio is stopped and the output stage is in high impedance.",
@@ -302,9 +302,9 @@ chorus_amp_status_t chorus_amp_poll_fault(const chorus_amp_config_t *config,
         return CHORUS_AMP_OK;
     }
 
+    (void)go_high_impedance(stage, report);
     (void)controller->stop_clock(controller->ctx);
     report->clock_started = 0;
-    (void)go_high_impedance(stage, report);
     report_detail(report,
                   "the amplifier at I2C address 0x%02x reports a fault: its fault register reads "
                   "0x%02x and a part with no fault reads 0x%02x. Audio is stopped and the output "

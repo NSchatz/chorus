@@ -168,8 +168,8 @@ void app_main(void)
     if (xTaskCreate(fault_watch, "chorus-amp-fault", 4096, &watch, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "the amplifier fault watch could not be started; nothing would notice a "
                       "fault, so the output stage goes back to high impedance");
-        (void)controller.stop_clock(controller.ctx);
         (void)stage.high_impedance(stage.ctx);
+        (void)controller.stop_clock(controller.ctx);
         return;
     }
 
@@ -179,7 +179,7 @@ void app_main(void)
     /* run_seconds is zero, so the line above does not return while the board
      * has power. If it ever does, the output stage goes dead rather than being
      * left live with nothing feeding it. */
-    (void)controller.stop_clock(controller.ctx);
     (void)stage.high_impedance(stage.ctx);
+    (void)controller.stop_clock(controller.ctx);
     ESP_LOGE(TAG, "the session ended; the output stage is in high impedance");
 }

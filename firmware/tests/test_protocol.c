@@ -13,12 +13,122 @@
 #include "harness.h"
 
 #include <ctype.h>
+#include <dirent.h>
+#include <errno.h>
 #include <inttypes.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
-/* Every catalogued type, so that "every catalogued message type has a
- * committed vector" is a claim this file can check rather than assume. */
+/* Every type this endpoint mirrors. It is checked against the committed
+ * directory below and never trusted on its own: a list compared with a literal
+ * in the same file agrees with itself whatever the fixtures say. */
 static const char *const CATALOG[] = {"time_sync", "audio_chunk", "stream_end"};
 #define CATALOG_COUNT (sizeof(CATALOG) / sizeof(CATALOG[0]))
+
+/* --- the committed directory is the catalog --------------------------------
+ *
+ * fixtures/README.md makes fixtures/protocol/ the contract between the two
+ * implementations: "A second-language implementation [...] is expected to run
+ * the same two assertions against the same files. That is what keeps the two
+ * implementations from drifting apart." So the vectors this file round trips
+ * are DISCOVERED by reading that directory, the way test_sync.c discovers
+ * fixtures/sync, and the list above is held to what is found. A vector pair
+ * committed for a type this endpoint does not mirror is drift, and turns this
+ * suite red naming the type. */
+
+#define MAX_COMMITTED_VECTORS 32
+
+typedef struct {
+    char stem[128];
+} committed_vector_t;
+
+typedef struct {
+    committed_vector_t vectors[MAX_COMMITTED_VECTORS];
+    size_t count;
+    int unreadable;
+    int overflowed;
+} committed_catalog_t;
+
+static int compare_stems(const void *a, const void *b)
+{
+    return strcmp(((const committed_vector_t *)a)->stem, ((const committed_vector_t *)b)->stem);
+}
+
+static void read_committed_catalog(const char *dir_path, committed_catalog_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    DIR *dir = opendir(dir_path);
+    if (dir == NULL) {
+        out->unreadable = 1;
+        return;
+    }
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        const char *dot = strrchr(entry->d_name, '.');
+        if (dot == NULL || strcmp(dot, ".hex") != 0) {
+            continue;
+        }
+        size_t stem_len = (size_t)(dot - entry->d_name);
+        if (out->count >= MAX_COMMITTED_VECTORS ||
+            stem_len >= sizeof(out->vectors[0].stem)) {
+            out->overflowed = 1;
+            break;
+        }
+        memcpy(out->vectors[out->count].stem, entry->d_name, stem_len);
+        out->vectors[out->count].stem[stem_len] = '\0';
+        out->count++;
+    }
+    closedir(dir);
+    qsort(out->vectors, out->count, sizeof(out->vectors[0]), compare_stems);
+}
+
+/* The drift verdict, COMPUTED rather than asserted, so the same function can be
+ * taken over a scratch directory and shown going red. Empty strings mean the
+ * two sets are the same set. */
+typedef struct {
+    char unmirrored[128];
+    char without_vector[128];
+} catalog_drift_t;
+
+static int in_catalog(const char *stem)
+{
+    for (size_t i = 0; i < CATALOG_COUNT; i++) {
+        if (strcmp(CATALOG[i], stem) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int is_committed(const committed_catalog_t *committed, const char *stem)
+{
+    for (size_t i = 0; i < committed->count; i++) {
+        if (strcmp(committed->vectors[i].stem, stem) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static catalog_drift_t catalog_drift(const committed_catalog_t *committed)
+{
+    catalog_drift_t drift;
+    memset(&drift, 0, sizeof(drift));
+    for (size_t i = 0; i < committed->count; i++) {
+        if (!in_catalog(committed->vectors[i].stem)) {
+            snprintf(drift.unmirrored, sizeof(drift.unmirrored), "%s",
+                     committed->vectors[i].stem);
+            break;
+        }
+    }
+    for (size_t i = 0; i < CATALOG_COUNT; i++) {
+        if (!is_committed(committed, CATALOG[i])) {
+            snprintf(drift.without_vector, sizeof(drift.without_vector), "%s", CATALOG[i]);
+            break;
+        }
+    }
+    return drift;
+}
 
 static char *read_text(const char *path)
 {
@@ -474,15 +584,255 @@ static void the_exchange_arithmetic_matches_the_document(void)
                  "a nonsensical exchange yields a round trip of 0 rather than a huge one");
 }
 
+/* Read fixtures/protocol/ and hold this endpoint's catalog to what is there. */
+static void the_committed_directory_is_the_catalog(committed_catalog_t *committed)
+{
+    char dir_path[512];
+    chorus_repo_path(dir_path, sizeof(dir_path), "fixtures/protocol");
+    read_committed_catalog(dir_path, committed);
+
+    chorus_check(!committed->unreadable && !committed->overflowed && committed->count > 0,
+                 "fixtures/protocol/ was read and holds %zu committed .hex vectors",
+                 committed->count);
+    for (size_t i = 0; i < committed->count; i++) {
+        printf("     %s.hex\n", committed->vectors[i].stem);
+    }
+
+    catalog_drift_t drift = catalog_drift(committed);
+    if (drift.unmirrored[0] == '\0') {
+        chorus_check(1, "every committed vector pair names a type this endpoint mirrors");
+    } else {
+        chorus_check(0,
+                     "fixtures/protocol/%s.hex is committed and this endpoint's catalog does "
+                     "not carry it: the C implementation has fallen behind the vectors",
+                     drift.unmirrored);
+    }
+    if (drift.without_vector[0] == '\0') {
+        chorus_check(1, "every type this endpoint mirrors has a committed vector pair");
+    } else {
+        chorus_check(0,
+                     "this endpoint mirrors %s and fixtures/protocol/%s.hex is not committed",
+                     drift.without_vector, drift.without_vector);
+    }
+    chorus_check(committed->count == CATALOG_COUNT,
+                 "the %zu committed vector pairs and the %zu types this endpoint mirrors are "
+                 "the same set",
+                 committed->count, CATALOG_COUNT);
+}
+
+/* --- the drift guard, shown going red -------------------------------------
+ *
+ * A guard that has only ever been green is a guard nobody has seen work, which
+ * is exactly what the hardcoded three-element list this replaced was. Both
+ * directions are demonstrated on a scratch copy of the fixture directory, in
+ * the shape firmware/tests/test_scan.c already uses. The copies are made under
+ * the system temporary directory and removed afterwards, so a demonstration
+ * never touches fixtures/. */
+
+static int copy_file(const char *from, const char *to)
+{
+    FILE *in = fopen(from, "rb");
+    if (in == NULL) {
+        return -1;
+    }
+    FILE *out = fopen(to, "wb");
+    if (out == NULL) {
+        fclose(in);
+        return -1;
+    }
+    char buffer[8192];
+    size_t got;
+    int failed = 0;
+    while ((got = fread(buffer, 1, sizeof(buffer), in)) > 0) {
+        if (fwrite(buffer, 1, got, out) != got) {
+            failed = 1;
+            break;
+        }
+    }
+    fclose(in);
+    fclose(out);
+    return failed ? -1 : 0;
+}
+
+static void remove_scratch(const char *path)
+{
+    DIR *dir = opendir(path);
+    if (dir == NULL) {
+        remove(path);
+        return;
+    }
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        char child[1024];
+        snprintf(child, sizeof(child), "%.700s/%.255s", path, entry->d_name);
+        remove(child);
+    }
+    closedir(dir);
+    rmdir(path);
+}
+
+static int scratch_fixture_dir(const char *what, char *out, size_t out_len)
+{
+    snprintf(out, out_len, "/tmp/chorus-protocol-catalog-%s-%d", what, (int)getpid());
+    remove_scratch(out);
+    if (mkdir(out, 0755) != 0 && errno != EEXIST) {
+        return -1;
+    }
+    return 0;
+}
+
+static int copy_committed_pair(const char *stem, const char *into)
+{
+    static const char *const extensions[] = {"hex", "fields"};
+    for (size_t i = 0; i < sizeof(extensions) / sizeof(extensions[0]); i++) {
+        char relative[256];
+        char from[512];
+        char to[1024];
+        snprintf(relative, sizeof(relative), "fixtures/protocol/%s.%s", stem, extensions[i]);
+        chorus_repo_path(from, sizeof(from), relative);
+        snprintf(to, sizeof(to), "%.700s/%.100s.%.16s", into, stem, extensions[i]);
+        if (copy_file(from, to) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+/* A vector pair for a type this endpoint does not mirror. The bytes are never
+ * decoded by anything: what is under test is whether the guard SEES the pair. */
+static int smuggle_fourth_pair(const char *into, const char *stem)
+{
+    char path[1024];
+    snprintf(path, sizeof(path), "%.700s/%.100s.hex", into, stem);
+    FILE *file = fopen(path, "wb");
+    if (file == NULL) {
+        return -1;
+    }
+    fputs("# a hypothetical fourth catalogued type, committed as a golden vector\n"
+          "04 00 08\n00 00 00 00 00 00 00 2a\n",
+          file);
+    fclose(file);
+    snprintf(path, sizeof(path), "%.700s/%.100s.fields", into, stem);
+    file = fopen(path, "wb");
+    if (file == NULL) {
+        return -1;
+    }
+    fprintf(file, "message_type = %s\nuptime_ns = 42\n", stem);
+    fclose(file);
+    return 0;
+}
+
+static void a_committed_vector_this_endpoint_does_not_mirror(void)
+{
+    char scratch[512];
+    if (scratch_fixture_dir("fourth-type", scratch, sizeof(scratch)) != 0) {
+        chorus_check(0, "a scratch fixture directory for the fourth-type demonstration is "
+                        "makeable");
+        return;
+    }
+    int copied = 0;
+    for (size_t i = 0; i < CATALOG_COUNT; i++) {
+        copied |= copy_committed_pair(CATALOG[i], scratch);
+    }
+    if (copied != 0 || smuggle_fourth_pair(scratch, "heartbeat") != 0) {
+        chorus_check(0, "the committed pairs plus a smuggled fourth are writable in the "
+                        "scratch copy");
+        remove_scratch(scratch);
+        return;
+    }
+
+    committed_catalog_t smuggled;
+    read_committed_catalog(scratch, &smuggled);
+    catalog_drift_t drift = catalog_drift(&smuggled);
+    chorus_check(smuggled.count == CATALOG_COUNT + 1,
+                 "the scratch directory holds %zu vector pairs, one more than this endpoint "
+                 "mirrors",
+                 smuggled.count);
+    chorus_check(strcmp(drift.unmirrored, "heartbeat") == 0,
+                 "a fourth committed vector pair turns the guard RED naming the type: '%s'",
+                 drift.unmirrored);
+    chorus_check(drift.without_vector[0] == '\0',
+                 "and it says nothing about the three types that are still mirrored");
+    remove_scratch(scratch);
+}
+
+static void a_mirrored_type_whose_vector_went_away(void)
+{
+    char scratch[512];
+    if (scratch_fixture_dir("missing-vector", scratch, sizeof(scratch)) != 0) {
+        chorus_check(0, "a scratch fixture directory for the missing-vector demonstration is "
+                        "makeable");
+        return;
+    }
+    const char *dropped = CATALOG[CATALOG_COUNT - 1];
+    int copied = 0;
+    for (size_t i = 0; i + 1 < CATALOG_COUNT; i++) {
+        copied |= copy_committed_pair(CATALOG[i], scratch);
+    }
+    if (copied != 0) {
+        chorus_check(0, "the remaining committed pairs are writable in the scratch copy");
+        remove_scratch(scratch);
+        return;
+    }
+
+    committed_catalog_t smuggled;
+    read_committed_catalog(scratch, &smuggled);
+    catalog_drift_t drift = catalog_drift(&smuggled);
+    chorus_check(strcmp(drift.without_vector, dropped) == 0,
+                 "a committed vector pair removed under a type this endpoint mirrors turns the "
+                 "guard RED naming it: '%s'",
+                 drift.without_vector);
+    chorus_check(drift.unmirrored[0] == '\0',
+                 "and it does not also accuse the pairs that are still there");
+    remove_scratch(scratch);
+}
+
+/* Or every demonstration above would go red for the wrong reason. */
+static void an_unaltered_scratch_copy_is_green(void)
+{
+    char scratch[512];
+    if (scratch_fixture_dir("unaltered", scratch, sizeof(scratch)) != 0) {
+        chorus_check(0, "a scratch fixture directory for the control is makeable");
+        return;
+    }
+    int copied = 0;
+    for (size_t i = 0; i < CATALOG_COUNT; i++) {
+        copied |= copy_committed_pair(CATALOG[i], scratch);
+    }
+    if (copied != 0) {
+        chorus_check(0, "the committed pairs are writable in the scratch copy");
+        remove_scratch(scratch);
+        return;
+    }
+
+    committed_catalog_t control;
+    read_committed_catalog(scratch, &control);
+    catalog_drift_t drift = catalog_drift(&control);
+    chorus_check(control.count == CATALOG_COUNT && drift.unmirrored[0] == '\0' &&
+                     drift.without_vector[0] == '\0',
+                 "an unaltered copy of the committed pairs is green, so the two above go red "
+                 "for the reason claimed");
+    remove_scratch(scratch);
+}
+
 int main(void)
 {
-    chorus_section("every catalogued message type has a committed vector, both directions");
-    for (size_t i = 0; i < CATALOG_COUNT; i++) {
-        one_vector(CATALOG[i]);
+    chorus_section("fixtures/protocol/ is read, and this endpoint's catalog is held to it");
+    committed_catalog_t committed;
+    the_committed_directory_is_the_catalog(&committed);
+
+    chorus_section("the drift guard, shown going red on a smuggled fixture directory");
+    a_committed_vector_this_endpoint_does_not_mirror();
+    a_mirrored_type_whose_vector_went_away();
+    an_unaltered_scratch_copy_is_green();
+
+    chorus_section("every committed vector round trips, both directions");
+    for (size_t i = 0; i < committed.count; i++) {
+        one_vector(committed.vectors[i].stem);
     }
-    chorus_check(CATALOG_COUNT == 3,
-                 "the catalog this test covers has %zu types, matching MessageType::ALL",
-                 CATALOG_COUNT);
 
     chorus_section("an unrecognised type is skipped and the session stays open");
     unknown_type_is_skipped_and_the_session_stays_open();

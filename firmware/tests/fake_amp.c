@@ -94,6 +94,13 @@ static int fake_apply_clock(void *ctx, const chorus_i2s_clock_t *clock)
 static int fake_stop_clock(void *ctx)
 {
     fake_amp_t *fake = (fake_amp_t *)ctx;
+    /* Stopping the clock IS a clock change. Counting only apply_clock would
+     * make the assertion above blind to the teardown paths, which are the ones
+     * that run with the output stage already live. */
+    fake->clock_changes++;
+    if (fake->stage != FAKE_STAGE_HIGH_IMPEDANCE) {
+        fake->clock_changed_while_not_high_impedance = 1;
+    }
     record(fake, FAKE_EV_CLOCK_STOPPED, 0, 0, 0, CHORUS_I2C_ACK);
     return 0;
 }

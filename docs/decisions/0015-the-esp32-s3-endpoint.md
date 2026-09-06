@@ -55,6 +55,15 @@ ORDER `docs/protocol.md` makes normative: a truncated header and an
 over-declared length consume nothing, an unassigned type is stepped over, a
 short payload and a bad field cost one frame each.
 
+It ENUMERATES that directory rather than carrying a list of type names, the way
+`test_sync.c` enumerates `fixtures/sync`. A hardcoded list checked against its
+own length is a tautology and would let the C side fall silently behind the
+vectors, which is the one thing `fixtures/README.md` says these files exist to
+prevent. Enumerating makes the coupling real in both directions: a committed
+vector pair with no C mirror is red, and a mirrored type with no committed pair
+is red. Both are demonstrated on a scratch copy of the fixture directory rather
+than asserted, in the shape `test_scan.c` already uses.
+
 **The sync core** (`firmware/src/sync_servo.c`, `sync_sim.c`, `sync_rng.c`,
 `sync_scenario.c`) is held to two things. First, every scenario under
 `fixtures/sync` drives the modelled playout error below that scenario's
@@ -113,7 +122,7 @@ state-control register, the healthy device-id value, the no-fault value and the
 analog-gain code as the literal word `unknown`. `unknown` is not a placeholder
 that defaults to something: `chorus_amp_bring_up` refuses, names the key, and
 leaves the output stage in high impedance. There is not one register literal in
-`firmware/src/amp.c`, and `firmware/check/endpoint-scan.c` fails the suite if a
+`firmware/src/amp.c`, and `firmware/check/endpoint_scan.c` fails the suite if a
 hex literal ever appears there.
 
 ### The order, and why it is that order
@@ -172,8 +181,12 @@ the decision record. **The endpoint stops the audio.**
 An amplifier reporting a fault - overcurrent, overtemperature, DC at the output
 - while driving a real loudspeaker is exactly the case where continuing is what
 damages a driver, and this repository's fail-safe rule is that the irreversible
-thing is the one you refuse. So `chorus_amp_poll_fault` stops the I2S clock,
-puts the output stage in high impedance, and hands back a status with a name;
+thing is the one you refuse. So `chorus_amp_poll_fault` puts the output stage in
+high impedance, THEN stops the I2S clock, and hands back a status with a name;
+the order is the same one bring-up uses and for the same reason - stopping a
+clock is a clock change, and `chorus/amp.h` step 7 promises that every clock
+change is made into a dead output, not only the first. Every unwind in this tree
+kills the output before it touches the clock. On the telemetry side,
 `chorus_telemetry_record_amp` sets `audio=stopped-on-amp-fault` for EVERY
 non-OK amplifier status, so there is no state of the telemetry struct that
 reports a fault and `audio=running`.
@@ -283,7 +296,7 @@ is flat about it:
 
 `dma_descriptor_placement = internal`, refused at configuration time if it is
 not, and - because a runtime flag is easy to satisfy and easy to bypass -
-`firmware/check/endpoint-scan.c` additionally refuses ANY external-RAM
+`firmware/check/endpoint_scan.c` additionally refuses ANY external-RAM
 placement anywhere in the endpoint tree: `EXT_RAM_BSS_ATTR`,
 `EXT_RAM_NOINIT_ATTR`, `EXT_RAM_ATTR`, `MALLOC_CAP_SPIRAM`, `SPIRAM_MALLOC`.
 

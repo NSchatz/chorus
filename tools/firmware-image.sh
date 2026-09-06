@@ -16,7 +16,7 @@
 #
 # THIS SHIPS NOTHING. It builds an image and stops. OTA, rollback and every
 # form of image activation belong to chorus#FLEET-10, and
-# firmware/check/endpoint-scan.c fails the suite if a line of the endpoint tree
+# firmware/check/endpoint_scan.c fails the suite if a line of the endpoint tree
 # so much as names one.
 #
 # NEEDS AN ENVIRONMENT.

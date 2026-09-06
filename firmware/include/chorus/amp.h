@@ -9,7 +9,7 @@
  * this sequencer uses arrives from `firmware/config/endpoint.conf`, where they
  * are DECLARED UNKNOWN until somebody reads them off the datasheet at
  * bring-up. There is not one register literal in the endpoint tree, and
- * firmware/check/endpoint-scan.c fails the suite if one appears.
+ * firmware/check/endpoint_scan.c fails the suite if one appears.
  *
  * A register whose id reads `unknown` is not defaulted to anything. The
  * sequencer refuses, names the key, and leaves the output stage in high
@@ -174,10 +174,12 @@ chorus_amp_status_t chorus_amp_bring_up(const chorus_amp_config_t *config,
 
 /* Read the fault register of a brought-up part.
  *
- * On a fault this stops the audio: the output stage goes to high impedance and
- * the I2S clock is stopped, and the caller is handed a status with a name to
- * publish. Continuing to play into a faulted amplifier is what damages a
- * driver, and docs/decisions/0015 records the choice. */
+ * On a fault this stops the audio, in that order and not the other one: the
+ * output stage goes to high impedance FIRST and the I2S clock is stopped after
+ * it, because stopping a clock is a clock change and step 7 above promises
+ * every clock change is made into a dead output. The caller is handed a status
+ * with a name to publish. Continuing to play into a faulted amplifier is what
+ * damages a driver, and docs/decisions/0015 records the choice. */
 chorus_amp_status_t chorus_amp_poll_fault(const chorus_amp_config_t *config,
                                           chorus_i2c_bus_t *bus, chorus_output_stage_t *stage,
                                           chorus_i2s_controller_t *controller,
