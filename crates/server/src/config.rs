@@ -53,6 +53,34 @@ pub struct ServerConfig {
     /// the process's thread population: a client is served by a thread that
     /// already existed when the scheduling report was taken, or it is refused.
     pub max_clients: usize,
+    /// Where the control channel listens, or `None` for a server with no
+    /// control plane at all.
+    ///
+    /// Opt-in rather than defaulted, and
+    /// `docs/decisions/0016-the-control-catalog.md` records why: a fixed
+    /// default port would be bound by several of this repository's own
+    /// verification runs at once, and `deploy/` is not this phase's to change.
+    pub control_listen: Option<String>,
+    /// How many control connections may be served at once.
+    ///
+    /// A ceiling, and the same argument `max_clients` makes: one thread exists
+    /// for each of these from the moment the process starts, so this number is
+    /// part of what fixes the thread population.
+    pub control_workers: usize,
+    /// Where the zone state is persisted, or `None` for a run that keeps
+    /// nothing across a restart.
+    pub state_file: Option<String>,
+    /// The zones this server has, in the order they were configured.
+    ///
+    /// Read only when there is no persisted state to load; see
+    /// `docs/decisions/0018-the-persisted-zone-state.md`.
+    pub zones: Vec<String>,
+    /// Where each group's audio stream is served, as `group=address`.
+    pub group_audio: Vec<(String, String)>,
+    /// Whether to advertise this server by multicast DNS.
+    pub advertise: bool,
+    /// The DNS-SD instance label this server advertises under.
+    pub instance: String,
 }
 
 impl Default for ServerConfig {
@@ -74,6 +102,13 @@ impl Default for ServerConfig {
             allow_unlocked_memory: false,
             once: true,
             max_clients: 4,
+            control_listen: None,
+            control_workers: 8,
+            state_file: None,
+            zones: Vec::new(),
+            group_audio: Vec::new(),
+            advertise: false,
+            instance: "chorus".to_string(),
         }
     }
 }
@@ -104,6 +139,18 @@ pub enum ServerConfigError {
     RtTimeIsZero,
     /// A ceiling of zero clients would refuse every connection.
     NoClientsAllowed,
+    /// A control channel with no worker would refuse every connection.
+    NoControlWorkersAllowed,
+    /// A `--group-audio` argument that is not `group=address`.
+    NotAGroupAddress {
+        /// The value as it was given.
+        value: String,
+    },
+    /// A zone identifier the catalog does not allow.
+    NotAZone {
+        /// The value as it was given.
+        value: String,
+    },
 }
 
 impl fmt::Display for ServerConfigError {
@@ -130,6 +177,24 @@ impl fmt::Display for ServerConfigError {
                 f,
                 "a ceiling of 0 clients would bind a socket and refuse every connection that \
                  arrived on it"
+            ),
+            ServerConfigError::NoControlWorkersAllowed => write!(
+                f,
+                "a control channel with 0 workers would bind a socket and refuse every \
+                 connection that arrived on it"
+            ),
+            ServerConfigError::NotAGroupAddress { value } => write!(
+                f,
+                "'{}' is not 'group=address'; --group-audio says where one group's audio stream \
+                 is served, for example --group-audio downstairs=127.0.0.1:4011",
+                value
+            ),
+            ServerConfigError::NotAZone { value } => write!(
+                f,
+                "'{}' is not a zone identifier; the control catalog declares 1 to {} characters \
+                 of lower-case letters, digits and hyphens",
+                value,
+                chorus_control::catalog::MAX_IDENTIFIER_LEN
             ),
         }
     }
@@ -174,6 +239,34 @@ impl ServerConfig {
                 "--allow-unlocked-memory" => config.allow_unlocked_memory = true,
                 "--serve-forever" => config.once = false,
                 "--max-clients" => config.max_clients = number(&arg, &value()?)? as usize,
+                "--control-listen" => config.control_listen = Some(value()?),
+                "--control-workers" => config.control_workers = number(&arg, &value()?)? as usize,
+                "--state-file" => config.state_file = Some(value()?),
+                "--zone" => {
+                    let id = value()?;
+                    if !chorus_control::catalog::is_identifier(&id) {
+                        return Err(ServerConfigError::NotAZone { value: id });
+                    }
+                    config.zones.push(id);
+                }
+                "--group-audio" => {
+                    let pair = value()?;
+                    let (group, address) = pair
+                        .split_once('=')
+                        .ok_or_else(|| ServerConfigError::NotAGroupAddress {
+                            value: pair.clone(),
+                        })?;
+                    if !chorus_control::catalog::is_identifier(group) || address.is_empty() {
+                        return Err(ServerConfigError::NotAGroupAddress {
+                            value: pair.clone(),
+                        });
+                    }
+                    config
+                        .group_audio
+                        .push((group.to_string(), address.to_string()));
+                }
+                "--advertise" => config.advertise = true,
+                "--instance" => config.instance = value()?,
                 other => {
                     return Err(ServerConfigError::UnknownArgument {
                         argument: other.to_string(),
@@ -186,6 +279,9 @@ impl ServerConfig {
         }
         if config.max_clients == 0 {
             return Err(ServerConfigError::NoClientsAllowed);
+        }
+        if config.control_listen.is_some() && config.control_workers == 0 {
+            return Err(ServerConfigError::NoControlWorkersAllowed);
         }
         Ok(config)
     }
@@ -239,6 +335,66 @@ mod tests {
         let err =
             ServerConfig::from_args(["--max-clients".to_string(), "0".to_string()]).unwrap_err();
         assert_eq!(err, ServerConfigError::NoClientsAllowed);
+    }
+
+    #[test]
+    fn the_control_plane_is_off_unless_an_address_is_given_for_it() {
+        assert_eq!(ServerConfig::default().control_listen, None);
+        let c = ServerConfig::from_args([
+            "--control-listen".to_string(),
+            "127.0.0.1:0".to_string(),
+        ])
+        .unwrap();
+        assert_eq!(c.control_listen.as_deref(), Some("127.0.0.1:0"));
+        assert_eq!(c.control_workers, 8, "docs/decisions/0016 records why 8");
+    }
+
+    #[test]
+    fn a_control_channel_with_no_worker_is_refused_rather_than_bound() {
+        let err = ServerConfig::from_args([
+            "--control-listen".to_string(),
+            "127.0.0.1:0".to_string(),
+            "--control-workers".to_string(),
+            "0".to_string(),
+        ])
+        .unwrap_err();
+        assert_eq!(err, ServerConfigError::NoControlWorkersAllowed);
+        // With no control channel the number is not consulted at all, so it is
+        // not a reason to refuse a configuration that never uses it.
+        assert!(
+            ServerConfig::from_args(["--control-workers".to_string(), "0".to_string()]).is_ok()
+        );
+    }
+
+    #[test]
+    fn a_zone_or_a_group_address_that_is_not_one_is_refused_at_start() {
+        let err =
+            ServerConfig::from_args(["--zone".to_string(), "Kitchen Zone".to_string()]).unwrap_err();
+        assert!(matches!(err, ServerConfigError::NotAZone { .. }), "{:?}", err);
+        let err = ServerConfig::from_args([
+            "--group-audio".to_string(),
+            "downstairs".to_string(),
+        ])
+        .unwrap_err();
+        assert!(
+            matches!(err, ServerConfigError::NotAGroupAddress { .. }),
+            "{:?}",
+            err
+        );
+        let c = ServerConfig::from_args([
+            "--zone".to_string(),
+            "kitchen".to_string(),
+            "--zone".to_string(),
+            "study".to_string(),
+            "--group-audio".to_string(),
+            "downstairs=127.0.0.1:4011".to_string(),
+        ])
+        .unwrap();
+        assert_eq!(c.zones, vec!["kitchen".to_string(), "study".to_string()]);
+        assert_eq!(
+            c.group_audio,
+            vec![("downstairs".to_string(), "127.0.0.1:4011".to_string())]
+        );
     }
 
     #[test]

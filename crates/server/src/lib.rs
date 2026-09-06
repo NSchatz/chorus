@@ -17,6 +17,12 @@
 //! population is a declared quantity rather than a function of how many
 //! endpoints are switched on.
 //!
+//! **The control half** ([`control`]) is the second, separate catalog: zones
+//! with names, groups, volume and mute, changed by a versioned JSON message and
+//! fanned out to every subscriber. It is on its own connection, it never
+//! touches an audio frame, and every thread it needs is created before the
+//! scheduling report is taken, for the reason [`clients`] gives about its own.
+//!
 //! **The host half** ([`hostreport`], and `chorus_hostctl` under it) reads the
 //! real-time priority ceiling the container was granted, takes a priority no
 //! greater than it, bounds every real-time thread with a CPU-time limit before
@@ -40,12 +46,14 @@
 
 pub mod clients;
 pub mod config;
+pub mod control;
 pub mod hostreport;
 pub mod serve;
 pub mod source;
 pub mod stream;
 
 pub use clients::ClientPool;
+pub use control::{ControlPlane, ControlRefused, ControlState};
 pub use config::{ServerConfig, ServerConfigError};
 pub use hostreport::{ContractRefused, MemoryLockOutcome, RealTimeOutcome};
 pub use serve::{serve_stream, ServeError, ServeParams, ServeReport};

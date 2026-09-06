@@ -58,6 +58,8 @@ use chorus_protocol::{encode, Message, StreamEnd, TimeSync};
 
 use crate::buffer::{frames_to_us, us_to_frames, Accepted, Buffer, Counters, Zone};
 use crate::config::ClientConfig;
+use crate::control::ZoneWatch;
+use crate::zone::ZoneGain;
 use crate::delaylog::{DelayLog, LogHeader, LogSummary};
 use crate::receive::{
     receive_loop, FramingError, Handshake, ReceiveStop, Received, Receiver, StreamShape,
@@ -208,6 +210,7 @@ fn record_stop(slot: &StopSlot, reason: StopReason) {
 /// path with no exchange at all: the loop then has no offset, applies no
 /// correction, and says so, which is exactly what it must do against a peer
 /// that never answers.
+#[allow(clippy::too_many_arguments)]
 pub fn run_session<R: Read + Send + 'static, S: PcmSink>(
     config: &ClientConfig,
     mut source: R,
@@ -217,8 +220,10 @@ pub fn run_session<R: Read + Send + 'static, S: PcmSink>(
     timeline: MonotonicTimeline,
     counters: Arc<Counters>,
     sync_out: Option<Box<dyn Write>>,
+    watch: Arc<ZoneWatch>,
 ) -> Result<RunOutcome, std::io::Error> {
     let rate_hz = sink.rate_hz();
+    let gain = ZoneGain::new(handshake.shape.sample_format);
     let buffer = Arc::new(Buffer::new(config.min_us, config.max_us, rate_hz));
     let keep_going = Arc::new(AtomicBool::new(true));
     let (events_tx, events_rx) = mpsc::channel::<PendingEvent>();
@@ -291,6 +296,8 @@ pub fn run_session<R: Read + Send + 'static, S: PcmSink>(
         &replies_rx,
         sync_out,
         &stop_slot,
+        gain,
+        &watch,
     );
 
     keep_going.store(false, Ordering::SeqCst);
@@ -383,6 +390,8 @@ fn play<S: PcmSink>(
     replies: &ChannelReceiver<TimeSync>,
     mut sync_out: Option<Box<dyn Write>>,
     stop_slot: &StopSlot,
+    gain: ZoneGain,
+    watch: &Arc<ZoneWatch>,
 ) -> Result<RunOutcome, std::io::Error> {
     let rate_hz = sink.rate_hz();
     let start_fill_frames = us_to_frames(config.start_fill_us, rate_hz);
@@ -413,6 +422,9 @@ fn play<S: PcmSink>(
     let mut was_stale = false;
     let mut was_muted = false;
     let mut was_undelayed = false;
+    // What the zone last commanded, so a change is one log line and not one per
+    // chunk.
+    let mut last_gain = watch.gain();
 
     macro_rules! read_delay {
         () => {
@@ -504,6 +516,10 @@ fn play<S: PcmSink>(
                 primed_frames
             ),
         )?;
+        // The zone's gain is applied here too. The priming write is audio like
+        // any other, and an endpoint whose zone is muted must not begin with
+        // 120 ms of sound before the first state message reaches it.
+        gain.apply(watch.gain(), &mut primed);
         match sink.write(&primed) {
             Ok(report) => {
                 counters
@@ -739,7 +755,21 @@ fn play<S: PcmSink>(
                     let now_ns = timeline.now_ns();
                     corrector.advance(now_ns.saturating_sub(last_advance_ns));
                     last_advance_ns = now_ns;
-                    let shaped = corrector.shape(&queued.chunk.audio_data);
+                    let mut shaped = corrector.shape(&queued.chunk.audio_data);
+                    // The zone's volume and mute, applied to the frames about
+                    // to be written and to nothing else. This is the last thing
+                    // that touches the PCM before the device sees it, so what a
+                    // modelled sink accepts IS what the zone commanded.
+                    let now_gain = watch.gain();
+                    gain.apply(now_gain, &mut shaped);
+                    if now_gain != last_gain {
+                        last_gain = now_gain;
+                        log.event(
+                            timeline.now_us(),
+                            "zone-gain",
+                            &format!("gain={} {}", now_gain.literal(), watch.line()),
+                        )?;
+                    }
                     match sink.write(&shaped) {
                         Ok(report) => {
                             counters
@@ -807,7 +837,8 @@ fn play<S: PcmSink>(
             let now_ns = timeline.now_ns();
             corrector.advance(now_ns.saturating_sub(last_advance_ns));
             last_advance_ns = now_ns;
-            let shaped = corrector.shape(&queued.chunk.audio_data);
+            let mut shaped = corrector.shape(&queued.chunk.audio_data);
+            gain.apply(watch.gain(), &mut shaped);
             match sink.write(&shaped) {
                 Ok(report) => {
                     counters

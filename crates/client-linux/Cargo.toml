@@ -11,6 +11,8 @@ chorus-protocol = { path = "../protocol" }
 chorus-audio = { path = "../audio" }
 chorus-alsa = { path = "../alsa" }
 chorus-sync = { path = "../sync" }
+chorus-control = { path = "../control" }
+chorus-discovery = { path = "../discovery" }
 
 [[bin]]
 name = "chorus-client"

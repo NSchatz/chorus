@@ -10,6 +10,8 @@ publish.workspace = true
 chorus-protocol = { path = "../protocol" }
 chorus-audio = { path = "../audio" }
 chorus-hostctl = { path = "../hostctl" }
+chorus-control = { path = "../control" }
+chorus-discovery = { path = "../discovery" }
 
 [dev-dependencies]
 # The end-to-end tests decode what the server put on a real socket with the
