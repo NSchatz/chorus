@@ -3,6 +3,13 @@
 # both line outputs captured together, and the inter-device error reported as a
 # distribution.
 #
+# The captures are spread across the graded hour and the first of them starts
+# after the acquisition transient, because AC-1 asks for an hour of settled
+# playout and excludes the first minute by name. A single window taken as the
+# endpoints start is a picture of the thing the criterion excludes, and one
+# window anywhere is not a distribution. config/sync.conf holds the settle, the
+# count and the length of each capture.
+#
 # THIS IS THE ENTRY POINT FOR AC-1 AND AC-1 IS NOT PASSED. It needs a second
 # wired endpoint, an audio interface with two channels of capture, and real
 # loudspeakers. On a machine without them this script exits non-zero naming the
@@ -34,14 +41,22 @@ build_once
 
 RUN_SECONDS="$(sync_conf sync_hour_run_seconds)"
 CAPTURE_SECONDS="$(sync_conf sync_hour_capture_seconds)"
+SETTLE_SECONDS="$(sync_conf sync_hour_settle_seconds)"
+CAPTURES="$(sync_conf sync_hour_captures)"
 DEVICE="$(audio_device)"
 CAPTURE_DEVICE="$(capture_device)"
 OUT_DIR="${CHORUS_MEASURE_OUT:-${TMPDIR:-/tmp}}"
 LOG_DIR="${CHORUS_SYNC_LOG_DIR:-$REPO_ROOT/docs/measurements}"
 
+# The graded window is what is left of the run once the acquisition transient
+# has passed, and the captures are spread evenly across it.
+GRADED_SECONDS=$((RUN_SECONDS - SETTLE_SECONDS))
+CAPTURE_SPACING=$((GRADED_SECONDS / CAPTURES))
+
 say "chorus: the hour-long grouped-stream run"
 say "  criterion:     AC-1, the one criterion of this phase that needs hardware"
-say "  run:           ${RUN_SECONDS}s, captured ${CAPTURE_SECONDS}s at a time"
+say "  run:           ${RUN_SECONDS}s, of which the first ${SETTLE_SECONDS}s is acquisition"
+say "  captures:      ${CAPTURES} of ${CAPTURE_SECONDS}s, one every ${CAPTURE_SPACING}s"
 say "  local device:  $DEVICE"
 say "  capture:       $CAPTURE_DEVICE"
 say "  second endpoint: ${CHORUS_SECOND_ENDPOINT:-<unset>}"
@@ -92,6 +107,7 @@ client_args() {
 }
 
 say "chorus: starting endpoint A here"
+RUN_STARTED=$SECONDS
 "$BIN_DIR/chorus-client" \
     --server "127.0.0.1:$PORT" \
     --device "$DEVICE" \
@@ -112,14 +128,28 @@ REMOTE_COMMAND="chorus-client --server ${SERVER_HOST}:${PORT} \
 ssh "$CHORUS_SECOND_ENDPOINT" "$REMOTE_COMMAND" &
 CLIENT_B_PID=$!
 
-say "chorus: capturing both line outputs"
-"$BIN_DIR/chorus-measure-capture" \
-    --capture-device "$CAPTURE_DEVICE" \
-    --seconds "$CAPTURE_SECONDS" \
-    --out "$OUT_DIR/chorus-sync-hour-capture.wav"
-
-say "chorus: analysing the capture"
-"$BIN_DIR/chorus-measure" lag "$OUT_DIR/chorus-sync-hour-capture.wav" --label "sync-hour-run"
+# AC-1 is a distribution over an hour of settled playout, so the rig takes a
+# capture every CAPTURE_SPACING seconds from the end of the settle onwards. One
+# window at t=0 would be a picture of the acquisition transient, which is the
+# window the criterion excludes by name, and one window anywhere is not a
+# distribution.
+say "chorus: capturing both line outputs, $CAPTURES times, starting at t=${SETTLE_SECONDS}s"
+CAPTURE_INDEX=1
+while [ "$CAPTURE_INDEX" -le "$CAPTURES" ]; do
+    DUE=$((SETTLE_SECONDS + (CAPTURE_INDEX - 1) * CAPTURE_SPACING))
+    while [ $((SECONDS - RUN_STARTED)) -lt "$DUE" ]; do
+        sleep 1
+    done
+    WAV="$OUT_DIR/chorus-sync-hour-capture-$CAPTURE_INDEX.wav"
+    say "chorus: capture $CAPTURE_INDEX of $CAPTURES at t=$((SECONDS - RUN_STARTED))s"
+    "$BIN_DIR/chorus-measure-capture" \
+        --capture-device "$CAPTURE_DEVICE" \
+        --seconds "$CAPTURE_SECONDS" \
+        --out "$WAV"
+    say "chorus: analysing capture $CAPTURE_INDEX"
+    "$BIN_DIR/chorus-measure" lag "$WAV" --label "sync-hour-run-$CAPTURE_INDEX"
+    CAPTURE_INDEX=$((CAPTURE_INDEX + 1))
+done
 
 wait "$CLIENT_A_PID"
 CLIENT_A_STATUS=$?

@@ -711,11 +711,22 @@ impl PlayoutCorrector {
     ///
     /// Drops frames from the front, inserts silence at the front, and silences
     /// whatever a mute still owes, in that order.
+    ///
+    /// The mute covers the SPLICE, and the splice is where audio resumes. When
+    /// this call inserted silence, the join the ear would hear is at the far
+    /// end of that insertion, not at its start, so the mute begins where the
+    /// insertion stops. Silencing the insertion instead would spend the mute
+    /// on frames the corrector had just zeroed itself and report them in
+    /// [`PlayoutCorrector::muted_frames`] as though a splice had been covered:
+    /// a backward step larger than the mute would then leave the only audible
+    /// discontinuity it makes uncovered, and say it had covered it.
     pub fn shape(&mut self, pcm: &[u8]) -> Vec<u8> {
         let frames_in = pcm.len() / self.frame_len;
         let mut out: Vec<u8> = Vec::with_capacity(pcm.len());
 
         let mut from = 0usize;
+        // Where audio resumes in `out`, which is where a mute has to start.
+        let mut splice_at = 0usize;
         if self.pending_frames >= 1.0 {
             let drop = (self.pending_frames as u64).min(frames_in as u64);
             self.pending_frames -= drop as f64;
@@ -726,14 +737,15 @@ impl PlayoutCorrector {
             self.pending_frames += insert as f64;
             self.inserted_frames += insert;
             out.resize(insert as usize * self.frame_len, 0);
+            splice_at = out.len();
         }
         out.extend_from_slice(&pcm[from..]);
 
         if self.mute_frames > 0 {
-            let frames_out = (out.len() / self.frame_len) as u64;
-            let silence = self.mute_frames.min(frames_out);
+            let frames_after_splice = ((out.len() - splice_at) / self.frame_len) as u64;
+            let silence = self.mute_frames.min(frames_after_splice);
             let bytes = silence as usize * self.frame_len;
-            out[..bytes].fill(0);
+            out[splice_at..splice_at + bytes].fill(0);
             self.mute_frames -= silence;
             self.muted_frames += silence;
         }
@@ -829,6 +841,52 @@ mod tests {
         assert!(shaped[..240 * 4].iter().all(|b| *b == 0));
         assert!(shaped[240 * 4..].iter().all(|b| *b == 9));
         assert!(!corrector.muted(), "the mute ran out, so playout resumed");
+    }
+
+    #[test]
+    fn a_backward_step_larger_than_the_mute_still_mutes_real_audio() {
+        let mut corrector = PlayoutCorrector::new(48_000, 4);
+        // 40 ms of step, BACKWARD, under a 20 ms mute: the step is twice the
+        // mute, so the inserted silence alone would swallow the whole mute.
+        corrector.hard_resync(-40_000_000.0, 20_000_000);
+        assert!((corrector.pending_frames() + 1_920.0).abs() < 1e-9);
+
+        let shaped = corrector.shape(&vec![9u8; 3_840 * 4]);
+        assert_eq!(shaped.len() / 4, 1_920 + 3_840, "1920 frames were inserted");
+        assert_eq!(corrector.inserted_frames(), 1_920);
+        assert_eq!(corrector.muted_frames(), 960, "20 ms of mute at 48 kHz");
+
+        // The insertion is silent because it is an insertion, and the 960
+        // frames after it are silent because they are the mute. What must NOT
+        // happen is the mute landing inside the insertion, which would leave
+        // audio resuming at full level straight off a 40 ms gap.
+        assert!(shaped[..1_920 * 4].iter().all(|b| *b == 0), "the insertion");
+        assert!(
+            shaped[1_920 * 4..(1_920 + 960) * 4].iter().all(|b| *b == 0),
+            "the mute lands on the audio that resumes, not on the insertion"
+        );
+        assert!(
+            shaped[(1_920 + 960) * 4..].iter().all(|b| *b == 9),
+            "and playout resumes at full level after it"
+        );
+        assert!(!corrector.muted(), "the mute ran out, so playout resumed");
+    }
+
+    #[test]
+    fn a_mute_with_no_audio_left_to_cover_is_carried_to_the_next_chunk() {
+        let mut corrector = PlayoutCorrector::new(48_000, 4);
+        corrector.hard_resync(-20_000_000.0, 10_000_000);
+        // A chunk that is entirely consumed by the insertion leaves nothing
+        // after the splice, so the mute is owed still rather than spent.
+        let shaped = corrector.shape(&[]);
+        assert_eq!(shaped.len() / 4, 960, "the whole insertion, no audio");
+        assert_eq!(corrector.muted_frames(), 0, "nothing real was muted yet");
+        assert!(corrector.muted(), "the mute is still owed");
+
+        let shaped = corrector.shape(&vec![9u8; 960 * 4]);
+        assert_eq!(corrector.muted_frames(), 480, "10 ms at 48 kHz");
+        assert!(shaped[..480 * 4].iter().all(|b| *b == 0));
+        assert!(shaped[480 * 4..].iter().all(|b| *b == 9));
     }
 
     #[test]

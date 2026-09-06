@@ -14,6 +14,15 @@
 //! streams that happen to sound alike. They cannot be inaudibly apart, because
 //! there is nothing they are both aligned TO.
 //!
+//! # No back pressure, but a ceiling
+//!
+//! One endpoint that stops reading must not stop the stream the others are
+//! aligned to, so nothing here blocks the chunk emitter on a slow client. That
+//! decoupling needs its other half or it is just an unbounded allocation:
+//! every subscriber's queue is bounded at [`SUBSCRIBER_QUEUE_LIMIT`], and
+//! items dropped for a subscriber at its ceiling are counted in
+//! [`Fanout::dropped`] and reported at the end of the stream.
+//!
 //! # The connection carries both directions
 //!
 //! A client's time-sync request arrives on the same connection its audio
@@ -39,11 +48,33 @@
 //! `Instant` and its own epoch. There is no wall clock anywhere on this path.
 
 use std::io::{self, Read, Write};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 
 use chorus_audio::MonotonicTimeline;
 use chorus_protocol::{decode_frame, encode, FrameOutcome, Message, TimeSync};
+
+/// How far behind one client may fall before the group plays on without it,
+/// counted in outbound items.
+///
+/// A group has no back pressure on purpose: one endpoint that stops reading
+/// must not stop the stream the others are aligned to. But a queue with no
+/// ceiling is not decoupling, it is an unbounded allocation with a stalled
+/// socket on the end of it. At the default stream shape (48 kHz stereo
+/// `pcm_s16le` in 20 ms chunks) a subscriber that has stopped draining accrues
+/// about 192 kB of audio every second it stays stalled, for as long as the
+/// process runs, on a host this server has already asked for 64 MB of locked
+/// memory.
+///
+/// 128 items is 2.56 s of audio at that shape and roughly 500 kB per stalled
+/// subscriber. A client that is 2.5 s behind is not going to catch up: the
+/// client plays to a fixed playout latency of 180 ms and treats anything past
+/// its ceiling as an overflow, so those chunks are already due to be dropped at
+/// the far end. What matters is that the drop is BOUNDED and COUNTED here
+/// rather than deferred into an allocation, which is what
+/// [`Fanout::dropped`] reports.
+pub const SUBSCRIBER_QUEUE_LIMIT: usize = 128;
 
 /// Something to put on one client's connection.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,7 +96,8 @@ pub enum Outbound {
 /// Every client currently attached to the stream.
 #[derive(Debug, Default)]
 pub struct Fanout {
-    subscribers: Mutex<Vec<Sender<Outbound>>>,
+    subscribers: Mutex<Vec<SyncSender<Outbound>>>,
+    dropped: AtomicU64,
 }
 
 impl Fanout {
@@ -79,8 +111,11 @@ impl Fanout {
     /// A client that attaches mid-stream gets the chunks from where it
     /// attached. Its sequence numbers are a contiguous run from its own first
     /// chunk; they do not start at zero, because the stream did not.
-    pub fn subscribe(&self) -> (Sender<Outbound>, Receiver<Outbound>) {
-        let (tx, rx) = mpsc::channel();
+    ///
+    /// The queue is bounded at [`SUBSCRIBER_QUEUE_LIMIT`]; see there for why a
+    /// group needs a ceiling even though it must not have back pressure.
+    pub fn subscribe(&self) -> (SyncSender<Outbound>, Receiver<Outbound>) {
+        let (tx, rx) = mpsc::sync_channel(SUBSCRIBER_QUEUE_LIMIT);
         self.lock().push(tx.clone());
         (tx, rx)
     }
@@ -90,19 +125,44 @@ impl Fanout {
         self.lock().len()
     }
 
-    /// Hand `item` to every attached client, dropping the ones that have gone.
+    /// How many items have been dropped for subscribers that were at their
+    /// ceiling, over the life of this fanout.
+    ///
+    /// This is the report half of the bound. A drop that is not counted is
+    /// indistinguishable from a stream that was never sent, and an operator
+    /// reading a run needs to be able to tell those apart.
+    pub fn dropped(&self) -> u64 {
+        self.dropped.load(Ordering::Relaxed)
+    }
+
+    /// Hand `item` to every attached client, dropping the ones that have gone
+    /// and the items of the ones that are too far behind.
     ///
     /// A client that has disconnected is not an error and never stops the
     /// stream: the stream is the thing the others are aligned to, and taking
     /// it down because one endpoint was unplugged would take the group with
-    /// it.
+    /// it. A client that is still connected but has stopped draining is the
+    /// same argument one step on: the group plays past it, this item is
+    /// dropped for it alone and counted in [`Fanout::dropped`], and it stays
+    /// attached so that it can catch up if it starts reading again.
     pub fn broadcast(&self, item: Outbound) -> usize {
         let mut subscribers = self.lock();
-        subscribers.retain(|tx| tx.send(item.clone()).is_ok());
+        let mut dropped = 0u64;
+        subscribers.retain(|tx| match tx.try_send(item.clone()) {
+            Ok(()) => true,
+            Err(TrySendError::Full(_)) => {
+                dropped += 1;
+                true
+            }
+            Err(TrySendError::Disconnected(_)) => false,
+        });
+        if dropped > 0 {
+            self.dropped.fetch_add(dropped, Ordering::Relaxed);
+        }
         subscribers.len()
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<Sender<Outbound>>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<SyncSender<Outbound>>> {
         match self.subscribers.lock() {
             Ok(g) => g,
             Err(poisoned) => poisoned.into_inner(),
@@ -160,7 +220,7 @@ const MAX_PENDING: usize = 3 + 65_535 + 65_536;
 pub fn read_requests<R: Read>(
     source: &mut R,
     timeline: MonotonicTimeline,
-    out: &Sender<Outbound>,
+    out: &SyncSender<Outbound>,
     keep_going: &dyn Fn() -> bool,
 ) -> RequestStop {
     let mut pending: Vec<u8> = Vec::new();
@@ -193,8 +253,18 @@ pub fn read_requests<R: Read>(
                     t0_ns: request.t0_ns,
                     t1_ns: timeline.now_ns(),
                 };
-                if out.send(answer).is_err() {
-                    return RequestStop::Closed;
+                match out.try_send(answer) {
+                    Ok(()) => {}
+                    // The queue is bounded, so this client is already
+                    // SUBSCRIBER_QUEUE_LIMIT items behind on its own socket.
+                    // Blocking here would stall this reader on a client that
+                    // is not reading; the exchange is simply not answered, and
+                    // an unanswered exchange is one the client discards and
+                    // asks again. What must not happen is an answer queued
+                    // behind seconds of stale audio and stamped with a `t2`
+                    // from before that wait.
+                    Err(TrySendError::Full(_)) => {}
+                    Err(TrySendError::Disconnected(_)) => return RequestStop::Closed,
                 }
             }
         }
@@ -260,6 +330,37 @@ mod tests {
     }
 
     #[test]
+    fn a_subscriber_that_stops_draining_is_bounded_and_its_drops_are_counted() {
+        let fanout = Fanout::new();
+        let (_reader_tx, reading) = fanout.subscribe();
+        let (_stalled_tx, stalled) = fanout.subscribe();
+        let frame = Outbound::Frame(Arc::new(vec![0u8; 3_840]));
+
+        // Twice the ceiling, so the stalled subscriber is well past it and the
+        // one that is reading is never behind.
+        let broadcasts = SUBSCRIBER_QUEUE_LIMIT * 2;
+        for _ in 0..broadcasts {
+            assert_eq!(fanout.broadcast(frame.clone()), 2, "nobody is disconnected");
+            assert!(reading.recv().is_ok(), "the draining client keeps up");
+        }
+
+        // The stalled one holds exactly its ceiling and not one item more.
+        let mut held = 0usize;
+        while stalled.try_recv().is_ok() {
+            held += 1;
+        }
+        assert_eq!(
+            held, SUBSCRIBER_QUEUE_LIMIT,
+            "a stalled subscriber must not accumulate past its ceiling"
+        );
+        assert_eq!(
+            fanout.dropped() as usize,
+            broadcasts - SUBSCRIBER_QUEUE_LIMIT,
+            "every dropped item is counted, so a drop is never silent"
+        );
+    }
+
+    #[test]
     fn a_client_that_has_gone_is_dropped_and_the_stream_carries_on() {
         let fanout = Fanout::new();
         let (_a_tx, a) = fanout.subscribe();
@@ -281,7 +382,7 @@ mod tests {
             t3_ns: 0,
         }))
         .unwrap();
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::sync_channel(SUBSCRIBER_QUEUE_LIMIT);
         let mut source = std::io::Cursor::new(request);
         read_requests(&mut source, timeline, &tx, &|| true);
         drop(tx);

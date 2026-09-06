@@ -516,6 +516,149 @@ fn the_modelled_hour_holds_at_the_worst_realistic_crystal_pair_too() {
     assert_eq!(result.clamped_ticks, 0, "the clamp never bit here either");
 }
 
+/// The `wired loaded` row of `docs/decisions/0014`: the middle of the three
+/// modelled scenarios, and the one the record reported with no committed
+/// reproduction.
+fn wired_loaded() -> ModelParams {
+    ModelParams {
+        server_ppm: -12.5,
+        client_ppm: 38.0,
+        epoch_offset_ns: 4_100_000,
+        base_one_way_ns: 200_000.0,
+        jitter: JitterModel::Exponential { mean_us: 150.0 },
+        seed: 0x10AD_ED01,
+        ..params()
+    }
+}
+
+#[test]
+fn the_modelled_hour_holds_on_the_loaded_wired_link_too() {
+    // The third scenario `docs/decisions/0014` reports. It is here so that all
+    // three rows of that table have a committed reproduction and none of them
+    // is prose: a reader who does not trust the record can run it.
+    let mut endpoint = ModelledEndpoint::new(wired_loaded(), sync());
+    endpoint.initial_misalignment_ns = 18_000_000;
+    let result = endpoint.run(60 * MINUTE_NS);
+
+    let true_peak = result.max_true_error_after(MINUTE_NS);
+    let loop_peak = result.max_loop_error_after(MINUTE_NS);
+    println!(
+        "0014 wired loaded: ground truth {:.1} us, loop {:.1} us, hard resyncs {} ({} after \
+         minute 1), underruns {}, clamped {}, exchanges {} accepted / {} discarded",
+        true_peak / 1_000.0,
+        loop_peak / 1_000.0,
+        result.hard_resyncs_at_ns.len(),
+        result.hard_resyncs_after(MINUTE_NS),
+        result.underruns,
+        result.clamped_ticks,
+        result.accepted,
+        result.discarded
+    );
+    assert!(
+        true_peak < BOUND_NS,
+        "modelled playout error peaked at {:.0} ns after the first minute on the loaded link",
+        true_peak
+    );
+    assert!(loop_peak < BOUND_NS);
+    assert_eq!(result.hard_resyncs_after(MINUTE_NS), 0);
+    assert!(
+        !result.hard_resyncs_at_ns.is_empty(),
+        "the run has to start outside the bound and be driven in"
+    );
+    assert_eq!(result.underruns, 0);
+    assert_eq!(result.clamped_ticks, 0);
+    assert_eq!(result.discarded, 0, "a loaded link is not a nonsensical one");
+    assert!(result.accepted > 3_000, "got {}", result.accepted);
+}
+
+#[test]
+fn the_sweep_that_fixed_the_window_the_alpha_and_the_interval_reruns() {
+    // AC-11 asks that a later reader can tell a value measured here from one
+    // borrowed off another project. `docs/decisions/0014` reports a six-row
+    // sweep over the worst-case crystal pair, 20 modelled minutes each, and
+    // this is that sweep as a committed reproduction: run it with
+    // `-- --nocapture` and the table prints.
+    //
+    // What is asserted is what the decision RESTS on, not the digits it
+    // happens to print: the shape FOUNDATION-1 carried does not hold this
+    // phase's bound, the shape this phase chose does, and deeper windows with
+    // lighter smoothing keep helping all the way down the table (which is why
+    // the record has to argue for stopping at 64 rather than pointing at a
+    // minimum).
+    let worst = ModelParams {
+        server_ppm: 50.0,
+        client_ppm: -50.0,
+        epoch_offset_ns: -8_000_000,
+        base_one_way_ns: 250_000.0,
+        jitter: JitterModel::Exponential { mean_us: 150.0 },
+        seed: 0xC0FFEE_11,
+        ..params()
+    };
+    // window, alpha, interval_ms - the table's own rows, in its own order.
+    let candidates = [
+        (8usize, 0.25f64, 1_000u64),
+        (16, 0.25, 1_000),
+        (32, 0.125, 500),
+        (64, 0.0625, 500),
+        (64, 0.03125, 500),
+        (128, 0.03125, 500),
+    ];
+
+    let mut peaks = Vec::new();
+    for (window, alpha, interval_ms) in candidates {
+        let mut endpoint = ModelledEndpoint::new(
+            worst,
+            SyncConfig {
+                filter_window: window,
+                smoothing_alpha: alpha,
+                interval_ms,
+                ..sync()
+            },
+        );
+        endpoint.initial_misalignment_ns = -25_000_000;
+        let result = endpoint.run(20 * MINUTE_NS);
+        let peak = result.max_true_error_after(MINUTE_NS);
+        println!(
+            "0014 sweep: window {:>3} alpha {:<8} interval {:>4} ms -> peak {:>6.1} us",
+            window,
+            alpha,
+            interval_ms,
+            peak / 1_000.0
+        );
+        peaks.push(peak);
+    }
+
+    assert!(
+        peaks[0] > BOUND_NS,
+        "the shape ServoConfig::default() carried out of FOUNDATION-1 (window 8, alpha 0.25, \
+         1000 ms) has to MISS this phase's 250 us bound, or these constants were not outputs of \
+         this phase at all; it peaked at {:.0} ns",
+        peaks[0]
+    );
+    let chosen = peaks[3];
+    assert!(
+        chosen < BOUND_NS,
+        "the chosen shape (window 64, alpha 0.0625, 500 ms) has to hold the bound; it peaked at \
+         {:.0} ns",
+        chosen
+    );
+    for pair in peaks.windows(2) {
+        assert!(
+            pair[1] < pair[0],
+            "the sweep is reported as improving monotonically down the table, and it does not: \
+             {:.0} ns then {:.0} ns",
+            pair[0],
+            pair[1]
+        );
+    }
+    assert!(
+        peaks[5] < chosen,
+        "the record's own argument is that the sweep KEEPS improving past the chosen row and the \
+         choice stops for a reason the sweep cannot show; if the deepest row were not better, \
+         that paragraph would be wrong"
+    );
+}
+
 // -------------------------------------------------------------------------
 // AC-13: a nonsensical exchange is discarded, and the loop carries on.
 // -------------------------------------------------------------------------
@@ -832,9 +975,30 @@ fn the_committed_constants_and_the_compiled_ones_are_the_same_numbers() {
     assert_eq!(conf("sync_interval_ms"), SYNC_INTERVAL_MS as f64);
     assert_eq!(conf("playout_latency_us"), PLAYOUT_LATENCY_US as f64);
     assert_eq!(conf("mute_us"), MUTE_US as f64);
-    // The hour-long run's own length, which only the entry point reads.
-    assert!(conf("sync_hour_run_seconds") >= 3_600.0);
-    assert!(conf("sync_hour_capture_seconds") > 0.0);
+    // The hour-long run's own schedule, which only the entry point reads. The
+    // arithmetic is asserted here because the alternative is finding out on a
+    // rig, an hour in, that the last capture was due after the run had ended.
+    let run = conf("sync_hour_run_seconds");
+    let settle = conf("sync_hour_settle_seconds");
+    let captures = conf("sync_hour_captures");
+    let capture = conf("sync_hour_capture_seconds");
+    assert!(capture > 0.0);
+    assert!(captures >= 2.0, "one window is not a distribution");
+    assert!(
+        settle >= 60.0,
+        "AC-1 excludes the first minute, so no capture may start inside it"
+    );
+    assert!(
+        run - settle >= 3_600.0,
+        "the graded window, after the settle, is still at least the hour AC-1 asks for"
+    );
+    // The last capture starts at settle + (captures - 1) * spacing and has to
+    // finish before the run does.
+    let spacing = ((run - settle) / captures).floor();
+    assert!(
+        settle + (captures - 1.0) * spacing + capture <= run,
+        "the last capture must end inside the run"
+    );
 
     let config = SyncConfig::default();
     assert_eq!(config.filter_window, FILTER_WINDOW);

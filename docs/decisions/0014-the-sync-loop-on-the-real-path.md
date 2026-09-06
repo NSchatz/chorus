@@ -107,6 +107,15 @@ a whole frame would quantise the correction to 50 frames a second, which is
 itself move the playout pointer, and the mute would then be part of the
 correction instead of covering its splice.
 
+**And the mute starts where audio resumes, not at the front of the chunk.** A
+backward step inserts silence, and the join an ear would hear is at the far end
+of that insertion. Silencing the front of the chunk instead spends the mute on
+frames the corrector had just zeroed itself: for any backward step larger than
+`mute_us` the only audible discontinuity is then uncovered, and
+`muted_frames()` reports it as covered. So `PlayoutCorrector::shape` records
+where the insertion ends and mutes from there, and carries the mute to the next
+chunk when this one had no audio left after the splice.
+
 ## How the constants were chosen
 
 The method, so a later reader can re-run it: a modelled endpoint
@@ -136,11 +145,25 @@ Three modelled scenarios, chosen to match the committed simulator scenarios in
 At the values fixed below, over 60 modelled minutes each, peak error after the
 first modelled minute:
 
-| scenario | ground truth | the loop's own error | hard resyncs | after minute 1 | underruns |
-|---|---|---|---|---|---|
-| quiet wired | 69.8 us | 42.0 us | 1 | 0 | 0 |
-| wired loaded | 125.3 us | 104.4 us | 1 | 0 | 0 |
-| worst crystal pair | 158.7 us | 90.7 us | 1 | 0 | 0 |
+| scenario | ground truth | the loop's own error | hard resyncs | after minute 1 | underruns | reproduced by |
+|---|---|---|---|---|---|---|
+| quiet wired | 69.8 us | 42.0 us | 1 | 0 | 0 | `a_modelled_hour_holds_below_a_quarter_millisecond_after_the_first_minute` |
+| wired loaded | 184.4 us | 80.3 us | 1 | 0 | 0 | `the_modelled_hour_holds_on_the_loaded_wired_link_too` |
+| worst crystal pair | 158.7 us | 90.7 us | 1 | 0 | 0 | `the_modelled_hour_holds_at_the_worst_realistic_crystal_pair_too` |
+
+Every row is a committed test in `crates/client-linux/tests/sync_loop.rs`, named
+above, and the seeds and initial misalignments that make each one reproducible
+are in that file rather than in this prose. Run them with
+
+```
+make one ARGS="-p chorus-client-linux --test sync_loop -- --nocapture"
+```
+
+and the figures print. The `wired loaded` row was carried as prose in the first
+cut of this record, with a seed and an initial misalignment that were never
+committed; the numbers here are the committed reproduction's, which is why the
+row now reads 184.4 us rather than the 125.3 us that first stood here. The
+scenario, its clocks and its link are unchanged.
 
 ## The constants this phase fixed
 
@@ -157,6 +180,13 @@ each, peak ground-truth error after the first modelled minute:**
 | **64** | **0.0625** | **500 ms** | **159 us** |
 | 64 | 0.03125 | 500 ms | 121 us |
 | 128 | 0.03125 | 500 ms | 91 us |
+
+The sweep is a committed test,
+`the_sweep_that_fixed_the_window_the_alpha_and_the_interval_reruns` in
+`crates/client-linux/tests/sync_loop.rs`. It re-runs all six rows and prints
+them, and it asserts what this section rests on rather than the digits: that the
+first row misses this phase's bound, that the chosen row holds it, and that the
+column keeps improving to the bottom.
 
 The first row is the shape `ServoConfig::default()` carried out of
 FOUNDATION-1, and it is the one row that does not hold this phase's own bound.
@@ -186,10 +216,10 @@ the roadmap already measures at 0.154% utilisation, which is not a cost.
 steady-state above.
 
 - **Above**: the largest steady-state error the loop shows in any modelled
-  scenario is 159 us, so a threshold at 2 ms is twelve times the error the fine
-  tier actually holds. That margin is what keeps the loop out of the step tier
-  during ordinary operation, which is AC-1's second half and AC-10's second
-  half.
+  scenario is 184 us, so a threshold at 2 ms is nearly eleven times the error
+  the fine tier actually holds. That margin is what keeps the loop out of the
+  step tier during ordinary operation, which is AC-1's second half and AC-10's
+  second half.
 - **Below**: slewing an error away at the clamp takes `error / clamp` seconds,
   so 2 ms at 300 ppm is 6.7 seconds of audibly wrong playout. Past that, a
   muted splice is the smaller harm.
@@ -327,6 +357,43 @@ queue. Stamping them together would fold the server's own queueing into the
 network time the client measures, and the client would then correct for a delay
 that is not there. `t3` stays zero on the wire: it is the client's receive
 stamp on the client's clock, and the server will not invent it.
+
+### `--serve-forever` still means what it says
+
+`ServerConfig::once` predates this phase, `deploy/run-server.sh` and
+`deploy/Dockerfile` both pass `--serve-forever`, and it is the deployed command
+line. The accept loop it used to sit in is gone, so the flag is honoured in the
+new shape instead: the acceptor thread runs for the life of the process and the
+PRODUCER is what restarts, on a fresh source, once the last stream ended and a
+new client has arrived. Waiting for that arrival is deliberate and is what the
+old accept-then-serve loop did: nothing is produced into an empty room, and the
+stream a listener joins starts where the audio does. `config.once` left unread
+would have made a documented flag on the deployment path a silent no-op, which
+is why `crates/server/tests/regress_0031_f1.rs` runs the real binary with
+`--serve-forever` and asks a second client for a second stream.
+
+**One timeline for the process, not one per stream.** The old server built a
+fresh `MonotonicTimeline` for each connection, which cost nothing when a
+connection and a stream were the same thing. They are not any more: clients stay
+attached across a stream boundary. A fresh epoch would step their presentation
+timestamps backwards while the `t1`/`t2` they are answered with came from the
+epoch they attached on, which is two clocks inside one connection. Monotonic
+time already gives the next stream a later origin than the last one's, so
+nothing is bought by restarting it.
+
+### The fanout has no back pressure, and therefore needs a ceiling
+
+One endpoint that stops reading must not stop the stream the others are aligned
+to, so `FanoutSink::write` never blocks the emitter on a slow client. That half
+is right and is why the fanout exists. The other half is a bound: an unbounded
+queue behind a stalled socket accrues about 192 kB a second at 48 kHz stereo
+`pcm_s16le` in 20 ms chunks, without limit, in a process that has asked its host
+for 64 MB of locked memory. `SUBSCRIBER_QUEUE_LIMIT = 128` items is 2.56 s of
+audio at that shape and roughly 500 kB per stalled subscriber; a client that far
+behind is past the ceiling its own buffer would drop at anyway. Items dropped
+for a subscriber at its limit are COUNTED (`Fanout::dropped`) and reported on
+the `stream done` line as `dropped_for_slow_clients`, because a drop nobody
+counts is indistinguishable from a stream that was never sent.
 
 ## What this does not decide
 

@@ -23,6 +23,7 @@ use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -216,22 +217,18 @@ fn main() -> ExitCode {
         .unwrap_or_else(|_| config.listen.clone());
     status.say(&format!("listening on={}", bound));
 
-    // ONE source, ONE chunker, ONE timeline, fanned out. Two clients attached
-    // at the same time are on the same timeline and get the same presentation
-    // timestamp for the same content; a chunker each would give them two
-    // streams that merely sound alike.
-    let mut pcm = match source::open(&config.source, format, config.tone_ms) {
-        Ok(s) => s,
-        Err(e) => {
-            report(
-                "the PCM source could not be opened",
-                &format!("{}: {}", config.source, e),
-            );
-            return ExitCode::from(EXIT_SOURCE);
-        }
-    };
-    status.say(&format!("source {}", pcm.describe()));
-
+    // ONE timeline for the whole process, ONE fanout, and one source and one
+    // chunker per stream. Two clients attached at the same time are on the same
+    // timeline and get the same presentation timestamp for the same content; a
+    // chunker each would give them two streams that merely sound alike.
+    //
+    // The timeline outlives a stream on purpose. A second stream on a fresh
+    // epoch would step the presentation timestamps of anybody still attached
+    // backwards, while the `t1`/`t2` stamps their exchanges are answered with
+    // came from the epoch they attached on - two clocks in one connection, and
+    // the one thing this whole phase exists to avoid. Monotonic time already
+    // gives the next stream an origin later than the last one's, so nothing is
+    // gained by restarting it.
     let timeline = MonotonicTimeline::new();
     let fanout = Arc::new(Fanout::new());
     let keep = Arc::new(AtomicBool::new(true));
@@ -241,28 +238,11 @@ fn main() -> ExitCode {
         rate_skew_ppm: config.rate_skew_ppm,
     };
 
-    // The first client is waited for before a chunk is cut, so that nothing is
-    // produced into an empty room and the stream a listener joins starts where
-    // the audio does.
-    let (first, peer) = match listener.accept() {
-        Ok(v) => v,
-        Err(e) => {
-            report("a client connection failed", &e.to_string());
-            return ExitCode::from(EXIT_TRANSPORT);
-        }
-    };
-    attach(first, peer, &timeline, &fanout, &keep, &status);
-
-    let producer = {
-        let fanout = Arc::clone(&fanout);
-        let keep = Arc::clone(&keep);
-        let go = move || keep.load(Ordering::SeqCst);
-        let mut read = move |buf: &mut [u8]| pcm.read(buf);
-        let mut sink = FanoutSink::new(fanout);
-        thread::spawn(move || serve_stream(params, timeline, &mut read, &mut sink, &go))
-    };
-
-    // Everything else that arrives joins the stream already running.
+    // Every client that arrives, first or fiftieth, is attached here and joins
+    // whatever is playing. One unit per attached client goes down `arrivals`,
+    // which is how the producer below waits for somebody to play to without
+    // owning the listener.
+    let (arrived, arrivals) = mpsc::channel::<()>();
     let acceptor = {
         let fanout = Arc::clone(&fanout);
         let keep = Arc::clone(&keep);
@@ -275,7 +255,12 @@ fn main() -> ExitCode {
             };
             while keep.load(Ordering::SeqCst) {
                 match listener.accept() {
-                    Ok((stream, peer)) => attach(stream, peer, &timeline, &fanout, &keep, &status),
+                    Ok((stream, peer)) => {
+                        attach(stream, peer, &timeline, &fanout, &keep, &status);
+                        if arrived.send(()).is_err() {
+                            return;
+                        }
+                    }
                     Err(e) => {
                         report("a client connection failed", &e.to_string());
                         return;
@@ -285,46 +270,96 @@ fn main() -> ExitCode {
         })
     };
 
-    let outcome = match producer.join() {
-        Ok(o) => o,
-        Err(_) => {
-            report("the stream stopped", "the chunk emitter panicked");
-            status.say("stopped reason=stream-failed");
-            return ExitCode::from(EXIT_TRANSPORT);
+    // One stream, or one stream after another. `--serve-forever` clears
+    // `config.once`, and `deploy/run-server.sh` and `deploy/Dockerfile` both
+    // pass it, so this loop is the deployed shape and the single stream is the
+    // default one every `tools/` entry point takes.
+    let exit = loop {
+        // A client is waited for before a chunk is cut, so that nothing is
+        // produced into an empty room and the stream a listener joins starts
+        // where the audio does.
+        if arrivals.recv().is_err() {
+            report(
+                "a client connection failed",
+                "the acceptor stopped before a client attached",
+            );
+            break ExitCode::from(EXIT_TRANSPORT);
         }
-    };
-    keep.store(false, Ordering::SeqCst);
 
-    match outcome {
-        Ok(served) => {
-            status.say(&format!(
-                "stream done chunks_sent={} frames_sent={} bytes_discarded={} \
-                 ended_cleanly={} final_sequence={} clients={}",
-                served.chunks_sent,
-                served.frames_sent,
-                served.bytes_discarded,
-                u8::from(served.ended_cleanly),
-                served.final_sequence,
-                fanout.subscribers()
-            ));
-            status.say("stopped reason=stream-ended");
-            // The acceptor is parked in `accept`, which nothing here can
-            // interrupt without a shutdown syscall this server does not
-            // otherwise need; the process is exiting, so it is left to go with
-            // it rather than joined.
-            drop(acceptor);
-            ExitCode::SUCCESS
-        }
-        Err(e) => {
-            report("the stream stopped", &e.to_string());
-            status.say("stopped reason=stream-failed");
-            drop(acceptor);
-            match e {
-                chorus_server::serve::ServeError::Source(_) => ExitCode::from(EXIT_SOURCE),
-                _ => ExitCode::from(EXIT_TRANSPORT),
+        let mut pcm = match source::open(&config.source, format, config.tone_ms) {
+            Ok(s) => s,
+            Err(e) => {
+                report(
+                    "the PCM source could not be opened",
+                    &format!("{}: {}", config.source, e),
+                );
+                break ExitCode::from(EXIT_SOURCE);
+            }
+        };
+        status.say(&format!("source {}", pcm.describe()));
+
+        let producer = {
+            let fanout = Arc::clone(&fanout);
+            let keep = Arc::clone(&keep);
+            let go = move || keep.load(Ordering::SeqCst);
+            let mut read = move |buf: &mut [u8]| pcm.read(buf);
+            let mut sink = FanoutSink::new(fanout);
+            thread::spawn(move || serve_stream(params, timeline, &mut read, &mut sink, &go))
+        };
+
+        let outcome = match producer.join() {
+            Ok(o) => o,
+            Err(_) => {
+                keep.store(false, Ordering::SeqCst);
+                report("the stream stopped", "the chunk emitter panicked");
+                status.say("stopped reason=stream-failed");
+                break ExitCode::from(EXIT_TRANSPORT);
+            }
+        };
+
+        match outcome {
+            Ok(served) => {
+                status.say(&format!(
+                    "stream done chunks_sent={} frames_sent={} bytes_discarded={} \
+                     ended_cleanly={} final_sequence={} clients={} dropped_for_slow_clients={}",
+                    served.chunks_sent,
+                    served.frames_sent,
+                    served.bytes_discarded,
+                    u8::from(served.ended_cleanly),
+                    served.final_sequence,
+                    fanout.subscribers(),
+                    fanout.dropped()
+                ));
+                if config.once {
+                    keep.store(false, Ordering::SeqCst);
+                    status.say("stopped reason=stream-ended");
+                    break ExitCode::SUCCESS;
+                }
+                // The clients of the stream that just ended have had their
+                // end-of-stream signal and are leaving, so the arrivals they
+                // registered are spent. Discarding them is what makes the next
+                // pass wait for a NEW listener rather than replay into a room
+                // that has emptied.
+                while arrivals.try_recv().is_ok() {}
+                status.say("stream ended, waiting for the next client");
+            }
+            Err(e) => {
+                keep.store(false, Ordering::SeqCst);
+                report("the stream stopped", &e.to_string());
+                status.say("stopped reason=stream-failed");
+                break match e {
+                    chorus_server::serve::ServeError::Source(_) => ExitCode::from(EXIT_SOURCE),
+                    _ => ExitCode::from(EXIT_TRANSPORT),
+                };
             }
         }
-    }
+    };
+
+    // The acceptor is parked in `accept`, which nothing here can interrupt
+    // without a shutdown syscall this server does not otherwise need; the
+    // process is exiting, so it is left to go with it rather than joined.
+    drop(acceptor);
+    exit
 }
 
 /// Attach one connection to the stream: audio out, requests in, replies back.

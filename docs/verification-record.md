@@ -56,7 +56,8 @@ What the repository has instead is the committed entry point, which refuses.
 --- sync-hour-run.sh (exit 3)
     chorus: the hour-long grouped-stream run
       criterion:     AC-1, the one criterion of this phase that needs hardware
-      run:           3900s, captured 30s at a time
+      run:           3900s, of which the first 60s is acquisition
+      captures:      6 of 30s, one every 640s
       local device:  chorus-no-such-device
       capture:       chorus-no-such-capture-device
       second endpoint: <unset>
@@ -78,9 +79,11 @@ CHORUS_CAPTURE_DEVICE=hw:1,0 CHORUS_CLIENT_DEVICE=hw:0,0 \
 
 Instructions: the script's own header, and
 `docs/decisions/0014-the-sync-loop-on-the-real-path.md` for what every constant
-it passes in means. The capture and the two delay logs it writes ARE the
+it passes in means. The captures and the two delay logs it writes ARE the
 evidence and can be graded afterwards, on any machine, by someone who did not
-take them:
+take them. There are SIX captures of 30 s, spread one every 640 s from t = 60 s,
+so that none of them is of the acquisition transient AC-1 excludes by name and
+so that what is reported is a distribution over the hour rather than one window:
 
 ```
 cargo run -p chorus-measure --bin chorus-measure -- lag <capture.wav> --label <name>
@@ -99,7 +102,7 @@ a modelled device with no sound card.
 | AC-2, the offset comes from the minimum-delay sample and not the newest | `cargo test -p chorus-client-linux --test sync_loop` | three exchanges reporting the same true 1 000 000 ns offset, one of them queued at 20 us and the other two at 900 us and 1500 us in one direction. The published round trip is 20 000 ns, the offset is within 20 us of the truth, and the counterfactual is asserted in the same test: the newest sample's own estimate is out by more than 700 us, so a filter that took it would be visibly wrong. Over a modelled run the published round trip settles at 240 to 300 us against a modelled 240 us floor |
 | AC-3, the error is the delay the device reports to the DAC | the same target | two runs handed the same audio and the same timestamps, differing only in what the DEVICE says: 48 000 more frames of reported delay moves the error by 1 000 000 000 ns, to within 1 ns. Both runs wrote 1920 frames and had every frame accepted, so an error derived from the return of the write call could not tell them apart. Structurally: `crates/client-linux/src/sync.rs` contains no `SinkWrite`, `frames_written`, `underran` or `.write(` outside its documentation, asserted by reading the source |
 | AC-4, the bound is half the round trip of the sample the offset came from | `--test sync_telemetry` | round trips of 3 ms, 400 us and 1.2 ms in a window; the published round trip is 400 000 ns and the published bound is exactly 200 000 ns. A newer, worse exchange does not become the bound by being newer; a better one does. Over a real client session on a loopback socket, `bound_ns == round_trip_ns / 2` and both are in the delay log |
-| AC-5, past the threshold it mutes, realigns and resumes | `--test sync_loop` | a 40 ms error against a 2 ms threshold returns a step and not a slew, the correction in force goes to zero, the splice is muted for the configured 20 ms, the playout pointer moves by the whole step to within 25 us, and output resumes when the mute runs out. The mute silences frames in place and inserts none, so it costs nothing in alignment |
+| AC-5, past the threshold it mutes, realigns and resumes | `--test sync_loop` | a 40 ms error against a 2 ms threshold returns a step and not a slew, the correction in force goes to zero, the splice is muted for the configured 20 ms, the playout pointer moves by the whole step to within 25 us, and output resumes when the mute runs out. The mute silences frames in place and inserts none, so it costs nothing in alignment. Two unit tests hold the boundary the first cut of this work got wrong: a BACKWARD step of twice the mute silences 960 frames of the audio that resumes after the inserted silence rather than 960 frames of that silence, and a chunk with no audio left after the splice carries the mute forward instead of spending it |
 
 ### This spec's own criteria
 
@@ -107,7 +110,7 @@ a modelled device with no sound card.
 |---|---|---|
 | AC-6, the rig run refuses visibly | `make verify` | `tools/sync-hour-run.sh` exits 3 naming the criterion and the prerequisite, quoted in full above. `tools/unrun-checks-are-visibly-unrun.sh` derives its list recursively from `tools/`, finds 10 environment-dependent entry points and checks all 10 |
 | AC-7, the record says what ran and what did not | this file | the section you are reading. AC-1 is recorded as NOT passed with the verbatim refusal, the exact command, and the missing prerequisite |
-| AC-8, two clients, one timeline, contiguous runs | `cargo test -p chorus-server --test grouped_stream` | two clients attached before the first chunk is cut receive at least 120 chunks each, share at least 100 sequence numbers, and for every shared sequence the presentation timestamp and the audio bytes are identical. Each client's sequence numbers are a contiguous run. Timestamps are exactly one chunk duration apart, start to start, and the stream's origin is the server's own monotonic reading rather than zero. A client that joins late starts partway into the run, not at sequence 0, and is on the same timestamps for the content it shares |
+| AC-8, two clients, one timeline, contiguous runs | `cargo test -p chorus-server --test grouped_stream` | two clients attached before the first chunk is cut receive at least 120 chunks each, share at least 100 sequence numbers, and for every shared sequence the presentation timestamp and the audio bytes are identical. Each client's sequence numbers are a contiguous run. Timestamps are exactly one chunk duration apart, start to start, and the stream's origin is the server's own monotonic reading rather than zero. A client that joins late starts partway into the run, not at sequence 0, and is on the same timestamps for the content it shares. The fanout that makes this possible has no back pressure and therefore has a ceiling: `cargo test -p chorus-server --lib` asserts that a subscriber which stops draining holds exactly `SUBSCRIBER_QUEUE_LIMIT` items and not one more, that the dropped items are counted, and that the client beside it never misses one |
 | AC-9, the exchange is answered on the audio connection | the same target | six requests sent up the connection the audio comes down, six replies, and at least 150 chunks received in the same window with their sequence run unbroken. Each reply echoes the client's own `t0` untouched, carries a nonzero `t1` and a `t2` at or after it, both from the server's `MonotonicTimeline` and both inside the run, never going backwards between exchanges. `t3` is zero on the wire, because it is the client's receive stamp on the client's clock and the server will not invent it; the client stamps it and the completed exchange is four monotonic-nanosecond timestamps. Two clients exchange independently on their own connections against the same server timeline |
 | AC-10, the modelled hour | `--test sync_loop` | see below |
 | AC-11, every constant with what it was chosen from | `docs/decisions/0014-the-sync-loop-on-the-real-path.md` | the filter window, the smoothing weight, the exchange cadence, the hard-resync threshold, the correction clamp, the staleness limit, the round-trip ceiling, the playout latency and the mute, each with its provenance, and the three inherited values named as inherited. `--test sync_loop` asserts every number in `config/sync.conf` equals the compiled constant of the same name |
@@ -136,9 +139,10 @@ Over 60 modelled minutes, peak absolute error after the first modelled minute:
 | modelled scenario | ground truth | the loop's own error | hard resyncs | after minute 1 | underruns | exchanges |
 |---|---|---|---|---|---|---|
 | quiet wired, 0 and +40 ppm, uniform 60 us | 69.8 us | 42.0 us | 1 | 0 | 0 | 7200 accepted, 0 discarded |
+| wired loaded, -12.5 and +38 ppm, exponential 150 us | 184.4 us | 80.3 us | 1 | 0 | 0 | 7200 accepted, 0 discarded |
 | worst crystal pair, +50 and -50 ppm, exponential 150 us | 158.7 us | 90.7 us | 1 | 0 | 0 | 7129 accepted, 0 discarded |
 
-Both hold below the 0.25 ms bound, and the one hard resync in each is the
+All three hold below the 0.25 ms bound, and the one hard resync in each is the
 acquisition in the first modelled minute, which the run is deliberately started
 outside the bound to produce. The counterfactual is asserted in the same test:
 the same run with the slew switched off and only the step tier left walks past
@@ -174,6 +178,39 @@ nothing. `docs/decisions/0014` records why that is a refusal and not a
 fallback. The delay log carries a `sync-no-device-delay` event naming the
 device. Everything about the correction on a device that paces still needs the
 hardware AC-1 needs.
+
+### What an adversarial review of this work changed, and what it could not
+
+The first cut of this phase was reviewed against the spec by a reader who had
+not written it. Five things came back; four are fixed in the tree and each is
+recorded above where it belongs, and the fifth needs the hardware AC-1 needs.
+
+- **`--serve-forever` had become a silent no-op.** The flag is documented in
+  `ServerConfig`, `deploy/run-server.sh` and `deploy/Dockerfile` both pass it,
+  and the fanout server had stopped reading `config.once`: the process served
+  one stream and exited whatever the command line said. It is honoured again,
+  by restarting the producer rather than the accept loop, and
+  `crates/server/tests/regress_0031_f1.rs` runs the REAL binary with the flag
+  and a finite source and asks a second client for a second stream. No file
+  under `deploy/` was changed, which was the alternative.
+- **The fanout's per-subscriber queue was unbounded.** Bounded now, with the
+  drops counted and reported. See AC-8 above.
+- **A hard resync could mute the silence it had just inserted.** Fixed, with
+  the boundary asserted. See AC-5 above.
+- **The rig run captured 30 s at t = 0.** It captures six times across the
+  graded hour now, starting after the acquisition transient. See AC-1 above.
+  **This change is NOT demonstrated here.** It is a change to a script that
+  refuses on this machine for want of two endpoints and an interface, so what
+  ran is the refusal and the arithmetic: `make verify` still finds and refuses
+  it, and `cargo test -p chorus-client-linux --test sync_loop` asserts the
+  schedule fits inside the run. Whether six windows of a real capture say what
+  this record expects is exactly the question AC-1 is, and it is still open.
+- **Two of `docs/decisions/0014`'s modelled tables were prose.** Both are
+  committed tests now, named in that record beside the rows they produce. The
+  `wired loaded` row changed from 125.3 us to 184.4 us in the process, because
+  the committed reproduction's seed and initial misalignment are not the ones
+  the uncommitted original run used. The number in the record is now the number
+  a reader gets.
 
 ### What did NOT run here, and is not claimed
 
