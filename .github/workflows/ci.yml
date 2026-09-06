@@ -52,6 +52,33 @@ jobs:
       - name: Whole workspace, including documentation examples
         run: cargo test --workspace
 
+      # The ESP32-S3 endpoint. Three separately named steps, because they are
+      # three different regressions and a red build should say which one broke.
+      # None of them needs an ESP32-S3, an amplifier, ESP-IDF or a sound card:
+      # the cores are held to committed fixtures and the amplifier is driven
+      # through an injectable transport. What genuinely needs hardware is
+      # tools/endpoint-rig-run.sh, which the `make verify` step below runs with
+      # its prerequisites absent and watches refuse.
+      - name: Endpoint golden-vector round trip
+        run: make firmware-golden-vectors
+
+      - name: Endpoint sync-core scenario regression
+        run: make firmware-sync-scenarios
+
+      # No eFuse write, no OTA activation, no settable wall clock on the
+      # endpoint path, nothing in external RAM, no register address in the
+      # amplifier driver, and no unit missing from the list. Includes the eight
+      # demonstrations that go red on a smuggled instance.
+      - name: Endpoint safety scans
+        run: make firmware-safety-scans
+
+      # The rest of it, including the amplifier bring-up order against a
+      # simulated part and the rejoin graded over a real socket with a real
+      # chorus-server killed and restarted under it. The outage-of-minutes run
+      # is real minutes of real wall clock, which is what makes it evidence.
+      - name: Endpoint clocking, amplifier, telemetry and the rejoin
+        run: make firmware-check
+
       # Every refusal path, and the proof that a verification whose environment
       # is absent exits non-zero naming what is missing rather than reporting
       # green. This runner has no audio device and no real-time priority, which

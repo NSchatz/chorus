@@ -57,6 +57,47 @@ verify-sync-hour: tools-executable
 measure-fixtures:
 	cargo run --quiet -p chorus-measure --bin chorus-measure -- fixtures
 
+# Regenerate the committed sync cross-check vectors from the committed
+# scenarios. Same rule as measure-fixtures, and for the same reason:
+# `cargo test -p chorus-sync --test crosscheck_vectors` asserts the result is
+# byte-identical to what is committed, and firmware/tests/test_sync.c holds the
+# C endpoint to the same files. This target is for changing a scenario and
+# never for making a red assertion green.
+sync-vectors:
+	cargo run --quiet -p chorus-sync --bin chorus-sync-vectors
+
+# --- the ESP32-S3 endpoint ---------------------------------------------------
+#
+# The endpoint's host build and every verification of it that needs no device.
+# Needs a C compiler and this workspace's own cargo; no ESP-IDF, no ESP32-S3,
+# no amplifier, no privilege. What genuinely needs hardware lives behind
+# tools/endpoint-rig-run.sh and refuses by name.
+firmware-check: tools-executable
+	$(MAKE) -f firmware/Makefile check
+
+# The image build. Refuses by name without the ESP-IDF toolchain and the
+# version firmware/config/endpoint.conf declares, and emits no partial image.
+firmware-image: tools-executable
+	bash tools/firmware-image.sh
+
+# The three things CI names as separate, fail-on-red steps.
+firmware-golden-vectors:
+	$(MAKE) -f firmware/Makefile golden-vectors
+
+firmware-sync-scenarios:
+	$(MAKE) -f firmware/Makefile sync-scenarios
+
+firmware-safety-scans:
+	$(MAKE) -f firmware/Makefile safety-scans
+
+# AC-1 and AC-3: an ESP32-S3 endpoint playing a grouped stream beside a Linux
+# endpoint, measured by the RIG-3 rig, and the produced sample rate measured
+# rather than read back from the configuration. NEITHER IS PASSED HERE. This
+# target exits non-zero naming its missing prerequisite; see
+# docs/verification-record.md, which quotes the refusal.
+verify-endpoint-rig: tools-executable
+	bash tools/endpoint-rig-run.sh
+
 # The saved reports over the committed fixtures, which is what puts a file in
 # docs/measurements/. Needs no device and no privilege.
 measure-fixture-reports: tools-executable

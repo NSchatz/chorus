@@ -191,6 +191,95 @@ require_second_endpoint() {
     fi
 }
 
+# A value from firmware/config/endpoint.conf. Same shape as conf() and
+# sync_conf(): the endpoint's committed numbers are passed to a run from the
+# one file that declares them, so a check and the thing it checks cannot drift
+# apart.
+endpoint_conf() {
+    local key="$1"
+    local value
+    value="$(sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*\\([^#]*\\).*/\\1/p" \
+        "$REPO_ROOT/firmware/config/endpoint.conf" | head -n 1 | tr -d '[:space:]')"
+    if [ -z "$value" ]; then
+        printf 'firmware/config/endpoint.conf has no %s\n' "$key" >&2
+        exit 2
+    fi
+    printf '%s' "$value"
+}
+
+# Refuse to continue unless the ESP-IDF toolchain the endpoint is built with is
+# installed AND is the version firmware/config/endpoint.conf declares.
+#
+# Both halves matter. An absent toolchain cannot build an image; a DIFFERENT
+# toolchain can, and the image it builds is one nobody chose, which is worse
+# because it looks like success.
+require_espidf() {
+    local criterion="$1"
+    local wanted
+    wanted="$(endpoint_conf espidf_version)"
+    if [ -z "${IDF_PATH:-}" ]; then
+        missing_prerequisite \
+            "$criterion" \
+            "the ESP-IDF toolchain at version $wanted; IDF_PATH is unset, so no toolchain is installed here" \
+            "install ESP-IDF $wanted and source its export.sh, which sets IDF_PATH and puts idf.py on PATH"
+    fi
+    if ! command -v idf.py >/dev/null 2>&1; then
+        missing_prerequisite \
+            "$criterion" \
+            "the ESP-IDF toolchain at version $wanted; IDF_PATH is ${IDF_PATH} but idf.py is not on PATH" \
+            "source \$IDF_PATH/export.sh so idf.py is on PATH"
+    fi
+    local found
+    found="$(idf.py --version 2>/dev/null | head -n 1 || true)"
+    if ! printf '%s' "$found" | grep -q "$wanted"; then
+        missing_prerequisite \
+            "$criterion" \
+            "the ESP-IDF toolchain at version $wanted; the installed one reports '${found:-nothing}'" \
+            "install ESP-IDF $wanted, or change espidf_version in firmware/config/endpoint.conf deliberately and say why in docs/decisions/"
+    fi
+}
+
+# Refuse to continue unless the operator named an ESP32-S3 endpoint to run on.
+require_esp32s3_endpoint() {
+    local criterion="$1"
+    if [ -z "${CHORUS_ESP32S3_PORT:-}" ]; then
+        missing_prerequisite \
+            "$criterion" \
+            "an ESP32-S3 endpoint with a TAS5825M-class amplifier and a real loudspeaker attached; CHORUS_ESP32S3_PORT names no serial port" \
+            "flash the endpoint onto an ESP32-S3 board wired to the amplifier per firmware/config/endpoint.conf's pin map, and set CHORUS_ESP32S3_PORT to its serial port"
+    fi
+    if [ ! -e "${CHORUS_ESP32S3_PORT}" ]; then
+        missing_prerequisite \
+            "$criterion" \
+            "an ESP32-S3 endpoint at ${CHORUS_ESP32S3_PORT}; nothing is there" \
+            "attach the board and point CHORUS_ESP32S3_PORT at the serial port it appears as"
+    fi
+}
+
+# Refuse to continue unless the amplifier's register map has been read off the
+# datasheet and written into firmware/config/endpoint.conf.
+#
+# This phase declares every one of those values `unknown` and names no address.
+# A hardware run cannot happen until somebody has read them, and refusing here
+# is how that stays visible rather than becoming a silent zero.
+require_amplifier_registers() {
+    local criterion="$1"
+    local unknown=""
+    local key
+    for key in amp_i2c_address amp_reg_device_id amp_reg_fault amp_reg_analog_gain \
+        amp_reg_state_control amp_device_id_value amp_fault_clear_value amp_analog_gain_code; do
+        if [ "$(endpoint_conf "$key")" = "unknown" ]; then
+            unknown="$unknown $key"
+        fi
+    done
+    if [ -n "$unknown" ]; then
+        missing_prerequisite \
+            "$criterion" \
+            "the TAS5825M register map; firmware/config/endpoint.conf still declares these UNKNOWN:$unknown" \
+            "read each value off TI's TAS5825M datasheet at bring-up and write it into firmware/config/endpoint.conf. This phase asserts the bring-up behaviour and names no address, which is why they are unknown here"
+    fi
+}
+
 # Refuse to continue unless the operator named a device that can be removed.
 require_removable_device() {
     local criterion="$1"

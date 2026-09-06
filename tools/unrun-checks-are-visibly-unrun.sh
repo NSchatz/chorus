@@ -129,6 +129,24 @@ expect_missing_prerequisite "sync-hour-run.sh" \
     CHORUS_CAPTURE_DEVICE=chorus-no-such-capture-device \
     bash "$REPO_ROOT/tools/sync-hour-run.sh"
 
+# No ESP-IDF toolchain. Genuinely absent: IDF_PATH is unset here and idf.py is
+# not on PATH, which is what a machine with no embedded toolchain looks like.
+# This is the entry point for AC-17 of the EMBEDDED-5 phase.
+expect_missing_prerequisite "firmware-image.sh" \
+    env -u IDF_PATH CHORUS_SKIP_BUILD=1 \
+    bash "$REPO_ROOT/tools/firmware-image.sh"
+
+# No ESP32-S3, no amplifier, no second endpoint, no capture device and no
+# playback device that paces. Genuinely absent: this machine is one container
+# with no serial port and no sound card of any kind. This is the entry point
+# for AC-1 and AC-3, the two criteria of EMBEDDED-5 that need hardware, and
+# neither is passed anywhere in this repository.
+expect_missing_prerequisite "endpoint-rig-run.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_ESP32S3_PORT= CHORUS_SECOND_ENDPOINT= \
+    CHORUS_CLIENT_DEVICE=chorus-no-such-device \
+    CHORUS_CAPTURE_DEVICE=chorus-no-such-capture-device \
+    bash "$REPO_ROOT/tools/endpoint-rig-run.sh"
+
 # --- and the list above is the whole list ------------------------------------
 #
 # An entry point is environment-dependent exactly when it calls one of lib.sh's

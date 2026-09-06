@@ -26,6 +26,7 @@
 #![warn(missing_docs)]
 
 pub mod config;
+pub mod crosscheck;
 pub mod jitter;
 pub mod rng;
 pub mod scenario;
@@ -39,4 +40,4 @@ pub use jitter::JitterModel;
 pub use rng::Rng;
 pub use scenario::{Scenario, ScenarioError};
 pub use servo::{OffsetFilter, Sample, Servo, ServoAction, ServoConfig};
-pub use sim::{run, PlayoutSample, SimResult};
+pub use sim::{run, run_recorded, ExchangeRecord, PlayoutSample, SimResult};

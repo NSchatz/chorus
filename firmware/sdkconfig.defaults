@@ -1,0 +1,32 @@
+# The endpoint's ESP-IDF defaults.
+#
+# Only what this phase asserts. Everything a later phase owns is left at
+# ESP-IDF's own default and named here as belonging to that phase, so a reader
+# can see what was decided and what was deliberately not.
+
+CONFIG_IDF_TARGET="esp32s3"
+
+# Octal PSRAM, which is why firmware/config/endpoint.conf declares
+# board_octal_psram = yes and why the pin-map check extends its reserved range
+# to GPIO33 to GPIO37.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+
+# DMA descriptors stay out of external RAM. The carried ESP-IDF external-RAM
+# guide: "DMA transaction descriptors cannot be placed in PSRAM."
+# firmware/check/endpoint_scan.c fails the suite if any PSRAM placement appears
+# in the endpoint tree, and this keeps the allocator from putting one there by
+# default.
+CONFIG_SPIRAM_USE_MALLOC=n
+
+# NOT SET HERE, deliberately:
+#
+# - Wi-Fi power save. chorus#WIFI-7 owns the wireless tier, asserts the mode by
+#   name and measures the jitter both ways. This phase asserts nothing about
+#   which link the endpoint uses, so it sets nothing.
+# - OTA, rollback and anti-rollback. chorus#FLEET-10 owns them, and its
+#   evidence is a deliberately bad image shipped and reverted. There is no
+#   OTA partition here and no image state is changed by anything in this tree.
+# - Secure Boot and Flash Encryption. Both burn eFuses, an eFuse bit set to 1
+#   "cannot be reverted back to 0", and guardrail 2 forbids that on development
+#   hardware outright.
