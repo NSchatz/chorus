@@ -83,6 +83,18 @@ device is a fault reading rather than a small one. Correcting nothing is the
 opposite of falling back: it is what the absence of the one admissible signal
 requires.
 
+**A zero says nothing about the offset, and is not allowed to.** What the client
+publishes about whether its offset can be trusted is decided from the age of the
+newest accepted sample and from nothing else: `SyncLoop::stale_age_ns` is the
+one place that age is compared to the limit, and both the decision to stop
+computing new corrections and the `stale` flag in the telemetry are taken from
+it. So a device with no delay to report cannot make an hours-old offset read as
+fresh, and the two things a published line says about one fact - `stale` and
+`age_ns` - cannot disagree. The alternative is to decide it on the way past,
+inside whichever branch a tick happens to return on; on a device that reports
+zero that publishes a seventy-second-old offset as fresh, which is the state
+`crates/client-linux/tests/regress_0031_F9.rs` holds against.
+
 ## What "applying a correction" means on a fixed-rate DAC
 
 A DAC plays the frames it has been given, in order, at its own rate. So writing

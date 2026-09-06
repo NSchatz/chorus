@@ -639,25 +639,16 @@ fn play<S: PcmSink>(
                     }
                 }
                 Ok(Correction::NoOffset) => {}
-                Ok(Correction::Stale { age_ns }) => {
-                    if !was_stale {
-                        was_stale = true;
-                        log.event(
-                            now_us,
-                            "sync-stale",
-                            &format!(
-                                "age_ns={} staleness_limit_ns={} correction_ppm={:.3} held=1",
-                                age_ns, config.sync.staleness_limit_ns, corrector.correction_ppm()
-                            ),
-                        )?;
-                    }
-                }
+                // Nothing to do: the correction in force stays in force. The
+                // event that records staleness is written below, from the
+                // published telemetry, because how old the newest accepted
+                // sample is does not depend on which arm this tick took.
+                Ok(Correction::Stale { .. }) => {}
                 Ok(Correction::Fine {
                     correction_ppm,
                     clamped,
                     error_ns,
                 }) => {
-                    was_stale = false;
                     corrector.advance(now_ns.saturating_sub(last_advance_ns));
                     last_advance_ns = now_ns;
                     corrector.set_rate_correction(correction_ppm);
@@ -675,7 +666,6 @@ fn play<S: PcmSink>(
                     )?;
                 }
                 Ok(Correction::HardResync { step_ns, error_ns }) => {
-                    was_stale = false;
                     corrector.advance(now_ns.saturating_sub(last_advance_ns));
                     last_advance_ns = now_ns;
                     corrector.hard_resync(step_ns, config.sync.mute_ns);
@@ -694,7 +684,24 @@ fn play<S: PcmSink>(
                     )?;
                 }
             }
-            log.event(now_us, "sync", &sync.telemetry(now_ns).line())?;
+            let telemetry = sync.telemetry(now_ns);
+            let stale_age_ns = telemetry.age_ns.filter(|_| telemetry.stale);
+            if let Some(age_ns) = stale_age_ns {
+                if !was_stale {
+                    log.event(
+                        now_us,
+                        "sync-stale",
+                        &format!(
+                            "age_ns={} staleness_limit_ns={} correction_ppm={:.3} held=1",
+                            age_ns,
+                            config.sync.staleness_limit_ns,
+                            corrector.correction_ppm()
+                        ),
+                    )?;
+                }
+            }
+            was_stale = stale_age_ns.is_some();
+            log.event(now_us, "sync", &telemetry.line())?;
         }
 
         let delay = match read_delay!() {

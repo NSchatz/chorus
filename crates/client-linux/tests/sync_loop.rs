@@ -423,6 +423,18 @@ fn a_modelled_hour_holds_below_a_quarter_millisecond_after_the_first_minute() {
 
     let true_peak = result.max_true_error_after(MINUTE_NS);
     let loop_peak = result.max_loop_error_after(MINUTE_NS);
+    println!(
+        "0014 quiet wired: ground truth {:.1} us, loop {:.1} us, hard resyncs {} ({} after \
+         minute 1), underruns {}, clamped {}, exchanges {} accepted / {} discarded",
+        true_peak / 1_000.0,
+        loop_peak / 1_000.0,
+        result.hard_resyncs_at_ns.len(),
+        result.hard_resyncs_after(MINUTE_NS),
+        result.underruns,
+        result.clamped_ticks,
+        result.accepted,
+        result.discarded
+    );
     assert!(
         true_peak < BOUND_NS,
         "modelled playout error peaked at {:.0} ns after the first minute, against a {:.0} ns \
@@ -505,11 +517,29 @@ fn the_modelled_hour_holds_at_the_worst_realistic_crystal_pair_too() {
     endpoint.initial_misalignment_ns = -25_000_000;
     let result = endpoint.run(60 * MINUTE_NS);
     let peak = result.max_true_error_after(MINUTE_NS);
+    let loop_peak = result.max_loop_error_after(MINUTE_NS);
+    println!(
+        "0014 worst crystal pair: ground truth {:.1} us, loop {:.1} us, hard resyncs {} ({} after \
+         minute 1), underruns {}, clamped {}, exchanges {} accepted / {} discarded",
+        peak / 1_000.0,
+        loop_peak / 1_000.0,
+        result.hard_resyncs_at_ns.len(),
+        result.hard_resyncs_after(MINUTE_NS),
+        result.underruns,
+        result.clamped_ticks,
+        result.accepted,
+        result.discarded
+    );
     assert!(
         peak < BOUND_NS,
         "modelled playout error peaked at {:.0} ns after the first minute at 100 ppm relative \
          skew",
         peak
+    );
+    assert!(
+        loop_peak < BOUND_NS,
+        "the error the loop itself formed peaked at {:.0} ns after the first minute",
+        loop_peak
     );
     assert_eq!(result.hard_resyncs_after(MINUTE_NS), 0);
     assert_eq!(result.underruns, 0);
@@ -807,6 +837,62 @@ fn a_server_that_stops_answering_leaves_audio_playing_and_the_offset_marked_stal
     assert!(!back.telemetry.stale, "the offset is fresh again");
     assert!(back.accepted > quiet.accepted);
     assert!(back.servo_updates > quiet.servo_updates);
+}
+
+#[test]
+fn a_device_that_reports_no_delay_does_not_make_a_stale_offset_read_as_fresh() {
+    // AC-15's third conjunct in the one state where the loop has nothing to
+    // form an error from: the server has gone quiet AND the device answers
+    // every delay query with zero, which is what the ALSA `null` device does
+    // for ever and what a real card can report in an xrun. Correcting nothing
+    // is what a zero delay asks for; publishing an hours-old offset as fresh
+    // is not, and the age of the newest accepted sample is what the criterion
+    // is about.
+    let config = sync();
+    let mut endpoint = ModelledEndpoint::new(params(), config);
+    let warm = endpoint.run(3 * MINUTE_NS);
+    assert!(warm.accepted > 100);
+    assert!(
+        !warm.telemetry.stale,
+        "the offset is fresh while the server is answering"
+    );
+    let played_while_warm = endpoint.dac().frames_played().expect("a behaving device");
+
+    endpoint.server_silent = true;
+    endpoint.dac().set_fault(DacFault::ReportsZeroDelay);
+    let quiet = endpoint.run(9 * MINUTE_NS);
+
+    assert_eq!(
+        quiet.stale_ticks, 0,
+        "every tick of the quiet stretch answered NoDeviceDelay, so this is the state the \
+         criterion is being asked about and not the ordinary stale one"
+    );
+    assert!(
+        quiet.telemetry.stale,
+        "six quiet minutes against a {} ns staleness limit, and the client publishes: {}",
+        config.staleness_limit_ns,
+        quiet.telemetry.line()
+    );
+    assert!(quiet.telemetry.line().contains("stale=1"));
+    assert!(
+        quiet.telemetry.offset_ns.is_some(),
+        "stale is a flag on the offset, not its absence"
+    );
+    assert_eq!(quiet.accepted, warm.accepted, "nothing was answered");
+
+    // And the other two conjuncts, which held before this and still hold.
+    assert_eq!(
+        quiet.servo_updates, warm.servo_updates,
+        "no new correction was computed"
+    );
+    assert_eq!(
+        quiet.telemetry.correction_ppm, warm.telemetry.correction_ppm,
+        "the correction in force is held rather than reset"
+    );
+    assert!(
+        endpoint.dac().frames_played().expect("a behaving device") > played_while_warm,
+        "the device went on playing throughout"
+    );
 }
 
 // -------------------------------------------------------------------------

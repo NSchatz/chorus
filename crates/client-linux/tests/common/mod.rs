@@ -73,6 +73,9 @@ pub struct ModelledDevice {
     /// Set to make every call fail, which is how a device going away mid-run
     /// is modelled.
     fails_from: Arc<Mutex<Option<Instant>>>,
+    /// Set to answer every delay query with zero however much the ring holds,
+    /// which is what the ALSA `null` device does for ever.
+    reports_zero_delay: bool,
 }
 
 impl ModelledDevice {
@@ -89,6 +92,7 @@ impl ModelledDevice {
             stopped: true,
             underruns: 0,
             fails_from: Arc::new(Mutex::new(None)),
+            reports_zero_delay: false,
         }
     }
 
@@ -96,6 +100,13 @@ impl ModelledDevice {
     /// that was removed mid-run.
     pub fn failure_switch(&self) -> Arc<Mutex<Option<Instant>>> {
         Arc::clone(&self.fails_from)
+    }
+
+    /// Make it report a delay of zero for ever, the way the ALSA `null` device
+    /// does. It goes on accepting and playing frames: what changes is what it
+    /// says about how far they are from a DAC.
+    pub fn reports_zero_delay(&mut self) {
+        self.reports_zero_delay = true;
     }
 
     pub fn underruns(&self) -> u64 {
@@ -206,6 +217,9 @@ impl PcmSink for ModelledDevice {
             )));
         }
         self.tick();
+        if self.reports_zero_delay {
+            return Ok(0);
+        }
         Ok(self.queued as i64)
     }
 
@@ -403,6 +417,11 @@ pub enum DacFault {
     None,
     /// It will not report its delay, and says why.
     RefusesDelay,
+    /// It answers every delay query with zero however much it holds, which is
+    /// what the ALSA `null` device does for ever and what a real card can
+    /// report while it is in an xrun. It still plays what it is given: what is
+    /// modelled here is the report, not the ring.
+    ReportsZeroDelay,
 }
 
 /// A DAC that drains on a virtual clock and reports its delay the way `alsa`
@@ -539,6 +558,9 @@ impl PcmSink for ModelledDac {
             )));
         }
         self.tick();
+        if self.fault == DacFault::ReportsZeroDelay {
+            return Ok(0);
+        }
         Ok(self.queued as i64)
     }
 

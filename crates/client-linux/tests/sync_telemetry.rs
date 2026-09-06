@@ -20,6 +20,7 @@ use chorus_client_linux::config::ClientConfig;
 use chorus_client_linux::delaylog::DelayLog;
 use chorus_client_linux::receive::handshake;
 use chorus_client_linux::run::{header_for, run_session};
+use chorus_client_linux::sink::PcmSink;
 use chorus_client_linux::sync::{SyncConfig, SyncLoop};
 use chorus_client_linux::Counters;
 use chorus_protocol::{decode_frame, encode, FrameOutcome, Message, TimeSync};
@@ -270,7 +271,7 @@ fn scripted_server(chunks: u32, answering: Answering, stop: Arc<AtomicBool>) -> 
     address
 }
 
-fn client_config(log: &std::path::Path, run_seconds: u64) -> ClientConfig {
+fn client_config(log: &std::path::Path, run_seconds: u64, sync: SyncConfig) -> ClientConfig {
     ClientConfig {
         server: "unused".to_string(),
         device: "modelled".to_string(),
@@ -282,7 +283,7 @@ fn client_config(log: &std::path::Path, run_seconds: u64) -> ClientConfig {
         run_seconds: Some(run_seconds),
         overflow_skew_ppm: 2_000,
         require_pacing: false,
-        sync: SyncConfig::default(),
+        sync,
     }
 }
 
@@ -292,9 +293,20 @@ fn temp_path(name: &str) -> std::path::PathBuf {
     dir
 }
 
-/// Run the real client session against the scripted server and give back what
-/// it published.
+/// Run the real client session against the scripted server, on a device that
+/// behaves and the configuration the client ships with.
 fn run_against(answering: Answering, name: &str) -> (chorus_client_linux::RunOutcome, String) {
+    let device = common::ModelledDevice::new("modelled", RATE_HZ, FRAME_LEN, 400_000);
+    run_against_device(answering, name, SyncConfig::default(), device)
+}
+
+/// The same, on a device and a sync configuration the caller chooses.
+fn run_against_device(
+    answering: Answering,
+    name: &str,
+    sync: SyncConfig,
+    mut device: common::ModelledDevice,
+) -> (chorus_client_linux::RunOutcome, String) {
     let stop = Arc::new(AtomicBool::new(false));
     let address = scripted_server(2_000, answering, Arc::clone(&stop));
     let mut stream = TcpStream::connect(&address).expect("the scripted server is listening");
@@ -305,10 +317,9 @@ fn run_against(answering: Answering, name: &str) -> (chorus_client_linux::RunOut
 
     let hand = handshake(&mut stream, &|| true).expect("the stream starts");
     let path = temp_path(name);
-    let config = client_config(&path, 4);
+    let config = client_config(&path, 4, sync);
     config.validate().expect("the test configuration is valid");
-    let mut device = common::ModelledDevice::new("modelled", RATE_HZ, FRAME_LEN, 400_000);
-    let header = header_for(&config, "modelled", &hand.shape);
+    let header = header_for(&config, device.device(), &hand.shape);
     let mut log = DelayLog::open(&path, &header).expect("the log opens");
     let counters = Arc::new(Counters::new());
     let outcome = run_session(
@@ -395,5 +406,65 @@ fn a_real_client_whose_server_never_answers_publishes_no_offset_and_corrects_not
     assert!(
         !log.contains("kind=correction"),
         "a client with no offset applied a correction"
+    );
+}
+
+#[test]
+fn a_real_client_whose_device_reports_no_delay_still_publishes_a_stale_offset() {
+    // AC-15's third conjunct through the shipped session rather than the loop
+    // alone. The device reports a delay of zero for ever, which is what the
+    // ALSA `null` device does and what `make verify-null-device` runs the
+    // shipped binaries against: nothing may be corrected against it, and the
+    // offset's age has to be published for what it is anyway.
+    //
+    // The staleness limit is shortened to 200 ms because a session that runs
+    // for four seconds cannot outlive the shipped 10 s one. Nothing else about
+    // the run differs from the two above.
+    let mut device = common::ModelledDevice::new("modelled-null", RATE_HZ, FRAME_LEN, 400_000);
+    device.reports_zero_delay();
+    let sync = SyncConfig {
+        staleness_limit_ns: 200_000_000,
+        ..SyncConfig::default()
+    };
+    let (outcome, log) = run_against_device(Answering::Yes, "telemetry-stale-null", sync, device);
+    let telemetry = outcome.telemetry;
+
+    assert!(
+        telemetry.accepted >= 2,
+        "the server answered, so there is an offset for the run to age: {}",
+        telemetry.line()
+    );
+    assert!(
+        outcome.played_anything,
+        "audio kept playing while the offset went stale"
+    );
+    assert_eq!(
+        outcome.inserted_frames, 0,
+        "a delay of zero is not a signal, so nothing is corrected against it"
+    );
+    assert_eq!(outcome.dropped_frames, 0);
+    assert!(
+        !log.contains("kind=correction"),
+        "the run corrected against a device that reported no delay"
+    );
+    assert!(
+        log.contains("kind=sync-no-device-delay"),
+        "the log does not record the device's zero"
+    );
+
+    // The published line, which is what a consumer keys on.
+    assert!(
+        log.lines()
+            .any(|line| line.contains("kind=sync ") && line.contains("stale=1")),
+        "no published telemetry line reports the offset as stale:\n{}",
+        log.lines()
+            .filter(|line| line.contains("kind=sync "))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    assert!(
+        log.contains("kind=sync-stale"),
+        "the log's own stale event never fired, so the run's event stream and its published \
+         lines disagree about the same fact"
     );
 }

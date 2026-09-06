@@ -117,7 +117,7 @@ a modelled device with no sound card.
 | AC-12, the audio-path scan accounts for every new unit | `cargo test -p chorus-audio-path` | `crates/client-linux/src/sync.rs`, `crates/server/src/stream.rs`, `crates/sync/src/lib.rs`, `crates/sync/src/servo.rs` and `crates/sync/src/config.rs` are listed on the path; the simulator's four units are excluded with reasons. All 7 audio-path tests pass, including both red demonstrations, and the check went red first on the unlisted `sync.rs`, which is how the enrolment was found rather than remembered |
 | AC-13, a nonsensical exchange is discarded | `--test sync_loop` | three shapes that cannot be a round trip - the server holding a request longer than the whole exchange took, a round trip above the configured ceiling, and a reply that arrived before it was sent - are each discarded by name, the accepted count does not move, and the offset, round trip and bound are exactly what they were before. Over a modelled run with every exchange corrupted from minute two, more than 60 are discarded, not one is admitted, and the underrun count stays at zero |
 | AC-14, no exchange means no offset and no bound | `--test sync_telemetry` | `offset_ns`, `round_trip_ns` and `bound_ns` are all absent and the published line reads `offset_ns=none round_trip_ns=none bound_ns=none`; the test asserts the string `bound_ns=0` does not appear. A client whose every exchange was discarded is in the same state and answers the same way. A real client session against a server that answers nothing publishes `none` for all three, inserts zero frames, drops zero frames, applies no correction, writes no `correction` event to its log, and still plays audio |
-| AC-15, a silent server leaves audio playing and the offset stale | `--test sync_loop` | after the server stops answering, the loop keeps correcting until the newest accepted sample is older than the 10 s staleness limit, then reports stale and runs the servo not once over the following three modelled minutes. The correction in force is held rather than reset; the offset is still published, with a stale flag on it rather than absent; the underrun count stays at zero and the run keeps producing playout samples. A server that comes back is not a special case: the offset goes fresh again and the servo resumes |
+| AC-15, a silent server leaves audio playing and the offset stale | `--test sync_loop` | after the server stops answering, the loop keeps correcting until the newest accepted sample is older than the 10 s staleness limit, then reports stale and runs the servo not once over the following three modelled minutes. The correction in force is held rather than reset; the offset is still published, with a stale flag on it rather than absent; the underrun count stays at zero and the run keeps producing playout samples. A server that comes back is not a special case: the offset goes fresh again and the servo resumes. **What the stale flag is decided from is the age of the newest accepted sample and nothing else.** A device that answers every delay query with zero - which the ALSA `null` device does for ever, and which a real card can report in an xrun - is corrected against not at all and does not make an old offset read as fresh: `a_device_that_reports_no_delay_does_not_make_a_stale_offset_read_as_fresh` runs six quiet modelled minutes on such a device, where no tick computed a correction and no tick returned the ordinary stale answer either, and the published line still reads `stale=1` with the offset still on it. `cargo test -p chorus-client-linux --test regress_0031_F9` is the reviewer's own artifact on the same point, and `--test sync_telemetry` puts it through the shipped session over a real socket: the log carries `sync-no-device-delay`, a `sync-stale` event and published lines reading `stale=1`, and not one `correction` event |
 | AC-16, a device that refuses its delay stops the run | `--test sync_loop` | the loop returns a refusal naming `hw:CARD=sulky,DEV=0`, quoting what the device said, and saying that the return of a write call is not a substitute. The servo was never run and nothing was corrected, even though that device would have accepted every frame handed to it. In the client session this is `StopReason::DelayRefused`, which reports `reason=delay-refused` and exits 4 |
 | AC-17, a clamped correction is applied clamped and reported | `--test sync_loop` | a 1 ms error asks for far more than the 300 ppm clamp; the correction applied is exactly -300 ppm, `clamped` is true, and the published line reads `clamped=1`. The clamped value reaches the frames: a second of it at 48 kHz inserts 14 whole frames of silence and carries the remaining 0.4 of a frame. A correction inside the clamp is not reported as clamped |
 
@@ -144,7 +144,10 @@ Over 60 modelled minutes, peak absolute error after the first modelled minute:
 
 All three hold below the 0.25 ms bound, and the one hard resync in each is the
 acquisition in the first modelled minute, which the run is deliberately started
-outside the bound to produce. The counterfactual is asserted in the same test:
+outside the bound to produce. Every figure in every row of this table prints
+from `cargo test -p chorus-client-linux --test sync_loop -- --nocapture`, on a
+line naming its scenario, so a reader who does not trust the digits can produce
+them rather than take them. The counterfactual is asserted in the same test:
 the same run with the slew switched off and only the step tier left walks past
 four times the bound and keeps stepping, more than five times after the first
 minute, which is exactly what the second half of the criterion forbids.
@@ -267,6 +270,41 @@ Two smaller findings came with it. One new delay-log event kind,
 record named it; the list carries it now. And the qualifier AC-8's contiguity
 needs, since the fanout gained its ceiling, is stated in the AC-8 row above
 rather than left to be inferred.
+
+### What a third review changed: staleness is about the sample, not the device
+
+A third reading of the same work, against the tree the second review's fixes
+produced, found one blocking thing and one smaller one.
+
+**A silent server was not reported stale when the device reported a delay of
+zero.** `SyncLoop::observe` read the device first and answered a zero with
+`Correction::NoDeviceDelay`, returning before it looked at how old the newest
+accepted sample was, so the flag `Telemetry::stale` publishes was never set on
+that path. The published line then said `stale=0` beside an `age_ns` of seventy
+seconds against a ten-second limit: two fields of one line disagreeing about one
+fact, and the one a consumer keys on was the wrong one. It is not a state that
+has to be contrived - the ALSA `null` device reports zero for ever, which is
+what `make verify-null-device` runs the shipped binaries against, and a real
+card can report a negative delay in an xrun, which took the same branch.
+
+The age of the newest accepted sample is now what decides staleness, in every
+state and whichever way a tick was answered. Nothing about what is corrected
+moved: a zero delay is still a reason to correct nothing, and a stale offset is
+still holdover rather than a jump to zero. What changed is that the flag can no
+longer disagree with the age published beside it.
+
+| what ran | what it establishes |
+|---|---|
+| `cargo test -p chorus-client-linux --test regress_0031_F9` | the reviewer's own artifact, carried into the tree unchanged in its body. Two halves of one scenario, differing only in what the device says about its delay: the control half with a ring goes stale, and the half on a device reporting zero now goes stale too. It failed on the tree this finding was raised against and passes now |
+| `--test sync_loop` | `a_device_that_reports_no_delay_does_not_make_a_stale_offset_read_as_fresh`: six quiet modelled minutes on a device reporting zero. Not one tick returned the ordinary stale answer, the servo was not run once and the correction in force did not move, the device went on playing, and the published telemetry reads `stale=1` with the offset still on it |
+| `--test sync_telemetry` | `a_real_client_whose_device_reports_no_delay_still_publishes_a_stale_offset`: the shipped `run_session` over a real loopback socket against a scripted server, on a device reporting zero and a staleness limit shortened to 200 ms so a four-second session can outlive it. The log carries `sync-no-device-delay`, published `stale=1` lines and a `sync-stale` event, no `correction` event, and the run inserted and dropped no frames |
+
+The smaller finding was in `docs/decisions/0014`: its three-scenario
+modelled-hour table said every row was a committed test whose figures print, and
+one row of the three printed. The two tests that asserted a bound without
+reporting the figure now report it, so the claim is true rather than narrowed;
+no number in that table changed, and the figures that now print are the figures
+that were already recorded.
 
 ### What did NOT run here, and is not claimed
 

@@ -304,6 +304,9 @@ pub enum Correction {
     ///
     /// This is not a fallback to another signal. It is the absence of the one
     /// signal this loop is entitled to, and the answer is to correct nothing.
+    /// It says nothing about the offset: how old the newest accepted sample is
+    /// is judged here exactly as it is in every other state, so a device with
+    /// no delay to report cannot make a stale offset read as fresh.
     NoDeviceDelay,
     /// No exchange has been accepted yet, so there is no offset and nothing is
     /// corrected.
@@ -404,7 +407,6 @@ pub struct SyncLoop {
     offset_ns: Option<f64>,
     /// Client time of the newest ACCEPTED exchange.
     newest_accepted_ns: Option<u64>,
-    stale: bool,
     correction_ppm: f64,
     clamped: bool,
     accepted: u64,
@@ -420,7 +422,6 @@ impl SyncLoop {
             config,
             offset_ns: None,
             newest_accepted_ns: None,
-            stale: false,
             correction_ppm: 0.0,
             clamped: false,
             accepted: 0,
@@ -502,16 +503,13 @@ impl SyncLoop {
         }
         let delay_ns = delay_frames as f64 * 1_000_000_000.0 / f64::from(rate_hz);
 
-        let (Some(offset_ns), Some(newest_ns)) = (self.offset_ns, self.newest_accepted_ns) else {
+        let (Some(offset_ns), Some(_)) = (self.offset_ns, self.newest_accepted_ns) else {
             return Ok(Correction::NoOffset);
         };
 
-        let age_ns = client_now_ns.saturating_sub(newest_ns);
-        if age_ns > self.config.staleness_limit_ns {
-            self.stale = true;
+        if let Some(age_ns) = self.stale_age_ns(client_now_ns) {
             return Ok(Correction::Stale { age_ns });
         }
-        self.stale = false;
 
         let target_ns = next_write_ts_ns as f64 + self.config.playout_latency_ns as f64;
         let audible_ns = client_now_ns as f64 + delay_ns + offset_ns;
@@ -541,6 +539,25 @@ impl SyncLoop {
         })
     }
 
+    /// How old the newest accepted sample is, when it is older than the
+    /// staleness limit, and `None` otherwise.
+    ///
+    /// The age of the newest accepted sample is a fact about the exchanges and
+    /// the clock alone. It does not depend on what the audio device reported,
+    /// nor on what this loop decided to do about it: a device with no delay to
+    /// report is a reason to correct nothing, not a reason to trust an old
+    /// offset. Both the decision to stop computing new corrections and the
+    /// flag [`Telemetry::stale`] publishes are taken from here, so no state of
+    /// the device can make the two disagree.
+    fn stale_age_ns(&self, client_now_ns: u64) -> Option<u64> {
+        let age_ns = client_now_ns.saturating_sub(self.newest_accepted_ns?);
+        if age_ns > self.config.staleness_limit_ns {
+            Some(age_ns)
+        } else {
+            None
+        }
+    }
+
     /// What this client publishes about its own timing health.
     pub fn telemetry(&self, client_now_ns: u64) -> Telemetry {
         let selected = self.filter.selected();
@@ -553,7 +570,7 @@ impl SyncLoop {
             // causes." Half the round trip of the sample the offset came from,
             // which is the sample the filter selected and not the newest one.
             bound_ns: round_trip_ns.map(|rtt| rtt / 2),
-            stale: self.stale,
+            stale: self.stale_age_ns(client_now_ns).is_some(),
             age_ns: self
                 .newest_accepted_ns
                 .map(|at| client_now_ns.saturating_sub(at)),
