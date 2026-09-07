@@ -72,6 +72,13 @@ verify-soak: tools-executable
 verify-mdns: tools-executable
 	bash tools/mdns-live-run.sh
 
+# The other half of AC-2's fallback sentence: "connects to the configured static
+# address AND PLAYS". Needs a playback device that opens and no multicast at
+# all; the browse returning nothing is the antecedent, and a browse that cannot
+# run at all makes this refuse by name rather than pass on an easier case.
+verify-discovery-fallback: tools-executable
+	bash tools/discovery-fallback-run.sh
+
 # The measurement run that needs two endpoints, an audio interface and real
 # loudspeakers. Beside verify-device because it follows the same rule: it exits
 # non-zero naming its missing prerequisite rather than reporting green.

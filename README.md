@@ -109,9 +109,10 @@ endpoint back to playing after a server restart with nobody doing anything.
   the sink. Graded on the samples a modelled device accepted, never on a status
   line.
 - `tools/control-plane-run.sh`, `tools/restart-storm-run.sh`,
-  `tools/ui-render-run.sh`, `tools/mdns-live-run.sh`, `tools/soak-run.sh` - one
-  entry point per criterion. The last of those is NOT PASSED anywhere: it needs
-  three days of wall clock and the RIG-3 rig, and it refuses by name.
+  `tools/discovery-fallback-run.sh`, `tools/ui-render-run.sh`,
+  `tools/mdns-live-run.sh`, `tools/soak-run.sh` - one entry point per criterion.
+  The last of those is NOT PASSED anywhere: it needs three days of wall clock
+  and the RIG-3 rig, and it refuses by name.
 
 ## Building and testing
 
@@ -143,6 +144,7 @@ was verifying, rather than reporting itself green:
 ./tools/endpoint-rig-run.sh      # needs an ESP32-S3, an amplifier and the rig
 ./tools/control-plane-run.sh     # needs a playback device that opens
 ./tools/restart-storm-run.sh     # needs a playback device that opens
+./tools/discovery-fallback-run.sh # needs a playback device that opens
 ./tools/ui-render-run.sh         # needs Chromium and the driver under tools/ui
 ./tools/mdns-live-run.sh         # needs a link that carries multicast DNS
 ./tools/soak-run.sh              # needs three days of wall clock AND the rig

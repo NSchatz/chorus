@@ -69,6 +69,16 @@ jobs:
       - name: The modelled seventy-two hours, and the resync classification
         run: cargo test --package chorus-client-linux --test soak_72h -- --nocapture
 
+      # Two regressions about state and about the worker pool, named so that a
+      # red build says which one broke rather than "the workspace". The first
+      # is a zone name the catalog accepts that did not survive the persisted
+      # state file; the second is a control peer that stops draining its
+      # receive window and strands the worker serving it.
+      - name: Zone names survive a restart, and a stalled peer gives its worker back
+        run: |
+          cargo test --package chorus-server --test regress_0043_f1 -- --nocapture --test-threads=1
+          cargo test --package chorus-server --test control_stalled_peer -- --nocapture
+
       - name: Whole workspace, including documentation examples
         run: cargo test --workspace
 

@@ -2,8 +2,10 @@
 
 - Status: decided
 - Recorded by: PRODUCT-6 (spec S0043-chorus-product-6)
-- Implemented in: `crates/control/src/fanout.rs`; asserted by
-  `crates/control/tests/slow_subscriber.rs` and reported by
+- Implemented in: `crates/control/src/fanout.rs` and
+  `crates/server/src/control.rs`; asserted by
+  `crates/control/tests/slow_subscriber.rs` and
+  `crates/server/tests/control_stalled_peer.rs`, and reported by
   `GET /api/report`.
 
 ## Decision
@@ -13,6 +15,10 @@
 **At the ceiling the SUBSCRIBER is dropped**, not the message. What it never
 received is counted, and both the count of dropped subscribers and the count of
 messages they lost are reported.
+
+**`WRITE_TIMEOUT = 5 seconds` on every control connection**, so that a peer
+which stops draining its receive window cannot hold a worker thread inside
+`write` for ever.
 
 ## Reasoning
 
@@ -74,6 +80,50 @@ the reason it says both is that a count nobody can read is not a report. The
 count is on the server's status line at end of stream, and it is available while
 the process is running at `GET /api/report`, because an operator debugging a UI
 that keeps going blank needs it then rather than afterwards.
+
+### Why a queue ceiling is not the whole of it, and why there is a write timeout
+
+The ceiling is an APPLICATION-layer answer to a subscriber that stops reading,
+and it is the answer the criterion asks for. It is not an answer to the layer
+underneath it, and the two failures look identical from a distance.
+
+A peer that CLOSES is easy: the next write fails and the worker returns. A peer
+that stops draining its TCP receive window without closing is not. The window
+fills, then the socket's send buffer fills, and the worker blocks inside `write`
+for as long as the kernel is willing to wait, which is indefinitely. The fanout
+does its job - the queue reaches 32, the subscriber is removed and what it
+missed is counted - but the WORKER is in a system call and never gets back to
+`recv_timeout` to notice. Its slot in the fixed pool is never returned.
+
+That the pool is fixed is the reason this matters here more than it would
+elsewhere. `crates/server/src/main.rs` states the invariant: every thread this
+process will ever run is created before the scheduling report is taken, because
+`std::thread::spawn` inherits the creating thread's scheduling policy and this
+binary is run with `--ulimit rtprio=20`. So a stuck slot cannot be replaced by
+growing the pool. Enough stalled peers and the accept loop answers `503 Service
+Unavailable` to a browser that is behaving perfectly well, and the only way out
+is to restart the server.
+
+Five seconds bounds it. A write that cannot make progress in five seconds is a
+peer that is gone whatever its socket still says; the largest state message this
+server can build is tens of kilobytes, which is a few milliseconds of a local
+network, so nothing legitimate is ever cut off. It is shorter than the fifteen
+second `KEEPALIVE` so that a stuck stream is reclaimed before the comment line
+that would have been written next is due.
+
+The read side already had a ten second timeout, for the same reason and against
+the peer that opens a connection and never finishes its request line. Both
+directions are bounded now, and the property is the same one: the worker's slot
+comes back.
+
+`crates/server/tests/control_stalled_peer.rs` is the demonstration, against the
+real binary over real sockets. It attaches a subscriber that never reads a byte,
+applies commands until the fanout reports that subscriber dropped - the queue can
+only back up while the worker is stuck, so the drop is the evidence that it is -
+fills the remaining slot with a well-behaved subscriber, watches a fresh
+connection be answered `503`, and then watches the same request be answered
+after the stuck write times out. With the timeout removed, that last step never
+happens.
 
 ## What this cannot reach
 

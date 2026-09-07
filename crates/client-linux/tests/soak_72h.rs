@@ -119,6 +119,48 @@ impl Cause {
     }
 }
 
+/// The classifier itself, in one place.
+///
+/// It is a named function rather than an expression inside the run's loop for
+/// one reason: the demonstration that it CAN say "unexplained" has to drive the
+/// same code the run drives. A demonstration that restates the rule in its own
+/// body proves that the person who wrote the test can write an `if`, and
+/// nothing at all about the classification the record cites.
+///
+/// A resync is explained only by an event the run SCHEDULED - the acquisition
+/// transient at the start of a session, which is the settle window. Anything
+/// outside a scheduled window is unexplained BY CONSTRUCTION, which is the
+/// property AC-4's second half asks for: the answer does not depend on the
+/// loop's own account of itself.
+fn classify(at_ns: u64, session_index: usize) -> Cause {
+    if at_ns <= SETTLE_NS {
+        if session_index == 0 {
+            Cause::Acquisition
+        } else {
+            Cause::AcquisitionAfterRestart
+        }
+    } else {
+        Cause::Unexplained
+    }
+}
+
+/// Every hard resync of one session, classified.
+fn classify_all(hard_resyncs_at_ns: &[u64], session_index: usize) -> Vec<(u64, Cause)> {
+    hard_resyncs_at_ns
+        .iter()
+        .map(|at| (*at, classify(*at, session_index)))
+        .collect()
+}
+
+/// How many of them no scheduled event accounts for. This is the figure the
+/// run reports and asserts is zero.
+fn count_unexplained(resyncs: &[(u64, Cause)]) -> usize {
+    resyncs
+        .iter()
+        .filter(|(_, cause)| *cause == Cause::Unexplained)
+        .count()
+}
+
 /// What one modelled session did.
 struct Session {
     index: usize,
@@ -259,22 +301,7 @@ fn seventy_two_modelled_hours_hold_the_bound_and_every_resync_has_a_name() {
         }
         persisted = persist::render(&zones);
 
-        let resyncs: Vec<(u64, Cause)> = result
-            .hard_resyncs_at_ns
-            .iter()
-            .map(|at| {
-                let cause = if *at <= SETTLE_NS {
-                    if index == 0 {
-                        Cause::Acquisition
-                    } else {
-                        Cause::AcquisitionAfterRestart
-                    }
-                } else {
-                    Cause::Unexplained
-                };
-                (*at, cause)
-            })
-            .collect();
+        let resyncs = classify_all(&result.hard_resyncs_at_ns, index);
 
         sessions.push(Session {
             index,
@@ -336,10 +363,8 @@ fn seventy_two_modelled_hours_hold_the_bound_and_every_resync_has_a_name() {
                 cause.name()
             );
             *by_cause.entry(cause.name().to_string()).or_default() += 1;
-            if *cause == Cause::Unexplained {
-                unexplained += 1;
-            }
         }
+        unexplained += count_unexplained(&session.resyncs);
         assert_eq!(
             session.underruns, 0,
             "session {} underran, which is what three days of unattended running must not do",
@@ -407,13 +432,46 @@ fn the_classification_reports_a_resync_it_cannot_account_for() {
     // The demonstration the criterion's second half needs: the classifier is
     // only worth having if it can say "unexplained". A resync in the middle of
     // a session, with nothing scheduled anywhere near it, is exactly that.
-    let scheduled_settle = SETTLE_NS;
-    let smuggled_at = 9 * 3_600 * 1_000_000_000u64;
-    let cause = if smuggled_at <= scheduled_settle {
-        Cause::Acquisition
-    } else {
-        Cause::Unexplained
-    };
-    assert_eq!(cause, Cause::Unexplained);
-    assert_eq!(cause.name(), "UNEXPLAINED");
+    //
+    // It drives `classify_all` and `count_unexplained`, which are the SAME two
+    // functions the modelled run above drives, on a resync list of the same
+    // shape as `result.hard_resyncs_at_ns`. Nothing here restates the rule: an
+    // edit that made the classifier unable to answer "unexplained" would turn
+    // this red, and an edit that made it answer "unexplained" for a scheduled
+    // acquisition would turn it red the other way.
+    let mid_session = 9 * 3_600 * 1_000_000_000u64;
+    assert!(
+        mid_session > SETTLE_NS,
+        "the smuggled resync has to be outside the settle window to be unaccounted for"
+    );
+
+    let first_session = classify_all(&[SETTLE_NS / 2, mid_session], 0);
+    assert_eq!(
+        first_session[0].1,
+        Cause::Acquisition,
+        "a resync inside the first session's settle window is the acquisition transient"
+    );
+    assert_eq!(
+        first_session[1].1,
+        Cause::Unexplained,
+        "and one nine hours in, with nothing scheduled near it, is not accounted for"
+    );
+    assert_eq!(first_session[1].1.name(), "UNEXPLAINED");
+    assert_eq!(
+        count_unexplained(&first_session),
+        1,
+        "the count the run reports and asserts is zero is the count that sees it"
+    );
+
+    // After a modelled restart the settle window is still the only scheduled
+    // event, and it is named differently, so the classification distinguishes
+    // the two explained cases rather than collapsing them.
+    let later_session = classify_all(&[SETTLE_NS / 2, mid_session], 1);
+    assert_eq!(later_session[0].1, Cause::AcquisitionAfterRestart);
+    assert_eq!(later_session[1].1, Cause::Unexplained);
+    assert_eq!(count_unexplained(&later_session), 1);
+
+    // And a run with nothing but scheduled events reports nothing unexplained,
+    // which is the assertion the modelled run makes.
+    assert_eq!(count_unexplained(&classify_all(&[0, SETTLE_NS], 0)), 0);
 }

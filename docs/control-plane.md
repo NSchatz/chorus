@@ -60,8 +60,18 @@ refusal rather than a new room nobody has.
   URL, and a character that has to be escaped differently in each of those is a
   character that will eventually be escaped wrongly in one of them.
 - A **name** is 1 to 64 characters, no control character, and no leading or
-  trailing space. The persisted state format holds a name on one line, and a
-  name carrying a newline would be a name that does not come back.
+  trailing space. Every other printable character is a name character, `#`,
+  `\`, `[`, `]` and `=` included, because a name is what a person types into
+  the rename box and none of those is a reason to refuse one. The persisted
+  state format carries whatever this rule admits: it escapes `\` and `#` on the
+  way out and resolves them on the way back, and refuses to install a file it
+  cannot read back as the same state, so **every name this rule accepts
+  survives a restart byte for byte**
+  (`docs/decisions/0018-the-persisted-zone-state.md`; pinned by
+  `crates/server/tests/regress_0043_f1.rs` and by the names
+  `tools/restart-storm-run.sh` sets). The one exclusion is the control
+  characters above: the state file holds a name on one line, and a name
+  carrying a newline would be a name that does not come back.
 - A **volume** is a decimal from `0.000` to `1.000` inclusive, in steps of
   `0.001`, written with **exactly three fractional digits**. `0.5` and `0.50`
   are not this value on the wire. It is the AMPLITUDE FACTOR and not a position

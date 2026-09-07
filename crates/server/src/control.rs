@@ -80,6 +80,31 @@ const IDLE_WAKE: Duration = Duration::from_millis(200);
 /// a closed socket is the only way this end learns.
 const KEEPALIVE: Duration = Duration::from_secs(15);
 
+/// How long a write to a control peer may block before that peer is dropped.
+///
+/// [`chorus_control::fanout::ControlFanout`] answers the slow subscriber at the
+/// APPLICATION layer: every subscriber's queue is bounded, and one that stops
+/// consuming is removed at the ceiling with what it missed counted. That is the
+/// whole of the criterion and it holds. It is not the whole of the hazard.
+///
+/// A peer that stops draining its TCP receive window - rather than closing -
+/// blocks its worker inside `write` for as long as the kernel is willing to
+/// wait, which is indefinitely. The fanout still drops the subscriber, but the
+/// WORKER never gets back to `recv_timeout`, so its slot in the fixed pool is
+/// never returned; enough such peers and the accept loop answers everyone
+/// `503`, which is a fixed thread pool being denied to the people entitled to
+/// it. The pool is fixed on purpose (`crates/server/src/main.rs`: every thread
+/// exists before the scheduling report), so a stuck slot cannot be replaced by
+/// growing the pool and has to be reclaimed instead.
+///
+/// This bounds it. A write that cannot make progress in this long is an error,
+/// the connection is dropped and the slot comes back. Deliberately far longer
+/// than any legitimate write here needs - a state message is a few hundred
+/// bytes and the largest this server can build is tens of kilobytes - so a
+/// merely slow peer is not cut off, and shorter than [`KEEPALIVE`] so a stuck
+/// stream is reclaimed before the next comment line would have been due.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// Why the control channel could not start.
 #[derive(Debug)]
 pub enum ControlRefused {
@@ -462,6 +487,9 @@ fn respond(connection: &mut TcpStream, status: &str, content_type: &str, body: &
 /// thread to the pool.
 fn serve_connection(connection: TcpStream, state: &Arc<ControlState>, keep: &Arc<AtomicBool>) {
     let _ = connection.set_read_timeout(Some(Duration::from_secs(10)));
+    // Both directions are bounded, and for the same reason: this worker's slot
+    // in the fixed pool has to come back. See WRITE_TIMEOUT.
+    let _ = connection.set_write_timeout(Some(WRITE_TIMEOUT));
     let reader_socket = match connection.try_clone() {
         Ok(s) => s,
         Err(_) => return,

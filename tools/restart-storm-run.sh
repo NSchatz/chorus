@@ -17,6 +17,16 @@
 # So the zones are deliberately moved off their defaults before the kill, and
 # what the new server serves is compared against what was set, field by field.
 #
+# The names set below are deliberately NOT tidy, and that is load-bearing.
+# `is_display_name` in crates/control/src/catalog.rs admits any printable
+# character in a name, so a person using the shipped UI's rename box can type
+# one - and the persisted state file's own comment character is '#'. A grader
+# that only ever sets "The Kitchen" cannot see a name that does not come back,
+# which is exactly how a '#' in a name reached this branch unnoticed. Each name
+# here carries at least one character of the persisted format's own syntax, one
+# of them BEGINS with the comment character, and a check below refuses to pass
+# if a later edit tidies them.
+#
 # Needs a playback device that opens; the ALSA `null` device is enough, because
 # what is graded is whether a played-frame counter advances again and not the
 # value of any reported delay. Refuses by name where there is not even one.
@@ -151,8 +161,10 @@ say "chorus: a server, $ENDPOINTS endpoints, and zone state that is not the defa
 start_server "$OUT_DIR/server-1.log"
 
 for SET in \
-    '{"v":1,"t":"name","zone":"kitchen","name":"The Kitchen"}' \
-    '{"v":1,"t":"name","zone":"study","name":"The Study"}' \
+    '{"v":1,"t":"name","zone":"kitchen","name":"The Kitchen #1"}' \
+    '{"v":1,"t":"name","zone":"study","name":"#2 The Study"}' \
+    '{"v":1,"t":"name","zone":"hall","name":"Hall \\ Landing"}' \
+    '{"v":1,"t":"name","zone":"porch","name":"Porch [north] = 1"}' \
     '{"v":1,"t":"volume","zone":"kitchen","volume":0.375}' \
     '{"v":1,"t":"volume","zone":"study","volume":0.125}' \
     '{"v":1,"t":"mute","zone":"hall","muted":true}' \
@@ -275,13 +287,42 @@ check "the-new-server-saw-all-four-come-back" \
 # --- and they came back to the state they left, not to defaults ---------------
 
 say ""
-for FIELD in \
-    '"id":"kitchen","name":"The Kitchen","group":"downstairs","volume":0.375,"muted":false' \
-    '"id":"study","name":"The Study","group":"downstairs","volume":0.125,"muted":false' \
-    '"id":"hall","name":"hall","group":"hall","volume":1.000,"muted":true' \
-    '"id":"porch","name":"porch","group":"porch","volume":1.000,"muted":false'
-do
+
+# The bytes the server must serve, hand-written rather than derived from what it
+# said: a grader that builds its expectation with the same encoder it is
+# grading agrees with itself. A backslash is written '\\' here because that is
+# how the state message encodes one.
+EXPECTED=(
+    '"id":"kitchen","name":"The Kitchen #1","group":"downstairs","volume":0.375,"muted":false'
+    '"id":"study","name":"#2 The Study","group":"downstairs","volume":0.125,"muted":false'
+    '"id":"hall","name":"Hall \\ Landing","group":"hall","volume":1.000,"muted":true'
+    '"id":"porch","name":"Porch [north] = 1","group":"porch","volume":1.000,"muted":false'
+)
+
+# A guard on this grader, not on the server: if a later edit tidies the names
+# back to ones that carry none of the persisted format's own syntax, this fails
+# instead of quietly grading a case that cannot break. Every character listed
+# here is one `is_display_name` admits and one the state file gives a meaning.
+AWKWARD=1
+MISSING=""
+for CH in '#' '\' '[' ']' '='; do
+    if ! printf '%s\n' "${EXPECTED[@]}" | grep -qF -- "$CH"; then
+        AWKWARD=0
+        MISSING="$MISSING $CH"
+    fi
+done
+if ! printf '%s\n' "${EXPECTED[@]}" | grep -qF -- '"name":"#'; then
+    AWKWARD=0
+    MISSING="$MISSING a-name-that-begins-with-the-comment-character"
+fi
+check "the-names-this-grader-sets-carry-the-punctuation-the-catalog-admits" "$AWKWARD" \
+    "a name here carries each of # \\ [ ] = and one begins with '#'${MISSING:+; MISSING:$MISSING}"
+
+for FIELD in "${EXPECTED[@]}"; do
     ZONE="$(printf '%s' "$FIELD" | sed 's/^"id":"\([a-z]*\)".*/\1/')"
+    check "$ZONE-was-holding-that-name-before-the-kill" \
+        "$(printf '%s' "$BEFORE" | grep -qF "$FIELD" && echo 1 || echo 0)" \
+        "the server accepted and held it: $FIELD"
     check "$ZONE-came-back-to-what-it-was-and-not-to-defaults" \
         "$(printf '%s' "$AFTER" | grep -qF "$FIELD" && echo 1 || echo 0)" \
         "$FIELD"

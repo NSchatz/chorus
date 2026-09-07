@@ -158,6 +158,13 @@ expect_missing_prerequisite "restart-storm-run.sh" \
     env CHORUS_SKIP_BUILD=1 CHORUS_CLIENT_DEVICE=chorus-no-such-device \
     bash "$REPO_ROOT/tools/restart-storm-run.sh"
 
+# The same, for AC-2's fallback half run all the way to playing. It needs a
+# device that opens and no multicast at all, so the device is the prerequisite
+# that is made absent here.
+expect_missing_prerequisite "discovery-fallback-run.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_CLIENT_DEVICE=chorus-no-such-device \
+    bash "$REPO_ROOT/tools/discovery-fallback-run.sh"
+
 # No browser engine. Genuinely absent: the path does not exist. This is the
 # entry point for AC-5, AC-6 and AC-10, and it must refuse rather than fall back
 # to reading the stylesheet, which is the failure it exists to prevent.

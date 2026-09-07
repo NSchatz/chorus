@@ -16,14 +16,26 @@ format = 1
 serial = 11
 
 [zone kitchen]
-name = The Kitchen
+name = The Kitchen \#1
 group = downstairs
 volume = 0.375
 muted = 0
 endpoints = endpoint-a,endpoint-b
 ```
 
+**An unescaped `#` starts a comment, and every value is escaped.** The two
+escapes are `\\` for a backslash and `\#` for a hash, and the format has no
+others: an escape it does not have is a refusal naming the sequence, never a
+dropped backslash. So `The Kitchen #1` is written `name = The Kitchen \#1` and
+comes back as `The Kitchen #1`.
+
 **Written by rename**: to a temporary beside it, then renamed over the old one.
+
+**A render this build cannot read back is never written.** `write_file` runs
+the rendered text through this module's own loader and compares the re-render
+before it installs anything, so a field that later carries text nobody escaped
+is a loud refusal on the machine that wrote it rather than a zone that comes
+back under a different name after the next restart.
 
 **Read once, at start, and it is the whole answer or it is not consulted.** A
 server with a state file does not merge it with `--zone` arguments.
@@ -58,6 +70,58 @@ The section header carries the zone identifier, which is why identifiers are
 restricted to lower-case letters, digits and hyphens
 (`docs/control-plane.md`): a `]` or a newline in an identifier would be an
 identifier that does not come back.
+
+### Why every value is escaped, and why the comment character forced it
+
+A `key = value` file with `#` comments has exactly one hazard, and this format
+hit it. A zone NAME is human-set text: `docs/control-plane.md` declares it as
+any printable character up to 64 of them, which is the right rule for a rename
+box a person types into, and it admits `#`. Written plainly, `name = Kitchen #1`
+reads back as `Kitchen` - silent corruption - and `name = #1` reads back as
+nothing at all, which the loader refuses, so the server replacing a killed one
+does not start and NO endpoint returns to playback. Both were real on this
+branch and both are pinned by `crates/server/tests/regress_0043_f1.rs`.
+
+Three routes were available:
+
+1. **Narrow the name rule** so `#` is not a name character. Rejected: it is a
+   user-visible capability cut made to suit a storage detail, and "Kitchen #1"
+   is a name a person will reasonably type. The wire catalog would then have to
+   refuse it, and the reason would be a comment character in a file the person
+   never sees.
+2. **Quote the value** (`name = "Kitchen #1"`). Rejected as a bigger change to a
+   format whose whole argument is that reading it needs nothing but a splitter
+   on `=`: quoting brings the question of what an unquoted value means, and
+   whether a quote inside a quoted value is doubled or escaped.
+3. **Escape the value**, which is what is done. Two escapes, `\\` and `\#`, both
+   applied on write and resolved on read, and an unescaped `#` still starts a
+   comment so the file stays hand-commentable. A person editing by hand sees
+   one backslash rule and no new punctuation.
+
+The escaping is applied to **every** value rendered, not only to `name`. Only
+`name` can carry a `#` today - identifiers, the volume literal, `muted`,
+`serial` and `format` cannot - but the comment stripping is per line across the
+whole loader, so a field that later becomes free text would reintroduce the
+fault by being the one place somebody forgot. Making it uniform costs nothing:
+escaping a value that contains neither `\` nor `#` returns it unchanged.
+
+The format version stays at **1**. Version 1 has never shipped: this branch is
+its first appearance, so there is no file anywhere that the old reading applies
+to, and bumping to 2 would announce a migration for a population of zero.
+
+### Why a write is checked before it is installed
+
+The property AC-3 rests on is "a state file this build writes is one this build
+reads back as the same state". Escaping makes it true; checking makes it stay
+true. `write_file` renders, loads the rendered text, re-renders what it loaded
+and compares, and installs nothing if the two differ. The cost is one parse of a
+few hundred bytes per applied command; the benefit is that the next hole in this
+format is found by the process that wrote the file, on the line that wrote it,
+instead of by a person whose rooms came back with the wrong names.
+
+A refused write is reported exactly as any other failed persist is: on stderr,
+saying the change is in force in this process and will not survive a restart,
+and the previous readable file is left where it was.
 
 ### Why the write is a rename
 
@@ -118,3 +182,5 @@ that never comes back is
 - **No persistence, with the endpoints re-announcing what they last had.**
   Rejected: the server is authoritative, and a state reconstructed from
   whichever endpoints happened to come back first is not one state.
+- **Refusing a `#` in a zone name instead of escaping it.** Rejected above, in
+  "Why every value is escaped".
