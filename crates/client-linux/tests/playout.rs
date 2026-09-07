@@ -39,6 +39,7 @@ fn config(tmp: &std::path::Path, run_seconds: Option<u64>) -> ClientConfig {
         overflow_skew_ppm: 2_000,
         require_pacing: false,
         sync: chorus_client_linux::SyncConfig::default(),
+        ..Default::default()
     }
 }
 
@@ -87,6 +88,7 @@ fn run<R: std::io::Read + Send + 'static>(
         // with nobody to exchange with has no offset and corrects nothing,
         // which is exactly the behaviour they were written against.
         None,
+        Arc::new(chorus_client_linux::ZoneWatch::new()),
     )
     .expect("the run writes its log");
     drop(log);
@@ -522,6 +524,7 @@ fn a_device_that_goes_away_mid_run_stops_the_run_and_does_not_claim_playback() {
         MonotonicTimeline::new(),
         counters,
         None,
+        Arc::new(chorus_client_linux::ZoneWatch::new()),
     )
     .expect("the run writes its log");
     drop(log);

@@ -1,0 +1,47 @@
+# chorus DNS-SD vector: advertisement-two-instances.
+#
+# GENERATED from the .params file beside it by `make discovery-vectors`, and
+# asserted byte for byte by crates/discovery/tests/dnssd_vectors.rs. Change the
+# parameters, never this file, and never to make a red assertion green.
+#
+# address.0 = 192.168.1.41
+# host = spare.local.
+# instance = spare
+# kind = response
+# port = 4110
+# service = _chorus-audio._tcp.local.
+# txt.0 = v=1
+# txt.1 = group=upstairs
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# offset 0x0000
+00 00 84 00 00 00 00 01 00 00 00 03 0D 5F 63 68
+# offset 0x0010
+6F 72 75 73 2D 61 75 64 69 6F 04 5F 74 63 70 05
+# offset 0x0020
+6C 6F 63 61 6C 00 00 0C 00 01 00 00 00 78 00 20
+# offset 0x0030
+05 73 70 61 72 65 0D 5F 63 68 6F 72 75 73 2D 61
+# offset 0x0040
+75 64 69 6F 04 5F 74 63 70 05 6C 6F 63 61 6C 00
+# offset 0x0050
+05 73 70 61 72 65 0D 5F 63 68 6F 72 75 73 2D 61
+# offset 0x0060
+75 64 69 6F 04 5F 74 63 70 05 6C 6F 63 61 6C 00
+# offset 0x0070
+00 21 80 01 00 00 00 78 00 13 00 00 00 00 10 0E
+# offset 0x0080
+05 73 70 61 72 65 05 6C 6F 63 61 6C 00 05 73 70
+# offset 0x0090
+61 72 65 0D 5F 63 68 6F 72 75 73 2D 61 75 64 69
+# offset 0x00a0
+6F 04 5F 74 63 70 05 6C 6F 63 61 6C 00 00 10 80
+# offset 0x00b0
+01 00 00 00 78 00 13 03 76 3D 31 0E 67 72 6F 75
+# offset 0x00c0
+70 3D 75 70 73 74 61 69 72 73 05 73 70 61 72 65
+# offset 0x00d0
+05 6C 6F 63 61 6C 00 00 01 80 01 00 00 00 78 00
+# offset 0x00e0
+04 C0 A8 01 29

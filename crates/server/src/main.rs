@@ -19,6 +19,16 @@
 //!        report built from a list that lost a thread reads clean for the
 //!        wrong reason. A thread that was created and never reported itself is
 //!        the same failure from the other end and exits the same way.
+//! - `8`  the control channel could not be bound, or was denied, or the
+//!        persisted zone state could not be read. The message names the
+//!        address or the file and the reason. This happens BEFORE any audio
+//!        thread exists and before the audio socket is bound, so a server that
+//!        cannot be controlled never serves audio while reporting itself as
+//!        controllable.
+//! - `9`  this server was told to advertise itself by multicast DNS and could
+//!        not. The message names what failed. Refusing is the point: a server
+//!        that quietly did not advertise looks exactly like one whose
+//!        endpoints have not asked yet.
 //!
 //! # The shape of the process, and why the report can be taken once
 //!
@@ -33,7 +43,16 @@
 //! - the **acceptor**, which does nothing but accept connections and hand them
 //!   to a slot;
 //! - two **client** threads per slot, `--max-clients` slots of them, created
-//!   whether or not anybody has connected.
+//!   whether or not anybody has connected;
+//! - with `--control-listen`, the **control acceptor** and one **control
+//!   worker** per `--control-workers` slot, created whether or not any
+//!   subscriber has connected, and with `--advertise` one **advertiser**.
+//!
+//! So the population is `3 + 2N` without the control plane and
+//! `4 + 2N + M` with it, plus one for the advertiser, and NOT ONE of those
+//! numbers is a function of how many endpoints or browsers are switched on.
+//! `crates/server/tests/control_thread_population.rs` grades that against
+//! `/proc` while subscribers come and go.
 //!
 //! That shape is deliberate and it is a safety property rather than a style.
 //! `std::thread::spawn` inherits the creating thread's scheduling policy
@@ -56,9 +75,12 @@ use std::thread;
 use std::time::Duration;
 
 use chorus_audio::{MonotonicTimeline, StreamFormat};
+use chorus_discovery::dnssd::{Advertisement, AUDIO_SERVICE, CONTROL_SERVICE};
+use chorus_discovery::net::{advertisable_addresses, Advertiser};
 use chorus_hostctl::ThreadRegistry;
 use chorus_server::clients::ClientPool;
 use chorus_server::config::ServerConfig;
+use chorus_server::control::{initial_state, ControlPlane, ControlState};
 use chorus_server::hostreport::{
     decide_memory_lock, register_ordinary_thread, scheduling_report, take_contract_for_this_thread,
     ContractRefused, RealTimeOutcome, SchedulingVerdict,
@@ -73,6 +95,8 @@ const EXIT_TRANSPORT: u8 = 4;
 const EXIT_SOURCE: u8 = 5;
 const EXIT_UNDECLARED_THREAD: u8 = 6;
 const EXIT_INCOMPLETE_INVENTORY: u8 = 7;
+const EXIT_CONTROL: u8 = 8;
+const EXIT_ADVERTISE: u8 = 9;
 
 /// Every status line carries the contract phrases, so a run that is missing
 /// part of the contract says so every time it says anything.
@@ -91,6 +115,18 @@ impl Status {
 fn report(what: &str, detail: &str) {
     let mut err = std::io::stderr();
     let _ = writeln!(err, "chorus-server: {}: {}", what, detail);
+}
+
+/// The port out of a `host:port`, for the SRV record that advertises it.
+///
+/// A listen address with no port in it cannot be advertised, and zero is what
+/// says so: an SRV record naming port 0 is one nothing can connect to, which is
+/// the honest answer where the port is unknown.
+fn port_of(address: &str) -> u16 {
+    address
+        .rsplit_once(':')
+        .and_then(|(_, port)| port.parse().ok())
+        .unwrap_or(0)
 }
 
 fn main() -> ExitCode {
@@ -122,6 +158,100 @@ fn main() -> ExitCode {
         report("chunk duration refused", &e.to_string());
         println!("chorus-server: stopped reason=unsupported-format chunks_sent=0");
         return ExitCode::from(EXIT_CONFIG);
+    }
+
+    // The control channel is bound HERE: before a thread exists, before the
+    // audio socket is bound, and before anything could be served. AC-9 asks
+    // that a server which cannot bind its control address exits non-zero
+    // naming the address and the reason and does not serve audio while
+    // reporting itself as controllable, and doing it first is what makes that
+    // true by construction rather than by care.
+    let mut control = None;
+    if let Some(address) = config.control_listen.clone() {
+        let default_audio = config.listen.clone();
+        let (zones, state_path, from_file) = match initial_state(
+            config.state_file.as_deref(),
+            &config.zones,
+            &config.group_audio,
+            &default_audio,
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                report("the control plane refused to start", &e.to_string());
+                println!("chorus-server: stopped reason=control-refused chunks_sent=0 played=0");
+                return ExitCode::from(EXIT_CONTROL);
+            }
+        };
+        let zone_count = zones.zones().len();
+        let state = Arc::new(ControlState::new(
+            zones,
+            config.state_file.as_ref().map(|_| state_path),
+        ));
+        match ControlPlane::bind(&address, Arc::clone(&state)) {
+            Ok(plane) => {
+                println!(
+                    "chorus-server: control listening on={} workers={} zones={} \
+                     state={} catalog_version={}",
+                    plane.address(),
+                    config.control_workers,
+                    zone_count,
+                    if from_file { "reloaded" } else { "configured" },
+                    chorus_control::CATALOG_VERSION
+                );
+                control = Some((plane, state));
+            }
+            Err(e) => {
+                report("the control plane refused to start", &e.to_string());
+                println!("chorus-server: stopped reason=control-refused chunks_sent=0 played=0");
+                return ExitCode::from(EXIT_CONTROL);
+            }
+        }
+    }
+
+    // The multicast socket, opened before any thread too, and for the same
+    // reason: a server told to advertise and unable to must say so rather than
+    // start and be quietly undiscoverable.
+    let mut advertiser = None;
+    if config.advertise {
+        let control_address = control
+            .as_ref()
+            .map(|(plane, _)| plane.address().to_string())
+            .unwrap_or_else(|| config.listen.clone());
+        let advertisements = vec![
+            Advertisement {
+                instance: config.instance.clone(),
+                service: AUDIO_SERVICE.to_string(),
+                host: format!("{}.local.", config.instance),
+                port: port_of(&config.listen),
+                addresses: advertisable_addresses(&config.listen),
+                txt: vec![
+                    ("v".to_string(), chorus_control::CATALOG_VERSION.to_string()),
+                    ("ctl".to_string(), port_of(&control_address).to_string()),
+                ],
+            },
+            Advertisement {
+                instance: config.instance.clone(),
+                service: CONTROL_SERVICE.to_string(),
+                host: format!("{}.local.", config.instance),
+                port: port_of(&control_address),
+                addresses: advertisable_addresses(&control_address),
+                txt: vec![("v".to_string(), chorus_control::CATALOG_VERSION.to_string())],
+            },
+        ];
+        match Advertiser::open(advertisements) {
+            Ok(open) => {
+                println!(
+                    "chorus-server: advertising instances={}",
+                    open.instances().join(" ")
+                );
+                advertiser = Some(open);
+            }
+            Err(e) => {
+                report("this server could not advertise itself", &e.to_string());
+                println!("chorus-server: stopped reason=advertise-refused chunks_sent=0 played=0");
+                return ExitCode::from(EXIT_ADVERTISE);
+            }
+        }
     }
 
     // Every thread registers itself, from inside itself, exactly once. This one
@@ -305,10 +435,58 @@ fn main() -> ExitCode {
             }
         });
     }
+    // The control plane's whole thread population, created here, on this
+    // thread, which holds no real-time policy for any of them to inherit, and
+    // before the scheduling report below. Nothing a subscriber does creates a
+    // thread after this point: `accept_loop` hands connections to workers that
+    // already exist, and turns one away by name when they are all busy.
+    let mut control_threads = 0usize;
+    let control_state = control.as_ref().map(|(_, state)| Arc::clone(state));
+    if let Some((mut plane, _)) = control.take() {
+        plane.spawn_workers(
+            config.control_workers,
+            Arc::clone(&keep),
+            Arc::clone(&registry),
+            ready.clone(),
+        );
+        control_threads = plane.threads() + 1;
+        let keep_for_acceptor = Arc::clone(&keep);
+        let registry = Arc::clone(&registry);
+        let ready = ready.clone();
+        thread::spawn(move || {
+            register_ordinary_thread("control-acceptor", &registry);
+            if ready.send(()).is_err() {
+                return;
+            }
+            drop(ready);
+            plane.accept_loop(keep_for_acceptor);
+        });
+    }
+
+    // The advertiser, which answers browses for as long as the run lasts.
+    let mut advertiser_threads = 0usize;
+    if let Some(advertiser) = advertiser.take() {
+        advertiser_threads = 1;
+        let keep = Arc::clone(&keep);
+        let registry = Arc::clone(&registry);
+        let ready = ready.clone();
+        thread::spawn(move || {
+            register_ordinary_thread("advertiser", &registry);
+            if ready.send(()).is_err() {
+                return;
+            }
+            drop(ready);
+            let _ = advertiser.announce();
+            while keep.load(Ordering::SeqCst) {
+                advertiser.answer_pending();
+            }
+        });
+    }
+
     drop(ready);
 
     // The report is taken over the whole population or not at all.
-    let expected = 1 + client_threads;
+    let expected = 1 + client_threads + control_threads + advertiser_threads;
     let mut up = 0usize;
     while came_up.recv().is_ok() {
         up += 1;
@@ -371,6 +549,9 @@ fn main() -> ExitCode {
         config.rate_skew_ppm,
         config.max_clients
     ));
+    if let Some(state) = &control_state {
+        status.say(&state.report());
+    }
     if memory.is_unlocked() {
         status.say("note this run holds no locked memory");
     }
@@ -459,6 +640,9 @@ fn main() -> ExitCode {
                     fanout.subscribers(),
                     fanout.dropped()
                 ));
+                if let Some(state) = &control_state {
+                    status.say(&state.report());
+                }
                 if config.once {
                     keep.store(false, Ordering::SeqCst);
                     status.say("stopped reason=stream-ended");

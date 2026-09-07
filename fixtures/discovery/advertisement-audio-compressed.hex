@@ -1,0 +1,41 @@
+# chorus DNS-SD vector: advertisement-audio-compressed.
+#
+# GENERATED from the .params file beside it by `make discovery-vectors`, and
+# asserted byte for byte by crates/discovery/tests/dnssd_vectors.rs. Change the
+# parameters, never this file, and never to make a red assertion green.
+#
+# address.0 = 192.168.1.40
+# compress = 1
+# host = chorus.local.
+# instance = chorus
+# kind = response
+# port = 4010
+# service = _chorus-audio._tcp.local.
+# txt.0 = v=1
+# txt.1 = group=downstairs
+# txt.2 = ctl=4020
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# offset 0x0000
+00 00 84 00 00 00 00 01 00 00 00 03 0D 5F 63 68
+# offset 0x0010
+6F 72 75 73 2D 61 75 64 69 6F 04 5F 74 63 70 05
+# offset 0x0020
+6C 6F 63 61 6C 00 00 0C 00 01 00 00 00 78 00 21
+# offset 0x0030
+06 63 68 6F 72 75 73 0D 5F 63 68 6F 72 75 73 2D
+# offset 0x0040
+61 75 64 69 6F 04 5F 74 63 70 05 6C 6F 63 61 6C
+# offset 0x0050
+00 C0 30 00 21 80 01 00 00 00 78 00 14 00 00 00
+# offset 0x0060
+00 0F AA 06 63 68 6F 72 75 73 05 6C 6F 63 61 6C
+# offset 0x0070
+00 C0 30 00 10 80 01 00 00 00 78 00 1E 03 76 3D
+# offset 0x0080
+31 10 67 72 6F 75 70 3D 64 6F 77 6E 73 74 61 69
+# offset 0x0090
+72 73 08 63 74 6C 3D 34 30 32 30 C0 63 00 01 80
+# offset 0x00a0
+01 00 00 00 78 00 04 C0 A8 01 28

@@ -14,9 +14,27 @@
 //!        is entitled to use and there is no substitute for it.
 //! - `5`  the client closed the session on a framing error.
 //! - `6`  the delay log could not be written.
+//! - `7`  this endpoint has no server address at all: discovery returned
+//!        nothing, or was not attempted, and no static address was configured.
+//!        The message says which of the two it lacked, because those are two
+//!        different things to fix.
 //!
 //! Nothing exits zero while producing no audio, and nothing reports itself as
 //! playing while it is not.
+//!
+//! # Where an endpoint finds its server, in order
+//!
+//! 1. **The control channel**, where there is one. The server is authoritative
+//!    about which group a zone is in and where that group's stream is served,
+//!    so a zone that has been grouped elsewhere is told, and this endpoint
+//!    moves.
+//! 2. **Multicast DNS**, with `--discover`.
+//! 3. **The configured static address**, with `--server`.
+//!
+//! The third is an assertion and not a nicety. Whether multicast reaches a
+//! container and crosses a VLAN is an open question in this deployment, and the
+//! fallback is what makes an endpoint work either way. What is NOT allowed is
+//! silence: an endpoint with neither exits `7` saying so.
 
 use std::io::Write;
 use std::net::TcpStream;
@@ -27,17 +45,21 @@ use std::time::Duration;
 
 use chorus_audio::MonotonicTimeline;
 use chorus_client_linux::config::{ClientConfig, ClientMode};
+use chorus_client_linux::control::{ControlLink, ZoneWatch};
 use chorus_client_linux::delaylog::DelayLog;
 use chorus_client_linux::receive::{handshake, HandshakeError};
 use chorus_client_linux::run::{counter_lines, header_for, run_session, StopReason};
 use chorus_client_linux::sink::{AlsaSink, PcmSink};
 use chorus_client_linux::Counters;
+use chorus_discovery::dnssd::AUDIO_SERVICE;
+use chorus_discovery::net::locate;
 
 const EXIT_CONFIG: u8 = 2;
 const EXIT_SERVER: u8 = 3;
 const EXIT_DEVICE: u8 = 4;
 const EXIT_FRAMING: u8 = 5;
 const EXIT_LOG: u8 = 6;
+const EXIT_NO_SERVER: u8 = 7;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -55,8 +77,165 @@ fn main() -> ExitCode {
 
     match mode {
         ClientMode::ProbeDevice => probe_device(&config),
-        ClientMode::Play => play(&config),
+        ClientMode::Play => endpoint(&config),
     }
+}
+
+/// One endpoint: subscribe to its zone, find its server, and play until it is
+/// told to stop or until nothing is left to try.
+///
+/// With `--rejoin` this is a loop and a session that ends is a session to start
+/// again. Without it there is exactly one session and the exit code is that
+/// session's, which is what every verification written before this phase reads.
+fn endpoint(config: &ClientConfig) -> ExitCode {
+    let timeline = MonotonicTimeline::new();
+    let keep = Arc::new(AtomicBool::new(true));
+    let watch = Arc::new(ZoneWatch::new());
+
+    // The control channel first, so that the first session already knows its
+    // zone's volume, its mute and which group's stream it is meant to be on.
+    let link = config.control.as_ref().map(|address| ControlLink {
+        address: address.clone(),
+        zone: config.zone.clone(),
+        endpoint: config.endpoint.clone(),
+    });
+    let mut following = None;
+    if let Some(link) = &link {
+        match link.attach() {
+            Ok(state) => {
+                watch.absorb(&state, &config.zone);
+                status(&format!(
+                    "control attached={} endpoint={} {}",
+                    link.address,
+                    config.endpoint,
+                    watch.line()
+                ));
+            }
+            Err(e) => {
+                // Not fatal. An endpoint whose control channel is not up yet
+                // plays at full scale and keeps trying, which is what the
+                // follow loop below does.
+                report(
+                    "the control channel could not be reached",
+                    &format!(
+                        "{}: {}; this endpoint will play at full scale and keep trying",
+                        link.address, e
+                    ),
+                );
+            }
+        }
+        let link = link.clone();
+        let watch = Arc::clone(&watch);
+        let keep = Arc::clone(&keep);
+        following = Some(std::thread::spawn(move || {
+            let go = || keep.load(Ordering::SeqCst);
+            link.follow(&watch, &go);
+        }));
+    }
+
+    let run_limit_us = config.run_seconds.map(|s| s * 1_000_000);
+    let mut session = 0u64;
+    let mut played_ever = false;
+    let mut total_frames = 0u64;
+    let mut backoff_ms = 50u64;
+    let code = loop {
+        session += 1;
+        let address = match where_to_play(config, &watch) {
+            Ok(address) => address,
+            Err(e) => {
+                report("this endpoint has nowhere to play from", &e);
+                status("stopped reason=no-server-address played=0");
+                break ExitCode::from(EXIT_NO_SERVER);
+            }
+        };
+        let outcome = play(config, &address, session, timeline, &watch);
+        played_ever |= outcome.played;
+        total_frames += outcome.frames_played;
+        status(&format!(
+            "session n={} server={} played={} frames_played={} total_frames_played={} \
+             stop={} {}",
+            session,
+            address,
+            u8::from(outcome.played),
+            outcome.frames_played,
+            total_frames,
+            outcome.reason,
+            watch.line()
+        ));
+        if !config.rejoin {
+            break outcome.code;
+        }
+        if outcome.code == ExitCode::from(EXIT_CONFIG)
+            || outcome.code == ExitCode::from(EXIT_LOG)
+        {
+            // A configuration or a log that cannot be written will not fix
+            // itself by being tried again.
+            break outcome.code;
+        }
+        if let Some(limit) = run_limit_us {
+            if timeline.now_us() >= limit {
+                status(&format!(
+                    "stopped reason=run-length-reached sessions={} total_frames_played={} \
+                     played={}",
+                    session,
+                    total_frames,
+                    u8::from(played_ever)
+                ));
+                break if played_ever {
+                    ExitCode::SUCCESS
+                } else {
+                    ExitCode::from(EXIT_SERVER)
+                };
+            }
+        }
+        // A backoff, not a spin. The endpoint has nothing else to do and the
+        // server may be a second away from coming back, so this stays short and
+        // is bounded by --rejoin-max-ms.
+        std::thread::sleep(Duration::from_millis(backoff_ms));
+        backoff_ms = (backoff_ms * 2).min(config.rejoin_max_ms.max(50));
+        if outcome.played {
+            backoff_ms = 50;
+        }
+    };
+
+    keep.store(false, Ordering::SeqCst);
+    if let Some(link) = &link {
+        let _ = link.leaving();
+    }
+    if let Some(handle) = following {
+        let _ = handle.join();
+    }
+    code
+}
+
+/// Where this endpoint should be playing from, in the order the module
+/// documentation gives.
+fn where_to_play(config: &ClientConfig, watch: &ZoneWatch) -> Result<String, String> {
+    let facts = watch.facts();
+    if facts.known && !facts.audio.is_empty() {
+        return Ok(facts.audio);
+    }
+    let window = config.discover_ms.map(Duration::from_millis);
+    let static_address = if config.server_configured {
+        Some(config.server.as_str())
+    } else {
+        None
+    };
+    match locate(AUDIO_SERVICE, window, static_address) {
+        Ok(located) => {
+            status(&located.line());
+            Ok(located.address().to_string())
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// What one session did.
+struct SessionOutcome {
+    code: ExitCode,
+    played: bool,
+    frames_played: u64,
+    reason: String,
 }
 
 fn report(what: &str, detail: &str) {
@@ -133,34 +312,58 @@ fn probe_device(config: &ClientConfig) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn play(config: &ClientConfig) -> ExitCode {
-    let timeline = MonotonicTimeline::new();
+fn refused(code: u8, reason: &str) -> SessionOutcome {
+    SessionOutcome {
+        code: ExitCode::from(code),
+        played: false,
+        frames_played: 0,
+        reason: reason.to_string(),
+    }
+}
+
+fn play(
+    config: &ClientConfig,
+    server: &str,
+    session: u64,
+    timeline: MonotonicTimeline,
+    watch: &Arc<ZoneWatch>,
+) -> SessionOutcome {
+    // The first session writes the configured log; a rejoin writes its own
+    // beside it, so a run that rejoined leaves one record per session rather
+    // than one record with the earlier ones written over.
+    let delay_log = if session <= 1 {
+        config.delay_log.clone()
+    } else {
+        format!("{}.session{}", config.delay_log, session)
+    };
     status(&format!(
         "starting server={} device={} min_us={} max_us={} start_fill_us={} \
-         device_target_us={} delay_log={}",
-        config.server,
+         device_target_us={} delay_log={} session={} zone={}",
+        server,
         config.device,
         config.min_us,
         config.max_us,
         config.start_fill_us,
         config.device_target_us,
-        config.delay_log
+        delay_log,
+        session,
+        config.zone
     ));
 
-    let stream = match TcpStream::connect(&config.server) {
+    let stream = match TcpStream::connect(server) {
         Ok(s) => s,
         Err(e) => {
             report(
                 "the server could not be reached at start",
-                &format!("{}: {}", config.server, e),
+                &format!("{}: {}", server, e),
             );
             status("stopped reason=server-unreachable played=0");
-            return ExitCode::from(EXIT_SERVER);
+            return refused(EXIT_SERVER, "server-unreachable");
         }
     };
     if let Err(e) = stream.set_read_timeout(Some(Duration::from_millis(200))) {
         report("the connection could not be configured", &e.to_string());
-        return ExitCode::from(EXIT_SERVER);
+        return refused(EXIT_SERVER, "connection-unconfigurable");
     }
     let _ = stream.set_nodelay(true);
     let mut stream = stream;
@@ -181,7 +384,7 @@ fn play(config: &ClientConfig) -> ExitCode {
             };
             report("the stream never started", &e.to_string());
             status("stopped reason=no-stream played=0");
-            return ExitCode::from(code);
+            return refused(code, "no-stream");
         }
     };
     status(&format!(
@@ -209,19 +412,19 @@ fn play(config: &ClientConfig) -> ExitCode {
                 "stopped reason=device-unusable device={} played=0",
                 config.device
             ));
-            return ExitCode::from(EXIT_DEVICE);
+            return refused(EXIT_DEVICE, "device-unusable");
         }
     };
 
     let header = header_for(config, &config.device, &hand.shape);
-    let mut log = match DelayLog::open(&config.delay_log, &header) {
+    let mut log = match DelayLog::open(&delay_log, &header) {
         Ok(l) => l,
         Err(e) => {
             report(
                 "the delay log could not be written",
-                &format!("{}: {}", config.delay_log, e),
+                &format!("{}: {}", delay_log, e),
             );
-            return ExitCode::from(EXIT_LOG);
+            return refused(EXIT_LOG, "delay-log-unwritable");
         }
     };
 
@@ -249,11 +452,12 @@ fn play(config: &ClientConfig) -> ExitCode {
         timeline,
         Arc::clone(&counters),
         sync_out,
+        Arc::clone(watch),
     ) {
         Ok(o) => o,
         Err(e) => {
             report("the delay log could not be written", &e.to_string());
-            return ExitCode::from(EXIT_LOG);
+            return refused(EXIT_LOG, "delay-log-unwritable");
         }
     };
 
@@ -281,14 +485,26 @@ fn play(config: &ClientConfig) -> ExitCode {
         "stopped reason={} played={} delay_log={}",
         outcome.stop.name(),
         u8::from(outcome.played_anything),
-        config.delay_log
+        delay_log
     ));
     status(&outcome.stop.describe());
 
-    match outcome.stop {
-        StopReason::EndOfStream(_) | StopReason::RunLengthReached => ExitCode::SUCCESS,
-        StopReason::ConnectionLost { .. } | StopReason::NoStream => ExitCode::from(EXIT_SERVER),
-        StopReason::Framing(_) => ExitCode::from(EXIT_FRAMING),
-        StopReason::DeviceFailed(_) | StopReason::DelayRefused(_) => ExitCode::from(EXIT_DEVICE),
+    let code = match outcome.stop {
+        StopReason::EndOfStream(_)
+        | StopReason::RunLengthReached
+        | StopReason::ZoneMoved { .. } => 0,
+        StopReason::ConnectionLost { .. } | StopReason::NoStream => EXIT_SERVER,
+        StopReason::Framing(_) => EXIT_FRAMING,
+        StopReason::DeviceFailed(_) | StopReason::DelayRefused(_) => EXIT_DEVICE,
+    };
+    SessionOutcome {
+        code: if code == 0 {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::from(code)
+        },
+        played: outcome.played_anything,
+        frames_played: outcome.summary.frames_played,
+        reason: outcome.stop.name().to_string(),
     }
 }

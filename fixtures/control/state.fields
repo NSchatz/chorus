@@ -1,0 +1,34 @@
+# Canonical input for the state golden vector.
+#
+# The state message is what the server fans out to every subscriber after every
+# change. Rendering the zone state below must produce exactly state.json, and
+# state.json must decode to exactly these values.
+#
+# `present` is the subset of `endpoints` attached right now. It is in the
+# message and NOT in the persisted state, because which endpoints are switched
+# on is a fact about now: docs/decisions/0019 records that choice and what it
+# means for an endpoint that never comes back.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = state
+serial = 7
+default_audio = 127.0.0.1:4010
+group_audio.downstairs = 127.0.0.1:4011
+
+zone.0.id = kitchen
+zone.0.name = Kitchen
+zone.0.group = downstairs
+zone.0.volume = 0.375
+zone.0.muted = 0
+zone.0.endpoints = endpoint-a,endpoint-b
+zone.0.present = endpoint-a
+
+zone.1.id = study
+zone.1.name = Study
+zone.1.group = study
+zone.1.volume = 1.000
+zone.1.muted = 1
+zone.1.endpoints =
+zone.1.present =

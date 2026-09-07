@@ -1,0 +1,17 @@
+# Canonical input for the unknown-catalog-version refusal vector.
+#
+# This is the one refusal that ends the SESSION rather than one message.
+# Decoding `input` must be refused, nothing from it may be applied, and
+# encoding the refusal must produce exactly refused-unknown-version.json. The
+# message names the version it was offered and the versions this build has,
+# both of which the criterion asks for by name.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = refused
+input = {"v":9,"t":"hello"}
+ends_the_session = 1
+field = v
+offered = 9
+implemented = 1

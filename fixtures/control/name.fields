@@ -1,0 +1,11 @@
+# Canonical input for the name golden vector.
+#
+# Encoding these field values must produce exactly name.json, and decoding
+# name.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = name
+zone = kitchen
+name = Kitchen

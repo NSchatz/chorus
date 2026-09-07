@@ -38,6 +38,58 @@ splitter to read.
 
 The field layout each of these follows is `docs/protocol.md`.
 
+## `control/`
+
+The control catalog's golden vectors, in the same two-file shape as
+`protocol/` and for the same reason. `docs/control-plane.md` is the contract
+they pin.
+
+- `<name>.json` is the message, byte for byte, followed by exactly one newline.
+  The newline is not part of the message; it is there because a file that does
+  not end in one is a file every tool complains about. There are no comments in
+  it, because the bytes have to be the bytes.
+- `<name>.fields` is the canonical input those bytes encode, one `key = value`
+  per line. A `#` starts a comment only at the START of a line, because a
+  refusal vector's `detail` may contain one anywhere else.
+
+The round trip both directions is asserted in
+`crates/control/tests/catalog_vectors.rs`, which DISCOVERS the vectors from this
+directory rather than listing them, so adding a vector is adding two files. It
+also asserts the other direction of the drift guard: every message type in the
+catalog must have a vector here, and every vector here must be a type in the
+catalog.
+
+Three of the vectors are refusals. Their `.fields` carries an `input` line
+holding a whole control message; decoding it must be refused and encoding the
+refusal must produce the committed bytes, so the WORDING of an error is part of
+the contract too. An error that stopped naming the offending field would still
+be an error, and the criterion asks for one that names it.
+
+## `discovery/`
+
+The DNS-SD packets an endpoint has to produce and to read, in the same
+`.params` plus generated-output shape as `measure/`:
+
+- `<name>.params` is what the packet is made of.
+- `<name>.hex` is the packet, whitespace separated hex, generated from those
+  parameters by `make discovery-vectors`.
+- `<name>.expected` is what a resolver must make of it: the instance, the host,
+  the port, the address it would dial and every TXT key.
+
+```
+make discovery-vectors     # regenerate every packet from its parameters
+```
+
+`crates/discovery/tests/dnssd_vectors.rs` asserts that regenerating reproduces
+every committed `.hex` byte for byte, so that target is for changing a
+fixture's parameters and never for making a red assertion green.
+
+One vector is the same advertisement written with DNS name compression. The
+encoder in `crates/discovery/src/wire.rs` deliberately never compresses - one
+message, one spelling, which is what makes a vector a contract - so that vector
+is what holds the DECODER to the case every real responder produces, and it must
+resolve to exactly what the uncompressed one resolves to.
+
 ## `sync/`
 
 One simulator scenario per file, `*.cfg`, in the same `key = value` format.

@@ -1,0 +1,178 @@
+/* The control page.
+ *
+ * Every interactive control here is painted at a border box of at least 44 by
+ * 44 CSS pixels, against a criterion that asks for 24 by 24. The margin is
+ * deliberate: the criterion is measured from the RENDERED box in a real engine,
+ * a range input's intrinsic height is well under either number until something
+ * sets it, and a rule that only just clears the bar is a rule one font change
+ * away from failing. tools/ui-render-run.sh measures every one of them.
+ */
+
+:root {
+  --ink: #101418;
+  --quiet: #4a5560;
+  --line: #c9d2da;
+  --panel: #ffffff;
+  --page: #f2f5f7;
+  --accent: #1f5f8b;
+  --control: 44px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.bar {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+footer.bar {
+  border-bottom: 0;
+  border-top: 1px solid var(--line);
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  letter-spacing: 0.02em;
+}
+
+.link, [data-serial] {
+  margin: 0;
+  color: var(--quiet);
+  font-size: 0.875rem;
+}
+
+main {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  padding: 1.25rem;
+}
+
+.zone {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.zone h2 {
+  margin: 0;
+  font-size: 1.0625rem;
+}
+
+.zone .meta {
+  margin: 0;
+  color: var(--quiet);
+  font-size: 0.875rem;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.row label {
+  min-width: 4.5rem;
+  color: var(--quiet);
+  font-size: 0.875rem;
+}
+
+/* Every control, one rule, so a new control cannot be added below the bar by
+ * being written without one. */
+button,
+select,
+input[type="text"],
+input[type="range"] {
+  min-height: var(--control);
+  min-width: var(--control);
+  height: var(--control);
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  padding: 0 0.75rem;
+}
+
+input[type="range"] {
+  flex: 1 1 auto;
+  padding: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  border-color: transparent;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--line);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  margin-top: -8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+button {
+  cursor: pointer;
+}
+
+button[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.value {
+  min-width: 3.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  grid-column: 1 / -1;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1.25rem;
+}
+
+.empty h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.0625rem;
+}
+
+.empty p {
+  margin: 0 0 0.5rem;
+}
+
+code {
+  display: block;
+  overflow-x: auto;
+  padding: 0.625rem 0.75rem;
+  border-radius: 8px;
+  background: var(--page);
+  border: 1px solid var(--line);
+  font: 0.8125rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}

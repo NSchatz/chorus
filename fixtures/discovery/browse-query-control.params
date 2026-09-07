@@ -1,0 +1,9 @@
+# The same query for the control channel's service type.
+#
+# Two service types are advertised, not one: an endpoint needs the audio stream
+# and a browser needs the control channel, and they are on different ports.
+#
+# Format: key = value, '#' starts a comment.
+
+kind = query
+service = _chorus-ctl._tcp.local.

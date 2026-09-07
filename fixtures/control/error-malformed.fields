@@ -1,0 +1,14 @@
+# Canonical input for the malformed-message refusal vector.
+#
+# `input` is not JSON: it has a trailing comma. Decoding it must be refused,
+# and encoding the refusal must produce exactly error-malformed.json. The
+# refusal names no field, because the fault is the whole message, and the byte
+# offset in the detail is what a person debugging a client actually needs.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+input = {"v":1,"t":"mute","zone":"kitchen",}
+ends_the_session = 0
+field =

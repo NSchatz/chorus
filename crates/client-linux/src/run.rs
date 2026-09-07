@@ -58,6 +58,8 @@ use chorus_protocol::{encode, Message, StreamEnd, TimeSync};
 
 use crate::buffer::{frames_to_us, us_to_frames, Accepted, Buffer, Counters, Zone};
 use crate::config::ClientConfig;
+use crate::control::ZoneWatch;
+use crate::zone::ZoneGain;
 use crate::delaylog::{DelayLog, LogHeader, LogSummary};
 use crate::receive::{
     receive_loop, FramingError, Handshake, ReceiveStop, Received, Receiver, StreamShape,
@@ -104,6 +106,17 @@ pub enum StopReason {
     DelayRefused(DelayRefused),
     /// The stream never started: no chunk ever arrived.
     NoStream,
+    /// The server put this endpoint's zone into a group whose stream is
+    /// somewhere else.
+    ///
+    /// An orderly end, not a failure: the session finishes, what is already
+    /// held is played out, and the session supervisor opens the next one
+    /// against the address the state message named. It is a stop reason of its
+    /// own because it is the one end that is not a fault of anything.
+    ZoneMoved {
+        /// Where the zone's stream is now.
+        to: String,
+    },
 }
 
 impl StopReason {
@@ -115,7 +128,9 @@ impl StopReason {
     pub fn is_clean(&self) -> bool {
         matches!(
             self,
-            StopReason::EndOfStream(_) | StopReason::RunLengthReached
+            StopReason::EndOfStream(_)
+                | StopReason::RunLengthReached
+                | StopReason::ZoneMoved { .. }
         )
     }
 
@@ -130,6 +145,7 @@ impl StopReason {
             StopReason::DeviceFailed(_) => "device-failed",
             StopReason::DelayRefused(_) => "delay-refused",
             StopReason::NoStream => "no-stream",
+            StopReason::ZoneMoved { .. } => "zone-moved",
         }
     }
 
@@ -156,6 +172,11 @@ impl StopReason {
             StopReason::DeviceFailed(e) => format!("the audio device failed: {}", e),
             StopReason::DelayRefused(e) => e.to_string(),
             StopReason::NoStream => "the connection carried no audio chunk at all".to_string(),
+            StopReason::ZoneMoved { to } => format!(
+                "this endpoint's zone was put into a group whose stream is served at {}, so this \
+                 session ended and the next one is against that address",
+                to
+            ),
         }
     }
 }
@@ -208,6 +229,7 @@ fn record_stop(slot: &StopSlot, reason: StopReason) {
 /// path with no exchange at all: the loop then has no offset, applies no
 /// correction, and says so, which is exactly what it must do against a peer
 /// that never answers.
+#[allow(clippy::too_many_arguments)]
 pub fn run_session<R: Read + Send + 'static, S: PcmSink>(
     config: &ClientConfig,
     mut source: R,
@@ -217,8 +239,10 @@ pub fn run_session<R: Read + Send + 'static, S: PcmSink>(
     timeline: MonotonicTimeline,
     counters: Arc<Counters>,
     sync_out: Option<Box<dyn Write>>,
+    watch: Arc<ZoneWatch>,
 ) -> Result<RunOutcome, std::io::Error> {
     let rate_hz = sink.rate_hz();
+    let gain = ZoneGain::new(handshake.shape.sample_format);
     let buffer = Arc::new(Buffer::new(config.min_us, config.max_us, rate_hz));
     let keep_going = Arc::new(AtomicBool::new(true));
     let (events_tx, events_rx) = mpsc::channel::<PendingEvent>();
@@ -291,6 +315,8 @@ pub fn run_session<R: Read + Send + 'static, S: PcmSink>(
         &replies_rx,
         sync_out,
         &stop_slot,
+        gain,
+        &watch,
     );
 
     keep_going.store(false, Ordering::SeqCst);
@@ -383,6 +409,8 @@ fn play<S: PcmSink>(
     replies: &ChannelReceiver<TimeSync>,
     mut sync_out: Option<Box<dyn Write>>,
     stop_slot: &StopSlot,
+    gain: ZoneGain,
+    watch: &Arc<ZoneWatch>,
 ) -> Result<RunOutcome, std::io::Error> {
     let rate_hz = sink.rate_hz();
     let start_fill_frames = us_to_frames(config.start_fill_us, rate_hz);
@@ -413,6 +441,9 @@ fn play<S: PcmSink>(
     let mut was_stale = false;
     let mut was_muted = false;
     let mut was_undelayed = false;
+    // What the zone last commanded, so a change is one log line and not one per
+    // chunk.
+    let mut last_gain = watch.gain();
 
     macro_rules! read_delay {
         () => {
@@ -504,6 +535,10 @@ fn play<S: PcmSink>(
                 primed_frames
             ),
         )?;
+        // The zone's gain is applied here too. The priming write is audio like
+        // any other, and an endpoint whose zone is muted must not begin with
+        // 120 ms of sound before the first state message reaches it.
+        gain.apply(watch.gain(), &mut primed);
         match sink.write(&primed) {
             Ok(report) => {
                 counters
@@ -538,8 +573,31 @@ fn play<S: PcmSink>(
 
     // Phase 3: pace the writes to hold the device's delay near its target, and
     // run the sync loop, which is what decides WHAT is written.
+    let moves_at_start = watch.moves();
     while device_error.is_none() && delay_refused.is_none() {
         drain_events!();
+
+        // The zone's stream has moved. This session is against the address it
+        // used to be at, so it ends here and the supervisor opens the next one
+        // against the address the state message named. What is already held is
+        // played out, in phase 4, exactly as it is at the end of a stream.
+        if watch.moves() != moves_at_start {
+            let to = watch.facts().audio;
+            keep_going.store(false, Ordering::SeqCst);
+            record_stop(stop_slot, StopReason::ZoneMoved { to: to.clone() });
+            if graded {
+                // The flag is not lowered here because nothing reads it again:
+                // the loop breaks and phase 4 takes no graded sample. The event
+                // is what records where the interval closed and why, exactly as
+                // it is for the end of the run above.
+                log.event(
+                    timeline.now_us(),
+                    "graded-close",
+                    &format!("reason=zone-moved to={} graded=0", to),
+                )?;
+            }
+            break;
+        }
 
         if let Some(limit) = run_limit_us {
             if timeline.now_us() >= limit {
@@ -739,7 +797,21 @@ fn play<S: PcmSink>(
                     let now_ns = timeline.now_ns();
                     corrector.advance(now_ns.saturating_sub(last_advance_ns));
                     last_advance_ns = now_ns;
-                    let shaped = corrector.shape(&queued.chunk.audio_data);
+                    let mut shaped = corrector.shape(&queued.chunk.audio_data);
+                    // The zone's volume and mute, applied to the frames about
+                    // to be written and to nothing else. This is the last thing
+                    // that touches the PCM before the device sees it, so what a
+                    // modelled sink accepts IS what the zone commanded.
+                    let now_gain = watch.gain();
+                    gain.apply(now_gain, &mut shaped);
+                    if now_gain != last_gain {
+                        last_gain = now_gain;
+                        log.event(
+                            timeline.now_us(),
+                            "zone-gain",
+                            &format!("gain={} {}", now_gain.literal(), watch.line()),
+                        )?;
+                    }
                     match sink.write(&shaped) {
                         Ok(report) => {
                             counters
@@ -807,7 +879,8 @@ fn play<S: PcmSink>(
             let now_ns = timeline.now_ns();
             corrector.advance(now_ns.saturating_sub(last_advance_ns));
             last_advance_ns = now_ns;
-            let shaped = corrector.shape(&queued.chunk.audio_data);
+            let mut shaped = corrector.shape(&queued.chunk.audio_data);
+            gain.apply(watch.gain(), &mut shaped);
             match sink.write(&shaped) {
                 Ok(report) => {
                     counters

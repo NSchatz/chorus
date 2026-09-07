@@ -1,0 +1,17 @@
+[package]
+name = "chorus-control"
+description = "the chorus control catalog: versioned JSON messages, server-authoritative zone state, its persisted form and its bounded fanout"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+# AC-11 says a stalled control subscriber must not block or reorder the AUDIO
+# path. That is a claim about the real audio fanout, so the test drives the real
+# one rather than a model of it. A dev-dependency cycle with chorus-server is
+# what this costs, and it is the same trade crates/server already makes to
+# decode its own output with the client's receiver.
+chorus-server = { path = "../server" }

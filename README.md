@@ -7,7 +7,7 @@ The target is sub-millisecond inter-device error on wired endpoints, measured ra
 - `BRIEF.md` - the guiding document: requirements, measured targets, hard guardrails, design areas with recommendations, the 10-phase roadmap, and the decisions still open.
 - `CLAUDE.md` - the working agreement, and how work reaches this repo through the SDD umbrella.
 - `docs/decisions/` - one file per significant decision. `docs/measurements/` - harness reports; a timing claim without one is not evidence.
-- `docs/protocol.md` - the wire format, which is what a second implementation is held to.
+- `docs/protocol.md` - the audio wire format, which is what a second implementation is held to. `docs/control-plane.md` - the control catalog, which is a separate contract on a separate connection and held the same way.
 
 ## What exists
 
@@ -83,6 +83,37 @@ comes back by itself after an outage.
 
 The endpoint has **never driven a pin**. Nothing here has been heard.
 
+**Phase 6, zones, groups, control and a UI.** The phase that makes the system
+usable by someone who did not build it: rooms with names, groups, volume, mute,
+a page to see them on, an endpoint that finds its server by itself, and every
+endpoint back to playing after a server restart with nobody doing anything.
+
+- `crates/control` - the versioned JSON control catalog, the
+  server-authoritative zone state it changes, that state's persisted form, and
+  the bounded fanout that gets a change to every subscriber. No socket, no
+  clock, no thread, and no third-party dependency: the JSON codec is written
+  here for the same reason `crates/protocol` is (`docs/decisions/0016`).
+  `docs/control-plane.md` is the contract and `fixtures/control/` pins its
+  bytes.
+- `crates/discovery` - multicast DNS and DNS-SD, enough of both for a server to
+  say where it is and an endpoint to hear it, with `fixtures/discovery/` pinning
+  the query and response packets so a second implementation is graded against
+  them. The static fallback is an assertion and not a nicety: an endpoint with
+  neither discovery nor an address exits saying which of the two it lacked.
+- `crates/server/src/control.rs` and `crates/server/src/ui/` - the control
+  channel and the page it serves. Every thread it needs is created before the
+  scheduling report, for the reason `crates/server/src/clients.rs` gives about
+  its own.
+- `crates/client-linux/src/zone.rs` and `src/control.rs` - the endpoint's zone:
+  one atomic the playout loop reads, applied to the PCM at the last point before
+  the sink. Graded on the samples a modelled device accepted, never on a status
+  line.
+- `tools/control-plane-run.sh`, `tools/restart-storm-run.sh`,
+  `tools/discovery-fallback-run.sh`, `tools/ui-render-run.sh`,
+  `tools/mdns-live-run.sh`, `tools/soak-run.sh` - one entry point per criterion.
+  The last of those is NOT PASSED anywhere: it needs three days of wall clock
+  and the RIG-3 rig, and it refuses by name.
+
 ## Building and testing
 
 Stable Rust and a C compiler, no external dependencies. `libasound.so.2` is
@@ -111,6 +142,12 @@ was verifying, rather than reporting itself green:
 ./tools/measure/capture-run.sh   # needs two endpoints and an audio interface
 ./tools/firmware-image.sh        # needs ESP-IDF at the declared version
 ./tools/endpoint-rig-run.sh      # needs an ESP32-S3, an amplifier and the rig
+./tools/control-plane-run.sh     # needs a playback device that opens
+./tools/restart-storm-run.sh     # needs a playback device that opens
+./tools/discovery-fallback-run.sh # needs a playback device that opens
+./tools/ui-render-run.sh         # needs Chromium and the driver under tools/ui
+./tools/mdns-live-run.sh         # needs a link that carries multicast DNS
+./tools/soak-run.sh              # needs three days of wall clock AND the rig
 ```
 
 `docs/verification-record.md` says, per criterion, which of those actually ran

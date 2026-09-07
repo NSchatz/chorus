@@ -147,6 +147,50 @@ expect_missing_prerequisite "endpoint-rig-run.sh" \
     CHORUS_CAPTURE_DEVICE=chorus-no-such-capture-device \
     bash "$REPO_ROOT/tools/endpoint-rig-run.sh"
 
+# No playback device. Genuinely absent: the name does not exist. Both of these
+# are PRODUCT-6's entry points for AC-1 and AC-3, and both run real endpoints,
+# which need a device that opens.
+expect_missing_prerequisite "control-plane-run.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_CLIENT_DEVICE=chorus-no-such-device \
+    bash "$REPO_ROOT/tools/control-plane-run.sh"
+
+expect_missing_prerequisite "restart-storm-run.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_CLIENT_DEVICE=chorus-no-such-device \
+    bash "$REPO_ROOT/tools/restart-storm-run.sh"
+
+# The same, for AC-2's fallback half run all the way to playing. It needs a
+# device that opens and no multicast at all, so the device is the prerequisite
+# that is made absent here.
+expect_missing_prerequisite "discovery-fallback-run.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_CLIENT_DEVICE=chorus-no-such-device \
+    bash "$REPO_ROOT/tools/discovery-fallback-run.sh"
+
+# No browser engine. Genuinely absent: the path does not exist. This is the
+# entry point for AC-5, AC-6 and AC-10, and it must refuse rather than fall back
+# to reading the stylesheet, which is the failure it exists to prevent.
+expect_missing_prerequisite "ui-render-run.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_BROWSER=/chorus-no-such-browser \
+    bash "$REPO_ROOT/tools/ui-render-run.sh"
+
+# No three days. Genuinely absent: no run in this pipeline has three days, and
+# no amount of configuration makes one. This is AC-4, which is NOT PASSED
+# anywhere in this repository.
+expect_missing_prerequisite "soak-run.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_SOAK_SECONDS= CHORUS_SECOND_ENDPOINT= \
+    CHORUS_CLIENT_DEVICE=chorus-no-such-device \
+    CHORUS_CAPTURE_DEVICE=chorus-no-such-capture-device \
+    bash "$REPO_ROOT/tools/soak-run.sh"
+
+# No usable multicast. Genuinely absent, and it has to be made so on purpose:
+# this container DOES carry multicast and tools/mdns-live-run.sh passes here, so
+# the only honest way to see its refusal is to make UDP 5353 genuinely
+# unavailable, which is what a host already running a responder looks like.
+# tools/with-mdns-port-taken.sh binds it for the duration.
+expect_missing_prerequisite "mdns-live-run.sh" \
+    env CHORUS_SKIP_BUILD=1 \
+    bash "$REPO_ROOT/tools/with-mdns-port-taken.sh" \
+    bash "$REPO_ROOT/tools/mdns-live-run.sh"
+
 # --- and the list above is the whole list ------------------------------------
 #
 # An entry point is environment-dependent exactly when it calls one of lib.sh's

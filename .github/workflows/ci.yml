@@ -49,6 +49,36 @@ jobs:
           cargo test --package chorus-hostctl
           cargo test --package chorus-alsa
 
+      # The control catalog's committed vectors, both directions, plus the
+      # refusals and the bound on a subscriber that stopped reading. Needs no
+      # socket and no device: the crate has neither.
+      - name: Control catalog vectors, refusals and the subscriber bound
+        run: cargo test --package chorus-control -- --nocapture
+
+      # The DNS-SD packets, and the assertion that regenerating them from their
+      # committed parameters reproduces the committed bytes. Needs no multicast:
+      # what the live exchange adds is behind tools/mdns-live-run.sh, which the
+      # `make verify` step below watches refuse.
+      - name: Discovery packet vectors
+        run: cargo test --package chorus-discovery -- --nocapture
+
+      # 72 MODELLED hours, and every hard resync in them carrying a named cause.
+      # It is a modelled result and not AC-4; docs/verification-record.md says
+      # so where it reports the figures. Named separately because a change that
+      # made the loop resync for a reason nobody scheduled should say so.
+      - name: The modelled seventy-two hours, and the resync classification
+        run: cargo test --package chorus-client-linux --test soak_72h -- --nocapture
+
+      # Two regressions about state and about the worker pool, named so that a
+      # red build says which one broke rather than "the workspace". The first
+      # is a zone name the catalog accepts that did not survive the persisted
+      # state file; the second is a control peer that stops draining its
+      # receive window and strands the worker serving it.
+      - name: Zone names survive a restart, and a stalled peer gives its worker back
+        run: |
+          cargo test --package chorus-server --test regress_0043_f1 -- --nocapture --test-threads=1
+          cargo test --package chorus-server --test control_stalled_peer -- --nocapture
+
       - name: Whole workspace, including documentation examples
         run: cargo test --workspace
 

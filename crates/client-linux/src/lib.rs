@@ -37,20 +37,28 @@
 //! - [`delaylog`]: the record a run leaves behind. Excluded from the audio
 //!   path, and the only place a settable clock is read.
 //! - [`logcheck`]: grading that record afterwards, from the file alone.
+//! - [`control`]: what this endpoint's zone says it should be doing, taken from
+//!   the server's control channel and reduced to one atomic the audio path
+//!   reads.
+//! - [`zone`]: applying that to the PCM, at the last point before the sink.
 
 #![warn(missing_docs)]
 
 pub mod buffer;
 pub mod config;
+pub mod control;
 pub mod delaylog;
 pub mod logcheck;
 pub mod receive;
 pub mod run;
 pub mod sink;
 pub mod sync;
+pub mod zone;
 
 pub use buffer::{Buffer, Counters};
 pub use config::{ClientConfig, ClientMode, ConfigError};
+pub use control::{ControlLink, ZoneFacts, ZoneWatch};
 pub use run::{run_session, RunOutcome, StopReason};
 pub use sink::{AlsaSink, PcmSink, SinkError, SinkWrite};
 pub use sync::{Correction, PlayoutCorrector, SyncConfig, SyncLoop, Telemetry};
+pub use zone::ZoneGain;

@@ -1,0 +1,12 @@
+{
+  "name": "chorus-ui-render-check",
+  "private": true,
+  "version": "0.1.0",
+  "description": "The rendered grader for the chorus control page. Dev-only: nothing here ships, and the Cargo workspace has no dependency on any of it.",
+  "scripts": {
+    "check": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}

@@ -1,0 +1,11 @@
+# Canonical input for the mute golden vector.
+#
+# Encoding these field values must produce exactly mute.json, and decoding
+# mute.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = mute
+zone = kitchen
+muted = 1

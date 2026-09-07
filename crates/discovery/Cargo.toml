@@ -1,0 +1,17 @@
+[package]
+name = "chorus-discovery"
+description = "multicast DNS and DNS-SD: the server advertises where it is, the endpoint finds it, and the packets are the contract"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[[bin]]
+name = "chorus-discovery-vectors"
+path = "src/bin/chorus-discovery-vectors.rs"
+
+[[bin]]
+name = "chorus-mdns-probe"
+path = "src/bin/chorus-mdns-probe.rs"

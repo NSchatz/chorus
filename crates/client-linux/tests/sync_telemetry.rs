@@ -284,6 +284,7 @@ fn client_config(log: &std::path::Path, run_seconds: u64, sync: SyncConfig) -> C
         overflow_skew_ppm: 2_000,
         require_pacing: false,
         sync,
+        ..Default::default()
     }
 }
 
@@ -331,6 +332,7 @@ fn run_against_device(
         MonotonicTimeline::new(),
         counters,
         Some(sync_out),
+        Arc::new(chorus_client_linux::ZoneWatch::new()),
     )
     .expect("the run writes its log");
     drop(log);

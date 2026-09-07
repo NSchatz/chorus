@@ -239,6 +239,128 @@ check "uncrossable-bounds-say-why" \
     "$(echo "$OUT" | grep -q 'not under the 600 s' && echo 1 || echo 0)" \
     "$(echo "$OUT" | head -n 1)"
 
+# --- a control channel whose address cannot be bound ------------------------
+#
+# AC-9: "IF the control channel cannot bind its configured address, or is denied
+# it THEN THE SYSTEM SHALL exit non-zero with a documented code naming the
+# address and the reason, and SHALL NOT serve audio while reporting itself as
+# controllable."
+#
+# The address is genuinely taken: this holds it for the duration of the run.
+TAKEN_PORT="$(free_port)"
+python3 - "$TAKEN_PORT" >/dev/null 2>&1 <<'PY' &
+import socket, sys, time
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+s.bind(("127.0.0.1", int(sys.argv[1])))
+s.listen(1)
+time.sleep(30)
+PY
+HOLDER=$!
+sleep 1
+AUDIO_PORT="$(free_port)"
+run_server --listen "127.0.0.1:$AUDIO_PORT" --no-lock-memory --allow-non-realtime \
+    --control-listen "127.0.0.1:$TAKEN_PORT" --zone kitchen
+CONTROL_STATUS=$STATUS
+CONTROL_OUT="$OUT"
+kill_quietly "$HOLDER"
+check "unbindable-control-address-exits-with-its-documented-code" \
+    "$([ "$CONTROL_STATUS" -eq 8 ] && echo 1 || echo 0)" \
+    "exit $CONTROL_STATUS, and crates/server/src/main.rs documents 8 for this"
+check "unbindable-control-address-names-the-address-and-the-reason" \
+    "$(echo "$CONTROL_OUT" | grep -q "127.0.0.1:$TAKEN_PORT could not be bound" \
+        && echo 1 || echo 0)" \
+    "$(echo "$CONTROL_OUT" | grep 'could not be bound' | head -n 1)"
+check "unbindable-control-address-serves-no-audio" \
+    "$(echo "$CONTROL_OUT" | grep -q 'listening on=' && echo 0 || echo 1)" \
+    "the audio socket was never bound: $(echo "$CONTROL_OUT" | grep -c 'listening on=') 'listening on' lines"
+check "unbindable-control-address-plays-nothing" \
+    "$(echo "$CONTROL_OUT" | grep -q 'chunks_sent=0' && echo 1 || echo 0)" \
+    "$(echo "$CONTROL_OUT" | grep 'stopped' | head -n 1)"
+check "unbindable-control-address-does-not-claim-to-be-controllable" \
+    "$(echo "$CONTROL_OUT" | grep -q 'control listening on=' && echo 0 || echo 1)" \
+    "it never said it was listening for control"
+
+# --- an endpoint with no server address at all ------------------------------
+#
+# AC-2's other side: an endpoint with neither discovery nor a static address
+# has to say WHICH OF THE TWO it lacked, because those are two different things
+# to fix.
+run_client --no-server --device chorus-no-such-device \
+    --delay-log "${TMPDIR:-/tmp}/chorus-refusals-unused.log"
+check "no-server-address-exits-with-its-documented-code" \
+    "$([ "$STATUS" -eq 7 ] && echo 1 || echo 0)" \
+    "exit $STATUS, and crates/client-linux/src/main.rs documents 7 for this"
+check "no-server-address-says-which-of-the-two-is-missing" \
+    "$(echo "$OUT" | grep -q 'discovery was not attempted and no static address was configured' \
+        && echo 1 || echo 0)" \
+    "$(echo "$OUT" | grep 'no server address' | head -n 1)"
+check "no-server-address-says-how-to-fix-either-of-them" \
+    "$(echo "$OUT" | grep -q -- '--server' && echo "$OUT" | grep -q -- '--discover' \
+        && echo 1 || echo 0)" \
+    "it names both --server and --discover"
+check "no-server-address-does-not-claim-playback" \
+    "$(echo "$OUT" | grep -q 'played=0' && echo 1 || echo 0)" \
+    "$(echo "$OUT" | grep 'stopped' | head -n 1)"
+
+# --- a control message the server cannot accept ------------------------------
+#
+# AC-8 is graded byte for byte by `cargo test -p chorus-control --test
+# refusals`. What is checked here is that the SHIPPED BINARY refuses the same
+# way, over a real socket, because a rule that holds in a library and not in the
+# process is not a rule the system has.
+CONTROL_PORT="$(free_port)"
+AUDIO_PORT="$(free_port)"
+"$BIN_DIR/chorus-server" --listen "127.0.0.1:$AUDIO_PORT" --serve-forever \
+    --no-lock-memory --allow-non-realtime \
+    --control-listen "127.0.0.1:$CONTROL_PORT" --zone kitchen \
+    >"${TMPDIR:-/tmp}/chorus-refusals-control.log" 2>&1 &
+CONTROL_SERVER=$!
+sleep 2
+refuse_message() {
+    python3 - "$CONTROL_PORT" "$1" <<'PY'
+import socket, sys
+port, body = int(sys.argv[1]), sys.argv[2].encode()
+s = socket.create_connection(("127.0.0.1", port))
+s.sendall(
+    b"POST /api/command HTTP/1.1\r\nHost: chorus\r\nContent-Type: application/json\r\n"
+    + b"Content-Length: " + str(len(body)).encode() + b"\r\nConnection: close\r\n\r\n" + body
+)
+answer = b""
+while True:
+    chunk = s.recv(65536)
+    if not chunk:
+        break
+    answer += chunk
+sys.stdout.write(answer.decode("utf-8", "replace"))
+PY
+}
+BEFORE_STATE="$(refuse_message '{"v":1,"t":"hello"}' | tail -n 1)"
+UNKNOWN_ZONE="$(refuse_message '{"v":1,"t":"mute","zone":"bathroom","muted":true}')"
+check "the-binary-refuses-an-unknown-zone-naming-the-field" \
+    "$(printf '%s' "$UNKNOWN_ZONE" | grep -q '400 Bad Request' \
+        && printf '%s' "$UNKNOWN_ZONE" | grep -q '"field":"zone"' && echo 1 || echo 0)" \
+    "$(printf '%s' "$UNKNOWN_ZONE" | tail -n 1 | cut -c1-110)"
+OUT_OF_RANGE="$(refuse_message '{"v":1,"t":"volume","zone":"kitchen","volume":2.000}')"
+check "the-binary-refuses-a-volume-outside-the-declared-range" \
+    "$(printf '%s' "$OUT_OF_RANGE" | grep -q '"field":"volume"' && echo 1 || echo 0)" \
+    "$(printf '%s' "$OUT_OF_RANGE" | tail -n 1 | cut -c1-110)"
+MALFORMED="$(refuse_message '{"v":1,"t":"mute",}')"
+check "the-binary-refuses-a-message-that-is-not-json" \
+    "$(printf '%s' "$MALFORMED" | grep -q 'not well-formed JSON' && echo 1 || echo 0)" \
+    "$(printf '%s' "$MALFORMED" | tail -n 1 | cut -c1-110)"
+WRONG_VERSION="$(refuse_message '{"v":9,"t":"hello"}')"
+check "the-binary-refuses-an-unimplemented-catalog-version-and-names-both" \
+    "$(printf '%s' "$WRONG_VERSION" | grep -q '426 Upgrade Required' \
+        && printf '%s' "$WRONG_VERSION" | grep -q '"offered":9' \
+        && printf '%s' "$WRONG_VERSION" | grep -q '"implemented":\[1\]' && echo 1 || echo 0)" \
+    "$(printf '%s' "$WRONG_VERSION" | tail -n 1 | cut -c1-110)"
+AFTER_STATE="$(refuse_message '{"v":1,"t":"hello"}' | tail -n 1)"
+check "no-refused-message-changed-the-state-a-subscriber-would-be-sent" \
+    "$([ "$BEFORE_STATE" = "$AFTER_STATE" ] && echo 1 || echo 0)" \
+    "the state is byte-identical before and after four refusals"
+kill_quietly "$CONTROL_SERVER"
+
 say ""
 if [ "$FAILURES" -eq 0 ]; then
     say "chorus: every refusal path holds"

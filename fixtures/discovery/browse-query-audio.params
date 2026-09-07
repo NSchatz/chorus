@@ -1,0 +1,10 @@
+# The query an endpoint sends when it starts with no server address.
+#
+# RFC 6763 section 4.1: a client "requests records of type PTR" with the name
+# "<Service>.<Domain>", and the answers are the service instance names. RFC 6762
+# section 18.1: the query identifier is zero in a multicast query.
+#
+# Format: key = value, '#' starts a comment.
+
+kind = query
+service = _chorus-audio._tcp.local.

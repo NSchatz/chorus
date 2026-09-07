@@ -1,0 +1,19 @@
+# What a resolver must make of advertisement-audio-compressed.hex.
+#
+# Identical to advertisement-audio.expected, and that is the point: the same
+# advertisement compressed and uncompressed has to resolve to the same host and
+# the same port, or a resolver's answer depends on how the responder chose to
+# write it.
+#
+# Format: key = value, '#' starts a comment.
+
+service = _chorus-audio._tcp.local.
+instances = 1
+instance.0.name = chorus._chorus-audio._tcp.local.
+instance.0.label = chorus
+instance.0.host = chorus.local.
+instance.0.port = 4010
+instance.0.address = 192.168.1.40:4010
+instance.0.txt.v = 1
+instance.0.txt.group = downstairs
+instance.0.txt.ctl = 4020

@@ -31,6 +31,16 @@ pub const DEFAULT_OVERFLOW_SKEW_PPM: u64 = 2_000;
 /// A crossing test has to finish inside one ten-minute run.
 pub const MAX_SECONDS_TO_CROSS: u64 = 600;
 
+/// How long `--discover` browses for a server before falling back.
+///
+/// RFC 6762 section 5.2 has a responder answer a query "immediately" on the
+/// link, subject to the randomised 20 to 120 ms delay section 6 requires of a
+/// SHARED record, which a DNS-SD service's PTR is. A second is many times that
+/// and is short enough that an endpoint whose link carries no multicast at all
+/// is playing from its static address a second after it started rather than
+/// after a timeout somebody has to wait through.
+pub const DEFAULT_DISCOVER_MS: u64 = 1_000;
+
 /// How a client run is configured.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClientConfig {
@@ -69,6 +79,30 @@ pub struct ClientConfig {
     /// verification entry points, so a check and the thing it checks cannot
     /// drift apart.
     pub sync: SyncConfig,
+    /// Whether `--server` was given at all.
+    ///
+    /// The distinction matters: a client with no server address and no
+    /// discovery has to say which of the two it lacks, and it cannot say that
+    /// from a field that has a default in it.
+    pub server_configured: bool,
+    /// How long to browse for a server by multicast DNS before falling back,
+    /// or `None` to browse not at all.
+    pub discover_ms: Option<u64>,
+    /// The control channel to subscribe to, or `None` for an endpoint that
+    /// plays at full scale and is told nothing.
+    pub control: Option<String>,
+    /// The zone this endpoint plays.
+    pub zone: String,
+    /// This endpoint's identifier, which is what the zone's membership records.
+    pub endpoint: String,
+    /// Whether to reconnect and carry on when a session ends unexpectedly.
+    ///
+    /// Off by default, because every verification this repository already has
+    /// grades a SINGLE session and reads its exit code. An endpoint in a house
+    /// is started with it on.
+    pub rejoin: bool,
+    /// Longest to wait between rejoin attempts, in milliseconds.
+    pub rejoin_max_ms: u64,
 }
 
 impl Default for ClientConfig {
@@ -85,6 +119,13 @@ impl Default for ClientConfig {
             overflow_skew_ppm: DEFAULT_OVERFLOW_SKEW_PPM,
             require_pacing: false,
             sync: SyncConfig::default(),
+            server_configured: false,
+            discover_ms: None,
+            control: None,
+            zone: "default".to_string(),
+            endpoint: "endpoint".to_string(),
+            rejoin: false,
+            rejoin_max_ms: 2_000,
         }
     }
 }
@@ -326,7 +367,24 @@ impl ClientConfig {
             match arg.as_str() {
                 "--probe-device" => mode = ClientMode::ProbeDevice,
                 "--require-pacing" => config.require_pacing = true,
-                "--server" => config.server = value()?,
+                "--server" => {
+                    config.server = value()?;
+                    config.server_configured = true;
+                }
+                "--no-server" => {
+                    // The only way to say "I have no static address" on a
+                    // command line where one has a default. It exists so that
+                    // the discovery-and-fallback behaviour can be exercised
+                    // without editing the default out of the source.
+                    config.server_configured = false;
+                }
+                "--discover" => config.discover_ms = Some(DEFAULT_DISCOVER_MS),
+                "--discover-ms" => config.discover_ms = Some(number(&arg, &value()?)?),
+                "--control" => config.control = Some(value()?),
+                "--zone" => config.zone = value()?,
+                "--endpoint" => config.endpoint = value()?,
+                "--rejoin" => config.rejoin = true,
+                "--rejoin-max-ms" => config.rejoin_max_ms = number(&arg, &value()?)?,
                 "--device" => config.device = value()?,
                 "--delay-log" => config.delay_log = value()?,
                 "--min-us" => config.min_us = number(&arg, &value()?)?,

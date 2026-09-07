@@ -38,9 +38,18 @@
 //! `hard-resync` (a step, with the error it answered), `sync-stale` (the offset
 //! aged past its limit), `sync-no-device-delay` (the device answered zero,
 //! which is not a distance to a DAC, so nothing was corrected) and
-//! `sync-resume` (a mute ran out). A reader that does
+//! `sync-resume` (a mute ran out); and, from the control plane,
+//! `zone-gain` (the zone's volume or mute changed what this endpoint is
+//! multiplying its samples by, with the new gain and the state message it came
+//! from). A reader that does
 //! not know a kind can ignore it: the grader keys on the ones it needs and
 //! passes the rest through, which is why a new kind is not a format version.
+//!
+//! Note that `zone` and `zone-gain` are about different things and the older
+//! name is the confusing one: `zone` is a BUFFER OCCUPANCY zone, which this log
+//! has carried since SOUND-2, and `zone-gain` is a room. Renaming the older one
+//! would break every committed log and every grader that reads it, so the newer
+//! kind carries the qualifier instead.
 
 use std::fs::File;
 use std::io::{self, BufWriter, Write};

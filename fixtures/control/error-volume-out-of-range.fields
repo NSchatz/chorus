@@ -1,0 +1,15 @@
+# Canonical input for the out-of-range refusal vector.
+#
+# `input` is a whole control message. Decoding it must be refused, and encoding
+# the refusal must produce exactly error-volume-out-of-range.json. The wording
+# is part of the vector on purpose: an error naming the offending field is what
+# the criterion asks for, and a message that stopped naming it would still be
+# an error.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+input = {"v":1,"t":"volume","zone":"kitchen","volume":2.000}
+ends_the_session = 0
+field = volume
