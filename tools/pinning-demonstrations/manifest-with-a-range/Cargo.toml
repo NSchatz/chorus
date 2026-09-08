@@ -1,0 +1,17 @@
+# WRONG ON PURPOSE. `serde = "1.0"` is a caret range: it resolves to whatever
+# 1.x was newest the day the lock was written, and to something else the day it
+# is written again. tools/pinning-check.sh requires this to go red naming P4.
+#
+# Not a member of the workspace at the repository root, and never built.
+
+[package]
+name = "chorus-pinning-demonstration-manifest-with-a-range"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+serde = "1.0"
+
+[dev-dependencies]
+chorus-protocol = { path = "../../../crates/protocol" }

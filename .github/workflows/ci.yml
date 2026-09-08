@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Toolchain
         run: |
@@ -108,6 +108,15 @@ jobs:
       # is real minutes of real wall clock, which is what makes it evidence.
       - name: Endpoint clocking, amplifier, telemetry and the rejoin
         run: make firmware-check
+
+      # Every image reference, every action reference and every dependency
+      # manifest, against the umbrella's documentation/pinning-conventions.md.
+      # Includes the committed demonstrations that go red on each shape it
+      # refuses, and the one that goes red because a whole category stopped
+      # matching. Resolves nothing over the network, so it cannot red this build
+      # because a registry had a bad afternoon.
+      - name: Images, actions and manifests are pinned
+        run: make verify-pinning
 
       # Every refusal path, and the proof that a verification whose environment
       # is absent exits non-zero naming what is missing rather than reporting

@@ -1,0 +1,8 @@
+# A lockfile beside the manifest, so the ONE thing this tree demonstrates is the
+# range in Cargo.toml and not a missing lock. Hand-written and never resolved:
+# nothing here is built.
+version = 3
+
+[[package]]
+name = "chorus-pinning-demonstration-manifest-with-a-range"
+version = "0.1.0"

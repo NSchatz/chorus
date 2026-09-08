@@ -1,0 +1,4 @@
+# A lockfile beside the manifest, so the ONE thing this tree demonstrates is the
+# install configuration and not a missing lock. Hand-written and never resolved:
+# nothing here is installed.
+lockfileVersion: '9.0'

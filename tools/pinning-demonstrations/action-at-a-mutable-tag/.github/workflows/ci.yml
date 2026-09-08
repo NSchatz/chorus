@@ -1,0 +1,19 @@
+# WRONG ON PURPOSE. `@v4` is a tag, and its publisher moves it: the v4 this
+# repository was pinned against had changed the fork-checkout guard since the
+# day anyone last read it. tools/pinning-check.sh requires this to go red
+# naming P3.
+name: ci
+
+on:
+  push:
+
+jobs:
+  test:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Build
+        run: true

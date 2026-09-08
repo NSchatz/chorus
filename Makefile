@@ -18,9 +18,20 @@ one:
 # Every verification that needs no device and no privilege. This is what CI
 # runs beside the suite.
 verify: tools-executable
+	bash tools/pinning-check.sh
 	bash tools/refusals.sh
 	bash tools/unrun-checks-are-visibly-unrun.sh
 	bash tools/measure/capture-refusals.sh
+
+# Every image reference, every action reference and every dependency manifest in
+# the tree, against the umbrella's documentation/pinning-conventions.md, plus the
+# committed demonstrations that show the check going red on each shape it
+# refuses. Needs no device, no privilege and NO NETWORK: it resolves no tag and
+# asks no registry anything, which is why this repository carries no scheduled
+# liveness workflow (P8). Also run by `make verify`; named separately so a red
+# CI build says the pins broke rather than "the workspace".
+verify-pinning: tools-executable
+	bash tools/pinning-check.sh
 
 tools-executable:
 	chmod +x tools/*.sh tools/measure/*.sh
