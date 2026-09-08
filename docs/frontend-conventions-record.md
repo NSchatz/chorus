@@ -15,7 +15,11 @@ claiming an assertion after the assertion has stopped running.
 An assertion name is a claim declared in `tools/ui/claims.js`. Each one is
 proved by a test in `tools/ui/ui.spec.js` against a page a browser engine
 painted, and each one is shown going red in `tools/ui/mutation.spec.js` against
-a page mutated to break exactly that claim. `docs/control-page.md` is what the
+a page mutated to break exactly that claim. That division is a rule and not a
+habit: every ledger line carries the file it was written from, and
+`tools/ui/check-claims.js` discounts and names a demonstration recorded
+anywhere but `mutation.spec.js`, so a `demonstrates()` call sitting beside the
+real page cannot make the count come out. `docs/control-page.md` is what the
 page's regions link to.
 
 ## The record
@@ -27,8 +31,8 @@ page's regions link to.
 | F3 | unreadable-figure, stale-not-current | |
 | F4 | aggregate-states-its-set | |
 | F5 | unreadable-figure | |
-| F6 | stale-not-current, paused-feed-visible | |
-| F7 | three-states | |
+| F6 | stale-not-current, paused-feed-visible, loading-never-unresolved | |
+| F7 | three-states, loading-never-unresolved | |
 | F8 | short-labels-and-doc-link | |
 | F9 | reflow-360 | |
 | F10 | themes-follow-preference, contrast-in-both-themes | |
@@ -76,8 +80,9 @@ draws.
 stops - "a dropped stream, failed poll or paused feed" - and they are not one
 thing under three names. A dropped stream is visible from the connection; a
 paused feed is the case where the connection says nothing is wrong, and a page
-that watched only the connection would be blind to exactly it. Both limbs are
-asserted, one each:
+that watched only the connection would be blind to exactly it; a failed poll is
+what finds the second, and it is also the only thing that can find a server
+that was already stopped when the page was opened. All three are asserted:
 
 - **Dropped** (`stale-not-current`). The feed is severed at the socket under a
   live page; the connection reads `Connection lost` and every figure reads
@@ -93,15 +98,35 @@ asserted, one each:
   `last known`, then to return to `live` when the server resumes. What finds it
   is the page's own poll of the server failing: `chorus.js` probes `/api/state`
   on a timer and a figure reads as current only when the stream is up AND the
-  last probe came back, which bounds how long a paused feed can be shown as live
-  at under nine seconds. The demonstration is the mechanism this page used
-  before, served at `/demo/stale-blind`: freshness from `onerror` and a
-  `readyState` watchdog alone, shown still reading `live` twelve seconds into a
-  pause.
+  last probe came back. For a page that has already received a state, that timer
+  bounds how long a paused feed can be shown as live at under nine seconds. The
+  demonstration is the mechanism this page used before, served at
+  `/demo/stale-blind`: freshness from `onerror` and a `readyState` watchdog
+  alone, shown still reading `live` twelve seconds into a pause.
+- **The first poll, which nothing else can watch**
+  (`loading-never-unresolved`). The timer above is started when the page's own
+  first `/api/state` request settles, so it is no help at all to a page opened
+  while the server is already stopped: that request never comes back, and
+  without a deadline on it the page subscribes to nothing and shows `Loading`
+  for as long as the tab is open. So that one request carries its own deadline,
+  `STATE_TIMEOUT`, after which the failure is rendered as the error notice, and
+  the assertion grades it against a server that accepts the connection and
+  answers nothing rather than against a delay chosen to land inside the window.
+  The demonstration is the bootstrap this page used before, served at
+  `/demo/loading-blind`: one `fetch("/api/state")` with no deadline on it, shown
+  still reading `Loading` twenty seconds into a pause.
 
 **F7 Three states, all of them.** Loading is graded against a state request that
-has not answered, empty against a real server with no zone configured, and error
-against a state request that fails. Each is asserted to be alone.
+never answers at all, empty against a real server with no zone configured, and
+error against a state request that fails. Each is asserted to be alone. The
+clause's other limb - that a loading state is never left unresolved - has no
+condition on it, so it is graded against the state that breaks it and not
+against a slow answer chosen to arrive inside the window
+(`loading-never-unresolved`): the page is opened against a server that accepts
+the connection and returns nothing, and has to reach the actionable error notice
+with no interaction and inside a bounded time. A merely slow request is asserted
+in the same breath to still resolve INTO the zone list, so that deadline cannot
+be bought by calling every slow server a stopped one.
 
 **F8 Explanation lives in docs.** No text run on the surface is more than twelve
 words, every region carries exactly one link, and the link is followed in the

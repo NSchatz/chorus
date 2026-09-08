@@ -28,7 +28,8 @@
 # any of them from the inside:
 #
 #   every declared claim ran, so a deleted assertion cannot shrink the check;
-#   every claim was shown going red on a page that breaks it;
+#   every claim was shown going red on a page that breaks it, in the file that
+#   holds the mutated pages and not beside the real one;
 #   docs/frontend-conventions-record.md maps all eleven clauses, each to one
 #   thing, and every assertion it names ran in this invocation.
 #
@@ -47,7 +48,7 @@ source "$(dirname "$0")/lib.sh"
 
 build_once
 
-CRITERION="the control page holds the frontend conventions F1 to F11: contrast and focus in both themes, keyboard operation, accessible names, no state carried by colour alone, an aggregate that states its set, an unreadable figure that costs nothing else, a severed feed and a paused one that both stop reading as current, three states, short labels with the paragraphs in the repo's docs, a 360 pixel layout for every name the catalog admits, and a Content-Security-Policy the browser does not complain about"
+CRITERION="the control page holds the frontend conventions F1 to F11: contrast and focus in both themes, keyboard operation, accessible names, no state carried by colour alone, an aggregate that states its set, an unreadable figure that costs nothing else, a severed feed and a paused one that both stop reading as current, three states with a loading one that resolves even against a server that answers nothing, short labels with the paragraphs in the repo's docs, a 360 pixel layout for every name the catalog admits, and a Content-Security-Policy the browser does not complain about"
 require_browser_driver "$CRITERION"
 
 FAILURES=0
@@ -177,6 +178,25 @@ printf '%s\n' "$CLAIMS_OUT" | sed 's/^/    /'
 check "the-measurement-was-shown-going-red-on-a-page-that-breaks-it" \
     "$([ "$CLAIMS_STATUS" -eq 0 ] && echo 1 || echo 0)" \
     "$(printf '%s' "$CLAIMS_OUT" | grep -E '^(pass|FAIL)' | head -n 1)"
+
+# And that reader shown refusing too. `proves` and `demonstrates` are both
+# exported to both spec files, so a demonstration recorded beside the real page
+# would satisfy the count above while demonstrating nothing. Every ledger line
+# carries the file it was written from; this is the run's OWN ledger with every
+# demonstration relabelled as though it had been recorded in ui.spec.js, which
+# has to be refused by name.
+MISFILED_LEDGER="$OUT_DIR/misfiled.ledger"
+sed 's/ mutation\.spec\.js$/ ui.spec.js/' "$LEDGER" >"$MISFILED_LEDGER"
+set +e
+MISFILED_OUT="$(node "$REPO_ROOT/tools/ui/check-claims.js" "$MISFILED_LEDGER" 2>&1)"
+MISFILED_STATUS=$?
+set -e
+MISFILED_OK=1
+[ "$MISFILED_STATUS" -eq 0 ] && MISFILED_OK=0
+printf '%s' "$MISFILED_OUT" | grep -q 'belongs in mutation.spec.js' || MISFILED_OK=0
+check "a-demonstration-recorded-beside-the-real-page-is-refused-naming-it" \
+    "$MISFILED_OK" \
+    "exit $MISFILED_STATUS: $(printf '%s' "$MISFILED_OUT" | grep 'belongs in mutation.spec.js' | head -n 1)"
 
 # The committed record of the eleven clauses, read against what actually ran.
 say ""

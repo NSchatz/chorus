@@ -9,12 +9,16 @@
 //   inside a green test run;
 //   a claim with no demonstration, because a check that cannot fail is not
 //   evidence;
+//   a demonstration recorded from the file that holds the assertions, because
+//   `demonstrates()` beside the real page counts without demonstrating
+//   anything;
 //   a clause of the frontend conventions whose committed record names an
 //   assertion that did not run in this invocation.
 //
 // The ledger is a file rather than a return value because the two spec files run
 // in one worker and the runner is a shell script; a line appended per assertion
-// is the smallest thing both can read.
+// is the smallest thing both can read. Each line carries the file it was written
+// from, which is what makes the third refusal above possible.
 
 const fs = require("fs");
 const path = require("path");
@@ -47,6 +51,8 @@ const CLAIMS = {
     "a feed that has stopped delivering over a connection that is still established stops reading as live, and reads as live again when it resumes",
   "three-states":
     "loading, empty and error are distinct, actionable, and never two at once",
+  "loading-never-unresolved":
+    "a state request that never answers resolves the loading notice into the actionable error notice, inside a bounded time and with no interaction",
   "short-labels-and-doc-link":
     "labels stay to a few words and each region links once to a document that resolves",
   "reflow-360":
@@ -65,6 +71,32 @@ const LEDGER =
   process.env.CHORUS_UI_LEDGER ||
   path.join(__dirname, ".playwright", "claims.ledger");
 
+/// The file that called `proves` or `demonstrates`, as a bare name.
+///
+/// The ledger records it because a line reading only `demo three-states` cannot
+/// say WHERE the demonstration was: `proves` and `demonstrates` are both
+/// exported to both spec files, so a `demonstrates()` call sitting in
+/// `ui.spec.js` beside the real page would satisfy the counter while
+/// demonstrating nothing. With the file on the line, check-claims.js can refuse
+/// it. Read off V8's structured stack rather than passed in by the caller,
+/// because a value the caller supplies is one the caller can get wrong.
+function callerFile() {
+  const before = Error.prepareStackTrace;
+  Error.prepareStackTrace = (_, frames) => frames;
+  const frames = new Error().stack;
+  Error.prepareStackTrace = before;
+  if (!Array.isArray(frames)) {
+    return "unknown";
+  }
+  for (const frame of frames) {
+    const file = typeof frame.getFileName === "function" ? frame.getFileName() : null;
+    if (file && path.resolve(file) !== __filename) {
+      return path.basename(file);
+    }
+  }
+  return "unknown";
+}
+
 function append(kind, id) {
   if (!Object.prototype.hasOwnProperty.call(CLAIMS, id)) {
     throw new Error(
@@ -72,7 +104,7 @@ function append(kind, id) {
     );
   }
   fs.mkdirSync(path.dirname(LEDGER), { recursive: true });
-  fs.appendFileSync(LEDGER, `${kind} ${id}\n`);
+  fs.appendFileSync(LEDGER, `${kind} ${id} ${callerFile()}\n`);
 }
 
 /// Called at the END of an assertion that proved a claim on the real page. At
@@ -87,22 +119,40 @@ function demonstrates(id) {
   append("demo", id);
 }
 
+/// Where each kind of line is allowed to have been written. An assertion is
+/// graded against the page a real server served and belongs in ui.spec.js; a
+/// demonstration is the same measurement pointed at a page built to break one
+/// claim and belongs in mutation.spec.js. Recording one from the other file is
+/// the mistake this mapping exists to make visible.
+const RECORDED_IN = { claim: "ui.spec.js", demo: "mutation.spec.js" };
+
 /// Read the ledger back.
 function readLedger(file = LEDGER) {
   if (!fs.existsSync(file)) {
-    return { claims: [], demos: [] };
+    return { claims: [], demos: [], misfiled: [] };
   }
   const claims = new Set();
   const demos = new Set();
+  const misfiled = [];
   for (const line of fs.readFileSync(file, "utf8").split("\n")) {
-    const [kind, id] = line.trim().split(/\s+/);
-    if (kind === "claim" && id) {
+    const [kind, id, from] = line.trim().split(/\s+/);
+    if (kind !== "claim" && kind !== "demo") {
+      continue;
+    }
+    if (!id) {
+      continue;
+    }
+    if (from !== RECORDED_IN[kind]) {
+      misfiled.push({ kind, id, from: from || "nowhere" });
+      continue;
+    }
+    if (kind === "claim") {
       claims.add(id);
-    } else if (kind === "demo" && id) {
+    } else {
       demos.add(id);
     }
   }
-  return { claims: [...claims].sort(), demos: [...demos].sort() };
+  return { claims: [...claims].sort(), demos: [...demos].sort(), misfiled };
 }
 
-module.exports = { CLAIMS, LEDGER, proves, demonstrates, readLedger };
+module.exports = { CLAIMS, LEDGER, RECORDED_IN, proves, demonstrates, readLedger };

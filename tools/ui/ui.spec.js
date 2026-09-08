@@ -358,6 +358,56 @@ for (const theme of ["light", "dark"]) {
       `links carrying no mark but their colour in the ${theme} theme`
     ).toEqual([]);
 
+    // And the same three measurements against the surface a working server
+    // never paints: a zone whose volume, mute and group could not be read. It
+    // renders three words no other state carries and it renders two controls
+    // this page DISABLES, which composite differently from the ones above. A
+    // state the assertion never renders is a state nothing here ever measured a
+    // colour in.
+    const doctored = twoZones();
+    delete doctored.zones[0].volume;
+    delete doctored.zones[0].muted;
+    delete doctored.zones[0].group;
+    await scenario({ state: doctored });
+    await page.goto(`${FIXTURE}/`);
+    await expect(page.locator('[data-mute-state="kitchen"]')).toHaveText("Unavailable");
+    await expect(page.locator('[data-mute="kitchen"]')).toBeDisabled();
+    await expect(page.locator('[data-group-select="kitchen"]')).toBeDisabled();
+
+    const unreadableRuns = await contrast.textContrast(page);
+    expect(
+      unreadableRuns.some((run) => run.text === "Unavailable"),
+      `no "Unavailable" run was among the ${unreadableRuns.length} measured`
+    ).toBe(true);
+    expect(
+      contrast.tooPale(unreadableRuns).map((r) => ({
+        what: r.what,
+        text: r.text,
+        ink: r.ink,
+        on: r.surface,
+        ratio: Number(r.ratio.toFixed(2)),
+        floor: r.floor,
+      })),
+      `text below its floor in the ${theme} theme with a zone's figures unreadable`
+    ).toEqual([]);
+
+    const unreadableMarks = await contrast.nonTextContrast(page);
+    expect(unreadableMarks.length).toBeGreaterThanOrEqual(6);
+    expect(
+      contrast.indistinct(unreadableMarks).map((m) => ({
+        label: m.label,
+        kind: m.kind,
+        ratio: Number(m.ratio.toFixed(2)),
+        surround: m.surround,
+        edge: m.edge,
+      })),
+      `control boundaries below 3:1 in the ${theme} theme with a zone's figures unreadable`
+    ).toEqual([]);
+    expect(
+      contrast.unmarkedLinks(await contrast.linkMarks(page)).map((l) => l.label),
+      `links carrying no mark but their colour in the ${theme} theme with a zone's figures unreadable`
+    ).toEqual([]);
+
     proves("contrast-in-both-themes");
   });
 
@@ -380,6 +430,34 @@ for (const theme of ["light", "dark"]) {
         over: r.over,
       })),
       `controls whose focus indicator is suppressed or below 3:1 in the ${theme} theme`
+    ).toEqual([]);
+
+    // The same measurement on the state where two of this page's controls are
+    // disabled. What is graded is the controls that CAN take focus: a disabled
+    // one is not "a control [that] has keyboard focus", `focus()` on it changes
+    // no pixel, and reporting that as a suppressed indicator would be a false
+    // alarm standing where a real one has to be visible.
+    const doctored = twoZones();
+    delete doctored.zones[0].volume;
+    delete doctored.zones[0].muted;
+    delete doctored.zones[0].group;
+    await scenario({ state: doctored });
+    await page.goto(`${FIXTURE}/`);
+    await expect(page.locator('[data-mute="kitchen"]')).toBeDisabled();
+
+    const unreadableRows = await contrast.focusIndicators(page);
+    expect(unreadableRows.length).toBeGreaterThanOrEqual(6);
+    expect(
+      unreadableRows.map((r) => r.label),
+      "a control that cannot take focus was graded on its focus indicator"
+    ).not.toContain("Mute The Kitchen");
+    expect(
+      contrast.unfocusable(unreadableRows).map((r) => ({
+        label: r.label,
+        pixelsChanged: r.pixelsChanged,
+        ratio: Number(r.ratio.toFixed(2)),
+      })),
+      `controls whose focus indicator is suppressed or below 3:1 in the ${theme} theme with a zone's figures unreadable`
     ).toEqual([]);
 
     proves("focus-visible");
@@ -799,14 +877,30 @@ test("a refused command is shown where it was issued, and the control keeps the 
 test("loading, empty and error are distinct, actionable, and never two at once", async ({
   page,
 }) => {
-  // Loading: the state request has not answered yet.
-  await scenario({ stateDelayMs: 4000, eventsMode: "silent" });
+  // Loading: the state request has not answered. Graded against a request that
+  // NEVER answers - the server accepts the connection and returns nothing,
+  // which is what a stopped or wedged chorus-server looks like from a browser -
+  // and not against a delay chosen to land inside the observation window. The
+  // limb the criterion states is unconditional, so the state it is graded
+  // against is the one that breaks it.
+  await scenario({ paused: true });
   await page.goto(`${FIXTURE}/`, { waitUntil: "commit" });
   await expect(page.locator("[data-loading]")).toBeVisible();
   let counts = await reads.viewStates(page);
   expect(reads.statesShowing(counts)).toEqual(["loading"]);
   expect((await page.locator("[data-loading]").innerText()).length).toBeGreaterThan(10);
   // A loading state is never left unresolved.
+  await expect(page.locator("[data-loading]")).toHaveCount(0, { timeout: 15_000 });
+  counts = await reads.viewStates(page);
+  expect(reads.statesShowing(counts)).toEqual(["error"]);
+
+  // And a request that is merely slow still draws its zones: the loading notice
+  // resolves INTO the zone list rather than into an error, so the deadline
+  // above did not buy the unconditional limb by calling every slow server a
+  // stopped one.
+  await scenario({ stateDelayMs: 4000, eventsMode: "silent" });
+  await page.goto(`${FIXTURE}/`, { waitUntil: "commit" });
+  await expect(page.locator("[data-loading]")).toBeVisible();
   await expect(page.locator("[data-loading]")).toHaveCount(0, { timeout: 15_000 });
   await expect(page.locator('[data-zone-name="kitchen"]')).toBeVisible();
   counts = await reads.viewStates(page);
@@ -837,6 +931,60 @@ test("loading, empty and error are distinct, actionable, and never two at once",
   expect(error.toLowerCase()).toContain("chorus-server");
 
   proves("three-states");
+});
+
+test("a state request that never answers is resolved into something a person can act on, and bounded", async ({
+  page,
+}) => {
+  // The limb of the criterion that has no condition on it: "SHALL never leave a
+  // loading state unresolved". A loading state is only ever left unresolved by
+  // a request that does not come back, so both scenarios here are requests that
+  // do not come back, and the page is watched with NO interaction of any kind.
+  //
+  // Both are states a stopped process produces. The fixture's `paused` is the
+  // one its own comment calls "the state a SIGSTOPped server is in": every
+  // established connection stays up and nothing is answered on any route the
+  // page uses. `stateDelayMs` past the window is the same fault reached through
+  // the knob the three-states assertion uses, so the two cannot both be
+  // satisfied by a delay chosen to fit.
+  const nonAnswers = [
+    ["the server accepts the connection and answers nothing", { paused: true }],
+    [
+      "the state request is delayed past any window a person would wait",
+      { stateDelayMs: 600_000, eventsMode: "silent" },
+    ],
+  ];
+
+  for (const [what, wanted] of nonAnswers) {
+    await scenario(wanted);
+    const openedAt = Date.now();
+    await page.goto(`${FIXTURE}/`, { waitUntil: "commit" });
+    await expect(page.locator("[data-loading]")).toBeVisible();
+    expect(reads.statesShowing(await reads.viewStates(page)), what).toEqual(["loading"]);
+
+    await expect(
+      page.locator("[data-loading]"),
+      `${what}: the loading notice was still up`
+    ).toHaveCount(0, { timeout: 20_000 });
+    const took = Date.now() - openedAt;
+    expect(
+      took,
+      `${what}: the page took ${took}ms to resolve its loading state`
+    ).toBeLessThan(15_000);
+
+    // What it resolved TO, because resolving a spinner into a blank body would
+    // satisfy the words and none of the point. It is the error notice, alone,
+    // and it says what to go and do.
+    expect(reads.statesShowing(await reads.viewStates(page)), what).toEqual(["error"]);
+    const error = await page.locator("[data-error]").innerText();
+    expect(error.toLowerCase(), what).toContain("could not be read");
+    expect(error.toLowerCase(), what).toContain("chorus-server");
+    await expect(page.locator("[data-connection]"), what).toHaveText("Connection lost");
+    expect((await reads.viewStates(page)).bodyText, what).toBeGreaterThan(40);
+  }
+
+  await scenario({});
+  proves("loading-never-unresolved");
 });
 
 // --- words on the surface, paragraphs in the document ------------------------

@@ -53,6 +53,23 @@
   var PROBE_EVERY = 4000;
   var PROBE_TIMEOUT = 5000;
 
+  /// How long the page waits for its FIRST state before it says it has not got
+  /// one.
+  ///
+  /// The bootstrap fetch at the bottom of this file is the one request on the
+  /// page with nothing else watching it: the event stream and the probe timer
+  /// above are both started when it settles, so a server that accepts the
+  /// connection and answers nothing - a stopped or wedged chorus-server, which
+  /// is exactly the fault the probe exists to catch once a state HAS arrived -
+  /// would leave the page reading "Loading / Reading this server's zones."
+  /// for as long as the tab is open, with no error and nothing to act on. A
+  /// first state that has not come back inside this is a failed poll and is
+  /// rendered as one. It is deliberately longer than PROBE_TIMEOUT, because a
+  /// first request has a connection to make and a whole state to serialise and
+  /// a merely slow server should get its zones drawn rather than an error; and
+  /// it is under the ten seconds the severed case is held to.
+  var STATE_TIMEOUT = 8000;
+
   var zonesEl = document.querySelector("[data-zones]");
   var connectionEl = document.querySelector("[data-connection]");
   var serialEl = document.querySelector("[data-serial]");
@@ -783,9 +800,48 @@
     window.setTimeout(probe, PROBE_EVERY);
   }
 
+  /// The event stream and the probe timer, started once and once only.
+  ///
+  /// They are started when the first state request settles, and ALSO by the
+  /// deadline below when it does not, so that a request which never comes back
+  /// cannot be the reason the page never subscribes to anything. Guarded
+  /// because both routes can be taken on one load.
+  var feedStarted = false;
+  function startFeed() {
+    if (feedStarted) {
+      return;
+    }
+    feedStarted = true;
+    live();
+    probeLater();
+  }
+
   // The state is fetched once as well as subscribed to, so the page shows
   // something even where the event stream cannot be opened at all.
-  fetch("/api/state")
+  var firstController =
+    typeof AbortController === "function" ? new AbortController() : null;
+  var firstOptions = { cache: "no-store" };
+  if (firstController) {
+    firstOptions.signal = firstController.signal;
+  }
+  /// The deadline on that one request. Without it the loading notice is the
+  /// whole page indefinitely against a server that answers nothing, which the
+  /// conventions call a view that silently freezes.
+  var firstGiveUp = window.setTimeout(function () {
+    if (firstController) {
+      firstController.abort();
+    }
+    if (lastState === null) {
+      // Whether or not this engine could abort the request, a first state that
+      // has not arrived by now is one the page has to admit it has not got.
+      // `fail()` puts up the error notice, which says to check chorus-server is
+      // running and reload.
+      serverAnswering = false;
+      fail();
+    }
+    startFeed();
+  }, STATE_TIMEOUT);
+  fetch("/api/state", firstOptions)
     .then(function (response) {
       if (!response.ok) {
         throw new Error("the server answered " + response.status);
@@ -794,14 +850,27 @@
     })
     .then(function (state) {
       serverAnswering = true;
+      if (feedStarted && lastState !== null) {
+        // The deadline started the feed and the feed has already delivered.
+        // This answer is the older of the two, and applying it would move
+        // figures backwards.
+        return;
+      }
       apply(state);
     })
     .catch(function () {
       serverAnswering = false;
+      if (feedStarted && lastState !== null) {
+        // The deadline passed, the feed started and it has already painted a
+        // state. A first request failing after that is a reason to stop calling
+        // those figures current, not a reason to blank them.
+        recompute();
+        return;
+      }
       fail();
     })
     .finally(function () {
-      live();
-      probeLater();
+      window.clearTimeout(firstGiveUp);
+      startFeed();
     });
 })();

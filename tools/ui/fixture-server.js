@@ -281,6 +281,54 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  // The demonstration for the bounded-loading claim: a page that bootstraps its
+  // state the way the control page did BEFORE this work - one fetch("/api/state")
+  // with no deadline on it, with everything else the page does started from
+  // that fetch's .finally(). Against a server that accepts the connection and
+  // answers nothing the promise never settles, so the loading notice is the
+  // whole page for as long as the tab is open, and the same
+  // `reads.statesShowing` the real claim is graded with reports it still
+  // loading. It is served from here rather than written into the spec file
+  // because the request has to be same-origin with something that can be paused.
+  if (path === "/demo/loading-blind") {
+    response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    response.end(
+      '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+        "<title>a page whose first request has no deadline</title></head><body>" +
+        "<p data-connection>Connecting</p>" +
+        '<main data-zones><section data-loading data-region="loading">' +
+        "<h2>Loading</h2><p>Reading this server's zones.</p>" +
+        "</section></main>" +
+        "<script>\n" +
+        "var zones = document.querySelector('[data-zones]');\n" +
+        "var connection = document.querySelector('[data-connection]');\n" +
+        "function show(html) { zones.innerHTML = html; }\n" +
+        "function fail() {\n" +
+        "  show('<section data-error><h2>State could not be read</h2>" +
+        "<p>Check chorus-server is running, then reload.</p></section>');\n" +
+        "  connection.textContent = 'Connection lost';\n" +
+        "}\n" +
+        "function draw(state) {\n" +
+        "  var html = '';\n" +
+        "  for (var i = 0; i < state.zones.length; i += 1) {\n" +
+        "    html += '<section data-zone=\"' + state.zones[i].id + '\"><h2>' +\n" +
+        "      state.zones[i].name + '</h2></section>';\n" +
+        "  }\n" +
+        "  show(html);\n" +
+        "  connection.textContent = 'Live';\n" +
+        "}\n" +
+        "fetch('/api/state')\n" +
+        "  .then(function (r) {\n" +
+        "    if (!r.ok) { throw new Error('the server answered ' + r.status); }\n" +
+        "    return r.json();\n" +
+        "  })\n" +
+        "  .then(draw)\n" +
+        "  .catch(fail);\n" +
+        "</script></body></html>\n"
+    );
+    return;
+  }
+
   if (path === "/fixture/scenario" && request.method === "POST") {
     const wanted = JSON.parse((await readBody(request)) || "{}");
     scenario = {

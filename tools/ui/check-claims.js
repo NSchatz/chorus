@@ -6,12 +6,17 @@
 // proved and every demonstration records the claim it broke, and this reads the
 // two lists back against the declared set.
 //
+// Each line also carries the file it was written from, and this refuses one
+// written from the wrong file: `proves` and `demonstrates` are exported to both
+// spec files, so without that a `demonstrates()` call sitting in ui.spec.js
+// beside the real page would satisfy the count while demonstrating nothing.
+//
 //   node check-claims.js <ledger>
 
-const { CLAIMS, readLedger } = require("./claims");
+const { CLAIMS, RECORDED_IN, readLedger } = require("./claims");
 
 const ledgerPath = process.argv[2];
-const { claims, demos } = readLedger(ledgerPath);
+const { claims, demos, misfiled } = readLedger(ledgerPath);
 const declared = Object.keys(CLAIMS).sort();
 
 const missing = declared.filter((id) => !claims.includes(id));
@@ -41,6 +46,22 @@ if (undemonstrated.length) {
     "FAIL these claims ran with no demonstration beside them, so nothing shows the measurement can fail:"
   );
   undemonstrated.forEach((id) => console.log(`    ${id}: ${CLAIMS[id]}`));
+  failures += 1;
+}
+
+// A demonstration is only evidence if it is pointed at a page built to break
+// the claim, and an assertion is only evidence if it is pointed at the page a
+// real server served. The two live in different files on purpose, and a line
+// written from the wrong one is discounted and named rather than counted.
+if (misfiled.length) {
+  console.log(
+    "FAIL these ledger lines were recorded from a file that does not record that kind:"
+  );
+  misfiled.forEach((line) =>
+    console.log(
+      `    ${line.kind} ${line.id} was recorded in ${line.from}, and a ${line.kind} belongs in ${RECORDED_IN[line.kind]}`
+    )
+  );
   failures += 1;
 }
 

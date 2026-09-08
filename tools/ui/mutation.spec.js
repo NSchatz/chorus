@@ -506,6 +506,42 @@ test("a page whose script never resolves leaves the loading state visible", asyn
   demonstrates("three-states");
 });
 
+test("a first state request with no deadline on it leaves the loading notice up for good", async ({
+  page,
+}) => {
+  // Not an invented failure. This is the bootstrap the control page shipped
+  // before this work: one fetch("/api/state") with no deadline on it, with
+  // everything else the page does started from that fetch's .finally(). It is
+  // served by the fixture at /demo/loading-blind so that the request goes to a
+  // server that can be PAUSED - accepting the connection and answering nothing,
+  // which is what a stopped chorus-server looks like from a browser and what
+  // the fixture's own comment calls "the state a SIGSTOPped server is in".
+  //
+  // The measurement is the same `reads.statesShowing` the three-states and
+  // loading-never-unresolved claims are graded with, and the wait is longer
+  // than the fifteen seconds the real page is held to, so a green real page and
+  // a red one here are the same measurement at the same moment.
+  await fetch(`${FIXTURE}/fixture/scenario`, {
+    method: "POST",
+    body: JSON.stringify({ paused: true }),
+  });
+  await page.goto(`${FIXTURE}/demo/loading-blind`, { waitUntil: "commit" });
+  await expect(page.locator("[data-loading]")).toBeVisible();
+
+  // No interaction of any kind from here on. Just time.
+  await page.waitForTimeout(20_000);
+
+  const counts = await reads.viewStates(page);
+  expect(
+    reads.statesShowing(counts),
+    `a loading state with no deadline under it was read as resolved: ${JSON.stringify(counts)}`
+  ).toEqual(["loading"]);
+  expect(await page.locator("[data-connection]").innerText()).toBe("Connecting");
+
+  await resetFixture();
+  demonstrates("loading-never-unresolved");
+});
+
 test("a page showing two of the three states at once is reported showing two", async ({
   page,
 }) => {

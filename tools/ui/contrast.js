@@ -22,6 +22,26 @@ const NON_TEXT_FLOOR = 3.0;
 const INTERACTIVE =
   'button, select, input, textarea, a[href], [role="button"], [role="switch"], [tabindex]:not([tabindex="-1"])';
 
+/// The same set, less the controls that cannot be operated at all.
+///
+/// The two criteria measured through these selectors both have a trigger that a
+/// disabled control never fires. 1.4.11 Non-text Contrast is about "the visual
+/// information required to identify ... controls", and WCAG 2.2 excepts this
+/// case twice in one sentence: "except for inactive components or where the
+/// appearance of the component is determined by the user agent and not modified
+/// by the author". 2.4.7 Focus Visible is about a control that "has keyboard
+/// focus", and focus cannot reach one that is disabled.
+///
+/// Measuring them anyway does not find a defect; it manufactures two. Chromium
+/// composites a disabled `<select>` at `opacity: 0.7`, which drags an author
+/// boundary of 5.37:1 down to 2.96:1 without the author having touched it, and
+/// `focus()` on a disabled element changes nothing, so its indicator reports
+/// `pixelsChanged=0`. Two false alarms in the same state are enough to bury a
+/// real one, which is the only reason this filter exists.
+const OPERABLE = INTERACTIVE.split(", ")
+  .map((one) => `${one}:not([disabled])`)
+  .join(", ");
+
 /// Every run of text the page actually painted, with the colour it was painted
 /// in and the box it occupies.
 async function textRuns(page) {
@@ -159,9 +179,9 @@ function tooPale(rows) {
   return rows.filter((row) => !row.ok);
 }
 
-/// Where every interactive control is, and what kind it is.
+/// Where every OPERABLE interactive control is, and what kind it is.
 async function controlBoxes(page) {
-  return page.$$eval(INTERACTIVE, (nodes) =>
+  return page.$$eval(OPERABLE, (nodes) =>
     nodes.map((node) => {
       const box = node.getBoundingClientRect();
       return {
@@ -338,7 +358,7 @@ function indistinct(rows) {
 /// OUTSIDE the border box is inside the comparison. A control whose indicator
 /// was suppressed changes nothing and is reported by name.
 async function focusIndicators(page, pad = 8) {
-  const handles = await page.$$(INTERACTIVE);
+  const handles = await page.$$(OPERABLE);
   const rows = [];
   for (const handle of handles) {
     const label = await handle.evaluate((node) =>
@@ -386,6 +406,7 @@ function unfocusable(rows) {
 
 module.exports = {
   INTERACTIVE,
+  OPERABLE,
   TEXT_FLOOR,
   LARGE_TEXT_FLOOR,
   NON_TEXT_FLOOR,

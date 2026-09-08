@@ -159,6 +159,14 @@ different from a figure that could not be read, which costs only that figure.
 Check that `chorus-server` is running on the address this page was served from,
 then reload.
 
+"Did not answer" includes never answering. A server that is stopped or wedged
+accepts the connection and returns nothing, and a request to it would otherwise
+hang for as long as the tab is open, leaving `Loading` as the whole page with
+nothing to act on. So the page's first request for the state carries a deadline
+of a few seconds, and a request that has not come back by then is treated as one
+that failed: this notice goes up rather than the loading one staying. A merely
+slow server still gets its zones drawn.
+
 ## Themes, keyboard and colour
 
 The page follows the operating system's light or dark preference. There is no
