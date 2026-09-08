@@ -1,10 +1,11 @@
 // The doctoring, for the states a real server cannot be made to produce.
 //
-// Four of the claims are about what the page does when the state it receives is
-// not one chorus-server will ever send, or when the feed underneath it dies: a
-// volume that is not a number, an endpoint list that is absent, an event stream
-// that is severed and then restored, and a state request that never answers.
-// There is no flag that makes a correct server emit any of those.
+// Several of the claims are about what the page does when the state it receives
+// is not one chorus-server will ever send, or when the feed underneath it dies:
+// a volume that is not a number, an endpoint list that is absent, an event
+// stream that is severed and then restored, a state request that never answers,
+// and a server that has STOPPED ANSWERING under a connection that is still
+// established. There is no flag that makes a correct server emit any of those.
 //
 // So the page is put in front of a server that will. This one PROXIES the page,
 // its stylesheet, its script and its document straight through from the real
@@ -61,12 +62,17 @@ function twoZones() {
   };
 }
 
+/// `paused` is the state a SIGSTOPped server is in, and the one an EventSource
+/// cannot see: nothing is severed, every established connection stays up, and
+/// the server answers nothing at all. It is reached with `/fixture/pause` and
+/// left with `/fixture/resume`.
 let scenario = {
   stateStatus: 200,
   stateDelayMs: 0,
   stateBody: null,
   state: twoZones(),
   eventsMode: "open",
+  paused: false,
 };
 
 const streams = new Set();
@@ -150,6 +156,14 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  // A paused server accepts the connection and answers nothing, on any route
+  // the page under test uses. Nothing is destroyed: an EventSource already
+  // established stays OPEN and a fetch just never comes back, which is what a
+  // stopped process looks like from a browser.
+  if (scenario.paused && (path === "/api/state" || path === "/api/events")) {
+    return;
+  }
+
   if (path === "/api/state") {
     const answer = () => {
       if (scenario.stateStatus !== 200) {
@@ -227,6 +241,46 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  // The demonstration for the paused-feed claim: a page that decides freshness
+  // the way the control page did BEFORE this work - from `EventSource.onerror`
+  // and a watchdog on `readyState`, and from nothing else. Against a server
+  // that has stopped answering under a connection that is still established,
+  // both of those go on saying everything is fine, and the same measuring
+  // function the real claim is graded with reports it still reading as live.
+  // It is served from here rather than written into the spec file because an
+  // EventSource has to be same-origin with something that answers /api/events.
+  if (path === "/demo/stale-blind") {
+    response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    response.end(
+      '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+        "<title>a page that watches only its connection</title></head><body>" +
+        "<p data-connection>Connecting</p>" +
+        '<p>Figures <span data-freshness="kitchen">live</span></p>' +
+        '<p>Figures <span data-freshness="footer">live</span></p>' +
+        '<p data-volume="kitchen">38%</p>' +
+        "<script>\n" +
+        "var connection = document.querySelector('[data-connection]');\n" +
+        "var marks = document.querySelectorAll('[data-freshness]');\n" +
+        "var everOpened = false;\n" +
+        "function paint(fresh) {\n" +
+        "  connection.textContent = fresh ? 'Live' : 'Connection lost';\n" +
+        "  for (var i = 0; i < marks.length; i += 1) {\n" +
+        "    marks[i].textContent = fresh ? 'live' : 'last known';\n" +
+        "  }\n" +
+        "}\n" +
+        "var events = new EventSource('/api/events');\n" +
+        "events.onopen = function () { everOpened = true; paint(true); };\n" +
+        "events.onmessage = function () { everOpened = true; paint(true); };\n" +
+        "events.onerror = function () { if (everOpened) { paint(false); } };\n" +
+        "window.setInterval(function () {\n" +
+        "  if (events.readyState === 1) { everOpened = true; paint(true); return; }\n" +
+        "  if (everOpened) { paint(false); }\n" +
+        "}, 1000);\n" +
+        "</script></body></html>\n"
+    );
+    return;
+  }
+
   if (path === "/fixture/scenario" && request.method === "POST") {
     const wanted = JSON.parse((await readBody(request)) || "{}");
     scenario = {
@@ -235,6 +289,7 @@ const server = http.createServer(async (request, response) => {
       stateBody: null,
       state: twoZones(),
       eventsMode: "open",
+      paused: false,
       ...wanted,
     };
     for (const stream of streams) {
@@ -254,6 +309,29 @@ const server = http.createServer(async (request, response) => {
   if (path === "/fixture/restore" && request.method === "POST") {
     scenario.eventsMode = "open";
     json(response, 200, { severed: false });
+    return;
+  }
+
+  if (path === "/fixture/pause" && request.method === "POST") {
+    scenario.paused = true;
+    json(response, 200, { paused: true, streamsStillOpen: streams.size });
+    return;
+  }
+
+  if (path === "/fixture/resume" && request.method === "POST") {
+    scenario.paused = false;
+    // Whatever is still subscribed hears the current state, so a page that
+    // never lost its stream learns the server is back without reconnecting.
+    push();
+    json(response, 200, { paused: false, streamsStillOpen: streams.size });
+    return;
+  }
+
+  // How many event streams this fixture is still holding open. It is what tells
+  // a PAUSED feed apart from a severed one from the outside: a severed feed has
+  // none, and a paused one has the connection it always had.
+  if (path === "/fixture/streams") {
+    json(response, 200, { open: streams.size });
     return;
   }
 

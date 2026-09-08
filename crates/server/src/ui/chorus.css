@@ -131,10 +131,22 @@ main {
   grid-column: 1 / -1;
 }
 
+/* A zone heading carries a name a person typed. docs/control-plane.md admits 1
+ * to 64 characters with every printable character in them, so an unbroken
+ * sixty-four-character name is a name the server accepts and this page's own
+ * rename box produces. Without a break opportunity such a heading sets the
+ * card's grid column to its own max-content width, drags the body sideways at
+ * 360 pixels and paints the slider and the rename box off the right-hand edge.
+ * `anywhere` rather than `break-word` on purpose: only `anywhere` lets the
+ * engine count those break opportunities when it computes the min-content
+ * contribution the grid track is sized from. tools/ui/ui.spec.js renames a zone
+ * to an unbroken name at the catalog's maximum and measures the result. */
 .zone h2,
 .notice h2 {
   margin: 0;
   font-size: 1.0625rem;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .meta,

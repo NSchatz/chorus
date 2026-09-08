@@ -30,6 +30,19 @@ async function render(page, html) {
   await page.setContent(html, { waitUntil: "load" });
 }
 
+/// Put the fixture back to its default scenario, so a demonstration that pauses
+/// it does not leave it paused for whatever runs next.
+async function resetFixture() {
+  await fetch(`${FIXTURE}/fixture/scenario`, { method: "POST", body: "{}" });
+}
+
+async function fixtureDo(what) {
+  const response = await fetch(`${FIXTURE}/fixture/${what}`, { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`the fixture refused ${what}: ${await response.text()}`);
+  }
+}
+
 // --- target size ------------------------------------------------------------
 
 test("a control painted under the minimum is reported, with its size", async ({
@@ -445,6 +458,38 @@ test("figures that keep reading as current after the feed has dropped are report
   demonstrates("stale-not-current");
 });
 
+test("a page that watches only its connection cannot see a paused feed, and is reported", async ({
+  page,
+}) => {
+  // Not an invented failure. This is the mechanism the control page decided
+  // freshness with before this work - `EventSource.onerror` plus a watchdog on
+  // `readyState`, and nothing else - served by the fixture at
+  // /demo/stale-blind so that it can subscribe to a real event stream. The
+  // server it is subscribed to is then PAUSED: nothing is severed, the
+  // connection stays established, `readyState` stays OPEN, no error fires, and
+  // so that mechanism goes on reporting a page whose figures have not moved in
+  // twelve seconds as live. The measurement is the same
+  // `reads.stillReadingAsCurrent` the paused-feed claim is graded with.
+  await resetFixture();
+  await page.goto(`${FIXTURE}/demo/stale-blind`);
+  await expect(page.locator("[data-connection]")).toHaveText("Live");
+
+  await fixtureDo("pause");
+  await page.waitForTimeout(12_000);
+
+  const marks = await reads.stateMarks(page);
+  const frozen = reads.stillReadingAsCurrent(marks);
+  expect(
+    frozen.length,
+    `a feed that had delivered nothing for twelve seconds was read as current: ${JSON.stringify(marks)}`
+  ).toBeGreaterThanOrEqual(2);
+  expect(marks["connection"].text).toBe("Live");
+  expect(marks["volume:kitchen"].text).toBe("38%");
+
+  await resetFixture();
+  demonstrates("paused-feed-visible");
+});
+
 // --- the three states -------------------------------------------------------
 
 test("a page whose script never resolves leaves the loading state visible", async ({
@@ -546,6 +591,51 @@ test("content wider than the viewport that drags the body sideways is reported",
     "a document that scrolls sideways was read as though it fitted"
   ).toBe(true);
   expect(laid.outside.length).toBeGreaterThanOrEqual(1);
+  demonstrates("reflow-360");
+});
+
+test("a zone heading with no break opportunity drags the card's controls off the viewport", async ({
+  page,
+}) => {
+  // Not an invented failure either: this is the zone card as chorus.css built
+  // it before this work, with the wrapping rule left off the heading, and the
+  // name is one docs/control-plane.md admits - sixty-four characters, no space
+  // and no hyphen, which is what the page's own rename box produces. The
+  // heading's max-content width sets the card's grid column, the column drags
+  // the body sideways, and the rename box lands outside the viewport where a
+  // finger cannot reach it. The measurement is the same `reads.reflow` the
+  // 360-pixel claim is graded with.
+  const name = "MasterBedroomEnsuiteSpeakersAndTheHallway".padEnd(64, "x");
+  await page.setViewportSize({ width: 360, height: 640 });
+  await render(
+    page,
+    `<!doctype html><html><head><style>
+       * { box-sizing: border-box; }
+       body { margin: 0; font: 16px/1.5 system-ui, sans-serif; }
+       main { display: grid; gap: 1rem; padding: 1rem;
+              grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); }
+       .zone { display: grid; gap: 0.75rem; justify-items: start; min-width: 0;
+               border: 1px solid #5f6c79; border-radius: 10px; padding: 1rem; }
+       .zone h2 { margin: 0; font-size: 1.0625rem; }
+       .row { display: flex; align-items: center; gap: 0.75rem; width: 100%; min-width: 0; }
+       input[type="text"] { flex: 1 1 4rem; min-width: 4rem; height: 44px; font: inherit; }
+     </style></head><body>
+       <main><section class="zone">
+         <h2>${name}</h2>
+         <div class="row"><label for="n">Name</label>
+           <input id="n" type="text" data-rename="kitchen" value="${name}"></div>
+       </section></main>
+     </body></html>`
+  );
+  const laid = await reads.reflow(page, MINIMUM);
+  expect(
+    laid.scrollWidth > laid.clientWidth,
+    `a heading that cannot break was read as though it fitted: ${JSON.stringify(laid)}`
+  ).toBe(true);
+  expect(
+    laid.outside.map((c) => c.what),
+    "a control painted past the right-hand edge was read as inside the viewport"
+  ).toContain("input[data-rename]");
   demonstrates("reflow-360");
 });
 

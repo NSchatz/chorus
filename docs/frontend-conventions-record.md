@@ -27,7 +27,7 @@ page's regions link to.
 | F3 | unreadable-figure, stale-not-current | |
 | F4 | aggregate-states-its-set | |
 | F5 | unreadable-figure | |
-| F6 | stale-not-current | |
+| F6 | stale-not-current, paused-feed-visible | |
 | F7 | three-states | |
 | F8 | short-labels-and-doc-link | |
 | F9 | reflow-360 | |
@@ -55,9 +55,13 @@ mandatory, so there is no nullable field in the ordinary case. The clause still
 bites twice. A figure the state did not carry renders as the word `Unavailable`
 and never as `0`, a dash, `NaN`, `undefined` or a blank
 (`unreadable-figure`). A figure whose feed has dropped is marked `last known`
-rather than left reading as a current measurement (`stale-not-current`). A zone
-with nobody attached showing zero endpoints is a genuine measured zero and is
-correct.
+rather than left reading as a current measurement (`stale-not-current`; a feed
+that stopped delivering without dropping is the same rule, asserted under F6). A
+zone with nobody attached showing zero endpoints is a genuine measured zero and
+is correct. A zone whose NAME could not be read falls back to its identifier and
+says `name unavailable` beside it, rather than passing the identifier off as a
+name somebody chose, and a state whose zones all fail to identify renders the
+error state rather than `No zones yet` - both graded inside `unreadable-figure`.
 
 **F4 Every aggregate states its set.** The endpoint figure reads `1 of 2
 endpoints attached, 1 away`: the rows counted, the set they were counted over,
@@ -68,10 +72,32 @@ first half, asserted from the other side: the doctored zone renders
 `Unavailable` while every other zone and every other region of the view still
 draws.
 
-**F6 Stale is never shown as current.** The feed is severed under a live page;
-the connection reads `Connection lost` and every figure reads `last known`
-inside ten seconds with no interaction; the feed is restored and the figures
-read as current again without the page being reloaded.
+**F6 Stale is never shown as current.** The clause names three ways a feed
+stops - "a dropped stream, failed poll or paused feed" - and they are not one
+thing under three names. A dropped stream is visible from the connection; a
+paused feed is the case where the connection says nothing is wrong, and a page
+that watched only the connection would be blind to exactly it. Both limbs are
+asserted, one each:
+
+- **Dropped** (`stale-not-current`). The feed is severed at the socket under a
+  live page; the connection reads `Connection lost` and every figure reads
+  `last known` inside ten seconds with no interaction; the feed is restored and
+  the figures read as current again without the page being reloaded.
+- **Paused, and the failed poll that finds it** (`paused-feed-visible`). The
+  server stops answering with nothing severed: the fixture holds every
+  established connection open and answers no request on it, which is what a
+  stopped process looks like from a browser - `EventSource.readyState` stays
+  OPEN and no error fires. The assertion checks with the fixture that the
+  stream is still open, so it is grading the paused case and not the dropped one
+  over again, and requires the page to read `Not answering` with every figure
+  `last known`, then to return to `live` when the server resumes. What finds it
+  is the page's own poll of the server failing: `chorus.js` probes `/api/state`
+  on a timer and a figure reads as current only when the stream is up AND the
+  last probe came back, which bounds how long a paused feed can be shown as live
+  at under nine seconds. The demonstration is the mechanism this page used
+  before, served at `/demo/stale-blind`: freshness from `onerror` and a
+  `readyState` watchdog alone, shown still reading `live` twelve seconds into a
+  pause.
 
 **F7 Three states, all of them.** Loading is graded against a state request that
 has not answered, empty against a real server with no zone configured, and error
@@ -83,7 +109,13 @@ engine to `docs/control-page.md`, which has to answer with the document.
 
 **F9 Phone first.** At 360 by 640 the document does not scroll sideways, no
 control is painted outside the viewport or under 24 by 24, and the one thing
-too wide to fit scrolls inside its own container.
+too wide to fit scrolls inside its own container. It is graded against the
+widest state the control catalog admits and not only against a name that
+happens to fit: the zone is renamed, through the page's own command route, to an
+unbroken sixty-four-character name with no space and no hyphen in it, and the
+measurement is taken again with the name asserted still whole on the card. The
+demonstration is that same card with the wrapping rule off the heading, shown
+dragging the rename box off the right-hand edge.
 
 **F10 Both themes.** A light preference paints a light page and light panels and
 a dark one paints dark, decided by the luminance of the pixels rather than by

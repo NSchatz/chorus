@@ -26,23 +26,43 @@ implied.
 
 ## The header
 
-**The connection word.** `Live` means the event stream is open and the figures
-below were sent by the server, not remembered by the page. `Connection lost`
-means the stream dropped: the browser is retrying, and every figure on the page
-is marked `last known` until it comes back. `Connecting` is the moment before
-the first state arrives.
+**The connection word.** `Live` means the event stream is open, the server is
+still answering, and the figures below were sent by it rather than remembered by
+the page. `Connecting` is the moment before the first state arrives. Two words
+say it is not:
 
-A page whose feed has dropped is not a page with nothing to say, so the last
-figures stay on screen. What changes is that they stop claiming to be current.
-The page does not need to be reloaded when the stream comes back; the marks
-return to `live` on their own.
+- `Connection lost` means the stream dropped. The browser is retrying, and every
+  figure on the page is marked `last known` until it comes back.
+- `Not answering` means the stream never dropped and the server stopped
+  answering anyway. That is a different fault and a different thing to go and
+  look at: the connection is still established, so nothing about it says
+  anything is wrong, and the figures are as old as the moment it stopped.
+
+The second one is why the page does more than watch its connection. A server
+that stops - a process paused, a machine wedged, a host that answers the socket
+and nothing else - leaves the event stream open and delivers nothing, and a page
+that trusted the connection alone would go on calling a figure from minutes ago
+live. So the page also asks the server, on a timer, whether it is still
+answering, and a figure reads as current only when the stream is up **and** that
+ask came back. The answer to the ask is thrown away: it is the coming back that
+is the measurement, and every figure on the page still comes from the stream.
+
+A page whose feed has dropped or stopped is not a page with nothing to say, so
+the last figures stay on screen. What changes is that they stop claiming to be
+current. The page does not need to be reloaded when the server comes back; the
+marks return to `live` on their own.
 
 ## A zone card
 
 **The name.** What a person called this room. It is set from the box on the card
 and it survives a restart. The catalog admits 1 to 64 characters with no control
 character and no leading or trailing space; a name outside that is refused, and
-the refusal is shown on the card that issued it.
+the refusal is shown on the card that issued it. A long name with no space in it
+wraps inside the card rather than widening it, so nothing is pushed off the side
+of a phone and nothing is hidden. `name unavailable` in the meta line means the
+state carried no readable name for this zone: the heading falls back to the
+identifier, because a card has to be identifiable, and says so rather than
+passing the identifier off as a name somebody chose.
 
 **`id`.** The identifier the server was started with, `--zone <id>`. It never
 changes, and no message can create one: the set of rooms is a fact about a house,
@@ -131,9 +151,13 @@ for the reason `id` gives above.
 ## When the state cannot be read at all
 
 `State could not be read` means the request for the state did not answer, or
-answered with something that is not a state message. That is different from a
-figure that could not be read, which costs only that figure. Check that
-`chorus-server` is running on the address this page was served from, then reload.
+answered with something that is not a state message. It also means a state
+message every zone of which carried no usable identifier: zones did arrive, so
+`No zones yet` would send you to the server's command line for a fault that is
+in the message, and the footer's `N zones unreadable` says how many. That is all
+different from a figure that could not be read, which costs only that figure.
+Check that `chorus-server` is running on the address this page was served from,
+then reload.
 
 ## Themes, keyboard and colour
 

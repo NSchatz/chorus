@@ -43,6 +43,8 @@ const CLAIMS = {
     "a figure that cannot be read renders as unavailable in words while the rest of the view draws",
   "stale-not-current":
     "a severed feed reads as lost within ten seconds and every figure as last known, and a restored one clears it",
+  "paused-feed-visible":
+    "a feed that has stopped delivering over a connection that is still established stops reading as live, and reads as live again when it resumes",
   "three-states":
     "loading, empty and error are distinct, actionable, and never two at once",
   "short-labels-and-doc-link":

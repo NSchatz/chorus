@@ -7,7 +7,8 @@
 # stylesheet, its script and its document through byte for byte and answers only
 # the state request and the event stream itself: the states a correct server will
 # never produce (a figure that cannot be read, a feed that dies and comes back, a
-# state request that has not answered yet) are reached by doctoring the state and
+# state request that has not answered yet, a server that stops answering under a
+# connection that is still established) are reached by doctoring the state and
 # never by doctoring the page.
 #
 # Every assertion is on the rendered text, on a painted box read back with
@@ -46,7 +47,7 @@ source "$(dirname "$0")/lib.sh"
 
 build_once
 
-CRITERION="the control page holds the frontend conventions F1 to F11: contrast and focus in both themes, keyboard operation, accessible names, no state carried by colour alone, an aggregate that states its set, an unreadable figure that costs nothing else, a severed feed that stops reading as current, three states, short labels with the paragraphs in the repo's docs, a 360 pixel layout, and a Content-Security-Policy the browser does not complain about"
+CRITERION="the control page holds the frontend conventions F1 to F11: contrast and focus in both themes, keyboard operation, accessible names, no state carried by colour alone, an aggregate that states its set, an unreadable figure that costs nothing else, a severed feed and a paused one that both stop reading as current, three states, short labels with the paragraphs in the repo's docs, a 360 pixel layout for every name the catalog admits, and a Content-Security-Policy the browser does not complain about"
 require_browser_driver "$CRITERION"
 
 FAILURES=0

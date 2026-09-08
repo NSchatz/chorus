@@ -19,6 +19,16 @@
 //   A figure whose feed has dropped reads as last known rather than as
 //   current, and says so within a second of the drop rather than freezing.
 //
+// Freshness is TWO questions, because a feed can stop delivering in two ways
+// and only one of them is visible from the connection. The stream can drop -
+// EventSource says so - and the server can stop answering while the connection
+// it holds stays established, which EventSource cannot see at all: its
+// `readyState` is still OPEN, no error fires, and a page that watched only the
+// connection would go on calling a minute-old figure live. So the page also
+// PROBES the server on a timer, and a figure reads as current only when the
+// stream is up AND the last probe came back. `docs/control-page.md` is where
+// that is explained to a person.
+//
 // The volume literal is built by hand rather than with JSON.stringify, because
 // the catalog declares exactly three fractional digits and JSON.stringify would
 // write 0.5 where the catalog says 0.500. docs/control-plane.md is the
@@ -28,6 +38,20 @@
   "use strict";
 
   var DOC = "/docs/control-page.md";
+
+  /// How often the page asks the server whether it is still answering, and how
+  /// long that ask may take before it counts as a failed one.
+  ///
+  /// The two together bound how long a PAUSED feed - a server that has stopped
+  /// answering under a connection that is still established - can go on being
+  /// shown as live: the next probe starts within PROBE_EVERY and gives up after
+  /// PROBE_TIMEOUT, so at worst the page admits it inside nine seconds, which is
+  /// under the ten the severed case is held to. The timeout is deliberately
+  /// longer than the interval, and the next probe is scheduled when the last one
+  /// settles rather than on an interval, so two are never in flight at once and
+  /// a merely slow server is not reported as a stopped one.
+  var PROBE_EVERY = 4000;
+  var PROBE_TIMEOUT = 5000;
 
   var zonesEl = document.querySelector("[data-zones]");
   var connectionEl = document.querySelector("[data-connection]");
@@ -39,7 +63,15 @@
   /// could disagree with it.
   var lastState = null;
   /// Whether the feed is delivering. False means every figure is last known.
+  /// It is never set directly: it is `streamUp && serverAnswering`, so that
+  /// neither half can be lost without the page saying so.
   var fresh = false;
+  /// Whether the event stream is up, as EventSource sees it.
+  var streamUp = false;
+  /// Whether the last probe of the server came back. A stream that is still
+  /// established over a server that has stopped answering is OPEN to
+  /// EventSource and dead to everybody else; this is the half that sees it.
+  var serverAnswering = true;
   /// The event stream, and whether it has ever been open. A stream that has not
   /// opened YET on a page that has just loaded is not a dropped one.
   var events = null;
@@ -461,6 +493,12 @@
     parts.heading.textContent = zone.name;
 
     var meta = "id " + zone.id;
+    // A name that could not be read falls back to the identifier, and says so.
+    // The identifier passed off silently as the name is a value this page would
+    // be making up, which is the same fault as rendering an absent figure as 0.
+    if (!zone.nameReadable) {
+      meta += " · name unavailable";
+    }
     meta += " · group " + (zone.group === null ? "unavailable" : zone.group);
     meta += " · stream " + (zone.audio === null ? "unavailable" : zone.audio);
     parts.meta.textContent = meta;
@@ -531,19 +569,39 @@
 
   // --- painting the whole page ----------------------------------------------
 
+  /// What the connection line says. Three answers, not two: a stream that has
+  /// dropped and a server that has stopped answering under a stream that has
+  /// not are different things to be told, and a person who can see only one
+  /// word cannot tell which to go and look at.
+  function connectionText() {
+    if (fresh) {
+      return "Live";
+    }
+    return streamUp ? "Not answering" : "Connection lost";
+  }
+
   function paintFreshness() {
     if (lastState === null) {
       return;
     }
-    connectionEl.textContent = fresh ? "Live" : "Connection lost";
+    connectionEl.textContent = connectionText();
     footerFreshnessEl.textContent = fresh ? "live" : "last known";
     Object.keys(cards).forEach(function (id) {
       cards[id].freshness.textContent = fresh ? "live" : "last known";
     });
   }
 
-  function setFresh(value) {
+  /// Both halves, together. A figure is current only when the stream is
+  /// delivering AND the server is still answering; either one going means every
+  /// figure on the page reads as last known.
+  function recompute() {
+    var value = streamUp && serverAnswering;
     if (fresh === value) {
+      // The word can still have to change: "Connection lost" and "Not
+      // answering" are both `fresh === false`.
+      if (!fresh && lastState !== null) {
+        connectionEl.textContent = connectionText();
+      }
       return;
     }
     fresh = value;
@@ -551,10 +609,20 @@
   }
 
   function paintZones(force) {
+    if (lastState === null) {
+      // A refusal can arrive after a state message the page could not read; the
+      // error notice is already up and there is nothing to paint onto.
+      return;
+    }
     var zones = lastState.zones;
     if (zones.length === 0) {
-      if (showing !== "empty") {
-        show("empty", emptyNotice);
+      // Nothing readable arrived. "No zones yet" is the wrong thing to say when
+      // zones DID arrive and could not be read: that sends the operator to the
+      // server's command line for a fault that is in the message. The footer
+      // counts the dropped rows either way.
+      var kind = unreadableZones > 0 ? "error" : "empty";
+      if (showing !== kind) {
+        show(kind, kind === "error" ? errorNotice : emptyNotice);
       }
       return;
     }
@@ -622,40 +690,97 @@
     events.onopen = function () {
       everOpened = true;
       secondsWithoutStream = 0;
-      setFresh(true);
+      streamUp = true;
+      recompute();
     };
     events.onmessage = function (event) {
+      // A state message arriving is proof of both halves at once: the stream is
+      // delivering and the server is answering.
+      everOpened = true;
+      secondsWithoutStream = 0;
+      streamUp = true;
+      serverAnswering = true;
       try {
         apply(JSON.parse(event.data));
-        setFresh(true);
       } catch (e) {
         fail();
+        return;
       }
+      recompute();
     };
     events.onerror = function () {
       // A dropped event stream is not a reason to keep showing a stale page as
       // live. EventSource reconnects by itself; what changes here is what the
       // page admits to while it is gone.
       if (everOpened) {
-        setFresh(false);
+        streamUp = false;
+        recompute();
       }
     };
     window.setInterval(function () {
       if (events.readyState === 1) {
         everOpened = true;
         secondsWithoutStream = 0;
-        setFresh(true);
+        streamUp = true;
+        recompute();
         return;
       }
       if (everOpened) {
-        setFresh(false);
+        streamUp = false;
+        recompute();
         return;
       }
       secondsWithoutStream += 1;
       if (secondsWithoutStream >= 5) {
-        setFresh(false);
+        streamUp = false;
+        recompute();
       }
     }, 1000);
+  }
+
+  /// Ask the server whether it is still answering.
+  ///
+  /// The answer is thrown away. What this reads is whether one came back at
+  /// all, which is the half of freshness an established connection cannot tell
+  /// anybody: a server that has stopped answering leaves `EventSource` OPEN,
+  /// fires no error, and delivers nothing, and the page would otherwise go on
+  /// calling a minute-old figure live. Everything the page SHOWS still comes
+  /// from the stream, so a probe can never move a figure while the page is
+  /// calling that figure last known.
+  function probe() {
+    var controller =
+      typeof AbortController === "function" ? new AbortController() : null;
+    var giveUp = window.setTimeout(function () {
+      if (controller) {
+        controller.abort();
+      }
+    }, PROBE_TIMEOUT);
+    var options = { cache: "no-store" };
+    if (controller) {
+      options.signal = controller.signal;
+    }
+    fetch("/api/state", options)
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error("the server answered " + response.status);
+        }
+        return response.text();
+      })
+      .then(function () {
+        serverAnswering = true;
+      })
+      .catch(function () {
+        serverAnswering = false;
+      })
+      .finally(function () {
+        window.clearTimeout(giveUp);
+        recompute();
+        probeLater();
+      });
+  }
+
+  function probeLater() {
+    window.setTimeout(probe, PROBE_EVERY);
   }
 
   // The state is fetched once as well as subscribed to, so the page shows
@@ -667,7 +792,16 @@
       }
       return response.json();
     })
-    .then(apply)
-    .catch(fail)
-    .finally(live);
+    .then(function (state) {
+      serverAnswering = true;
+      apply(state);
+    })
+    .catch(function () {
+      serverAnswering = false;
+      fail();
+    })
+    .finally(function () {
+      live();
+      probeLater();
+    });
 })();

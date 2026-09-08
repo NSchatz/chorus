@@ -35,6 +35,11 @@ const MINIMUM = 24;
 /// is the clause; twelve is this page's reading of it, and every label it ships
 /// is well inside it.
 const MOST_WORDS = 12;
+/// A zone name at the control catalog's maximum with no break opportunity in
+/// it: sixty-four characters, no space and no hyphen. docs/control-plane.md
+/// admits it and the page's own rename box produces it, so it is the widest
+/// heading the 360-pixel criterion has to hold for.
+const UNBROKEN_NAME = "MasterBedroomEnsuiteSpeakersAndTheHallway".padEnd(64, "x");
 
 const BASE = process.env.CHORUS_UI_BASE;
 const EMPTY = process.env.CHORUS_UI_EMPTY_BASE;
@@ -110,6 +115,14 @@ async function fixtureDo(what) {
   if (!response.ok) {
     throw new Error(`the fixture refused ${what}: ${await response.text()}`);
   }
+}
+
+/// How many event streams the fixture is still holding open. A severed feed has
+/// none; a PAUSED one still has the connection it always had, which is what
+/// makes the two different states rather than two names for one.
+async function streamsStillOpen() {
+  const response = await fetch(`${FIXTURE}/fixture/streams`);
+  return (await response.json()).open;
 }
 
 /// The two-zone state the fixture serves by default, so a test can doctor one
@@ -282,11 +295,28 @@ for (const theme of ["light", "dark"]) {
     await page.goto(`${BASE}/`);
     await expect(page.locator('[data-zone-name="kitchen"]')).toBeVisible();
 
+    // A refusal is text on this page too, and a page with no refused command on
+    // it paints none: the refusal run has a zero box and drops out of what is
+    // measured. So one is issued first, from the page, and is graded with
+    // everything else rather than being the one run nothing ever looked at.
+    await page.locator('[data-rename="kitchen"]').fill("x".repeat(100));
+    await page.locator('[data-rename="kitchen"]').press("Enter");
+    await expect(page.locator('[data-refusal="kitchen"]')).toHaveText("Refused: name");
+    await page.evaluate(() => {
+      if (document.activeElement && document.activeElement.blur) {
+        document.activeElement.blur();
+      }
+    });
+
     const runs = await contrast.textContrast(page);
     expect(
       runs.length,
       "no text was measured, so this check would pass vacuously"
     ).toBeGreaterThanOrEqual(12);
+    expect(
+      runs.some((run) => run.what.includes("data-refusal")),
+      `the refusal was not among the ${runs.length} runs measured: ${JSON.stringify(runs.map((r) => r.what))}`
+    ).toBe(true);
     expect(
       contrast.tooPale(runs).map((r) => ({
         what: r.what,
@@ -595,6 +625,33 @@ test("a figure that cannot be read renders as unavailable while the rest of the 
   const painted = regions.filter((r) => r.painted).map((r) => r.region).sort();
   expect(painted).toEqual(["footer", "header", "zone-kitchen", "zone-study"]);
 
+  // A NAME that cannot be read is the same rule applied to the heading. The
+  // card falls back to the identifier, because a card has to be identifiable,
+  // and says the name was not the server's rather than passing the identifier
+  // off as one.
+  const nameless = twoZones();
+  nameless.serial = 7;
+  delete nameless.zones[1].name;
+  await scenario({ state: nameless });
+  await page.goto(`${FIXTURE}/`);
+  await expect(page.locator('[data-zone-name="study"]')).toHaveText("study");
+  await expect(page.locator('[data-zone-meta="study"]')).toContainText("name unavailable");
+  await expect(page.locator('[data-zone-name="kitchen"]')).toHaveText("The Kitchen");
+  await expect(page.locator('[data-zone-meta="kitchen"]')).not.toContainText("name unavailable");
+
+  // And a state whose zones ALL fail to identify is not "no zones configured".
+  // Telling an operator to restart the server with --zone flags, when zones did
+  // arrive and could not be read, is the loud claim being the wrong one.
+  const unidentifiable = twoZones();
+  unidentifiable.serial = 8;
+  delete unidentifiable.zones[0].id;
+  delete unidentifiable.zones[1].id;
+  await scenario({ state: unidentifiable });
+  await page.goto(`${FIXTURE}/`);
+  await expect(page.locator("[data-error]")).toBeVisible();
+  expect(reads.statesShowing(await reads.viewStates(page))).toEqual(["error"]);
+  await expect(page.locator("[data-serial]")).toContainText("2 zones unreadable");
+
   proves("unreadable-figure");
 });
 
@@ -640,6 +697,71 @@ test("a severed feed reads as lost within ten seconds, and a restored one reads 
   expect(survived.sameDocument, JSON.stringify(survived)).toBe(true);
 
   proves("stale-not-current");
+});
+
+test("a paused feed - nothing severed, the server no longer answering - stops reading as live and comes back", async ({
+  page,
+}) => {
+  // The third limb of clause F6, and the one an EventSource cannot see. Nothing
+  // is severed here: the fixture keeps every established connection up and
+  // answers nothing, which is what a stopped server looks like from a browser.
+  // `readyState` stays OPEN, no error fires, and a page that watched only its
+  // connection would go on calling a minute-old figure live.
+  await scenario({ state: twoZones() });
+  await page.goto(`${FIXTURE}/`);
+  await expect(page.locator('[data-freshness="kitchen"]')).toHaveText("live");
+  await expect(page.locator("[data-connection]")).toHaveText("Live");
+  const marked = await reads.markDocument(page);
+  expect(
+    await streamsStillOpen(),
+    "the page never subscribed, so there would be nothing to pause"
+  ).toBeGreaterThanOrEqual(1);
+
+  const pausedAt = Date.now();
+  await fixtureDo("pause");
+  await expect
+    .poll(async () => (await reads.stateMarks(page))["connection"].text, {
+      timeout: 20_000,
+      intervals: [250, 500, 500, 1000],
+    })
+    .toBe("Not answering");
+  const took = Date.now() - pausedAt;
+  expect(
+    took,
+    `the page took ${took}ms to admit the feed had stopped delivering`
+  ).toBeLessThan(20_000);
+
+  // It is the PAUSED state and not the severed one: the stream the page opened
+  // is still established on the other end, so nothing dropped.
+  expect(
+    await streamsStillOpen(),
+    "the stream was severed, so this graded the dropped case over again"
+  ).toBeGreaterThanOrEqual(1);
+
+  const stale = await reads.stateMarks(page);
+  expect(
+    reads.stillReadingAsCurrent(stale),
+    "figures still reading as current while the server answered nothing"
+  ).toEqual([]);
+  expect(
+    Object.keys(stale).filter((id) => id.startsWith("freshness:")).length
+  ).toBeGreaterThanOrEqual(3);
+  // The figures are still there, and still the last ones the server sent. A
+  // paused feed is a reason to stop claiming they are current, not to blank
+  // them.
+  const zones = await reads.renderedZones(page);
+  expect(zones.find((z) => z.id === "kitchen").volume).toBe("38%");
+
+  await fixtureDo("resume");
+  await expect(page.locator("[data-connection]")).toHaveText("Live", { timeout: 20_000 });
+  await expect(page.locator('[data-freshness="kitchen"]')).toHaveText("live");
+  await expect(page.locator('[data-freshness="footer"]')).toHaveText("live");
+
+  // And it came back without the page being reloaded.
+  const survived = await reads.documentSurvived(page, marked);
+  expect(survived.sameDocument, JSON.stringify(survived)).toBe(true);
+
+  proves("paused-feed-visible");
 });
 
 test("a refused command is shown where it was issued, and the control keeps the server's state", async ({
@@ -785,6 +907,39 @@ test("at 360 by 640 the body does not scroll sideways and every control stays in
     laid.small,
     `controls under ${MINIMUM} by ${MINIMUM} at 360 pixels wide`
   ).toEqual([]);
+
+  // The criterion is unconditional on the state, so it is graded against the
+  // WIDEST state the control catalog admits and not only against a name chosen
+  // to fit. docs/control-plane.md: a name is 1 to 64 characters and every
+  // printable character is a name character, so a name with no space in it,
+  // typed into this page's own rename box, is a state the server accepts. Sixty
+  // four of them in one word is the worst case there is.
+  await secondSubscriber(
+    BASE,
+    JSON.stringify({ v: 1, t: "name", zone: "kitchen", name: UNBROKEN_NAME })
+  );
+  await expect(page.locator('[data-zone-name="kitchen"]')).toHaveText(UNBROKEN_NAME);
+  expect(UNBROKEN_NAME.length).toBe(64);
+  expect(UNBROKEN_NAME).not.toMatch(/[\s-]/);
+
+  const widest = await reads.reflow(page, MINIMUM);
+  expect(
+    widest.scrollWidth,
+    `a ${UNBROKEN_NAME.length}-character unbroken name scrolls the document to ` +
+      `${widest.scrollWidth} in a ${widest.clientWidth} viewport`
+  ).toBeLessThanOrEqual(widest.clientWidth);
+  expect(widest.bodyScrollWidth).toBeLessThanOrEqual(widest.bodyClientWidth);
+  expect(
+    widest.outside,
+    "controls painted outside the viewport by a name the catalog admits"
+  ).toEqual([]);
+  expect(
+    widest.small,
+    `controls under ${MINIMUM} by ${MINIMUM} beside an unbroken name`
+  ).toEqual([]);
+  // And the name is still all there: fitting it is a wrapping rule, not a
+  // truncation that hides what a person typed.
+  expect(await page.locator('[data-zone-name="kitchen"]').innerText()).toBe(UNBROKEN_NAME);
 
   // Content too wide to fit scrolls inside its own container rather than
   // dragging the body sideways. The empty state's command line is the widest
