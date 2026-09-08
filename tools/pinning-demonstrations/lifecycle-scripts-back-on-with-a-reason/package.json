@@ -1,0 +1,9 @@
+{
+  "name": "chorus-pinning-demonstration-lifecycle-scripts-back-on-with-a-reason",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Right on purpose: the .npmrc beside this turns dependency lifecycle scripts back on and says why, which P4 allows. Never installed.",
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}

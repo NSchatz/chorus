@@ -7,9 +7,6 @@
 /firmware/sdkconfig
 /firmware/sdkconfig.old
 
-# No external dependencies yet, so the lock records nothing (docs/decisions/0002).
-Cargo.lock
-
 # The rendered UI grader's driver, which is a DEV dependency and is installed
 # rather than committed. Nothing here ships: the Cargo workspace does not depend
 # on it, the server serves no file from it, and only tools/ui-render-run.sh runs
