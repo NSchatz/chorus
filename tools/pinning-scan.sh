@@ -513,29 +513,57 @@ scan_dependency_manifests() {
 # `false` is allowed and is meant to be reachable. What is refused is a `false`
 # with nothing beside it saying why, because that is the one a later reader
 # cannot tell from an accident.
+#
+# The reason has to be MARKED as one - `# reason: <why>` - and not merely be a
+# comment that happens to sit above the setting. Accepting any adjacent comment
+# was tried first and is worthless: every one of these files already carries
+# explanatory prose, so the rule passed on the strength of its own instructions
+# and would have passed on a licence header. A marker is the difference between
+# a control and a formality, and it costs the person opting back in six
+# characters.
+REASON='reason:'
 judge_install_config() {
     local file="$1" pattern="$2" comment_marker="$3"
-    local entry n line value prev
+    local entry n line value prev trailing candidate why=""
     entry="$(grep -n -E "$pattern" "$file" 2>/dev/null | head -n 1)"
     [ -n "$entry" ] || return 1
     n="${entry%%:*}"
     line="${entry#*:}"
-    value="$(strip_quotes "${line#*[=:]}")"
+    value="$(strip_quotes "${line%%"$comment_marker"*}")"
+    value="$(strip_quotes "${value#*[=:]}")"
     case "$value" in
         true)
             ok "$file" "$n" "lifecycle scripts are off"
             return 0
             ;;
     esac
+
+    # The reason may ride on the setting's own line or on the line above it.
+    trailing=""
+    case "$line" in
+        *"$comment_marker"*) trailing="${line#*"$comment_marker"}" ;;
+    esac
     prev=""
     if [ "$n" -gt 1 ]; then
         prev="$(sed -n "$(( n - 1 ))p" "$file")"
+        case "$prev" in
+            *"$comment_marker"*) prev="${prev#*"$comment_marker"}" ;;
+            *) prev="" ;;
+        esac
     fi
-    if [[ "$prev" =~ ^[[:space:]]*${comment_marker}[[:space:]]*[^[:space:]] ]]; then
-        exempt "$file" "$n" "lifecycle scripts are on, and the line above says why: $(strip_quotes "${prev#*"$comment_marker"}")"
+    for candidate in "$trailing" "$prev"; do
+        candidate="$(strip_quotes "$candidate")"
+        if [[ "$candidate" =~ ^${REASON}[[:space:]]*[^[:space:]] ]]; then
+            why="$candidate"
+            break
+        fi
+    done
+
+    if [ -n "$why" ]; then
+        exempt "$file" "$n" "lifecycle scripts are on, and the setting carries its reason: $why"
     else
         violation "$file" "$n" P4 "$(strip_quotes "$line")" \
-            "the reason on the comment line directly above it. Turning lifecycle scripts back on is allowed and is meant to be; doing it with nothing saying why is what is refused"
+            "a reason marked as one, written \`${comment_marker} ${REASON} <why>\`, on the setting's own line or the line directly above it. Turning lifecycle scripts back on is allowed and is meant to be; doing it with nothing saying why is what is refused, and an ordinary comment that happens to sit above the setting is not a reason"
     fi
     return 0
 }

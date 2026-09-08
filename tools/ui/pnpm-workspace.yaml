@@ -4,7 +4,8 @@
 # a control that only holds under one of the two config readers is not a
 # control. It was written by `pnpm config set ignore-scripts true`.
 #
-# To turn lifecycle scripts back on, set this to false and put the reason on the
-# comment line directly above the setting. tools/pinning-check.sh refuses a
-# `false` that carries no reason, in either file.
+# To turn lifecycle scripts back on, set this to false and write the reason
+# beside it as `# reason: <why>`, on this line or the one above it.
+# tools/pinning-check.sh refuses a `false` without one, in either file, and an
+# ordinary comment sitting above the setting does not count as a reason.
 ignoreScripts: true

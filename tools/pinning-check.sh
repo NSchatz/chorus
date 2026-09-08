@@ -95,6 +95,35 @@ fi
 
 # --- the demonstrations ------------------------------------------------------
 
+# One committed tree that is RIGHT on purpose. P4 leaves the node opt-back-in
+# deliberately open, and without a tree that takes it and passes, "refuses a
+# `false` with no reason" and "refuses every `false`" leave identical evidence.
+expect_green() {
+    local name="$1"
+    CHECKED+=("$name")
+    local dir="$DEMOS/$name"
+    if [ ! -d "$dir" ]; then
+        fail "$name: no such demonstration under tools/pinning-demonstrations"
+        return
+    fi
+
+    local out status
+    set +e
+    out="$(bash "$SCAN" --fixture "$dir" 2>&1)"
+    status=$?
+    set -e
+
+    say ""
+    say "--- $name (exit $status, wanted 0)"
+    printf '%s\n' "$out" | sed 's/^/    /'
+
+    if [ "$status" -ne 0 ]; then
+        fail "$name exited $status and 0 was wanted; the escape hatch P4 leaves open has been shut by accident"
+        return
+    fi
+    say "pass $name is accepted, so the check discriminates rather than refusing every case"
+}
+
 # One committed tree that is unpinned on purpose. It has to go red, with the
 # right exit code, naming the clause it broke.
 expect_red() {
@@ -161,6 +190,11 @@ say ""
 say "=== chorus: and a category that examined nothing at all ======================"
 
 expect_red a-category-went-empty       repository 3 "STOPPED LOOKING"
+
+say ""
+say "=== chorus: and the one case that is supposed to pass ========================"
+
+expect_green lifecycle-scripts-back-on-with-a-reason
 
 # --- the four are four, and the list is the whole list -----------------------
 
