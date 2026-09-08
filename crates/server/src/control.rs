@@ -167,12 +167,36 @@ pub struct ControlState {
     ui: Ui,
 }
 
-/// The three files the browser is served.
+/// The files the browser is served: the page, what it loads, and the document
+/// every region of the page links to. The document is served rather than only
+/// committed, because a link to an explanation that answers 404 in a browser is
+/// a link to nothing.
 struct Ui {
     html: &'static str,
     css: &'static str,
     js: &'static str,
+    doc: &'static str,
 }
+
+/// The policy the browser is handed with the page and with every asset the page
+/// loads.
+///
+/// Tight enough to be worth having: nothing loads from anywhere but this origin,
+/// there is no inline script or inline style for anything to be smuggled into,
+/// and the page cannot be framed. Wide enough that the page still works: the
+/// stylesheet and the script are served from here, and `connect-src` is what the
+/// state request and the event stream travel on. A policy that silenced the page
+/// would be a failure and not a pass, which is why the check that grades this
+/// asserts the page still renders its zones and still updates under it.
+///
+/// It says nothing about what `POST /api/command` accepts. A Content-Security-
+/// Policy constrains what a BROWSER may load and connect to; the control
+/// listener's acceptance rules are `docs/control-plane.md`'s, and this listener
+/// has no authentication either before or after this header, which is a fact
+/// about the deployment and not something a response header can change.
+const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; \
+     connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; \
+     frame-ancestors 'none'";
 
 impl ControlState {
     /// Build the shared state.
@@ -188,6 +212,7 @@ impl ControlState {
                 html: include_str!("ui/index.html"),
                 css: include_str!("ui/chorus.css"),
                 js: include_str!("ui/chorus.js"),
+                doc: include_str!("../../../docs/control-page.md"),
             },
         }
     }
@@ -471,13 +496,42 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> Option<Request> {
 }
 
 fn respond(connection: &mut TcpStream, status: &str, content_type: &str, body: &str) {
+    respond_with(connection, status, content_type, body, "");
+}
+
+/// The same response, carrying the Content-Security-Policy. Everything a
+/// BROWSER is handed goes through this one: the page, its stylesheet, its
+/// script and the document its regions link to.
+fn respond_to_browser(connection: &mut TcpStream, status: &str, content_type: &str, body: &str) {
+    respond_with(
+        connection,
+        status,
+        content_type,
+        body,
+        CONTENT_SECURITY_POLICY,
+    );
+}
+
+fn respond_with(
+    connection: &mut TcpStream,
+    status: &str,
+    content_type: &str,
+    body: &str,
+    policy: &str,
+) {
+    let policy_header = if policy.is_empty() {
+        String::new()
+    } else {
+        format!("Content-Security-Policy: {}\r\n", policy)
+    };
     let _ = write!(
         connection,
         "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\n\
-         Cache-Control: no-store\r\nConnection: close\r\n\r\n{}",
+         Cache-Control: no-store\r\n{}Connection: close\r\n\r\n{}",
         status,
         content_type,
         body.len(),
+        policy_header,
         body
     );
     let _ = connection.flush();
@@ -511,23 +565,32 @@ fn serve_connection(connection: TcpStream, state: &Arc<ControlState>, keep: &Arc
     };
     let path = request.path.split('?').next().unwrap_or("/").to_string();
     match (request.method.as_str(), path.as_str()) {
-        ("GET", "/") | ("GET", "/index.html") => respond(
+        ("GET", "/") | ("GET", "/index.html") => respond_to_browser(
             &mut connection,
             "200 OK",
             "text/html; charset=utf-8",
             state.ui.html,
         ),
-        ("GET", "/chorus.css") => respond(
+        ("GET", "/chorus.css") => respond_to_browser(
             &mut connection,
             "200 OK",
             "text/css; charset=utf-8",
             state.ui.css,
         ),
-        ("GET", "/chorus.js") => respond(
+        ("GET", "/chorus.js") => respond_to_browser(
             &mut connection,
             "200 OK",
             "text/javascript; charset=utf-8",
             state.ui.js,
+        ),
+        // What every region of the page links to. The paragraphs explaining what
+        // a figure counts live here rather than on the surface, and a link to an
+        // explanation has to answer with the explanation.
+        ("GET", "/docs/control-page.md") => respond_to_browser(
+            &mut connection,
+            "200 OK",
+            "text/plain; charset=utf-8",
+            state.ui.doc,
         ),
         ("GET", "/api/state") => respond(
             &mut connection,

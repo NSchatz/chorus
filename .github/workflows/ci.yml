@@ -113,5 +113,39 @@ jobs:
       # is absent exits non-zero naming what is missing rather than reporting
       # green. This runner has no audio device and no real-time priority, which
       # is exactly the environment that makes the second one meaningful.
+      #
+      # It runs BEFORE the browser is installed on purpose. `make verify` drives
+      # tools/ui-render-run.sh with CHORUS_BROWSER pointed at a path that does
+      # not exist and watches it refuse by name, and a step that had already put
+      # an engine on the runner would be watching a weaker thing refuse.
       - name: Refusals, and that unrun checks are visibly unrun
         run: make verify
+
+      # The engine and the driver the rendered check needs. The container this
+      # repository is developed in has Chromium already; a GitHub runner does
+      # not, so one is installed here and its path is resolved from the driver
+      # itself rather than guessed at, which is what keeps this working across a
+      # driver version bump.
+      - name: A browser engine and the rendering driver
+        run: |
+          npm install --global pnpm@10
+          cd tools/ui
+          export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+          pnpm install --ignore-scripts --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+          WHERE="require('@playwright/test').chromium.executablePath()"
+          echo "CHORUS_BROWSER=$(node -e "console.log($WHERE)")" >> "$GITHUB_ENV"
+
+      # The control page, RENDERED, against the eleven clauses of the umbrella's
+      # frontend conventions: contrast and focus in both themes, keyboard
+      # operation, accessible names, no state carried by colour alone, an
+      # aggregate that states its set, an unreadable figure that costs nothing
+      # else, a severed feed that stops reading as current, three states, short
+      # labels with the paragraphs in this repository's docs, a 360 pixel
+      # layout, and a Content-Security-Policy the browser does not complain
+      # about. It also refuses when a clause assertion did not run, when a claim
+      # has no demonstration beside it, and when the committed clause record has
+      # gone out of date. A missing prerequisite exits non-zero naming it; there
+      # is no path here that reports green without an engine.
+      - name: The control page, rendered, against the frontend conventions
+        run: make verify-ui
