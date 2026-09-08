@@ -3,19 +3,28 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>chorus</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="/chorus.css">
 </head>
 <body>
-<header class="bar">
+<header class="bar" data-region="header">
   <h1>chorus</h1>
-  <p class="link" data-connection>connecting to this server</p>
+  <p class="state" data-connection>Connecting</p>
+  <a class="doc-link" href="/docs/control-page.md">What this page shows</a>
 </header>
 <main id="zones" data-zones>
-  <p data-loading>Loading the zones this server has.</p>
+  <section class="notice" data-loading data-region="loading">
+    <h2>Loading</h2>
+    <p>Reading this server's zones.</p>
+    <a class="doc-link" href="/docs/control-page.md">What this page shows</a>
+  </section>
 </main>
-<footer class="bar">
-  <p data-serial></p>
+<footer class="bar" data-region="footer">
+  <p class="state" data-serial>Waiting for state</p>
+  <p class="state">Figures <span data-freshness="footer">not yet</span></p>
+  <a class="doc-link" href="/docs/control-page.md">What these numbers mean</a>
 </footer>
 <script src="/chorus.js"></script>
 </body>

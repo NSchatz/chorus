@@ -1,0 +1,111 @@
+# The frontend conventions, clause by clause
+
+The umbrella's `documentation/frontend-conventions.md` binds every user
+interface this project ships. chorus ships one: the control page the server
+hands out on its control listener. This file says, for each of the eleven
+clauses, which rendered assertion proves it here, or why it cannot apply.
+
+It is not prose that can drift. `tools/ui/check-clause-record.js` reads the
+table below on every `make verify-ui` and exits non-zero, naming the clause, if
+any of the eleven is absent, carries both an assertion and an exemption, carries
+neither, or names an assertion that did not run in that invocation. So a clause
+cannot be quietly dropped, an exemption cannot be silent, and a row cannot go on
+claiming an assertion after the assertion has stopped running.
+
+An assertion name is a claim declared in `tools/ui/claims.js`. Each one is
+proved by a test in `tools/ui/ui.spec.js` against a page a browser engine
+painted, and each one is shown going red in `tools/ui/mutation.spec.js` against
+a page mutated to break exactly that claim. `docs/control-page.md` is what the
+page's regions link to.
+
+## The record
+
+| clause | assertions | exemption |
+|---|---|---|
+| F1 | contrast-in-both-themes, keyboard-operation, focus-visible, accessible-names, not-colour-alone, target-size | |
+| F2 | rendered-by-a-real-engine | |
+| F3 | unreadable-figure, stale-not-current | |
+| F4 | aggregate-states-its-set | |
+| F5 | unreadable-figure | |
+| F6 | stale-not-current | |
+| F7 | three-states | |
+| F8 | short-labels-and-doc-link | |
+| F9 | reflow-360 | |
+| F10 | themes-follow-preference, contrast-in-both-themes | |
+| F11 | csp-clean | |
+
+## Why each row says what it says
+
+**F1 Accessibility.** WCAG 2.2 AA. Contrast is measured from the framebuffer in
+both themes (1.4.3 and 1.4.11), the tab order is walked and every control
+operated by key (2.1.1), the focus indicator is a measured pixel difference
+clearing 3:1 (2.4.7), every accessible name is read out of the tree Chromium
+computed (4.1.2), no state is carried by hue alone (1.4.1), and every control is
+painted at 24 by 24 CSS pixels or more (2.5.8).
+
+**F2 Rendered claims need a real engine.** Every assertion in the table is
+graded on a page Chromium painted, and `tools/ui-render-run.sh` refuses by name
+rather than reading source text when there is no engine or no driver.
+`rendered-by-a-real-engine` is the assertion that the page under all of them was
+actually drawn: the framebuffer has more than one colour in it and the pixels
+where a zone card sits are the colour the engine computed for it.
+
+**F3 Absence is not zero.** chorus's state message declares every field
+mandatory, so there is no nullable field in the ordinary case. The clause still
+bites twice. A figure the state did not carry renders as the word `Unavailable`
+and never as `0`, a dash, `NaN`, `undefined` or a blank
+(`unreadable-figure`). A figure whose feed has dropped is marked `last known`
+rather than left reading as a current measurement (`stale-not-current`). A zone
+with nobody attached showing zero endpoints is a genuine measured zero and is
+correct.
+
+**F4 Every aggregate states its set.** The endpoint figure reads `1 of 2
+endpoints attached, 1 away`: the rows counted, the set they were counted over,
+and the rows left out, all beside the figure and in seven words.
+
+**F5 One unreadable figure costs nothing else.** The same assertion as F3's
+first half, asserted from the other side: the doctored zone renders
+`Unavailable` while every other zone and every other region of the view still
+draws.
+
+**F6 Stale is never shown as current.** The feed is severed under a live page;
+the connection reads `Connection lost` and every figure reads `last known`
+inside ten seconds with no interaction; the feed is restored and the figures
+read as current again without the page being reloaded.
+
+**F7 Three states, all of them.** Loading is graded against a state request that
+has not answered, empty against a real server with no zone configured, and error
+against a state request that fails. Each is asserted to be alone.
+
+**F8 Explanation lives in docs.** No text run on the surface is more than twelve
+words, every region carries exactly one link, and the link is followed in the
+engine to `docs/control-page.md`, which has to answer with the document.
+
+**F9 Phone first.** At 360 by 640 the document does not scroll sideways, no
+control is painted outside the viewport or under 24 by 24, and the one thing
+too wide to fit scrolls inside its own container.
+
+**F10 Both themes.** A light preference paints a light page and light panels and
+a dark one paints dark, decided by the luminance of the pixels rather than by
+which media query is in the file; and the contrast assertions run once per
+theme.
+
+**F11 A Content-Security-Policy is required.** The server sends one with the
+page, its stylesheet, its script and its document. The browser's own violation
+reports are asserted empty, and the page is asserted to still work under it:
+the stylesheet applied, the script ran, the state request answered, the event
+stream delivered another subscriber's change, and a command the page issued was
+accepted.
+
+## No clause is exempted
+
+Every one of the eleven applies to this surface and every one is asserted. The
+exemption column is empty on purpose and the checker requires it to stay empty
+as long as an assertion is named: a future exemption has to be written down,
+with its reason, in the row it excuses.
+
+One claim in `tools/ui/claims.js` is deliberately not in the table.
+`refusal-shown` answers chorus's own acceptance criterion about a refused
+command rather than a clause of the conventions, and the checker does not
+require every claim to be cited by a clause, only that every clause cites a
+claim that ran.
