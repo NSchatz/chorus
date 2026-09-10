@@ -1,0 +1,17 @@
+[package]
+name = "chorus-comment-density"
+description = "chorus comment density: the Rust token counter and the gate that holds its ceiling"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+name = "chorus_comment_density"
+path = "src/lib.rs"
+
+[[bin]]
+name = "chorus-comment-density"
+path = "src/main.rs"
+
+[dependencies]
