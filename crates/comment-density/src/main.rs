@@ -70,7 +70,7 @@ fn run() -> i32 {
     let sweep = Sweep::run(&root, paths, &cfg);
 
     match command {
-        "record" => rewrite_record(&root, &sweep, &cfg, baseline),
+        "record" => rewrite_record(&root, &sweep, baseline),
         "report" => {
             print_report(&sweep, &cfg);
             sweep.verdict(&cfg).exit_code()
@@ -136,7 +136,7 @@ fn print_report(sweep: &Sweep, cfg: &Config) {
     print!("{}", sweep.render(cfg));
 }
 
-fn rewrite_record(root: &Path, sweep: &Sweep, cfg: &Config, baseline: bool) -> i32 {
+fn rewrite_record(root: &Path, sweep: &Sweep, baseline: bool) -> i32 {
     let path = root.join(RECORD);
     let existing = match fs::read_to_string(&path) {
         Ok(text) => text,
@@ -145,7 +145,7 @@ fn rewrite_record(root: &Path, sweep: &Sweep, cfg: &Config, baseline: bool) -> i
             return density::EXIT_RECORD_DISAGREES;
         }
     };
-    match density::record::render(&existing, sweep, cfg, baseline) {
+    match density::record::render(&existing, sweep, baseline) {
         Ok(text) => match fs::write(&path, text) {
             Ok(()) => {
                 println!("{RECORD} rewritten from the tree as it stands");
