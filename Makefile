@@ -33,6 +33,21 @@ verify: tools-executable
 verify-pinning: tools-executable
 	bash tools/pinning-check.sh
 
+# The comment counter's own suite, alone, against its own fixtures. This is
+# where every counting rule and every refusal path is graded, because a run of
+# the gate over a compliant tree exits zero whether or not the counter reads a
+# raw string correctly. Needs no device, no privilege and no network, and calls
+# no require_* guard.
+#
+# The suite lives in a workspace crate, so CI reaches it through the
+# `cargo test --workspace` step as well; this target is a grading lane and not a
+# bypass, named separately so a red build says the counting broke rather than
+# "the workspace". Deliberately not `make check`, which is the whole workspace
+# suite: a counting assertion that reddens when an unrelated crate regresses
+# grades nothing.
+verify-comment-density-suite:
+	cargo test --quiet -p chorus-comment-density
+
 tools-executable:
 	chmod +x tools/*.sh tools/measure/*.sh
 
