@@ -61,3 +61,13 @@ pub fn raw_identifier() -> i64 {
     let r#type = 7;
     r#type
 }
+
+pub const MULTI_LINE: &str = "
+// this line carries no code token at all
+/* and neither does this one, closing and everything */
+";
+
+pub const MULTI_LINE_RAW: &str = r#"
+/// a doc marker inside a raw string
+//! and an inner one
+"#;
