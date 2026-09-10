@@ -22,6 +22,7 @@ verify: tools-executable
 	bash tools/refusals.sh
 	bash tools/unrun-checks-are-visibly-unrun.sh
 	bash tools/measure/capture-refusals.sh
+	$(MAKE) verify-comment-density
 
 # Every image reference, every action reference and every dependency manifest in
 # the tree, against the umbrella's documentation/pinning-conventions.md, plus the
@@ -32,6 +33,48 @@ verify: tools-executable
 # CI build says the pins broke rather than "the workspace".
 verify-pinning: tools-executable
 	bash tools/pinning-check.sh
+
+# Every tracked .rs file against the prose ceiling docs/comment-density-record.md
+# declares, then the record itself, then the committed demonstrations that show
+# this gate going red on each shape it refuses. Counted from the Rust token
+# stream by crates/comment-density, never by matching a line against a pattern.
+#
+# Needs no device, no privilege and NO NETWORK: it opens no socket and asks no
+# registry anything, and the counter takes no external crate, which is what buys
+# that. It calls no require_* guard from tools/lib.sh either, so
+# tools/unrun-checks-are-visibly-unrun.sh has nothing to register and stays
+# complete. Also run by `make verify`; named separately so a red CI build says
+# the prose ceiling broke rather than "the workspace".
+#
+# EXIT CODES, distinct per failure mode. When more than one holds, the first
+# listed below wins, so the most actionable one is the one a reader sees:
+#
+#   0   every measured file is at or under the ceiling, the record agrees with
+#       this gate and with the tree, and every demonstration produced what it
+#       demonstrates
+#   6   the sweep matched no tracked .rs file at all, which is a category that
+#       has stopped matching rather than a compliant tree
+#   5   a tracked .rs file could not be read; it is named and never skipped
+#   4   a tracked .rs file could not be tokenized to completion; it is named
+#       with the byte offset at which tokenizing stopped, and is never counted
+#       as zero prose
+#   2   a measured file is over the ceiling
+#   3   docs/comment-density-record.md and this gate disagree: no ceiling
+#       declared, a value this gate does not enforce, a row whose two code-line
+#       counts differ, a row naming a path this gate does not measure, or a row
+#       the tree no longer matches
+#   7   a committed demonstration did not produce what it demonstrates
+#   8   a capability this check needs is missing, refused in tools/lib.sh's shape
+verify-comment-density:
+	cargo run --quiet -p chorus-comment-density -- gate
+
+# Rewrite the generated half of docs/comment-density-record.md from the tree as
+# it stands. The before column is carried over untouched, so the untrimmed
+# measurement survives; --baseline overwrites it and is a deliberate change to
+# what the baseline means. Neither can make a red ceiling green: the ceiling is
+# measured against the tree and never against the record.
+comment-density-record:
+	cargo run --quiet -p chorus-comment-density -- record
 
 # The comment counter's own suite, alone, against its own fixtures. This is
 # where every counting rule and every refusal path is graded, because a run of
