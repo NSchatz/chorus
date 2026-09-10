@@ -25,6 +25,23 @@ this file.
 `crates/comment-density` carries the same three numbers and refuses when they
 and this list disagree, so neither can move without the other.
 
+All three were set from the untrimmed distribution below, and the ceiling is a
+no-regression ceiling rather than a target: 90% is the first round number above
+the densest file measured, `crates/audio-path/src/lib.rs` at 86.6%, and 45% is
+the first round number above the densest file that carries code,
+`crates/client-linux/src/delaylog.rs` at 44.1%. The distribution splits at that
+gap and nowhere else. Everything from 57.5% up is a crate root, where the prose
+is the crate's own documentation and the code is `pub mod` and `pub use`;
+everything from 44.1% down carries code. Nothing was trimmed to reach these
+numbers, and `docs/decisions/0011-comment-density-baseline.md` says why.
+
+The ceiling is the coarse tooth of three. The warn band names every file that
+drifts up into crate-root territory without failing the build, and the table
+below is the fine one: the gate reads every row against the tree, so any change
+to any file's prose or code line count is a red build until the record is
+regenerated and committed, and the diff of that regeneration is where a comment
+that crept in becomes visible.
+
 ## What is measured
 
 Rust only, and every tracked `.rs` file in the repository. `firmware/` is C11,
