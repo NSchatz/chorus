@@ -295,15 +295,15 @@ fn walk(root: &Path, dir: &Path, found: &mut Vec<String>) -> io::Result<()> {
     entries.sort_by_key(|entry| entry.file_name());
     for entry in entries {
         let path = entry.path();
-        // Never follow into a symlink and never resolve one: a dangling .rs
-        // symlink is a file that cannot be read, and skipping it would be the
+        // The .rs suffix decides, before anything asks what is behind it. A
+        // dangling symlink and a directory that took the name of a source file
+        // are both paths that cannot be read, and skipping either would be the
         // silent omission the unreadable criterion forbids.
-        let kind = entry.file_type()?;
-        if kind.is_dir() {
-            walk(root, &path, found)?;
-        } else if path.extension().map(|ext| ext == "rs").unwrap_or(false) {
+        if path.extension().map(|ext| ext == "rs").unwrap_or(false) {
             let relative = path.strip_prefix(root).unwrap_or(&path);
             found.push(relative.to_string_lossy().replace('\\', "/"));
+        } else if entry.file_type()?.is_dir() {
+            walk(root, &path, found)?;
         }
     }
     Ok(())

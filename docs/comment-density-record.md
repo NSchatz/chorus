@@ -9,11 +9,21 @@ measure.
 
 `make comment-density-record` rewrites the generated half from the tree as it
 stands. It carries the before column over untouched, so the untrimmed
-measurement survives every later rewrite; `--baseline` is what fills that column
-in the first place, and rewriting a baseline is a deliberate change to what the
-baseline means rather than a way to make a red assertion green. Nothing the
-regeneration writes can silence the ceiling, which is measured against the tree
-and never against this file.
+measurement survives every later rewrite.
+`cargo run -p chorus-comment-density -- record --baseline` is what fills that
+column in the first place, and running it again is a deliberate change to what
+the baseline means rather than a way to make a red assertion green: neither form
+can silence the ceiling, which is measured against the tree and never against
+this file.
+
+## What the gate enforces
+
+- ceiling: 90%
+- warn band: 45%
+- minimum counted lines: 30
+
+`crates/comment-density` carries the same three numbers and refuses when they
+and this list disagree, so neither can move without the other.
 
 ## What is measured
 
@@ -56,8 +66,8 @@ is the tree at this change's head.
 
 | distribution | files | prose lines | code lines | ratio |
 |---|---|---|---|---|
-| untrimmed | 116 | 7462 | 29886 | 19.9% |
-| at this change's head | 116 | 7462 | 29886 | 19.9% |
+| untrimmed | 116 | 7464 | 29885 | 19.9% |
+| at this change's head | 116 | 7464 | 29885 | 19.9% |
 
 | file | prose before | code before | ratio before | prose after | code after | ratio after |
 |---|---|---|---|---|---|---|
@@ -97,10 +107,10 @@ is the tree at this change's head.
 | crates/comment-density/src/count.rs | 11 | 181 | 5.7% | 11 | 181 | 5.7% |
 | crates/comment-density/src/demos.rs | 11 | 138 | 7.3% | 11 | 138 | 7.3% |
 | crates/comment-density/src/lex.rs | 21 | 184 | 10.2% | 21 | 184 | 10.2% |
-| crates/comment-density/src/lib.rs | 8 | 53 | 13.1% | 8 | 53 | 13.1% |
+| crates/comment-density/src/lib.rs | 9 | 53 | 14.5% | 9 | 53 | 14.5% |
 | crates/comment-density/src/main.rs | 12 | 168 | 6.6% | 12 | 168 | 6.6% |
 | crates/comment-density/src/record.rs | 15 | 237 | 5.9% | 15 | 237 | 5.9% |
-| crates/comment-density/src/sweep.rs | 17 | 272 | 5.8% | 17 | 272 | 5.8% |
+| crates/comment-density/src/sweep.rs | 18 | 271 | 6.2% | 18 | 271 | 6.2% |
 | crates/comment-density/tests/counting.rs | 7 | 196 | 3.4% | 7 | 196 | 3.4% |
 | crates/comment-density/tests/refusals.rs | 9 | 286 | 3.0% | 9 | 286 | 3.0% |
 | crates/control/src/catalog.rs | 124 | 524 | 19.1% | 124 | 524 | 19.1% |

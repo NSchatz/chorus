@@ -54,9 +54,9 @@ pub const TREES: &[Demonstration] = &[
     },
     Demonstration {
         name: "a-tree-that-passes",
-        shape: "a documented file under the ceiling beside a file under the minimum",
+        shape: "a documented file in the warn band beside a file under the minimum",
         wanted: crate::EXIT_OK,
-        must_name: &["FILE documented.rs", "BELOW-MINIMUM tiny.rs"],
+        must_name: &["FILE documented.rs", "BELOW-MINIMUM tiny.rs", "WARN documented.rs"],
     },
 ];
 

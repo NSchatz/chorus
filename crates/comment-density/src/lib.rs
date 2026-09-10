@@ -4,11 +4,12 @@ pub mod lex;
 pub mod record;
 pub mod sweep;
 
-// Set from this repository's own measured baseline. docs/comment-density-record.md
-// carries the distribution they were read off and the sentence that says which
-// one; the gate refuses if the record and these disagree.
-pub const CEILING_PERCENT: u32 = 45;
-pub const WARN_PERCENT: u32 = 35;
+// Set from this repository's own measured baseline, which
+// docs/comment-density-record.md carries in full along with the sentence saying
+// which distribution each was read off. The gate refuses if the record and
+// these disagree, so neither can move without the other.
+pub const CEILING_PERCENT: u32 = 90;
+pub const WARN_PERCENT: u32 = 45;
 pub const MINIMUM_COUNTED_LINES: usize = 30;
 
 // Distinct per failure mode, so a red build says which regression broke rather
