@@ -274,7 +274,7 @@ fn the_generated_region_is_rewritten_with_the_before_column_carried_over() {
     let (_dir, sweep, cfg) = two_file_sweep("record-rewrite");
     let stale = "| a.rs | 40 | 35 | 53.3% | 40 | 35 | 53.3% |\n\
                  | b.rs | 0 | 1 | 0.0% | 0 | 1 | 0.0% |";
-    let rewritten = record::render(&record_of(AGREES, stale), &sweep, &cfg, false)
+    let rewritten = record::render(&record_of(AGREES, stale), &sweep, false)
         .expect("the region is there to rewrite");
     assert!(rewritten.contains("| a.rs | 40 | 35 | 53.3% | 5 | 35 | 12.5% |"), "{rewritten}");
     assert_eq!(record::check(&record::parse(&rewritten), &sweep, &cfg), Vec::<String>::new());
