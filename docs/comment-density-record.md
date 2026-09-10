@@ -33,7 +33,7 @@ the first round number above the densest file that carries code,
 gap and nowhere else. Everything from 57.5% up is a crate root, where the prose
 is the crate's own documentation and the code is `pub mod` and `pub use`;
 everything from 44.1% down carries code. Nothing was trimmed to reach these
-numbers, and `docs/decisions/0011-comment-density-baseline.md` says why.
+numbers, and `docs/decisions/0020-the-comment-density-baseline.md` says why.
 
 The ceiling is the coarse tooth of three. The warn band names every file that
 drifts up into crate-root territory without failing the build, and the table
