@@ -45,6 +45,34 @@ fn comment_like_text_inside_a_literal_is_never_prose() {
     assert_eq!(counts.tenths(), 0);
 }
 
+// The umbrella's failure, at the line where it actually shows. A literal on a
+// line that also carries code is attributed to code either way, so a counter
+// that had gone back to matching quote characters would still pass the fixture
+// above. What separates them is the INTERIOR of a multi-line literal, where the
+// only thing on the line is text that spells a comment.
+const MULTI_LINE_LITERALS: &str = r##"
+const NORMAL: &str = "
+// a line with no code token on it at all
+/* and another, closing and everything */
+";
+
+const RAW: &str = r#"
+/// a doc marker inside a raw string
+//! and an inner one
+"#;
+
+fn main() {
+    println!("{NORMAL}{RAW}");
+}
+"##;
+
+#[test]
+fn the_interior_of_a_multi_line_literal_is_code_and_not_prose() {
+    let counts = count(MULTI_LINE_LITERALS, &plain()).expect("the fixture tokenizes");
+    assert_eq!(counts.prose, 0, "a literal's interior is not prose, whatever it spells");
+    assert_eq!(counts.code, 11);
+}
+
 const DEEP_RAW: &str = r####"
 fn main() {
     let one = r#"// one hash"#;
