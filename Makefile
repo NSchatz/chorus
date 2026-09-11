@@ -15,8 +15,11 @@ probe:
 one:
 	cargo test $(ARGS)
 
-# Every verification that needs no device and no privilege. This is what CI
-# runs beside the suite.
+# Every verification that needs no device and no privilege and answers in
+# seconds. This is what CI runs beside the suite. The one no-device verification
+# that is NOT here is verify-control-determinism, which is minutes of repeated
+# runs by design; it has its own target and its own CI step so that a red build
+# says the determinism claim broke rather than "the verifications".
 verify: tools-executable
 	bash tools/pinning-check.sh
 	bash tools/refusals.sh
@@ -32,6 +35,16 @@ verify: tools-executable
 # CI build says the pins broke rather than "the workspace".
 verify-pinning: tools-executable
 	bash tools/pinning-check.sh
+
+# The control-plane thread-population checks, run over and over on one build,
+# plus two starved runs that must go red naming the busy-worker refusal. Those
+# checks take workers from a fixed pool to grade AC-12, so one green run of them
+# is one scheduling and not a determinism claim; the repetition count is
+# committed in config/verification.conf. Needs no device, no privilege and no
+# network. It is MINUTES rather than seconds, which is why it is its own target
+# and its own CI step rather than part of `make verify`.
+verify-control-determinism: tools-executable
+	bash tools/control-determinism.sh
 
 tools-executable:
 	chmod +x tools/*.sh tools/measure/*.sh
