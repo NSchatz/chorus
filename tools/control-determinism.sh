@@ -58,8 +58,12 @@ refuse() {
     exit 2
 }
 
+# Here-strings rather than a pipe into grep, here and below: `grep -q` stops
+# reading at the first match, and under `pipefail` the writer it left holding a
+# closed pipe is a non-zero pipeline status, which would be this check failing
+# because it found what it was looking for.
 positive_integer() {
-    printf '%s' "${1:-}" | grep -qE '^[1-9][0-9]*$'
+    grep -qE '^[1-9][0-9]*$' <<<"${1:-}"
 }
 
 # --- the repetition count ----------------------------------------------------
@@ -244,14 +248,14 @@ starved() {
     local wanted
     for wanted in '503 Service Unavailable' 'control workers is busy' \
         "control workers in force: $workers" 'attachments held:'; do
-        if ! printf '%s' "$OUT" | grep -q -- "$wanted"; then
+        if ! grep -qF -- "$wanted" <<<"$OUT"; then
             say "FAIL the starved run's output never said '$wanted'"
             ok=0
         fi
     done
     if [ "$ok" -eq 1 ]; then
         say "pass it went red in ${took} s naming the refusal, the ceiling and the attachments held:"
-        printf '%s\n' "$OUT" | grep -A6 'refused to serve' | head -n 12 | sed 's/^/    /'
+        { grep -A6 'refused to serve' <<<"$OUT" || true; } | head -n 12 | sed 's/^/    /'
     else
         printf '%s\n' "$OUT" | sed 's/^/    /'
         FAILURES=$(( FAILURES + 1 ))
