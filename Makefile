@@ -22,6 +22,7 @@ one:
 # says the determinism claim broke rather than "the verifications".
 verify: tools-executable
 	bash tools/pinning-check.sh
+	bash tools/styling-check.sh
 	bash tools/refusals.sh
 	bash tools/unrun-checks-are-visibly-unrun.sh
 	bash tools/measure/capture-refusals.sh
@@ -35,6 +36,21 @@ verify: tools-executable
 # CI build says the pins broke rather than "the workspace".
 verify-pinning: tools-executable
 	bash tools/pinning-check.sh
+
+# The control page's stylesheet SOURCES, against the umbrella's styling
+# conventions S1 to S10: every colour and length resolving to a token, three
+# tiers named for role, the 4px scale, a value chosen by hand per theme, the
+# measured contrast ratio recorded beside each pair, separation by border and
+# surface, and one accent hue. Plus the committed trees that show the check
+# going red on each shape it refuses. Needs node, no device, no privilege and no
+# network. Also run by `make verify`; named separately so a red CI build says
+# the styling broke rather than "the verifications".
+#
+# It is a check of SOURCE TEXT and it is not the rendered one. What the page
+# PAINTS - the contrast floors, the faces, the reconciliation of each recorded
+# ratio against the pixels - is `make verify-ui`, in a real browser engine.
+verify-styling: tools-executable
+	bash tools/styling-check.sh
 
 # The control-plane thread-population checks, run over and over on one build,
 # plus two starved runs that must go red naming the busy-worker refusal. Those

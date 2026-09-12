@@ -1,0 +1,20 @@
+/* A copy of tools/styling-demonstrations/base/page.css with ONE thing wrong: it
+ * animates something, while the styling record exempts S9 on the ground that
+ * this surface animates nothing. An exemption is a claim about the surface, and
+ * this is the moment it stops being true.
+ */
+
+.card {
+  background: var(--card-surface);
+  border: var(--hairline) solid var(--card-edge);
+  color: var(--card-ink);
+  padding: var(--card-pad);
+  gap: var(--card-gap);
+  transition: color 200ms linear;
+}
+
+.card p {
+  margin: var(--reset-margin);
+  color: var(--muted);
+  font-size: var(--meta-size);
+}

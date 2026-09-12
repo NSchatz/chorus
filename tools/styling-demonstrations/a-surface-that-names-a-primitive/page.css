@@ -1,0 +1,19 @@
+/* A copy of tools/styling-demonstrations/base/page.css with ONE thing wrong: a
+ * rule reaches past the tier it is allowed to name and spends a primitive. The
+ * value it paints is right; what is wrong is that changing the scale step where
+ * it means something no longer reaches this rule.
+ */
+
+.card {
+  background: var(--card-surface);
+  border: var(--hairline) solid var(--card-edge);
+  color: var(--card-ink);
+  padding: var(--space-16);
+  gap: var(--card-gap);
+}
+
+.card p {
+  margin: var(--reset-margin);
+  color: var(--muted);
+  font-size: var(--meta-size);
+}
