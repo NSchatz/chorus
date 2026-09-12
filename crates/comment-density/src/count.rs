@@ -55,23 +55,17 @@ pub fn count(src: &str, cfg: &Config) -> Result<Counts, LexError> {
 
     let mut comment_lines: BTreeSet<usize> = BTreeSet::new();
     let mut code_lines: BTreeSet<usize> = BTreeSet::new();
-    let mut leading: Vec<&Lexeme> = Vec::new();
-    let mut seen_code = false;
 
     for lexeme in &lexemes {
         let first = line_at(&starts, lexeme.start);
         let last = line_at(&starts, lexeme.end.saturating_sub(1));
         match lexeme.kind {
             Kind::Code => {
-                seen_code = true;
                 for line in first..=last {
                     code_lines.insert(line);
                 }
             }
             Kind::Comment => {
-                if !seen_code {
-                    leading.push(lexeme);
-                }
                 let text = comment_text(&src[lexeme.start..lexeme.end]);
                 let target = if is_directive(&text, &cfg.directive_prefixes) {
                     &mut code_lines
@@ -85,18 +79,19 @@ pub fn count(src: &str, cfg: &Config) -> Result<Counts, LexError> {
         }
     }
 
+    let block = leading_block(&lexemes, src, &starts);
     let mut generated_marker = None;
     let mut header_opener = None;
     let mut header: BTreeSet<usize> = BTreeSet::new();
-    if !leading.is_empty() {
+    if !block.is_empty() {
         let mut text: Vec<String> = Vec::new();
-        for lexeme in &leading {
+        for lexeme in &block {
             text.extend(comment_text(&src[lexeme.start..lexeme.end]));
         }
         generated_marker = marker_in(&text, &cfg.generated_markers);
         if let Some(opener) = licence_opener(&text) {
             header_opener = Some(opener);
-            for lexeme in &leading {
+            for lexeme in &block {
                 let first = line_at(&starts, lexeme.start);
                 let last = line_at(&starts, lexeme.end.saturating_sub(1));
                 for line in first..=last {
@@ -126,6 +121,69 @@ pub fn count(src: &str, cfg: &Config) -> Result<Counts, LexError> {
         header_opener,
         generated_marker,
     })
+}
+
+// The leading comment block: the run of comments a file opens with and no more
+// than that. It ends at the first code token, at the first blank line between
+// two comments, and at the first change of comment form. Both exclusions below
+// are scoped to it, so one licence line or one generated marker excuses the
+// block it opens and never a documentation block written under it: a rule that
+// ran to the first code token would make prepending "SPDX-License-Identifier"
+// the way past the ceiling that counting doc comments as prose exists to close.
+fn leading_block<'a>(lexemes: &'a [Lexeme], src: &str, starts: &[usize]) -> Vec<&'a Lexeme> {
+    let mut block: Vec<&Lexeme> = Vec::new();
+    let mut opened: Option<Form> = None;
+    let mut previous_last = 0usize;
+    for lexeme in lexemes {
+        if lexeme.kind != Kind::Comment {
+            break;
+        }
+        let form = comment_form(&src[lexeme.start..lexeme.end]);
+        let first = line_at(starts, lexeme.start);
+        if let Some(opened) = opened {
+            if form != opened || first > previous_last + 1 {
+                break;
+            }
+        }
+        opened = Some(form);
+        previous_last = line_at(starts, lexeme.end.saturating_sub(1));
+        block.push(lexeme);
+    }
+    block
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Form {
+    Line,
+    OuterLineDoc,
+    InnerLineDoc,
+    Block,
+    OuterBlockDoc,
+    InnerBlockDoc,
+}
+
+// Which of Rust's six comment forms a lexeme is written in. `////` is an
+// ordinary line comment rather than a run of doc slashes, and `/**/` is an empty
+// block comment rather than an outer block doc, so each doc form has to look at
+// what follows its marker.
+fn comment_form(raw: &str) -> Form {
+    if let Some(rest) = raw.strip_prefix("//") {
+        if rest.starts_with('!') {
+            return Form::InnerLineDoc;
+        }
+        if rest.starts_with('/') && !rest.starts_with("//") {
+            return Form::OuterLineDoc;
+        }
+        return Form::Line;
+    }
+    let rest = raw.strip_prefix("/*").unwrap_or(raw);
+    if rest.starts_with('!') {
+        return Form::InnerBlockDoc;
+    }
+    if rest.starts_with('*') && !rest.starts_with("*/") {
+        return Form::OuterBlockDoc;
+    }
+    Form::Block
 }
 
 fn line_starts(src: &str) -> Vec<usize> {
