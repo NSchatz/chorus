@@ -118,6 +118,16 @@ jobs:
       - name: Images, actions and manifests are pinned
         run: make verify-pinning
 
+      # The prose ceiling on every tracked .rs file, counted from the Rust token
+      # stream, plus the record that declares the ceiling and the six committed
+      # demonstrations that show this gate going red on each shape it refuses.
+      # Resolves nothing over the network and needs no device: the counter takes
+      # no external crate. Named separately from the `make verify` step below,
+      # which also runs it, so a red build says the prose ceiling broke rather
+      # than "the workspace".
+      - name: Comment density is under the agreed ceiling
+        run: make verify-comment-density
+
       # Every refusal path, and the proof that a verification whose environment
       # is absent exits non-zero naming what is missing rather than reporting
       # green. This runner has no audio device and no real-time priority, which
