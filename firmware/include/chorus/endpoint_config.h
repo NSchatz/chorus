@@ -11,10 +11,16 @@
 
 #include "chorus/amp.h"
 #include "chorus/i2s.h"
+#include "chorus/wifi.h"
 
 #define CHORUS_ENDPOINT_TEXT 128
 
 typedef struct {
+    /* The link: which transport it is, the power save mode to set on a radio,
+     * and the network, whose name and secret this repository declares unknown.
+     * `chorus#WIFI-7` owns every value in it. */
+    chorus_wifi_config_t link;
+
     char server_address[CHORUS_ENDPOINT_TEXT];
     uint32_t reconnect_first_backoff_ms;
     uint32_t reconnect_max_backoff_ms;

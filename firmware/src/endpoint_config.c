@@ -91,6 +91,60 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
         }                                                                                          \
     } while (0)
 
+    /* The link. A value declared `unknown` here is a fact about somebody's
+     * house that this repository does not have, which is a third class beside
+     * the values the endpoint phase FIXED and the register map it declared
+     * unknown; `known` is 0 and the buffer is left empty, so there is no
+     * default network anywhere for a join to fall back to. */
+    char link_text[CHORUS_ENDPOINT_TEXT];
+    NEED(chorus_conf_string(&conf, "link_transport", link_text, sizeof(link_text), detail,
+                            detail_len));
+    int link_ok = 0;
+    out->link.transport = chorus_transport_from_name(link_text, &link_ok);
+    if (!link_ok) {
+        snprintf(detail, detail_len, "%s: link_transport = %s is not `wired` or `wireless`",
+                 conf.path, link_text);
+        return -1;
+    }
+    NEED(chorus_conf_string(&conf, "link_wifi_power_save", link_text, sizeof(link_text), detail,
+                            detail_len));
+    out->link.power_save = chorus_wifi_ps_from_name(link_text, &link_ok);
+    if (!link_ok) {
+        snprintf(detail, detail_len,
+                 "%s: link_wifi_power_save = %s is not `none`, `min-modem` or `max-modem`. It is "
+                 "not a value this repository declares unknown either: the whole point of the "
+                 "phase is that the mode is SET rather than inherited",
+                 conf.path, link_text);
+        return -1;
+    }
+    NEED(chorus_conf_bool(&conf, "link_wifi_coexistence", &out->link.coexistence, detail,
+                          detail_len));
+    if (chorus_conf_get(&conf, "link_wifi_ssid") == NULL) {
+        snprintf(detail, detail_len, "%s has no link_wifi_ssid", conf.path);
+        return -1;
+    }
+    if (chorus_conf_is_unknown(&conf, "link_wifi_ssid")) {
+        out->link.ssid_known = 0;
+        out->link.ssid[0] = '\0';
+    } else {
+        NEED(chorus_conf_string(&conf, "link_wifi_ssid", out->link.ssid, sizeof(out->link.ssid),
+                                detail, detail_len));
+        out->link.ssid_known = 1;
+    }
+    if (chorus_conf_get(&conf, "link_wifi_secret") == NULL) {
+        snprintf(detail, detail_len, "%s has no link_wifi_secret", conf.path);
+        return -1;
+    }
+    if (chorus_conf_is_unknown(&conf, "link_wifi_secret")) {
+        out->link.secret_known = 0;
+        out->link.secret[0] = '\0';
+    } else {
+        NEED(chorus_conf_string(&conf, "link_wifi_secret", out->link.secret,
+                                sizeof(out->link.secret), detail, detail_len));
+        out->link.secret_known = 1;
+    }
+    snprintf(out->link.source, sizeof(out->link.source), "%s", path);
+
     NEED(chorus_conf_string(&conf, "server_address", out->server_address,
                             sizeof(out->server_address), detail, detail_len));
     NEED(chorus_conf_u32(&conf, "reconnect_first_backoff_ms", &out->reconnect_first_backoff_ms,
