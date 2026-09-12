@@ -24,6 +24,10 @@
 //! - [`zones`] is the server-authoritative state a command changes.
 //! - [`persist`] is what survives a restart.
 //! - [`fanout`] is how a change reaches every subscriber, bounded.
+//! - [`transport`] is the tier a zone is DECLARED in, beside the catalog and
+//!   not inside it: no message carries a transport, `CATALOG_VERSION` does not
+//!   move for it, and the vectors are byte-identical. It is here because it is
+//!   a fact about a zone, and zones are what this crate owns.
 //!
 //! There is no socket in this crate, no clock in it, and no thread. The server
 //! binds and threads in `crates/server/src/control.rs`; keeping those out of
@@ -35,8 +39,10 @@ pub mod catalog;
 pub mod fanout;
 pub mod json;
 pub mod persist;
+pub mod transport;
 pub mod zones;
 
 pub use catalog::{decode_command, Command, Refusal, RefusalKind, Volume, CATALOG_VERSION};
 pub use fanout::{ControlFanout, CONTROL_QUEUE_LIMIT};
+pub use transport::{GroupTier, Transport, WirelessPolicy, ZoneTransports, WIRELESS_POLICY};
 pub use zones::{Zone, Zones};

@@ -19,6 +19,7 @@
 //! | [`wav`] | reads a two-channel PCM recording, refusing every malformed case by name |
 //! | [`lag`] | cross-correlates sliding windows and reduces them to median, p95 and maximum |
 //! | [`freerun`] | fits the relative offset series of two uncorrected clients and reports ppm |
+//! | [`jitter`] | the spread of a series, and the report it is saved as, one per power-save mode |
 //! | [`report`] | renders a run into `docs/measurements/` and records the baseline later runs cite |
 //! | [`chirp`] | the sweep, and the amplitude ceiling that stands in front of a real amplifier |
 //! | [`fixtures`] | regenerates the committed fixture inputs from their committed parameters |
@@ -55,6 +56,7 @@ pub mod chirp;
 pub mod config;
 pub mod fixtures;
 pub mod freerun;
+pub mod jitter;
 pub mod lag;
 pub mod report;
 pub mod rng;
@@ -63,6 +65,7 @@ pub mod wav;
 pub use chirp::{ChirpError, ChirpSpec};
 pub use config::{ConfigError, MeasureConfig};
 pub use freerun::{OffsetSeries, SlopeError, SlopeFit, SlopeSettings};
+pub use jitter::{JitterError, JitterSummary, PowerSaveMode};
 pub use lag::{LagError, LagSettings, LagSummary, SIGN_CONVENTION};
 pub use report::{Baseline, BuildIdentity, ReportError};
 pub use wav::{Capture, CaptureError};

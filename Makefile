@@ -25,6 +25,7 @@ verify: tools-executable
 	bash tools/refusals.sh
 	bash tools/unrun-checks-are-visibly-unrun.sh
 	bash tools/measure/capture-refusals.sh
+	bash tools/wireless-expectations-check.sh
 
 # Every image reference, every action reference and every dependency manifest in
 # the tree, against the umbrella's documentation/pinning-conventions.md, plus the
@@ -171,6 +172,18 @@ firmware-safety-scans:
 # docs/verification-record.md, which quotes the refusal.
 verify-endpoint-rig: tools-executable
 	bash tools/endpoint-rig-run.sh
+
+# chorus#WIFI-7's AC-2 and AC-3: a Wi-Fi endpoint measured with modem sleep
+# disabled and again with the platform default left in place, beside a second
+# endpoint in another room, captured by the RIG-3 rig. NEITHER IS PASSED HERE.
+# This target exits non-zero naming its missing prerequisite; see
+# docs/verification-record.md, which quotes the refusal. What stands beside it
+# with no radio present is the report shape and the arithmetic, graded against
+# committed MODELLED series by `cargo test -p chorus-measure --test
+# report_shape`, which those series and every report written from them label as
+# modelled and not as a measurement.
+verify-wireless: tools-executable
+	bash tools/wireless-characterization-run.sh
 
 # The saved reports over the committed fixtures, which is what puts a file in
 # docs/measurements/. Needs no device and no privilege.

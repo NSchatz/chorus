@@ -8,10 +8,13 @@
 //! the real destination.
 
 use std::collections::BTreeSet;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use chorus_measure::config::MeasureConfig;
 use chorus_measure::freerun::{self, SlopeSettings};
+use chorus_measure::jitter::{self, JitterRun, PowerSaveMode};
 use chorus_measure::lag::{self, LagSettings};
 use chorus_measure::report::{
     self, Baseline, BuildIdentity, FreeRunRun, LagRun, BASELINE_FILE, MEASUREMENTS_DIR,
@@ -378,6 +381,410 @@ fn the_committed_reports_are_in_the_measurements_directory_and_agree_with_each_o
     // And the honest label survived into the committed artifact.
     assert_eq!(baseline.source, "fixture");
     assert!(free_run_text.contains("`source = fixture` is the honest label here"));
+}
+
+// -------------------------------------------------------------------------
+// chorus#WIFI-7: the wireless characterization's report shape (AC-12) and the
+// refusal when a report cannot be written (AC-18).
+// -------------------------------------------------------------------------
+
+/// The committed series for one power-save mode, and its label.
+fn jitter_series(mode: PowerSaveMode) -> (PathBuf, &'static str) {
+    match mode {
+        PowerSaveMode::None => (
+            fixture("14-wireless-jitter-ps-none.offsets"),
+            "wireless-ps-none",
+        ),
+        PowerSaveMode::MinModem => (
+            fixture("15-wireless-jitter-ps-min-modem.offsets"),
+            "wireless-ps-min-modem",
+        ),
+        PowerSaveMode::MaxModem => panic!("no series is committed for the maximum modem mode"),
+    }
+}
+
+fn jitter_report(mode: PowerSaveMode, build: &BuildIdentity) -> String {
+    let root = repository_root();
+    let (path, label) = jitter_series(mode);
+    let series = freerun::read_series(&path).expect("a committed series");
+    let summary = jitter::analyse(&series).expect("a committed series is a distribution");
+    let run = JitterRun {
+        label,
+        series: &series,
+        summary: &summary,
+        mode,
+        transport: "wireless",
+        from_fixture: true,
+        build,
+        command: "make measure-fixture-reports",
+        root: &root,
+    };
+    jitter::render_jitter_report(&run)
+}
+
+/// AC-12. One report per power-save mode, each naming the mode that was in
+/// force, the transport and the build it measured.
+#[test]
+fn a_jitter_run_writes_one_report_per_power_save_mode_naming_the_mode_the_transport_and_the_build()
+{
+    let dir = scratch("jitter-per-mode");
+    let before = listing(&dir);
+    let build = pinned_build();
+
+    for (mode, name) in [
+        (PowerSaveMode::None, "rig3-jitter-wireless-ps-none.md"),
+        (
+            PowerSaveMode::MinModem,
+            "rig3-jitter-wireless-ps-min-modem.md",
+        ),
+    ] {
+        let body = jitter_report(mode, &build);
+        report::write_report(&dir, name, &body).expect("the scratch directory is writable");
+        assert!(
+            body.contains(&format!("Power save mode in force: **{}**", mode.name())),
+            "the report does not name the mode that was in force: {}",
+            body
+        );
+        assert!(
+            body.contains(mode.platform_name()),
+            "and it names the platform's own spelling too: {}",
+            body
+        );
+        assert!(
+            body.contains("Transport: **wireless**"),
+            "the report does not name the transport: {}",
+            body
+        );
+        assert!(
+            body.contains(&build.commit),
+            "the report does not name the build it measured: {}",
+            body
+        );
+        // And it says, loudly, what a modelled series is not.
+        assert!(
+            body.contains("NOT A MEASUREMENT"),
+            "a report over a committed fixture has to say so: {}",
+            body
+        );
+    }
+
+    let after = listing(&dir);
+    let new: Vec<&String> = after.difference(&before).collect();
+    assert_eq!(
+        new.len(),
+        2,
+        "one report per mode, and these appeared: {:?}",
+        new
+    );
+
+    // The two reports are different numbers, so "one per mode" is a difference
+    // and not two copies of one run.
+    let none = std::fs::read_to_string(dir.join("rig3-jitter-wireless-ps-none.md")).unwrap();
+    let default =
+        std::fs::read_to_string(dir.join("rig3-jitter-wireless-ps-min-modem.md")).unwrap();
+    assert_ne!(none, default);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// AC-12's second half: a report whose mode is not known is REFUSED, and
+/// nothing is written.
+#[test]
+fn a_report_whose_power_save_mode_is_not_known_is_refused_and_nothing_is_written() {
+    let dir = scratch("jitter-no-mode");
+    let (series, _) = jitter_series(PowerSaveMode::None);
+
+    for mode in [None, Some("unknown"), Some(""), Some("WIFI_PS_NONE")] {
+        let mut args = vec![
+            "jitter".to_string(),
+            series.to_string_lossy().into_owned(),
+            "--label".to_string(),
+            "refused".to_string(),
+            "--transport".to_string(),
+            "wireless".to_string(),
+            "--out".to_string(),
+            dir.to_string_lossy().into_owned(),
+        ];
+        if let Some(word) = mode {
+            args.push("--mode".to_string());
+            args.push(word.to_string());
+        }
+        let output = Command::new(env!("CARGO_BIN_EXE_chorus-measure"))
+            .args(&args)
+            .output()
+            .expect("the measure binary runs");
+        let said = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_ne!(
+            output.status.code(),
+            Some(0),
+            "a mode of {:?} was accepted: {}",
+            mode,
+            said
+        );
+        assert!(
+            said.contains("NO REPORT IS WRITTEN"),
+            "the refusal has to say nothing was written: {}",
+            said
+        );
+        assert!(
+            said.contains("none, min-modem, max-modem"),
+            "and name the modes a report may carry: {}",
+            said
+        );
+        assert!(
+            listing(&dir).is_empty(),
+            "a refused run left something behind: {:?}",
+            listing(&dir)
+        );
+    }
+
+    // A transport nobody committed is refused the same way.
+    let output = Command::new(env!("CARGO_BIN_EXE_chorus-measure"))
+        .args([
+            "jitter",
+            series.to_str().unwrap(),
+            "--label",
+            "refused",
+            "--mode",
+            "none",
+            "--transport",
+            "wifi",
+            "--out",
+            dir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("the measure binary runs");
+    let said = String::from_utf8_lossy(&output.stderr).into_owned();
+    assert_ne!(output.status.code(), Some(0), "{}", said);
+    assert!(said.contains("wired, wireless"), "{}", said);
+    assert!(listing(&dir).is_empty());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// AC-18. A report that cannot be written names the path and the reason, exits
+/// non-zero, and leaves no partial file behind.
+#[test]
+fn a_report_that_cannot_be_written_names_the_path_and_leaves_nothing_partial() {
+    // The destination is not there at all.
+    let missing = std::env::temp_dir().join(format!(
+        "chorus-no-such-measurements-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&missing);
+    let err = report::write_report(&missing, "x.md", "body").unwrap_err();
+    assert_eq!(err.condition(), "destination-missing");
+    assert!(err.to_string().contains(&missing.display().to_string()));
+    assert!(!missing.exists(), "the refusal created the destination");
+
+    // The destination exists and is not a directory.
+    let file = std::env::temp_dir().join(format!("chorus-not-a-dir-{}", std::process::id()));
+    std::fs::write(&file, "not a directory").unwrap();
+    let err = report::write_report(&file, "x.md", "body").unwrap_err();
+    assert_eq!(err.condition(), "destination-not-a-directory");
+    assert!(err.to_string().contains(&file.display().to_string()));
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "not a directory",
+        "the refusal wrote over the thing it refused"
+    );
+    let _ = std::fs::remove_file(&file);
+
+    // The destination is a directory that cannot be written to. This is the one
+    // that matters for "no partial file": the body goes to a temporary beside
+    // the destination and is renamed into place, so a denied write has a window
+    // in which a partial file could exist.
+    let locked = scratch("jitter-read-only");
+    let permissions = std::fs::Permissions::from_mode(0o555);
+    std::fs::set_permissions(&locked, permissions).unwrap();
+    let err = report::write_report(&locked, "rig3-jitter-denied.md", "body")
+        .expect_err("a read-only directory cannot hold a report");
+    assert_eq!(err.condition(), "destination-not-writable");
+    assert!(
+        err.to_string().contains("rig3-jitter-denied.md"),
+        "the refusal has to name the path: {}",
+        err
+    );
+    assert!(
+        err.to_string().contains("Nothing partial has been left behind"),
+        "{}",
+        err
+    );
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(
+        listing(&locked).is_empty(),
+        "a denied write left something behind: {:?}",
+        listing(&locked)
+    );
+    let _ = std::fs::remove_dir_all(&locked);
+
+    // And the SHIPPED BINARY does the same, exiting non-zero and naming the
+    // destination it could not write into.
+    let (series, _) = jitter_series(PowerSaveMode::None);
+    let output = Command::new(env!("CARGO_BIN_EXE_chorus-measure"))
+        .args([
+            "jitter",
+            series.to_str().unwrap(),
+            "--label",
+            "denied",
+            "--mode",
+            "none",
+            "--transport",
+            "wireless",
+            "--out",
+            missing.to_str().unwrap(),
+        ])
+        .output()
+        .expect("the measure binary runs");
+    let said = String::from_utf8_lossy(&output.stderr).into_owned();
+    assert_ne!(output.status.code(), Some(0), "{}", said);
+    assert!(
+        said.contains(&missing.display().to_string()),
+        "the refusal has to name the path: {}",
+        said
+    );
+    assert!(!missing.exists());
+}
+
+/// A second analysis over the same series reports identical numbers.
+#[test]
+fn a_second_jitter_run_over_the_same_series_reports_identical_numbers() {
+    for mode in [PowerSaveMode::None, PowerSaveMode::MinModem] {
+        let (path, _) = jitter_series(mode);
+        let series = freerun::read_series(&path).unwrap();
+        assert_eq!(
+            jitter::analyse(&series).unwrap(),
+            jitter::analyse(&series).unwrap()
+        );
+    }
+    let build = pinned_build();
+    let once = jitter_report(PowerSaveMode::None, &build);
+    let twice = jitter_report(PowerSaveMode::None, &build);
+    assert_eq!(once, twice);
+}
+
+/// The committed jitter reports really are in `docs/measurements/`, one per
+/// mode, and each carries the figures its committed series produces today.
+#[test]
+fn the_committed_jitter_reports_are_in_the_measurements_directory_and_are_reproducible() {
+    let dir = repository_root().join(MEASUREMENTS_DIR);
+    for (mode, name) in [
+        (PowerSaveMode::None, "rig3-jitter-wireless-ps-none.md"),
+        (
+            PowerSaveMode::MinModem,
+            "rig3-jitter-wireless-ps-min-modem.md",
+        ),
+    ] {
+        let path = dir.join(name);
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{} is committed: {}", path.display(), e));
+
+        // It names a build, as a forty character hexadecimal commit.
+        let line = text
+            .lines()
+            .find(|l| l.starts_with("Build measured: "))
+            .unwrap_or_else(|| panic!("{} names no build", name));
+        let commit: String = line.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+        assert!(commit.len() >= 40, "{} is not a commit: {}", name, line);
+
+        assert!(
+            text.contains(&format!("Power save mode in force: **{}**", mode.name())),
+            "{} does not name the mode that was in force",
+            name
+        );
+        assert!(text.contains("Transport: **wireless**"), "{}", name);
+
+        // And the figures are the ones the committed series produces today,
+        // which is what makes the saved report reproducible by a reader who did
+        // not run it.
+        let (series_path, _) = jitter_series(mode);
+        let series = freerun::read_series(&series_path).unwrap();
+        let summary = jitter::analyse(&series).unwrap();
+        for (what, rendered) in [
+            ("median", format!("{:.1} us", summary.median_us)),
+            ("p95", format!("{:.1} us", summary.p95_us)),
+            ("maximum", format!("{:.1} us", summary.max_us)),
+            ("peak to peak", format!("{:.1} us", summary.peak_to_peak_us)),
+        ] {
+            assert!(
+                text.contains(&rendered),
+                "{} does not carry the {} its series produces ({}); re-run `make \
+                 measure-fixture-reports`",
+                name,
+                what,
+                rendered
+            );
+        }
+    }
+}
+
+/// The two committed series are materially different, so a check over them can
+/// see a difference at all.
+///
+/// Without this the pair could quietly become two copies of one shape and every
+/// assertion above would still pass, which would make the whole "one report per
+/// mode" arrangement decorative.
+#[test]
+fn the_two_committed_series_differ_the_way_the_two_modes_do() {
+    let disabled = {
+        let (path, _) = jitter_series(PowerSaveMode::None);
+        jitter::analyse(&freerun::read_series(&path).unwrap()).unwrap()
+    };
+    let default = {
+        let (path, _) = jitter_series(PowerSaveMode::MinModem);
+        jitter::analyse(&freerun::read_series(&path).unwrap()).unwrap()
+    };
+    assert!(
+        default.median_us > disabled.median_us * 10.0,
+        "the platform default's series is not materially noisier than the disabled one: {:.1} us \
+         against {:.1} us",
+        default.median_us,
+        disabled.median_us
+    );
+    assert!(
+        default.p95_us > disabled.p95_us * 10.0,
+        "{:.1} us against {:.1} us",
+        default.p95_us,
+        disabled.p95_us
+    );
+}
+
+/// The floor a distribution is computed from, and the words a report may name,
+/// agree with the committed configuration.
+#[test]
+fn the_jitter_analysis_agrees_with_the_committed_configuration() {
+    let config = MeasureConfig::read(&repository_root()).unwrap();
+    assert_eq!(
+        jitter::MIN_OBSERVATIONS,
+        config.free_run_min_points,
+        "the floor under a distribution and the floor under a slope fit are the same number for \
+         the same reason, and they have drifted apart"
+    );
+
+    let text = std::fs::read_to_string(repository_root().join("config/transport.conf"))
+        .expect("config/transport.conf is committed");
+    let declared: Vec<String> = text
+        .lines()
+        .filter_map(|line| {
+            let line = match line.find('#') {
+                Some(at) => &line[..at],
+                None => line,
+            };
+            line.split_once('=').and_then(|(k, v)| {
+                (k.trim() == "transports").then(|| v.trim().to_string())
+            })
+        })
+        .collect();
+    assert_eq!(declared.len(), 1, "config/transport.conf names transports once");
+    let declared: Vec<&str> = declared[0].split_whitespace().collect();
+    assert_eq!(
+        declared, jitter::TRANSPORTS,
+        "the transports a report may name and the ones config/transport.conf commits have \
+         drifted apart"
+    );
 }
 
 /// The figures in the committed lag report are the figures the estimator

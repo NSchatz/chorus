@@ -490,6 +490,13 @@ pub fn decode_command(text: &str) -> Result<Command, Refusal> {
             };
             Command::Mute { zone, muted }
         }
+        "transport" => {
+            return Err(Refusal::rejected(
+                "t",
+                format!("'transport' is not a command in catalog version {}. {}",
+                        CATALOG_VERSION, TRANSPORT_IS_CONFIGURED),
+            ))
+        }
         other => {
             return Err(Refusal::rejected(
                 "t",
@@ -511,10 +518,27 @@ fn version_list() -> String {
         .join(", ")
 }
 
+/// What a refusal says when a message tries to change a zone's transport.
+///
+/// The rule is not new and this is not a new rule: `docs/control-plane.md`
+/// already states that the set of zones is CONFIGURED and not commanded,
+/// because the rooms in a house are a fact about a building. Which wire or
+/// radio a room is on is the same kind of fact, so it is declared in the same
+/// place, and a message that tries to change it gets told where it is declared
+/// rather than a generic complaint about an unknown field.
+pub const TRANSPORT_IS_CONFIGURED: &str =
+    "a zone's transport is CONFIGURED and not commanded, exactly as the set of zones is: it is \
+     declared with '--zone <id>=<transport>' on the server's command line, and the tiers and \
+     what each is held to are committed in config/transport.conf. No message in this catalog \
+     changes it, and nothing in this message has been applied";
+
 /// Refuse a message carrying a field the command does not declare.
 fn expect_fields(members: &[(String, Value)], declared: &[&str]) -> Result<(), Refusal> {
     for (key, _) in members {
         if !declared.contains(&key.as_str()) {
+            if key == "transport" {
+                return Err(Refusal::rejected("transport", TRANSPORT_IS_CONFIGURED.to_string()));
+            }
             return Err(Refusal::rejected(
                 key,
                 format!(

@@ -72,6 +72,16 @@ fn main() -> ExitCode {
     };
     if let Err(e) = config.validate() {
         report("configuration refused", &e.to_string());
+        // AC-8: an endpoint that cannot apply the playout latency its group is
+        // held to STOPS, and says so on the line every verification reads, so
+        // that "and plays nothing" is visible rather than inferred from an exit
+        // code.
+        if matches!(
+            e,
+            chorus_client_linux::config::ConfigError::WirelessPlayoutLatencyNotApplied { .. }
+        ) {
+            status("stopped reason=wireless-playout-latency-not-applied played=0 frames_played=0");
+        }
         return ExitCode::from(EXIT_CONFIG);
     }
 
@@ -336,9 +346,19 @@ fn play(
     } else {
         format!("{}.session{}", config.delay_log, session)
     };
+    // The tier rides on the line that already says what this run is configured
+    // with, so one grep answers "what is this endpoint held to" for a wired and
+    // a wireless run alike.
+    //
+    // `power_save` is `unknown` on this endpoint and says so rather than
+    // claiming a mode. Turning Linux modem power save off needs privilege and a
+    // different authority than the one this phase cites, which is the ESP-IDF
+    // default; a Linux endpoint in a wireless zone gets the deeper buffer and
+    // is honest about not knowing what its own radio is doing.
     status(&format!(
         "starting server={} device={} min_us={} max_us={} start_fill_us={} \
-         device_target_us={} delay_log={} session={} zone={}",
+         device_target_us={} delay_log={} session={} zone={} transport={} bound_us={} \
+         playout_latency_us={} power_save=unknown",
         server,
         config.device,
         config.min_us,
@@ -347,7 +367,10 @@ fn play(
         config.device_target_us,
         delay_log,
         session,
-        config.zone
+        config.zone,
+        config.transport,
+        config.transport.bound_us(),
+        config.sync.playout_latency_ns / 1_000
     ));
 
     let stream = match TcpStream::connect(server) {

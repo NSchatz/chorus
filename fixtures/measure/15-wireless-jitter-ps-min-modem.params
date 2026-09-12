@@ -1,0 +1,28 @@
+# A MODELLED offset series for a wireless endpoint with the PLATFORM DEFAULT
+# left in place, which the carried ESP-IDF guide states is WIFI_PS_MIN_MODEM.
+#
+# NOT A MEASUREMENT, for exactly the reasons its sibling
+# 14-wireless-jitter-ps-none.params gives, and generated from the parameters
+# below byte for byte by `make measure-fixtures`.
+#
+# The jitter level is a SHAPE and not a claim. Under minimum modem sleep the
+# carried guide says "the delay in receiving Wi-Fi data may be the same as the
+# DTIM cycle", and a DTIM cycle is typically a few beacon intervals of about
+# 102.4 ms; 40 ms of one sigma is that order of magnitude. What the number is
+# here for is that the two committed series differ, so a check over them can see
+# a difference at all. No timing claim rests on it and none may.
+
+kind = free-run
+output = 15-wireless-jitter-ps-min-modem.offsets
+label = wireless-ps-min-modem-MODELLED
+
+points = 1200
+interval_s = 0.5
+rate_ppm = 0.0
+
+# 40 ms of jitter, one sigma: fifty times the sibling series, which is the
+# difference this phase exists to put on the record rather than argue about.
+jitter_us = 40000.0
+
+initial_offset_ns = 0
+seed = 42

@@ -75,11 +75,12 @@ use std::thread;
 use std::time::Duration;
 
 use chorus_audio::{MonotonicTimeline, StreamFormat};
+use chorus_control::transport::ZoneTransports;
 use chorus_discovery::dnssd::{Advertisement, AUDIO_SERVICE, CONTROL_SERVICE};
 use chorus_discovery::net::{advertisable_addresses, Advertiser};
 use chorus_hostctl::ThreadRegistry;
 use chorus_server::clients::ClientPool;
-use chorus_server::config::ServerConfig;
+use chorus_server::config::{ServerConfig, ServerConfigError};
 use chorus_server::control::{initial_state, ControlPlane, ControlState};
 use chorus_server::hostreport::{
     decide_memory_lock, register_ordinary_thread, scheduling_report, take_contract_for_this_thread,
@@ -135,6 +136,16 @@ fn main() -> ExitCode {
         Ok(c) => c,
         Err(e) => {
             report("configuration refused", &e.to_string());
+            // AC-5 asks for "serves no audio and no control state" as an
+            // observable and not as an absence, so the zone-tier refusal says
+            // so positively. Nothing has been bound at this point: the audio
+            // socket, the control socket and the zone state are all still
+            // ahead of this line.
+            if matches!(e, ServerConfigError::NotATransport { .. }) {
+                println!(
+                    "chorus-server: stopped reason=unknown-transport chunks_sent=0 zones_served=0"
+                );
+            }
             return ExitCode::from(EXIT_CONFIG);
         }
     };
@@ -160,6 +171,19 @@ fn main() -> ExitCode {
         return ExitCode::from(EXIT_CONFIG);
     }
 
+    // Every zone's tier, before anything is bound and before a byte is served.
+    //
+    // WIFI-7's AC-6: "SHALL report, for every zone it serves, the transport in
+    // force and the bound that transport is held to, so that no zone's tier is
+    // implicit". Here rather than beside the control plane, because a zone is
+    // declared on this command line whether or not a control channel is asked
+    // for, and a tier reported only sometimes is a tier a reader has to guess
+    // at the rest of the time.
+    let transports = ZoneTransports::new(&config.zone_transports);
+    for zone in &config.zones {
+        println!("chorus-server: {}", transports.report(zone));
+    }
+
     // The control channel is bound HERE: before a thread exists, before the
     // audio socket is bound, and before anything could be served. AC-9 asks
     // that a server which cannot bind its control address exits non-zero
@@ -182,6 +206,17 @@ fn main() -> ExitCode {
                 return ExitCode::from(EXIT_CONTROL);
             }
         };
+        // WIFI-7's AC-7: a group holding any wireless zone is held to the
+        // wireless buffer policy and the wireless bound, and the report names
+        // the zone whose declaration set it. The groups come from the state
+        // that was just loaded, so a group a restart reloaded is reported the
+        // same way a configured one is.
+        for group in ZoneTransports::groups(zones.zones()) {
+            println!(
+                "chorus-server: {}",
+                transports.group_tier(zones.zones(), &group).report()
+            );
+        }
         let zone_count = zones.zones().len();
         let state = Arc::new(ControlState::new(
             zones,

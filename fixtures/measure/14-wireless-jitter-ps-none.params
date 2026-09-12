@@ -1,0 +1,33 @@
+# A MODELLED offset series for a wireless endpoint with modem sleep DISABLED.
+#
+# NOT A MEASUREMENT. Nothing in this repository has ever put an ESP32-S3 on a
+# wireless link, and this file does not pretend otherwise: it is generated from
+# the parameters below, byte for byte, by `make measure-fixtures`. What it
+# exists for is to make the SHAPE and the ARITHMETIC of a jitter report
+# gradeable with no radio present, which is what `chorus#WIFI-7` needs from it.
+#
+# The jitter level is a SHAPE and not a claim. It is the order of magnitude
+# BRIEF.md section 6 attributes to "Wi-Fi with power save off, low single-digit
+# ms with excursions", chosen so the two committed series differ the way the
+# phase says the two modes differ. No timing claim rests on it and none may:
+# the measured version of this run is AC-3, it is operator graded, and
+# docs/verification-record.md records it as NOT passed.
+
+kind = free-run
+output = 14-wireless-jitter-ps-none.offsets
+label = wireless-ps-none-MODELLED
+
+# Ten minutes of observations, twice a second, which is the cadence
+# config/sync.conf's sync_interval_ms puts on the real exchange.
+points = 1200
+interval_s = 0.5
+
+# No drift. A jitter characterization is about the spread and not about a rate;
+# the free-run baseline is what measures a rate, and it has its own fixture.
+rate_ppm = 0.0
+
+# 800 us of jitter, one sigma.
+jitter_us = 800.0
+
+initial_offset_ns = 0
+seed = 41

@@ -8,6 +8,7 @@
 //! ```text
 //! chorus-measure lag <capture.wav> --label <name> [--out <dir>] [--baseline <file>]
 //! chorus-measure free-run <series.offsets> --label <name> [--out <dir>] [--source fixture|hardware]
+//! chorus-measure jitter <series.offsets> --label <name> --mode <power save> --transport <t>
 //! chorus-measure fixtures [--check]
 //! ```
 
@@ -17,6 +18,7 @@ use std::process::ExitCode;
 use chorus_audio::MonotonicTimeline;
 use chorus_measure::config::MeasureConfig;
 use chorus_measure::freerun::{self, SlopeSettings};
+use chorus_measure::jitter::{self, JitterError, JitterRun, PowerSaveMode};
 use chorus_measure::lag::{self, LagSettings};
 use chorus_measure::report::{
     self, Baseline, FreeRunRun, LagRun, BASELINE_FILE, MEASUREMENTS_DIR,
@@ -28,6 +30,8 @@ usage:
   chorus-measure lag <capture.wav> --label <name> [--out <dir>] [--baseline <file>]
   chorus-measure free-run <series.offsets> --label <name> [--out <dir>]
                           [--source fixture|hardware] [--baseline-out <file>]
+  chorus-measure jitter <series.offsets> --label <name> --mode none|min-modem|max-modem
+                        --transport wired|wireless [--out <dir>] [--measured]
   chorus-measure fixtures [--check]
 
 Every threshold this rig compares against is declared in config/measure.conf.
@@ -43,6 +47,7 @@ fn main() -> ExitCode {
     let result = match command.as_str() {
         "lag" => lag_command(&args[1..]),
         "free-run" => free_run_command(&args[1..]),
+        "jitter" => jitter_command(&args[1..]),
         "fixtures" => fixtures_command(&args[1..]),
         "--help" | "-h" | "help" => {
             println!("{}", USAGE);
@@ -275,6 +280,100 @@ fn free_run_command(args: &[String]) -> Result<(), String> {
         "chorus-measure: recorded the free-run baseline in {}",
         baseline_out.display()
     );
+    Ok(())
+}
+
+/// `chorus#WIFI-7`'s characterization, host side: a series in, one report per
+/// power-save mode into `docs/measurements/`.
+///
+/// The mode is REQUIRED and has no default. A jitter figure taken with modem
+/// sleep disabled and one taken with the platform default left in place are
+/// measurements of different systems, and a report that did not say which was in
+/// force would be a number nobody could use.
+fn jitter_command(args: &[String]) -> Result<(), String> {
+    let options = Options::parse(args, &["label", "out", "mode", "transport"])?;
+    let series_path = options
+        .positional
+        .first()
+        .ok_or_else(|| format!("a series is required\n\n{}", USAGE))?;
+    let label = options
+        .value("label")
+        .ok_or_else(|| format!("--label is required\n\n{}", USAGE))?;
+
+    let mode = match options.value("mode") {
+        Some(word) => PowerSaveMode::parse(word).ok_or_else(|| {
+            JitterError::ModeNotKnown {
+                offered: word.to_string(),
+                permitted: PowerSaveMode::permitted(),
+            }
+            .to_string()
+        })?,
+        None => {
+            return Err(JitterError::ModeNotKnown {
+                offered: String::new(),
+                permitted: PowerSaveMode::permitted(),
+            }
+            .to_string())
+        }
+    };
+    let transport = options.value("transport").unwrap_or("wireless").to_string();
+    if !jitter::TRANSPORTS.contains(&transport.as_str()) {
+        return Err(JitterError::TransportNotKnown {
+            offered: transport,
+            permitted: jitter::TRANSPORTS.join(", "),
+        }
+        .to_string());
+    }
+
+    let root = repository_root();
+    let out = options
+        .value("out")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.join(MEASUREMENTS_DIR));
+
+    let series = freerun::read_series(Path::new(series_path)).map_err(|e| e.to_string())?;
+    let summary = jitter::analyse(&series).map_err(|e| e.to_string())?;
+    let build = report::build_identity(&root).map_err(|e| e.to_string())?;
+
+    // A series is a fixture unless the run says it was taken over a real link.
+    // The default is the cautious one: a report that wrongly says "fixture" is
+    // an under-claim, and one that wrongly says "measured" is evidence that is
+    // not there.
+    let from_fixture = !options.flag("measured");
+    let command = format!(
+        "cargo run -p chorus-measure --bin chorus-measure -- jitter {} --label {} --mode {} \
+         --transport {}",
+        report::relative_display(Path::new(series_path), &root),
+        label,
+        mode.name(),
+        transport
+    );
+    let run = JitterRun {
+        label,
+        series: &series,
+        summary: &summary,
+        mode,
+        transport: &transport,
+        from_fixture,
+        build: &build,
+        command: &command,
+        root: &root,
+    };
+    let name = format!("rig3-jitter-{}.md", slug(label));
+    let written = report::write_report(&out, &name, &jitter::render_jitter_report(&run))
+        .map_err(|e| e.to_string())?;
+    println!(
+        "chorus-measure: power save {}, transport {}: median {:.1} us, p95 {:.1} us, max {:.1} \
+         us, peak to peak {:.1} us over {} observations",
+        mode.name(),
+        transport,
+        summary.median_us,
+        summary.p95_us,
+        summary.max_us,
+        summary.peak_to_peak_us,
+        summary.observations
+    );
+    println!("chorus-measure: wrote {}", written.display());
     Ok(())
 }
 
