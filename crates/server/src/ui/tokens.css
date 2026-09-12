@@ -117,10 +117,19 @@
   --leading-body: 1.5;
   --tracking-wordmark: 0.02em;
 
-  /* The two faces. The UI face is whatever the operating system calls its own;
-   * the figure face is fixed-advance, so a column of figures lines up. */
-  --font-system-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-system-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* The two faces. The UI face is the one the operating system dresses its own
+   * interface in; the figure face is fixed-advance, so a column of figures
+   * lines up.
+   *
+   * The UI stack names each platform's face and ends at the generic
+   * `sans-serif`. It does NOT name `system-ui`, and that is the load-bearing
+   * part: the keyword resolves through fontconfig, a system is free to point it
+   * at a fixed-advance family, and one that does collapses the two faces here
+   * into one. The generic keywords are the two with a guaranteed shape, so each
+   * stack ends at one, and `make verify-ui` measures which shape arrived rather
+   * than taking either on trust. */
+  --font-ui: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 /* tier: semantic, theme: light */
@@ -265,6 +274,6 @@
   /* The two type roles. Prose, headings and controls are set in the UI face;
    * anything whose column alignment carries meaning is set in the figure face,
    * with tabular figures so equal digits take equal width. */
-  --face-prose: var(--font-system-ui);
-  --face-figure: var(--font-system-mono);
+  --face-prose: var(--font-ui);
+  --face-figure: var(--font-mono);
 }
