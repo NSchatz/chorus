@@ -44,6 +44,11 @@ wait on it, and never buy determinism with headroom.**
   verify-control-determinism`, which runs the checks for the repetitions
   `config/verification.conf` commits to, on one build, on two CPUs, and runs them
   again against a plane too small to serve them and requires that to go red.
+- **No check hands a server a port nobody is holding.** Every server these checks
+  start is started on `127.0.0.1:0` and asked where it landed; the one check that
+  needs an address of its own holds it across the whole run. The repetition count
+  is floored at fifty whether it comes from the committed constant or from
+  `CHORUS_DETERMINISM_REPETITIONS`.
 
 ## Reasoning
 
@@ -81,6 +86,50 @@ out would be fifteen seconds of nothing per check. A command that is applied is
 fanned out to every subscriber, so provoking one turns a fifteen-second wait into
 a write that fails at once and a slot that comes back.
 
+### Why the ports are the server's and not the check's
+
+The worker pool is not the only thing these four checks share. Each of them
+starts a server, and the way to give a server a loopback address is to ask the
+kernel for a free port. Doing that in the TEST process means binding
+`127.0.0.1:0`, reading the port, closing the socket and passing the number to the
+child: between the close and the child's bind the port is held by nobody, and one
+of these checks deliberately holds a loopback port of its own while the others
+run. A port taken in that interval makes the server exit on a bind it could not
+make, which reaches the check as a server that never said it was listening. That
+is a red run about ports, on an unchanged build, for a question that is about
+threads.
+
+The interval is the defect, not its width, so it is removed rather than narrowed.
+`chorus-server` already resolves `127.0.0.1:0` for both of its sockets and prints
+where each one landed - `control listening on=` through `ControlPlane::address()`
+and `listening on=` through the audio listener's `local_addr()` - so the process
+that binds a socket can be the process that holds it, and there is nothing to
+hand over. Retrying a failed start on fresh ports would have been the other
+answer; it keeps the interval and adds a path that only runs when the race that
+should not exist has happened.
+
+The check that needs an address of its own is the unbindable-control-address one,
+which must be told an address something else holds. It holds both of its
+addresses - the taken control address and the audio address - from before the
+server starts until after it has exited. Holding the audio address is also a
+better assertion than the one it replaces: "the audio port is still free
+afterwards" could be falsified by any other process, while a server that had got
+as far as an audio listener on a held port would have been refused on it and
+would have said so by name.
+
+### Why the repetition floor binds the override too
+
+`CHORUS_DETERMINISM_REPETITIONS` exists to run MORE repetitions than the
+committed count, and the floor applies to it for the same reason it applies to
+the constant: the number of repetitions is what the claim is made of, so an
+override under the floor would be a way to report the determinism claim
+satisfied out of one lucky scheduling. `require_soak_window` in `tools/lib.sh`
+already holds `CHORUS_SOAK_SECONDS` to exactly this rule - "a shorter run is a
+different claim and this will not make it" - and a check whose claim can be
+shrunk from the environment is a check with a way around it. Running the checks a
+handful of times while working is running the checks, not making the claim, and
+`make one` is how that is done.
+
 ### Why the repetition count is committed rather than chosen by the script
 
 It is a constant a check rests on, so it lives in `config/verification.conf` with
@@ -93,4 +142,7 @@ its own repetition count could be made to pass by making that number one.
 Anything about the shipped control plane. No behaviour of `chorus-server` is
 changed by it: the pool is still fixed, the refusal is still `503` by name, and
 the observable the checks synchronise on - the subscriber count in
-`GET /api/report` - was already published for AC-11's report half.
+`GET /api/report` - was already published for AC-11's report half. The two
+addresses the checks now read back are already printed by the shipped binary for
+the same reason a person reading a log needs them; nothing was added to it, and
+`127.0.0.1:0` is an address it already accepted.

@@ -40,12 +40,28 @@
 //! is the two things that would hide the hazard instead of grading it: the
 //! worker ceiling is not raised to buy headroom, and the checks are not
 //! serialized.
+//!
+//! # No check here hands a server a port nobody is holding
+//!
+//! The other way these checks could be decided by something other than the
+//! property they grade is the sockets. They run four at a time in one binary,
+//! and one of them deliberately HOLDS a loopback port for its whole run, so a
+//! port this process binds, reads and releases in order to pass the number to a
+//! server is a port anything in this binary can take in between. The server then
+//! exits on a bind it could not make, and the check sees a server that never
+//! said it was listening: a red run with nothing to do with AC-12.
+//!
+//! So no port here is released and then handed over. Every server is started on
+//! [`EPHEMERAL`] and asked where it landed, which the server already says of
+//! both its sockets; the process that binds a socket is the process that holds
+//! it, and there is no interval to lose it in. The one check that needs a port
+//! of its own holds it from before its server starts until after it has exited.
 
 use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
-use std::process::{Child, ChildStdout, Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -98,12 +114,13 @@ const PROVOKE_EVERY: usize = 5;
 /// scheduler.
 const SETTLE: Duration = Duration::from_millis(300);
 
-fn free_port() -> u16 {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
-    port
-}
+/// A loopback address with the port left to the kernel.
+///
+/// The server resolves it when it binds and prints where it landed, for the
+/// audio socket (`crates/server/src/main.rs`, `listener.local_addr()`) and for
+/// the control channel (`ControlPlane::address()`) alike, so nothing here has to
+/// choose a port on its behalf. See the module note on ports.
+const EPHEMERAL: &str = "127.0.0.1:0";
 
 struct Server(Child);
 
@@ -120,20 +137,37 @@ struct ReportedThread {
     tid: u32,
 }
 
-fn pump(stdout: ChildStdout) -> (thread::JoinHandle<()>, mpsc::Receiver<String>) {
-    let (tx, rx) = mpsc::channel::<String>();
-    let handle = thread::spawn(move || {
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            if tx.send(line).is_err() {
+/// Carry one of the child's streams into `tx`, line by line, labelled.
+///
+/// BOTH streams are carried, and into the same channel. The server reports every
+/// refusal on stderr (`report` in `crates/server/src/main.rs`) and says it
+/// stopped on stdout, so a run that discarded stderr would be a run whose
+/// failure could not say why it failed: that is how a server which could not
+/// bind a socket reached this file as nothing but "it never said it was
+/// listening". The label is what keeps the two apart in a quoted failure, and it
+/// is a prefix so that no stderr line can be mistaken for one of the stdout
+/// lines these checks read.
+fn pump<R: Read + Send + 'static>(
+    stream: R,
+    tx: mpsc::Sender<String>,
+    label: &'static str,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        for line in BufReader::new(stream).lines().map_while(Result::ok) {
+            if tx.send(format!("{}{}", label, line)).is_err() {
                 return;
             }
         }
-    });
-    (handle, rx)
+    })
 }
 
-/// Start the server and read its output until it says it is listening for
-/// audio, which is after the scheduling report has been printed.
+/// Start the server on kernel-assigned ports and read its output until it says
+/// it is listening for audio, which is after the scheduling report has been
+/// printed.
+///
+/// The two sockets are asked for as [`EPHEMERAL`] and read back off the lines
+/// the server prints about them, so this process never hands over a port it is
+/// not holding. See the module note on ports.
 fn start(extra: &[String]) -> (Server, u32, mpsc::Receiver<String>, Vec<String>) {
     let mut args = vec![
         "--source".to_string(),
@@ -142,19 +176,26 @@ fn start(extra: &[String]) -> (Server, u32, mpsc::Receiver<String>, Vec<String>)
         "30000".to_string(),
         "--allow-non-realtime".to_string(),
         "--allow-unlocked-memory".to_string(),
+        "--listen".to_string(),
+        EPHEMERAL.to_string(),
+        "--control-listen".to_string(),
+        EPHEMERAL.to_string(),
     ];
     args.extend(extra.iter().cloned());
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_chorus-server"))
         .args(&args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .expect("the server binary runs");
     let pid = child.id();
     let stdout = child.stdout.take().expect("stdout was piped");
+    let stderr = child.stderr.take().expect("stderr was piped");
     let server = Server(child);
-    let (lines, rest) = pump(stdout);
+    let (tx, rest) = mpsc::channel::<String>();
+    let on_stdout = pump(stdout, tx.clone(), "");
+    let on_stderr = pump(stderr, tx, "stderr: ");
 
     let mut startup = Vec::new();
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -172,10 +213,13 @@ fn start(extra: &[String]) -> (Server, u32, mpsc::Receiver<String>, Vec<String>)
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            // Both pipes are closed, which is this server gone. Whatever it said
+            // on its way out is in `startup`, stderr included.
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }
-    drop(lines);
+    drop(on_stdout);
+    drop(on_stderr);
     panic!("the server never reported a bound socket; it said: {:?}", startup);
 }
 
@@ -213,6 +257,22 @@ fn control_address(startup: &[String]) -> String {
             Some(rest.split_whitespace().next()?.to_string())
         })
         .unwrap_or_else(|| panic!("the server never said where its control channel is: {:?}", startup))
+}
+
+/// The audio address the server printed, with its ephemeral port resolved.
+///
+/// The same line `start` waits for, read for the address rather than the fact of
+/// it: `main.rs` prints `local_addr()` here, so this is where the kernel put the
+/// socket and not what was asked for.
+fn audio_address(startup: &[String]) -> String {
+    startup
+        .iter()
+        .find_map(|line| {
+            let at = line.find("chorus-server: listening on=")?;
+            let rest = &line[at + "chorus-server: listening on=".len()..];
+            Some(rest.split_whitespace().next()?.to_string())
+        })
+        .unwrap_or_else(|| panic!("the server never said where its audio socket is: {:?}", startup))
 }
 
 /// The ceiling the first check's control plane is started with.
@@ -548,9 +608,15 @@ impl Plane {
                 return;
             }
             if started.elapsed() >= SERVICE_DEADLINE {
+                // One fact, one spelling. `serve` above names the ceiling and
+                // the attachments held in exactly these words and
+                // `tools/control-determinism.sh` requires a starved run to say
+                // them, so a failure that reached the deadline here rather than
+                // there has to be readable by the same reader.
                 panic!(
-                    "the control plane says {} event-stream subscribers are attached after {:?} \
-                     and this check needs {}. Control workers in force: {}. Attachments held: {}",
+                    "the control plane says {} event-stream subscribers are attached after {:?}, \
+                     and this check needs {}.\n  \
+                     control workers in force: {}\n  attachments held:         {}",
                     seen,
                     started.elapsed(),
                     wanted,
@@ -602,16 +668,10 @@ fn answer_past_the_ceiling(address: &str) -> String {
 
 #[test]
 fn the_control_plane_creates_every_thread_it_will_run_before_the_report_is_taken() {
-    let audio = free_port();
-    let control = free_port();
     let workers = control_workers();
     let (server, pid, _rest, startup) = start(&[
-        "--listen".to_string(),
-        format!("127.0.0.1:{}", audio),
         "--max-clients".to_string(),
         MAX_CLIENTS.to_string(),
-        "--control-listen".to_string(),
-        format!("127.0.0.1:{}", control),
         "--control-workers".to_string(),
         workers.to_string(),
         "--zone".to_string(),
@@ -696,7 +756,8 @@ fn the_control_plane_creates_every_thread_it_will_run_before_the_report_is_taken
 
     // And the same again, with the audio path busy, because that is the
     // combination the deployment actually runs.
-    let mut client = TcpStream::connect(("127.0.0.1", audio)).expect("the server is listening");
+    let mut client =
+        TcpStream::connect(audio_address(&startup).as_str()).expect("the server is listening");
     client.set_read_timeout(Some(READ_TIMEOUT)).unwrap();
     let mut scratch = vec![0u8; 65_536];
     assert!(client.read(&mut scratch).expect("audio comes down") > 0);
@@ -719,15 +780,9 @@ fn the_control_plane_creates_every_thread_it_will_run_before_the_report_is_taken
 
 #[test]
 fn a_subscriber_past_the_ceiling_is_refused_by_name_rather_than_served_by_a_new_thread() {
-    let audio = free_port();
-    let control = free_port();
     let (server, pid, _rest, startup) = start(&[
-        "--listen".to_string(),
-        format!("127.0.0.1:{}", audio),
         "--max-clients".to_string(),
         "1".to_string(),
-        "--control-listen".to_string(),
-        format!("127.0.0.1:{}", control),
         "--control-workers".to_string(),
         "2".to_string(),
         "--zone".to_string(),
@@ -773,14 +828,24 @@ fn a_control_address_that_cannot_be_bound_stops_the_server_before_it_serves_audi
     // reporting itself as controllable."
     //
     // The address is genuinely taken: this test holds it.
-    let taken = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+    let taken = std::net::TcpListener::bind(EPHEMERAL).expect("a loopback port");
     let address = taken.local_addr().unwrap().to_string();
-    let audio = free_port();
+    // And the audio address is one this test holds too, from before the server
+    // starts until after it has exited. That is the race-free form of "nothing
+    // was ever bound to it": a port released and looked at again afterwards
+    // could have been taken by anything in between, and the checks in this
+    // binary that start servers are exactly such an anything. Held, it cannot
+    // have been bound by this server, and a server that had got as far as its
+    // audio listener would have failed ON IT and said so - naming it, with the
+    // transport exit code instead of the control one. The assertions below are
+    // what would catch that.
+    let audio = std::net::TcpListener::bind(EPHEMERAL).expect("a loopback port");
+    let audio_address = audio.local_addr().unwrap().to_string();
 
     let output = Command::new(env!("CARGO_BIN_EXE_chorus-server"))
         .args([
             "--listen",
-            &format!("127.0.0.1:{}", audio),
+            &audio_address,
             "--source",
             "tone",
             "--allow-non-realtime",
@@ -821,11 +886,22 @@ fn a_control_address_that_cannot_be_bound_stops_the_server_before_it_serves_audi
         "and nothing was ever put on it: {}",
         said
     );
+    // The audio socket was never even reached, which is the strongest form of
+    // "did not serve audio". This check holds that address, so a server that had
+    // tried to bind it would have been refused and would have reported that
+    // refusal by name - and it says nothing about it at all.
+    assert!(
+        !said.contains("the listen address could not be bound"),
+        "the server stopped at the control channel, before the audio socket: {}",
+        said
+    );
+    assert!(
+        !said.contains(&audio_address),
+        "the audio address was never reached, so nothing should name it: {}",
+        said
+    );
 
-    // The audio port is still free, which is the strongest form of "did not
-    // serve audio": nothing was ever bound to it.
-    std::net::TcpListener::bind(("127.0.0.1", audio))
-        .expect("the audio port was never bound by the refused server");
+    drop(audio);
     drop(taken);
 }
 
@@ -838,19 +914,20 @@ fn a_state_file_this_build_cannot_read_stops_the_server_the_same_way() {
         Instant::now().elapsed().as_nanos()
     ));
     std::fs::write(&path, "format = 1\nserial = 1\n\n[zone kitchen]\nname = K\n").unwrap();
-    let audio = free_port();
-    let control = free_port();
 
+    // Both addresses are left to the kernel, and neither is ever bound: the
+    // state file is read before the control channel is bound, which is the
+    // ordering this check is about.
     let output = Command::new(env!("CARGO_BIN_EXE_chorus-server"))
         .args([
             "--listen",
-            &format!("127.0.0.1:{}", audio),
+            EPHEMERAL,
             "--source",
             "tone",
             "--allow-non-realtime",
             "--allow-unlocked-memory",
             "--control-listen",
-            &format!("127.0.0.1:{}", control),
+            EPHEMERAL,
             "--state-file",
             &path.display().to_string(),
         ])

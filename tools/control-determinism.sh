@@ -23,16 +23,21 @@
 # tools/unrun-checks-are-visibly-unrun.sh derives.
 #
 #   ./tools/control-determinism.sh
-#   CHORUS_DETERMINISM_REPETITIONS=5 ./tools/control-determinism.sh
+#   CHORUS_DETERMINISM_REPETITIONS=500 ./tools/control-determinism.sh
 
 source "$(dirname "$0")/lib.sh"
 
-# The floor the committed repetition count may never go under.
+# The floor the repetition count may never go under, committed or overridden.
 #
 # Fifty is not a measurement of anything; it is the smallest number that makes
 # the claim "this is deterministic" cost more than one lucky scheduling. It is a
 # FLOOR and not a default: lowering the committed constant under it fails this
-# check by name rather than quietly buying a faster build.
+# check by name rather than quietly buying a faster build, and so does an
+# override that grants fewer, because the number of repetitions IS the claim and
+# a shorter run is a different one. `require_soak_window` in tools/lib.sh holds
+# CHORUS_SOAK_SECONDS to the same rule for the same reason. Running the checks
+# fewer times than that is running the checks, not making this claim: the binary
+# itself is there for that, and `make one` runs it.
 MINIMUM_REPETITIONS=50
 
 # The checks this runs, and the package they live in.
@@ -69,7 +74,10 @@ positive_integer() {
 # --- the repetition count ----------------------------------------------------
 #
 # Committed, because a check and the thing it checks must not be able to drift
-# apart, and an environment override for a tighter loop while working.
+# apart, and an environment override for running MORE repetitions than the
+# committed number. The floor binds the override too: the count is what the claim
+# is made of, so an override that granted fewer would be a way to pass this check
+# without making its claim.
 
 if ! COMMITTED="$(conf control_determinism_repetitions 2>/dev/null)"; then
     refuse \
@@ -97,8 +105,15 @@ if [ -n "${CHORUS_DETERMINISM_REPETITIONS+set}" ]; then
     if ! positive_integer "${CHORUS_DETERMINISM_REPETITIONS}"; then
         refuse \
             "CHORUS_DETERMINISM_REPETITIONS is '${CHORUS_DETERMINISM_REPETITIONS}', which is not a positive integer" \
-            "the override runs a tighter loop while working; it is not a way to run this check zero times" \
-            "unset it to run the committed $COMMITTED, or set it to a whole number above zero"
+            "the override runs MORE repetitions than the committed count; it is not a way to run this check zero times" \
+            "unset it to run the committed $COMMITTED, or set it to a whole number of at least $MINIMUM_REPETITIONS"
+    fi
+    if [ "$CHORUS_DETERMINISM_REPETITIONS" -lt "$MINIMUM_REPETITIONS" ]; then
+        refuse \
+            "CHORUS_DETERMINISM_REPETITIONS grants $CHORUS_DETERMINISM_REPETITIONS repetitions and this claim is made out of at least $MINIMUM_REPETITIONS" \
+            "the floor binds the override exactly as it binds the committed constant: under it, one lucky scheduling is most of the evidence" \
+            "unset it to run the committed $COMMITTED, or raise it to at least $MINIMUM_REPETITIONS. A shorter run is a different claim and this will not make it" \
+            "to run the checks themselves a handful of times, run them: make one ARGS='--package $TEST_PACKAGE --test $TEST_TARGET'"
     fi
     REPETITIONS="$CHORUS_DETERMINISM_REPETITIONS"
 fi
