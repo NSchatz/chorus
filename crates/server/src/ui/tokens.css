@@ -1,0 +1,270 @@
+/* The control page's tokens. Every colour and every length the page paints
+ * resolves to a name declared here, and nothing outside this file carries a
+ * literal.
+ *
+ * THREE TIERS, and the file is read by a machine as well as by a person.
+ * `tools/ui/tokens.js` parses it and `tools/styling-check.sh` refuses a file it
+ * cannot parse, so the shape below is a contract:
+ *
+ *   /^ tier: primitive $/          raw values, no meaning attached
+ *   /^ tier: semantic, theme: X $/ a primitive assigned a role, once per theme
+ *   /^ tier: component $/          a semantic bound to one component
+ *
+ * A rule in the stylesheet reaches for the semantic or the component tier. Only
+ * the semantic tier names a primitive.
+ *
+ * BOTH THEMES ARE CHOSEN BY HAND. The dark palette is not the light one put
+ * through a rule: each theme picks its own primitive for every role, because a
+ * derived palette misses contrast floors and the hand fixes land anyway without
+ * the honesty of having been chosen. Nothing here mixes, inverts or filters a
+ * colour, and the styling check refuses a file that does.
+ *
+ * THE MEASURED RATIO IS WRITTEN BESIDE THE VALUE. Each line of the form
+ *
+ *     contrast: --a on --b = N.NN, floor F
+ *
+ * is the ratio a browser engine measured between those two tokens IN THIS
+ * THEME, off the painted pixels. It is not decoration and it cannot go stale:
+ * `make verify-ui` maps every row its contrast measurement produces back to the
+ * token pair that painted it and exits non-zero when a recorded number and a
+ * measured one differ by more than 0.05, and it also refuses a measured row
+ * that maps to no token pair. `docs/decisions/0021-a-measured-ratio-is-recorded-beside-the-value.md`
+ * records why these annotations are here at all, and what rule they replace.
+ *
+ * The slider is the one place where the floor is not obvious: the TRACK is the
+ * control's visible extent and clears 3:1 against the panel it sits on, and the
+ * THUMB is the mark that carries the value and clears 3:1 against the track. A
+ * palette that only cleared one of those would leave the value unreadable to
+ * somebody who cannot pick the thumb out of the bar it slides along.
+ */
+
+:root {
+  color-scheme: light dark;
+}
+
+/* tier: primitive */
+:root {
+  /* Neutrals, lightest to darkest. A number is a label and not a promise. */
+  --neutral-000: #ffffff;
+  --neutral-030: #f2f7fc;
+  --neutral-060: #eef1f4;
+  --neutral-080: #e9eff5;
+  --neutral-300: #b3c0cd;
+  --neutral-420: #8f9aa6;
+  --neutral-450: #7f8d9c;
+  --neutral-500: #767f88;
+  --neutral-520: #6b7987;
+  --neutral-600: #646d78;
+  --neutral-650: #5f6c79;
+  --neutral-700: #414d59;
+  --neutral-880: #1a2129;
+  --neutral-900: #16191d;
+  --neutral-930: #10161c;
+  --neutral-950: #0f141a;
+
+  /* The one hue this repository claims, and the four state hues. */
+  --blue-300: #7ab8f5;
+  --blue-600: #0a5387;
+  --green-300: #7fd39b;
+  --green-700: #0a6b2f;
+  --amber-300: #f0c274;
+  --amber-700: #7a4a00;
+  --orange-300: #ffb454;
+  --orange-700: #8a3200;
+  --red-300: #ff9b8f;
+  --red-700: #a11208;
+
+  /* The absence of paint, which is a value a component asks for by name like
+   * any other. The slider's own box is not painted at all: what a person sees
+   * is the track and the thumb the user agent draws inside it. */
+  --nothing: transparent;
+
+  /* The 4px scale. Every length the page paints is a step of it, named for
+   * the number of pixels it is, so a value off the scale is visible in the
+   * declaration rather than only in the check. */
+  --space-0: 0px;
+  --space-4: 4px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-44: 44px;
+  --space-48: 48px;
+  --space-56: 56px;
+  --space-64: 64px;
+  --space-320: 320px;
+  /* A negative step, for centring a mark on the bar it rides. */
+  --space-minus-8: -8px;
+
+  /* Hairlines and the focus ring. Not spacing: a stroke is the width of a line
+   * drawn on a boundary, and a 4px one would be a slab. */
+  --stroke-1: 1px;
+  --stroke-3: 3px;
+  --stroke-offset-2: 2px;
+
+  /* Corner radii. */
+  --radius-4: 4px;
+  --radius-8: 8px;
+  --radius-12: 12px;
+
+  /* The type scale, in the sizes the page paints. */
+  --text-13: 13px;
+  --text-14: 14px;
+  --text-16: 16px;
+  --text-17: 17px;
+  --text-20: 20px;
+  --leading-body: 1.5;
+  --tracking-wordmark: 0.02em;
+
+  /* The two faces. The UI face is whatever the operating system calls its own;
+   * the figure face is fixed-advance, so a column of figures lines up. */
+  --font-system-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-system-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* tier: semantic, theme: light */
+:root {
+  --bg: var(--neutral-060);
+  --panel: var(--neutral-000);
+  --line: var(--neutral-650);
+  --fg: var(--neutral-930);
+  /* contrast: --fg on --panel = 18.20, floor 4.5 */
+  /* contrast: --fg on --bg = 16.06, floor 4.5 */
+  --muted: var(--neutral-700);
+  /* contrast: --muted on --panel = 8.64, floor 4.5 */
+  --accent: var(--blue-600);
+  /* contrast: --accent on --panel = 8.08, floor 3 */
+  --ok: var(--green-700);
+  /* contrast: --ok on --panel = 6.65, floor 4.5 */
+  --warn: var(--amber-700);
+  /* contrast: --warn on --panel = 7.48, floor 4.5 */
+  --bad: var(--red-700);
+  /* contrast: --bad on --panel = 8.06, floor 4.5 */
+  --border: var(--neutral-500);
+  /* contrast: --border on --panel = 4.07, floor 3 */
+  --mark: var(--neutral-900);
+  /* contrast: --mark on --border = 4.33, floor 3 */
+  --focus: var(--orange-700);
+  /* contrast: --focus on --panel = 8.28, floor 3 */
+  --disabled: var(--neutral-600);
+  /* contrast: --disabled on --panel = 5.25, floor 4.5 */
+  --selected: var(--blue-600);
+  /* contrast: --selected on --panel = 8.08, floor 3 */
+  /* contrast: --bg on --selected = 7.12, floor 4.5 */
+  --link: var(--blue-600);
+  /* contrast: --link on --panel = 8.08, floor 4.5 */
+}
+
+@media (prefers-color-scheme: dark) {
+  /* tier: semantic, theme: dark */
+  :root {
+    --bg: var(--neutral-950);
+    --panel: var(--neutral-880);
+    --line: var(--neutral-450);
+    --fg: var(--neutral-080);
+    /* contrast: --fg on --panel = 14.02, floor 4.5 */
+    /* contrast: --fg on --bg = 15.97, floor 4.5 */
+    --muted: var(--neutral-300);
+    /* contrast: --muted on --panel = 8.77, floor 4.5 */
+    --accent: var(--blue-300);
+    /* contrast: --accent on --panel = 7.73, floor 3 */
+    --ok: var(--green-300);
+    /* contrast: --ok on --panel = 9.04, floor 4.5 */
+    --warn: var(--amber-300);
+    /* contrast: --warn on --panel = 9.80, floor 4.5 */
+    --bad: var(--red-300);
+    /* contrast: --bad on --panel = 7.99, floor 4.5 */
+    --border: var(--neutral-520);
+    /* contrast: --border on --panel = 3.64, floor 3 */
+    --mark: var(--neutral-030);
+    /* contrast: --mark on --border = 4.14, floor 3 */
+    --focus: var(--orange-300);
+    /* contrast: --focus on --panel = 9.21, floor 3 */
+    --disabled: var(--neutral-420);
+    /* contrast: --disabled on --panel = 5.68, floor 4.5 */
+    --selected: var(--blue-300);
+    /* contrast: --selected on --panel = 7.73, floor 3 */
+    /* contrast: --bg on --selected = 8.81, floor 4.5 */
+    --link: var(--blue-300);
+    /* contrast: --link on --panel = 7.73, floor 4.5 */
+  }
+}
+
+/* tier: component */
+:root {
+  /* A rule in chorus.css names one of these or one of the roles above, and
+   * never a primitive: the palette and the scale are reached through a name
+   * that says what the value is FOR. tools/styling-check.sh refuses a
+   * stylesheet source that names a primitive directly, and refuses a component
+   * token that names a primitive colour instead of the role that owns it. */
+  --reset-margin: var(--space-0);
+  --shrink-min: var(--space-0);
+
+  --wordmark-ink: var(--accent);
+  --wordmark-size: var(--text-20);
+  --wordmark-tracking: var(--tracking-wordmark);
+  --heading-size: var(--text-17);
+  --body-size: var(--text-16);
+  --body-leading: var(--leading-body);
+  --meta-size: var(--text-14);
+  --code-size: var(--text-13);
+  --code-leading: var(--leading-body);
+
+  /* Every control is painted at a border box of at least 44 by 44 CSS pixels,
+   * against a criterion that asks for 24 by 24. The margin is deliberate: the
+   * criterion is measured from the RENDERED box in a real engine, a range
+   * input's intrinsic height is well under either number until something sets
+   * it, and a rule that only just clears the bar is one font change away from
+   * failing. tools/ui-render-run.sh measures every one of them. */
+  --control-size: var(--space-44);
+  --control-radius: var(--radius-8);
+  --control-surface: var(--panel);
+  --control-edge: var(--border);
+  --control-ink: var(--fg);
+  --control-pad-x: var(--space-12);
+  --control-pad-y: var(--space-0);
+  --control-basis: var(--space-64);
+  --control-basis-narrow: var(--space-48);
+  --control-disabled-ink: var(--disabled);
+  --control-selected-fill: var(--selected);
+  --control-selected-ink: var(--bg);
+
+  --slider-surface: var(--nothing);
+  --slider-edge: var(--nothing);
+  --slider-pad: var(--space-0);
+  --slider-track-height: var(--space-8);
+  --slider-track-radius: var(--radius-4);
+  --slider-track-fill: var(--border);
+  --slider-thumb-size: var(--space-24);
+  --slider-thumb-fill: var(--mark);
+  /* Half the difference between the track and the thumb, so the mark rides the
+   * centre of the bar. */
+  --slider-thumb-rise: var(--space-minus-8);
+
+  --surface-radius: var(--radius-12);
+  --surface-pad: var(--space-16);
+  --surface-gap: var(--space-12);
+  --surface-column-min: var(--space-320);
+
+  --bar-pad-y: var(--space-12);
+  --bar-pad-x: var(--space-16);
+  --bar-gap-y: var(--space-12);
+  --bar-gap-x: var(--space-16);
+
+  --figure-min-width: var(--space-56);
+  --label-min-width: var(--space-64);
+
+  --code-pad-y: var(--space-8);
+  --code-pad-x: var(--space-12);
+
+  --focus-ring-width: var(--stroke-3);
+  --focus-ring-offset: var(--stroke-offset-2);
+  --hairline: var(--stroke-1);
+
+  /* The two type roles. Prose, headings and controls are set in the UI face;
+   * anything whose column alignment carries meaning is set in the figure face,
+   * with tabular figures so equal digits take equal width. */
+  --face-prose: var(--font-system-ui);
+  --face-figure: var(--font-system-mono);
+}

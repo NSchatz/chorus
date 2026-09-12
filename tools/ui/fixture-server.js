@@ -8,7 +8,7 @@
 // established. There is no flag that makes a correct server emit any of those.
 //
 // So the page is put in front of a server that will. This one PROXIES the page,
-// its stylesheet, its script and its document straight through from the real
+// both its stylesheets, its script and its document straight through from the real
 // chorus-server, byte for byte and header for header, and answers only
 // `/api/state` and `/api/events` itself. What is under test is therefore the
 // shipped page, unmodified, reading a state that has been doctored on purpose.
@@ -29,7 +29,13 @@ if (!UPSTREAM) {
   process.exit(2);
 }
 
-const PROXIED = new Set(["/", "/index.html", "/chorus.css", "/chorus.js"]);
+const PROXIED = new Set([
+  "/",
+  "/index.html",
+  "/tokens.css",
+  "/chorus.css",
+  "/chorus.js",
+]);
 
 /// A state message with two zones, which is what most scenarios start from.
 function twoZones() {

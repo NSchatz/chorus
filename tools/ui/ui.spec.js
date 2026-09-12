@@ -1114,7 +1114,7 @@ test("the server sends a policy, the browser reports no violation, and everythin
   await expect(page.locator('[data-zone-name="kitchen"]')).toBeVisible();
 
   // The page and every asset it loads were sent one.
-  for (const asset of ["/", "/chorus.css", "/chorus.js"]) {
+  for (const asset of ["/", "/tokens.css", "/chorus.css", "/chorus.js"]) {
     const url = asset === "/" ? `${BASE}/` : `${BASE}${asset}`;
     const sent = watch.responses.find((r) => r.url === url);
     expect(sent, `nothing answered ${url}`).toBeTruthy();
