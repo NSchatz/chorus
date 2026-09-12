@@ -165,6 +165,14 @@ firmware-sync-scenarios:
 firmware-safety-scans:
 	$(MAKE) -f firmware/Makefile safety-scans
 
+# chorus#WIFI-7's host-gradable half: the power save mode the endpoint SETS
+# rather than inherits, the readback, the two ways that mode can fail to be in
+# effect, and the refusal to join on a credential this repository does not have.
+# Named separately so a red CI build says the wireless bring-up broke rather
+# than "the endpoint". Also run by `make firmware-check`.
+firmware-wireless:
+	$(MAKE) -f firmware/Makefile wireless
+
 # AC-1 and AC-3: an ESP32-S3 endpoint playing a grouped stream beside a Linux
 # endpoint, measured by the RIG-3 rig, and the produced sample rate measured
 # rather than read back from the configuration. NEITHER IS PASSED HERE. This

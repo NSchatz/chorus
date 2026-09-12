@@ -11,13 +11,190 @@ picks up this tree later has no access to the notes the implementing session
 wrote elsewhere. If the two ever disagree, this file is the one attached to the
 code.
 
-Five phases are recorded here, most recent first:
+Six phases are recorded here, most recent first:
 
+- [WIFI-7, the wireless tier](#wifi-7-the-wireless-tier)
 - [PRODUCT-6, zones, groups, the control plane, discovery and a UI](#product-6-zones-groups-the-control-plane-discovery-and-a-ui)
 - [EMBEDDED-5, the ESP32-S3 endpoint](#embedded-5-the-esp32-s3-endpoint)
 - [SYNC-4, the sync loop on the real path](#sync-4-the-sync-loop-on-the-real-path)
 - [RIG-3, the measurement harness](#rig-3-the-measurement-harness)
 - [SOUND-2, first sound](#sound-2-first-sound)
+
+## WIFI-7: the wireless tier
+
+### The machine this was written on
+
+```
+kernel                    Linux 6.12.90+deb13.1-amd64 x86_64
+toolchain                 rustc 1.98.1, cc (GCC) for the endpoint's C
+ESP-IDF                   absent - IDF_PATH is unset and idf.py is not on PATH
+ESP32-S3                  none. There is no serial port and no board
+wireless link             none. No access point, and firmware/config/endpoint.conf
+                          declares the network name and the secret UNKNOWN
+/dev/snd                  absent - no sound card of any kind
+capture device            none. There is no audio interface of any kind here
+second endpoint           none. There is one machine and it is this container,
+                          and it is not in another room from itself
+container                 a disposable Linux container, not a house
+```
+
+### AC-2 AND AC-3 ARE NOT PASSED
+
+**Stated first, and plainly, because they are the two criteria the phase is
+named for and because everything below could otherwise be mistaken for them.**
+
+> **AC-2.** WHEN a Wi-Fi endpoint runs with modem sleep disabled THE SYSTEM
+> SHALL meet the 5 ms multiroom inter-device bound.
+>
+> **AC-3.** WHEN a Wi-Fi endpoint is measured with the platform default left in
+> place THE SYSTEM SHALL record the resulting jitter in docs/measurements/
+> rather than tune the servo against it.
+
+**Neither criterion is passed, neither is skipped-green and neither is
+satisfied. Nothing in this repository claims either of them.**
+
+AC-2 needs an ESP32-S3 endpoint on this house's Wi-Fi playing a grouped stream
+beside a second endpoint in ANOTHER ROOM, with both line outputs captured by the
+RIG-3 rig. The bound is a measured distribution over a real radio and no
+committed test can produce one. AC-3 needs the same rig run twice, once with the
+platform default left in place, and no test can make a radio sleep. This machine
+has no radio, no board, no capture interface and no second machine, and this
+pipeline has no route to acquire them.
+
+`make verify` runs the entry point, and this is what it printed here, verbatim:
+
+```
+--- wireless-characterization-run.sh (exit 3)
+    chorus: the wireless characterization, one run per power-save mode
+      criterion:       AC-2 and AC-3, the two criteria of this phase that need hardware
+      modes:           none min-modem
+      endpoint sets:   none (firmware/config/endpoint.conf)
+      coexistence:     no
+      bound:           5000 us between rooms (config/transport.conf)
+      playout latency: 500000 us, the wireless policy's
+      run:             3900s, of which the first 60s is acquisition
+      capture:         30s per mode
+      access point:    <unset>
+      endpoint:        <unset>
+      second endpoint: <unset>
+      local device:    chorus-no-such-device
+      capture device:  chorus-no-such-capture-device
+    MISSING PREREQUISITE
+      criterion:    a Wi-Fi endpoint with modem sleep disabled holds the 5 ms multiroom inter-device bound, and the jitter with the platform power save mode left in place is recorded rather than answered with servo aggression
+      prerequisite: a wireless network for the endpoint to join; firmware/config/endpoint.conf still declares these UNKNOWN: link_wifi_ssid link_wifi_secret
+      how to get it: put the network name and its secret into firmware/config/endpoint.conf, or provision them out of band, and do not commit either. This repository declares them unknown on purpose: a secret committed once is in a git history no rotation reaches
+      this check is NOT passed, NOT skipped-green and NOT satisfied.
+pass wireless-characterization-run.sh refuses, names both, and claims nothing
+```
+
+**The first prerequisite it names is absent on EVERY machine and not only on
+this one.** The network name and the secret are declared `unknown` in
+`firmware/config/endpoint.conf` and are meant to stay that way: a credential
+committed once is in a git history no rotation reaches. So this entry point
+refuses on a bench with an ESP32-S3 attached too, until somebody has put a real
+network in front of it or provisioned one out of band.
+
+What an operator with the environment runs:
+
+```
+CHORUS_WIRELESS_AP='ubiquiti-u6-lite 5GHz' CHORUS_ESP32S3_PORT=/dev/ttyACM0 \
+CHORUS_SECOND_ENDPOINT=user@endpoint-b CHORUS_CAPTURE_DEVICE=hw:1,0 \
+CHORUS_CLIENT_DEVICE=hw:0,0 \
+    ./tools/wireless-characterization-run.sh     # or: make verify-wireless
+```
+
+Instructions: the script's own header, and
+`docs/decisions/0021-the-wireless-tier.md` for what every constant it passes in
+means. The captures and the delay logs it writes ARE the evidence and can be
+graded afterwards, on any machine, by someone who did not take them.
+
+### THE TWO SAVED JITTER REPORTS ARE NOT MEASUREMENTS EITHER
+
+`docs/measurements/rig3-jitter-wireless-ps-none.md` and
+`docs/measurements/rig3-jitter-wireless-ps-min-modem.md` exist and are committed.
+**They were computed from committed MODELLED series, generated from committed
+parameters, and not from any radio.** Each says so in its own text, in a section
+headed "What this report does not establish", in the words "THIS SERIES IS A
+COMMITTED FIXTURE AND NOT A MEASUREMENT".
+
+They are here for one reason: the report's shape and its arithmetic are
+gradeable with no radio present, and without them AC-12 and AC-18 would be
+criteria pointing at nothing. Nothing about Wi-Fi rests on the numbers in them
+and nothing may be made to.
+
+### What ran here
+
+| criterion | what answers it | result |
+|---|---|---|
+| AC-1, the endpoint sets its power save mode explicitly and reports the mode it set | `make firmware-check` (`firmware/tests/test_wifi.c`, 92 checks, 0 failed) | Read off the SIMULATED RADIO's own event log and off the published telemetry line, never off the bring-up's account of itself: `firmware/tests/fake_radio.c` records what happened at the antenna and the bring-up cannot reach the log. The fake POWERS UP IN THE PLATFORM DEFAULT (`WIFI_PS_MIN_MODEM`, which is what the carried ESP-IDF guide says it is), so a bring-up that set nothing would leave it there and be seen. After bring-up the radio is in `none`, the mode was set exactly once, and it is NOT the default it would have inherited. The ORDER is graded on the log: the mode is set AFTER the radio is initialised, and set and read back BEFORE the join that makes the link usable, which is the order the carried guide fixes. All three modes reach the radio as themselves, so a bring-up that always set `WIFI_PS_NONE` would fail. The published line carries `transport=wireless wifi_ps_declared=none wifi_ps_in_force=none wireless_bound=publishable`. **Shown going red**: setting `CHORUS_WIFI_PLATFORM_DEFAULT` instead of the declared mode turns 16 of the 92 checks red, naming the mode the radio was left in |
+| AC-2 | `[grade: operator]` | **NOT PASSED**, above, in full |
+| AC-3 | `[grade: operator]` | **NOT PASSED**, above, in full |
+| AC-4, a wireless zone applies the wireless buffer policy and is not held to the wired bound | `cargo test -p chorus-client-linux --test wireless_policy` (8 tests) | All five values of the policy are applied, and each is asserted to be DEEPER than the wired one, so a policy that happened to equal the wired numbers would fail. The bound in force is the 5 ms one and is asserted NOT to be the 0.5 ms one. The policy is run through the client's OWN `validate()`, so a set of numbers the shipped client would refuse to start with is a set this repository cannot hold a zone to. A zone that declares nothing is wired and byte-for-byte unchanged. The committed `config/transport.conf` and the compiled constants are asserted to be the same numbers. And the SHIPPED BINARY is run: `--transport wireless` is accepted and gets as far as the device. **Shown going red**: disabling the policy adoption turns 3 of the 8 tests red |
+| AC-5, a transport the committed configuration does not name | `make verify` (`tools/refusals.sh`), and `cargo test -p chorus-server --test wireless_zones` | The SHIPPED BINARY, with `--zone bedroom=wifi`: exit 2, naming the zone (`the zone 'bedroom'`), the value it read (`the transport 'wifi'`) and the permitted transports (`wired, wireless`, which the check reads out of `config/transport.conf` rather than restating). It served NO AUDIO (no `listening on=` line at all) and NO CONTROL STATE (no `control listening on=`), and says so positively with `chunks_sent=0 zones_served=0`. A transport the configuration DOES name is accepted in the same script, so the refusal is about the word and not about the flag being unusable |
+| AC-6, a zone with no transport is wired, and every zone's tier is reported | `cargo test -p chorus-server --test wireless_zones` | The real `chorus-server`, started with `--zone kitchen --zone bedroom=wireless --zone study=wired`, prints one tier line per zone before anything is bound: `zone id=kitchen transport=wired bound_us=500`, `zone id=bedroom transport=wireless bound_us=5000`, `zone id=study transport=wired bound_us=500`. THREE declared, THREE reported, so no zone's tier is left to a reader's knowledge of the default |
+| AC-7, a group holding a wireless zone is held to the wireless policy, and the report names the zone that did it | the same target | A state file written by the REAL renderer puts `kitchen` (wired) and `bedroom` (wireless) in one group `downstairs`, and the server reloads it: `group id=downstairs transport=wireless bound_us=5000 set_by=bedroom policy=wireless playout_latency_us=500000 min_us=120000 max_us=900000 ...`. The wired zone sharing the group has no tier of its own, which is what "the whole group" means. The group with no wireless zone stays `transport=wired bound_us=500 set_by=none policy=wired`. The rule is ALSO graded at every position: with the wireless zone first, second or third in the group, the group is wireless and the report names that zone, so "any wireless zone" is what is checked rather than "the first zone". **Shown going red**: making the group rule name nobody turns 2 of the 6 tests red |
+| AC-8, an endpoint that cannot apply the declared wireless latency | `make verify` (`tools/refusals.sh`), and `cargo test -p chorus-client-linux --test wireless_policy` | The SHIPPED CLIENT, in two shapes. Told to play at the WIRED latency inside a wireless group: exit 2, `declared playout latency is 500000 us`, `would apply 180000 us instead`, and `stopped reason=wireless-playout-latency-not-applied played=0 frames_played=0`. Given bounds that cannot hold the declared latency at all: the same refusal, still naming BOTH numbers rather than reporting the one it cannot use twice. A wireless endpoint that CAN apply it is not refused, so the refusals are about the latency and not about the tier being unusable. Both latencies in the check are read out of `config/transport.conf` and `config/sync.conf` rather than written into the script |
+| AC-9, a coexistence mode means the mode that was set is not in effect | `make firmware-check` (`firmware/tests/test_wifi.c`) | Both spellings. A coexistence DECLARED in the committed configuration, and one the PLATFORM reports that the board did not declare: each is reported as `sleeps-in-coexistence`, each leaves `wireless_bound=withheld` on the published line, and in each the mode WAS set and the platform DOES report it, which is the whole point - the disagreement is not about the mode. The link still comes up and the zone still plays; only the CLAIM is withheld. **Shown going red**: publishing the bound on the coexistence path turns 3 checks red |
+| AC-10, the platform reports a mode other than the one declared | the same target | `power-save-mode-disagrees`, with BOTH modes in the report and both in the detail a person reads, and the published line carrying `wifi_ps_declared=none wifi_ps_in_force=min-modem wireless_bound=withheld`. The test asserts the string `wireless_bound=publishable` does not appear |
+| AC-11, the characterization entry point refuses by name with no hardware | `make verify` (`tools/unrun-checks-are-visibly-unrun.sh`) | The meta-check DERIVES its list recursively from `tools/` and now finds and checks **19** environment-dependent entry points where it found 18 before this phase. The new one is `tools/wireless-characterization-run.sh`; it exits 3, names the missing prerequisite AND the criterion it was verifying, and reports nothing as passed, skipped-green or satisfied. The refusal is quoted in full above |
+| AC-12, one report per power-save mode, each naming the mode, the transport and the build | `cargo test -p chorus-measure --test report_shape` (16 tests) | Two runs into a scratch directory produce exactly two new files, each naming the mode in force (in this repository's word and in the platform's own), the transport, and the build's forty-character commit. The two reports are asserted to be DIFFERENT, and the two committed series are asserted to differ by more than a factor of ten in median and p95, so "one per mode" is a difference and not two copies of one run. The refusal half is graded through the SHIPPED BINARY: `--mode` absent, `unknown`, empty, and `WIFI_PS_NONE` are each refused with `NO REPORT IS WRITTEN`, and the destination directory is asserted EMPTY afterwards. **Shown going red**: defaulting an unparseable mode to `none` turns the refusal test red |
+| AC-13, no servo constant moved | `config/sync.conf` | `git diff main...HEAD -- config/sync.conf` is empty. Every constant SYNC-4 fixed is at the value SYNC-4 fixed, and this phase's whole answer to Wi-Fi jitter is `config/transport.conf`'s buffer depth and playout latency, which is what BRIEF.md section 9 asks for by name |
+| AC-14, the published expectations cannot drift from the committed configuration | `make verify` (`tools/wireless-expectations-check.sh`) | The set of numbers is DERIVED from `config/transport.conf` rather than listed in the check, so a key added to that file and not to `docs/wireless-expectations.md` turns it red: all **10** committed values are stated in the document, and stated once. The eleventh is the wired playout latency the document compares against, read from `config/sync.conf`. **The check is shown going red four ways**, on scratch copies of the document: a number that moved in the configuration and not in the document, a committed value the document states nowhere, a wired latency that disagrees with `config/sync.conf`, and a document that is not published at all |
+| AC-15, a message that tries to change a transport | `cargo test -p chorus-server --test wireless_zones` | Three spellings against a REAL server over a real socket: a `transport` field on a command that has fields, a `transport` field on a command that does not, and a command type of its own. Each is answered `400 Bad Request` saying a transport is `CONFIGURED and not commanded` and naming `config/transport.conf`. The state a subscriber would be sent is byte-identical before and after all three, and the well-formed `mute` one of them carried was NOT applied. **Shown going red**: removing the targeted refusal turns the test red |
+| AC-16, the endpoint tree gains a wireless unit and every safety scan still passes | `make firmware-safety-scans` (42 checks, 0 failed) | `pass endpoint-scan: 26 units scanned` where 24 were scanned before this phase, none reading a settable clock, none burning an eFuse, none activating an OTA image, none placing anything in external RAM, and none unaccounted for. No rule in `firmware/check/endpoint_scan.c` was relaxed, no unit was moved into `[excluded]`, and `firmware/endpoint-units.conf` still has an empty exclusion section. **The scan found this work's own defect before a human did**: an early draft of `firmware/include/chorus/wifi.h` explained the settable-clock rule by naming the three spellings it forbids, and the scan went red on its own comment, which is exactly what it is for. **Shown going red again, deliberately**: removing `firmware/src/wifi.c` from the unit list turns the scan red with `unit-missing-from-the-list` |
+| AC-17, no credential in the repository, and an unknown one refuses to join | `make firmware-check` (`firmware/tests/test_wifi.c`) | The COMMITTED configuration is loaded by the reader the board uses: `link_wifi_ssid` and `link_wifi_secret` both read `unknown` and both carry an empty value, so the endpoint this repository ships refuses to join as it stands. The refusal names WHICH value is unknown and the file to set it in, reports the link DOWN (asserted from a telemetry surface that STARTED with the link up, so it is the record putting it down and not it never having been up), and attempts NO JOIN AT ALL: the simulated radio records zero events, so nothing was retried against a default. And with a secret that IS known, the secret reaches the radio and appears nowhere in the report or the published line. **Shown going red**: joining a default network on the unknown-credential path turns 9 checks red |
+| AC-18, a report that cannot be written | `cargo test -p chorus-measure --test report_shape` | Four destinations that cannot hold a report: one that is not there (`destination-missing`, naming the path, and the refusal does not create it), one that exists and is not a directory (`destination-not-a-directory`, and the file it refused is unaltered), a directory with no write permission (`destination-not-writable`, naming the path, saying "Nothing partial has been left behind", and the directory is asserted EMPTY afterwards), and the same through the SHIPPED BINARY, which exits non-zero naming the destination |
+| AC-19, the suite passes on a machine with no radio, no ESP32-S3, no capture device and no privilege | `make check && make firmware-check` | Both green. `make check` builds the whole workspace and runs `cargo test --workspace`: 66 test binaries, 0 failed, including the three new graders. `make firmware-check` runs the endpoint's host build and every verification of it that needs no device: protocol 46 checks, sync core 137, safety scans 42, clocking 72, amplifier 86, telemetry 23, and **wireless bring-up 92**, all 0 failed, plus the real-socket outage run. The firmware half is named explicitly because `make check` is the cargo workspace only and would have gone green with every firmware criterion unbuilt |
+
+### The wiring the new test needed, and why it is called out
+
+`firmware/Makefile` enumerates its test binaries by name in `all:` and its run
+targets by name in `check:`, and it has no wildcard over `firmware/tests/`. A
+`test_wifi.c` absent from either list would compile nowhere or run never, and
+four criteria would point at a file that grades nothing while every gate stayed
+green. Both lists carry it: `$(BUILD)/test_wifi` in `all:`, and a `wireless` run
+target that `check:` depends on. **Shown**: with `wireless` removed from
+`check:`, `make firmware-check` is still green and the string "endpoint wireless
+bring-up" appears in its output zero times.
+
+CI also names it as a step of its own, `make firmware-wireless`, beside the
+golden vectors, the sync scenarios and the safety scans. That is EMBEDDED-5's
+AC-18 convention applied to the endpoint regression this phase added: a red
+build should say which regression broke rather than "the endpoint". It runs the
+same target `make firmware-check` runs, exactly as those three do.
+
+### What did NOT run here, and is not claimed
+
+- **AC-2 and AC-3**, above, in full.
+- **Any radio.** No access point, no board, no antenna, no room. Every wireless
+  figure in `docs/measurements/` is computed from a committed modelled series
+  and every report written from one says so.
+- **`firmware/main/esp_hal.c`'s radio binding and `app_main.c`'s use of it.**
+  They are compiled only by ESP-IDF and NOTHING in this repository compiles
+  them. They are scanned as text by the safety scans, and that is the only thing
+  said about them. Everything they bind is graded; the wiring is not, and the
+  criterion that grades the wiring is AC-2.
+- **Any image, any flash, any eFuse, any OTA.** Untouched, and the endpoint
+  safety scan enforces that the last two do not appear.
+- **The Linux client's own radio.** Nothing here turns Linux modem power save
+  off. A Linux endpoint in a wireless zone gets the buffer policy and reports
+  `power_save=unknown` rather than claiming a mode.
+- **SOUND-2's, RIG-3's, SYNC-4's, EMBEDDED-5's and PRODUCT-6's hardware-blocked
+  rows.** Unchanged by this phase and still blocked on the same missing
+  hardware. This work does not claim them and does not unblock them.
+
+### Running the lot, on a machine that has the environment
+
+```
+make check                    # the cargo workspace, including the three new graders
+make firmware-check           # the endpoint's host build, including test_wifi
+make firmware-safety-scans    # AC-16
+make verify                   # every refusal path, including this phase's three
+CHORUS_WIRELESS_AP='ubiquiti-u6-lite 5GHz' CHORUS_ESP32S3_PORT=/dev/ttyACM0 \
+CHORUS_SECOND_ENDPOINT=user@endpoint-b CHORUS_CAPTURE_DEVICE=hw:1,0 \
+CHORUS_CLIENT_DEVICE=hw:0,0 \
+    make verify-wireless      # AC-2 and AC-3: needs a house as well
+```
 
 ## PRODUCT-6: zones, groups, the control plane, discovery and a UI
 
