@@ -79,6 +79,18 @@ jobs:
           cargo test --package chorus-server --test regress_0043_f1 -- --nocapture --test-threads=1
           cargo test --package chorus-server --test control_stalled_peer -- --nocapture
 
+      # The thread-population checks take workers from the control plane's fixed
+      # pool to ask about that pool, so one green run of them is one scheduling
+      # and not a determinism claim. This runs them for the repetitions
+      # config/verification.conf commits to, on one build, on two CPUs because
+      # that is where the interleaving happens, and runs them again against a
+      # control plane too small to serve them, which has to go red naming the
+      # busy-worker refusal. Minutes rather than seconds, and its own step so
+      # that a red build says the determinism claim broke rather than "the
+      # workspace".
+      - name: The control-plane thread population, repeated on one build
+        run: make verify-control-determinism
+
       - name: Whole workspace, including documentation examples
         run: cargo test --workspace
 
