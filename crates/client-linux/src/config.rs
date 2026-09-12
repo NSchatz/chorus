@@ -18,6 +18,8 @@
 
 use std::fmt;
 
+use chorus_control::transport::{Transport, DEFAULT_TRANSPORT, WIRELESS_POLICY};
+
 use crate::sync::SyncConfig;
 
 /// The deliberate rate difference the overflow verification applies, in parts
@@ -103,6 +105,19 @@ pub struct ClientConfig {
     pub rejoin: bool,
     /// Longest to wait between rejoin attempts, in milliseconds.
     pub rejoin_max_ms: u64,
+    /// The transport the group this endpoint plays is held to.
+    ///
+    /// Declared by the SERVER, where the set of zones is declared, and passed
+    /// to an endpoint from there. An endpoint does not decide which tier it is
+    /// in: a group is the unit a stream is served to and every endpoint in it
+    /// plays one timeline, so the tier is a property of the group and not of
+    /// the machine.
+    ///
+    /// Wireless here means the wireless BUFFER POLICY, and nothing about this
+    /// machine's own radio. Turning Linux power save off needs privilege and a
+    /// different authority; a Linux endpoint in a wireless zone gets the deeper
+    /// buffer and reports that its own power-save mode is unknown.
+    pub transport: Transport,
 }
 
 impl Default for ClientConfig {
@@ -126,6 +141,7 @@ impl Default for ClientConfig {
             endpoint: "endpoint".to_string(),
             rejoin: false,
             rejoin_max_ms: 2_000,
+            transport: DEFAULT_TRANSPORT,
         }
     }
 }
@@ -184,6 +200,32 @@ pub enum ConfigError {
     },
     /// The rate difference is zero, so no crossing would ever happen.
     SkewIsZero,
+    /// This endpoint is in a group held to the wireless policy and cannot apply
+    /// the playout latency that policy declares.
+    ///
+    /// The whole of AC-8: the endpoint STOPS rather than playing that stream at
+    /// the latency it can manage. Playing at the wired latency inside a group
+    /// held to the wireless one is the failure this refuses: every endpoint in
+    /// a group applies the same latency or they are not in sync with each
+    /// other, and an endpoint quietly playing 320 ms early is worse than an
+    /// endpoint that says it cannot.
+    WirelessPlayoutLatencyNotApplied {
+        /// The latency the group is held to, in microseconds.
+        declared_us: u64,
+        /// The latency this run would apply instead, in microseconds.
+        applied_us: u64,
+        /// The device delay target in force.
+        device_target_us: u64,
+        /// The maximum bound in force.
+        max_us: u64,
+    },
+    /// A transport the committed configuration does not name.
+    NotATransport {
+        /// The value as it was given.
+        value: String,
+        /// Every transport the committed configuration names.
+        permitted: String,
+    },
     /// An argument this binary does not have.
     UnknownArgument {
         /// The argument as it was given.
@@ -262,6 +304,27 @@ impl fmt::Display for ConfigError {
                 f,
                 "the overflow rate difference is 0 ppm, so no crossing would ever happen"
             ),
+            ConfigError::WirelessPlayoutLatencyNotApplied {
+                declared_us,
+                applied_us,
+                device_target_us,
+                max_us,
+            } => write!(
+                f,
+                "this endpoint is in a group held to the wireless policy, whose declared playout \
+                 latency is {} us, and this run would apply {} us instead (its device delay \
+                 target is {} us and its maximum bound is {} us, and a playout latency has to sit \
+                 strictly between them). Every endpoint in a group applies the SAME latency or \
+                 they are not aligned with each other, so this endpoint stops rather than playing \
+                 that stream at {} us",
+                declared_us, applied_us, device_target_us, max_us, applied_us
+            ),
+            ConfigError::NotATransport { value, permitted } => write!(
+                f,
+                "'{}' is not a transport; the transports the committed configuration names are \
+                 {}, and config/transport.conf declares what each is held to",
+                value, permitted
+            ),
             ConfigError::UnknownArgument { argument } => {
                 write!(f, "unknown argument '{}'", argument)
             }
@@ -280,6 +343,25 @@ impl std::error::Error for ConfigError {}
 impl ClientConfig {
     /// Check the three relations that keep the bounds meaningful.
     pub fn validate(&self) -> Result<(), ConfigError> {
+        // AC-8, and it is checked FIRST on purpose. An endpoint in a group held
+        // to the wireless policy that cannot apply that group's latency is
+        // failing at the tier, and being told "the start fill is not between
+        // the bounds" would send its reader after the wrong number. The tier's
+        // own failure names both latencies and the band, which is what the
+        // criterion asks for.
+        if self.transport == Transport::Wireless {
+            let declared_us = WIRELESS_POLICY.playout_latency_us;
+            let applied_us = self.sync.playout_latency_ns / 1_000;
+            let fits = declared_us > self.device_target_us && declared_us < self.max_us;
+            if !fits || applied_us != declared_us {
+                return Err(ConfigError::WirelessPlayoutLatencyNotApplied {
+                    declared_us,
+                    applied_us,
+                    device_target_us: self.device_target_us,
+                    max_us: self.max_us,
+                });
+            }
+        }
         if self.min_us == 0 {
             return Err(ConfigError::MinimumIsZero);
         }
@@ -357,6 +439,17 @@ impl ClientConfig {
     ) -> Result<(ClientConfig, ClientMode), ConfigError> {
         let mut config = ClientConfig::default();
         let mut mode = ClientMode::Play;
+        // Which of the five buffer values the command line set for itself. A
+        // value the operator gave is never overwritten by the tier's policy:
+        // the policy is what a zone GETS, and an explicit number on a command
+        // line is somebody saying otherwise on purpose. Where that leaves the
+        // run unable to apply the latency its group is held to, it refuses
+        // rather than silently winning either way.
+        let mut given_min = false;
+        let mut given_max = false;
+        let mut given_start_fill = false;
+        let mut given_device_target = false;
+        let mut given_playout_latency = false;
         let mut it = args.into_iter().peekable();
         while let Some(arg) = it.next() {
             let mut value = || -> Result<String, ConfigError> {
@@ -387,10 +480,30 @@ impl ClientConfig {
                 "--rejoin-max-ms" => config.rejoin_max_ms = number(&arg, &value()?)?,
                 "--device" => config.device = value()?,
                 "--delay-log" => config.delay_log = value()?,
-                "--min-us" => config.min_us = number(&arg, &value()?)?,
-                "--max-us" => config.max_us = number(&arg, &value()?)?,
-                "--start-fill-us" => config.start_fill_us = number(&arg, &value()?)?,
-                "--device-target-us" => config.device_target_us = number(&arg, &value()?)?,
+                "--transport" => {
+                    let word = value()?;
+                    config.transport =
+                        Transport::parse(&word).ok_or(ConfigError::NotATransport {
+                            value: word.clone(),
+                            permitted: Transport::permitted(),
+                        })?;
+                }
+                "--min-us" => {
+                    config.min_us = number(&arg, &value()?)?;
+                    given_min = true;
+                }
+                "--max-us" => {
+                    config.max_us = number(&arg, &value()?)?;
+                    given_max = true;
+                }
+                "--start-fill-us" => {
+                    config.start_fill_us = number(&arg, &value()?)?;
+                    given_start_fill = true;
+                }
+                "--device-target-us" => {
+                    config.device_target_us = number(&arg, &value()?)?;
+                    given_device_target = true;
+                }
                 "--overflow-skew-ppm" => config.overflow_skew_ppm = number(&arg, &value()?)?,
                 "--run-seconds" => config.run_seconds = Some(number(&arg, &value()?)?),
                 "--sync-interval-ms" => config.sync.interval_ms = number(&arg, &value()?)?,
@@ -410,7 +523,8 @@ impl ClientConfig {
                 }
                 "--max-rtt-us" => config.sync.max_rtt_ns = number(&arg, &value()?)? * 1_000,
                 "--playout-latency-us" => {
-                    config.sync.playout_latency_ns = number(&arg, &value()?)? * 1_000
+                    config.sync.playout_latency_ns = number(&arg, &value()?)? * 1_000;
+                    given_playout_latency = true;
                 }
                 "--mute-us" => config.sync.mute_ns = number(&arg, &value()?)? * 1_000,
                 other => {
@@ -418,6 +532,35 @@ impl ClientConfig {
                         argument: other.to_string(),
                     })
                 }
+            }
+        }
+
+        // The wireless buffer policy, applied to an endpoint in a group held to
+        // it. This is AC-4 in one place: a wireless zone GETS the deeper buffer
+        // and the looser latency, rather than being held to the wired numbers
+        // with a looser bound written down somewhere.
+        if config.transport == Transport::Wireless {
+            if !given_min {
+                config.min_us = WIRELESS_POLICY.min_us;
+            }
+            if !given_max {
+                config.max_us = WIRELESS_POLICY.max_us;
+            }
+            if !given_start_fill {
+                config.start_fill_us = WIRELESS_POLICY.start_fill_us;
+            }
+            if !given_device_target {
+                config.device_target_us = WIRELESS_POLICY.device_target_us;
+            }
+            // The declared latency is adopted only where the bounds IN FORCE
+            // can hold it. Where they cannot, the run keeps the latency it
+            // would otherwise have played at, and `validate` refuses naming
+            // both numbers: reporting "declared 500000, would apply 500000"
+            // would tell a reader nothing at all.
+            let declared_us = WIRELESS_POLICY.playout_latency_us;
+            let fits = declared_us > config.device_target_us && declared_us < config.max_us;
+            if !given_playout_latency && fits {
+                config.sync.playout_latency_ns = declared_us * 1_000;
             }
         }
         Ok((config, mode))

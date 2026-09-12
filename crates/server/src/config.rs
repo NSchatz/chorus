@@ -8,6 +8,7 @@
 use std::fmt;
 
 use chorus_audio::UnsupportedFormat;
+use chorus_control::transport::{Transport, DEFAULT_TRANSPORT};
 
 /// How a server run is configured.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,6 +76,18 @@ pub struct ServerConfig {
     /// Read only when there is no persisted state to load; see
     /// `docs/decisions/0018-the-persisted-zone-state.md`.
     pub zones: Vec<String>,
+    /// The transport each zone was declared with, in the same order.
+    ///
+    /// From `--zone <id>=<transport>`. A zone declared with no transport is
+    /// wired, which is `chorus_control::transport::DEFAULT_TRANSPORT` and is
+    /// recorded here explicitly so that no zone's tier is implicit: a reader of
+    /// this list never has to know the default to know what a zone is.
+    ///
+    /// The transport is NOT part of the persisted state and NOT part of the
+    /// control catalog. It is declared where the set of zones is declared,
+    /// because `docs/control-plane.md` says that set is configured and not
+    /// commanded, and which wire a room is on is the same kind of fact.
+    pub zone_transports: Vec<(String, Transport)>,
     /// Where each group's audio stream is served, as `group=address`.
     pub group_audio: Vec<(String, String)>,
     /// Whether to advertise this server by multicast DNS.
@@ -106,6 +119,7 @@ impl Default for ServerConfig {
             control_workers: 8,
             state_file: None,
             zones: Vec::new(),
+            zone_transports: Vec::new(),
             group_audio: Vec::new(),
             advertise: false,
             instance: "chorus".to_string(),
@@ -151,6 +165,16 @@ pub enum ServerConfigError {
         /// The value as it was given.
         value: String,
     },
+    /// A zone declared with a transport the committed configuration does not
+    /// name.
+    NotATransport {
+        /// The zone that declared it.
+        zone: String,
+        /// The value as it was read.
+        value: String,
+        /// Every transport the committed configuration names.
+        permitted: String,
+    },
 }
 
 impl fmt::Display for ServerConfigError {
@@ -195,6 +219,18 @@ impl fmt::Display for ServerConfigError {
                  of lower-case letters, digits and hyphens",
                 value,
                 chorus_control::catalog::MAX_IDENTIFIER_LEN
+            ),
+            ServerConfigError::NotATransport {
+                zone,
+                value,
+                permitted,
+            } => write!(
+                f,
+                "the zone '{}' is declared with the transport '{}', and the transports the \
+                 committed configuration names are {}. config/transport.conf declares them and \
+                 what each is held to; nothing is served, because a zone whose tier nobody chose \
+                 would be a zone held to a bound nobody chose",
+                zone, value, permitted
             ),
         }
     }
@@ -242,12 +278,31 @@ impl ServerConfig {
                 "--control-listen" => config.control_listen = Some(value()?),
                 "--control-workers" => config.control_workers = number(&arg, &value()?)? as usize,
                 "--state-file" => config.state_file = Some(value()?),
+                // `--zone <id>` or `--zone <id>=<transport>`. One declaration
+                // site, because a zone's transport is a fact about the zone and
+                // `docs/control-plane.md` puts the set of zones on this command
+                // line. `=` is not an identifier character, so a bare `--zone
+                // kitchen` is unambiguous and unchanged.
                 "--zone" => {
-                    let id = value()?;
+                    let declaration = value()?;
+                    let (id, transport) = match declaration.split_once('=') {
+                        Some((id, word)) => {
+                            let transport = Transport::parse(word).ok_or_else(|| {
+                                ServerConfigError::NotATransport {
+                                    zone: id.to_string(),
+                                    value: word.to_string(),
+                                    permitted: Transport::permitted(),
+                                }
+                            })?;
+                            (id.to_string(), transport)
+                        }
+                        None => (declaration.clone(), DEFAULT_TRANSPORT),
+                    };
                     if !chorus_control::catalog::is_identifier(&id) {
                         return Err(ServerConfigError::NotAZone { value: id });
                     }
-                    config.zones.push(id);
+                    config.zones.push(id.clone());
+                    config.zone_transports.push((id, transport));
                 }
                 "--group-audio" => {
                     let pair = value()?;
@@ -395,6 +450,63 @@ mod tests {
             c.group_audio,
             vec![("downstairs".to_string(), "127.0.0.1:4011".to_string())]
         );
+    }
+
+    #[test]
+    fn a_zone_declares_its_transport_where_it_is_declared_and_wired_is_the_default() {
+        let c = ServerConfig::from_args([
+            "--zone".to_string(),
+            "kitchen".to_string(),
+            "--zone".to_string(),
+            "bedroom=wireless".to_string(),
+            "--zone".to_string(),
+            "study=wired".to_string(),
+        ])
+        .unwrap();
+        assert_eq!(
+            c.zones,
+            vec!["kitchen".to_string(), "bedroom".to_string(), "study".to_string()]
+        );
+        assert_eq!(
+            c.zone_transports,
+            vec![
+                ("kitchen".to_string(), Transport::Wired),
+                ("bedroom".to_string(), Transport::Wireless),
+                ("study".to_string(), Transport::Wired),
+            ],
+            "a zone declaring no transport is wired, and it is recorded rather than inferred"
+        );
+    }
+
+    #[test]
+    fn a_transport_the_committed_configuration_does_not_name_is_refused_at_start() {
+        for word in ["wifi", "Wireless", "", "wired-ish"] {
+            let err = ServerConfig::from_args([
+                "--zone".to_string(),
+                format!("bedroom={}", word),
+            ])
+            .unwrap_err();
+            match &err {
+                ServerConfigError::NotATransport {
+                    zone,
+                    value,
+                    permitted,
+                } => {
+                    assert_eq!(zone, "bedroom");
+                    assert_eq!(value, word);
+                    assert_eq!(permitted, "wired, wireless");
+                }
+                other => panic!("'{}' was not refused as a transport: {:?}", word, other),
+            }
+            let said = err.to_string();
+            assert!(said.contains("bedroom"), "{}", said);
+            assert!(said.contains("wired, wireless"), "{}", said);
+        }
+        // And the zone identifier is still checked on the other side of the `=`.
+        let err =
+            ServerConfig::from_args(["--zone".to_string(), "Bed Room=wireless".to_string()])
+                .unwrap_err();
+        assert!(matches!(err, ServerConfigError::NotAZone { .. }), "{:?}", err);
     }
 
     #[test]
