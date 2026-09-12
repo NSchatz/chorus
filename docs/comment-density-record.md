@@ -14,7 +14,9 @@ measurement survives every later rewrite.
 column in the first place, and running it again is a deliberate change to what
 the baseline means rather than a way to make a red assertion green: neither form
 can silence the ceiling, which is measured against the tree and never against
-this file.
+this file. It is the right act when a change moves a file's code lines, which
+the two code columns compare and which no regeneration can reconcile, and the
+wrong one after a trim, whose whole claim is that those two columns agree.
 
 ## What the gate enforces
 
@@ -64,6 +66,11 @@ The counting stance, in full:
   from the aggregate, and is reported as excluded.
 - A leading comment block opening with an SPDX licence identifier or a copyright
   line leaves both counts, and is reported. Nothing in this repository has one.
+- The leading comment block is the run of comments a file opens with and no more
+  than that: it ends at the first code token, at the first blank line between two
+  comments, and at the first change of comment form. Both exclusions above are
+  scoped to it, so a licence line or a generated marker excuses the block it
+  opens and never a documentation block written underneath.
 - A file below the declared minimum of counted lines is excluded from the
   ceiling test and still appears in the report and in the table below.
 - The ceiling and the warn band are per file. The aggregate is reported and
@@ -83,8 +90,8 @@ is the tree at this change's head.
 
 | distribution | files | prose lines | code lines | ratio |
 |---|---|---|---|---|
-| untrimmed | 116 | 7469 | 29904 | 19.9% |
-| at this change's head | 116 | 7469 | 29904 | 19.9% |
+| untrimmed | 117 | 7506 | 30042 | 19.9% |
+| at this change's head | 117 | 7506 | 30042 | 19.9% |
 
 | file | prose before | code before | ratio before | prose after | code after | ratio after |
 |---|---|---|---|---|---|---|
@@ -121,15 +128,16 @@ is the tree at this change's head.
 | crates/client-linux/tests/sync_loop.rs | 183 | 843 | 17.8% | 183 | 843 | 17.8% |
 | crates/client-linux/tests/sync_telemetry.rs | 58 | 379 | 13.2% | 58 | 379 | 13.2% |
 | crates/client-linux/tests/zone_apply.rs | 65 | 373 | 14.8% | 65 | 373 | 14.8% |
-| crates/comment-density/src/count.rs | 11 | 181 | 5.7% | 11 | 181 | 5.7% |
+| crates/comment-density/src/count.rs | 22 | 225 | 8.9% | 22 | 225 | 8.9% |
 | crates/comment-density/src/demos.rs | 11 | 138 | 7.3% | 11 | 138 | 7.3% |
 | crates/comment-density/src/lex.rs | 21 | 184 | 10.2% | 21 | 184 | 10.2% |
 | crates/comment-density/src/lib.rs | 9 | 53 | 14.5% | 9 | 53 | 14.5% |
 | crates/comment-density/src/main.rs | 12 | 168 | 6.6% | 12 | 168 | 6.6% |
 | crates/comment-density/src/record.rs | 15 | 237 | 5.9% | 15 | 237 | 5.9% |
 | crates/comment-density/src/sweep.rs | 18 | 271 | 6.2% | 18 | 271 | 6.2% |
-| crates/comment-density/tests/counting.rs | 12 | 215 | 5.2% | 12 | 215 | 5.2% |
+| crates/comment-density/tests/counting.rs | 16 | 243 | 6.1% | 16 | 243 | 6.1% |
 | crates/comment-density/tests/refusals.rs | 9 | 286 | 3.0% | 9 | 286 | 3.0% |
+| crates/comment-density/tests/regress_0113_F1.rs | 22 | 66 | 25.0% | 22 | 66 | 25.0% |
 | crates/control/src/catalog.rs | 124 | 524 | 19.1% | 124 | 524 | 19.1% |
 | crates/control/src/fanout.rs | 52 | 114 | 31.3% | 52 | 114 | 31.3% |
 | crates/control/src/json.rs | 83 | 446 | 15.6% | 83 | 446 | 15.6% |

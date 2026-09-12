@@ -20,7 +20,7 @@ clippy, and nothing about how a comment is worded.
 ## What was measured, before anything was decided
 
 Every tracked `.rs` file in the repository, counted from its Rust token stream.
-116 files, 7462 lines of prose over 29886 lines of code, 19.9% in aggregate.
+117 files, 7506 lines of prose over 30042 lines of code, 19.9% in aggregate.
 `docs/comment-density-record.md` carries the whole distribution, file by file,
 and the counting stance in full.
 
@@ -29,9 +29,9 @@ The distribution splits once, and cleanly:
 | where | files | ratio |
 |---|---|---|
 | the densest file measured, `crates/audio-path/src/lib.rs` | 1 | 86.6% |
-| crate roots, `crates/*/src/lib.rs` | 8 | 57.5% to 86.6% |
+| the crate roots above the gap, each a `crates/*/src/lib.rs` | 8 | 57.5% to 86.6% |
 | the densest file that carries code, `crates/client-linux/src/delaylog.rs` | 1 | 44.1% |
-| every file that carries code | 106 | 44.1% and below |
+| every file that carries code | 109 | 44.1% and below |
 
 There is nothing between 44.1% and 57.5%. The eight files above the gap are
 crate roots: their prose is crate-level design documentation and their code is
@@ -139,6 +139,15 @@ vendoring it is the same reason `crates/protocol` owns its own PRNG.
 - A new `.rs` file needs a row in the record. Its before column reads `-`, which
   is the honest answer for a file that did not exist when the baseline was
   measured.
+- A change that adds or removes a line of CODE needs more than that regeneration:
+  the two code-line counts in that file's row are the rule that a trim moves no
+  code token, so a code change makes them disagree by construction and
+  `make comment-density-record` carries the old before column straight into the
+  disagreement. Such a change re-takes the baseline with
+  `cargo run -p chorus-comment-density -- record --baseline`, which is a
+  deliberate statement that the tree being compared against has moved. It cannot
+  make a red ceiling green: the ceiling is measured against the tree and never
+  against the record.
 
 ## Revisit when
 

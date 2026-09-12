@@ -200,6 +200,43 @@ fn a_copyright_line_opens_a_header_too() {
     assert_eq!(counts.prose, 0);
 }
 
+// The three bounds on the leading block, each on its own. A rule that ran to the
+// first code token instead would let one prepended licence line take an
+// arbitrarily large doc block out of the prose count, which is the loophole
+// counting doc comments as prose exists to close.
+
+const LICENCE_THEN_DOCS: &str = r#"
+// SPDX-License-Identifier: MIT
+//! module documentation, which the stance counts as prose
+//! and a second line of it
+fn f() {}
+"#;
+
+#[test]
+fn a_licence_line_does_not_reach_a_doc_block_in_another_form() {
+    let counts = count(LICENCE_THEN_DOCS, &plain()).expect("tokenizes");
+    assert_eq!(counts.header_lines, 1, "the header is the block the licence line opened");
+    assert_eq!(counts.prose, 2, "every line an inner doc comment occupies is prose");
+    assert_eq!(counts.code, 1);
+}
+
+#[test]
+fn a_blank_line_ends_the_leading_block() {
+    let body = "// Copyright somebody\n\n// ordinary prose, one blank line down\nfn f() {}\n";
+    let counts = count(body, &plain()).expect("tokenizes");
+    assert_eq!(counts.header_lines, 1);
+    assert_eq!(counts.prose, 1);
+    assert_eq!(counts.code, 1);
+}
+
+#[test]
+fn a_marker_below_the_leading_block_excludes_nothing() {
+    let cfg = config(&[], &["@generated"]);
+    let body = "// an ordinary opening block\n\n// @generated, one blank line down\nfn f() {}\n";
+    let counts = count(body, &cfg).expect("tokenizes");
+    assert_eq!(counts.generated_marker, None, "the marker is not in the block the file opens with");
+}
+
 #[test]
 fn a_file_with_no_comment_tokens_has_a_ratio_of_zero() {
     let counts = count("fn f() {}\nfn g() {}\n", &plain()).expect("tokenizes");
