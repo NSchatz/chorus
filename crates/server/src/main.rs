@@ -75,7 +75,8 @@ use std::thread;
 use std::time::Duration;
 
 use chorus_audio::{MonotonicTimeline, StreamFormat};
-use chorus_control::transport::ZoneTransports;
+use chorus_control::transport::{Transport, ZoneTransports};
+use chorus_control::zones::Zone;
 use chorus_discovery::dnssd::{Advertisement, AUDIO_SERVICE, CONTROL_SERVICE};
 use chorus_discovery::net::{advertisable_addresses, Advertiser};
 use chorus_hostctl::ThreadRegistry;
@@ -110,6 +111,42 @@ struct Status {
 impl Status {
     fn say(&self, line: &str) {
         println!("chorus-server: {} {} {}", line, self.real_time, self.memory);
+    }
+}
+
+/// One tier line per zone this server SERVES, and one line per declaration that
+/// reaches no zone it serves.
+///
+/// WIFI-7's AC-6 asks for the transport in force and the bound it is held to
+/// "for every zone it serves, so that no zone's tier is implicit", so the list
+/// walked is the served zone state and never the `--zone` command line. The two
+/// differ in both directions, and both are the same defect:
+///
+/// - a server restarted against its persisted state is given its zones by the
+///   file and serves zones the command line never named;
+/// - a `--zone` naming a zone the state does not hold declares a tier for a
+///   zone nobody serves.
+///
+/// The second is reported rather than dropped, because a declaration that
+/// silently reaches nothing reads exactly like one that took effect. It is
+/// deliberately NOT spelled `zone id=`: that shape is the tier of a zone being
+/// served, and this is the absence of one.
+fn report_zone_tiers(
+    transports: &ZoneTransports,
+    served: &[Zone],
+    declared: &[(String, Transport)],
+) {
+    for zone in served {
+        println!("chorus-server: {}", transports.report(&zone.id));
+    }
+    for (id, transport) in declared {
+        if !served.iter().any(|zone| zone.id == *id) {
+            println!(
+                "chorus-server: zone-declaration id={} transport={} \
+                 applies_to=no-zone-this-server-serves",
+                id, transport
+            );
+        }
     }
 }
 
@@ -171,18 +208,19 @@ fn main() -> ExitCode {
         return ExitCode::from(EXIT_CONFIG);
     }
 
-    // Every zone's tier, before anything is bound and before a byte is served.
-    //
     // WIFI-7's AC-6: "SHALL report, for every zone it serves, the transport in
     // force and the bound that transport is held to, so that no zone's tier is
-    // implicit". Here rather than beside the control plane, because a zone is
-    // declared on this command line whether or not a control channel is asked
-    // for, and a tier reported only sometimes is a tier a reader has to guess
-    // at the rest of the time.
+    // implicit".
+    //
+    // The zones this server SERVES are the ones its zone state holds, and that
+    // set is not `config.zones`: `initial_state` ignores the command line
+    // entirely whenever a state file loads, which is the documented restart
+    // (`docs/decisions/0018-the-persisted-zone-state.md` -- `--zone` is read
+    // only when there is no persisted state). So the report is taken below,
+    // from the state itself, once it exists. Reporting from `config.zones` here
+    // would say nothing about a restarted house and would print a tier for a
+    // zone nobody serves, which is the same implicit tier from both ends.
     let transports = ZoneTransports::new(&config.zone_transports);
-    for zone in &config.zones {
-        println!("chorus-server: {}", transports.report(zone));
-    }
 
     // The control channel is bound HERE: before a thread exists, before the
     // audio socket is bound, and before anything could be served. AC-9 asks
@@ -206,6 +244,9 @@ fn main() -> ExitCode {
                 return ExitCode::from(EXIT_CONTROL);
             }
         };
+        // AC-6, over the zones this server actually serves: the state that was
+        // just loaded, whether it came off the command line or off the file.
+        report_zone_tiers(&transports, zones.zones(), &config.zone_transports);
         // WIFI-7's AC-7: a group holding any wireless zone is held to the
         // wireless buffer policy and the wireless bound, and the report names
         // the zone whose declaration set it. The groups come from the state
@@ -241,6 +282,12 @@ fn main() -> ExitCode {
                 return ExitCode::from(EXIT_CONTROL);
             }
         }
+    } else {
+        // No control channel, so this server holds no zone state and serves no
+        // zone: there is no tier in force anywhere for a reader to have to
+        // guess at. A `--zone` declaration made anyway is reported as what it
+        // is rather than being silently dropped.
+        report_zone_tiers(&transports, &[], &config.zone_transports);
     }
 
     // The multicast socket, opened before any thread too, and for the same

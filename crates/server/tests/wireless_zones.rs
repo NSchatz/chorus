@@ -187,10 +187,185 @@ fn every_zone_is_reported_with_its_transport_and_its_bound() {
         said
     );
 
-    // EVERY zone, not some of them: three declared, three reported, and no
-    // zone's tier left to a reader's knowledge of the default.
-    let reported = lines.iter().filter(|l| l.contains("zone id=")).count();
-    assert_eq!(reported, 3, "one line per zone, and these were said: {}", said);
+    // EVERY zone, not some of them: three served, three reported, and no zone's
+    // tier left to a reader's knowledge of the default. The count is taken from
+    // the SERVER's own `zones=` rather than from the command line, because the
+    // two are the same list only where there is no state file to load.
+    assert_eq!(
+        tier_lines(&lines),
+        zones_served(&lines),
+        "one line per zone the server serves, and these were said: {}",
+        said
+    );
+    assert_eq!(
+        zones_served(&lines),
+        3,
+        "and it is serving the three that were declared: {}",
+        said
+    );
+}
+
+/// Write a state file the real renderer produced, holding three zones, two of
+/// them grouped. This is the documented restart:
+/// `docs/decisions/0018-the-persisted-zone-state.md` makes the persisted state
+/// the authority, and `--zone` is read only where there is none.
+fn a_persisted_house(path: &PathBuf) {
+    let mut zones = Zones::new("127.0.0.1:4010");
+    zones.add(Zone::new("kitchen")).unwrap();
+    zones.add(Zone::new("bedroom")).unwrap();
+    zones.add(Zone::new("study")).unwrap();
+    for zone in ["kitchen", "bedroom"] {
+        zones
+            .apply(
+                &decode_command(&format!(
+                    r#"{{"v":1,"t":"group","zone":"{}","group":"downstairs"}}"#,
+                    zone
+                ))
+                .unwrap(),
+            )
+            .unwrap();
+    }
+    std::fs::write(path, persist::render(&zones)).expect("the state file is written");
+}
+
+/// How many zones the SERVER says it serves, read off its own line rather than
+/// counted by this test. `zones=3 state=reloaded` is the server's own account of
+/// the set AC-6 is about, so a grader that compares tier lines against it cannot
+/// drift from what the server actually holds.
+fn zones_served(lines: &[String]) -> usize {
+    lines
+        .iter()
+        .find_map(|line| {
+            line.split_whitespace()
+                .find_map(|word| word.strip_prefix("zones="))
+                .and_then(|count| count.parse::<usize>().ok())
+        })
+        .expect("the server says how many zones it serves")
+}
+
+fn tier_lines(lines: &[String]) -> usize {
+    lines.iter().filter(|l| l.contains("zone id=")).count()
+}
+
+/// AC-6, over the zones the server SERVES rather than over its command line.
+///
+/// The restart the repository documents: the persisted state is the authority
+/// and the operator does not repeat the zone list, so `--zone` names nothing at
+/// all. Every zone still has to carry its tier, or a restarted house is a house
+/// whose every tier is implicit.
+#[test]
+fn every_zone_a_restart_serves_is_reported_with_its_tier() {
+    let state = scratch("restart");
+    a_persisted_house(&state);
+
+    let (_server, mut out, address) = start(&[], Some(&state));
+    let lines = lines_until_listening(&mut out);
+    assert!(wait_for_control(&address), "the server never came up");
+    let said = lines.join("\n");
+
+    assert!(
+        said.contains("state=reloaded"),
+        "this has to be the reload path for it to be about AC-6: {}",
+        said
+    );
+    assert_eq!(
+        tier_lines(&lines),
+        zones_served(&lines),
+        "one tier line per zone the server says it serves, and it said: {}",
+        said
+    );
+    for zone in ["kitchen", "bedroom", "study"] {
+        assert!(
+            said.contains(&format!(
+                "zone id={} transport=wired bound_us={}",
+                zone, WIRED_BOUND_US
+            )),
+            "'{}' is served and declared nothing, so it is wired and says so: {}",
+            zone,
+            said
+        );
+    }
+
+    let _ = std::fs::remove_file(&state);
+}
+
+/// AC-6, the partial declaration: the command line names ONE of the three zones
+/// the state holds. The two it does not name are served just the same, and a
+/// reader of the tier lines has no way to tell a partial list from a whole one,
+/// so every served zone is reported or none of them means anything.
+#[test]
+fn a_partial_zone_declaration_still_reports_every_served_zone() {
+    let state = scratch("partial");
+    a_persisted_house(&state);
+
+    let (_server, mut out, address) = start(&["bedroom=wireless"], Some(&state));
+    let lines = lines_until_listening(&mut out);
+    assert!(wait_for_control(&address), "the server never came up");
+    let said = lines.join("\n");
+
+    assert_eq!(
+        tier_lines(&lines),
+        zones_served(&lines),
+        "one tier line per served zone, whatever the command line named: {}",
+        said
+    );
+    assert!(
+        said.contains(&format!(
+            "zone id=bedroom transport=wireless bound_us={}",
+            WIRELESS_BOUND_US
+        )),
+        "the declared zone carries its declaration: {}",
+        said
+    );
+    for zone in ["kitchen", "study"] {
+        assert!(
+            said.contains(&format!(
+                "zone id={} transport=wired bound_us={}",
+                zone, WIRED_BOUND_US
+            )),
+            "'{}' was not named on the command line and is served anyway: {}",
+            zone,
+            said
+        );
+    }
+
+    let _ = std::fs::remove_file(&state);
+}
+
+/// The same gap from the other end: a transport declared for a zone the served
+/// state does not hold. No tier is reported for it, because a tier line is the
+/// tier of a zone being served; and the declaration is reported as reaching
+/// nothing, because silence there reads exactly like a declaration that took
+/// effect.
+#[test]
+fn a_declaration_that_reaches_no_served_zone_is_reported_as_reaching_nothing() {
+    let state = scratch("unserved");
+    a_persisted_house(&state);
+
+    let (_server, mut out, address) = start(&["livingroom=wireless"], Some(&state));
+    let lines = lines_until_listening(&mut out);
+    assert!(wait_for_control(&address), "the server never came up");
+    let said = lines.join("\n");
+
+    assert_eq!(
+        tier_lines(&lines),
+        zones_served(&lines),
+        "a zone nobody serves gets no tier line: {}",
+        said
+    );
+    assert!(
+        !said.contains("zone id=livingroom"),
+        "'livingroom' is not served, so no tier is in force for it: {}",
+        said
+    );
+    assert!(
+        said.contains("zone-declaration id=livingroom transport=wireless")
+            && said.contains("applies_to=no-zone-this-server-serves"),
+        "and the declaration that reached nothing says so: {}",
+        said
+    );
+
+    let _ = std::fs::remove_file(&state);
 }
 
 /// AC-7. A group holding one wireless zone is held to the wireless policy and
