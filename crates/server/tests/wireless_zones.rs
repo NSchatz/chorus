@@ -368,6 +368,63 @@ fn a_declaration_that_reaches_no_served_zone_is_reported_as_reaching_nothing() {
     let _ = std::fs::remove_file(&state);
 }
 
+/// A server with no control channel holds no zone state and serves no zone, so
+/// there is no tier in force for it to report. It says that rather than saying
+/// nothing: the declaration it was given is reported as reaching nothing, and no
+/// tier line is printed about a zone this process does not serve.
+#[test]
+fn a_server_with_no_control_channel_serves_no_zone_and_claims_no_tier() {
+    let audio = free_port();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_chorus-server"))
+        .args([
+            "--listen",
+            &format!("127.0.0.1:{}", audio),
+            "--source",
+            "tone",
+            "--serve-forever",
+            "--allow-non-realtime",
+            "--allow-unlocked-memory",
+            "--zone",
+            "kitchen=wireless",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("the server binary runs");
+    let mut out = BufReader::new(child.stdout.take().expect("stdout is piped"));
+    let _server = Server(child);
+
+    // As far as the audio socket, which is past everything printed at start.
+    let mut lines = Vec::new();
+    for line in out.by_ref().lines() {
+        let line = line.expect("the server's stdout is readable");
+        let done = line.contains("listening on=");
+        lines.push(line);
+        if done || lines.len() > 200 {
+            break;
+        }
+    }
+    let said = lines.join("\n");
+
+    assert!(
+        said.contains("listening on="),
+        "the server has to have started for this to be about what it reported: {}",
+        said
+    );
+    assert_eq!(
+        tier_lines(&lines),
+        0,
+        "no control channel is no zone state and no zone served, so no tier is in force: {}",
+        said
+    );
+    assert!(
+        said.contains("zone-declaration id=kitchen transport=wireless")
+            && said.contains("applies_to=no-zone-this-server-serves"),
+        "and the declaration it was given says it reached nothing: {}",
+        said
+    );
+}
+
 /// AC-7. A group holding one wireless zone is held to the wireless policy and
 /// the wireless bound, and the report names the zone that did it.
 #[test]
