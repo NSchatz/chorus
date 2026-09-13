@@ -1,4 +1,4 @@
-# 0020: the comment density baseline
+# 0021: the comment density baseline
 
 - Status: decided
 - Recorded by: spec S0113-chorus-comment-prose
@@ -20,7 +20,7 @@ clippy, and nothing about how a comment is worded.
 ## What was measured, before anything was decided
 
 Every tracked `.rs` file in the repository, counted from its Rust token stream.
-117 files, 7506 lines of prose over 30042 lines of code, 19.9% in aggregate.
+117 files, 7700 lines of prose over 30317 lines of code, 20.2% in aggregate.
 `docs/comment-density-record.md` carries the whole distribution, file by file,
 and the counting stance in full.
 

@@ -35,7 +35,7 @@ the first round number above the densest file that carries code,
 gap and nowhere else. Everything from 57.5% up is a crate root, where the prose
 is the crate's own documentation and the code is `pub mod` and `pub use`;
 everything from 44.1% down carries code. Nothing was trimmed to reach these
-numbers, and `docs/decisions/0020-the-comment-density-baseline.md` says why.
+numbers, and `docs/decisions/0021-the-comment-density-baseline.md` says why.
 
 The ceiling is the coarse tooth of three. The warn band names every file that
 drifts up into crate-root territory without failing the build, and the table
@@ -90,8 +90,8 @@ is the tree at this change's head.
 
 | distribution | files | prose lines | code lines | ratio |
 |---|---|---|---|---|
-| untrimmed | 117 | 7506 | 30042 | 19.9% |
-| at this change's head | 117 | 7506 | 30042 | 19.9% |
+| untrimmed | 117 | 7700 | 30317 | 20.2% |
+| at this change's head | 117 | 7700 | 30317 | 20.2% |
 
 | file | prose before | code before | ratio before | prose after | code after | ratio after |
 |---|---|---|---|---|---|---|
@@ -193,7 +193,7 @@ is the tree at this change's head.
 | crates/server/src/source.rs | 29 | 153 | 15.9% | 29 | 153 | 15.9% |
 | crates/server/src/stream.rs | 156 | 282 | 35.6% | 156 | 282 | 35.6% |
 | crates/server/tests/control_stalled_peer.rs | 57 | 173 | 24.7% | 57 | 173 | 24.7% |
-| crates/server/tests/control_thread_population.rs | 53 | 371 | 12.5% | 53 | 371 | 12.5% |
+| crates/server/tests/control_thread_population.rs | 247 | 646 | 27.6% | 247 | 646 | 27.6% |
 | crates/server/tests/grouped_stream.rs | 51 | 337 | 13.1% | 51 | 337 | 13.1% |
 | crates/server/tests/regress_0031_f1.rs | 26 | 89 | 22.6% | 26 | 89 | 22.6% |
 | crates/server/tests/regress_0031_f6.rs | 51 | 139 | 26.8% | 51 | 139 | 26.8% |
