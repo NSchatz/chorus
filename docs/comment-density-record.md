@@ -90,8 +90,8 @@ is the tree at this change's head.
 
 | distribution | files | prose lines | code lines | ratio |
 |---|---|---|---|---|
-| untrimmed | 117 | 7700 | 30317 | 20.2% |
-| at this change's head | 117 | 7700 | 30317 | 20.2% |
+| untrimmed | 122 | 8311 | 32607 | 20.3% |
+| at this change's head | 122 | 8311 | 32607 | 20.3% |
 
 | file | prose before | code before | ratio before | prose after | code after | ratio after |
 |---|---|---|---|---|---|---|
@@ -110,12 +110,12 @@ is the tree at this change's head.
 | crates/audio/src/lib.rs | 21 | 8 | 72.4% | 21 | 8 | 72.4% |
 | crates/client-linux/src/bin/delaylog_check.rs | 11 | 86 | 11.3% | 11 | 86 | 11.3% |
 | crates/client-linux/src/buffer.rs | 116 | 349 | 24.9% | 116 | 349 | 24.9% |
-| crates/client-linux/src/config.rs | 136 | 389 | 25.9% | 136 | 389 | 25.9% |
+| crates/client-linux/src/config.rs | 196 | 481 | 28.9% | 196 | 481 | 28.9% |
 | crates/client-linux/src/control.rs | 78 | 322 | 19.5% | 78 | 322 | 19.5% |
 | crates/client-linux/src/delaylog.rs | 99 | 125 | 44.1% | 99 | 125 | 44.1% |
 | crates/client-linux/src/lib.rs | 43 | 18 | 70.4% | 43 | 18 | 70.4% |
 | crates/client-linux/src/logcheck.rs | 55 | 468 | 10.5% | 55 | 468 | 10.5% |
-| crates/client-linux/src/main.rs | 74 | 410 | 15.2% | 74 | 410 | 15.2% |
+| crates/client-linux/src/main.rs | 91 | 428 | 17.5% | 91 | 428 | 17.5% |
 | crates/client-linux/src/receive.rs | 153 | 510 | 23.0% | 153 | 510 | 23.0% |
 | crates/client-linux/src/run.rs | 169 | 808 | 17.2% | 169 | 808 | 17.2% |
 | crates/client-linux/src/sink.rs | 47 | 93 | 33.5% | 47 | 93 | 33.5% |
@@ -127,6 +127,7 @@ is the tree at this change's head.
 | crates/client-linux/tests/soak_72h.rs | 126 | 317 | 28.4% | 126 | 317 | 28.4% |
 | crates/client-linux/tests/sync_loop.rs | 183 | 843 | 17.8% | 183 | 843 | 17.8% |
 | crates/client-linux/tests/sync_telemetry.rs | 58 | 379 | 13.2% | 58 | 379 | 13.2% |
+| crates/client-linux/tests/wireless_policy.rs | 58 | 308 | 15.8% | 58 | 308 | 15.8% |
 | crates/client-linux/tests/zone_apply.rs | 65 | 373 | 14.8% | 65 | 373 | 14.8% |
 | crates/comment-density/src/count.rs | 22 | 225 | 8.9% | 22 | 225 | 8.9% |
 | crates/comment-density/src/demos.rs | 11 | 138 | 7.3% | 11 | 138 | 7.3% |
@@ -138,11 +139,12 @@ is the tree at this change's head.
 | crates/comment-density/tests/counting.rs | 16 | 243 | 6.1% | 16 | 243 | 6.1% |
 | crates/comment-density/tests/refusals.rs | 9 | 286 | 3.0% | 9 | 286 | 3.0% |
 | crates/comment-density/tests/regress_0113_F1.rs | 22 | 66 | 25.0% | 22 | 66 | 25.0% |
-| crates/control/src/catalog.rs | 124 | 524 | 19.1% | 124 | 524 | 19.1% |
+| crates/control/src/catalog.rs | 132 | 539 | 19.6% | 132 | 539 | 19.6% |
 | crates/control/src/fanout.rs | 52 | 114 | 31.3% | 52 | 114 | 31.3% |
 | crates/control/src/json.rs | 83 | 446 | 15.6% | 83 | 446 | 15.6% |
-| crates/control/src/lib.rs | 30 | 9 | 76.9% | 30 | 9 | 76.9% |
+| crates/control/src/lib.rs | 34 | 11 | 75.5% | 34 | 11 | 75.5% |
 | crates/control/src/persist.rs | 105 | 492 | 17.5% | 105 | 492 | 17.5% |
+| crates/control/src/transport.rs | 93 | 216 | 30.0% | 93 | 216 | 30.0% |
 | crates/control/src/zones.rs | 72 | 288 | 20.0% | 72 | 288 | 20.0% |
 | crates/control/tests/catalog_vectors.rs | 33 | 212 | 13.4% | 33 | 212 | 13.4% |
 | crates/control/tests/refusals.rs | 37 | 150 | 19.7% | 37 | 150 | 19.7% |
@@ -158,14 +160,15 @@ is the tree at this change's head.
 | crates/hostctl/src/lib.rs | 330 | 695 | 32.1% | 330 | 695 | 32.1% |
 | crates/hostctl/tests/thread_inventory.rs | 64 | 450 | 12.4% | 64 | 450 | 12.4% |
 | crates/measure/src/bin/chorus-measure-capture.rs | 38 | 184 | 17.1% | 38 | 184 | 17.1% |
-| crates/measure/src/bin/chorus-measure.rs | 14 | 289 | 4.6% | 14 | 289 | 4.6% |
+| crates/measure/src/bin/chorus-measure.rs | 26 | 371 | 6.5% | 26 | 371 | 6.5% |
 | crates/measure/src/capture.rs | 43 | 105 | 29.0% | 43 | 105 | 29.0% |
 | crates/measure/src/chirp.rs | 55 | 191 | 22.3% | 55 | 191 | 22.3% |
 | crates/measure/src/config.rs | 57 | 200 | 22.1% | 57 | 200 | 22.1% |
 | crates/measure/src/fixtures.rs | 88 | 388 | 18.4% | 88 | 388 | 18.4% |
 | crates/measure/src/freerun.rs | 108 | 398 | 21.3% | 108 | 398 | 21.3% |
+| crates/measure/src/jitter.rs | 129 | 391 | 24.8% | 129 | 391 | 24.8% |
 | crates/measure/src/lag.rs | 157 | 594 | 20.9% | 157 | 594 | 20.9% |
-| crates/measure/src/lib.rs | 53 | 25 | 67.9% | 53 | 25 | 67.9% |
+| crates/measure/src/lib.rs | 54 | 27 | 66.6% | 54 | 27 | 66.6% |
 | crates/measure/src/report.rs | 120 | 616 | 16.3% | 120 | 616 | 16.3% |
 | crates/measure/src/rng.rs | 31 | 67 | 31.6% | 31 | 67 | 31.6% |
 | crates/measure/src/wav.rs | 95 | 479 | 16.5% | 95 | 479 | 16.5% |
@@ -173,7 +176,7 @@ is the tree at this change's head.
 | crates/measure/tests/lag_resolution.rs | 45 | 175 | 20.4% | 45 | 175 | 20.4% |
 | crates/measure/tests/no_settable_wall_clock.rs | 52 | 207 | 20.0% | 52 | 207 | 20.0% |
 | crates/measure/tests/refusals.rs | 64 | 322 | 16.5% | 64 | 322 | 16.5% |
-| crates/measure/tests/report_shape.rs | 54 | 329 | 14.0% | 54 | 329 | 14.0% |
+| crates/measure/tests/report_shape.rs | 92 | 675 | 11.9% | 92 | 675 | 11.9% |
 | crates/protocol/src/codec.rs | 102 | 379 | 21.2% | 102 | 379 | 21.2% |
 | crates/protocol/src/lib.rs | 28 | 15 | 65.1% | 28 | 15 | 65.1% |
 | crates/protocol/src/message.rs | 111 | 160 | 40.9% | 111 | 160 | 40.9% |
@@ -184,11 +187,11 @@ is the tree at this change's head.
 | crates/protocol/tests/golden_vectors.rs | 7 | 131 | 5.0% | 7 | 131 | 5.0% |
 | crates/server/src/bin/chorus-rt-spin.rs | 35 | 90 | 28.0% | 35 | 90 | 28.0% |
 | crates/server/src/clients.rs | 95 | 319 | 22.9% | 95 | 319 | 22.9% |
-| crates/server/src/config.rs | 73 | 315 | 18.8% | 73 | 315 | 18.8% |
-| crates/server/src/control.rs | 180 | 590 | 23.3% | 180 | 590 | 23.3% |
+| crates/server/src/config.rs | 95 | 403 | 19.0% | 95 | 403 | 19.0% |
+| crates/server/src/control.rs | 184 | 598 | 23.5% | 184 | 598 | 23.5% |
 | crates/server/src/hostreport.rs | 70 | 272 | 20.4% | 70 | 272 | 20.4% |
 | crates/server/src/lib.rs | 43 | 14 | 75.4% | 43 | 14 | 75.4% |
-| crates/server/src/main.rs | 145 | 536 | 21.2% | 145 | 536 | 21.2% |
+| crates/server/src/main.rs | 190 | 571 | 24.9% | 190 | 571 | 24.9% |
 | crates/server/src/serve.rs | 81 | 249 | 24.5% | 81 | 249 | 24.5% |
 | crates/server/src/source.rs | 29 | 153 | 15.9% | 29 | 153 | 15.9% |
 | crates/server/src/stream.rs | 156 | 282 | 35.6% | 156 | 282 | 35.6% |
@@ -198,8 +201,10 @@ is the tree at this change's head.
 | crates/server/tests/regress_0031_f1.rs | 26 | 89 | 22.6% | 26 | 89 | 22.6% |
 | crates/server/tests/regress_0031_f6.rs | 51 | 139 | 26.8% | 51 | 139 | 26.8% |
 | crates/server/tests/regress_0043_f1.rs | 31 | 174 | 15.1% | 31 | 174 | 15.1% |
+| crates/server/tests/regress_0051_F1.rs | 34 | 153 | 18.1% | 34 | 153 | 18.1% |
 | crates/server/tests/serving.rs | 56 | 401 | 12.2% | 56 | 401 | 12.2% |
 | crates/server/tests/thread_shape.rs | 46 | 223 | 17.1% | 46 | 223 | 17.1% |
+| crates/server/tests/wireless_zones.rs | 86 | 534 | 13.8% | 86 | 534 | 13.8% |
 | crates/sync/src/bin/chorus-sync-vectors.rs | 7 | 3 | 70.0% | 7 | 3 | 70.0% |
 | crates/sync/src/config.rs | 58 | 185 | 23.8% | 58 | 185 | 23.8% |
 | crates/sync/src/crosscheck.rs | 38 | 128 | 22.8% | 38 | 128 | 22.8% |
