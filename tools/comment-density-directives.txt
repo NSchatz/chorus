@@ -1,0 +1,13 @@
+# Comment prefixes that are a directive to a tool rather than prose an author
+# chose to write. A comment whose first text line starts with one of these is
+# counted as CODE.
+#
+# Blank lines and lines starting with # are ignored, so this file is a list and
+# a place to say why each entry is on it. An EMPTY list is a legitimate state:
+# chorus has no directive comments today, and the gate exits zero on an
+# otherwise compliant tree with nothing here.
+#
+# Rust's own tooling directives are attributes (#[...] and #![...]), which are
+# code already and never reach this list. What would belong here is a comment
+# that some other tool reads: add the prefix, and say in this block what reads
+# it.
