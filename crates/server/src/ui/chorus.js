@@ -508,6 +508,15 @@
   function fillCard(zone, groups, force) {
     var parts = cards[zone.id];
     parts.heading.textContent = zone.name;
+    // A heading showing an identifier because no name could be read is a
+    // figure and not a name somebody typed, so it is marked for the rule that
+    // sets figures in the fixed-advance face. The word beside it in the meta
+    // line is what SAYS so; this is what makes it look like what it is.
+    if (zone.nameReadable) {
+      parts.heading.removeAttribute("data-name-unreadable");
+    } else {
+      parts.heading.setAttribute("data-name-unreadable", "");
+    }
 
     var meta = "id " + zone.id;
     // A name that could not be read falls back to the identifier, and says so.
@@ -597,11 +606,29 @@
     return streamUp ? "Not answering" : "Connection lost";
   }
 
+  /// The connection line, in words and as a state a stylesheet can reach.
+  ///
+  /// The WORD is what says which of the three states this is, and it is the
+  /// only thing a rendering with no colour in it has; the attribute is the
+  /// second signal, so the state is also carried by the token the line is
+  /// painted in. Setting both here rather than at each call site is what stops
+  /// the two disagreeing.
+  function paintConnection(text) {
+    connectionEl.textContent = text;
+    var state = "waiting";
+    if (text === "Live") {
+      state = "live";
+    } else if (text !== "Connecting") {
+      state = "stalled";
+    }
+    connectionEl.setAttribute("data-connection", state);
+  }
+
   function paintFreshness() {
     if (lastState === null) {
       return;
     }
-    connectionEl.textContent = connectionText();
+    paintConnection(connectionText());
     footerFreshnessEl.textContent = fresh ? "live" : "last known";
     Object.keys(cards).forEach(function (id) {
       cards[id].freshness.textContent = fresh ? "live" : "last known";
@@ -617,7 +644,7 @@
       // The word can still have to change: "Connection lost" and "Not
       // answering" are both `fresh === false`.
       if (!fresh && lastState !== null) {
-        connectionEl.textContent = connectionText();
+        paintConnection(connectionText());
       }
       return;
     }
@@ -695,7 +722,7 @@
   function fail() {
     lastState = null;
     show("error", errorNotice);
-    connectionEl.textContent = "Connection lost";
+    paintConnection("Connection lost");
     serialEl.textContent = "No state";
     footerFreshnessEl.textContent = "not yet";
   }

@@ -280,6 +280,24 @@ require_amplifier_registers() {
     fi
 }
 
+# Refuse to continue unless node is here to run a check written in it.
+#
+# CHORUS_NODE names the interpreter, the way CHORUS_BROWSER names the engine, so
+# a run can be pointed at a different one and so tools/unrun-checks-are-visibly-
+# unrun.sh can point it at one that genuinely is not there. The variable is
+# exported rather than returned, because every caller needs the same answer.
+require_node() {
+    local criterion="$1"
+    CHORUS_NODE="${CHORUS_NODE:-node}"
+    export CHORUS_NODE
+    if ! command -v "$CHORUS_NODE" >/dev/null 2>&1; then
+        missing_prerequisite \
+            "$criterion" \
+            "node, to run the check; '$CHORUS_NODE' is not on PATH" \
+            "mise use node@22"
+    fi
+}
+
 # Refuse to continue unless there is a real browser engine AND a driver for it.
 #
 # Both halves matter and neither substitutes for the other. A criterion about a

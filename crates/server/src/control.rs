@@ -173,6 +173,7 @@ pub struct ControlState {
 /// a link to nothing.
 struct Ui {
     html: &'static str,
+    tokens: &'static str,
     css: &'static str,
     js: &'static str,
     doc: &'static str,
@@ -210,6 +211,7 @@ impl ControlState {
             turned_away: AtomicU64::new(0),
             ui: Ui {
                 html: include_str!("ui/index.html"),
+                tokens: include_str!("ui/tokens.css"),
                 css: include_str!("ui/chorus.css"),
                 js: include_str!("ui/chorus.js"),
                 doc: include_str!("../../../docs/control-page.md"),
@@ -570,6 +572,16 @@ fn serve_connection(connection: TcpStream, state: &Arc<ControlState>, keep: &Arc
             "200 OK",
             "text/html; charset=utf-8",
             state.ui.html,
+        ),
+        // The palette, the scale and the type roles, ahead of the stylesheet
+        // that spends them. It is its own file because nothing outside it is
+        // allowed to carry a literal, and a check that reads "outside the token
+        // file" needs an outside to read.
+        ("GET", "/tokens.css") => respond_to_browser(
+            &mut connection,
+            "200 OK",
+            "text/css; charset=utf-8",
+            state.ui.tokens,
         ),
         ("GET", "/chorus.css") => respond_to_browser(
             &mut connection,

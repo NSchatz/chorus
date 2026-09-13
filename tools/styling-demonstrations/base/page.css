@@ -1,0 +1,20 @@
+/* The base demonstration tree: a stylesheet that holds every styling rule.
+ *
+ * One of everything the rules look at: a surface, a border, an ink, a padding,
+ * a gap, a reset margin and a type size, each reached for by a name in the tier
+ * a stylesheet is allowed to name.
+ */
+
+.card {
+  background: var(--card-surface);
+  border: var(--hairline) solid var(--card-edge);
+  color: var(--card-ink);
+  padding: var(--card-pad);
+  gap: var(--card-gap);
+}
+
+.card p {
+  margin: var(--reset-margin);
+  color: var(--muted);
+  font-size: var(--meta-size);
+}

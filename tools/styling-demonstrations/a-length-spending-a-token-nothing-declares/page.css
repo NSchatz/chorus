@@ -1,0 +1,24 @@
+/* A copy of tools/styling-demonstrations/base/page.css with ONE thing wrong: a
+ * PADDING reaches for a token no theme declares.
+ *
+ * The sibling tree a-token-nothing-declares puts the undeclared name in a
+ * colour. This one puts it in a length, which is the shape that reaches the
+ * second rule: an unresolvable length is a length the 4px scale cannot be
+ * measured against, so a scan that reported the rest of its rules here would be
+ * reporting "every length token is a whole multiple of 4px" over a length it
+ * never examined.
+ */
+
+.card {
+  background: var(--card-surface);
+  border: var(--hairline) solid var(--card-edge);
+  color: var(--card-ink);
+  padding: var(--pad-that-nothing-declares);
+  gap: var(--card-gap);
+}
+
+.card p {
+  margin: var(--reset-margin);
+  color: var(--muted);
+  font-size: var(--meta-size);
+}
