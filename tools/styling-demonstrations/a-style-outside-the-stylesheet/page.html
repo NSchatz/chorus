@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- A copy of tools/styling-demonstrations/base/page.html with ONE thing wrong:
+     a style attribute on an element. The colour in it is outside every
+     stylesheet source the scan reads, so no colour or length rule can reach it
+     and the check would report that every colour resolves to a token. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>base</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="page.css" />
+  </head>
+  <body>
+    <section class="card" style="background: #3a4653; padding: 10px">
+      <p>A card painted from the markup, where no stylesheet check can see it.</p>
+    </section>
+  </body>
+</html>

@@ -1,0 +1,19 @@
+/* A copy of tools/styling-demonstrations/base/page.css with ONE thing wrong: a
+ * rule reaches for a token no theme declares. In a browser this paints nothing
+ * at all and the property is thrown away, which is the quietest failure a
+ * stylesheet has.
+ */
+
+.card {
+  background: var(--card-surface);
+  border: var(--hairline) solid var(--card-edge);
+  color: var(--card-inkk);
+  padding: var(--card-pad);
+  gap: var(--card-gap);
+}
+
+.card p {
+  margin: var(--reset-margin);
+  color: var(--muted);
+  font-size: var(--meta-size);
+}

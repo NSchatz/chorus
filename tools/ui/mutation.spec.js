@@ -19,6 +19,8 @@ const contrast = require("./contrast");
 const a11y = require("./a11y");
 const reads = require("./reads");
 const engine = require("./engine");
+const reconcile = require("./reconcile");
+const typeface = require("./typeface");
 const { demonstrates } = require("./claims");
 
 const MINIMUM = 24;
@@ -308,6 +310,153 @@ test("a theme that ignores the operating-system preference is reported", async (
     `a light preference was answered with ${body.colour}`
   ).toBeLessThan(0.6);
   demonstrates("themes-follow-preference");
+});
+
+// --- the tokens, and the ratios recorded beside them -------------------------
+
+/// A page painted from a token table of its own, so a demonstration can change
+/// a token's value the way a person would and leave the annotation behind.
+function tokenPage(roles, body) {
+  const declarations = Object.entries(roles)
+    .map(([name, value]) => `${name}: ${value};`)
+    .join(" ");
+  return `<!doctype html><html><head><style>
+     :root { ${declarations} }
+     body { background: var(--panel); margin: 0; padding: 40px; }
+     p { color: var(--fg); font-size: 16px; margin: 0; }
+   </style></head><body>${body}</body></html>`;
+}
+
+test("a token whose value changed and whose annotation did not is reported, with both numbers", async ({
+  page,
+}) => {
+  // The failure the criterion names by name. The record says --fg on --panel is
+  // 18.20, which it was; the token now resolves to a grey four times paler, and
+  // nobody went back to the comment. The measurement is the same
+  // `reconcile.reconcile` the real claim is graded with, over the same
+  // `contrast.textContrast` rows.
+  await render(
+    page,
+    tokenPage(
+      { "--panel": "#ffffff", "--fg": "#767f88" },
+      "<p>a paragraph whose ink was changed and whose annotation was not</p>"
+    )
+  );
+  const ledger = [{ ink: "--fg", on: "--panel", ratio: 18.2, floor: 4.5, theme: "light" }];
+  const resolved = await reconcile.resolvedTokens(page, ["--fg", "--panel"]);
+  expect(resolved.get("--fg")).toBe("#767f88");
+  const rows = reconcile.rowsFrom(await contrast.textContrast(page), []);
+  const report = reconcile.reconcile({ ledger, resolved, rows, theme: "light" });
+  const stale = report.problems.filter((problem) => problem.why === "stale-annotation");
+  expect(
+    stale.length,
+    `a recorded ratio four times the measured one was read as current: ${JSON.stringify(report)}`
+  ).toBe(1);
+  expect(stale[0].message).toContain("18.20");
+  expect(stale[0].message).toContain("4.07");
+  demonstrates("tokens-reconciled");
+});
+
+test("a measured row painted in a colour no token declares is reported as mapping to nothing", async ({
+  page,
+}) => {
+  // The other half of a total reconciliation, and the one that stops it being
+  // satisfied by mapping nothing: a run painted in a literal, which is exactly
+  // what the source check refuses and exactly what this would have to notice if
+  // one ever reached the page.
+  await render(
+    page,
+    tokenPage(
+      { "--panel": "#ffffff", "--fg": "#10161c" },
+      '<p style="color:#8a3200">a run painted in a colour no role declares</p>'
+    )
+  );
+  const ledger = [{ ink: "--fg", on: "--panel", ratio: 18.2, floor: 4.5, theme: "light" }];
+  const resolved = await reconcile.resolvedTokens(page, ["--fg", "--panel"]);
+  const rows = reconcile.rowsFrom(await contrast.textContrast(page), []);
+  const report = reconcile.reconcile({ ledger, resolved, rows, theme: "light" });
+  const unmapped = report.problems.filter((problem) => problem.why === "unmapped-row");
+  expect(
+    unmapped.length,
+    `a row painted in a colour no role declares was read as reconciled: ${JSON.stringify(report)}`
+  ).toBe(1);
+  expect(unmapped[0].message).toContain("#8a3200");
+  expect(report.mapped).toBe(0);
+  demonstrates("tokens-reconciled");
+});
+
+// --- the two faces -----------------------------------------------------------
+
+test("a figure painted in the system UI face is reported, with the widths that show it", async ({
+  page,
+}) => {
+  await render(
+    page,
+    `<!doctype html><html><head><style>
+       body { margin: 0; padding: 40px;
+              font: 16px -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+     </style></head><body>
+       <span data-volume="kitchen">38%</span>
+     </body></html>`
+  );
+  const rows = await typeface.faces(page, "[data-volume]");
+  expect(rows.length).toBe(1);
+  const offenders = typeface.notFixedAdvance(rows);
+  expect(
+    offenders.length,
+    `a figure in a proportional face was read as fixed-advance: ${JSON.stringify(rows)}`
+  ).toBe(1);
+  expect(offenders[0].narrowWide[0]).toBeLessThan(offenders[0].narrowWide[1]);
+  demonstrates("figures-fixed-advance");
+});
+
+test("a heading painted in the figure face is reported", async ({ page }) => {
+  // The rule read the other way. A page that answered "everything is
+  // monospace" would satisfy the figures half and lose the sentences, and this
+  // is the measurement that says so.
+  await render(
+    page,
+    `<!doctype html><html><head><style>
+       body { margin: 0; padding: 40px; font: 16px ui-monospace, monospace; }
+     </style></head><body>
+       <h2 data-zone-name="kitchen">The Kitchen</h2>
+     </body></html>`
+  );
+  const rows = await typeface.faces(page, "h2");
+  expect(rows.length).toBe(1);
+  const offenders = typeface.notProportional(rows);
+  expect(
+    offenders.length,
+    `a heading in a fixed-advance face was read as prose: ${JSON.stringify(rows)}`
+  ).toBe(1);
+  expect(offenders[0].narrowWide[0]).toBe(offenders[0].narrowWide[1]);
+  demonstrates("figures-fixed-advance");
+});
+
+test("an empty notice whose command is not in the figure face is reported", async ({
+  page,
+}) => {
+  await render(
+    page,
+    `<!doctype html><html><head><style>
+       body { margin: 0; padding: 40px;
+              font: 16px -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+       code { display: block; font-family: inherit; }
+     </style></head><body>
+       <section data-empty>
+         <h2>No zones yet</h2>
+         <p>Start the server with one --zone for each room:</p>
+         <code>chorus-server --control-listen 127.0.0.1:4020 --zone kitchen</code>
+       </section>
+     </body></html>`
+  );
+  const rows = await typeface.faces(page, "[data-empty] code");
+  expect(rows.length).toBe(1);
+  expect(
+    typeface.notFixedAdvance(rows).length,
+    `a command line in a proportional face was read as fixed-advance: ${JSON.stringify(rows)}`
+  ).toBe(1);
+  demonstrates("empty-notice-type-rule");
 });
 
 // --- the accessibility tree -------------------------------------------------

@@ -1,0 +1,298 @@
+// Every counting rule the stance declares, pinned against a fixture that
+// exercises it. The fixtures are raw strings rather than files on purpose: a
+// fixture that lived as a tracked .rs file would be swept by the gate itself,
+// and a fixture full of comment-like text inside literals is exactly the file
+// this suite exists to prove is counted at zero prose.
+
+use chorus_comment_density::count::{count, Config};
+use chorus_comment_density::{CEILING_PERCENT, MINIMUM_COUNTED_LINES, WARN_PERCENT};
+
+fn config(directives: &[&str], markers: &[&str]) -> Config {
+    Config {
+        ceiling_percent: CEILING_PERCENT,
+        warn_percent: WARN_PERCENT,
+        minimum_counted_lines: MINIMUM_COUNTED_LINES,
+        directive_prefixes: directives.iter().map(|value| value.to_string()).collect(),
+        generated_markers: markers.iter().map(|value| value.to_string()).collect(),
+    }
+}
+
+fn plain() -> Config {
+    config(&[], &[])
+}
+
+// The umbrella's original failure, in Rust. Every comment marker here is inside
+// a literal and none of it is prose.
+const LITERALS: &str = r##"
+fn main() {
+    let a = "// not a comment";
+    let b = r"/* also not one */";
+    let c = r#"and "// this" is not either"#;
+    let d = b"// bytes are not prose";
+    let e = br"/* raw bytes are not prose */";
+    let f = '/';
+    let g = '*';
+    let h = "an escaped \" and then // still nothing";
+    println!("{a}{b}{c}{e}{f}{g}{h}{:?}", d);
+}
+"##;
+
+#[test]
+fn comment_like_text_inside_a_literal_is_never_prose() {
+    let counts = count(LITERALS, &plain()).expect("the fixture tokenizes");
+    assert_eq!(counts.prose, 0, "a literal is not prose");
+    assert_eq!(counts.code, 11);
+    assert_eq!(counts.tenths(), 0);
+}
+
+// The umbrella's failure, at the line where it actually shows. A literal on a
+// line that also carries code is attributed to code either way, so a counter
+// that had gone back to matching quote characters would still pass the fixture
+// above. What separates them is the INTERIOR of a multi-line literal, where the
+// only thing on the line is text that spells a comment.
+const MULTI_LINE_LITERALS: &str = r##"
+const NORMAL: &str = "
+// a line with no code token on it at all
+/* and another, closing and everything */
+";
+
+const RAW: &str = r#"
+/// a doc marker inside a raw string
+//! and an inner one
+"#;
+
+fn main() {
+    println!("{NORMAL}{RAW}");
+}
+"##;
+
+#[test]
+fn the_interior_of_a_multi_line_literal_is_code_and_not_prose() {
+    let counts = count(MULTI_LINE_LITERALS, &plain()).expect("the fixture tokenizes");
+    assert_eq!(counts.prose, 0, "a literal's interior is not prose, whatever it spells");
+    assert_eq!(counts.code, 11);
+}
+
+const DEEP_RAW: &str = r####"
+fn main() {
+    let one = r#"// one hash"#;
+    let two = r##"// two hashes, and "# does not close it"##;
+    let three = r###"// three, and "## does not close it either"###;
+    let cstr = c"// a C string is not prose";
+    println!("{one}{two}{three}{cstr:?}");
+}
+"####;
+
+#[test]
+fn a_raw_string_closes_at_its_own_hash_depth() {
+    let counts = count(DEEP_RAW, &plain()).expect("the fixture tokenizes");
+    assert_eq!(counts.prose, 0);
+    assert_eq!(counts.code, 7);
+}
+
+const NESTED: &str = r#"
+/* outer
+   /* inner, which Rust permits */
+   still outer */
+fn f() {}
+"#;
+
+#[test]
+fn a_nested_block_comment_is_prose_to_its_own_closing() {
+    let counts = count(NESTED, &plain()).expect("the fixture tokenizes");
+    assert_eq!(counts.prose, 3);
+    assert_eq!(counts.code, 1);
+}
+
+const DOCS: &str = r#"
+//! an inner line doc
+/// an outer line doc
+pub struct A;
+/** an outer block doc */
+pub struct B;
+/*! an inner block doc */
+fn g() {}
+"#;
+
+#[test]
+fn every_doc_comment_form_is_prose() {
+    let counts = count(DOCS, &plain()).expect("the fixture tokenizes");
+    assert_eq!(counts.prose, 4, "all four doc forms count");
+    assert_eq!(counts.code, 3);
+}
+
+const ATTRIBUTES: &str = r##"
+#![allow(dead_code)]
+#![doc = "// this is an attribute, not a comment"]
+#[derive(Debug, Clone)]
+#[doc = r#"/* nor is this */"#]
+pub struct A;
+"##;
+
+#[test]
+fn an_attribute_is_code_however_much_it_reads_like_a_directive() {
+    let counts = count(ATTRIBUTES, &plain()).expect("the fixture tokenizes");
+    assert_eq!(counts.prose, 0);
+    assert_eq!(counts.code, 5);
+}
+
+const DIRECTIVE: &str = r#"
+// chorus-lint: allow this once
+fn f() {}
+"#;
+
+#[test]
+fn a_comment_on_the_committed_directive_list_is_code() {
+    let listed = count(DIRECTIVE, &config(&["chorus-lint:"], &[])).expect("tokenizes");
+    assert_eq!(listed.prose, 0, "a directive is code");
+    assert_eq!(listed.code, 2);
+}
+
+#[test]
+fn an_empty_directive_list_leaves_the_same_comment_as_prose() {
+    let unlisted = count(DIRECTIVE, &plain()).expect("tokenizes");
+    assert_eq!(unlisted.prose, 1, "anything not on the list is prose");
+    assert_eq!(unlisted.code, 1);
+}
+
+const GENERATED: &str = r#"
+// @generated by the vector writer; do not edit
+// The rest of this block is the generator's prose and not an author's.
+fn f() {}
+"#;
+
+#[test]
+fn a_generated_marker_in_the_leading_block_excludes_the_file() {
+    let cfg = config(&[], &["@generated"]);
+    let counts = count(GENERATED, &cfg).expect("tokenizes");
+    assert_eq!(counts.generated_marker.as_deref(), Some("@generated"));
+}
+
+#[test]
+fn a_marker_that_is_not_in_the_leading_block_excludes_nothing() {
+    let cfg = config(&[], &["@generated"]);
+    let body = "fn f() {}\n// @generated, but not at the top\n";
+    let counts = count(body, &cfg).expect("tokenizes");
+    assert_eq!(counts.generated_marker, None);
+}
+
+const LICENCE: &str = r#"
+// SPDX-License-Identifier: MIT
+// Copyright the chorus authors
+fn f() {}
+// and an ordinary comment that is prose
+"#;
+
+#[test]
+fn a_licence_header_leaves_both_counts() {
+    let counts = count(LICENCE, &plain()).expect("tokenizes");
+    assert_eq!(counts.header_lines, 2);
+    assert_eq!(counts.header_opener.as_deref(), Some("SPDX-License-Identifier: MIT"));
+    assert_eq!(counts.prose, 1, "only the ordinary comment is prose");
+    assert_eq!(counts.code, 1);
+}
+
+#[test]
+fn a_copyright_line_opens_a_header_too() {
+    let body = "// Copyright somebody\n// all rights reserved\nfn f() {}\n";
+    let counts = count(body, &plain()).expect("tokenizes");
+    assert_eq!(counts.header_lines, 2);
+    assert_eq!(counts.prose, 0);
+}
+
+// The three bounds on the leading block, each on its own. A rule that ran to the
+// first code token instead would let one prepended licence line take an
+// arbitrarily large doc block out of the prose count, which is the loophole
+// counting doc comments as prose exists to close.
+
+const LICENCE_THEN_DOCS: &str = r#"
+// SPDX-License-Identifier: MIT
+//! module documentation, which the stance counts as prose
+//! and a second line of it
+fn f() {}
+"#;
+
+#[test]
+fn a_licence_line_does_not_reach_a_doc_block_in_another_form() {
+    let counts = count(LICENCE_THEN_DOCS, &plain()).expect("tokenizes");
+    assert_eq!(counts.header_lines, 1, "the header is the block the licence line opened");
+    assert_eq!(counts.prose, 2, "every line an inner doc comment occupies is prose");
+    assert_eq!(counts.code, 1);
+}
+
+#[test]
+fn a_blank_line_ends_the_leading_block() {
+    let body = "// Copyright somebody\n\n// ordinary prose, one blank line down\nfn f() {}\n";
+    let counts = count(body, &plain()).expect("tokenizes");
+    assert_eq!(counts.header_lines, 1);
+    assert_eq!(counts.prose, 1);
+    assert_eq!(counts.code, 1);
+}
+
+#[test]
+fn a_marker_below_the_leading_block_excludes_nothing() {
+    let cfg = config(&[], &["@generated"]);
+    let body = "// an ordinary opening block\n\n// @generated, one blank line down\nfn f() {}\n";
+    let counts = count(body, &cfg).expect("tokenizes");
+    assert_eq!(counts.generated_marker, None, "the marker is not in the block the file opens with");
+}
+
+#[test]
+fn a_file_with_no_comment_tokens_has_a_ratio_of_zero() {
+    let counts = count("fn f() {}\nfn g() {}\n", &plain()).expect("tokenizes");
+    assert_eq!(counts.prose, 0);
+    assert_eq!(counts.code, 2);
+    assert_eq!(counts.tenths(), 0, "nothing is divided by nothing");
+}
+
+#[test]
+fn an_empty_file_divides_by_nothing() {
+    let counts = count("", &plain()).expect("tokenizes");
+    assert_eq!(counts.counted(), 0);
+    assert_eq!(counts.tenths(), 0);
+}
+
+const LIFETIMES: &str = r#"
+struct S<'a> { s: &'a str }
+fn f<'a>(x: &'a str) -> &'a str {
+    'outer: loop { break 'outer; }
+    x
+}
+// the lexer has to still be here to see this
+"#;
+
+#[test]
+fn a_lifetime_is_not_an_unterminated_character_literal() {
+    let counts = count(LIFETIMES, &plain()).expect("the fixture tokenizes");
+    assert_eq!(counts.prose, 1, "the comment after the lifetimes is still found");
+    assert_eq!(counts.code, 5);
+}
+
+const RAW_IDENT: &str = r##"
+fn f() {
+    let r#type = 1;
+    let r#fn = r#"a raw string, which r#type is not"#;
+}
+// and the lexer is still here
+"##;
+
+#[test]
+fn a_raw_identifier_is_not_a_raw_string() {
+    let counts = count(RAW_IDENT, &plain()).expect("the fixture tokenizes");
+    assert_eq!(counts.prose, 1);
+    assert_eq!(counts.code, 4);
+}
+
+#[test]
+fn a_line_carrying_a_code_token_is_code_however_it_ends() {
+    let counts = count("let x = 1; // why\n// why, alone\n", &plain()).expect("tokenizes");
+    assert_eq!(counts.code, 1, "an annotated line of code is a line of code");
+    assert_eq!(counts.prose, 1, "a line that is only a comment is prose");
+}
+
+#[test]
+fn a_blank_line_inside_a_block_comment_counts_as_neither() {
+    let counts = count("/* one\n\n   three */\nfn f() {}\n", &plain()).expect("tokenizes");
+    assert_eq!(counts.prose, 2);
+    assert_eq!(counts.code, 1);
+}

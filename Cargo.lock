@@ -30,6 +30,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "chorus-comment-density"
+version = "0.1.0"
+
+[[package]]
 name = "chorus-control"
 version = "0.1.0"
 dependencies = [

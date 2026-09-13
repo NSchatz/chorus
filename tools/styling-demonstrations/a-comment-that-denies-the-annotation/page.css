@@ -1,0 +1,23 @@
+/* A copy of tools/styling-demonstrations/base/page.css with ONE thing wrong: a
+ * comment that still argues the rule the decision record supersedes. Every
+ * declaration in it is correct; what is wrong is that the file now says two
+ * opposite things about whether a ratio belongs beside a value, which is worse
+ * than either of them on its own.
+ *
+ * Every pair here is measured in the engine, in both themes, which is why there
+ * is no ratio written beside a value that could go stale.
+ */
+
+.card {
+  background: var(--card-surface);
+  border: var(--hairline) solid var(--card-edge);
+  color: var(--card-ink);
+  padding: var(--card-pad);
+  gap: var(--card-gap);
+}
+
+.card p {
+  margin: var(--reset-margin);
+  color: var(--muted);
+  font-size: var(--meta-size);
+}

@@ -1,0 +1,20 @@
+/* A copy of tools/styling-demonstrations/base/page.css with ONE thing wrong: a
+ * surface is raised with a shadow. Every value in it is a token, so the only
+ * thing wrong is the raising itself, which is what the styling record says this
+ * surface does not do and what its S8 row would have to be rewritten for.
+ */
+
+.card {
+  background: var(--card-surface);
+  border: var(--hairline) solid var(--card-edge);
+  box-shadow: var(--card-gap) var(--card-gap) var(--card-gap) var(--line);
+  color: var(--card-ink);
+  padding: var(--card-pad);
+  gap: var(--card-gap);
+}
+
+.card p {
+  margin: var(--reset-margin);
+  color: var(--muted);
+  font-size: var(--meta-size);
+}

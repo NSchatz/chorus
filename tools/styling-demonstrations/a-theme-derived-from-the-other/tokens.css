@@ -1,0 +1,100 @@
+/* A copy of tools/styling-demonstrations/base/tokens.css with ONE thing
+ * wrong: the dark theme's --muted is mixed out of two other tokens rather than chosen.
+ *
+ * tools/styling-check.sh scans this tree and requires it to go red naming that
+ * one rule. A check nobody has seen fail is a formality rather than evidence.
+ */
+
+/* tier: primitive */
+:root {
+  --paper: #ffffff;
+  --paper-dim: #eef1f4;
+  --ink: #10161c;
+  --ink-soft: #414d59;
+  --edge: #767f88;
+  --rule: #5f6c79;
+  --mark-ink: #16191d;
+  --night: #0f141a;
+  --night-panel: #1a2129;
+  --night-ink: #e9eff5;
+  --night-soft: #b3c0cd;
+  --night-edge: #6b7987;
+  --night-rule: #7f8d9c;
+  --night-mark: #f2f7fc;
+  --blue-day: #0a5387;
+  --blue-night: #7ab8f5;
+  --green-day: #0a6b2f;
+  --green-night: #7fd39b;
+  --amber-day: #7a4a00;
+  --amber-night: #f0c274;
+  --orange-day: #8a3200;
+  --orange-night: #ffb454;
+  --red-day: #a11208;
+  --red-night: #ff9b8f;
+  --grey-day: #646d78;
+  --grey-night: #8f9aa6;
+
+  --space-0: 0px;
+  --space-8: 8px;
+  --space-16: 16px;
+  --stroke-1: 1px;
+  --text-14: 14px;
+}
+
+/* tier: semantic, theme: light */
+:root {
+  --bg: var(--paper-dim);
+  --panel: var(--paper);
+  --line: var(--rule);
+  --fg: var(--ink);
+  /* contrast: --fg on --panel = 18.20, floor 4.5 */
+  --muted: var(--ink-soft);
+  /* contrast: --muted on --panel = 8.64, floor 4.5 */
+  --accent: var(--blue-day);
+  --ok: var(--green-day);
+  --warn: var(--amber-day);
+  --bad: var(--red-day);
+  --border: var(--edge);
+  /* contrast: --border on --panel = 4.07, floor 3 */
+  --mark: var(--mark-ink);
+  --focus: var(--orange-day);
+  --disabled: var(--grey-day);
+  --selected: var(--blue-day);
+  --link: var(--blue-day);
+}
+
+@media (prefers-color-scheme: dark) {
+  /* tier: semantic, theme: dark */
+  :root {
+    --bg: var(--night);
+    --panel: var(--night-panel);
+    --line: var(--night-rule);
+    --fg: var(--night-ink);
+    /* contrast: --fg on --panel = 14.02, floor 4.5 */
+    --muted: color-mix(in srgb, var(--night-ink) 70%, var(--night-panel));
+    /* contrast: --muted on --panel = 8.77, floor 4.5 */
+    --accent: var(--blue-night);
+    --ok: var(--green-night);
+    --warn: var(--amber-night);
+    --bad: var(--red-night);
+    --border: var(--night-edge);
+    /* contrast: --border on --panel = 3.64, floor 3 */
+    --mark: var(--night-mark);
+    --focus: var(--orange-night);
+    --disabled: var(--grey-night);
+    --selected: var(--blue-night);
+    --link: var(--blue-night);
+  }
+}
+
+/* tier: component */
+:root {
+  --card-surface: var(--panel);
+  --card-edge: var(--line);
+  --card-ink: var(--fg);
+  --card-pad: var(--space-16);
+  --card-gap: var(--space-8);
+  --hairline: var(--stroke-1);
+  --meta-size: var(--text-14);
+  --reset-margin: var(--space-0);
+}
