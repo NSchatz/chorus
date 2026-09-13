@@ -90,8 +90,16 @@ function namesFor(table, colour) {
 
 /// Every row the contrast measurement produced, as a pair of colours and the
 /// ratio between them. One shape, so nothing downstream has to know whether a
-/// row came from a text run, a control boundary or a slider.
-function rowsFrom(textRows, markRows) {
+/// row came from a text run, a control boundary, a slider or a focus indicator.
+///
+/// ALL THREE of the functions in contrast.js that produce a ratio between two
+/// framebuffer colours come through here: `textContrast`, `nonTextContrast` and
+/// `focusIndicators`. AC-7 says "every row the contrast measurement produces in
+/// a theme", and a function left out by construction is exactly the shape of
+/// reconciliation that reports itself total over the half it was handed.
+/// `linkMarks` is the one measurement not here, and it is not a ratio: it
+/// reports what fraction of a link's width carries the link's own colour.
+function rowsFrom(textRows, markRows, focusRows = []) {
   const rows = [];
   for (const run of textRows) {
     rows.push({
@@ -125,6 +133,18 @@ function rowsFrom(textRows, markRows) {
       kind: mark.kind,
       colours: [normalise(mark.edge), normalise(mark.surround)],
       measured: mark.ratio,
+      floor: 3,
+    });
+  }
+  for (const focus of focusRows) {
+    rows.push({
+      what: `the focus indicator of ${focus.label}`,
+      kind: "focus indicator",
+      // The colour the indicator was DRAWN in and the colour it was drawn OVER,
+      // both taken from the difference between two framebuffers rather than
+      // from any declaration.
+      colours: [normalise(focus.drawn), normalise(focus.over)],
+      measured: focus.ratio,
       floor: 3,
     });
   }

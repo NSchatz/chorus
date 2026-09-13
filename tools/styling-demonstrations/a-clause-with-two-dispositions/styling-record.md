@@ -17,4 +17,4 @@ it.
 | S7 | tokens-reconciled | and also, this surface records no ratios | |
 | S8 | source:border-and-surface-separation, contrast-in-both-themes | | |
 | S9 | | This page animates nothing. | |
-| S10 | source:one-accent-hue | | |
+| S10 | | [exempts: --focus] The focus ring is neither the accent nor the line. | |

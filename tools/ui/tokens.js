@@ -47,9 +47,17 @@ const ROLES = [
   "--link",
 ];
 
-/// The roles that paint a state rather than a surface or its ink. S10 lets each
-/// of these carry its own hue; everything else is neutral or the one accent.
-const STATE_ROLES = ["--ok", "--warn", "--bad", "--focus", "--disabled", "--selected"];
+/// The roles S10 admits a second hue for, and the list is the clause's own
+/// enumeration rather than a reading of it: "every other colour in the palette
+/// is neutral or a state token (`--ok`, `--warn`, `--bad`)". Three names.
+///
+/// `--focus`, `--disabled` and `--selected` are state roles in the S2 sense and
+/// the clause still does not name them, so they are held to the accent window
+/// like any other role. A palette that needs one of them outside that window
+/// takes a written exemption in docs/styling-conventions-record.md, which
+/// `one-accent-hue` reads and holds to its own premise. Widening this list
+/// instead would make the rule report a conformance nobody measured.
+const STATE_ROLES = ["--ok", "--warn", "--bad"];
 
 const TIER_LINE = /^\s*\/\*\s*tier:\s*(primitive|semantic|component)\s*(?:,\s*theme:\s*(light|dark)\s*)?\*\/\s*$/;
 const DECLARATION_LINE = /^\s*(--[a-zA-Z0-9-]+)\s*:\s*([^;]+);\s*$/;

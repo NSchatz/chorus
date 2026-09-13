@@ -44,7 +44,10 @@ const RULES = {
   "tokens-resolve": "every token a stylesheet reaches for is declared in both themes",
   "border-and-surface-separation":
     "surfaces are separated by a border token and a surface token, and nothing is raised",
-  "one-accent-hue": "one non-neutral hue outside the state roles, and it is the accent",
+  "one-accent-hue":
+    "one non-neutral hue outside the three state roles S10 enumerates, and it is the accent",
+  "styling-stays-in-the-stylesheet":
+    "the page's markup and script carry no style of their own, so the stylesheet sources are all of them",
   "clause-record":
     "the committed styling record gives every clause exactly one disposition",
   "decision-record":
@@ -109,6 +112,15 @@ yellow yellowgreen transparent currentcolor`
 
 const NAMED_COLOUR = new RegExp(`(^|[\\s,(])(${NAMED_COLOURS.join("|")})(?=$|[\\s,)/;])`, "i");
 
+/// Whether a value is a colour in any of the forms a person writes one in. Used
+/// by `no-colour-literals` through the three tests separately, because it
+/// reports WHICH form it found, and by `three-tiers`, which only needs to know
+/// that the value is paint.
+function isColour(value) {
+  const text = String(value || "");
+  return HEX_LITERAL.test(text) || COLOUR_FUNCTION.test(text) || NAMED_COLOUR.test(text);
+}
+
 // The forms that make one theme out of another. S6 refuses all of them: a
 // derived palette misses contrast floors, and the hand fixes land anyway
 // without the honesty of having been chosen.
@@ -165,29 +177,45 @@ function fixtureConfig(dir) {
       ? fs.readdirSync(where).filter((name) => name.endsWith(".css") && name !== "tokens.css")
       : [];
   const names = [...new Set([...cssIn(BASE), ...cssIn(fixture)])].sort();
+  const otherIn = (where, suffixes) =>
+    fs.existsSync(where)
+      ? fs.readdirSync(where).filter((name) => suffixes.some((s) => name.endsWith(s)))
+      : [];
+  const elsewhere = [
+    ...new Set([
+      ...otherIn(BASE, ELSEWHERE_SUFFIXES),
+      ...otherIn(fixture, ELSEWHERE_SUFFIXES),
+    ]),
+  ].sort();
   const ownRecord = path.join(fixture, "styling-record.md");
   const ownDecisions = path.join(fixture, "decisions");
   return {
     label: path.relative(REPO_ROOT, fixture) || fixture,
     tokenFile: pick("tokens.css"),
     sources: names.map(pick),
+    elsewhere: elsewhere.map(pick),
     record: fs.existsSync(ownRecord) ? ownRecord : repo.record,
     decisions: fs.existsSync(ownDecisions) ? ownDecisions : repo.decisions,
   };
 }
 
+/// The files that are not stylesheets and could still carry a style: the markup
+/// the server hands out and the script that builds the page at runtime. AC-2
+/// and AC-3 are written over "any stylesheet source outside the token file", and
+/// `styling-stays-in-the-stylesheet` is what makes the `.css` files all of them.
+const ELSEWHERE_SUFFIXES = [".html", ".js"];
+
 function repoConfig() {
   const ui = path.join(REPO_ROOT, "crates", "server", "src", "ui");
+  const inUi = (keep) =>
+    fs.existsSync(ui)
+      ? fs.readdirSync(ui).filter(keep).map((name) => path.join(ui, name)).sort()
+      : [];
   return {
     label: "this repository",
     tokenFile: path.join(ui, "tokens.css"),
-    sources: fs.existsSync(ui)
-      ? fs
-          .readdirSync(ui)
-          .filter((name) => name.endsWith(".css") && name !== "tokens.css")
-          .map((name) => path.join(ui, name))
-          .sort()
-      : [],
+    sources: inUi((name) => name.endsWith(".css") && name !== "tokens.css"),
+    elsewhere: inUi((name) => ELSEWHERE_SUFFIXES.some((s) => name.endsWith(s))),
     record: path.join(REPO_ROOT, "docs", "styling-conventions-record.md"),
     decisions: path.join(REPO_ROOT, "docs", "decisions"),
   };
@@ -214,17 +242,26 @@ class Report {
   stoppedLooking(what) {
     this.empty.push(what);
   }
-  print() {
+  /// `passes: false` prints the failures and not one `pass` line.
+  ///
+  /// AC-5 names two antecedents - a token file that will not parse, and a
+  /// stylesheet reaching for a token no theme defines - and gives them one
+  /// consequent: "SHALL NOT report any part of the check as passed". Both
+  /// branches below print through here with `passes: false`, so the sentence is
+  /// honoured the same way twice rather than once.
+  print({ passes = true } = {}) {
     for (const failure of this.failures) {
       console.log(`FAIL ${failure.rule} ${failure.where}: ${failure.message}`);
     }
     for (const what of this.empty) {
       console.log(`STOPPED LOOKING: ${what}`);
     }
-    const broken = new Set(this.failures.map((f) => f.rule));
-    for (const rule of [...this.ran].sort()) {
-      if (!broken.has(rule)) {
-        console.log(`pass ${rule}: ${RULES[rule]}`);
+    if (passes) {
+      const broken = new Set(this.failures.map((f) => f.rule));
+      for (const rule of [...this.ran].sort()) {
+        if (!broken.has(rule)) {
+          console.log(`pass ${rule}: ${RULES[rule]}`);
+        }
       }
     }
     console.log(`ran: ${[...this.ran].sort().join(",")}`);
@@ -254,7 +291,7 @@ function scan(config) {
     // not parse would be reporting noise, and reporting the ones that happened
     // to pass would be reporting part of the check as passed, which AC-5
     // refuses by name.
-    report.print();
+    report.print({ passes: false });
     console.log(
       `\n${config.label}: the token file did not parse, so no part of this check is reported as passed`
     );
@@ -283,16 +320,40 @@ function scan(config) {
     report.stoppedLooking("no declaration was found in any stylesheet source");
   }
 
+  // AC-5's OTHER antecedent, and it runs before everything below it for the
+  // same reason the parse branch returns: a name no theme declares is a value
+  // the rules below cannot read. `spacing-scale` would skip the padding that
+  // spends it and then report that every length token is a whole multiple of
+  // 4px, which is a pass printed over a length examined not at all. So the
+  // branch refuses here and reports no pass line, exactly as the parse branch
+  // does one sentence of the criterion earlier.
+  tokensResolve(report, parsed, tables, sources);
+  if (report.failures.length) {
+    report.print({ passes: false });
+    console.log(
+      `\n${config.label}: a stylesheet reaches for a token no theme declares, so no part of this check is reported as passed`
+    );
+    return 2;
+  }
+
   roleVocabulary(report, parsed, tables);
   threeTiers(report, parsed, tables, sources);
   noColourLiterals(report, sources);
   spacingScale(report, tables, sources);
   handAuthoredThemes(report, parsed, tables);
-  tokensResolve(report, parsed, tables, sources);
   separation(report, sources);
-  oneAccentHue(report, tables);
+  stylingStaysInTheStylesheet(report, config);
+
+  // The two rules below READ the committed record, so the record is read first.
+  // Registering them as run before `clause-record` grades the record keeps that
+  // ordering invisible to a clause: the record may cite either of them and the
+  // "names a rule that did not run in this invocation" refusal still means what
+  // it says.
+  report.runs("one-accent-hue");
+  report.runs("exemptions-stay-true");
   const record = clauseRecord(report, config);
   decisionRecord(report, config, sources);
+  oneAccentHue(report, tables, record, path.relative(REPO_ROOT, config.record));
   exemptionsStayTrue(report, record, sources);
 
   report.print();
@@ -354,7 +415,15 @@ function threeTiers(report, parsed, tables, sources) {
   const primitives = new Set(parsed.tiers.primitive);
   const isPrimitiveColour = (name) => {
     const declaration = tables.light.get(name);
-    return Boolean(declaration && primitives.has(name) && tokens.isHex(declaration.value));
+    if (!declaration || !primitives.has(name)) {
+      return false;
+    }
+    // A colour in ANY of the forms a person writes one in, not only the
+    // hexadecimal form. `transparent` is a colour keyword and a component
+    // reaching past the semantic tier for it is reaching past it for a colour,
+    // which is the thing the clause refuses; a rule that only saw hex would
+    // report "no component token names a primitive colour" over one that does.
+    return isColour(declaration.value);
   };
 
   for (const source of sources) {
@@ -602,9 +671,91 @@ function separation(report, sources) {
   }
 }
 
+// The shapes that put a colour or a length somewhere no stylesheet check can
+// reach it: a style block or a style attribute in the markup, and a script
+// writing one at runtime. The sanctioned route is a class, which resolves to a
+// rule in a stylesheet source, which is where AC-2 and AC-3 grade it.
+const STYLE_ELSEWHERE = [
+  { pattern: /<style[\s>]/i, what: "a <style> block", where: ".html" },
+  { pattern: /\sstyle\s*=\s*["']/i, what: 'a style="" attribute', where: ".html" },
+  { pattern: /\.style\s*(\.|\[|=[^=])/, what: "a style written from the script", where: ".js" },
+  { pattern: /\.setProperty\s*\(/, what: "a custom property set from the script", where: ".js" },
+  { pattern: /\.cssText\s*=/, what: "a declaration block written from the script", where: ".js" },
+  {
+    pattern: /setAttribute\s*\(\s*["']style["']/,
+    what: "a style attribute written from the script",
+    where: ".js",
+  },
+  {
+    pattern: /createElement\s*\(\s*["']style["']/,
+    what: "a stylesheet built from the script",
+    where: ".js",
+  },
+  { pattern: /\binsertRule\s*\(/, what: "a rule inserted from the script", where: ".js" },
+  { pattern: /\badoptedStyleSheets\b/, what: "an adopted stylesheet", where: ".js" },
+];
+
+/// What makes `sources` the WHOLE source set AC-2 and AC-3 are written over.
+///
+/// Those two criteria say "any stylesheet source outside the token file", and
+/// this scan reads the `.css` files. That is only the same set while a colour or
+/// a length has nowhere else to be: a `<style>` block in the markup, a `style=`
+/// attribute, or `element.style` in the script are all styling this check could
+/// never see. So none of them is allowed to exist, which is a property a machine
+/// can hold and a grep cannot be trusted to re-run.
+function stylingStaysInTheStylesheet(report, config) {
+  report.runs("styling-stays-in-the-stylesheet");
+  const files = config.elsewhere || [];
+  for (const file of files) {
+    const where = path.relative(REPO_ROOT, file);
+    const suffix = path.extname(file);
+    const text = withoutComments(fs.readFileSync(file, "utf8"), suffix);
+    text.split("\n").forEach((line, index) => {
+      for (const shape of STYLE_ELSEWHERE) {
+        if (shape.where === suffix && shape.pattern.test(line)) {
+          report.fail(
+            "styling-stays-in-the-stylesheet",
+            `${where}:${index + 1}`,
+            `${shape.what}; a colour or a length here is outside every stylesheet source this check reads, so it names a class and the rule lives in the stylesheet`
+          );
+        }
+      }
+    });
+  }
+  if (files.length === 0) {
+    report.stoppedLooking(
+      "there is no markup or script beside the stylesheet, so nothing held the stylesheet sources to being the whole source set"
+    );
+  }
+}
+
+/// The same text with every comment blanked, so prose about `element.style` is
+/// not read as `element.style`. String literals are left alone: the shapes above
+/// look inside them on purpose.
+function withoutComments(text, suffix) {
+  if (suffix === ".html") {
+    return text.replace(/<!--[\s\S]*?-->/g, (c) => c.replace(/[^\n]/g, " "));
+  }
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "))
+    .replace(/(^|[^:])\/\/[^\n]*/g, (whole, lead) => lead + " ".repeat(whole.length - lead.length));
+}
+
 /// S10: one hue that is not a state, and it is the accent.
-function oneAccentHue(report, tables) {
+///
+/// The exception is the clause's own enumeration - `--ok`, `--warn`, `--bad` -
+/// and nothing else is admitted by this code. A palette that needs a second hue
+/// on another role says so in the committed record, in the exemption cell of
+/// S10's row, in the form `[exempts: --focus]`; this rule reads that cell and
+/// admits exactly the roles it names. Two refusals fall out, and both matter:
+/// a second hue on a role the record does not exempt, and an exemption for a
+/// role that is already inside the accent window, which is an exemption holding
+/// nothing and the beginning of a list that quietly grows.
+function oneAccentHue(report, tables, record, recordPath) {
   report.runs("one-accent-hue");
+  const exempted = exemptedRoles(record, "S10");
+  const admitted = [...tokens.STATE_ROLES, ...exempted];
+  const neededIt = new Set();
   for (const theme of tokens.THEMES) {
     const hues = [];
     for (const role of tokens.ROLES) {
@@ -639,15 +790,46 @@ function oneAccentHue(report, tables) {
     }
     for (const other of hues) {
       const apart = Math.abs(((other.hue - accent.hue + 540) % 360) - 180);
-      if (apart > 15) {
-        report.fail(
-          "one-accent-hue",
-          theme,
-          `${other.role} is ${other.value}, a second hue ${Math.round(apart)} degrees from the accent ${accent.value}; every colour outside the state tokens is neutral or the accent`
-        );
+      if (apart <= 15) {
+        continue;
       }
+      if (admitted.includes(other.role)) {
+        neededIt.add(other.role);
+        continue;
+      }
+      report.fail(
+        "one-accent-hue",
+        theme,
+        `${other.role} is ${other.value}, a second hue ${Math.round(apart)} degrees from the accent ${accent.value}; S10 admits ${tokens.STATE_ROLES.join(", ")} and no other, so this is the accent's hue, a neutral, or a written exemption in the record`
+      );
     }
   }
+  for (const role of exempted) {
+    if (!neededIt.has(role)) {
+      report.fail(
+        "one-accent-hue",
+        recordPath || "the styling record",
+        `the record exempts ${role} from S10 and ${role} is not a second hue in either theme, so the exemption holds nothing up; an exemption nothing needs is how a list of them grows`
+      );
+    }
+  }
+}
+
+/// The roles a clause's exemption cell names, in the form `[exempts: --a, --b]`.
+///
+/// The marker is required rather than reading every `--name` out of the prose,
+/// because the prose for S10 has to be able to say "neither the accent nor the
+/// line" without exempting `--accent` and `--line` by mentioning them.
+function exemptedRoles(record, clause) {
+  const row = record && record.get ? record.get(clause) : null;
+  if (!row || !row.exemption) {
+    return [];
+  }
+  const marker = /\[\s*exempts:([^\]]*)\]/i.exec(row.exemption);
+  if (!marker) {
+    return [];
+  }
+  return [...new Set(marker[1].match(/--[a-zA-Z0-9-]+/g) || [])];
 }
 
 /// AC-14: the committed record, one disposition per clause.

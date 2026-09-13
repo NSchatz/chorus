@@ -74,11 +74,6 @@
   --red-300: #ff9b8f;
   --red-700: #a11208;
 
-  /* The absence of paint, which is a value a component asks for by name like
-   * any other. The slider's own box is not painted at all: what a person sees
-   * is the track and the thumb the user agent draws inside it. */
-  --nothing: transparent;
-
   /* The 4px scale. Every length the page paints is a step of it, named for
    * the number of pixels it is, so a value off the scale is visible in the
    * declaration rather than only in the check. */
@@ -209,6 +204,15 @@
    * token that names a primitive colour instead of the role that owns it. */
   --reset-margin: var(--space-0);
   --shrink-min: var(--space-0);
+
+  /* The absence of paint. It sits HERE and not in the primitive tier: the
+   * primitive tier is the palette, and there is no colour in this to change,
+   * so a component naming it is not a component reaching past its role into
+   * the palette. The slider's own box is not painted at all - what a person
+   * sees is the track and the thumb the user agent draws inside it - so the two
+   * rules that would otherwise inherit the shared control surface and edge name
+   * this instead. */
+  --nothing: transparent;
 
   --wordmark-ink: var(--accent);
   --wordmark-size: var(--text-20);

@@ -535,6 +535,12 @@ for (const theme of ["light", "dark"]) {
     // put beside comes off the framebuffer, and the mapping from one to the
     // other is the table THE ENGINE resolved the roles to in this theme. No
     // floor is judged from the file: contrast.js grades those, from pixels.
+    //
+    // "Every row the contrast measurement produces" is all three of the
+    // functions in contrast.js that produce a ratio between two framebuffer
+    // colours, and the `kinds` set at the bottom is what holds that: a kind of
+    // row that stopped arriving fails this test, so a function cannot fall out
+    // of the reconciliation the way one was left out of it to begin with.
     expect(
       TOKENS.problems,
       `the token file did not parse: ${TOKENS.problems.join("; ")}`
@@ -547,6 +553,7 @@ for (const theme of ["light", "dark"]) {
 
     await page.emulateMedia({ colorScheme: theme });
     const used = new Set();
+    const kinds = new Set();
     let measuredRows = 0;
 
     async function reconcileWhatIsPainted(what, atLeast) {
@@ -557,7 +564,8 @@ for (const theme of ["light", "dark"]) {
       ).toBe(tokenFile.ROLES.length);
       const rows = reconcile.rowsFrom(
         await contrast.textContrast(page),
-        await contrast.nonTextContrast(page)
+        await contrast.nonTextContrast(page),
+        await contrast.focusIndicators(page)
       );
       expect(
         rows.length,
@@ -570,6 +578,7 @@ for (const theme of ["light", "dark"]) {
       ).toEqual([]);
       expect(report.mapped, `${what}: no row mapped to a token pair`).toBe(rows.length);
       report.used.forEach((pair) => used.add(pair));
+      rows.forEach((row) => kinds.add(row.kind));
       measuredRows += rows.length;
     }
 
@@ -616,6 +625,14 @@ for (const theme of ["light", "dark"]) {
       `only ${used.size} recorded pairs were put beside a measurement: ${[...used].join(", ")}`
     ).toBeGreaterThanOrEqual(8);
     expect(measuredRows).toBeGreaterThanOrEqual(48);
+    // Every kind of row the three ratio-producing measurements make, reconciled.
+    // A kind missing here is a measurement that stopped reaching the mapping,
+    // which is a reconciliation reporting itself total over less than it was
+    // given.
+    expect(
+      [...kinds].sort(),
+      `the kinds of measured row that were reconciled in the ${theme} theme`
+    ).toEqual(["boundary", "focus indicator", "slider thumb", "slider track", "text"]);
 
     await scenario({});
     proves("tokens-reconciled");

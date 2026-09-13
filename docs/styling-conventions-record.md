@@ -44,7 +44,7 @@ these three:
 | S7 | tokens-reconciled | | |
 | S8 | source:border-and-surface-separation, contrast-in-both-themes | | |
 | S9 | | This page animates nothing. There is no transition, no animation and no keyframe in its stylesheet, so there is no motion to honour a reduced-motion preference about and no value change that is illegible with motion off. The moment one is added the exemption stops being true, which is what `source:exemptions-stay-true` refuses. | |
-| S10 | source:one-accent-hue | | |
+| S10 | | [exempts: --focus] One accent is claimed and declared, and every role outside the three state tokens the clause enumerates is neutral or the accent hue, with one exception written here instead of widened into the rule. The focus ring has to be neither the accent nor the line: this surface already spends the accent hue on the wordmark, on every link and on the fill of a pressed control, so a ring in that hue would be a ring the page is full of, and a ring in the line colour is the boundary it is drawn beside. The focus role is the one hue nothing else here carries, and it clears 3:1 against the panel in both themes off the painted pixels. `source:one-accent-hue` admits exactly the roles named in this cell, refuses a second hue on any other role, and refuses a name here that has stopped needing the exemption. | |
 
 ## Why each row says what it says
 
@@ -68,7 +68,15 @@ than reaching past it into the palette.
 
 The tier rule is applied to colour exactly as the clause states it: primitives
 are named only by the semantic tier, and the surface names only the semantic and
-component tiers. For lengths and type it is applied one tier shorter, because
+component tiers. A colour is a colour in any of the forms one is written in, so
+the rule refuses a component reaching for a primitive whose value is a hex, a
+colour function or a CSS named colour; a rule that only saw the hexadecimal form
+would report "no component token names a primitive colour" over a component
+naming a keyword. The absence of paint is not in the palette and so is not a
+primitive: `--nothing` is declared in the component tier, where the two slider
+rules that have to undo the shared control surface and edge can name it without
+reaching past a role for a colour. For lengths and type it is applied one tier
+shorter, because
 the clause's semantic vocabulary is a colour vocabulary and there is no semantic
 length role to route a padding through: the 4px scale and the type scale are
 primitives, the component tier binds the step each component spends, and the
@@ -127,20 +135,38 @@ raised surface makes this build red, and whoever adds it adds the scale with it.
 **S9 Motion is decoration, never information.** Exempt, with the reason in the
 row, and the exemption is machine-checked rather than asserted in prose.
 
-**S10 The accent is the only non-neutral hue.** `source:one-accent-hue` resolves
-every role outside the state tokens in each theme, measures how far each is from
-grey, and requires every one that has a hue at all to be within fifteen degrees
-of `--accent`. The state tokens - `--ok`, `--warn`, `--bad`, `--focus`,
-`--disabled`, `--selected` - are the clause's own exception, and `--selected`
-and `--link` are the accent hue in any case.
+**S10 The accent is the only non-neutral hue.** Exempt for one named role, with
+the reason in the row, and the exemption is machine-checked rather than asserted
+in prose. `source:one-accent-hue` resolves every role in each theme, measures how
+far each is from grey, and requires every one that has a hue at all to be within
+fifteen degrees of `--accent`. Its exception list is the clause's own
+enumeration and nothing else: `--ok`, `--warn` and `--bad`. `--focus`,
+`--disabled` and `--selected` are state roles in the S2 sense and the clause
+still does not name them, so they are measured like any other role - `--selected`
+and `--link` are the accent hue, `--disabled` is a neutral, and `--focus` is the
+one role that needs the exemption the row writes down. The rule reads that row
+and admits exactly the roles it names, which is the half that keeps an exemption
+from quietly becoming a list: a second hue on a role the row does not name is a
+refusal, and so is a name in the row that is already inside the accent window.
+
+There is no third route. An exception list held in the checker rather than in
+this row would report a conformance nobody measured, which is the failure mode
+`frontend.md` F1 names: a check whose exception list is where the disagreement
+with the clause was put.
 
 ## What is not in this table
 
-`tools/ui/styling-scan.js` runs five rules no clause cites: `tokens-parse`,
-which refuses a token file it cannot read rather than reading less of it;
-`tokens-resolve`, which S1 does cite; `clause-record`, which is this file being
-read; `decision-record`, which is the decision above being required and no
-stylesheet comment being allowed to contradict it; and
-`exemptions-stay-true`, which is the two exemptions above being held to their
-own premises. They are the machinery that keeps the table honest rather than
-dispositions of a clause.
+`tools/ui/styling-scan.js` runs six rules no clause cites. `tokens-parse`
+refuses a token file it cannot read rather than reading less of it.
+`clause-record` is this file being read. `decision-record` is the decision above
+being required and no stylesheet comment being allowed to contradict it.
+`exemptions-stay-true` holds S4's and S9's exemptions to their own premises, and
+`one-accent-hue` holds S10's to its, which is why S10's row is an exemption and
+not an assertion: a rule that reads a row cannot also be that row's disposition
+without grading itself. `styling-stays-in-the-stylesheet` is what makes the
+`.css` files the WHOLE source set the first three rules are written over: a
+`<style>` block, a `style=` attribute or an `element.style` written from the
+script would be styling no stylesheet check could reach, so none of them is
+allowed to exist and the page says what it looks like by naming a class. They
+are the machinery that keeps the table honest rather than dispositions of a
+clause.

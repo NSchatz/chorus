@@ -16,4 +16,4 @@ why it is refused rather than read as "nothing to say".
 | S7 | tokens-reconciled | | |
 | S8 | source:border-and-surface-separation, contrast-in-both-themes | | |
 | S9 | | This page animates nothing. | |
-| S10 | source:one-accent-hue | | |
+| S10 | | [exempts: --focus] The focus ring is neither the accent nor the line. | |

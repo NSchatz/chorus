@@ -101,8 +101,16 @@ expect_green() {
 # One committed tree that breaks exactly one rule. It has to go red, naming that
 # rule and nothing else: a tree that went red for two reasons would leave the
 # second one unproved and the first one unlocated.
+#
+# A third argument of `silent` adds AC-5's second consequent: "SHALL NOT report
+# any part of the check as passed". The criterion attaches it to two antecedents,
+# a token file that will not parse and a stylesheet reaching for a token no theme
+# defines, and a scan that named the undefined token and then printed eleven pass
+# lines beside it would satisfy the first half of that sentence and not the
+# second. Counted here rather than asserted in the scanner's own prose, because a
+# scanner cannot be the witness that it stayed quiet.
 expect_red() {
-    local name="$1" want_rule="$2"
+    local name="$1" want_rule="$2" quiet="${3:-}"
     CHECKED+=("$name")
     local dir="$DEMOS/$name"
     if [ ! -d "$dir" ]; then
@@ -135,6 +143,16 @@ expect_red() {
         fail "$name went red on more than the one rule it breaks: $(printf '%s' "$others" | tr '\n' ' ')"
         red=0
     fi
+    if [ "$quiet" = "silent" ]; then
+        local passes
+        passes="$(printf '%s\n' "$out" | grep -cE '^pass ' || true)"
+        if [ "$passes" -ne 0 ]; then
+            fail "$name reported $passes rule(s) as passed; AC-5 says this branch reports no part of the check as passed"
+            red=0
+        else
+            say "pass $name reported no part of the check as passed"
+        fi
+    fi
     if [ "$red" -eq 1 ]; then
         say "pass $name went red naming $want_rule and nothing else"
         REDS=$(( REDS + 1 ))
@@ -149,17 +167,25 @@ expect_red a-token-missing-from-one-theme        role-vocabulary
 expect_red a-raw-colour-in-the-page              no-colour-literals
 expect_red a-length-off-the-scale                spacing-scale
 expect_red a-length-written-inline               spacing-scale
-expect_red a-token-nothing-declares              tokens-resolve
 expect_red a-theme-derived-from-the-other        hand-authored-themes
-expect_red a-token-file-that-does-not-parse      tokens-parse
 expect_red a-surface-that-names-a-primitive      three-tiers
+expect_red a-component-that-names-a-primitive-colour-keyword three-tiers
 expect_red a-second-hue-outside-the-states       one-accent-hue
+expect_red a-second-hue-the-record-does-not-exempt one-accent-hue
+expect_red an-exemption-no-hue-needs             one-accent-hue
 expect_red a-raised-surface                      border-and-surface-separation
+expect_red a-style-outside-the-stylesheet        styling-stays-in-the-stylesheet
 expect_red motion-under-an-exemption             exemptions-stay-true
 expect_red a-comment-that-denies-the-annotation  decision-record
 expect_red no-decision-on-record                 decision-record
 expect_red a-clause-with-two-dispositions        clause-record
 expect_red a-clause-mapped-to-nothing            clause-record
+
+# AC-5's two antecedents, and the consequent they share: each of these names what
+# it could not read and reports NO rule as passed.
+expect_red a-token-file-that-does-not-parse      tokens-parse    silent
+expect_red a-token-nothing-declares              tokens-resolve  silent
+expect_red a-length-spending-a-token-nothing-declares tokens-resolve silent
 
 say ""
 say "=== chorus: and the one tree that is supposed to pass ========================="
