@@ -21,12 +21,17 @@
 // has not answered yet) are reached by doctoring the state, never by doctoring
 // the page.
 
+const fs = require("fs");
+const path = require("path");
 const { test, expect } = require("@playwright/test");
 const { measureControls, tooSmall } = require("./measure");
 const contrast = require("./contrast");
 const a11y = require("./a11y");
 const reads = require("./reads");
 const engine = require("./engine");
+const tokenFile = require("./tokens");
+const reconcile = require("./reconcile");
+const typeface = require("./typeface");
 const { proves } = require("./claims");
 
 /// The smallest border box the target-size criterion allows, in CSS pixels.
@@ -40,6 +45,39 @@ const MOST_WORDS = 12;
 /// admits it and the page's own rename box produces it, so it is the widest
 /// heading the 360-pixel criterion has to hold for.
 const UNBROKEN_NAME = "MasterBedroomEnsuiteSpeakersAndTheHallway".padEnd(64, "x");
+
+/// The token file, parsed once. What is read out of it is the RECORDED ratios
+/// and nothing else: every number they are compared against comes off the
+/// pixels, and no floor is ever judged from this file.
+const TOKENS = tokenFile.parseTokens(
+  fs.readFileSync(
+    path.join(__dirname, "..", "..", "crates", "server", "src", "ui", "tokens.css"),
+    "utf8"
+  ),
+  "crates/server/src/ui/tokens.css"
+);
+
+/// Every run whose column alignment carries meaning: the volume figure, the
+/// endpoint figure, the serial line, the command in the empty notice, and a
+/// heading showing an identifier because the state carried no name.
+const FIGURE_RUNS =
+  '[data-volume], [data-endpoints], [data-serial], [data-zone-name][data-name-unreadable], code';
+
+/// Every heading, explanatory sentence and control label.
+const PROSE_RUNS = [
+  "h1",
+  ".zone h2:not([data-name-unreadable])",
+  ".notice h2",
+  ".notice p",
+  ".meta:not([data-endpoints])",
+  ".row label",
+  "button",
+  "select",
+  'input[type="text"]',
+  "[data-mute-state]",
+  ".doc-link",
+  ".state:not([data-serial])",
+].join(", ");
 
 const BASE = process.env.CHORUS_UI_BASE;
 const EMPTY = process.env.CHORUS_UI_EMPTY_BASE;
@@ -486,6 +524,192 @@ for (const theme of ["light", "dark"]) {
     proves("themes-follow-preference");
   });
 }
+
+// --- the tokens the page is painted from -------------------------------------
+
+for (const theme of ["light", "dark"]) {
+  test(`every ratio recorded beside a token pair is the one the engine measures, in the ${theme} theme`, async ({
+    page,
+  }) => {
+    // The recorded numbers come out of the token file. Every number they are
+    // put beside comes off the framebuffer, and the mapping from one to the
+    // other is the table THE ENGINE resolved the roles to in this theme. No
+    // floor is judged from the file: contrast.js grades those, from pixels.
+    expect(
+      TOKENS.problems,
+      `the token file did not parse: ${TOKENS.problems.join("; ")}`
+    ).toEqual([]);
+    const ledger = TOKENS.contrast.filter((row) => row.theme === theme);
+    expect(
+      ledger.length,
+      `no contrast ratio is recorded for the ${theme} theme at all, so this check would pass over an empty set`
+    ).toBeGreaterThanOrEqual(10);
+
+    await page.emulateMedia({ colorScheme: theme });
+    const used = new Set();
+    let measuredRows = 0;
+
+    async function reconcileWhatIsPainted(what, atLeast) {
+      const resolved = await reconcile.resolvedTokens(page, tokenFile.ROLES);
+      expect(
+        resolved.size,
+        `${what}: the engine resolved ${resolved.size} of the ${tokenFile.ROLES.length} roles`
+      ).toBe(tokenFile.ROLES.length);
+      const rows = reconcile.rowsFrom(
+        await contrast.textContrast(page),
+        await contrast.nonTextContrast(page)
+      );
+      expect(
+        rows.length,
+        `${what}: the contrast measurement produced ${rows.length} rows, so this would reconcile almost nothing`
+      ).toBeGreaterThanOrEqual(atLeast);
+      const report = reconcile.reconcile({ ledger, resolved, rows, theme });
+      expect(
+        report.problems.map((problem) => problem.message),
+        `${what}, in the ${theme} theme`
+      ).toEqual([]);
+      expect(report.mapped, `${what}: no row mapped to a token pair`).toBe(rows.length);
+      report.used.forEach((pair) => used.add(pair));
+      measuredRows += rows.length;
+    }
+
+    // The page a real server serves, with a refused command on it so the one
+    // run painted in --bad is among what is measured.
+    await knownState(BASE);
+    await page.goto(`${BASE}/`);
+    await expect(page.locator('[data-zone-name="kitchen"]')).toBeVisible();
+    await page.locator('[data-rename="kitchen"]').fill("x".repeat(100));
+    await page.locator('[data-rename="kitchen"]').press("Enter");
+    await expect(page.locator('[data-refusal="kitchen"]')).toHaveText("Refused: name");
+    await page.evaluate(() => {
+      if (document.activeElement && document.activeElement.blur) {
+        document.activeElement.blur();
+      }
+    });
+    await reconcileWhatIsPainted("the page a real server served, with a refusal on it", 24);
+
+    // A zone whose figures could not be read, which is where --disabled is
+    // painted and nowhere else.
+    const doctored = twoZones();
+    delete doctored.zones[0].volume;
+    delete doctored.zones[0].muted;
+    delete doctored.zones[0].group;
+    await scenario({ state: doctored });
+    await page.goto(`${FIXTURE}/`);
+    await expect(page.locator('[data-mute="kitchen"]')).toBeDisabled();
+    await reconcileWhatIsPainted("a zone whose figures could not be read", 12);
+
+    // A state that could not be read at all, which is where --warn is painted.
+    await scenario({ stateStatus: 500, eventsMode: "severed" });
+    await page.goto(`${FIXTURE}/`);
+    await expect(page.locator("[data-error]")).toBeVisible();
+    await expect(page.locator("[data-connection]")).toHaveText("Connection lost");
+    await reconcileWhatIsPainted("a state that could not be read", 6);
+
+    // A server with no zone configured, which is where the one run on --bg is.
+    await page.goto(`${EMPTY}/`);
+    await expect(page.locator("[data-empty]")).toBeVisible();
+    await reconcileWhatIsPainted("a server with no zone configured", 6);
+
+    expect(
+      used.size,
+      `only ${used.size} recorded pairs were put beside a measurement: ${[...used].join(", ")}`
+    ).toBeGreaterThanOrEqual(8);
+    expect(measuredRows).toBeGreaterThanOrEqual(48);
+
+    await scenario({});
+    proves("tokens-reconciled");
+  });
+}
+
+test("every figure is painted in a fixed-advance face and every sentence in the system UI face", async ({
+  page,
+}) => {
+  await knownState(BASE);
+  await page.goto(`${BASE}/`);
+  await expect(page.locator('[data-zone-name="kitchen"]')).toBeVisible();
+
+  const figures = await typeface.faces(page, FIGURE_RUNS);
+  expect(
+    figures.length,
+    "no figure was measured, so this check would pass vacuously"
+  ).toBeGreaterThanOrEqual(5);
+  for (const wanted of ["[data-volume]", "[data-endpoints]", "[data-serial]"]) {
+    expect(
+      figures.some((row) => row.what.includes(wanted)),
+      `no ${wanted} run was among the ${figures.length} measured: ${JSON.stringify(figures.map((f) => f.what))}`
+    ).toBe(true);
+  }
+  expect(
+    typeface.notFixedAdvance(figures),
+    "runs whose column alignment carries meaning that the engine did not paint at one advance per character"
+  ).toEqual([]);
+
+  const prose = await typeface.faces(page, PROSE_RUNS);
+  expect(
+    prose.length,
+    "no heading, sentence or label was measured, so this check would pass vacuously"
+  ).toBeGreaterThanOrEqual(12);
+  expect(
+    typeface.notProportional(prose),
+    "headings, sentences or control labels the engine painted in a fixed-advance face"
+  ).toEqual([]);
+
+  // The fourth run the criterion names: a heading showing an identifier because
+  // the state carried no name for that zone. It is a figure, and the heading
+  // beside it, whose name WAS read, is not.
+  const nameless = twoZones();
+  nameless.serial = 7;
+  delete nameless.zones[1].name;
+  await scenario({ state: nameless });
+  await page.goto(`${FIXTURE}/`);
+  await expect(page.locator('[data-zone-name="study"]')).toHaveText("study");
+  const identifiers = await typeface.faces(page, "[data-zone-name][data-name-unreadable]");
+  expect(identifiers.length, "no heading fell back to an identifier").toBe(1);
+  expect(
+    typeface.notFixedAdvance(identifiers),
+    "an identifier standing in for a name was not painted at one advance per character"
+  ).toEqual([]);
+  const named = await typeface.faces(page, ".zone h2:not([data-name-unreadable])");
+  expect(named.length, "no heading kept the name the state carried").toBe(1);
+  expect(
+    typeface.notProportional(named),
+    "a heading showing a name a person typed was painted in the figure face"
+  ).toEqual([]);
+
+  await scenario({});
+  proves("figures-fixed-advance");
+});
+
+test("the empty notice sets its command in the figure face and its sentences in the UI face", async ({
+  page,
+}) => {
+  await page.goto(`${EMPTY}/`);
+  await expect(page.locator("[data-empty]")).toBeVisible();
+
+  const command = await typeface.faces(page, "[data-empty] code");
+  expect(command.length, "the empty notice painted no command line").toBe(1);
+  expect(command[0].text).toContain("chorus-server");
+  expect(
+    typeface.notFixedAdvance(command),
+    "the command a person has to type was not painted at one advance per character"
+  ).toEqual([]);
+
+  const sentences = await typeface.faces(
+    page,
+    "[data-empty] h2, [data-empty] p, [data-empty] .doc-link"
+  );
+  expect(
+    sentences.length,
+    "the empty notice painted no heading, sentence or link"
+  ).toBeGreaterThanOrEqual(3);
+  expect(
+    typeface.notProportional(sentences),
+    "the empty notice's heading, sentences or link were painted in the figure face"
+  ).toEqual([]);
+
+  proves("empty-notice-type-rule");
+});
 
 test("every control is reachable by Tab in reading order and does what a pointer does", async ({
   page,
@@ -1114,7 +1338,7 @@ test("the server sends a policy, the browser reports no violation, and everythin
   await expect(page.locator('[data-zone-name="kitchen"]')).toBeVisible();
 
   // The page and every asset it loads were sent one.
-  for (const asset of ["/", "/chorus.css", "/chorus.js"]) {
+  for (const asset of ["/", "/tokens.css", "/chorus.css", "/chorus.js"]) {
     const url = asset === "/" ? `${BASE}/` : `${BASE}${asset}`;
     const sent = watch.responses.find((r) => r.url === url);
     expect(sent, `nothing answered ${url}`).toBeTruthy();

@@ -12,11 +12,19 @@
 # never by doctoring the page.
 #
 # Every assertion is on the rendered text, on a painted box read back with
-# getBoundingClientRect(), on a colour read out of the framebuffer, on the
-# accessibility tree Chromium computed, or on the browser's own
-# Content-Security-Policy violation reports. Nothing reads the HTML, the JS or
-# the CSS, and there is no assertion here that a text search of those files could
-# satisfy.
+# getBoundingClientRect(), on a colour read out of the framebuffer, on a width
+# the engine laid out, on the accessibility tree Chromium computed, or on the
+# browser's own Content-Security-Policy violation reports. There is no assertion
+# here that a text search of the HTML, the JS or the CSS could satisfy.
+#
+# One thing IS read out of a file, and it is worth saying exactly what. The
+# token file records the contrast ratio measured between each token pair, and
+# tools/ui/reconcile.js reads those recorded NUMBERS back and puts each beside
+# the ratio the engine measured off the painted pixels for the pair that painted
+# it. The recorded number is the thing under test; the number it is judged
+# against comes from the framebuffer, and no floor is ever decided from the
+# file. A text search cannot satisfy that assertion, because half of it is a
+# measurement.
 #
 # That is not a stylistic preference. A text grader cannot decide what a rule
 # applies to, what wins the cascade, or what is SHOWN rather than merely built,
@@ -48,7 +56,7 @@ source "$(dirname "$0")/lib.sh"
 
 build_once
 
-CRITERION="the control page holds the frontend conventions F1 to F11: contrast and focus in both themes, keyboard operation, accessible names, no state carried by colour alone, an aggregate that states its set, an unreadable figure that costs nothing else, a severed feed and a paused one that both stop reading as current, three states with a loading one that resolves even against a server that answers nothing, short labels with the paragraphs in the repo's docs, a 360 pixel layout for every name the catalog admits, and a Content-Security-Policy the browser does not complain about"
+CRITERION="the control page holds the frontend conventions F1 to F11 and the rendered half of the styling conventions: contrast and focus in both themes, keyboard operation, accessible names, no state carried by colour alone, an aggregate that states its set, an unreadable figure that costs nothing else, a severed feed and a paused one that both stop reading as current, three states with a loading one that resolves even against a server that answers nothing, short labels with the paragraphs in the repo's docs, a 360 pixel layout for every name the catalog admits, a Content-Security-Policy the browser does not complain about, every recorded contrast ratio reconciled against the pixels the pair painted, and the figure face on every run whose column alignment carries meaning"
 require_browser_driver "$CRITERION"
 
 FAILURES=0

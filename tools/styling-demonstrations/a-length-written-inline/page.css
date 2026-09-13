@@ -1,0 +1,19 @@
+/* A copy of tools/styling-demonstrations/base/page.css with ONE thing wrong: a
+ * length written into a rule instead of resolving to a token. It is even on the
+ * 4px scale, which is the point: what the rule refuses is a length nobody can
+ * change from the one place lengths are declared.
+ */
+
+.card {
+  background: var(--card-surface);
+  border: var(--hairline) solid var(--card-edge);
+  color: var(--card-ink);
+  padding: 16px;
+  gap: var(--card-gap);
+}
+
+.card p {
+  margin: var(--reset-margin);
+  color: var(--muted);
+  font-size: var(--meta-size);
+}

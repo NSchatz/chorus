@@ -1,94 +1,86 @@
 /* The control page.
  *
- * Every interactive control here is painted at a border box of at least 44 by
- * 44 CSS pixels, against a criterion that asks for 24 by 24. The margin is
- * deliberate: the criterion is measured from the RENDERED box in a real engine,
- * a range input's intrinsic height is well under either number until something
- * sets it, and a rule that only just clears the bar is a rule one font change
- * away from failing. tools/ui-render-run.sh measures every one of them.
+ * Not one colour and not one length is written here. Every value resolves to a
+ * token declared in tokens.css, which is the file that carries the palette, the
+ * 4px scale, the type roles and the measured contrast ratio beside each pair.
+ * tools/styling-check.sh reads this file and refuses a literal in it, and
+ * tools/ui-render-run.sh renders the page and refuses a recorded ratio that no
+ * longer matches what the engine measures.
  *
- * Two themes, both chosen by hand. The light one is not derived from the dark
- * one by rule, because a derived palette misses contrast floors and the hand
- * fixes land anyway without the honesty of having been chosen. Every pair below
- * that has to clear a floor is measured in the engine, in BOTH themes, by
- * tools/ui/contrast.js - not read back from these declarations, which is why
- * there is no ratio written beside a value here that could go stale.
+ * TWO FACES, and which one a run gets is a rule rather than a habit. Anything
+ * whose column alignment carries meaning - a volume, an endpoint figure, a
+ * serial, an identifier standing in for a name that could not be read, the
+ * command line in the empty notice - is set in the figure face with tabular
+ * figures. Headings, sentences and control labels are set in the UI face. The
+ * proof is a measurement, not this comment: `make verify-ui` lays out two
+ * equal-length runs in each and compares the widths the engine painted.
  *
- * The slider is the one place where the floor is not obvious: the TRACK is the
- * control's visible extent and clears 3:1 against the panel it sits on, and the
- * THUMB is the mark that carries the value and clears 3:1 against the track. A
- * palette that only cleared one of those would leave the value unreadable to
- * somebody who cannot pick the thumb out of the bar it slides along.
+ * One density, and it is the compact one operator tools default to.
  */
-
-:root {
-  color-scheme: light dark;
-
-  --page: #eef1f4;
-  --panel: #ffffff;
-  --ink: #10161c;
-  --quiet: #414d59;
-  --line: #5f6c79;
-  --accent: #0a5387;
-  --on-accent: #ffffff;
-  --focus: #8a3200;
-  --track: #767f88;
-  --thumb: #06263d;
-  --bad: #a11208;
-
-  --control: 44px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --page: #0f141a;
-    --panel: #1a2129;
-    --ink: #e9eff5;
-    --quiet: #b3c0cd;
-    --line: #7f8d9c;
-    --accent: #7ab8f5;
-    --on-accent: #0f141a;
-    --focus: #ffb454;
-    --track: #6b7987;
-    --thumb: #f2f7fc;
-    --bad: #ff9b8f;
-  }
-}
 
 * { box-sizing: border-box; }
 
 body {
-  margin: 0;
-  background: var(--page);
-  color: var(--ink);
-  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  margin: var(--reset-margin);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--face-prose);
+  font-size: var(--body-size);
+  line-height: var(--body-leading);
+}
+
+/* The figure face. A run in it is one a person reads down a column, so equal
+ * digits have to take equal width. Every selector here names a figure the page
+ * paints; chorus.js marks the heading when the name it shows is an identifier
+ * the state could not give a name for, which is the one case where a heading is
+ * a figure. */
+[data-volume],
+[data-endpoints],
+[data-serial],
+[data-zone-name][data-name-unreadable],
+code {
+  font-family: var(--face-figure);
+  font-variant-numeric: tabular-nums;
 }
 
 .bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem 1rem;
-  padding: 0.75rem 1rem;
+  gap: var(--bar-gap-y) var(--bar-gap-x);
+  padding: var(--bar-pad-y) var(--bar-pad-x);
   background: var(--panel);
-  border-bottom: 1px solid var(--line);
+  border-bottom: var(--hairline) solid var(--line);
 }
 
 footer.bar {
-  border-bottom: 0;
-  border-top: 1px solid var(--line);
+  border-bottom-style: none;
+  border-top: var(--hairline) solid var(--line);
 }
 
 h1 {
-  margin: 0;
-  font-size: 1.25rem;
-  letter-spacing: 0.02em;
+  margin: var(--reset-margin);
+  color: var(--wordmark-ink);
+  font-size: var(--wordmark-size);
+  letter-spacing: var(--wordmark-tracking);
 }
 
 .state {
-  margin: 0;
-  color: var(--quiet);
-  font-size: 0.875rem;
+  margin: var(--reset-margin);
+  color: var(--muted);
+  font-size: var(--meta-size);
+}
+
+/* The connection word carries a state, so it is painted in the state's own
+ * token. The word itself is what says which state it is - docs/control-page.md
+ * explains all three - and this is the second signal rather than the only one,
+ * which is what keeps a rendering with no colour in it readable. */
+[data-connection="live"] {
+  color: var(--ok);
+}
+
+[data-connection="stalled"] {
+  color: var(--warn);
 }
 
 /* One link per region, to the document that explains that region. The paint is
@@ -97,9 +89,9 @@ h1 {
 .doc-link {
   display: inline-flex;
   align-items: center;
-  min-height: var(--control);
-  color: var(--accent);
-  font-size: 0.875rem;
+  min-height: var(--control-size);
+  color: var(--link);
+  font-size: var(--meta-size);
   text-decoration: underline;
   /* The underline is the mark that says "link" to somebody who cannot pick the
    * hue out of the line it sits in, so it runs the whole width of the text
@@ -110,21 +102,21 @@ h1 {
 
 main {
   display: grid;
-  gap: 1rem;
-  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
-  padding: 1rem;
+  gap: var(--surface-pad);
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--surface-column-min), 100%), 1fr));
+  padding: var(--surface-pad);
 }
 
 .zone,
 .notice {
   background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 1rem;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--surface-radius);
+  padding: var(--surface-pad);
   display: grid;
-  gap: 0.75rem;
+  gap: var(--surface-gap);
   justify-items: start;
-  min-width: 0;
+  min-width: var(--shrink-min);
 }
 
 .notice {
@@ -143,37 +135,37 @@ main {
  * to an unbroken name at the catalog's maximum and measures the result. */
 .zone h2,
 .notice h2 {
-  margin: 0;
-  font-size: 1.0625rem;
+  margin: var(--reset-margin);
+  font-size: var(--heading-size);
   overflow-wrap: anywhere;
-  min-width: 0;
+  min-width: var(--shrink-min);
 }
 
 .meta,
 .notice p {
-  margin: 0;
-  color: var(--quiet);
-  font-size: 0.875rem;
+  margin: var(--reset-margin);
+  color: var(--muted);
+  font-size: var(--meta-size);
   overflow-wrap: anywhere;
 }
 
 .notice p {
-  color: var(--ink);
+  color: var(--fg);
 }
 
 .row {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--surface-gap);
   width: 100%;
-  min-width: 0;
+  min-width: var(--shrink-min);
 }
 
 .row label {
   flex: 0 0 auto;
-  min-width: 4rem;
-  color: var(--quiet);
-  font-size: 0.875rem;
+  min-width: var(--label-min-width);
+  color: var(--muted);
+  font-size: var(--meta-size);
 }
 
 /* Every control, one rule, so a new control cannot be added below the bar by
@@ -182,52 +174,52 @@ button,
 select,
 input[type="text"],
 input[type="range"] {
-  min-height: var(--control);
-  min-width: var(--control);
-  height: var(--control);
+  min-height: var(--control-size);
+  min-width: var(--control-size);
+  height: var(--control-size);
   font: inherit;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  color: var(--ink);
-  padding: 0 0.75rem;
+  border: var(--hairline) solid var(--control-edge);
+  border-radius: var(--control-radius);
+  background: var(--control-surface);
+  color: var(--control-ink);
+  padding: var(--control-pad-y) var(--control-pad-x);
 }
 
 input[type="text"] {
-  flex: 1 1 4rem;
-  min-width: 4rem;
+  flex: 1 1 var(--control-basis);
+  min-width: var(--control-basis);
 }
 
 select {
   flex: 0 1 auto;
-  min-width: 0;
+  min-width: var(--shrink-min);
   max-width: 100%;
 }
 
 input[type="range"] {
-  flex: 1 1 3rem;
-  min-width: 3rem;
-  padding: 0;
+  flex: 1 1 var(--control-basis-narrow);
+  min-width: var(--control-basis-narrow);
+  padding: var(--slider-pad);
   -webkit-appearance: none;
   appearance: none;
-  background: transparent;
-  border-color: transparent;
+  background: var(--slider-surface);
+  border-color: var(--slider-edge);
 }
 
 input[type="range"]::-webkit-slider-runnable-track {
-  height: 10px;
-  border-radius: 5px;
-  background: var(--track);
+  height: var(--slider-track-height);
+  border-radius: var(--slider-track-radius);
+  background: var(--slider-track-fill);
 }
 
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 24px;
-  height: 24px;
-  margin-top: -7px;
+  width: var(--slider-thumb-size);
+  height: var(--slider-thumb-size);
+  margin-top: var(--slider-thumb-rise);
   border-radius: 50%;
-  background: var(--thumb);
+  background: var(--slider-thumb-fill);
 }
 
 button {
@@ -236,9 +228,22 @@ button {
 }
 
 button[aria-pressed="true"] {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
+  background: var(--control-selected-fill);
+  border-color: var(--control-selected-fill);
+  color: var(--control-selected-ink);
+}
+
+/* A control the state cannot support is disabled, and says so in a token
+ * rather than in the engine's own compositing. The user agent paints a
+ * disabled control at seven tenths opacity, which drags an author's colour to
+ * a ratio the author never chose; this takes that back and dims the control
+ * deliberately, to a value that still clears the text floor against the panel
+ * it sits on. */
+button:disabled,
+select:disabled {
+  opacity: 1;
+  color: var(--control-disabled-ink);
+  border-color: var(--control-disabled-ink);
 }
 
 /* The focus indicator. Drawn outside the border box so it cannot be confused
@@ -246,21 +251,20 @@ button[aria-pressed="true"] {
  * the line, and on :focus rather than only :focus-visible so that a control
  * focused by any route says so. */
 :focus {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
+  outline: var(--focus-ring-width) solid var(--focus);
+  outline-offset: var(--focus-ring-offset);
 }
 
 .value {
   flex: 0 0 auto;
-  min-width: 3.5rem;
+  min-width: var(--figure-min-width);
   text-align: right;
-  font-variant-numeric: tabular-nums;
 }
 
 .refusal {
-  margin: 0;
+  margin: var(--reset-margin);
   color: var(--bad);
-  font-size: 0.875rem;
+  font-size: var(--meta-size);
   font-weight: 700;
 }
 
@@ -272,11 +276,12 @@ code {
   display: block;
   width: 100%;
   overflow-x: auto;
-  padding: 0.625rem 0.75rem;
-  border-radius: 8px;
-  background: var(--page);
-  border: 1px solid var(--line);
-  color: var(--ink);
-  font: 0.8125rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: var(--code-pad-y) var(--code-pad-x);
+  border-radius: var(--control-radius);
+  background: var(--bg);
+  border: var(--hairline) solid var(--line);
+  color: var(--fg);
+  font-size: var(--code-size);
+  line-height: var(--code-leading);
   white-space: pre;
 }

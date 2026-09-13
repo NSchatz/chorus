@@ -172,6 +172,15 @@ expect_missing_prerequisite "ui-render-run.sh" \
     env CHORUS_SKIP_BUILD=1 CHORUS_BROWSER=/chorus-no-such-browser \
     bash "$REPO_ROOT/tools/ui-render-run.sh"
 
+# No interpreter for the styling scan. Genuinely absent: the name does not
+# exist. The styling check reads source text and has no engine to lose, but it
+# is still a check with a prerequisite, and a check that quietly reported green
+# because its interpreter was missing would be the same fault as one that read
+# the stylesheet because the browser was.
+expect_missing_prerequisite "styling-check.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_NODE=chorus-no-such-node \
+    bash "$REPO_ROOT/tools/styling-check.sh"
+
 # No three days. Genuinely absent: no run in this pipeline has three days, and
 # no amount of configuration makes one. This is AC-4, which is NOT PASSED
 # anywhere in this repository.

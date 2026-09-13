@@ -65,6 +65,12 @@ const CLAIMS = {
     "a refused command is rendered where it was issued and the control keeps the state the server holds",
   "rendered-by-a-real-engine":
     "every claim above was measured on a page a browser engine painted",
+  "tokens-reconciled":
+    "every row the contrast measurement produced maps to the token pair that painted it, and the ratio recorded beside that pair matches the one measured off the pixels, in both themes",
+  "figures-fixed-advance":
+    "every run whose column alignment carries meaning is painted in a fixed-advance face and every heading, sentence and control label in the system UI face, measured from the widths the engine painted",
+  "empty-notice-type-rule":
+    "the empty notice's example command is painted in the fixed-advance face and its sentences in the system UI face",
 };
 
 const LEDGER =
