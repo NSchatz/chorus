@@ -107,11 +107,22 @@ pub struct ClientConfig {
     pub rejoin_max_ms: u64,
     /// The transport the group this endpoint plays is held to.
     ///
-    /// Declared by the SERVER, where the set of zones is declared, and passed
-    /// to an endpoint from there. An endpoint does not decide which tier it is
-    /// in: a group is the unit a stream is served to and every endpoint in it
-    /// plays one timeline, so the tier is a property of the group and not of
-    /// the machine.
+    /// An endpoint does not DECIDE which tier it is in: a group is the unit a
+    /// stream is served to and every endpoint in it plays one timeline, so the
+    /// tier is a property of the group and not of the machine. The zone's
+    /// transport is declared on the SERVER, where the set of zones is declared,
+    /// and the server reports the tier of every zone and every group it serves.
+    ///
+    /// Nothing carries it from there to here. No control message and no
+    /// protocol field mentions a transport: the control catalog is deliberately
+    /// unmoved by this tier (`CATALOG_VERSION` is 1, `fixtures/control/` is
+    /// byte-identical), and `crates/control/src/transport.rs` says why. So this
+    /// endpoint is TOLD its tier on its own command line, with `--transport`,
+    /// and whoever starts it gives it the word the server's own zone
+    /// declaration carries. A run told the wrong one plays at the wrong buffer
+    /// depth and nothing here can see that; what the system does guarantee is
+    /// that an endpoint which cannot APPLY the declared wireless latency stops
+    /// rather than plays at the wired one.
     ///
     /// Wireless here means the wireless BUFFER POLICY, and nothing about this
     /// machine's own radio. Turning Linux power save off needs privilege and a

@@ -89,20 +89,29 @@ servo can correct because it is not this endpoint's to choose. The endpoint
 publishes the mode it set and the mode the platform reports, on the same
 `key=value` line it already publishes its link and its amplifier on.
 
-Two things stop the wireless bound from being published even when the mode was
+Three things stop the wireless bound from being published even when the mode was
 set:
 
 - the platform reports a different mode than the one that was set;
 - the radio is in a coexistence mode, where the platform sleeps outside its
-  Wi-Fi time slice even with modem sleep disabled.
+  Wi-Fi time slice even with modem sleep disabled;
+- the mode that was set is a modem-sleep mode. The bound above is stated with
+  modem sleep DISABLED, so an endpoint configured with `min-modem` or
+  `max-modem` has chosen its mode rather than inherited one and still gets no
+  bound published about it, because the delay modem sleep costs is the DTIM
+  cycle the figure assumes away.
 
-In both cases the link still comes up and the zone still plays, and the
+In all three cases the link still comes up and the zone still plays, and the
 endpoint's published line says `wireless_bound=withheld`.
 
 **A Linux endpoint in a wireless zone gets the buffer policy and reports
-`power_save=unknown`.** Turning Linux modem power save off needs privilege and a
-different authority than the one this tier cites, and an endpoint that cannot
-say what its radio is doing says so rather than claiming a mode.
+`wifi_ps_in_force=unknown`.** Turning Linux modem power save off needs privilege
+and a different authority than the one this tier cites, and an endpoint that
+cannot say what its radio is doing says so rather than claiming a mode. It
+publishes `wifi_ps_declared=` and `wifi_ps_in_force=`, which are the keys the
+ESP32 endpoint publishes, so one grep answers "what mode is this endpoint in"
+across both endpoints; a wired endpoint of either kind answers
+`not-applicable`.
 
 **No credential is in this repository.** The endpoint's network name and its
 secret are declared `unknown` in `firmware/config/endpoint.conf` and will stay

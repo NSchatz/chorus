@@ -150,6 +150,76 @@ static void every_declared_mode_is_the_mode_that_is_set(void)
     chorus_check(!ok, "and neither is a word the platform does not have");
 }
 
+/* The bound is stated WITH MODEM SLEEP DISABLED, so a declared modem-sleep mode
+ * brings the link up and publishes no bound.
+ *
+ * AC-1 is satisfied by any mode that is SET rather than inherited, and a house
+ * may legitimately declare `min-modem` to save power. What it must not get is
+ * the wireless bound, which is stated about a radio that is not sleeping: under
+ * modem sleep the carried guide puts the delay in receiving Wi-Fi data at the
+ * DTIM cycle or the listening interval, and that is the delay the 5 ms figure
+ * assumes away. */
+static void a_declared_modem_sleep_mode_publishes_no_wireless_bound(void)
+{
+    const chorus_wifi_ps_t sleeping[] = {CHORUS_WIFI_PS_MIN_MODEM, CHORUS_WIFI_PS_MAX_MODEM};
+    for (size_t i = 0; i < sizeof(sleeping) / sizeof(sleeping[0]); i++) {
+        fake_radio_t fake;
+        fake_radio_init(&fake);
+        chorus_wifi_config_t config = a_wireless_link(sleeping[i]);
+        chorus_radio_t radio = fake_radio(&fake);
+        chorus_wifi_report_t report;
+        chorus_wifi_status_t status = chorus_wifi_bring_up(&config, &radio, &report);
+
+        chorus_check(status == CHORUS_WIFI_OK && report.link_up && fake.joins == 1,
+                     "a declared `%s` is not a refusal: the link comes up and the endpoint plays",
+                     chorus_wifi_ps_name(sleeping[i]));
+        chorus_check(report.mode_read && report.in_force == sleeping[i] && report.mode_in_effect,
+                     "the mode it declared IS the mode in force: %s",
+                     chorus_wifi_ps_name(report.in_force));
+        chorus_check(!report.bound_publishable,
+                     "and the wireless bound is NOT published, because it is stated with modem "
+                     "sleep disabled and `%s` is modem sleep",
+                     chorus_wifi_ps_name(sleeping[i]));
+        chorus_check(strstr(report.detail, "modem sleep") != NULL,
+                     "the report says why in words: %s", report.detail);
+
+        chorus_telemetry_t telemetry;
+        chorus_telemetry_init(&telemetry);
+        chorus_telemetry_record_wifi(&telemetry, &report);
+        telemetry.link = CHORUS_LINK_UP;
+        char line[768];
+        chorus_telemetry_line(&telemetry, line, sizeof(line));
+        printf("     %s\n", line);
+        chorus_check(strstr(line, "wireless_bound=withheld") != NULL &&
+                         strstr(line, "wireless_bound=publishable") == NULL,
+                     "and the published line withholds it: %s", line);
+    }
+
+    /* The contrast, so this is a rule about the MODE and not a bring-up that
+     * never publishes anything: the mode that disables modem sleep publishes. */
+    fake_radio_t awake;
+    fake_radio_init(&awake);
+    chorus_wifi_config_t none = a_wireless_link(CHORUS_WIFI_PS_NONE);
+    chorus_radio_t radio = fake_radio(&awake);
+    chorus_wifi_report_t report;
+    chorus_wifi_bring_up(&none, &radio, &report);
+    chorus_check(report.bound_publishable,
+                 "with modem sleep disabled the bound is publishable, so the rule above is about "
+                 "the mode and not about withholding everything");
+
+    /* And the committed configuration is on the publishing side of that rule,
+     * read by the board's own reader rather than asserted as a literal. */
+    chorus_endpoint_config_t committed;
+    char detail[512];
+    detail[0] = '\0';
+    if (chorus_endpoint_config_load(&committed, chorus_endpoint_config_default_path(), detail,
+                                    sizeof(detail)) == 0) {
+        chorus_check(committed.link.power_save == CHORUS_WIFI_PS_NONE,
+                     "the mode this repository commits is the one that disables modem sleep: %s",
+                     chorus_wifi_ps_name(committed.link.power_save));
+    }
+}
+
 /* AC-10. */
 static void a_platform_reporting_another_mode_reports_both_and_claims_nothing(void)
 {
@@ -497,6 +567,9 @@ int main(void)
 
     chorus_section("every declared mode");
     every_declared_mode_is_the_mode_that_is_set();
+
+    chorus_section("a declared modem-sleep mode");
+    a_declared_modem_sleep_mode_publishes_no_wireless_bound();
 
     chorus_section("the platform reports another mode");
     a_platform_reporting_another_mode_reports_both_and_claims_nothing();

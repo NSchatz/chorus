@@ -54,6 +54,12 @@
  * holds the bound is a measured distribution over a real radio, it is operator
  * graded, and it is NOT passed in this repository.
  *
+ * One of those conditions is the declared mode itself. The bound is stated with
+ * modem sleep DISABLED, so an endpoint that deliberately declares `min-modem` or
+ * `max-modem` has set the mode it chose rather than inherited one, is in it, and
+ * still publishes no bound: the delay modem sleep costs is the DTIM cycle, which
+ * is exactly what the figure assumes away.
+ *
  * # No clock, and no credential
  *
  * Nothing here reads a clock of any kind, and in particular nothing here starts
@@ -185,7 +191,13 @@ typedef struct {
     /* Whether the mode this endpoint set is the mode in force AND nothing else
      * makes the platform sleep anyway. */
     int mode_in_effect;
-    /* Whether the wireless bound may be PUBLISHED. Never whether it is met. */
+    /* Whether the wireless bound may be PUBLISHED. Never whether it is met.
+     *
+     * It takes the mode in force as well as the conditions above: the bound is
+     * stated with modem sleep DISABLED, so an endpoint that deliberately
+     * declares `min-modem` or `max-modem` sets the mode it chose, comes up on
+     * it, and still publishes no bound. `mode_in_effect` is the other question
+     * and answers 1 there. */
     int bound_publishable;
     /* Whether the link is usable. A session is not told the link is usable
      * until this is 1. */
@@ -219,6 +231,9 @@ typedef struct {
  *      slice gets that reported and the bound withheld, even though it agreed
  *      about the mode.
  *   7. join, and only then is the link usable.
+ *   8. publish the wireless bound only where the mode in force is the one that
+ *      disables modem sleep, because that is the condition the bound is stated
+ *      under.
  *
  * Steps 4 and 5 are both before step 7, which is the whole of "set its Wi-Fi
  * power save mode explicitly before it reports the link usable". */

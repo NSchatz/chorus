@@ -330,3 +330,60 @@ fn the_shipped_client_accepts_the_wireless_tier() {
     assert!(said.contains("500000") && said.contains("180000"), "{}", said);
     assert!(said.contains("played=0"), "{}", said);
 }
+
+/// One grep reaches both endpoints' power-save mode.
+///
+/// The endpoint tree publishes `wifi_ps_declared=` and `wifi_ps_in_force=` on
+/// the ESP32's `key=value` line (`firmware/src/telemetry.c`, asserted by
+/// `firmware/tests/test_wifi.c`), so this endpoint publishes the same two keys
+/// rather than a third spelling of the same idea. The ANSWERS differ and are
+/// meant to: this endpoint declares no mode and reads none back, so it says
+/// `unknown` where it has a radio it knows nothing about and `not-applicable`
+/// where the link is wired, which is what the firmware line says about a link
+/// with no radio in it.
+#[test]
+fn the_published_line_names_the_power_save_mode_the_way_both_endpoints_do() {
+    // A server address nothing is listening on: the starting line is published
+    // before the connection is made, and no audio device is touched before it.
+    let run = |transport: &str| {
+        let output = Command::new(env!("CARGO_BIN_EXE_chorus-client"))
+            .args([
+                "--transport",
+                transport,
+                "--server",
+                "127.0.0.1:1",
+                "--device",
+                "chorus-no-such-device",
+            ])
+            .output()
+            .expect("the client binary runs");
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    };
+
+    let wireless = run("wireless");
+    assert!(
+        wireless.contains("wifi_ps_declared=unknown")
+            && wireless.contains("wifi_ps_in_force=unknown"),
+        "a wireless Linux endpoint says it does not know its own mode, under the keys the other \
+         endpoint uses: {}",
+        wireless
+    );
+    assert!(
+        !wireless.contains("power_save="),
+        "and it does not publish the mode under a second spelling only one endpoint has: {}",
+        wireless
+    );
+
+    let wired = run("wired");
+    assert!(
+        wired.contains("wifi_ps_declared=not-applicable")
+            && wired.contains("wifi_ps_in_force=not-applicable"),
+        "a wired endpoint has no radio to have a mode, and says so in the same words the firmware \
+         line does: {}",
+        wired
+    );
+}

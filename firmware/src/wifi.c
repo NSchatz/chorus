@@ -228,12 +228,35 @@ chorus_wifi_status_t chorus_wifi_bring_up(const chorus_wifi_config_t *config,
     }
     report->join_attempted = 1;
     report->link_up = 1;
-    report->bound_publishable = 1;
-    snprintf(report->detail, sizeof(report->detail),
-             "the power save mode `%s` was set from %s before the link was reported usable, the "
-             "platform reports `%s`, and the platform default `%s` was not inherited",
-             chorus_wifi_ps_name(config->power_save), config->source,
-             chorus_wifi_ps_name(in_force),
-             chorus_wifi_ps_name(CHORUS_WIFI_PLATFORM_DEFAULT));
+
+    /* 8. The bound is published only with modem sleep OFF.
+     *
+     * The wireless bound this tier carries is stated with modem sleep disabled,
+     * and modem sleep is what the carried guide says costs "the same as the DTIM
+     * cycle (minimum power-saving mode) or the listening interval (maximum
+     * power-saving mode)" in delay. So a deliberately declared `min-modem` or
+     * `max-modem` is a legitimate configuration, is SET rather than inherited,
+     * and brings the link up like any other - and it does not get the bound,
+     * because the bound was never stated about a sleeping radio. Reading the
+     * mode here rather than only the readback is the difference between "the
+     * mode I asked for is the mode I am in" and "the sleep this bound assumes
+     * away is gone". */
+    report->bound_publishable = (in_force == CHORUS_WIFI_PS_NONE);
+    if (report->bound_publishable) {
+        snprintf(report->detail, sizeof(report->detail),
+                 "the power save mode `%s` was set from %s before the link was reported usable, "
+                 "the platform reports `%s`, and the platform default `%s` was not inherited",
+                 chorus_wifi_ps_name(config->power_save), config->source,
+                 chorus_wifi_ps_name(in_force),
+                 chorus_wifi_ps_name(CHORUS_WIFI_PLATFORM_DEFAULT));
+    } else {
+        snprintf(report->detail, sizeof(report->detail),
+                 "the power save mode `%s` was set from %s before the link was reported usable and "
+                 "the platform reports `%s`, so it was chosen rather than inherited; but modem "
+                 "sleep is ON in that mode and the wireless bound is stated with modem sleep "
+                 "disabled, so the bound is NOT published about this endpoint",
+                 chorus_wifi_ps_name(config->power_save), config->source,
+                 chorus_wifi_ps_name(in_force));
+    }
     return done(report, CHORUS_WIFI_OK);
 }

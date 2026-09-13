@@ -178,7 +178,8 @@ same target `make firmware-check` runs, exactly as those three do.
   safety scan enforces that the last two do not appear.
 - **The Linux client's own radio.** Nothing here turns Linux modem power save
   off. A Linux endpoint in a wireless zone gets the buffer policy and reports
-  `power_save=unknown` rather than claiming a mode.
+  `wifi_ps_in_force=unknown` rather than claiming a mode, under the same key the
+  ESP32 endpoint publishes its mode with.
 - **SOUND-2's, RIG-3's, SYNC-4's, EMBEDDED-5's and PRODUCT-6's hardware-blocked
   rows.** Unchanged by this phase and still blocked on the same missing
   hardware. This work does not claim them and does not unblock them.
