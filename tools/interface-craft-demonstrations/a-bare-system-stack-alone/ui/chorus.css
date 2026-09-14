@@ -1,0 +1,23 @@
+/* base/ui/chorus.css with one rule added: a stack in which every family is a
+ * face an operating system supplies or a generic keyword, and no face this tree
+ * chose stands ahead of them.
+ *
+ * None of the five faces C2 names by name is in it, so what this tree breaks is
+ * "a bare system stack alone" and nothing else. */
+
+body {
+  font-family: var(--face-prose);
+}
+
+.title {
+  font-family: -apple-system, "Segoe UI", sans-serif;
+}
+
+.panel {
+  border-radius: var(--surface-radius);
+  border-color: var(--accent);
+}
+
+.figure {
+  font-family: var(--face-figure);
+}

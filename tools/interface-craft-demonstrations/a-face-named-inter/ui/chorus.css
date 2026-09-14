@@ -1,0 +1,23 @@
+/* base/ui/chorus.css with one rule added: a declared stack naming Inter.
+ *
+ * The stack goes here and not in ui/tokens.css on purpose. The record declares
+ * --font-ui, so a tree that changed THAT would go red twice, once for the
+ * blocklist entry and once because the record and the token file disagree, and
+ * a tree that goes red for two reasons proves neither. */
+
+body {
+  font-family: var(--face-prose);
+}
+
+.title {
+  font-family: "Inter", -apple-system, sans-serif;
+}
+
+.panel {
+  border-radius: var(--surface-radius);
+  border-color: var(--accent);
+}
+
+.figure {
+  font-family: var(--face-figure);
+}

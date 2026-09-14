@@ -1,0 +1,5 @@
+A marker, not a source. Three of base's four sources are removed here and the
+fourth, chorus.js, is committed as a DIRECTORY, so this tree resolves one
+identity source and can read none of them. That is the other half of AC-5: not
+an empty set, but a blocklist entry that ended up tested against no source at
+all, which is what a sweep looks like the moment it stops reaching its files.

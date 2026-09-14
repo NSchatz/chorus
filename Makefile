@@ -23,6 +23,7 @@ one:
 verify: tools-executable
 	bash tools/pinning-check.sh
 	bash tools/styling-check.sh
+	bash tools/interface-craft-check.sh
 	bash tools/refusals.sh
 	bash tools/unrun-checks-are-visibly-unrun.sh
 	bash tools/measure/capture-refusals.sh
@@ -53,6 +54,49 @@ verify-pinning: tools-executable
 # ratio against the pixels - is `make verify-ui`, in a real browser engine.
 verify-styling: tools-executable
 	bash tools/styling-check.sh
+
+# The control page's committed IDENTITY, against the umbrella's interface-craft
+# conventions C1 and C2: docs/interface-craft-record.md names a display face, a
+# text face, an accent, a radius signature and a shadow signature with one
+# sentence each and agrees with the token file, and no source under
+# crates/server/src/ui carries an entry of C2's blocklist that the record does
+# not name as an exception with its reason. Plus the committed trees that show
+# the check going red on every entry of that list and on every other way it can
+# fail. The source directory is RESOLVED rather than written down, so a fifth
+# file landing beside the four is swept rather than missed.
+#
+# Needs node, no device, no privilege and no network. Also run by `make verify`;
+# named separately so a red CI build says the design record broke rather than
+# "the verifications".
+#
+# It is a check of SOURCE TEXT and it is not the rendered one, which is what C2
+# asks for in as many words. What the page PAINTS is `make verify-ui`, in a real
+# browser engine, and clauses C3 to C8 belong there and not here.
+#
+# EXIT CODES, distinct per failure mode. The repository's own verdict wins when
+# there is one, because a demonstration that also failed is the less actionable
+# of the two:
+#
+#   0   the record holds, this repository's sources carry no unnamed C2 entry,
+#       and every committed demonstration produced what it demonstrates
+#   2   an identity source carries a C2 blocklist entry the record does not name
+#       as an exception; the entry, the file and the line are named
+#   3   a capability this check needs is missing, refused in tools/lib.sh's shape
+#   4   a category has stopped matching: the identity sources resolved to an
+#       empty set, or a blocklist entry was tested against no source at all
+#   5   the design record names an exception and gives it no reason, so the
+#       exception is not granted and what it covered is reported
+#   6   the design record names an exception for an entry no identity source
+#       carries, so a permission that stopped being needed is withdrawn
+#   7   the design record is absent
+#   8   the design record is there and cannot be read
+#   9   the design record does not parse in the shape this check expects
+#   10  the record's five identity entries are wrong: one is missing, named
+#       twice, carries no reason, or disagrees with the token file
+#   11  a committed demonstration did not produce what it demonstrates, the base
+#       tree did not pass, or the scan did not print what it measured
+verify-interface-craft: tools-executable
+	bash tools/interface-craft-check.sh
 
 # The control-plane thread-population checks, run over and over on one build,
 # plus two starved runs that must go red naming the busy-worker refusal. Those

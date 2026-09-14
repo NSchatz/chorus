@@ -1,0 +1,23 @@
+/* base/ui/chorus.css with one rule added: a declared stack naming Roboto.
+ *
+ * The record beside this file excepts Roboto and gives no reason for it, so the
+ * exception is not granted and this stack is reported. Without the stack, the
+ * tree would be showing an exception nothing needs, which is a different
+ * criterion and has a tree of its own. */
+
+body {
+  font-family: var(--face-prose);
+}
+
+.title {
+  font-family: "Chorus Display", Roboto, sans-serif;
+}
+
+.panel {
+  border-radius: var(--surface-radius);
+  border-color: var(--accent);
+}
+
+.figure {
+  font-family: var(--face-figure);
+}

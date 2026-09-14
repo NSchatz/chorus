@@ -1,0 +1,7 @@
+chorus.js beside this file is a DIRECTORY and not a file, which is how a source
+path that resolves and cannot be opened is committed to git. A mode of 000 would
+not survive a checkout; a directory does.
+
+The scan lists it as an identity source, fails to read it, and reports that
+every blocklist entry was tested against no source at all rather than reporting
+a clean sweep of nothing.

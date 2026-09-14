@@ -1,0 +1,8 @@
+A marker, not a record. A file named interface-craft-record.md.removed in a
+demonstration's root takes the record out of the composition instead of
+inheriting base's, which is the only way to commit a tree whose design record is
+genuinely ABSENT.
+
+C1 asks a repo to commit a record. A check that treated an absent one as an
+empty one would report "no exception is claimed" and pass, which is the shape of
+a gate that grades nothing.

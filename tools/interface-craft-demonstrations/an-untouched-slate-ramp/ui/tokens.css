@@ -1,0 +1,26 @@
+/* base/ui/tokens.css with one primitive added: a step of shadcn's slate ramp,
+ * by that name.
+ *
+ * The word has to be matched as a name and not as a substring, or every
+ * `translate` in a stylesheet would be a finding. */
+
+/* tier: primitive */
+:root {
+  --teal-600: #0a6b6b;
+  --slate-500: #64748b;
+  --radius-12: 12px;
+  --font-ui: "Chorus Display", -apple-system, sans-serif;
+  --font-mono: "Chorus Mono", ui-monospace, monospace;
+}
+
+/* tier: semantic, theme: light */
+:root {
+  --accent: var(--teal-600);
+}
+
+/* tier: component */
+:root {
+  --surface-radius: var(--radius-12);
+  --face-prose: var(--font-ui);
+  --face-figure: var(--font-mono);
+}

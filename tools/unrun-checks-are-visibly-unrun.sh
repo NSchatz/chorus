@@ -195,6 +195,14 @@ expect_missing_prerequisite "styling-check.sh" \
     env CHORUS_SKIP_BUILD=1 CHORUS_NODE=chorus-no-such-node \
     bash "$REPO_ROOT/tools/styling-check.sh"
 
+# The same, for the interface-craft gate. It reads the design record and the same
+# four source files and has no engine to lose either, and a check that quietly
+# reported green because its interpreter was missing would leave the identity
+# ungraded while looking exactly like a page whose identity is on record.
+expect_missing_prerequisite "interface-craft-check.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_NODE=chorus-no-such-node \
+    bash "$REPO_ROOT/tools/interface-craft-check.sh"
+
 # No three days. Genuinely absent: no run in this pipeline has three days, and
 # no amount of configuration makes one. This is AC-4, which is NOT PASSED
 # anywhere in this repository.

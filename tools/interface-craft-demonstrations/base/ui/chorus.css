@@ -1,0 +1,15 @@
+/* The base tree's stylesheet. It spends the tokens the record names and
+ * carries no entry of the C2 blocklist. */
+
+body {
+  font-family: var(--face-prose);
+}
+
+.panel {
+  border-radius: var(--surface-radius);
+  border-color: var(--accent);
+}
+
+.figure {
+  font-family: var(--face-figure);
+}
