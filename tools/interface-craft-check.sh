@@ -155,6 +155,28 @@ else
     else
         say "pass the scan read all $(printf '%s\n' "$FOUND_SOURCES" | wc -l | tr -d ' ') files under crates/server/src/ui and nothing outside it"
     fi
+
+    # The three files that would make this check report a hit it wrote itself.
+    # The scan declares the blocklist, this script declares it a second time, and
+    # the record spells out every entry it excepts; any of the three swept as a
+    # source would go red on its own text. The demonstrations are the trap in the
+    # other direction: they are deliberately broken copies, and a sweep that
+    # walked them would be grading a fixture.
+    OWN_TEXT=0
+    for FORBIDDEN in tools/ui/interface-craft-scan.js tools/interface-craft-check.sh \
+        docs/interface-craft-record.md; do
+        if printf '%s\n' "$READ_LINE" | tr ',' '\n' | grep -qxF "$FORBIDDEN"; then
+            fail "the scan read $FORBIDDEN as an identity source, so a hit it reports could be one it wrote itself"
+            OWN_TEXT=1
+        fi
+    done
+    if printf '%s\n' "$READ_LINE" | tr ',' '\n' | grep -q '^tools/'; then
+        fail "the scan read a file under tools/ as an identity source; the demonstrations there are deliberately broken copies and grading one is grading a fixture"
+        OWN_TEXT=1
+    fi
+    if [ "$OWN_TEXT" -eq 0 ]; then
+        say "pass neither this check's own copy of the blocklist, nor the scan's, nor the record's exception rows, nor a demonstration tree was swept as a source"
+    fi
 fi
 
 say ""
