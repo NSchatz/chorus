@@ -1,0 +1,23 @@
+/* base/ui/chorus.css with one rule added: a gradient with a purple stop and a
+ * blue one.
+ *
+ * #6d28d9 reads 263 degrees and #2563eb reads 221, one in each of the two bands
+ * the scan names. Neither is written as an identifier C2 lists, which is the
+ * point: this entry is a description and it has to be recognised as one. */
+
+body {
+  font-family: var(--face-prose);
+}
+
+.panel {
+  border-radius: var(--surface-radius);
+  border-color: var(--accent);
+}
+
+.hero {
+  background-image: linear-gradient(135deg, #6d28d9, #2563eb);
+}
+
+.figure {
+  font-family: var(--face-figure);
+}

@@ -1,0 +1,24 @@
+/* The base tree's tokens. Small on purpose: what it has to hold is the five
+ * identity entries the record beside it declares, and none of the C2
+ * blocklist. Every demonstration that breaks a token inherits this file with
+ * one line changed. */
+
+/* tier: primitive */
+:root {
+  --teal-600: #0a6b6b;
+  --radius-12: 12px;
+  --font-ui: "Chorus Display", -apple-system, sans-serif;
+  --font-mono: "Chorus Mono", ui-monospace, monospace;
+}
+
+/* tier: semantic, theme: light */
+:root {
+  --accent: var(--teal-600);
+}
+
+/* tier: component */
+:root {
+  --surface-radius: var(--radius-12);
+  --face-prose: var(--font-ui);
+  --face-figure: var(--font-mono);
+}

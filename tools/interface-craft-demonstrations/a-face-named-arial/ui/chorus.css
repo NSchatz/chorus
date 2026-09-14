@@ -1,0 +1,21 @@
+/* base/ui/chorus.css with one rule added: a declared stack naming Arial.
+ *
+ * A face this tree chose leads the stack, so what it breaks is the Arial entry
+ * and not "a bare system stack alone", which has a tree of its own. */
+
+body {
+  font-family: var(--face-prose);
+}
+
+.title {
+  font-family: "Chorus Display", Arial, sans-serif;
+}
+
+.panel {
+  border-radius: var(--surface-radius);
+  border-color: var(--accent);
+}
+
+.figure {
+  font-family: var(--face-figure);
+}

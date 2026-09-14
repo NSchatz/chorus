@@ -1,0 +1,4 @@
+A marker, not a source. A file named <name>.removed under a demonstration's ui/
+takes <name> out of the set composed over base/ui, which is the only way to
+commit a tree whose identity sources resolve to an EMPTY set while base still
+has four. This tree removes all four.

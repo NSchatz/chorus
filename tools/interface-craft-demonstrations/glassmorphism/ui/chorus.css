@@ -1,0 +1,19 @@
+/* base/ui/chorus.css with one declaration added: a backdrop-filter.
+ *
+ * That property IS the effect. It exists to blur what is behind a translucent
+ * surface and nothing else uses it, which is why the scan takes it as
+ * glassmorphism wherever it appears rather than looking for a named class. */
+
+body {
+  font-family: var(--face-prose);
+}
+
+.panel {
+  border-radius: var(--surface-radius);
+  border-color: var(--accent);
+  backdrop-filter: blur(12px);
+}
+
+.figure {
+  font-family: var(--face-figure);
+}

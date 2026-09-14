@@ -1,0 +1,22 @@
+/* base/ui/chorus.css with one rule added: a declared stack naming Space
+ * Grotesk.
+ *
+ * Space Grotesk is not a face any operating system supplies, so the stack it
+ * leads is not a bare system stack alone and this tree breaks the one entry. */
+
+body {
+  font-family: var(--face-prose);
+}
+
+.title {
+  font-family: "Space Grotesk", -apple-system, sans-serif;
+}
+
+.panel {
+  border-radius: var(--surface-radius);
+  border-color: var(--accent);
+}
+
+.figure {
+  font-family: var(--face-figure);
+}

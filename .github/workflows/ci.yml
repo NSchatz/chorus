@@ -149,6 +149,20 @@ jobs:
       - name: Comment density is under the agreed ceiling
         run: make verify-comment-density
 
+      # The control page's committed identity, against the umbrella's
+      # interface-craft conventions C1 and C2: the design record names a display
+      # face, a text face, an accent, a radius signature and a shadow signature
+      # with one sentence each and agrees with the token file, and no source
+      # under crates/server/src/ui carries an entry of C2's blocklist the record
+      # does not name as an exception with its reason. Includes the fifteen
+      # committed trees that go red one per entry and the nine that go red on
+      # every other way this gate can fail. Reads source text, resolves nothing
+      # over the network and needs no device. Named separately from the `make
+      # verify` step below, which also runs it, so a red build says the design
+      # record broke rather than "the verifications".
+      - name: The control page's committed identity, and the C2 blocklist
+        run: make verify-interface-craft
+
       # Every refusal path, and the proof that a verification whose environment
       # is absent exits non-zero naming what is missing rather than reporting
       # green. This runner has no audio device and no real-time priority, which

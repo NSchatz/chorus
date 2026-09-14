@@ -1,0 +1,27 @@
+/* base/ui/tokens.css with one primitive added: Tailwind's indigo-500, by that
+ * name.
+ *
+ * Added beside the declarations the record names rather than replacing one:
+ * replacing --teal-600 would make the record disagree with the token file as
+ * well, and a tree that goes red for two reasons proves neither. */
+
+/* tier: primitive */
+:root {
+  --teal-600: #0a6b6b;
+  --indigo-500: #6366f1;
+  --radius-12: 12px;
+  --font-ui: "Chorus Display", -apple-system, sans-serif;
+  --font-mono: "Chorus Mono", ui-monospace, monospace;
+}
+
+/* tier: semantic, theme: light */
+:root {
+  --accent: var(--teal-600);
+}
+
+/* tier: component */
+:root {
+  --surface-radius: var(--radius-12);
+  --face-prose: var(--font-ui);
+  --face-figure: var(--font-mono);
+}
