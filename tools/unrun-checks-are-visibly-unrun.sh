@@ -147,6 +147,20 @@ expect_missing_prerequisite "endpoint-rig-run.sh" \
     CHORUS_CAPTURE_DEVICE=chorus-no-such-capture-device \
     bash "$REPO_ROOT/tools/endpoint-rig-run.sh"
 
+# No wireless network, no ESP32-S3 on one, no second endpoint in another room
+# and no capture rig. Genuinely absent, and the first of those is absent on
+# EVERY machine rather than only on this one: firmware/config/endpoint.conf
+# declares the network name and the secret `unknown` and will go on declaring
+# them unknown, because a credential committed once is in a git history no
+# rotation reaches. This is the entry point for AC-2 and AC-3 of the WIFI-7
+# phase, and neither is passed anywhere in this repository.
+expect_missing_prerequisite "wireless-characterization-run.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_WIRELESS_AP= CHORUS_ESP32S3_PORT= \
+    CHORUS_SECOND_ENDPOINT= \
+    CHORUS_CLIENT_DEVICE=chorus-no-such-device \
+    CHORUS_CAPTURE_DEVICE=chorus-no-such-capture-device \
+    bash "$REPO_ROOT/tools/wireless-characterization-run.sh"
+
 # No playback device. Genuinely absent: the name does not exist. Both of these
 # are PRODUCT-6's entry points for AC-1 and AC-3, and both run real endpoints,
 # which need a device that opens.

@@ -1,12 +1,17 @@
 #include "esp_hal.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "driver/i2s_std.h"
 #include "esp_err.h"
+#include "esp_event.h"
 #include "esp_log.h"
+#include "esp_netif.h"
+#include "esp_wifi.h"
+#include "nvs_flash.h"
 
 static const char *TAG = "chorus-hal";
 
@@ -230,4 +235,147 @@ int chorus_esp_hal_init(const chorus_endpoint_config_t *config, chorus_i2c_bus_t
     controller->apply_clock = hal_apply_clock;
     controller->stop_clock = hal_stop_clock;
     return 0;
+}
+
+/* --- the radio ---------------------------------------------------------------
+ *
+ * The wireless half of `chorus#WIFI-7`, bound to the platform. Every DECISION
+ * is in firmware/src/wifi.c and graded on a host; what is here is the wiring,
+ * and the wiring is not claimed by this repository.
+ *
+ * The ORDER is the platform's own, from the carried ESP-IDF guide: the power
+ * save mode is set "after calling esp_wifi_init()", and modem sleep starts
+ * "when station connects to AP". So `hal_radio_init` goes as far as starting
+ * the station, `chorus_wifi_bring_up` sets and reads back the mode, and
+ * `hal_radio_join` is what connects. A mode set after the connect would be a
+ * mode set after modem sleep had already begun. */
+
+static wifi_ps_type_t to_platform_mode(chorus_wifi_ps_t mode)
+{
+    switch (mode) {
+    case CHORUS_WIFI_PS_NONE:
+        return WIFI_PS_NONE;
+    case CHORUS_WIFI_PS_MIN_MODEM:
+        return WIFI_PS_MIN_MODEM;
+    case CHORUS_WIFI_PS_MAX_MODEM:
+        return WIFI_PS_MAX_MODEM;
+    case CHORUS_WIFI_PS_UNKNOWN:
+        break;
+    }
+    /* Unreachable through the committed configuration: the reader refuses a
+     * mode it cannot name, so nothing ever asks this for an unknown one. The
+     * platform default is returned rather than an invented value, and the
+     * readback is what would then disagree and withhold the bound. */
+    return WIFI_PS_MIN_MODEM;
+}
+
+static chorus_wifi_ps_t from_platform_mode(wifi_ps_type_t mode)
+{
+    switch (mode) {
+    case WIFI_PS_NONE:
+        return CHORUS_WIFI_PS_NONE;
+    case WIFI_PS_MIN_MODEM:
+        return CHORUS_WIFI_PS_MIN_MODEM;
+    case WIFI_PS_MAX_MODEM:
+        return CHORUS_WIFI_PS_MAX_MODEM;
+    default:
+        /* A mode this build has no word for is reported as unknown, and a mode
+         * nobody can name is not a mode anything may be claimed about. */
+        return CHORUS_WIFI_PS_UNKNOWN;
+    }
+}
+
+static int hal_radio_init(void *ctx)
+{
+    (void)ctx;
+    esp_err_t nvs = nvs_flash_init();
+    if (nvs == ESP_ERR_NVS_NO_FREE_PAGES || nvs == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        if (nvs_flash_erase() != ESP_OK || nvs_flash_init() != ESP_OK) {
+            ESP_LOGE(TAG, "the non-volatile store the radio needs could not be prepared");
+            return -1;
+        }
+    } else if (nvs != ESP_OK) {
+        ESP_LOGE(TAG, "the non-volatile store the radio needs could not be prepared");
+        return -1;
+    }
+    if (esp_netif_init() != ESP_OK) {
+        return -1;
+    }
+    esp_err_t loop = esp_event_loop_create_default();
+    if (loop != ESP_OK && loop != ESP_ERR_INVALID_STATE) {
+        return -1;
+    }
+    if (esp_netif_create_default_wifi_sta() == NULL) {
+        return -1;
+    }
+    wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
+    if (esp_wifi_init(&init) != ESP_OK) {
+        return -1;
+    }
+    if (esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK) {
+        return -1;
+    }
+    /* Nothing here starts a network time service. The endpoint's only clock is
+     * firmware/src/monotonic.c and every instant on the audio path comes from
+     * it; the safety scans fail this file if a settable one ever appears. */
+    return (esp_wifi_start() == ESP_OK) ? 0 : -1;
+}
+
+static int hal_radio_set_power_save(void *ctx, chorus_wifi_ps_t mode)
+{
+    (void)ctx;
+    return (esp_wifi_set_ps(to_platform_mode(mode)) == ESP_OK) ? 0 : -1;
+}
+
+static int hal_radio_get_power_save(void *ctx, chorus_wifi_ps_t *mode)
+{
+    (void)ctx;
+    wifi_ps_type_t reported = WIFI_PS_MIN_MODEM;
+    if (esp_wifi_get_ps(&reported) != ESP_OK) {
+        return -1;
+    }
+    *mode = from_platform_mode(reported);
+    return 0;
+}
+
+/* Whether this IMAGE was built with software coexistence enabled.
+ *
+ * A build-time answer, and the honest one: the caveat is about what the
+ * platform does with its time slice, the image's own configuration is what
+ * decides that, and there is no portable runtime question that answers it. A
+ * board whose coexistence is a hardware fact rather than a build one declares
+ * it in firmware/config/endpoint.conf, and either source withholding the bound
+ * is enough. */
+static int hal_radio_coexistence_active(void *ctx, int *active)
+{
+    (void)ctx;
+#if defined(CONFIG_SW_COEXIST_ENABLE)
+    *active = 1;
+#else
+    *active = 0;
+#endif
+    return 0;
+}
+
+static int hal_radio_join(void *ctx, const char *ssid, const char *secret)
+{
+    (void)ctx;
+    wifi_config_t station;
+    memset(&station, 0, sizeof(station));
+    snprintf((char *)station.sta.ssid, sizeof(station.sta.ssid), "%s", ssid);
+    snprintf((char *)station.sta.password, sizeof(station.sta.password), "%s", secret);
+    if (esp_wifi_set_config(WIFI_IF_STA, &station) != ESP_OK) {
+        return -1;
+    }
+    return (esp_wifi_connect() == ESP_OK) ? 0 : -1;
+}
+
+void chorus_esp_hal_radio(chorus_radio_t *radio)
+{
+    radio->ctx = &hal;
+    radio->init = hal_radio_init;
+    radio->set_power_save = hal_radio_set_power_save;
+    radio->get_power_save = hal_radio_get_power_save;
+    radio->coexistence_active = hal_radio_coexistence_active;
+    radio->join = hal_radio_join;
 }

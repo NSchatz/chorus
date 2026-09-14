@@ -114,6 +114,15 @@ jobs:
       - name: Endpoint safety scans
         run: make firmware-safety-scans
 
+      # The power save mode the endpoint SETS rather than inherits, the
+      # readback, the two ways that mode can fail to be in effect, and the
+      # refusal to join on a credential this repository does not have. Graded
+      # against a simulated radio; the runner has none, which is exactly the
+      # environment that makes the refusal in the `make verify` step below mean
+      # something.
+      - name: Endpoint wireless bring-up
+        run: make firmware-wireless
+
       # The rest of it, including the amplifier bring-up order against a
       # simulated part and the rejoin graded over a real socket with a real
       # chorus-server killed and restarted under it. The outage-of-minutes run

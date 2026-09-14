@@ -28,6 +28,7 @@
 #include "chorus/endpoint_config.h"
 #include "chorus/session.h"
 #include "chorus/telemetry.h"
+#include "chorus/wifi.h"
 
 static const char *TAG = "chorus-endpoint";
 
@@ -139,6 +140,38 @@ void app_main(void)
         return;
     }
     ESP_LOGI(TAG, "%s", report.detail);
+
+    /* The link, before the session is told it is usable.
+     *
+     * `chorus#WIFI-7`: the power save mode is SET from the committed
+     * configuration rather than inherited, read back, and published on the line
+     * below. A bring-up that left the link down stops here rather than opening
+     * a session against a radio that is not on a network, and the output stage
+     * goes back to high impedance rather than being left live with nothing
+     * feeding it. */
+    chorus_radio_t radio;
+    chorus_esp_hal_radio(&radio);
+    chorus_wifi_report_t link;
+    chorus_wifi_status_t link_status = chorus_wifi_bring_up(&config.link, &radio, &link);
+    chorus_telemetry_record_wifi(&telemetry, &link);
+    {
+        char line[768];
+        chorus_telemetry_line(&telemetry, line, sizeof(line));
+        if (link.link_up) {
+            ESP_LOGI(TAG, "%s", line);
+            ESP_LOGI(TAG, "%s", link.detail);
+        } else {
+            ESP_LOGE(TAG, "%s", line);
+            ESP_LOGE(TAG, "%s", link.detail);
+        }
+    }
+    if (!link.link_up) {
+        ESP_LOGE(TAG, "the link is down (%s); no session is opened",
+                 chorus_wifi_status_name(link_status));
+        (void)stage.high_impedance(stage.ctx);
+        (void)controller.stop_clock(controller.ctx);
+        return;
+    }
 
     chorus_session_config_t session;
     memset(&session, 0, sizeof(session));

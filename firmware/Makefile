@@ -42,27 +42,36 @@ LIB_SRC := \
 	$(FW)/src/telemetry.c \
 	$(FW)/src/monotonic.c \
 	$(FW)/src/session.c \
+	$(FW)/src/wifi.c \
 	$(FW)/src/endpoint_config.c
 
-# The three units the configuration checker itself needs. It is built without
-# the gate below, because it IS the gate.
-GATE_SRC := $(FW)/src/conf.c $(FW)/src/i2s.c $(FW)/src/endpoint_config.c
+# The four units the configuration checker itself needs. It is built without
+# the gate below, because it IS the gate. wifi.c is here because the reader
+# turns the link section's words into the enums that section declares, and a
+# checker that could not read the link could not refuse a bad one.
+GATE_SRC := $(FW)/src/conf.c $(FW)/src/i2s.c $(FW)/src/wifi.c $(FW)/src/endpoint_config.c
 
 SCAN_SRC := $(FW)/check/endpoint_scan.c
 
-# The simulated part, output stage and I2S controller. Test-only, and outside
-# firmware/src on purpose: they are what the endpoint is graded AGAINST, and a
-# fake inside the tree the scans cover would be endpoint source.
-TEST_SUPPORT := $(FW)/tests/fake_amp.c
+# The simulated part, output stage, I2S controller and radio. Test-only, and
+# outside firmware/src on purpose: they are what the endpoint is graded AGAINST,
+# and a fake inside the tree the scans cover would be endpoint source.
+TEST_SUPPORT := $(FW)/tests/fake_amp.c $(FW)/tests/fake_radio.c
 
 STAMP := $(BUILD)/config-ok.stamp
 
 .PHONY: all check config-check golden-vectors sync-scenarios safety-scans amplifier clocking \
-        telemetry session-outage clean
+        telemetry wireless session-outage clean
 
+# Every binary this makefile builds, enumerated. There is no wildcard over
+# firmware/tests on purpose, and the cost of that is a test has to be named in
+# TWO places to run at all: here, and in the run target `check` depends on. A
+# test absent from either is a grading route pointing at something nothing
+# builds.
 all: $(BUILD)/chorus-endpoint-config-check $(BUILD)/chorus-endpoint-scan \
      $(BUILD)/chorus-endpoint-session $(BUILD)/test_protocol $(BUILD)/test_sync \
-     $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_scan $(BUILD)/test_telemetry
+     $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_scan $(BUILD)/test_telemetry \
+     $(BUILD)/test_wifi
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -98,8 +107,8 @@ $(BUILD)/test_scan: $(SCAN_SRC) $(FW)/tests/test_scan.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(FW)/check -I$(FW)/tests -o $@ $(SCAN_SRC) $(FW)/tests/test_scan.c $(LDLIBS)
 
 $(BUILD)/test_protocol $(BUILD)/test_sync $(BUILD)/test_amp $(BUILD)/test_i2s \
-$(BUILD)/test_telemetry: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) $(FW)/tests/test_%.c \
-                         $(STAMP) | $(BUILD)
+$(BUILD)/test_telemetry $(BUILD)/test_wifi: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
+                         $(FW)/tests/test_%.c $(STAMP) | $(BUILD)
 	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(TEST_SUPPORT) $(FW)/tests/test_$*.c $(LDLIBS)
 
 # --- what CI names separately ------------------------------------------------
@@ -123,11 +132,17 @@ clocking: $(BUILD)/test_i2s
 telemetry: $(BUILD)/test_telemetry
 	$(BUILD)/test_telemetry
 
+# chorus#WIFI-7: the power save mode the endpoint SETS, the readback, the two
+# ways that mode can fail to be in effect, and the refusal to join on a
+# credential this repository does not have. No radio, no ESP32-S3, no network.
+wireless: $(BUILD)/test_wifi
+	$(BUILD)/test_wifi
+
 session-outage: $(BUILD)/chorus-endpoint-session
 	bash $(FW)/tests/session-outage.sh
 
 check: config-check golden-vectors sync-scenarios safety-scans clocking amplifier telemetry \
-       session-outage
+       wireless session-outage
 
 clean:
 	rm -rf $(BUILD)

@@ -75,11 +75,13 @@ use std::thread;
 use std::time::Duration;
 
 use chorus_audio::{MonotonicTimeline, StreamFormat};
+use chorus_control::transport::{Transport, ZoneTransports};
+use chorus_control::zones::Zone;
 use chorus_discovery::dnssd::{Advertisement, AUDIO_SERVICE, CONTROL_SERVICE};
 use chorus_discovery::net::{advertisable_addresses, Advertiser};
 use chorus_hostctl::ThreadRegistry;
 use chorus_server::clients::ClientPool;
-use chorus_server::config::ServerConfig;
+use chorus_server::config::{ServerConfig, ServerConfigError};
 use chorus_server::control::{initial_state, ControlPlane, ControlState};
 use chorus_server::hostreport::{
     decide_memory_lock, register_ordinary_thread, scheduling_report, take_contract_for_this_thread,
@@ -112,6 +114,42 @@ impl Status {
     }
 }
 
+/// One tier line per zone this server SERVES, and one line per declaration that
+/// reaches no zone it serves.
+///
+/// WIFI-7's AC-6 asks for the transport in force and the bound it is held to
+/// "for every zone it serves, so that no zone's tier is implicit", so the list
+/// walked is the served zone state and never the `--zone` command line. The two
+/// differ in both directions, and both are the same defect:
+///
+/// - a server restarted against its persisted state is given its zones by the
+///   file and serves zones the command line never named;
+/// - a `--zone` naming a zone the state does not hold declares a tier for a
+///   zone nobody serves.
+///
+/// The second is reported rather than dropped, because a declaration that
+/// silently reaches nothing reads exactly like one that took effect. It is
+/// deliberately NOT spelled `zone id=`: that shape is the tier of a zone being
+/// served, and this is the absence of one.
+fn report_zone_tiers(
+    transports: &ZoneTransports,
+    served: &[Zone],
+    declared: &[(String, Transport)],
+) {
+    for zone in served {
+        println!("chorus-server: {}", transports.report(&zone.id));
+    }
+    for (id, transport) in declared {
+        if !served.iter().any(|zone| zone.id == *id) {
+            println!(
+                "chorus-server: zone-declaration id={} transport={} \
+                 applies_to=no-zone-this-server-serves",
+                id, transport
+            );
+        }
+    }
+}
+
 fn report(what: &str, detail: &str) {
     let mut err = std::io::stderr();
     let _ = writeln!(err, "chorus-server: {}: {}", what, detail);
@@ -135,6 +173,16 @@ fn main() -> ExitCode {
         Ok(c) => c,
         Err(e) => {
             report("configuration refused", &e.to_string());
+            // AC-5 asks for "serves no audio and no control state" as an
+            // observable and not as an absence, so the zone-tier refusal says
+            // so positively. Nothing has been bound at this point: the audio
+            // socket, the control socket and the zone state are all still
+            // ahead of this line.
+            if matches!(e, ServerConfigError::NotATransport { .. }) {
+                println!(
+                    "chorus-server: stopped reason=unknown-transport chunks_sent=0 zones_served=0"
+                );
+            }
             return ExitCode::from(EXIT_CONFIG);
         }
     };
@@ -160,6 +208,20 @@ fn main() -> ExitCode {
         return ExitCode::from(EXIT_CONFIG);
     }
 
+    // WIFI-7's AC-6: "SHALL report, for every zone it serves, the transport in
+    // force and the bound that transport is held to, so that no zone's tier is
+    // implicit".
+    //
+    // The zones this server SERVES are the ones its zone state holds, and that
+    // set is not `config.zones`: `initial_state` ignores the command line
+    // entirely whenever a state file loads, which is the documented restart
+    // (`docs/decisions/0018-the-persisted-zone-state.md` -- `--zone` is read
+    // only when there is no persisted state). So the report is taken below,
+    // from the state itself, once it exists. Reporting from `config.zones` here
+    // would say nothing about a restarted house and would print a tier for a
+    // zone nobody serves, which is the same implicit tier from both ends.
+    let transports = ZoneTransports::new(&config.zone_transports);
+
     // The control channel is bound HERE: before a thread exists, before the
     // audio socket is bound, and before anything could be served. AC-9 asks
     // that a server which cannot bind its control address exits non-zero
@@ -182,6 +244,20 @@ fn main() -> ExitCode {
                 return ExitCode::from(EXIT_CONTROL);
             }
         };
+        // AC-6, over the zones this server actually serves: the state that was
+        // just loaded, whether it came off the command line or off the file.
+        report_zone_tiers(&transports, zones.zones(), &config.zone_transports);
+        // WIFI-7's AC-7: a group holding any wireless zone is held to the
+        // wireless buffer policy and the wireless bound, and the report names
+        // the zone whose declaration set it. The groups come from the state
+        // that was just loaded, so a group a restart reloaded is reported the
+        // same way a configured one is.
+        for group in ZoneTransports::groups(zones.zones()) {
+            println!(
+                "chorus-server: {}",
+                transports.group_tier(zones.zones(), &group).report()
+            );
+        }
         let zone_count = zones.zones().len();
         let state = Arc::new(ControlState::new(
             zones,
@@ -206,6 +282,12 @@ fn main() -> ExitCode {
                 return ExitCode::from(EXIT_CONTROL);
             }
         }
+    } else {
+        // No control channel, so this server holds no zone state and serves no
+        // zone: there is no tier in force anywhere for a reader to have to
+        // guess at. A `--zone` declaration made anyway is reported as what it
+        // is rather than being silently dropped.
+        report_zone_tiers(&transports, &[], &config.zone_transports);
     }
 
     // The multicast socket, opened before any thread too, and for the same

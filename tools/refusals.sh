@@ -361,6 +361,129 @@ check "no-refused-message-changed-the-state-a-subscriber-would-be-sent" \
     "the state is byte-identical before and after four refusals"
 kill_quietly "$CONTROL_SERVER"
 
+# --- a zone declared with a transport nobody committed -----------------------
+#
+# WIFI-7's AC-5: "IF the server is started with a zone whose declared transport
+# is not one the committed configuration names THEN THE SYSTEM SHALL exit
+# non-zero, name the zone, the value it read and the permitted transports, and
+# SHALL serve no audio and no control state."
+#
+# The transports are committed in config/transport.conf and the binary carries
+# the same list; `cargo test -p chorus-client-linux --test wireless_policy`
+# asserts the two agree. What is checked here is that the SHIPPED BINARY refuses
+# the same way.
+PERMITTED="$(sed -n 's/^[[:space:]]*transports[[:space:]]*=[[:space:]]*\([^#]*\).*/\1/p' \
+    "$REPO_ROOT/config/transport.conf" | head -n 1 | sed 's/[[:space:]]*$//')"
+# The file lists them separated by spaces and a refusal names them separated by
+# commas. Deriving one from the other here is what keeps this check reading the
+# COMMITTED list rather than a copy of it written in this script.
+PERMITTED_LIST="$(printf '%s' "$PERMITTED" | sed 's/[[:space:]][[:space:]]*/, /g')"
+say "chorus: the transports config/transport.conf names are: $PERMITTED_LIST"
+CONTROL_PORT="$(free_port)"
+run_server --listen 127.0.0.1:0 --no-lock-memory --allow-non-realtime \
+    --control-listen "127.0.0.1:$CONTROL_PORT" --zone kitchen --zone "bedroom=wifi"
+check "unknown-transport-exits-non-zero" \
+    "$([ "$STATUS" -ne 0 ] && echo 1 || echo 0)" "exit $STATUS"
+check "unknown-transport-names-the-zone" \
+    "$(echo "$OUT" | grep -q "zone 'bedroom'" && echo 1 || echo 0)" \
+    "$(echo "$OUT" | head -n 1)"
+check "unknown-transport-names-the-value-it-read" \
+    "$(echo "$OUT" | grep -q "transport 'wifi'" && echo 1 || echo 0)" \
+    "$(echo "$OUT" | head -n 1)"
+check "unknown-transport-names-the-permitted-transports" \
+    "$(echo "$OUT" | grep -q "$PERMITTED_LIST" && echo 1 || echo 0)" \
+    "it names $PERMITTED_LIST, which is what config/transport.conf commits"
+check "unknown-transport-serves-no-audio" \
+    "$(echo "$OUT" | grep -q 'listening on=' && echo 0 || echo 1)" \
+    "the audio socket was never bound: $(echo "$OUT" | grep -c 'listening on=') 'listening on' lines"
+check "unknown-transport-serves-no-control-state" \
+    "$(echo "$OUT" | grep -q 'control listening on=' && echo 0 || echo 1)" \
+    "the control channel was never bound, so no subscriber was ever told a state"
+check "unknown-transport-says-it-served-nothing" \
+    "$(echo "$OUT" | grep -q 'chunks_sent=0 zones_served=0' && echo 1 || echo 0)" \
+    "$(echo "$OUT" | grep 'stopped' | head -n 1)"
+
+# And a transport the committed configuration DOES name is accepted, so the
+# refusal above is about the word and not about the flag being unusable.
+#
+# The run is stopped by an address that is genuinely held, which happens AFTER
+# the zone tiers are reported and before anything is served: a server that got
+# past its configuration has to be stopped by something, and a server that
+# served a client would need one.
+TAKEN_PORT="$(free_port)"
+python3 - "$TAKEN_PORT" >/dev/null 2>&1 <<'PY' &
+import socket, sys, time
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+s.bind(("127.0.0.1", int(sys.argv[1])))
+s.listen(1)
+time.sleep(30)
+PY
+HOLDER=$!
+sleep 1
+run_server --listen 127.0.0.1:0 --no-lock-memory --allow-non-realtime \
+    --control-listen "127.0.0.1:$TAKEN_PORT" --zone kitchen --zone "bedroom=wireless"
+kill_quietly "$HOLDER"
+check "a-committed-transport-is-accepted" \
+    "$(echo "$OUT" | grep -q 'zone id=bedroom transport=wireless' && echo 1 || echo 0)" \
+    "$(echo "$OUT" | grep 'zone id=bedroom' | head -n 1)"
+check "a-zone-declaring-no-transport-is-reported-as-wired" \
+    "$(echo "$OUT" | grep -q 'zone id=kitchen transport=wired' && echo 1 || echo 0)" \
+    "$(echo "$OUT" | grep 'zone id=kitchen' | head -n 1)"
+check "every-zone-has-its-tier-reported" \
+    "$([ "$(echo "$OUT" | grep -c 'zone id=')" -eq 2 ] && echo 1 || echo 0)" \
+    "$(echo "$OUT" | grep -c 'zone id=') tier lines for 2 declared zones, so no zone's tier is implicit"
+
+# --- an endpoint that cannot apply the declared wireless latency -------------
+#
+# WIFI-7's AC-8: "IF an endpoint in a group held to the wireless policy cannot
+# apply the declared wireless playout latency THEN THE SYSTEM SHALL stop playing
+# that stream and report both the latency it was asked for and the one it could
+# apply, rather than play at the wired latency."
+WIRELESS_LATENCY="$(sed -n \
+    's/^[[:space:]]*wireless_playout_latency_us[[:space:]]*=[[:space:]]*\([^#]*\).*/\1/p' \
+    "$REPO_ROOT/config/transport.conf" | head -n 1 | tr -d '[:space:]')"
+WIRED_LATENCY="$(sync_conf playout_latency_us)"
+say "chorus: the wireless policy declares ${WIRELESS_LATENCY} us of playout latency, the wired tier ${WIRED_LATENCY} us"
+
+# Told to play at the wired latency inside a group held to the wireless policy.
+run_client --transport wireless --playout-latency-us "$WIRED_LATENCY" \
+    --device chorus-no-such-device \
+    --delay-log "${TMPDIR:-/tmp}/chorus-refusals-unused.log"
+check "wired-latency-in-a-wireless-group-exits-non-zero" \
+    "$([ "$STATUS" -ne 0 ] && echo 1 || echo 0)" "exit $STATUS"
+check "wired-latency-in-a-wireless-group-names-the-latency-it-was-asked-for" \
+    "$(echo "$OUT" | grep -q "declared playout latency is $WIRELESS_LATENCY us" && echo 1 || echo 0)" \
+    "$(echo "$OUT" | head -n 1)"
+check "wired-latency-in-a-wireless-group-names-the-one-it-could-apply" \
+    "$(echo "$OUT" | grep -q "would apply $WIRED_LATENCY us instead" && echo 1 || echo 0)" \
+    "$(echo "$OUT" | head -n 1)"
+check "wired-latency-in-a-wireless-group-plays-nothing" \
+    "$(echo "$OUT" | grep -q 'played=0' && echo 1 || echo 0)" \
+    "$(echo "$OUT" | grep 'stopped' | head -n 1)"
+
+# Bounds that cannot hold the declared latency at all: the same refusal, and it
+# still names both numbers rather than reporting the one it cannot use twice.
+run_client --transport wireless --max-us 300000 \
+    --device chorus-no-such-device \
+    --delay-log "${TMPDIR:-/tmp}/chorus-refusals-unused.log"
+check "bounds-that-cannot-hold-the-wireless-latency-exit-non-zero" \
+    "$([ "$STATUS" -ne 0 ] && echo 1 || echo 0)" "exit $STATUS"
+check "bounds-that-cannot-hold-the-wireless-latency-name-both" \
+    "$(echo "$OUT" | grep -q "declared playout latency is $WIRELESS_LATENCY us" \
+        && echo "$OUT" | grep -q "would apply $WIRED_LATENCY us instead" && echo 1 || echo 0)" \
+    "$(echo "$OUT" | head -n 1)"
+check "bounds-that-cannot-hold-the-wireless-latency-play-nothing" \
+    "$(echo "$OUT" | grep -q 'played=0' && echo 1 || echo 0)" \
+    "$(echo "$OUT" | grep 'stopped' | head -n 1)"
+
+# And an endpoint in a wireless group that CAN apply it is not refused, so the
+# refusals above are about the latency and not about the tier being unusable.
+run_client --transport wireless --device chorus-no-such-device --probe-device
+check "a-wireless-endpoint-that-can-apply-the-declared-latency-is-not-refused" \
+    "$(echo "$OUT" | grep -q 'configuration refused' && echo 0 || echo 1)" \
+    "it got as far as the device, which is what exit $STATUS says"
+
 say ""
 if [ "$FAILURES" -eq 0 ]; then
     say "chorus: every refusal path holds"

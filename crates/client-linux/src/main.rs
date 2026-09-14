@@ -51,6 +51,7 @@ use chorus_client_linux::receive::{handshake, HandshakeError};
 use chorus_client_linux::run::{counter_lines, header_for, run_session, StopReason};
 use chorus_client_linux::sink::{AlsaSink, PcmSink};
 use chorus_client_linux::Counters;
+use chorus_control::transport::Transport;
 use chorus_discovery::dnssd::AUDIO_SERVICE;
 use chorus_discovery::net::locate;
 
@@ -72,6 +73,16 @@ fn main() -> ExitCode {
     };
     if let Err(e) = config.validate() {
         report("configuration refused", &e.to_string());
+        // AC-8: an endpoint that cannot apply the playout latency its group is
+        // held to STOPS, and says so on the line every verification reads, so
+        // that "and plays nothing" is visible rather than inferred from an exit
+        // code.
+        if matches!(
+            e,
+            chorus_client_linux::config::ConfigError::WirelessPlayoutLatencyNotApplied { .. }
+        ) {
+            status("stopped reason=wireless-playout-latency-not-applied played=0 frames_played=0");
+        }
         return ExitCode::from(EXIT_CONFIG);
     }
 
@@ -336,9 +347,28 @@ fn play(
     } else {
         format!("{}.session{}", config.delay_log, session)
     };
+    // The tier rides on the line that already says what this run is configured
+    // with, so one grep answers "what is this endpoint held to" for a wired and
+    // a wireless run alike.
+    //
+    // The power-save fields carry the SAME KEYS the ESP32 endpoint publishes
+    // (`firmware/src/telemetry.c`), so one grep reaches both endpoints rather
+    // than one of them. The ANSWER differs and is meant to: this endpoint
+    // declares no mode and reads none back, so it says `unknown` on a wireless
+    // link and `not-applicable` on a wired one, which is what the firmware line
+    // says about a link with no radio in it. Turning Linux modem power save off
+    // needs privilege and a different authority than the one this phase cites,
+    // which is the ESP-IDF default; a Linux endpoint in a wireless zone gets the
+    // deeper buffer and is honest about not knowing what its own radio is doing.
+    let wifi_ps = if config.transport == Transport::Wireless {
+        "unknown"
+    } else {
+        "not-applicable"
+    };
     status(&format!(
         "starting server={} device={} min_us={} max_us={} start_fill_us={} \
-         device_target_us={} delay_log={} session={} zone={}",
+         device_target_us={} delay_log={} session={} zone={} transport={} bound_us={} \
+         playout_latency_us={} wifi_ps_declared={} wifi_ps_in_force={}",
         server,
         config.device,
         config.min_us,
@@ -347,7 +377,12 @@ fn play(
         config.device_target_us,
         delay_log,
         session,
-        config.zone
+        config.zone,
+        config.transport,
+        config.transport.bound_us(),
+        config.sync.playout_latency_ns / 1_000,
+        wifi_ps,
+        wifi_ps
     ));
 
     let stream = match TcpStream::connect(server) {

@@ -71,6 +71,23 @@ sync_conf() {
     printf '%s' "$value"
 }
 
+# A value from config/transport.conf. The same shape as conf() and sync_conf():
+# the tier a zone is held to, and the buffer policy that tier applies, are
+# passed to a run from the one file that declares them, so a check and the thing
+# it checks cannot drift apart. `cargo test -p chorus-client-linux --test
+# wireless_policy` asserts the file and the compiled constants agree.
+transport_conf() {
+    local key="$1"
+    local value
+    value="$(sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*\\([^#]*\\).*/\\1/p" \
+        "$REPO_ROOT/config/transport.conf" | head -n 1 | tr -d '[:space:]')"
+    if [ -z "$value" ]; then
+        printf 'config/transport.conf has no %s\n' "$key" >&2
+        exit 2
+    fi
+    printf '%s' "$value"
+}
+
 # The device a run should use. `default` is the operator's real card; CI and a
 # container without one pass something else, and get told when it is not there.
 audio_device() {
@@ -277,6 +294,54 @@ require_amplifier_registers() {
             "$criterion" \
             "the TAS5825M register map; firmware/config/endpoint.conf still declares these UNKNOWN:$unknown" \
             "read each value off TI's TAS5825M datasheet at bring-up and write it into firmware/config/endpoint.conf. This phase asserts the bring-up behaviour and names no address, which is why they are unknown here"
+    fi
+}
+
+# Refuse to continue unless there is a wireless link for the endpoint to be ON.
+#
+# Two halves, and both are genuinely absent in this repository rather than made
+# absent for a check:
+#
+#   - the endpoint's committed link section declares its network name and its
+#     secret UNKNOWN, and always will, because a credential committed once is in
+#     a git history no rotation reaches. Until somebody puts a real network in
+#     firmware/config/endpoint.conf, or provisions one out of band, there is no
+#     network for an endpoint to join;
+#   - the access point the run is taken against has to be named, because a
+#     wireless jitter figure is a figure about ONE radio environment and a
+#     report that did not say which is a number nobody can compare with
+#     anything.
+#
+# This refuses on a machine with an ESP32-S3 attached and on a machine without
+# one, which is the point: the credential half is a fact about the repository.
+require_wireless_link() {
+    local criterion="$1"
+    local unknown=""
+    local key
+    for key in link_wifi_ssid link_wifi_secret; do
+        if [ "$(endpoint_conf "$key")" = "unknown" ]; then
+            unknown="$unknown $key"
+        fi
+    done
+    if [ -n "$unknown" ]; then
+        missing_prerequisite \
+            "$criterion" \
+            "a wireless network for the endpoint to join; firmware/config/endpoint.conf still declares these UNKNOWN:$unknown" \
+            "put the network name and its secret into firmware/config/endpoint.conf, or provision them out of band, and do not commit either. This repository declares them unknown on purpose: a secret committed once is in a git history no rotation reaches"
+    fi
+    local transport
+    transport="$(endpoint_conf link_transport)"
+    if [ "$transport" != "wireless" ]; then
+        missing_prerequisite \
+            "$criterion" \
+            "an endpoint whose link is declared wireless; firmware/config/endpoint.conf declares link_transport = $transport" \
+            "set link_transport = wireless in firmware/config/endpoint.conf, and flash an image built from it"
+    fi
+    if [ -z "${CHORUS_WIRELESS_AP:-}" ]; then
+        missing_prerequisite \
+            "$criterion" \
+            "the access point this run is taken against; CHORUS_WIRELESS_AP names none" \
+            "set CHORUS_WIRELESS_AP to something that identifies the access point and the band, for example 'ubiquiti-u6-lite 5GHz'. A wireless jitter figure is a figure about ONE radio environment and a report that cannot say which is a number nobody can compare with anything"
     fi
 }
 

@@ -17,6 +17,7 @@ idf_component_register(
         "../src/telemetry.c"
         "../src/monotonic.c"
         "../src/session.c"
+        "../src/wifi.c"
         "../src/endpoint_config.c"
     INCLUDE_DIRS
         "."
@@ -25,6 +26,9 @@ idf_component_register(
         driver
         esp_timer
         esp_netif
+        esp_wifi
+        esp_event
+        nvs_flash
         lwip
     EMBED_TXTFILES
         "../config/endpoint.conf"
