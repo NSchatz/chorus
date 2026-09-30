@@ -7,10 +7,3 @@
 /firmware/sdkconfig
 /firmware/sdkconfig.old
 
-# The rendered UI grader's driver, which is a DEV dependency and is installed
-# rather than committed. Nothing here ships: the Cargo workspace does not depend
-# on it, the server serves no file from it, and only tools/ui-render-run.sh runs
-# it. tools/ui/pnpm-lock.yaml IS committed, so the version is pinned.
-/tools/ui/node_modules
-/tools/ui/.playwright
-/tools/ui/test-results

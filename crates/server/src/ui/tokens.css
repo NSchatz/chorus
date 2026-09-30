@@ -2,9 +2,7 @@
  * resolves to a name declared here, and nothing outside this file carries a
  * literal.
  *
- * THREE TIERS, and the file is read by a machine as well as by a person.
- * `tools/ui/tokens.js` parses it and `tools/styling-check.sh` refuses a file it
- * cannot parse, so the shape below is a contract:
+ * THREE TIERS:
  *
  *   /^ tier: primitive $/          raw values, no meaning attached
  *   /^ tier: semantic, theme: X $/ a primitive assigned a role, once per theme
@@ -17,19 +15,17 @@
  * through a rule: each theme picks its own primitive for every role, because a
  * derived palette misses contrast floors and the hand fixes land anyway without
  * the honesty of having been chosen. Nothing here mixes, inverts or filters a
- * colour, and the styling check refuses a file that does.
+ * colour.
  *
  * THE MEASURED RATIO IS WRITTEN BESIDE THE VALUE. Each line of the form
  *
  *     contrast: --a on --b = N.NN, floor F
  *
  * is the ratio a browser engine measured between those two tokens IN THIS
- * THEME, off the painted pixels. It is not decoration and it cannot go stale:
- * `make verify-ui` maps every row its contrast measurement produces back to the
- * token pair that painted it and exits non-zero when a recorded number and a
- * measured one differ by more than 0.05, and it also refuses a measured row
- * that maps to no token pair. `docs/decisions/0021-a-measured-ratio-is-recorded-beside-the-value.md`
- * records why these annotations are here at all, and what rule they replace.
+ * THEME, off the painted pixels, when the rendered grader still ran. That
+ * grader was retired on 2026-09-30 (K18, R13), so these numbers are a record of
+ * its last run and nothing re-checks them; ADR 0021 (a measured ratio is
+ * recorded beside the value) is superseded.
  *
  * The slider is the one place where the floor is not obvious: the TRACK is the
  * control's visible extent and clears 3:1 against the panel it sits on, and the
@@ -121,8 +117,7 @@
    * part: the keyword resolves through fontconfig, a system is free to point it
    * at a fixed-advance family, and one that does collapses the two faces here
    * into one. The generic keywords are the two with a guaranteed shape, so each
-   * stack ends at one, and `make verify-ui` measures which shape arrived rather
-   * than taking either on trust. */
+   * stack ends at one. */
   --font-ui: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
@@ -199,9 +194,7 @@
 :root {
   /* A rule in chorus.css names one of these or one of the roles above, and
    * never a primitive: the palette and the scale are reached through a name
-   * that says what the value is FOR. tools/styling-check.sh refuses a
-   * stylesheet source that names a primitive directly, and refuses a component
-   * token that names a primitive colour instead of the role that owns it. */
+   * that says what the value is FOR. */
   --reset-margin: var(--space-0);
   --shrink-min: var(--space-0);
 
@@ -229,7 +222,7 @@
    * criterion is measured from the RENDERED box in a real engine, a range
    * input's intrinsic height is well under either number until something sets
    * it, and a rule that only just clears the bar is one font change away from
-   * failing. tools/ui-render-run.sh measures every one of them. */
+   * failing. */
   --control-size: var(--space-44);
   --control-radius: var(--radius-8);
   --control-surface: var(--panel);

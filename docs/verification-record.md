@@ -403,23 +403,16 @@ make verify                   # every refusal path, including this phase's six
 CHORUS_CLIENT_DEVICE=null make verify-control        # AC-1
 CHORUS_CLIENT_DEVICE=null make verify-restart-storm  # AC-3
 CHORUS_CLIENT_DEVICE=null make verify-discovery-fallback  # AC-2's "and plays"
-make verify-ui                # AC-5, AC-6, AC-10: needs Chromium and tools/ui
 make verify-mdns              # AC-2's live half
 CHORUS_SOAK_SECONDS=259200 CHORUS_SECOND_ENDPOINT=user@endpoint-b \
 CHORUS_CAPTURE_DEVICE=hw:1,0 CHORUS_CLIENT_DEVICE=hw:0,0 \
     make verify-soak          # AC-4: needs three days as well
 ```
 
-The one-off install the rendered grader needs:
-
-```
-mise use node@22                                    # if node is not already here
-cd tools/ui && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 pnpm install --ignore-scripts
-```
-
-Nothing under `tools/ui` ships. The Cargo workspace has no dependency on it, the
-server serves no file from it, and `tools/ui-render-run.sh` is the only thing
-that runs it.
+AC-5, AC-6 and AC-10 were graded by `make verify-ui` (`tools/ui-render-run.sh` and
+the driver under `tools/ui`), which was retired on 2026-09-30 with the other
+umbrella-derived gates (K18, R13). Their rows above record its last run; nothing
+re-runs them until the app's own browser smoke test (P5) lands.
 
 ## EMBEDDED-5: the ESP32-S3 endpoint
 

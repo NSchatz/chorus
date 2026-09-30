@@ -6,8 +6,7 @@
 // when the state message that resulted comes back down the event stream, which
 // is the same message every other subscriber gets.
 //
-// Three rules run through the whole file, and each is graded by a rendered
-// assertion in tools/ui/ui.spec.js:
+// Three rules run through the whole file:
 //
 //   A figure that cannot be read renders as the word "Unavailable", never as
 //   0, a dash, NaN, undefined or a blank, and one such figure costs nothing
