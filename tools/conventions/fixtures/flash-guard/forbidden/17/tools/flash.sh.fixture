@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+[ $CHORUS_OWNER_AT_BENCH = 1 ] || exit 1

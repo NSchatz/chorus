@@ -351,7 +351,7 @@ mod tests {
         assert_eq!(service.port, 4010);
         assert_eq!(
             service.socket_address().as_deref(),
-            Some("192.168.1.40:4010")
+            Some("192.0.2.40:4010")
         );
         assert_eq!(service.txt_value("group"), Some("downstairs"));
     }

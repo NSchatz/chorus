@@ -15,7 +15,7 @@ service = _chorus-audio._tcp.local.
 instance = chorus
 host = chorus.local.
 port = 4010
-address.0 = 192.168.1.40
+address.0 = 192.0.2.40
 txt.0 = v=1
 txt.1 = group=downstairs
 txt.2 = ctl=4020

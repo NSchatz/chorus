@@ -400,7 +400,7 @@ mod tests {
             vec![IpAddr::V4(Ipv4Addr::LOCALHOST)]
         );
         assert_eq!(
-            advertisable_addresses("192.168.1.40:4010"),
+            advertisable_addresses("192.0.2.40:4010"),
             vec![IpAddr::V4(Ipv4Addr::new(192, 168, 1, 40))]
         );
     }

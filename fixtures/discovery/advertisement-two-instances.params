@@ -15,6 +15,6 @@ service = _chorus-audio._tcp.local.
 instance = spare
 host = spare.local.
 port = 4110
-address.0 = 192.168.1.41
+address.0 = 192.0.2.41
 txt.0 = v=1
 txt.1 = group=upstairs

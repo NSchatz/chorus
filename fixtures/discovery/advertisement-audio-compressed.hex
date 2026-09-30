@@ -4,7 +4,7 @@
 # asserted byte for byte by crates/discovery/tests/dnssd_vectors.rs. Change the
 # parameters, never this file, and never to make a red assertion green.
 #
-# address.0 = 192.168.1.40
+# address.0 = 192.0.2.40
 # compress = 1
 # host = chorus.local.
 # instance = chorus
@@ -38,4 +38,4 @@
 # offset 0x0090
 72 73 08 63 74 6C 3D 34 30 32 30 C0 63 00 01 80
 # offset 0x00a0
-01 00 00 00 78 00 04 C0 A8 01 28
+01 00 00 00 78 00 04 C0 00 02 28

@@ -1,0 +1,34 @@
+# The tools `make gate` runs beside the Rust toolchain (rust-toolchain.toml) and ESP-IDF
+# (firmware/config/endpoint.conf). Exact versions only; mise.lock carries each binary's sha256
+# (`mise lock`), and the three PyPI tools are pinned by version plus the wheel digest recorded
+# below (PyPI never lets a released file be replaced: https://pypi.org/help/#file-name-reuse,
+# read 2026-09-30). An upgrade is its own commit saying why (docs/conventions.md, "Pins").
+# tools/conventions/check-pins.sh holds this file to that rule. Installed rootless with `mise install`.
+#
+# Versions and dates read 2026-09-30 from each project's release page:
+#   gitleaks 8.30.1     MIT         https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1 (2026-03-21)
+#   cargo-deny 0.20.2   MIT/Apache  https://github.com/EmbarkStudios/cargo-deny/releases/tag/0.20.2 (2026-07-09)
+#   shellcheck 0.11.0   GPL-3.0     https://github.com/koalaman/shellcheck/releases/tag/v0.11.0 (2025-08-04)
+#   actionlint 1.7.12   MIT         https://github.com/rhysd/actionlint/releases/tag/v1.7.12 (2026-03-30)
+#   yamllint 1.38.0     GPL-3.0     https://pypi.org/project/yamllint/1.38.0/ (2026-01-13)
+#     wheel yamllint-1.38.0-py3-none-any.whl sha256 fc394a5b3be980a4062607b8fdddc0843f4fa394152b6da21722f5d59013c220
+#   clang-format 23.1.1 Apache-2.0  https://pypi.org/project/clang-format/23.1.1/ (2026-09-10)
+#     wheel clang_format-23.1.1-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl sha256 64900462c1203cee2fec364536c2dda708baf0619e15b52ceda926648cc82f56
+#   cppcheck 2.17.1 from the PyPI wheel cppcheck 1.5.1 (wrapper Apache-2.0; cppcheck itself GPL-3.0)
+#     https://pypi.org/project/cppcheck/1.5.1/ (2025-04-18); upstream's newest is 2.22.0
+#     (https://github.com/cppcheck-opensource/cppcheck/releases/tag/2.22.0, 2026-09-19), not
+#     packaged as a wheel; 2.17.1 is what installs rootless here
+#     wheel cppcheck-1.5.1-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl sha256 ca87f5ed64386a40aaf156f295eac4efa6a7a819dd0415eb2d11577572e89405
+# The GPL-3.0 tools run as unmodified binaries; their source is never read (brief section 0.9).
+
+[tools]
+"aqua:gitleaks/gitleaks" = "8.30.1"
+"aqua:EmbarkStudios/cargo-deny" = "0.20.2"
+"aqua:koalaman/shellcheck" = "0.11.0"
+"aqua:rhysd/actionlint" = "1.7.12"
+"pipx:yamllint" = "1.38.0"
+"pipx:clang-format" = "23.1.1"
+"pipx:cppcheck" = "1.5.1"
+
+[settings]
+lockfile = true

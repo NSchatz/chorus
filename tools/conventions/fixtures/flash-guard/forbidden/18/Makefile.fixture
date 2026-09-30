@@ -1,0 +1,2 @@
+flash:
+	env CHORUS_OWNER_AT_BENCH=1 bash tools/firmware-flash.sh

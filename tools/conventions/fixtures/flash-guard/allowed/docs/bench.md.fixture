@@ -1,0 +1,5 @@
+# Flashing at the bench
+
+The owner runs:
+
+    CHORUS_OWNER_AT_BENCH=1 tools/firmware-flash.sh

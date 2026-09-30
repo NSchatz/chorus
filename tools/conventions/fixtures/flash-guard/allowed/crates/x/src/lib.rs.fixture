@@ -1,0 +1,3 @@
+fn at_bench() -> bool {
+    matches!(std::env::var("CHORUS_OWNER_AT_BENCH").as_deref(), Ok("1"))
+}
