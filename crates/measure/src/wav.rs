@@ -156,7 +156,12 @@ impl fmt::Display for CaptureError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             CaptureError::Unreadable { path, detail } => {
-                write!(f, "capture '{}' could not be read: {}", path.display(), detail)
+                write!(
+                    f,
+                    "capture '{}' could not be read: {}",
+                    path.display(),
+                    detail
+                )
             }
             CaptureError::NotRiffWave { path, read } => write!(
                 f,

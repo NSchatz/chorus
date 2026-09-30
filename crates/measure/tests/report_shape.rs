@@ -107,7 +107,12 @@ fn a_completed_run_writes_one_report_naming_the_build_and_every_figure() {
 
     let after = listing(&dir);
     let new: Vec<&String> = after.difference(&before).collect();
-    assert_eq!(new.len(), 1, "exactly one new file, and these appeared: {:?}", new);
+    assert_eq!(
+        new.len(),
+        1,
+        "exactly one new file, and these appeared: {:?}",
+        new
+    );
     assert_eq!(new[0], "rig3-lag-fixture-reference-capture.md");
 
     let saved = std::fs::read_to_string(&written).expect("the report is readable");
@@ -168,7 +173,11 @@ fn a_report_that_cannot_list_every_uncommitted_path_says_how_many_it_left_out() 
         dirty_paths: (0..30).map(|n| format!("M file-{}.rs", n)).collect(),
     };
     let state = dirty.tree_state();
-    assert!(state.contains("carried 30 uncommitted path(s)"), "{}", state);
+    assert!(
+        state.contains("carried 30 uncommitted path(s)"),
+        "{}",
+        state
+    );
     assert!(state.contains("and 18 more"), "{}", state);
 }
 
@@ -204,7 +213,12 @@ fn a_free_run_records_a_baseline_and_a_later_run_cites_it_and_its_report() {
         command: "make measure-fixture-reports",
         root: &root,
     };
-    report::write_report(&dir, report_name, &report::render_free_run_report(&free_run)).unwrap();
+    report::write_report(
+        &dir,
+        report_name,
+        &report::render_free_run_report(&free_run),
+    )
+    .unwrap();
     report::write_report(&dir, BASELINE_FILE, &baseline.render()).unwrap();
 
     // The artifact is on disk and reads back as what was recorded.
@@ -227,7 +241,11 @@ fn a_free_run_records_a_baseline_and_a_later_run_cites_it_and_its_report() {
     );
     // A fixture-derived baseline has to say so, so nobody reads it as a
     // statement about a real crystal.
-    assert!(later.contains("NOT a statement about any real crystal"), "{}", later);
+    assert!(
+        later.contains("NOT a statement about any real crystal"),
+        "{}",
+        later
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -237,7 +255,11 @@ fn a_free_run_records_a_baseline_and_a_later_run_cites_it_and_its_report() {
 fn a_run_with_no_recorded_baseline_says_that_rather_than_omitting_it() {
     let analysed = analyse("01-chirp-pair-a.wav");
     let body = lag_report(&analysed, &pinned_build(), None);
-    assert!(body.contains("No free-run baseline has been recorded"), "{}", body);
+    assert!(
+        body.contains("No free-run baseline has been recorded"),
+        "{}",
+        body
+    );
     assert!(body.contains("not a passing result"), "{}", body);
 }
 
@@ -609,7 +631,8 @@ fn a_report_that_cannot_be_written_names_the_path_and_leaves_nothing_partial() {
         err
     );
     assert!(
-        err.to_string().contains("Nothing partial has been left behind"),
+        err.to_string()
+            .contains("Nothing partial has been left behind"),
         "{}",
         err
     );
@@ -773,15 +796,19 @@ fn the_jitter_analysis_agrees_with_the_committed_configuration() {
                 Some(at) => &line[..at],
                 None => line,
             };
-            line.split_once('=').and_then(|(k, v)| {
-                (k.trim() == "transports").then(|| v.trim().to_string())
-            })
+            line.split_once('=')
+                .and_then(|(k, v)| (k.trim() == "transports").then(|| v.trim().to_string()))
         })
         .collect();
-    assert_eq!(declared.len(), 1, "config/transport.conf names transports once");
+    assert_eq!(
+        declared.len(),
+        1,
+        "config/transport.conf names transports once"
+    );
     let declared: Vec<&str> = declared[0].split_whitespace().collect();
     assert_eq!(
-        declared, jitter::TRANSPORTS,
+        declared,
+        jitter::TRANSPORTS,
         "the transports a report may name and the ones config/transport.conf commits have \
          drifted apart"
     );

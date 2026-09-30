@@ -116,7 +116,10 @@ fn output_is_withheld_until_the_start_fill_and_the_log_names_the_fill_it_started
         .iter()
         .find(|e| e.kind == "start-fill")
         .expect("the log names the fill it started at");
-    assert_eq!(fill.fields.get("start_fill_us").map(String::as_str), Some("120000"));
+    assert_eq!(
+        fill.fields.get("start_fill_us").map(String::as_str),
+        Some("120000")
+    );
     let filled: u64 = fill.fields["filled_us"].parse().unwrap();
     assert!(
         filled >= 120_000,
@@ -163,7 +166,12 @@ fn a_source_faster_than_the_sink_crosses_the_maximum_and_the_crossing_is_reporte
     let ran = run("overflow", source, Some(4), 400_000);
     let log = parse(&ran.log_text).expect("the log parses");
 
-    let peak = log.samples.iter().map(|s| s.occupancy_us).max().unwrap_or(0);
+    let peak = log
+        .samples
+        .iter()
+        .map(|s| s.occupancy_us)
+        .max()
+        .unwrap_or(0);
     let crossing = log
         .events
         .iter()
@@ -181,7 +189,10 @@ fn a_source_faster_than_the_sink_crosses_the_maximum_and_the_crossing_is_reporte
                     .collect::<Vec<_>>()
             )
         });
-    assert_eq!(crossing.fields.get("bound").map(String::as_str), Some("maximum"));
+    assert_eq!(
+        crossing.fields.get("bound").map(String::as_str),
+        Some("maximum")
+    );
     assert!(ran.outcome.summary.discarded_overflow > 0);
 
     // The overflow counter is its own, and moving it moves nothing else.
@@ -293,7 +304,10 @@ fn a_clean_end_of_stream_plays_the_short_final_chunk_out_and_exits_clean() {
         ran.outcome.summary.frames_written,
         30 * FRAMES_PER_CHUNK as u64 + 100
     );
-    assert_eq!(ran.outcome.summary.underruns, 0, "a drain is not an underrun");
+    assert_eq!(
+        ran.outcome.summary.underruns, 0,
+        "a drain is not an underrun"
+    );
 
     // The graded interval closed when the end of stream arrived, not when the
     // play-out that followed it finished.
@@ -333,7 +347,10 @@ fn a_connection_lost_without_the_signal_plays_out_what_is_held_and_exits_dirty()
         StopReason::ConnectionLost { .. } => {}
         other => panic!("expected a lost connection, got {:?}", other),
     }
-    assert!(!ran.outcome.stop.is_clean(), "a lost server is not a clean end");
+    assert!(
+        !ran.outcome.stop.is_clean(),
+        "a lost server is not a clean end"
+    );
     assert!(ran.outcome.played_anything, "what was held is played out");
     assert_eq!(
         ran.outcome.summary.frames_written,
@@ -372,7 +389,12 @@ fn the_graded_interval_closes_when_the_connection_is_lost_not_when_the_play_out_
         .events
         .iter()
         .find(|e| e.kind == "graded-close")
-        .unwrap_or_else(|| panic!("the log never says where the graded interval closed:\n{}", ran.log_text));
+        .unwrap_or_else(|| {
+            panic!(
+                "the log never says where the graded interval closed:\n{}",
+                ran.log_text
+            )
+        });
     assert_eq!(
         close.fields.get("reason").map(String::as_str),
         Some("connection-lost"),
@@ -536,7 +558,11 @@ fn a_device_that_goes_away_mid_run_stops_the_run_and_does_not_claim_playback() {
     match &outcome.stop {
         StopReason::DelayRefused(refused) => {
             assert_eq!(refused.device, "modelled");
-            assert!(refused.cause.to_string().contains("removed"), "{:?}", refused);
+            assert!(
+                refused.cause.to_string().contains("removed"),
+                "{:?}",
+                refused
+            );
         }
         StopReason::DeviceFailed(e) => {
             assert!(e.to_string().contains("removed"), "{}", e);

@@ -89,9 +89,7 @@ fn start(audio: u16, control: u16, log: &PathBuf) -> Server {
     }
     Server(
         command
-            .stdout(Stdio::from(
-                std::fs::File::create(log).expect("a log file"),
-            ))
+            .stdout(Stdio::from(std::fs::File::create(log).expect("a log file")))
             .stderr(Stdio::null())
             .spawn()
             .expect("the server binary runs"),
@@ -104,8 +102,12 @@ fn start(audio: u16, control: u16, log: &PathBuf) -> Server {
 /// as a connection that was answered `503`.
 fn request(address: &str, head: &str, body: &str) -> Option<String> {
     let mut socket = TcpStream::connect(address).ok()?;
-    socket.set_read_timeout(Some(Duration::from_secs(10))).ok()?;
-    socket.set_write_timeout(Some(Duration::from_secs(10))).ok()?;
+    socket
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .ok()?;
+    socket
+        .set_write_timeout(Some(Duration::from_secs(10)))
+        .ok()?;
     write!(socket, "{}{}", head, body).ok()?;
     socket.flush().ok()?;
     let mut response = String::new();
@@ -145,7 +147,9 @@ fn wait_for_control(address: &str) -> bool {
 /// Open an event stream. `drain` says whether anything is ever read from it.
 fn subscribe(address: &str) -> TcpStream {
     let mut socket = TcpStream::connect(address).expect("the control channel is listening");
-    socket.set_write_timeout(Some(Duration::from_secs(10))).unwrap();
+    socket
+        .set_write_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
     write!(
         socket,
         "GET /api/events HTTP/1.1\r\nHost: chorus\r\nAccept: text/event-stream\r\n\r\n"
@@ -203,7 +207,9 @@ fn a_peer_that_stops_reading_gives_its_worker_slot_back() {
     polite
         .set_read_timeout(Some(Duration::from_secs(10)))
         .unwrap();
-    let read = polite.read(&mut opening).expect("the polite subscriber is served");
+    let read = polite
+        .read(&mut opening)
+        .expect("the polite subscriber is served");
     assert!(read > 0, "the second subscriber was not served at all");
 
     let busy = post(&address).unwrap_or_default();

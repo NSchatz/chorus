@@ -141,8 +141,13 @@ fn a_zone_that_declares_no_transport_is_wired_and_unchanged() {
     assert_eq!(plain.max_us, default.max_us);
     assert_eq!(plain.start_fill_us, default.start_fill_us);
     assert_eq!(plain.device_target_us, default.device_target_us);
-    assert_eq!(plain.sync.playout_latency_ns, default.sync.playout_latency_ns);
-    plain.validate().expect("the wired defaults are still valid");
+    assert_eq!(
+        plain.sync.playout_latency_ns,
+        default.sync.playout_latency_ns
+    );
+    plain
+        .validate()
+        .expect("the wired defaults are still valid");
 }
 
 /// The policy is a configuration the SHIPPED CLIENT will start with.
@@ -209,12 +214,7 @@ fn an_endpoint_that_cannot_apply_the_declared_latency_refuses_naming_both() {
 
     // And an endpoint told to play at the WIRED latency inside a wireless group
     // is the same refusal, which is the case the criterion names by name.
-    let wired_latency = configured(&[
-        "--transport",
-        "wireless",
-        "--playout-latency-us",
-        "180000",
-    ]);
+    let wired_latency = configured(&["--transport", "wireless", "--playout-latency-us", "180000"]);
     let err = wired_latency
         .validate()
         .expect_err("playing at the wired latency in a wireless group is the forbidden case");
@@ -259,7 +259,10 @@ fn the_committed_transport_configuration_and_the_compiled_one_agree() {
     assert_eq!(conf("wireless_bound_us"), WIRELESS_BOUND_US);
     assert_eq!(conf("wireless_min_us"), WIRELESS_POLICY.min_us);
     assert_eq!(conf("wireless_max_us"), WIRELESS_POLICY.max_us);
-    assert_eq!(conf("wireless_start_fill_us"), WIRELESS_POLICY.start_fill_us);
+    assert_eq!(
+        conf("wireless_start_fill_us"),
+        WIRELESS_POLICY.start_fill_us
+    );
     assert_eq!(
         conf("wireless_device_target_us"),
         WIRELESS_POLICY.device_target_us
@@ -268,7 +271,10 @@ fn the_committed_transport_configuration_and_the_compiled_one_agree() {
         conf("wireless_playout_latency_us"),
         WIRELESS_POLICY.playout_latency_us
     );
-    assert_eq!(conf_word("transports"), Transport::permitted().replace(", ", " "));
+    assert_eq!(
+        conf_word("transports"),
+        Transport::permitted().replace(", ", " ")
+    );
     assert_eq!(conf_word("default_transport"), DEFAULT_TRANSPORT.name());
 }
 
@@ -327,7 +333,11 @@ fn the_shipped_client_accepts_the_wireless_tier() {
         String::from_utf8_lossy(&refused.stderr)
     );
     assert_eq!(refused.status.code(), Some(2), "{}", said);
-    assert!(said.contains("500000") && said.contains("180000"), "{}", said);
+    assert!(
+        said.contains("500000") && said.contains("180000"),
+        "{}",
+        said
+    );
     assert!(said.contains("played=0"), "{}", said);
 }
 

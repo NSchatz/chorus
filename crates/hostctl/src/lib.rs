@@ -574,7 +574,8 @@ impl InventoryError {
     pub fn is_uninterpretable_record(&self) -> bool {
         matches!(
             self,
-            InventoryError::RecordUninterpretable { .. } | InventoryError::EntryNamesNoThread { .. }
+            InventoryError::RecordUninterpretable { .. }
+                | InventoryError::EntryNamesNoThread { .. }
         )
     }
 }
@@ -847,12 +848,11 @@ pub fn thread_inventory_from(source: &dyn TaskSource) -> Result<ThreadInventory,
             }
         };
 
-        let (policy, rt_priority) = parse_stat_scheduling(&stat).ok_or_else(|| {
-            InventoryError::RecordUninterpretable {
+        let (policy, rt_priority) =
+            parse_stat_scheduling(&stat).ok_or_else(|| InventoryError::RecordUninterpretable {
                 tid,
                 detail: describe_record(&stat),
-            }
-        })?;
+            })?;
 
         // A name that cannot be read costs the thread its name, never its
         // place in the list: the thread is there, and what it is called is not
@@ -1079,8 +1079,7 @@ mod tests {
             // ordering does not become safe for being in a test. Lowering
             // RLIMIT_RTTIME needs no privilege and binds only real-time
             // tasks, of which this process has none.
-            bound_real_time_cpu_time(200_000)
-                .expect("lowering RLIMIT_RTTIME needs no privilege");
+            bound_real_time_cpu_time(200_000).expect("lowering RLIMIT_RTTIME needs no privilege");
             match take_real_time_policy(10) {
                 Err(HostError::CeilingIsZero { ceiling: c }) => assert_eq!(c, 0),
                 other => panic!("expected CeilingIsZero, got {:?}", other),

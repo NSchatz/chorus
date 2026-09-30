@@ -65,7 +65,10 @@ fn a_spawned_thread_inherits_the_policy_of_the_thread_that_spawned_it() {
     let parent = thread::spawn(|| {
         let param = SchedParam { sched_priority: 0 };
         let rc = unsafe { sched_setscheduler(0, SCHED_BATCH, &param) };
-        assert_eq!(rc, 0, "SCHED_BATCH needs no privilege and should be settable");
+        assert_eq!(
+            rc, 0,
+            "SCHED_BATCH needs no privilege and should be settable"
+        );
         let mine = unsafe { sched_getscheduler(0) };
         assert_eq!(mine, SCHED_BATCH, "this thread did not take the policy");
 
@@ -172,8 +175,13 @@ fn every_thread_the_server_runs_is_one_its_scheduling_report_counted() {
         .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
     let mut scratch = vec![0u8; 65_536];
-    let read = client.read(&mut scratch).expect("the client is served audio");
-    assert!(read > 0, "the client received nothing, so nothing is attached");
+    let read = client
+        .read(&mut scratch)
+        .expect("the client is served audio");
+    assert!(
+        read > 0,
+        "the client received nothing, so nothing is attached"
+    );
     // Give the per-client threads a moment to exist.
     thread::sleep(Duration::from_millis(200));
 

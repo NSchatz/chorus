@@ -106,7 +106,8 @@ fn decoding_every_committed_command_vector_recovers_its_committed_fields() {
 #[test]
 fn an_unknown_catalog_version_refuses_the_session_and_applies_nothing() {
     let fields = read_fields("refused-unknown-version");
-    let refusal = decode_command(&fields.get("input")).expect_err("this version is not implemented");
+    let refusal =
+        decode_command(&fields.get("input")).expect_err("this version is not implemented");
     assert!(
         refusal.ends_the_session(),
         "an unknown catalog version refuses the SESSION, not one message"
@@ -127,7 +128,11 @@ fn an_unknown_catalog_version_refuses_the_session_and_applies_nothing() {
     assert!(!zones.zone("kitchen").unwrap().muted);
     assert_eq!(zones.encode_state(), before);
     // And the refusal names both sides, which is the criterion's own wording.
-    assert!(refusal.detail.contains("version 9 was offered"), "{}", refusal);
+    assert!(
+        refusal.detail.contains("version 9 was offered"),
+        "{}",
+        refusal
+    );
     assert!(refusal.detail.contains("implements 1"), "{}", refusal);
 }
 

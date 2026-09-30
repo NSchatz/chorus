@@ -343,7 +343,11 @@ impl fmt::Display for ConfigError {
                 write!(f, "argument '{}' needs a value", argument)
             }
             ConfigError::NotANumber { argument, value } => {
-                write!(f, "argument '{}' got '{}', which is not a number", argument, value)
+                write!(
+                    f,
+                    "argument '{}' got '{}', which is not a number",
+                    argument, value
+                )
             }
         }
     }
@@ -518,13 +522,10 @@ impl ClientConfig {
                 "--overflow-skew-ppm" => config.overflow_skew_ppm = number(&arg, &value()?)?,
                 "--run-seconds" => config.run_seconds = Some(number(&arg, &value()?)?),
                 "--sync-interval-ms" => config.sync.interval_ms = number(&arg, &value()?)?,
-                "--filter-window" => {
-                    config.sync.filter_window = number(&arg, &value()?)? as usize
-                }
+                "--filter-window" => config.sync.filter_window = number(&arg, &value()?)? as usize,
                 "--smoothing-alpha" => config.sync.smoothing_alpha = decimal(&arg, &value()?)?,
                 "--hard-resync-threshold-us" => {
-                    config.sync.hard_resync_threshold_ns =
-                        number(&arg, &value()?)? as f64 * 1_000.0
+                    config.sync.hard_resync_threshold_ns = number(&arg, &value()?)? as f64 * 1_000.0
                 }
                 "--max-correction-ppm" => {
                     config.sync.max_correction_ppm = decimal(&arg, &value()?)?

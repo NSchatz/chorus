@@ -130,7 +130,11 @@ fn regress_0015_f1_pub_super_is_missed_the_same_way() {
 
 fn scratch_copy(root: &Path, name: &str) -> PathBuf {
     let mut scratch = std::env::temp_dir();
-    scratch.push(format!("chorus-regress-0015-f1-{}-{}", name, std::process::id()));
+    scratch.push(format!(
+        "chorus-regress-0015-f1-{}-{}",
+        name,
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&scratch);
     std::fs::create_dir_all(&scratch).unwrap();
     copy_tree(&root.join("crates"), &scratch.join("crates"));

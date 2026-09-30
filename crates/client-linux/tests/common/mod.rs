@@ -49,7 +49,9 @@ use std::time::{Duration, Instant};
 
 use chorus_client_linux::sink::{PcmSink, SinkError, SinkWrite};
 use chorus_client_linux::sync::{Correction, PlayoutCorrector, SyncConfig, SyncLoop};
-use chorus_protocol::{encode, AudioChunk, Message, SampleFormat, StreamEnd, TimeSync, RESERVED_LEN};
+use chorus_protocol::{
+    encode, AudioChunk, Message, SampleFormat, StreamEnd, TimeSync, RESERVED_LEN,
+};
 use chorus_sync::{JitterModel, Rng};
 
 /// A device modelled closely enough to drive the client's decisions.
@@ -114,10 +116,7 @@ impl ModelledDevice {
     }
 
     fn failed(&self) -> bool {
-        self.fails_from
-            .lock()
-            .map(|g| g.is_some())
-            .unwrap_or(false)
+        self.fails_from.lock().map(|g| g.is_some()).unwrap_or(false)
     }
 
     /// Advance the model to now: the DAC has consumed frames at the nominal
@@ -330,7 +329,10 @@ impl Read for PacedReader {
                     return Ok(0);
                 }
                 std::thread::sleep(Duration::from_millis(5));
-                return Err(io::Error::new(io::ErrorKind::WouldBlock, "paced reader idle"));
+                return Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    "paced reader idle",
+                ));
             }
             let (due, bytes) = &self.parts[self.at];
             if self.started.elapsed() < *due {
@@ -367,11 +369,7 @@ pub fn paced_chunks(
         let due = Duration::from_micros((chunk_us as f64 * i as f64 * rate_scale) as u64);
         parts.push((
             due,
-            chunk_frame(
-                i,
-                u64::from(i) * chunk_us * 1_000,
-                frames_per_chunk,
-            ),
+            chunk_frame(i, u64::from(i) * chunk_us * 1_000, frames_per_chunk),
         ));
     }
     if with_end_signal {
@@ -453,7 +451,13 @@ pub struct ModelledDac {
 
 impl ModelledDac {
     /// A DAC at the nominal rate, whose crystal is `ppm` off it.
-    pub fn new(device: &str, nominal_rate_hz: u32, frame_len: usize, ppm: f64, clock: VirtualClock) -> ModelledDac {
+    pub fn new(
+        device: &str,
+        nominal_rate_hz: u32,
+        frame_len: usize,
+        ppm: f64,
+        clock: VirtualClock,
+    ) -> ModelledDac {
         let last_tick_ns = clock.now_ns();
         ModelledDac {
             device: device.to_string(),
@@ -706,7 +710,10 @@ impl LoopResult {
 
     /// Hard resyncs at or after `from_ns`.
     pub fn hard_resyncs_after(&self, from_ns: u64) -> usize {
-        self.hard_resyncs_at_ns.iter().filter(|t| **t >= from_ns).count()
+        self.hard_resyncs_at_ns
+            .iter()
+            .filter(|t| **t >= from_ns)
+            .count()
     }
 }
 
@@ -796,8 +803,7 @@ impl ModelledEndpoint {
             let mut loop_error_ns = None;
             let client_now_ns = self.clock.now_ns();
             if self.started && client_now_ns >= self.next_tick_client_ns {
-                self.next_tick_client_ns =
-                    client_now_ns + self.sync.interval_ms.max(1) * 1_000_000;
+                self.next_tick_client_ns = client_now_ns + self.sync.interval_ms.max(1) * 1_000_000;
                 if !self.server_silent {
                     let exchange = self.exchange();
                     self.loop_.offer(&exchange);
@@ -931,7 +937,8 @@ impl ModelledEndpoint {
             // A deliberate misalignment, so a run can start outside the
             // hard-resync tier and be driven in.
             if self.initial_misalignment_ns != 0 {
-                let frames = (self.initial_misalignment_ns.unsigned_abs() as f64 / 1e9 * rate) as usize;
+                let frames =
+                    (self.initial_misalignment_ns.unsigned_abs() as f64 / 1e9 * rate) as usize;
                 if self.initial_misalignment_ns > 0 {
                     primed.extend(std::iter::repeat(0u8).take(frames * self.params.frame_len));
                 } else {

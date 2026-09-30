@@ -351,10 +351,23 @@ mod tests {
         assert_eq!(pool.threads(), 6, "two threads per slot, and no more");
         assert_eq!(up, 6, "every thread reported itself before it was needed");
         let roles: Vec<String> = registry.snapshot().iter().map(|t| t.role.clone()).collect();
-        assert_eq!(roles.len(), 6, "every thread registered itself: {:?}", roles);
+        assert_eq!(
+            roles.len(),
+            6,
+            "every thread registered itself: {:?}",
+            roles
+        );
         for index in 0..3 {
-            assert!(roles.contains(&format!("client-writer-{}", index)), "{:?}", roles);
-            assert!(roles.contains(&format!("client-reader-{}", index)), "{:?}", roles);
+            assert!(
+                roles.contains(&format!("client-writer-{}", index)),
+                "{:?}",
+                roles
+            );
+            assert!(
+                roles.contains(&format!("client-reader-{}", index)),
+                "{:?}",
+                roles
+            );
         }
         assert!(
             registry.snapshot().iter().all(|t| !t.wants_real_time),
@@ -401,7 +414,10 @@ mod tests {
         let (pool, _registry, _up) = a_pool(1);
 
         let (server, client) = connected_pair();
-        assert!(attach(&pool, server), "the free slot takes the first client");
+        assert!(
+            attach(&pool, server),
+            "the free slot takes the first client"
+        );
         drop(client);
 
         // Both halves have to finish before the slot is reusable, which is the

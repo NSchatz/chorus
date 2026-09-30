@@ -154,11 +154,7 @@ fn parse(path: &Path, text: &str) -> Result<BTreeMap<String, String>, ConfigErro
     Ok(out)
 }
 
-fn number(
-    path: &Path,
-    values: &BTreeMap<String, String>,
-    key: &str,
-) -> Result<f64, ConfigError> {
+fn number(path: &Path, values: &BTreeMap<String, String>, key: &str) -> Result<f64, ConfigError> {
     let raw = values.get(key).ok_or_else(|| ConfigError::Missing {
         path: path.to_path_buf(),
         key: key.to_string(),

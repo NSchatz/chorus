@@ -220,7 +220,10 @@ fn start(extra: &[String]) -> (Server, u32, mpsc::Receiver<String>, Vec<String>)
     }
     drop(on_stdout);
     drop(on_stderr);
-    panic!("the server never reported a bound socket; it said: {:?}", startup);
+    panic!(
+        "the server never reported a bound socket; it said: {:?}",
+        startup
+    );
 }
 
 fn reported(lines: &[String]) -> Vec<ReportedThread> {
@@ -256,7 +259,12 @@ fn control_address(startup: &[String]) -> String {
             let rest = &line[at + "control listening on=".len()..];
             Some(rest.split_whitespace().next()?.to_string())
         })
-        .unwrap_or_else(|| panic!("the server never said where its control channel is: {:?}", startup))
+        .unwrap_or_else(|| {
+            panic!(
+                "the server never said where its control channel is: {:?}",
+                startup
+            )
+        })
 }
 
 /// The audio address the server printed, with its ephemeral port resolved.
@@ -272,7 +280,12 @@ fn audio_address(startup: &[String]) -> String {
             let rest = &line[at + "chorus-server: listening on=".len()..];
             Some(rest.split_whitespace().next()?.to_string())
         })
-        .unwrap_or_else(|| panic!("the server never said where its audio socket is: {:?}", startup))
+        .unwrap_or_else(|| {
+            panic!(
+                "the server never said where its audio socket is: {:?}",
+                startup
+            )
+        })
 }
 
 /// The ceiling the first check's control plane is started with.
@@ -307,7 +320,10 @@ enum Attempt<T> {
 }
 
 fn get_request(path: &str) -> String {
-    format!("GET {} HTTP/1.1\r\nHost: chorus\r\nConnection: close\r\n\r\n", path)
+    format!(
+        "GET {} HTTP/1.1\r\nHost: chorus\r\nConnection: close\r\n\r\n",
+        path
+    )
 }
 
 fn command_request(body: &str) -> String {
@@ -320,7 +336,10 @@ fn command_request(body: &str) -> String {
 }
 
 fn volume_body(zone: &str, volume: &str) -> String {
-    format!(r#"{{"v":1,"t":"volume","zone":"{}","volume":{}}}"#, zone, volume)
+    format!(
+        r#"{{"v":1,"t":"volume","zone":"{}","volume":{}}}"#,
+        zone, volume
+    )
 }
 
 fn one_line(text: &str) -> String {
@@ -430,7 +449,8 @@ fn attach(address: &str, peek: bool) -> Attempt<TcpStream> {
             return Attempt::NotServed(early);
         }
     }
-    if let Err(cause) = write!(socket, "{}", get_request("/api/events")).and_then(|()| socket.flush())
+    if let Err(cause) =
+        write!(socket, "{}", get_request("/api/events")).and_then(|()| socket.flush())
     {
         return Attempt::NotServed(format!(
             "the control channel closed the connection before the request could go up ({}), \
@@ -541,10 +561,9 @@ impl Plane {
     /// One command, served.
     fn command(&self, body: &str) -> String {
         let request = command_request(body);
-        self.serve(
-            &format!("the command {}", body),
-            |peek| exchange(&self.address, &request, peek),
-        )
+        self.serve(&format!("the command {}", body), |peek| {
+            exchange(&self.address, &request, peek)
+        })
     }
 
     /// One event-stream subscriber, attached and held open.
@@ -738,7 +757,8 @@ fn the_control_plane_creates_every_thread_it_will_run_before_the_report_is_taken
     thread::sleep(SETTLE);
     let during = kernel_threads(pid);
     assert_eq!(
-        during, before,
+        during,
+        before,
         "serving {} control subscribers created a thread the scheduling report never saw",
         subscribers.len()
     );
@@ -865,7 +885,11 @@ fn a_control_address_that_cannot_be_bound_stops_the_server_before_it_serves_audi
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(said.contains(&address), "the refusal has to name the address: {}", said);
+    assert!(
+        said.contains(&address),
+        "the refusal has to name the address: {}",
+        said
+    );
     assert!(
         said.contains("could not be bound"),
         "the refusal has to name the reason: {}",
@@ -913,7 +937,11 @@ fn a_state_file_this_build_cannot_read_stops_the_server_the_same_way() {
         std::process::id(),
         Instant::now().elapsed().as_nanos()
     ));
-    std::fs::write(&path, "format = 1\nserial = 1\n\n[zone kitchen]\nname = K\n").unwrap();
+    std::fs::write(
+        &path,
+        "format = 1\nserial = 1\n\n[zone kitchen]\nname = K\n",
+    )
+    .unwrap();
 
     // Both addresses are left to the kernel, and neither is ever bound: the
     // state file is read before the control channel is bound, which is the

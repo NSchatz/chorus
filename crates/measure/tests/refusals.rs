@@ -75,7 +75,10 @@ fn a_capture_that_cannot_be_resolved_names_which_condition_it_hit() {
     assert!(said.contains("nothing to correlate"), "{}", said);
 
     // No chirp is present: energy everywhere and none of it a sweep.
-    assert_eq!(analyse_condition("05-uncorrelated-noise.wav"), "no-chirp-present");
+    assert_eq!(
+        analyse_condition("05-uncorrelated-noise.wav"),
+        "no-chirp-present"
+    );
     let said = analyse_message("05-uncorrelated-noise.wav");
     assert!(said.contains("no chirp is present"), "{}", said);
     assert!(said.contains("Hz band"), "{}", said);
@@ -101,7 +104,12 @@ fn the_three_unresolvable_conditions_are_told_apart() {
         analyse_condition("06-unresolvable-chirps.wav"),
     ];
     let unique: std::collections::BTreeSet<&String> = conditions.iter().collect();
-    assert_eq!(unique.len(), 3, "{:?} collapsed into fewer conditions", conditions);
+    assert_eq!(
+        unique.len(),
+        3,
+        "{:?} collapsed into fewer conditions",
+        conditions
+    );
 }
 
 /// AC-14's other half: a refused run reports no lag figure and leaves the
@@ -158,13 +166,21 @@ fn an_amplitude_above_the_declared_ceiling_refuses_and_names_both_numbers() {
     .expect_err("an over-level chirp must be refused");
     assert_eq!(err.condition(), "amplitude-above-ceiling");
     let said = err.to_string();
-    assert!(said.contains(&over.to_string()), "the requested amplitude is not named: {}", said);
+    assert!(
+        said.contains(&over.to_string()),
+        "the requested amplitude is not named: {}",
+        said
+    );
     assert!(
         said.contains(&config.chirp_amplitude_ceiling.to_string()),
         "the permitted amplitude is not named: {}",
         said
     );
-    assert!(said.contains(CONFIG_FILE), "where the ceiling is declared is not named: {}", said);
+    assert!(
+        said.contains(CONFIG_FILE),
+        "where the ceiling is declared is not named: {}",
+        said
+    );
     // "SHALL emit no audio": there is no ChirpSpec, so there is nothing any
     // caller could hand to a device. The refusal is in the constructor rather
     // than beside the device on purpose.
@@ -270,10 +286,8 @@ fn a_malformed_capture_writes_no_report() {
 #[test]
 fn an_unwritable_destination_is_refused_naming_the_path_and_the_reason() {
     // Case one: the directory is not there. Deterministic on every machine.
-    let missing = std::env::temp_dir().join(format!(
-        "chorus-measurements-absent-{}",
-        std::process::id()
-    ));
+    let missing =
+        std::env::temp_dir().join(format!("chorus-measurements-absent-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&missing);
     let err = report::write_report(&missing, "rig3-lag-x.md", "body")
         .expect_err("a missing destination must be refused");
@@ -315,7 +329,11 @@ fn an_unwritable_destination_is_refused_naming_the_path_and_the_reason() {
         assert_eq!(err.condition(), "destination-not-writable");
         let said = err.to_string();
         assert!(said.contains("rig3-lag-x.md"), "{}", said);
-        assert!(said.contains("Nothing partial has been left behind"), "{}", said);
+        assert!(
+            said.contains("Nothing partial has been left behind"),
+            "{}",
+            said
+        );
     } else {
         // This process can write there whatever the mode bits say, so the
         // honest assertion is the opposite one: the writer must not invent a

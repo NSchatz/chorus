@@ -118,9 +118,9 @@ fn unescape(text: &str) -> Result<String, String> {
             Some('#') => out.push('#'),
             Some(other) => {
                 return Err(format!(
-                    "'\\{}' is not an escape this format has; the only escapes are '\\\\' and '\\#'",
-                    other
-                ))
+                "'\\{}' is not an escape this format has; the only escapes are '\\\\' and '\\#'",
+                other
+            ))
             }
             None => return Err("a value ends with a lone '\\'".to_string()),
         }
@@ -159,7 +159,9 @@ pub fn render(zones: &Zones) -> String {
     out.push_str("# starts a comment; a value writes a hash as '\\#' and a backslash as '\\\\',\n");
     out.push_str("# and has no other escape, so any name the catalog accepts comes back.\n");
     out.push_str("# docs/decisions/0018-the-persisted-zone-state.md says what is here and what\n");
-    out.push_str("# deliberately is not. Editing this file by hand is supported; the server reads\n");
+    out.push_str(
+        "# deliberately is not. Editing this file by hand is supported; the server reads\n",
+    );
     out.push_str("# it once at start and refuses to start on a file it cannot parse.\n");
     out.push('\n');
     out.push_str(&format!("format = {}\n", STATE_FORMAT));
@@ -234,7 +236,8 @@ pub fn load(text: &str, default_audio: &str) -> Result<Zones, StateError> {
             detail: format!("'{}' is not 'key = value'", body),
         })?;
         let key = key.trim().to_string();
-        let value = unescape(value.trim()).map_err(|detail| StateError::Malformed { line, detail })?;
+        let value =
+            unescape(value.trim()).map_err(|detail| StateError::Malformed { line, detail })?;
         match current.as_mut() {
             Some((_, fields)) => {
                 if fields.iter().any(|(k, _)| *k == key) {
@@ -315,7 +318,10 @@ pub fn load(text: &str, default_audio: &str) -> Result<Zones, StateError> {
         if !is_identifier(&group) {
             return Err(StateError::Malformed {
                 line: 0,
-                detail: format!("zone '{}' is in a group that is not an identifier: '{}'", id, group),
+                detail: format!(
+                    "zone '{}' is in a group that is not an identifier: '{}'",
+                    id, group
+                ),
             });
         }
         let volume = Volume::parse(&volume).ok_or(StateError::Malformed {
@@ -345,7 +351,10 @@ pub fn load(text: &str, default_audio: &str) -> Result<Zones, StateError> {
             if !is_identifier(endpoint) {
                 return Err(StateError::Malformed {
                     line: 0,
-                    detail: format!("zone '{}' names an endpoint '{}' that is not an identifier", id, endpoint),
+                    detail: format!(
+                        "zone '{}' names an endpoint '{}' that is not an identifier",
+                        id, endpoint
+                    ),
                 });
             }
         }
@@ -486,7 +495,11 @@ mod tests {
             assert_eq!(loaded.endpoints, zone.endpoints);
             assert!(loaded.present.is_empty(), "presence is never persisted");
         }
-        assert_eq!(render(&back), text, "and rendering it again is the same file");
+        assert_eq!(
+            render(&back),
+            text,
+            "and rendering it again is the same file"
+        );
     }
 
     #[test]
@@ -545,8 +558,9 @@ mod tests {
                 })
                 .unwrap();
             let text = render(&zones);
-            let back = load(&text, "127.0.0.1:4010")
-                .unwrap_or_else(|e| panic!("{:?} made an unreadable state file: {}\n{}", name, e, text));
+            let back = load(&text, "127.0.0.1:4010").unwrap_or_else(|e| {
+                panic!("{:?} made an unreadable state file: {}\n{}", name, e, text)
+            });
             assert_eq!(
                 back.zones()[0].name,
                 *name,
@@ -587,9 +601,11 @@ mod tests {
                 name: "Kitchen\nStudy".to_string(),
             })
             .unwrap();
-        let err = write_file(&path, &broken).expect_err("a state that cannot be read back is refused");
+        let err =
+            write_file(&path, &broken).expect_err("a state that cannot be read back is refused");
         assert!(
-            err.to_string().contains("cannot read back") || err.to_string().contains("different state"),
+            err.to_string().contains("cannot read back")
+                || err.to_string().contains("different state"),
             "{}",
             err
         );
@@ -611,7 +627,11 @@ mod tests {
         let text = "format = 1\nserial = 3\n\n[zone kitchen]\nname = Back\\Room\n\
                     group = kitchen\nvolume = 1.000\nmuted = 0\nendpoints =\n";
         let err = load(text, "x").unwrap_err();
-        assert!(err.to_string().contains("is not an escape this format has"), "{}", err);
+        assert!(
+            err.to_string().contains("is not an escape this format has"),
+            "{}",
+            err
+        );
 
         let text = "format = 1\nserial = 3\n\n[zone kitchen]\nname = Back\\\n\
                     group = kitchen\nvolume = 1.000\nmuted = 0\nendpoints =\n";

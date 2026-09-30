@@ -153,10 +153,7 @@ impl OffsetFilter {
             return 0.0;
         }
         let drift = (newer.offset_ns - older.offset_ns) / span_ns;
-        drift.clamp(
-            -MAX_TRACKED_DRIFT_PPM * 1e-6,
-            MAX_TRACKED_DRIFT_PPM * 1e-6,
-        )
+        drift.clamp(-MAX_TRACKED_DRIFT_PPM * 1e-6, MAX_TRACKED_DRIFT_PPM * 1e-6)
     }
 }
 
@@ -308,7 +305,6 @@ impl Servo {
 #[cfg(test)]
 mod tests {
     use super::{OffsetFilter, Servo, ServoAction, ServoConfig};
-
 
     /// One second of client time, the reference exchange cadence.
     const TICK: f64 = 1e9;
@@ -483,11 +479,7 @@ mod tests {
             servo.correction_ppm(),
             skew_ppm
         );
-        assert!(
-            error_ns.abs() < 1_000.0,
-            "residual error {} ns",
-            error_ns
-        );
+        assert!(error_ns.abs() < 1_000.0, "residual error {} ns", error_ns);
     }
 
     #[test]

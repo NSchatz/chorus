@@ -158,10 +158,7 @@ mod tests {
         let list = AudioPathList::parse(text).unwrap();
         assert_eq!(list.on_path.len(), 2);
         assert_eq!(list.excluded.len(), 1);
-        assert_eq!(
-            list.excluded[0].reason,
-            "writes the record, reads nothing"
-        );
+        assert_eq!(list.excluded[0].reason, "writes the record, reads nothing");
         assert!(list.accounts_for("crates/audio/src/chunker.rs"));
         assert!(list.accounts_for("crates/client-linux/src/delaylog.rs"));
         assert!(!list.accounts_for("crates/audio/src/clock.rs"));

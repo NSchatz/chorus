@@ -272,7 +272,11 @@ fn two_clients_at_once_get_one_timeline_and_a_contiguous_run_each() {
                 "sequence {} is due at {} ns for one client and {} ns for the other",
                 sequence, timestamp_ns, other_ts
             );
-            assert_eq!(audio, other_audio, "sequence {} carried different audio", sequence);
+            assert_eq!(
+                audio, other_audio,
+                "sequence {} carried different audio",
+                sequence
+            );
             compared += 1;
         }
     }
@@ -344,7 +348,8 @@ fn a_time_sync_is_answered_on_the_audio_connection_while_audio_keeps_flowing() {
     let server = GroupedServer::start();
     let address = server.address.clone();
 
-    let client = thread::spawn(move || attach_and_collect(&address, 150, 6, Duration::from_secs(10)));
+    let client =
+        thread::spawn(move || attach_and_collect(&address, 150, 6, Duration::from_secs(10)));
     server.wait_for(1);
     let producer = server.produce(400);
     let (_stream, attached) = client.join().expect("the client finishes");
@@ -352,7 +357,11 @@ fn a_time_sync_is_answered_on_the_audio_connection_while_audio_keeps_flowing() {
     server.stop();
     let _ = producer.join();
 
-    assert_eq!(attached.replies.len(), 6, "every request has to be answered");
+    assert_eq!(
+        attached.replies.len(),
+        6,
+        "every request has to be answered"
+    );
     assert!(
         attached.chunks.len() >= 150,
         "audio has to keep flowing while the exchange happens: {} chunks",
@@ -367,7 +376,10 @@ fn a_time_sync_is_answered_on_the_audio_connection_while_audio_keeps_flowing() {
         // timeline: nonzero, ordered, inside the run, and never going
         // backwards between exchanges.
         assert!(reply.t1_ns > 0, "t1 is unset on reply {}", i);
-        assert!(reply.t2_ns >= reply.t1_ns, "the server transmitted before it received");
+        assert!(
+            reply.t2_ns >= reply.t1_ns,
+            "the server transmitted before it received"
+        );
         assert!(reply.t2_ns <= before, "a stamp from after the run ended");
         assert!(reply.t1_ns >= last_t1, "the server's stamps went backwards");
         last_t1 = reply.t1_ns;
@@ -384,7 +396,12 @@ fn a_time_sync_is_answered_on_the_audio_connection_while_audio_keeps_flowing() {
         ..attached.replies[0]
     };
     assert!(completed.rtt_ns() > 0 || completed.t2_ns == completed.t1_ns);
-    for stamp in [completed.t0_ns, completed.t1_ns, completed.t2_ns, completed.t3_ns] {
+    for stamp in [
+        completed.t0_ns,
+        completed.t1_ns,
+        completed.t2_ns,
+        completed.t3_ns,
+    ] {
         assert!(stamp > 0, "every timestamp of the exchange has to be set");
     }
 

@@ -454,9 +454,9 @@ fn read_name(bytes: &[u8], at: &mut usize) -> Result<Name, WireError> {
                     return Ok(Name(labels));
                 }
                 let end = cursor + length as usize;
-                let label = bytes.get(cursor..end).ok_or_else(|| {
-                    WireError::new("the message ended inside a name's label")
-                })?;
+                let label = bytes
+                    .get(cursor..end)
+                    .ok_or_else(|| WireError::new("the message ended inside a name's label"))?;
                 encoded += 1 + label.len();
                 if encoded > MAX_NAME_LEN {
                     return Err(WireError::new("a name is over the 255-byte limit"));
@@ -465,11 +465,10 @@ fn read_name(bytes: &[u8], at: &mut usize) -> Result<Name, WireError> {
                 cursor = end;
             }
             0xC0 => {
-                let second = *bytes.get(cursor + 1).ok_or_else(|| {
-                    WireError::new("a compression pointer is one byte short")
-                })?;
-                let target =
-                    (((length & 0x3F) as usize) << 8) | second as usize;
+                let second = *bytes
+                    .get(cursor + 1)
+                    .ok_or_else(|| WireError::new("a compression pointer is one byte short"))?;
+                let target = (((length & 0x3F) as usize) << 8) | second as usize;
                 if !jumped {
                     *at = cursor + 2;
                     jumped = true;
@@ -521,7 +520,9 @@ fn read_record(bytes: &[u8], at: &mut usize) -> Result<Record, WireError> {
         }
         rtype::SRV => {
             if length < 6 {
-                return Err(WireError::new("an SRV record is shorter than its fixed part"));
+                return Err(WireError::new(
+                    "an SRV record is shorter than its fixed part",
+                ));
             }
             let mut inner = *at;
             let priority = read_u16(bytes, &mut inner)?;

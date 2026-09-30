@@ -222,10 +222,7 @@ impl ReceiveStop {
     /// that closed without the signal is the other case, and the two are told
     /// apart by the signal, never by the timing.
     pub fn is_clean(&self) -> bool {
-        matches!(
-            self,
-            ReceiveStop::EndOfStream(_) | ReceiveStop::Stopped
-        )
+        matches!(self, ReceiveStop::EndOfStream(_) | ReceiveStop::Stopped)
     }
 }
 
@@ -393,8 +390,7 @@ pub fn receive_loop<R: Read>(
             Ok(n) => n,
             Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
             Err(ref e)
-                if e.kind() == io::ErrorKind::WouldBlock
-                    || e.kind() == io::ErrorKind::TimedOut =>
+                if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut =>
             {
                 continue
             }
@@ -481,14 +477,15 @@ pub fn handshake<R: Read>(
             Ok(n) => n,
             Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
             Err(ref e)
-                if e.kind() == io::ErrorKind::WouldBlock
-                    || e.kind() == io::ErrorKind::TimedOut =>
+                if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut =>
             {
                 continue
             }
             Err(e) => return Err(HandshakeError::ConnectionLost { error: Some(e) }),
         };
-        let events = receiver.push(&scratch[..n]).map_err(HandshakeError::Framing)?;
+        let events = receiver
+            .push(&scratch[..n])
+            .map_err(HandshakeError::Framing)?;
         for event in events {
             if matches!(event, Received::End(_)) && receiver.shape().is_none() {
                 return Err(HandshakeError::EndOfStreamBeforeAnyChunk);
@@ -694,6 +691,10 @@ mod tests {
         );
         // The stream cannot be reconciled, and the client says so rather than
         // playing the middle of a header as samples.
-        assert!(error.is_some(), "expected a framing error, played {}", played);
+        assert!(
+            error.is_some(),
+            "expected a framing error, played {}",
+            played
+        );
     }
 }

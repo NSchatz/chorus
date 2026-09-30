@@ -159,7 +159,10 @@ impl ZoneWatch {
             if candidate.get("id").and_then(Value::as_str) != Some(zone) {
                 continue;
             }
-            let muted = candidate.get("muted").and_then(Value::as_bool).unwrap_or(false);
+            let muted = candidate
+                .get("muted")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             let volume = candidate
                 .get("volume")
                 .and_then(Value::as_num)
@@ -380,7 +383,11 @@ mod tests {
     #[test]
     fn a_state_message_sets_the_gain_the_audio_path_reads() {
         let watch = ZoneWatch::new();
-        assert_eq!(watch.gain(), Volume::FULL, "an endpoint that has heard nothing plays");
+        assert_eq!(
+            watch.gain(),
+            Volume::FULL,
+            "an endpoint that has heard nothing plays"
+        );
         assert!(watch.absorb(STATE, "kitchen"));
         assert_eq!(watch.gain().thousandths(), 375);
         assert_eq!(watch.facts().audio, "127.0.0.1:4011");
@@ -422,7 +429,13 @@ mod tests {
     fn a_state_message_that_is_not_one_is_ignored_rather_than_acted_on() {
         let watch = ZoneWatch::new();
         watch.absorb(STATE, "kitchen");
-        for text in ["", "not json", "{}", r#"{"zones":"kitchen"}"#, r#"{"zones":[]}"#] {
+        for text in [
+            "",
+            "not json",
+            "{}",
+            r#"{"zones":"kitchen"}"#,
+            r#"{"zones":[]}"#,
+        ] {
             assert!(!watch.absorb(text, "kitchen"), "{}", text);
         }
         assert_eq!(watch.gain().thousandths(), 375, "and nothing moved");

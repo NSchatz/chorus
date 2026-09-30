@@ -11,7 +11,9 @@ use std::process::ExitCode;
 use chorus_alsa::{Format, Pcm};
 
 fn main() -> ExitCode {
-    let device = std::env::args().nth(1).unwrap_or_else(|| "null".to_string());
+    let device = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "null".to_string());
 
     if let Err(e) = chorus_alsa::runtime_available() {
         eprintln!("probe: {}", e);

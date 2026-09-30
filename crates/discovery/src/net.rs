@@ -20,9 +20,7 @@ use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket};
 use std::time::{Duration, Instant};
 
-use crate::dnssd::{
-    browse_query_bytes, resolve, Advertisement, Service, MDNS_GROUP_V4, MDNS_PORT,
-};
+use crate::dnssd::{browse_query_bytes, resolve, Advertisement, Service, MDNS_GROUP_V4, MDNS_PORT};
 use crate::wire::{class, rtype, Message};
 
 /// Largest datagram this module will read. RFC 6762 section 17 allows a
@@ -66,8 +64,8 @@ impl Advertiser {
     /// are reported by name rather than swallowed: a server told to advertise
     /// and unable to is a server that would otherwise look as though it had.
     pub fn open(advertisements: Vec<Advertisement>) -> Result<Advertiser, DiscoveryError> {
-        let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, MDNS_PORT))
-            .map_err(|e| {
+        let socket =
+            UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, MDNS_PORT)).map_err(|e| {
                 failing(
                     &format!("binding UDP port {} for multicast DNS", MDNS_PORT),
                     e,
@@ -336,10 +334,7 @@ pub fn locate(
                         instance: address.1,
                     });
                 }
-                what_discovery_did = Some(format!(
-                    "returned nothing in {} ms",
-                    window.as_millis()
-                ));
+                what_discovery_did = Some(format!("returned nothing in {} ms", window.as_millis()));
             }
             Err(e) => {
                 what_discovery_did = Some(format!("could not run at all ({})", e));
@@ -391,7 +386,11 @@ mod tests {
     fn a_configured_address_with_no_discovery_is_used_as_it_stands() {
         let located = locate(crate::dnssd::AUDIO_SERVICE, None, Some("127.0.0.1:4010")).unwrap();
         assert_eq!(located.address(), "127.0.0.1:4010");
-        assert!(located.line().contains("how=configured"), "{}", located.line());
+        assert!(
+            located.line().contains("how=configured"),
+            "{}",
+            located.line()
+        );
     }
 
     #[test]

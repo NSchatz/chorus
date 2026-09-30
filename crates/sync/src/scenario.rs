@@ -145,19 +145,13 @@ impl Scenario {
                 });
             }
             if !KEYS.contains(&key.as_str()) {
-                return Err(ScenarioError::UnknownKey {
-                    line: line_no,
-                    key,
-                });
+                return Err(ScenarioError::UnknownKey { line: line_no, key });
             }
             if pairs
                 .iter()
                 .any(|(existing, _)| existing.as_str() == key.as_str())
             {
-                return Err(ScenarioError::DuplicateKey {
-                    line: line_no,
-                    key,
-                });
+                return Err(ScenarioError::DuplicateKey { line: line_no, key });
             }
             pairs.push((key, value));
         }
@@ -175,10 +169,7 @@ impl Scenario {
             seed: parse_u64("seed", required(&pairs, "seed")?)?,
             duration_ms: parse_u64("duration_ms", required(&pairs, "duration_ms")?)?,
             step_ms: parse_u64("step_ms", required(&pairs, "step_ms")?)?,
-            sync_interval_ms: parse_u64(
-                "sync_interval_ms",
-                required(&pairs, "sync_interval_ms")?,
-            )?,
+            sync_interval_ms: parse_u64("sync_interval_ms", required(&pairs, "sync_interval_ms")?)?,
             server_ppm: parse_f64("server_ppm", required(&pairs, "server_ppm")?)?,
             client_ppm: parse_f64("client_ppm", required(&pairs, "client_ppm")?)?,
             initial_offset_ns: parse_i64(
@@ -225,7 +216,10 @@ fn optional<'a>(pairs: &'a [(String, String)], key: &str) -> Option<&'a str> {
         .map(|(_, value)| value.as_str())
 }
 
-fn required<'a>(pairs: &'a [(String, String)], key: &'static str) -> Result<&'a str, ScenarioError> {
+fn required<'a>(
+    pairs: &'a [(String, String)],
+    key: &'static str,
+) -> Result<&'a str, ScenarioError> {
     optional(pairs, key).ok_or(ScenarioError::MissingKey { key })
 }
 

@@ -84,7 +84,10 @@ fn a_skew_outside_the_modelled_range_is_refused() {
         assert!(
             matches!(
                 client.validate(),
-                Err(ConfigError::SkewOutOfRange { clock: "client", .. })
+                Err(ConfigError::SkewOutOfRange {
+                    clock: "client",
+                    ..
+                })
             ),
             "client case: {}",
             name
@@ -98,7 +101,10 @@ fn a_skew_outside_the_modelled_range_is_refused() {
         assert!(
             matches!(
                 server.validate(),
-                Err(ConfigError::SkewOutOfRange { clock: "server", .. })
+                Err(ConfigError::SkewOutOfRange {
+                    clock: "server",
+                    ..
+                })
             ),
             "server case: {}",
             name

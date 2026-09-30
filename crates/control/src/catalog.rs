@@ -108,7 +108,11 @@ impl Volume {
         while padded.len() < 3 {
             padded.push('0');
         }
-        let fraction: u32 = if padded.is_empty() { 0 } else { padded.parse().ok()? };
+        let fraction: u32 = if padded.is_empty() {
+            0
+        } else {
+            padded.parse().ok()?
+        };
         let total = whole.checked_mul(VOLUME_SCALE)?.checked_add(fraction)?;
         Volume::from_thousandths(i64::from(total))
     }
@@ -309,7 +313,12 @@ impl Refusal {
                 ),
                 (
                     "implemented".to_string(),
-                    Value::Arr(IMPLEMENTED_VERSIONS.iter().map(|v| Value::int(*v)).collect()),
+                    Value::Arr(
+                        IMPLEMENTED_VERSIONS
+                            .iter()
+                            .map(|v| Value::int(*v))
+                            .collect(),
+                    ),
                 ),
             ]),
             _ => Value::Obj(vec![
@@ -355,17 +364,17 @@ impl std::error::Error for Refusal {}
 /// a longer-than-expected payload. See `docs/control-plane.md`.
 pub fn decode_command(text: &str) -> Result<Command, Refusal> {
     let value = json::parse(text).map_err(|e| {
-        Refusal::malformed(
-            "",
-            format!("the message is not well-formed JSON: {}", e),
-        )
+        Refusal::malformed("", format!("the message is not well-formed JSON: {}", e))
     })?;
     let members = match &value {
         Value::Obj(members) => members,
         other => {
             return Err(Refusal::malformed(
                 "",
-                format!("a control message is an object and this is {}", other.kind()),
+                format!(
+                    "a control message is an object and this is {}",
+                    other.kind()
+                ),
             ))
         }
     };
@@ -493,8 +502,10 @@ pub fn decode_command(text: &str) -> Result<Command, Refusal> {
         "transport" => {
             return Err(Refusal::rejected(
                 "t",
-                format!("'transport' is not a command in catalog version {}. {}",
-                        CATALOG_VERSION, TRANSPORT_IS_CONFIGURED),
+                format!(
+                    "'transport' is not a command in catalog version {}. {}",
+                    CATALOG_VERSION, TRANSPORT_IS_CONFIGURED
+                ),
             ))
         }
         other => {
@@ -537,7 +548,10 @@ fn expect_fields(members: &[(String, Value)], declared: &[&str]) -> Result<(), R
     for (key, _) in members {
         if !declared.contains(&key.as_str()) {
             if key == "transport" {
-                return Err(Refusal::rejected("transport", TRANSPORT_IS_CONFIGURED.to_string()));
+                return Err(Refusal::rejected(
+                    "transport",
+                    TRANSPORT_IS_CONFIGURED.to_string(),
+                ));
             }
             return Err(Refusal::rejected(
                 key,
@@ -654,7 +668,9 @@ mod tests {
     fn a_volume_outside_the_declared_range_is_not_a_volume() {
         assert_eq!(Volume::from_thousandths(1_001), None);
         assert_eq!(Volume::from_thousandths(-1), None);
-        for text in ["1.001", "2.000", "-0.500", "0.5001", "1e0", ".5", "0.5x", ""] {
+        for text in [
+            "1.001", "2.000", "-0.500", "0.5001", "1e0", ".5", "0.5x", "",
+        ] {
             assert_eq!(Volume::parse(text), None, "{}", text);
         }
     }
@@ -697,9 +713,17 @@ mod tests {
         let refusal = decode_command(r#"{"v":9,"t":"hello"}"#).unwrap_err();
         assert!(refusal.ends_the_session());
         assert_eq!(refusal.field, "v");
-        assert!(refusal.detail.contains("catalog version 9 was offered"), "{}", refusal);
+        assert!(
+            refusal.detail.contains("catalog version 9 was offered"),
+            "{}",
+            refusal
+        );
         assert!(refusal.detail.contains("implements 1"), "{}", refusal);
-        assert!(refusal.encode().contains(r#""offered":9"#), "{}", refusal.encode());
+        assert!(
+            refusal.encode().contains(r#""offered":9"#),
+            "{}",
+            refusal.encode()
+        );
         assert!(
             refusal.encode().contains(r#""implemented":[1]"#),
             "{}",

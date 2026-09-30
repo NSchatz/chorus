@@ -60,7 +60,10 @@ fn main() -> ExitCode {
     let mut at = 0;
     while at < args.len() {
         let Some(name) = args[at].strip_prefix("--") else {
-            eprintln!("chorus-measure-capture: '{}' is not an option\n\n{}", args[at], USAGE);
+            eprintln!(
+                "chorus-measure-capture: '{}' is not an option\n\n{}",
+                args[at], USAGE
+            );
             return ExitCode::from(2);
         };
         if takes_value.contains(&name) {
@@ -168,14 +171,20 @@ fn main() -> ExitCode {
     }
 
     let Some(out) = value("out") else {
-        eprintln!("chorus-measure-capture: --out is required for a recording\n\n{}", USAGE);
+        eprintln!(
+            "chorus-measure-capture: --out is required for a recording\n\n{}",
+            USAGE
+        );
         return ExitCode::from(2);
     };
     let seconds: f64 = match value("seconds") {
         Some(text) => match text.parse() {
             Ok(s) => s,
             Err(_) => {
-                eprintln!("chorus-measure-capture: --seconds '{}' is not a number", text);
+                eprintln!(
+                    "chorus-measure-capture: --seconds '{}' is not a number",
+                    text
+                );
                 return ExitCode::from(2);
             }
         },

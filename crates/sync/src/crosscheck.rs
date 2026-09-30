@@ -128,7 +128,10 @@ pub fn vector_text(scenario_path: &Path) -> String {
         result.max_abs_error_after(settle_index.unwrap_or(0))
     ));
     out.push_str(&format!("max_abs_error_ns = {}\n", result.max_abs_error()));
-    out.push_str(&format!("first_error_ns = {}\n", result.samples[0].error_ns));
+    out.push_str(&format!(
+        "first_error_ns = {}\n",
+        result.samples[0].error_ns
+    ));
     out.push_str(&format!(
         "last_error_ns = {}\n",
         result.samples[result.samples.len() - 1].error_ns

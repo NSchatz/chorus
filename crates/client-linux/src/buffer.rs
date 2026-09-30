@@ -443,18 +443,25 @@ mod tests {
         let b = Buffer::new(60_000, 100_000, 48_000);
         let mut crossings = 0;
         for i in 0..6 {
-            crossings +=
-                u32::from(b.offer(chunk(i, u64::from(i) * 20_000_000, 960), 960).crossed_maximum);
+            crossings += u32::from(
+                b.offer(chunk(i, u64::from(i) * 20_000_000, 960), 960)
+                    .crossed_maximum,
+            );
         }
         assert_eq!(crossings, 1);
         b.pop();
         b.pop();
         assert_eq!(offer(&b, 6, 120_000_000), Accepted::Queued);
         for i in 7..9 {
-            crossings +=
-                u32::from(b.offer(chunk(i, u64::from(i) * 20_000_000, 960), 960).crossed_maximum);
+            crossings += u32::from(
+                b.offer(chunk(i, u64::from(i) * 20_000_000, 960), 960)
+                    .crossed_maximum,
+            );
         }
-        assert_eq!(crossings, 2, "coming back down and going up again crosses twice");
+        assert_eq!(
+            crossings, 2,
+            "coming back down and going up again crosses twice"
+        );
     }
 
     #[test]
@@ -471,7 +478,10 @@ mod tests {
         let b = Buffer::new(60_000, 300_000, 48_000);
         offer(&b, u32::MAX, 0);
         assert_eq!(offer(&b, 0, 20_000_000), Accepted::Queued);
-        assert_eq!(offer(&b, u32::MAX, 40_000_000), Accepted::DiscardedDuplicate);
+        assert_eq!(
+            offer(&b, u32::MAX, 40_000_000),
+            Accepted::DiscardedDuplicate
+        );
     }
 
     #[test]

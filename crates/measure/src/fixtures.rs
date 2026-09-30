@@ -106,7 +106,13 @@ impl fmt::Display for FixtureError {
                 write!(f, "{} declares no '{}'", path.display(), key)
             }
             FixtureError::Unusable { path, key, value } => {
-                write!(f, "{} gives '{}' as '{}', which is unusable", path.display(), key, value)
+                write!(
+                    f,
+                    "{} gives '{}' as '{}', which is unusable",
+                    path.display(),
+                    key,
+                    value
+                )
             }
             FixtureError::UnknownKind { path, kind } => write!(
                 f,
@@ -157,11 +163,13 @@ impl FixtureParams {
             if line.is_empty() {
                 continue;
             }
-            let (key, value) = line.split_once('=').ok_or_else(|| FixtureError::Malformed {
-                path: path.to_path_buf(),
-                line: index + 1,
-                detail: format!("'{}' is not 'key = value'", line),
-            })?;
+            let (key, value) = line
+                .split_once('=')
+                .ok_or_else(|| FixtureError::Malformed {
+                    path: path.to_path_buf(),
+                    line: index + 1,
+                    detail: format!("'{}' is not 'key = value'", line),
+                })?;
             values.insert(key.trim().to_string(), value.trim().to_string());
         }
         let kind = values
@@ -321,7 +329,13 @@ fn chirp_pair(params: &FixtureParams) -> Result<Vec<u8>, FixtureError> {
 /// Two silent channels.
 fn silence(params: &FixtureParams) -> Result<Vec<u8>, FixtureError> {
     let (rate, frames) = frames_of(params)?;
-    Ok(wav::write_wav(&vec![0i16; frames * 2], 2, rate, 16, WAVE_FORMAT_PCM))
+    Ok(wav::write_wav(
+        &vec![0i16; frames * 2],
+        2,
+        rate,
+        16,
+        WAVE_FORMAT_PCM,
+    ))
 }
 
 /// Two channels of independent full-band noise: energy everywhere, and no
@@ -394,7 +408,11 @@ fn truncated_chirp_pair(params: &FixtureParams) -> Result<Vec<u8>, FixtureError>
         return Err(FixtureError::Unusable {
             path: params.path.clone(),
             key: "keep_bytes".to_string(),
-            value: format!("{}, which is not shorter than the {} bytes generated", keep, bytes.len()),
+            value: format!(
+                "{}, which is not shorter than the {} bytes generated",
+                keep,
+                bytes.len()
+            ),
         });
     }
     bytes.truncate(keep);

@@ -195,8 +195,8 @@ where
             // a little past the point the audio stops.
             end_timestamp_ns: final_timestamp_ns.saturating_add(chunker.chunk_ns()),
         };
-        let frame = encode(&Message::StreamEnd(end))
-            .map_err(|e| ServeError::Encode(e.to_string()))?;
+        let frame =
+            encode(&Message::StreamEnd(end)).map_err(|e| ServeError::Encode(e.to_string()))?;
         sink.write_all(&frame).map_err(ServeError::Transport)?;
         sink.flush().map_err(ServeError::Transport)?;
         report.ended_cleanly = true;
@@ -254,14 +254,8 @@ mod tests {
             Ok(n)
         };
         let mut wire = Vec::new();
-        let report = serve_stream(
-            p,
-            MonotonicTimeline::new(),
-            &mut read,
-            &mut wire,
-            &|| true,
-        )
-        .unwrap();
+        let report =
+            serve_stream(p, MonotonicTimeline::new(), &mut read, &mut wire, &|| true).unwrap();
 
         assert_eq!(report.chunks_sent, 11);
         assert_eq!(report.bytes_discarded, 3);
@@ -348,8 +342,8 @@ mod tests {
             Ok(buf.len())
         };
         let mut wire = Vec::new();
-        let report = serve_stream(p, MonotonicTimeline::new(), &mut read, &mut wire, &|| false)
-            .unwrap();
+        let report =
+            serve_stream(p, MonotonicTimeline::new(), &mut read, &mut wire, &|| false).unwrap();
         assert!(!report.ended_cleanly);
         assert!(wire.is_empty());
     }

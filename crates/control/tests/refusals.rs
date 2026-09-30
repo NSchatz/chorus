@@ -89,15 +89,34 @@ fn refused(text: &str, field: &str) -> String {
 
 #[test]
 fn a_zone_that_does_not_exist_is_refused_and_the_zones_that_do_are_named() {
-    let encoded = refused(r#"{"v":1,"t":"mute","zone":"bathroom","muted":true}"#, "zone");
-    assert!(encoded.contains("there is no zone 'bathroom'"), "{}", encoded);
+    let encoded = refused(
+        r#"{"v":1,"t":"mute","zone":"bathroom","muted":true}"#,
+        "zone",
+    );
+    assert!(
+        encoded.contains("there is no zone 'bathroom'"),
+        "{}",
+        encoded
+    );
     assert!(encoded.contains("kitchen, study"), "{}", encoded);
     // Every command that names a zone, not only one of them.
-    refused(r#"{"v":1,"t":"name","zone":"bathroom","name":"Bathroom"}"#, "zone");
-    refused(r#"{"v":1,"t":"group","zone":"bathroom","group":"downstairs"}"#, "zone");
+    refused(
+        r#"{"v":1,"t":"name","zone":"bathroom","name":"Bathroom"}"#,
+        "zone",
+    );
+    refused(
+        r#"{"v":1,"t":"group","zone":"bathroom","group":"downstairs"}"#,
+        "zone",
+    );
     refused(r#"{"v":1,"t":"ungroup","zone":"bathroom"}"#, "zone");
-    refused(r#"{"v":1,"t":"volume","zone":"bathroom","volume":0.500}"#, "zone");
-    refused(r#"{"v":1,"t":"attach","zone":"bathroom","endpoint":"endpoint-a"}"#, "zone");
+    refused(
+        r#"{"v":1,"t":"volume","zone":"bathroom","volume":0.500}"#,
+        "zone",
+    );
+    refused(
+        r#"{"v":1,"t":"attach","zone":"bathroom","endpoint":"endpoint-a"}"#,
+        "zone",
+    );
 }
 
 #[test]
@@ -132,7 +151,9 @@ fn a_volume_at_each_end_of_the_declared_range_is_accepted() {
             Volume::from_thousandths(thousandths).unwrap().literal()
         );
         let command = decode_command(&text).unwrap_or_else(|e| panic!("{}: {}", text, e));
-        zones.apply(&command).unwrap_or_else(|e| panic!("{}: {}", text, e));
+        zones
+            .apply(&command)
+            .unwrap_or_else(|e| panic!("{}: {}", text, e));
         assert_eq!(
             zones.zone("kitchen").unwrap().volume.thousandths(),
             thousandths as u32
@@ -170,7 +191,10 @@ fn a_message_that_is_not_well_formed_json_is_refused_and_names_no_field() {
 #[test]
 fn a_message_whose_shape_is_wrong_is_refused_naming_the_field() {
     // A field the command does not declare.
-    refused(r#"{"v":1,"t":"ungroup","zone":"kitchen","volume":0.500}"#, "volume");
+    refused(
+        r#"{"v":1,"t":"ungroup","zone":"kitchen","volume":0.500}"#,
+        "volume",
+    );
     // A field the command requires and does not have.
     refused(r#"{"v":1,"t":"volume","zone":"kitchen"}"#, "volume");
     refused(r#"{"v":1,"t":"mute","zone":"kitchen"}"#, "muted");
@@ -178,11 +202,20 @@ fn a_message_whose_shape_is_wrong_is_refused_naming_the_field() {
     refused(r#"{"v":1,"t":"mute","zone":"kitchen","muted":1}"#, "muted");
     refused(r#"{"v":1,"t":"mute","zone":5,"muted":true}"#, "zone");
     // An identifier that is not one.
-    refused(r#"{"v":1,"t":"mute","zone":"Kitchen Zone","muted":true}"#, "zone");
+    refused(
+        r#"{"v":1,"t":"mute","zone":"Kitchen Zone","muted":true}"#,
+        "zone",
+    );
     refused(r#"{"v":1,"t":"mute","zone":"","muted":true}"#, "zone");
     // A name that would not survive the persisted state file.
-    refused(r#"{"v":1,"t":"name","zone":"kitchen","name":"two\nlines"}"#, "name");
-    refused(r#"{"v":1,"t":"name","zone":"kitchen","name":" padded "}"#, "name");
+    refused(
+        r#"{"v":1,"t":"name","zone":"kitchen","name":"two\nlines"}"#,
+        "name",
+    );
+    refused(
+        r#"{"v":1,"t":"name","zone":"kitchen","name":" padded "}"#,
+        "name",
+    );
     refused(r#"{"v":1,"t":"name","zone":"kitchen","name":""}"#, "name");
     // A type this catalog does not have.
     refused(r#"{"v":1,"t":"reboot","zone":"kitchen"}"#, "t");
@@ -195,7 +228,8 @@ fn a_refused_message_does_not_stop_the_next_one_being_applied() {
     // cost of a bad message.
     let mut zones = a_server();
     assert!(decode_command(r#"{"v":1,"t":"volume","zone":"kitchen","volume":9.000}"#).is_err());
-    let command = decode_command(r#"{"v":1,"t":"volume","zone":"kitchen","volume":0.250}"#).unwrap();
+    let command =
+        decode_command(r#"{"v":1,"t":"volume","zone":"kitchen","volume":0.250}"#).unwrap();
     zones.apply(&command).unwrap();
     assert_eq!(zones.zone("kitchen").unwrap().volume.thousandths(), 250);
 }

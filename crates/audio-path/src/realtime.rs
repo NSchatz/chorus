@@ -502,11 +502,17 @@ mod tests {
     fn a_call_is_a_call_and_a_definition_is_not() {
         assert!(calls("    match take_a_policy(10) {", "take_a_policy"));
         assert!(calls("let x = take_a_policy(p)?;", "take_a_policy"));
-        assert!(!calls("pub fn take_a_policy(wanted: u32) -> u32 {", "take_a_policy"));
+        assert!(!calls(
+            "pub fn take_a_policy(wanted: u32) -> u32 {",
+            "take_a_policy"
+        ));
         assert!(!calls("    fn take_a_policy(w: u32);", "take_a_policy"));
         // An import list names it without calling it.
         assert!(!calls("    take_a_policy, thread_id,", "take_a_policy"));
-        assert!(!calls("use chorus_hostctl::take_a_policy;", "take_a_policy"));
+        assert!(!calls(
+            "use chorus_hostctl::take_a_policy;",
+            "take_a_policy"
+        ));
         // A longer name that merely contains it is not it.
         assert!(!calls("do_not_take_a_policy_twice(1)", "take_a_policy"));
     }
@@ -552,10 +558,16 @@ mod tests {
     #[test]
     fn a_name_that_occurs_only_in_prose_is_not_a_site() {
         let source = concat!(
-            "//! A doc comment naming ", "take_real_time_policy", "(0).\n",
+            "//! A doc comment naming ",
+            "take_real_time_policy",
+            "(0).\n",
             "fn f() {\n",
-            "    // A line comment naming ", "take_real_time_policy", "(0).\n",
-            "    let message = \"", "take_real_time_policy", "(0)\";\n",
+            "    // A line comment naming ",
+            "take_real_time_policy",
+            "(0).\n",
+            "    let message = \"",
+            "take_real_time_policy",
+            "(0)\";\n",
             "    let _ = message;\n",
             "}\n",
         );
@@ -566,8 +578,12 @@ mod tests {
     fn the_bound_before_and_the_bound_after_are_told_apart() {
         let good = concat!(
             "fn f() {\n",
-            "    ", "bound_real_time_cpu_time", "(200_000)?;\n",
-            "    ", "take_real_time_policy", "(20)?;\n",
+            "    ",
+            "bound_real_time_cpu_time",
+            "(200_000)?;\n",
+            "    ",
+            "take_real_time_policy",
+            "(20)?;\n",
             "}\n",
         );
         let sites = acquisitions_in("crates/x/src/y.rs", good);
@@ -577,8 +593,12 @@ mod tests {
 
         let bad = concat!(
             "fn f() {\n",
-            "    ", "take_real_time_policy", "(20)?;\n",
-            "    ", "bound_real_time_cpu_time", "(200_000)?;\n",
+            "    ",
+            "take_real_time_policy",
+            "(20)?;\n",
+            "    ",
+            "bound_real_time_cpu_time",
+            "(200_000)?;\n",
             "}\n",
         );
         let sites = acquisitions_in("crates/x/src/y.rs", bad);
@@ -591,10 +611,14 @@ mod tests {
     fn a_bound_in_another_function_does_not_count() {
         let source = concat!(
             "fn bounded() {\n",
-            "    ", "bound_real_time_cpu_time", "(200_000)?;\n",
+            "    ",
+            "bound_real_time_cpu_time",
+            "(200_000)?;\n",
             "}\n",
             "fn acquires() {\n",
-            "    ", "take_real_time_policy", "(20)?;\n",
+            "    ",
+            "take_real_time_policy",
+            "(20)?;\n",
             "}\n",
         );
         let sites = acquisitions_in("crates/x/src/y.rs", source);
@@ -606,18 +630,17 @@ mod tests {
 
     #[test]
     fn a_list_with_one_section_parses_and_a_reason_is_refused() {
-        let list = AcquisitionList::parse("# a comment\n[acquisitions]\ncrates/a/src/b.rs\n")
-            .unwrap();
+        let list =
+            AcquisitionList::parse("# a comment\n[acquisitions]\ncrates/a/src/b.rs\n").unwrap();
         assert!(list.names("crates/a/src/b.rs"));
-        let err = AcquisitionList::parse("[acquisitions]\ncrates/a/src/b.rs = because\n")
-            .unwrap_err();
+        let err =
+            AcquisitionList::parse("[acquisitions]\ncrates/a/src/b.rs = because\n").unwrap_err();
         assert!(err.detail.contains("graded, not excused"));
         let err = AcquisitionList::parse("[excluded]\n").unwrap_err();
         assert!(err.detail.contains("unknown section"));
         let err = AcquisitionList::parse("crates/a/src/b.rs\n").unwrap_err();
         assert!(err.detail.contains("before any section"));
-        let err =
-            AcquisitionList::parse("[acquisitions]\ncrates/a.rs\ncrates/a.rs\n").unwrap_err();
+        let err = AcquisitionList::parse("[acquisitions]\ncrates/a.rs\ncrates/a.rs\n").unwrap_err();
         assert!(err.detail.contains("also appears on line"));
     }
 }

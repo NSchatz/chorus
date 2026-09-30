@@ -44,9 +44,17 @@ fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--rttime-us" => rttime_us = args.next().and_then(|v| v.parse().ok()).unwrap_or(rttime_us),
+            "--rttime-us" => {
+                rttime_us = args
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(rttime_us)
+            }
             "--rt-priority" => {
-                rt_priority = args.next().and_then(|v| v.parse().ok()).unwrap_or(rt_priority)
+                rt_priority = args
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(rt_priority)
             }
             other => {
                 eprintln!("chorus-rt-spin: unknown argument '{}'", other);
@@ -108,9 +116,12 @@ fn main() -> ExitCode {
     // nothing in here gives the CPU up voluntarily.
     let started = Instant::now();
     let mut accumulator: u64 = 0;
-    let give_up_after = std::time::Duration::from_micros(rttime_us.saturating_mul(50).max(5_000_000));
+    let give_up_after =
+        std::time::Duration::from_micros(rttime_us.saturating_mul(50).max(5_000_000));
     loop {
-        accumulator = accumulator.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+        accumulator = accumulator
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1);
         if accumulator == 0 {
             // Unreachable in practice; here so the loop cannot be optimised
             // away as having no effect.

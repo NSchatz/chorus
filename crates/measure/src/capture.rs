@@ -119,7 +119,12 @@ pub fn record(device: &str, rate_hz: u32, frames: usize) -> Result<RecordedCaptu
 /// builds the argument to this function, so an over-level run cannot reach
 /// here: there is no path from a requested amplitude to a device that does not
 /// pass the refusal first.
-pub fn emit(device: &str, rate_hz: u32, frames: usize, chirp: &ChirpSpec) -> Result<u64, AlsaError> {
+pub fn emit(
+    device: &str,
+    rate_hz: u32,
+    frames: usize,
+    chirp: &ChirpSpec,
+) -> Result<u64, AlsaError> {
     let mut pcm = Pcm::open(device, Format::S16Le, 2, rate_hz, BUFFER_US)?;
     let mut raw = Vec::with_capacity(frames * 4);
     for n in 0..frames {
@@ -154,7 +159,10 @@ mod tests {
         // Either the device is not there, or there is no ALSA at all. Both are
         // refusals; neither hands back a buffer of zeroes.
         assert!(
-            matches!(err, AlsaError::Call { .. } | AlsaError::RuntimeMissing { .. }),
+            matches!(
+                err,
+                AlsaError::Call { .. } | AlsaError::RuntimeMissing { .. }
+            ),
             "{:?}",
             err
         );

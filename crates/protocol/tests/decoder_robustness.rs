@@ -118,7 +118,11 @@ fn an_unknown_type_is_stepped_over_by_exactly_its_declared_length() {
     let mut session = Session::new();
     let outcomes = session.decode_buffer(&buf);
 
-    assert_eq!(outcomes.len(), 2, "the noise inside the skipped frame is not parsed");
+    assert_eq!(
+        outcomes.len(),
+        2,
+        "the noise inside the skipped frame is not parsed"
+    );
     assert!(outcomes[0].is_skipped());
     assert_eq!(outcomes[1].message(), Some(&time_sync()));
     assert!(session.is_open());
@@ -272,11 +276,7 @@ fn every_prefix_of_a_valid_stream_is_safe() {
     for cut in 0..=stream.len() {
         let mut session = Session::new();
         let outcomes = session.decode_buffer(&stream[..cut]);
-        assert!(
-            session.is_open(),
-            "session closed on a {} byte prefix",
-            cut
-        );
+        assert!(session.is_open(), "session closed on a {} byte prefix", cut);
         // Every complete frame in the prefix still decodes or skips normally.
         let rejected = outcomes.iter().filter(|o| o.is_rejected()).count();
         assert!(
@@ -327,7 +327,12 @@ fn invalid_field_values_are_rejected_frame_by_frame() {
         ),
         (
             "pcm that is not a whole number of frames",
-            audio_payload(2, SampleFormat::PcmS16Le.to_wire(), 48_000, &[0, 0, 0, 0, 0]),
+            audio_payload(
+                2,
+                SampleFormat::PcmS16Le.to_wire(),
+                48_000,
+                &[0, 0, 0, 0, 0],
+            ),
             InvalidField::AudioDataNotFrameAligned {
                 data_len: 5,
                 frame_len: 4,

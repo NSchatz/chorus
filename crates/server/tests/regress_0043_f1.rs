@@ -39,15 +39,22 @@ fn round_trip(name: &str) -> Result<String, String> {
     let mut zones = Zones::new("127.0.0.1:4010");
     zones.add(Zone::new("kitchen")).expect("a zone");
     let text = format!(r#"{{"v":1,"t":"name","zone":"kitchen","name":"{}"}}"#, name);
-    let command = decode_command(&text)
-        .unwrap_or_else(|e| panic!("the catalog refuses '{}': {}", name, e));
+    let command =
+        decode_command(&text).unwrap_or_else(|e| panic!("the catalog refuses '{}': {}", name, e));
     zones.apply(&command).expect("the zone exists");
-    assert_eq!(zones.zones()[0].name, name, "the name was applied in memory");
+    assert_eq!(
+        zones.zones()[0].name,
+        name,
+        "the name was applied in memory"
+    );
 
     let written = persist::render(&zones);
     match persist::load(&written, "127.0.0.1:4010") {
         Ok(reloaded) => Ok(reloaded.zones()[0].name.clone()),
-        Err(e) => Err(format!("{}\n--- the file this build wrote ---\n{}", e, written)),
+        Err(e) => Err(format!(
+            "{}\n--- the file this build wrote ---\n{}",
+            e, written
+        )),
     }
 }
 
@@ -61,7 +68,10 @@ fn a_zone_name_with_a_hash_in_it_survives_the_state_file() {
              '{}'",
             name, back
         ),
-        Err(e) => panic!("the state file this build wrote could not be read back: {}", e),
+        Err(e) => panic!(
+            "the state file this build wrote could not be read back: {}",
+            e
+        ),
     }
 }
 
@@ -132,7 +142,9 @@ fn wait_for_control(address: &str) -> bool {
 
 fn request(address: &str, head: &str, body: &str) -> String {
     let mut socket = TcpStream::connect(address).expect("the control channel is listening");
-    socket.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    socket
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
     write!(socket, "{}{}", head, body).expect("the request goes up");
     socket.flush().unwrap();
     let mut response = String::new();
@@ -197,7 +209,11 @@ fn a_restart_gives_the_name_back(name: &str) {
     let written = std::fs::read_to_string(&state).expect("the state file was written");
     let _second = start(audio, control, &state);
     let came_up = wait_for_control(&address);
-    let after = if came_up { state_of(&address) } else { String::new() };
+    let after = if came_up {
+        state_of(&address)
+    } else {
+        String::new()
+    };
     let _ = std::fs::remove_file(&state);
     assert!(
         came_up,
