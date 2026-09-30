@@ -62,6 +62,19 @@ jobs:
           printf '. %s/export.sh\n' "$HOME/esp-idf" > "$HOME/idf-env.sh"
           echo "CHORUS_IDF_ENV=$HOME/idf-env.sh" >> "$GITHUB_ENV"
 
+      # The endpoint's host build compiles its crypto library (TF-PSA-Crypto)
+      # from the ESP-IDF v6.1 tree, pinned by tag and commit in
+      # firmware/Makefile, which refuses any other. Only the mbedtls submodule
+      # is needed for that.
+      - name: ESP-IDF v6.1 crypto sources
+        run: |
+          git clone --branch v6.1 --depth 1 \
+            https://github.com/espressif/esp-idf.git "$HOME/esp-idf-v6.1"
+          git -C "$HOME/esp-idf-v6.1" submodule update --init --depth 1 \
+            components/mbedtls/mbedtls
+          git -C "$HOME/esp-idf-v6.1" rev-parse HEAD
+          echo "CHORUS_IDF_V61_DIR=$HOME/esp-idf-v6.1" >> "$GITHUB_ENV"
+
       # The identity step needs the private term list, which never exists on
       # a runner: with CI=true (set by GitHub) it prints SKIPPED and the
       # reason; everywhere else its absence fails the gate.

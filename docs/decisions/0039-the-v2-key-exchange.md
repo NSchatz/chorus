@@ -111,6 +111,9 @@ All read 2026-09-30; the full notes are `docs/research/2026-09-protocol-v2-sourc
 - A replaced speaker board, or a re-flashed key, is refused until the owner forgets the old
   endpoint. That is the point of the pin, and the refusal names what to do.
 - The C endpoint (goal 6) implements the same state machine over Mbed TLS and must pass the same
-  vectors; `CONFIG_MBEDTLS_CHACHAPOLY_C` goes on in its sdkconfig then.
+  vectors; `CONFIG_MBEDTLS_CHACHAPOLY_C` goes on in its sdkconfig then. (Update 2026-09-30,
+  goal 6: `firmware/src/noise.c`, over the PSA Crypto API only, passes the cacophony vector in
+  both roles and the four session vectors; `CONFIG_MBEDTLS_CHACHA20_C` and
+  `CONFIG_MBEDTLS_CHACHAPOLY_C` are in `firmware/sdkconfig.defaults`.)
 - The primitives are upgraded only as their own commit saying why, and the golden vectors must
   still pass unchanged.

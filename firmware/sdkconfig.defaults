@@ -19,6 +19,15 @@ CONFIG_SPIRAM_MODE_OCT=y
 # default.
 CONFIG_SPIRAM_USE_MALLOC=n
 
+# Protocol v2's cipher (docs/decisions/0039-the-v2-key-exchange.md): the
+# session is Noise_XX_25519_ChaChaPoly_SHA256, and firmware/src/noise.c reaches
+# ChaCha20-Poly1305 through the PSA Crypto API. ESP-IDF's mbedtls component
+# leaves both off by default (components/mbedtls/Kconfig in the pinned v6.1
+# tree, "Stream Cipher" menu, read 2026-09-30). X25519 (CURVE25519) and ECDH
+# are on by default there.
+CONFIG_MBEDTLS_CHACHA20_C=y
+CONFIG_MBEDTLS_CHACHAPOLY_C=y
+
 # NOT SET HERE, deliberately:
 #
 # - Wi-Fi power save. chorus#WIFI-7 owns the wireless tier, asserts the mode by

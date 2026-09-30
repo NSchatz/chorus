@@ -20,8 +20,9 @@ What a decoder does when it cannot accept a frame:
 ## Versions
 
 - **v1** is the FOUNDATION-1 catalog: `time_sync`, `audio_chunk` and
-  `stream_end` in the clear on one TCP connection. The ESP32-S3 endpoint
-  speaks it until it moves to v2 (goal 6).
+  `stream_end` in the clear on one TCP connection. Nothing in this tree
+  speaks it any more: the ESP32-S3 endpoint moved to v2 in goal 6
+  (2026-09-30).
 - **v2** keeps v1's frame and v1's three messages byte for byte, and adds a
   session (an authenticated key exchange with the endpoint's key pinned at
   adoption; everything after it encrypted), hello and capabilities, a stream
@@ -474,7 +475,8 @@ never sent in the hope that it copes.
 
 Decoding is the endpoint's (goal 6: the C endpoint and the Linux client, from
 the decoders proposal P9 settled); goal 5 carries the three on the wire, and
-the Linux client advertises PCM only until its decoders land.
+the Linux client and the C endpoint advertise PCM only until their decoders
+land.
 
 ### 0x13 coded chunk
 
@@ -731,6 +733,11 @@ encoder refuses exactly what the decoder rejects.
   endpoint sides (`crates/protocol/tests/v2_vectors.rs`).
 - `fixtures/protocol/v2/noise/cacophony_xx.fields`: the published Noise test
   vector the key exchange is held to.
+
+Both implementations read every one of them: the Rust tests under
+`crates/protocol/tests/`, and the C endpoint's `firmware/tests/test_protocol_v2.c`
+(every v2 vector, both directions) and `firmware/tests/test_noise.c` (the
+Noise vector in both roles, and the four session vectors from their keys).
 
 `fixtures/README.md` gives the file format and who reads what.
 

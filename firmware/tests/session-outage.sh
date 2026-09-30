@@ -4,11 +4,12 @@
 # "WHEN the server or the network disappears and returns THE SYSTEM SHALL
 # rejoin and resume playback with no human action."
 #
-# Until the endpoint speaks protocol v2 (goal 6), the server is the last v1
-# `chorus-server`, built from the v0.1.0 tag by `v1_server` (tools/lib.sh): the
-# server at HEAD refuses a v1 peer by name, which is v2's contract, not an
-# outage. The reconnect behaviour graded here is the endpoint's, and it is the
-# same against either.
+# The server is the `chorus-server` at HEAD and the endpoint speaks protocol v2
+# to it: every connection is a Noise XX handshake, the endpoint pins the
+# server's key on first use, and everything after the handshake is a
+# secure_record. The server keeps its identity in a directory that survives
+# each restart below, so a restarted server presents the key the endpoint
+# pinned; the endpoint keeps its key and its pins in files the same way.
 #
 # Nothing here is a mock. `chorus-server` is started for real, the endpoint
 # joins it over loopback TCP and decodes the committed protocol off the wire,
@@ -17,7 +18,8 @@
 # restart, no operator: the only thing that touches the endpoint is the passage
 # of time.
 #
-# Three shapes, because they fail differently:
+# Three shapes, because they fail differently, and a fourth that is not an
+# outage at all:
 #
 #   1. An outage SHORTER THAN ONE CHUNK. The chunk duration is a server option,
 #      and this run uses the longest one a 48 kHz stereo 16-bit stream can
@@ -34,6 +36,10 @@
 #      the connect-refused loop and not only the peer-closed one, and the audio
 #      resumes on a connection to a process that did not exist when the
 #      endpoint started.
+#   4. A server that comes back with ANOTHER KEY. That is not the server the
+#      endpoint pinned, so the endpoint refuses it (session_refused
+#      key_changed, surfaced by name), keeps its pin, and stops: only the
+#      owner changes a pin (docs/protocol.md, "Adoption").
 #
 # Runs anywhere: no audio device, no privilege, loopback only.
 #
@@ -68,14 +74,15 @@ if [ ! -x "$ENDPOINT" ]; then
     exit 1
 fi
 
-if ! V1_SERVER="$(v1_server)"; then
-    if [ "${CI:-}" = "true" ]; then
-        say "SKIPPED: session outage: the tag $V1_SERVER_TAG is not in this clone (CI's shallow checkout)"
-        exit 0
-    fi
-    missing_prerequisite "the endpoint rejoins a new server process (AC-4)" \
-        "a protocol v1 chorus-server, built from the git tag $V1_SERVER_TAG" "git fetch --tags"
+SERVER="$BIN_DIR/chorus-server"
+if [ ! -x "$SERVER" ]; then
+    say "FAIL $SERVER has not been built"
+    exit 1
 fi
+
+# One scratch directory per run: the server's identity directory, and the
+# endpoint's key and server pins. Removed at the end, never shared.
+STATE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/chorus-endpoint-outage.XXXXXX")"
 
 FAILURES=0
 check() {
@@ -91,13 +98,16 @@ check() {
 }
 
 SERVER_PID=""
+IDENTITY_DIR=""
+SERVER_LOG=/dev/null
 start_server() {
     local port="$1"
     local chunk_us="$2"
     local rate="$3"
     local channels="$4"
-    "$V1_SERVER" \
+    "$SERVER" \
         --listen "127.0.0.1:$port" \
+        --identity-dir "$IDENTITY_DIR" \
         --source tone \
         --rate "$rate" \
         --channels "$channels" \
@@ -106,7 +116,7 @@ start_server() {
         --rttime-us "$(conf rttime_us)" \
         --rt-priority "$(conf rt_priority)" \
         --memlock-wanted-bytes "$(conf memlock_wanted_bytes)" \
-        "${CONTRACT_ARGS[@]}" >/dev/null 2>&1 &
+        "${CONTRACT_ARGS[@]}" >>"$SERVER_LOG" 2>&1 &
     SERVER_PID=$!
 }
 
@@ -121,6 +131,18 @@ kill_server_hard() {
 read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
 OUT_DIR="${TMPDIR:-/tmp}"
 
+# A fresh identity for the server and the endpoint, kept across every restart
+# inside one shape: the restarted server is the same server, with the same key.
+ENDPOINT_IDENTITY=()
+fresh_state() {
+    local dir="$STATE_ROOT/$1"
+    mkdir -p "$dir/server-identity"
+    IDENTITY_DIR="$dir/server-identity"
+    SERVER_LOG="$dir/server.log"
+    ENDPOINT_IDENTITY=(--endpoint-id "chorus-endpoint-outage-$1" --key "$dir/endpoint.key"
+        --server-pins "$dir/server-pins")
+}
+
 field() {
     # One `key=value` field out of the endpoint's summary lines.
     sed -n "s/.*[[:space:]]$1=\\([^ ]*\\).*/\\1/p" "$2" | tail -n 1
@@ -129,7 +151,8 @@ field() {
 # --- 1. an outage shorter than one chunk --------------------------------------
 
 say ""
-say "chorus: outage 1 of 3, shorter than one chunk"
+say "chorus: outage 1 of 4, shorter than one chunk"
+fresh_state short
 
 CHUNK_US=320000
 PORT="$(free_port)"
@@ -138,10 +161,10 @@ SUMMARY="$OUT_DIR/chorus-endpoint-outage-short.summary"
 
 start_server "$PORT" "$CHUNK_US" 48000 2
 sleep 1
-"$ENDPOINT" --server "127.0.0.1:$PORT" --run-seconds 14 --log "$LOG" \
+"$ENDPOINT" --server "127.0.0.1:$PORT" --run-seconds 14 --log "$LOG" "${ENDPOINT_IDENTITY[@]}" \
     >"$SUMMARY" 2>&1 &
 ENDPOINT_PID=$!
-trap 'kill -9 "$ENDPOINT_PID" 2>/dev/null || true; kill_server_hard' EXIT
+trap 'kill -9 "$ENDPOINT_PID" 2>/dev/null || true; kill_server_hard; rm -rf "$STATE_ROOT"' EXIT
 
 sleep 4
 say "chorus: killing the server (SIGKILL) and starting a new one on the same port"
@@ -149,7 +172,7 @@ kill_server_hard
 start_server "$PORT" "$CHUNK_US" 48000 2
 
 wait "$ENDPOINT_PID"
-trap 'kill_server_hard' EXIT
+trap 'kill_server_hard; rm -rf "$STATE_ROOT"' EXIT
 kill_server_hard
 cat "$SUMMARY"
 
@@ -171,6 +194,15 @@ check "short-outage-was-shorter-than-one-chunk" \
 check "short-outage-played-audio" \
     "$([ "${CHUNKS:-0}" -ge 2 ] && echo 1 || echo 0)" \
     "$CHUNKS chunks of real PCM came off the wire"
+HANDSHAKES="$(field handshakes "$SUMMARY")"
+PINNED="$(field servers_pinned "$SUMMARY")"
+RECORDS="$(field records_received "$SUMMARY")"
+check "short-outage-spoke-v2" \
+    "$([ "${HANDSHAKES:-0}" -ge 2 ] && [ "${RECORDS:-0}" -ge 2 ] && echo 1 || echo 0)" \
+    "$HANDSHAKES protocol v2 handshakes and $RECORDS encrypted records received"
+check "short-outage-kept-its-pin" \
+    "$([ "${PINNED:-0}" -eq 1 ] && echo 1 || echo 0)" \
+    "the server was pinned $PINNED time(s): once, and the restarted server presented the pinned key"
 check "short-outage-needed-no-human" \
     "$(grep -c 'event=link-up' "$LOG" | awk '{print ($1 >= 2) ? 1 : 0}')" \
     "$(grep -c 'event=link-up' "$LOG") link-up events in the endpoint's own log"
@@ -187,7 +219,8 @@ if [ -n "${CHORUS_OUTAGE_SECONDS:-}" ]; then
     OUTAGE_SECONDS="$CHORUS_OUTAGE_SECONDS"
 fi
 say ""
-say "chorus: outage 2 of 3, an outage of minutes (${OUTAGE_SECONDS}s, which is real wall clock)"
+fresh_state minutes
+say "chorus: outage 2 of 4, an outage of minutes (${OUTAGE_SECONDS}s, which is real wall clock)"
 
 PORT="$(free_port)"
 LOG="$OUT_DIR/chorus-endpoint-outage-minutes.log"
@@ -197,9 +230,10 @@ RUN_SECONDS=$(( OUTAGE_SECONDS + 20 ))
 start_server "$PORT" "$(conf chunk_us)" 48000 2
 sleep 1
 "$ENDPOINT" --server "127.0.0.1:$PORT" --run-seconds "$RUN_SECONDS" --log "$LOG" \
+    "${ENDPOINT_IDENTITY[@]}" \
     >"$SUMMARY" 2>&1 &
 ENDPOINT_PID=$!
-trap 'kill -9 "$ENDPOINT_PID" 2>/dev/null || true; kill_server_hard' EXIT
+trap 'kill -9 "$ENDPOINT_PID" 2>/dev/null || true; kill_server_hard; rm -rf "$STATE_ROOT"' EXIT
 
 sleep 5
 say "chorus: killing the server and leaving it dead for ${OUTAGE_SECONDS}s"
@@ -209,7 +243,7 @@ say "chorus: bringing a new server back"
 start_server "$PORT" "$(conf chunk_us)" 48000 2
 
 wait "$ENDPOINT_PID"
-trap 'kill_server_hard' EXIT
+trap 'kill_server_hard; rm -rf "$STATE_ROOT"' EXIT
 kill_server_hard
 cat "$SUMMARY"
 
@@ -235,7 +269,8 @@ check "minutes-outage-kept-trying-without-spinning" \
 # --- 3. a server that returns on a new connection ------------------------------
 
 say ""
-say "chorus: outage 3 of 3, several failed attempts and then a new server process"
+say "chorus: outage 3 of 4, several failed attempts and then a new server process"
+fresh_state new-connection
 
 PORT="$(free_port)"
 LOG="$OUT_DIR/chorus-endpoint-outage-new-connection.log"
@@ -243,10 +278,10 @@ SUMMARY="$OUT_DIR/chorus-endpoint-outage-new-connection.summary"
 
 start_server "$PORT" "$(conf chunk_us)" 48000 2
 sleep 1
-"$ENDPOINT" --server "127.0.0.1:$PORT" --run-seconds 24 --log "$LOG" \
+"$ENDPOINT" --server "127.0.0.1:$PORT" --run-seconds 24 --log "$LOG" "${ENDPOINT_IDENTITY[@]}" \
     >"$SUMMARY" 2>&1 &
 ENDPOINT_PID=$!
-trap 'kill -9 "$ENDPOINT_PID" 2>/dev/null || true; kill_server_hard' EXIT
+trap 'kill -9 "$ENDPOINT_PID" 2>/dev/null || true; kill_server_hard; rm -rf "$STATE_ROOT"' EXIT
 
 sleep 3
 say "chorus: killing the server and leaving nothing listening for 10s"
@@ -256,7 +291,7 @@ say "chorus: a NEW server process answers on the same address"
 start_server "$PORT" "$(conf chunk_us)" 48000 2
 
 wait "$ENDPOINT_PID"
-trap 'kill_server_hard' EXIT
+trap 'kill_server_hard; rm -rf "$STATE_ROOT"' EXIT
 kill_server_hard
 cat "$SUMMARY"
 
@@ -281,6 +316,56 @@ check "new-connection-re-established-the-exchange" \
 check "new-connection-attempts-are-bounded" \
     "$([ "${ATTEMPTS:-0}" -le 2000 ] && echo 1 || echo 0)" \
     "$ATTEMPTS attempts in total, which is a backoff and not a spin"
+
+# --- 4. a server that comes back with another key ------------------------------
+
+say ""
+say "chorus: 4 of 4, a server that comes back with another key"
+fresh_state key-changed
+
+PORT="$(free_port)"
+LOG="$OUT_DIR/chorus-endpoint-key-changed.log"
+SUMMARY="$OUT_DIR/chorus-endpoint-key-changed.summary"
+
+start_server "$PORT" "$(conf chunk_us)" 48000 2
+sleep 1
+set +e
+"$ENDPOINT" --server "127.0.0.1:$PORT" --run-seconds 20 --log "$LOG" "${ENDPOINT_IDENTITY[@]}" \
+    >"$SUMMARY" 2>&1 &
+ENDPOINT_PID=$!
+set -e
+trap 'kill -9 "$ENDPOINT_PID" 2>/dev/null || true; kill_server_hard; rm -rf "$STATE_ROOT"' EXIT
+
+sleep 3
+PIN_BEFORE="$(cat "$STATE_ROOT/key-changed/server-pins")"
+say "chorus: killing the server and starting one with a NEW identity on the same port"
+kill_server_hard
+IDENTITY_DIR="$STATE_ROOT/key-changed/another-server-identity"
+mkdir -p "$IDENTITY_DIR"
+start_server "$PORT" "$(conf chunk_us)" 48000 2
+
+set +e
+wait "$ENDPOINT_PID"
+ENDPOINT_STATUS=$?
+set -e
+trap 'kill_server_hard; rm -rf "$STATE_ROOT"' EXIT
+sleep 1
+kill_server_hard
+cat "$SUMMARY"
+PIN_AFTER="$(cat "$STATE_ROOT/key-changed/server-pins")"
+
+check "key-changed-refused" \
+    "$(grep -c 'event=server-key-changed' "$LOG" | awk '{print ($1 == 1) ? 1 : 0}')" \
+    "$(grep -o 'event=server-key-changed detail="[^"]*"' "$LOG" | head -n 1)"
+check "key-changed-stopped" \
+    "$([ "$ENDPOINT_STATUS" -eq 4 ] && grep -q 'server-key-changed:' "$SUMMARY" && echo 1 || echo 0)" \
+    "the endpoint stopped (exit $ENDPOINT_STATUS) rather than treating another key as an outage"
+check "key-changed-pin-kept" \
+    "$([ -n "$PIN_BEFORE" ] && [ "$PIN_BEFORE" = "$PIN_AFTER" ] && echo 1 || echo 0)" \
+    "the pin file is what it was before the refusal"
+check "key-changed-server-saw-the-refusal" \
+    "$(grep -c 'reason=refused-by-peer' "$SERVER_LOG" | awk '{print ($1 >= 1) ? 1 : 0}')" \
+    "the new server logged the endpoint's session_refused: $(grep -o 'reason=refused-by-peer detail="[^"]*"' "$SERVER_LOG" | head -n 1)"
 
 say ""
 if [ "$FAILURES" -eq 0 ]; then
