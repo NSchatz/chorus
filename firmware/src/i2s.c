@@ -42,7 +42,9 @@ uint64_t chorus_i2s_bclk_hz(const chorus_i2s_clock_t *clock)
 {
     /* Two slots per frame: the endpoint carries stereo, and the reserved TV
      * channel counts are chorus#TV-9's, not this phase's. */
-    return (uint64_t)clock->sample_rate_hz * 2ull * (uint64_t)clock->slot_bit_width;
+    uint32_t wire =
+        (clock->wire_slot_bit_width == 0) ? clock->slot_bit_width : clock->wire_slot_bit_width;
+    return (uint64_t)clock->sample_rate_hz * 2ull * (uint64_t)wire;
 }
 
 uint64_t chorus_i2s_mclk_hz(const chorus_i2s_clock_t *clock)
@@ -73,6 +75,15 @@ size_t chorus_i2s_validate_clock(const chorus_i2s_clock_t *clock, chorus_finding
         clock->slot_bit_width != 32) {
         add_finding(findings, capacity, count, "slot-bit-width-not-supported",
                     "i2s_slot_bit_width = %u is not one of 8, 16, 24 or 32", clock->slot_bit_width);
+    }
+    if (clock->wire_slot_bit_width != 0 &&
+        ((clock->wire_slot_bit_width != 8 && clock->wire_slot_bit_width != 16 &&
+          clock->wire_slot_bit_width != 24 && clock->wire_slot_bit_width != 32) ||
+         clock->wire_slot_bit_width < clock->slot_bit_width)) {
+        add_finding(findings, capacity, count, "wire-slot-bit-width-not-supported",
+                    "i2s_wire_slot_bit_width = %u is not one of 8, 16, 24 or 32 at or above "
+                    "i2s_slot_bit_width = %u",
+                    clock->wire_slot_bit_width, clock->slot_bit_width);
     }
     if (clock->mclk_multiple == 0) {
         add_finding(findings, capacity, count, "mclk-multiple-is-zero",
