@@ -15,6 +15,7 @@ chorus-sync = { path = "../sync" }
 chorus-control = { path = "../control" }
 chorus-discovery = { path = "../discovery" }
 chorus-opus-sys = { path = "../opus-sys" }
+chorus-hostctl = { path = "../hostctl" }
 # MPL-2.0, used unmodified from crates.io for FLAC only: docs/decisions/0044-the-vendored-decoders.md
 # and deny.toml's exception. Version checked on crates.io 2026-09-30.
 symphonia-core = { version = "=0.6.1", default-features = false }

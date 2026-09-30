@@ -304,6 +304,11 @@ pub fn run_session<R: Read + Send + 'static, S: PcmSink>(
         })
     };
 
+    // The playout loop runs on this thread. With `--rt-priority` it runs under
+    // SCHED_FIFO, taken here, after the receiving thread was spawned so that
+    // one stays SCHED_OTHER, and left when `_playout_rt` drops at the end of
+    // the session (crate::realtime).
+    let _playout_rt = crate::realtime::enter_playout(config);
     let outcome = play(
         config,
         sink,

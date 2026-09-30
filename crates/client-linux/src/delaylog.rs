@@ -61,7 +61,7 @@ pub const FORMAT_VERSION: &str = "chorus delay log v1";
 
 /// Writes one run's delay log.
 pub struct DelayLog {
-    out: BufWriter<File>,
+    out: BufWriter<Box<dyn Write + Send>>,
 }
 
 /// What the header records about a run.
@@ -98,7 +98,7 @@ impl DelayLog {
     /// carry one.
     pub fn open<P: AsRef<Path>>(path: P, header: &LogHeader) -> io::Result<DelayLog> {
         let file = File::create(path)?;
-        let mut out = BufWriter::new(file);
+        let mut out = BufWriter::new(Box::new(file) as Box<dyn Write + Send>);
         writeln!(out, "# {}", FORMAT_VERSION)?;
         writeln!(
             out,
@@ -123,6 +123,15 @@ impl DelayLog {
         )?;
         out.flush()?;
         Ok(DelayLog { out })
+    }
+
+    /// A log that writes nothing (`--no-delay-log`): an installed endpoint
+    /// runs for weeks and a sample every 100 ms is a file that only grows. The
+    /// run is graded exactly as before; only the record is not kept.
+    pub fn discard() -> DelayLog {
+        DelayLog {
+            out: BufWriter::new(Box::new(io::sink())),
+        }
     }
 
     /// Record one sample.

@@ -404,6 +404,29 @@ pub fn take_real_time_policy(wanted: u32) -> Result<RealTimeGrant, HostError> {
     })
 }
 
+/// Put the calling thread back under `SCHED_OTHER` at priority 0.
+///
+/// The way out of [`take_real_time_policy`] for a thread that took a policy for
+/// one stretch of work and then goes on to spawn threads: `pthread_create(3)`
+/// hands a new thread its creator's policy unless told otherwise, so a thread
+/// that stays real-time after its work is done makes every thread it starts
+/// real-time too, unbounded by any decision of its own. Lowering a policy
+/// needs no privilege (`sched_setscheduler(2)`), so a failure here is the
+/// kernel's own error, returned as it came.
+// Unsafe allowed on this item: it is a libc FFI wrapper (the crate lint policy denies unsafe elsewhere).
+#[allow(unsafe_code)]
+pub fn leave_real_time_policy() -> io::Result<()> {
+    let param = SchedParam { sched_priority: 0 };
+    // SAFETY: pid 0 names the calling thread, and &param points at a live
+    // repr(C) SchedParam with struct sched_param's layout (one int) that the
+    // kernel only reads during the call.
+    let rc = unsafe { sched_setscheduler(0, SCHED_OTHER, &param) };
+    if rc != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
 /// Lock this process's memory, current and future.
 ///
 /// Returns the limit that was read on success, and a typed denial when either

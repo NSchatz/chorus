@@ -149,6 +149,19 @@ pub struct ClientConfig {
     /// The id the server pins this endpoint's key to, or `None` to use
     /// `endpoint`. It must be stable across restarts.
     pub endpoint_id: Option<String>,
+    /// `--rt-priority`: run the playout thread under `SCHED_FIFO` at this
+    /// priority, clamped to the host's rtprio ceiling, with the CPU-time bound
+    /// applied first (`crate::realtime`, ADR 0022). `None`, the default, keeps
+    /// every thread `SCHED_OTHER`.
+    pub rt_priority: Option<u32>,
+    /// `--rttime-us`: the `RLIMIT_RTTIME` bound applied before the policy is
+    /// taken. The default is the server's, from `config/verification.conf`
+    /// (`rttime_us = 200000`); it is not measured on an endpoint (ASSUMED).
+    pub rttime_us: u64,
+    /// `--no-delay-log`: write no delay log. For an installed endpoint running
+    /// for weeks, where a sample every 100 ms is a file that only grows; the
+    /// status lines still go to standard output (the journal, under systemd).
+    pub no_delay_log: bool,
 }
 
 impl Default for ClientConfig {
@@ -178,6 +191,9 @@ impl Default for ClientConfig {
             identity_dir: None,
             ephemeral_identity: false,
             endpoint_id: None,
+            rt_priority: None,
+            rttime_us: 200_000,
+            no_delay_log: false,
         }
     }
 }
@@ -281,6 +297,13 @@ pub enum ConfigError {
         /// The value as it was given.
         value: String,
     },
+    /// `--rt-priority 0` or `--rttime-us 0`: neither is a real-time request
+    /// (`SCHED_FIFO`'s lowest priority is 1, and a zero bound kills the first
+    /// real-time slice).
+    RealTimeZero {
+        /// The argument that was zero.
+        argument: &'static str,
+    },
 }
 
 impl fmt::Display for ConfigError {
@@ -381,6 +404,13 @@ impl fmt::Display for ConfigError {
                     argument, value
                 )
             }
+            ConfigError::RealTimeZero { argument } => write!(
+                f,
+                "{} is zero; SCHED_FIFO's lowest priority is 1 and a zero CPU-time bound ends the \
+                 first real-time slice, so leave --rt-priority out to run without a real-time \
+                 policy",
+                argument
+            ),
         }
     }
 }
@@ -445,6 +475,16 @@ impl ClientConfig {
         }
         if self.overflow_skew_ppm == 0 {
             return Err(ConfigError::SkewIsZero);
+        }
+        if self.rt_priority == Some(0) {
+            return Err(ConfigError::RealTimeZero {
+                argument: "--rt-priority",
+            });
+        }
+        if self.rt_priority.is_some() && self.rttime_us == 0 {
+            return Err(ConfigError::RealTimeZero {
+                argument: "--rttime-us",
+            });
         }
         let seconds = self.seconds_to_cross();
         if seconds >= MAX_SECONDS_TO_CROSS {
@@ -584,6 +624,15 @@ impl ClientConfig {
                     given_playout_latency = true;
                 }
                 "--mute-us" => config.sync.mute_ns = number(&arg, &value()?)? * 1_000,
+                "--rt-priority" => {
+                    // Clamped to the host's ceiling when taken, so a value past
+                    // u32 means "as much as the host allows", like any other
+                    // value above the ceiling.
+                    let wanted = number(&arg, &value()?)?;
+                    config.rt_priority = Some(u32::try_from(wanted).unwrap_or(u32::MAX));
+                }
+                "--rttime-us" => config.rttime_us = number(&arg, &value()?)?,
+                "--no-delay-log" => config.no_delay_log = true,
                 other => {
                     return Err(ConfigError::UnknownArgument {
                         argument: other.to_string(),
@@ -761,5 +810,51 @@ mod tests {
     fn the_device_ring_asked_for_is_above_the_configured_maximum() {
         let c = ClientConfig::default();
         assert!(c.device_buffer_us() > c.max_us);
+    }
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn real_time_is_off_unless_asked_for() {
+        let (c, _) = ClientConfig::from_args(Vec::<String>::new()).unwrap();
+        assert_eq!(c.rt_priority, None);
+        assert_eq!(c.rttime_us, 200_000);
+        assert!(!c.no_delay_log);
+        let (c, _) = ClientConfig::from_args(args(&[
+            "--rt-priority",
+            "20",
+            "--rttime-us",
+            "150000",
+            "--no-delay-log",
+        ]))
+        .unwrap();
+        c.validate().expect("a real-time request with a bound is valid");
+        assert_eq!(c.rt_priority, Some(20));
+        assert_eq!(c.rttime_us, 150_000);
+        assert!(c.no_delay_log);
+    }
+
+    #[test]
+    fn a_zero_priority_or_a_zero_bound_is_refused() {
+        let (c, _) = ClientConfig::from_args(args(&["--rt-priority", "0"])).unwrap();
+        assert_eq!(
+            c.validate().unwrap_err(),
+            ConfigError::RealTimeZero {
+                argument: "--rt-priority"
+            }
+        );
+        let (c, _) =
+            ClientConfig::from_args(args(&["--rt-priority", "5", "--rttime-us", "0"])).unwrap();
+        assert_eq!(
+            c.validate().unwrap_err(),
+            ConfigError::RealTimeZero {
+                argument: "--rttime-us"
+            }
+        );
+        // A bound with no policy asked for is no request at all, and is not refused.
+        let (c, _) = ClientConfig::from_args(args(&["--rttime-us", "0"])).unwrap();
+        c.validate().expect("no real-time request");
     }
 }
