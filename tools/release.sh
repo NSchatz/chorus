@@ -85,9 +85,11 @@ Artifacts:
   and flashing is the owner's act at the bench.
 
 Licences: chorus is MIT OR Apache-2.0 (LICENSE-MIT, LICENSE-APACHE). Dependencies: the
-Rust workspace has $EXTERNAL external crates (Cargo.lock \`source =\` lines), so no
-MPL-2.0 or other third-party source is in the server; the firmware links ESP-IDF
-(Apache-2.0) components, whose source is ESP-IDF $IDF_VER at the commit pinned in
+Rust workspace has $EXTERNAL external crates (Cargo.lock \`source =\` lines), each under a
+licence on the allowlist in \`deny.toml\` (checked by cargo-deny in \`make gate\`), so no
+MPL-2.0 source is in the server; the firmware links ESP-IDF components (ESP-IDF is
+Apache-2.0; its bundled third-party components carry their own licences, listed in ESP-IDF's
+\`docs/en/COPYRIGHT.rst\`), whose source is ESP-IDF $IDF_VER at the commit pinned in
 \`firmware/config/endpoint.conf\`. When an MPL-licensed dependency arrives, its source
 location is listed here (docs/release.md).
 

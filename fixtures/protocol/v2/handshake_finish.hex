@@ -1,0 +1,23 @@
+# chorus golden vector: handshake finish, protocol v2 message type 0x22.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# produce these exact bytes from the canonical input in handshake_finish.fields, and recover
+# exactly those fields from them (docs/protocol.md, "Version 2").
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+# Test-only keys (the four X25519 secrets in the .fields file) are public: never use them
+# for a real device. The Noise prologue is the 7 bytes of handshake_init before the Noise
+# message: 43 48 52 53 00 02 01. Noise_XX_25519_ChaChaPoly_SHA256 (noiseprotocol.org, rev 34).
+
+# frame header: type 0x22, payload length 85 (0x0055), big-endian
+22 00 55
+
+# noise, Noise message 3 (-> s, se): the endpoint's static public key, encrypted, and its tag
+98 47 1A 57 B5 1F 7C 06 F7 EA BF CD 22 FD A2 67
+CE 80 FC 43 BE B4 8C 4B E5 CF 91 46 91 61 F9 96
+B0 25 8A EE 48 AE E5 B9 A3 85 3D A1 2E 57 E0 88
+
+# the payload, encrypted: the endpoint id (length byte, then "chorus-endpoint-test") and a 16-byte tag
+70 96 8B 02 2D E7 C1 2B 58 A7 BD 3C B0 F0 11 46
+8B 35 B3 04 29 34 34 F3 30 26 A0 DA 5B DA C4 BA
+F1 72 86 8D B5

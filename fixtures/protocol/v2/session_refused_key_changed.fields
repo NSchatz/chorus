@@ -1,0 +1,15 @@
+# Canonical input for the session_refused_key_changed golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly session_refused_key_changed.hex, and decoding session_refused_key_changed.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+
+message_type = session_refused
+reason = key_changed
+detail = chorus-endpoint-test presented key 4edf:675a:4059:41ea but key 1aeb:44c4:f0f5:c20c has been pinned since its adoption; refused
+# The fingerprints: the first 8 bytes of SHA-256 of each public key, in 4 groups.
+# pinned: the public key of endpoint_static in handshake_init.fields; offered: of this secret.
+offered_static = 909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeaf

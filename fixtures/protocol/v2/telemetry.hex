@@ -1,0 +1,37 @@
+# chorus golden vector: telemetry, protocol v2 message type 0x15.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# produce these exact bytes from the canonical input in telemetry.fields, and recover
+# exactly those fields from them (docs/protocol.md, "Version 2").
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x15, payload length 36 (0x0024), big-endian
+15 00 24
+
+# taken_ns = 5000000000, endpoint clock
+00 00 00 01 2A 05 F2 00
+
+# sync_error_ns = -1250
+FF FF FF FF FF FF FB 1E
+
+# buffer_fill_us = 180000
+00 02 BF 20
+
+# underruns = 1
+00 00 00 01
+
+# resyncs = 0
+00 00 00 00
+
+# correction_ppb = -3500
+FF FF F2 54
+
+# link = 1 (wired)
+01
+
+# rssi_dbm = -128 (i8 minimum: unknown, as on a wired link)
+80
+
+# temperature_centi_c = 4150 (41.50 C)
+10 36

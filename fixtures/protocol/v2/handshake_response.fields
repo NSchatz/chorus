@@ -1,0 +1,18 @@
+# Canonical input for the handshake_response golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly handshake_response.hex, and decoding handshake_response.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+
+message_type = handshake_response
+noise = 23b7bb8c91ae008711fb12846780bcdf1e065f821bdfec49f57e7c7dcd4c482327032a4bfa621b5f9208c691f1cc45b8e08661ec17e5244214054e80bf6b3ae4521d955c82aa3530f736b5db2900cde92898e9f7db9b69a8bbe227d56d5d5718d72af160bb6d0f26c101ac54d5b08c29bee071
+# Test-only keys, public in this file: never use them for a real device.
+endpoint_static = 101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f
+endpoint_ephemeral = 303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f
+server_static = 505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f
+server_ephemeral = 707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f
+endpoint_id = chorus-endpoint-test
+server_id = chorus-server-test

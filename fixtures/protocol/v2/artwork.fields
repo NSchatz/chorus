@@ -1,0 +1,15 @@
+# Canonical input for the artwork golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly artwork.hex, and decoding artwork.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+
+message_type = artwork
+artwork_id = 7
+total_len = 20480
+offset = 0
+mime = image/jpeg
+data = ffd8ffe0

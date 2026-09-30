@@ -5,6 +5,9 @@
 # directory), and every file in it has an extension those tests read: a file of any other kind
 # would be read by neither. fixtures/control, fixtures/discovery and fixtures/measure are
 # Rust-only by declaration (the endpoint does not speak them yet; goal 6 moves control here).
+# fixtures/protocol/v2 and its noise/ directory are shared fixtures whose C reader arrives with
+# the endpoint's move to protocol v2 (goal 6, brief section 10): until then a row whose C column
+# is "goal 6" is held to its Rust reader and its extensions, and the missing C reader is printed.
 . "$(dirname "$0")/lib.sh"
 # directory | extensions both sides read | where Rust reads it | where C reads it
 shared=(
@@ -12,6 +15,8 @@ shared=(
     "fixtures/sync|cfg|crates/sync/tests crates/sync/src/crosscheck.rs|firmware/tests/test_sync.c"
     "fixtures/sync/crosscheck|expected|crates/sync/tests crates/sync/src/crosscheck.rs|firmware/tests/test_sync.c"
     "fixtures/dsp|*|crates/dsp/tests|firmware/tests/test_dsp.c"
+    "fixtures/protocol/v2|hex fields|crates/protocol/tests|goal 6"
+    "fixtures/protocol/v2/noise|fields|crates/protocol/tests|goal 6"
 )
 rc=0
 bad() { fail "Shared fixtures" "$1"; rc=1; }
@@ -27,8 +32,12 @@ for row in "${shared[@]}"; do
     # Rust and C both name the directory (C through chorus_repo_path or a "%s/<sub>/" format).
     # shellcheck disable=SC2086 # $rust and $c are space-separated path lists, split on purpose
     git grep -q -F -e "fixtures/$leaf\"" -e "\"$leaf\")" -e "fixtures/$leaf/" -e "$(basename "$leaf")\")" -- $rust || bad "$dir is not read by a Rust test under $rust"
-    # shellcheck disable=SC2086 # as above
-    git grep -q -F -e "\"fixtures/$leaf\"" -e "\"fixtures/$leaf/" -e "/$(basename "$leaf")/" -- $c || bad "$dir is not read by the C test $c"
+    if [ "$c" = "goal 6" ]; then
+        c="no C reader yet (goal 6)"
+    else
+        # shellcheck disable=SC2086 # as above
+        git grep -q -F -e "\"fixtures/$leaf\"" -e "\"fixtures/$leaf/" -e "/$(basename "$leaf")/" -- $c || bad "$dir is not read by the C test $c"
+    fi
     count=0
     while IFS= read -r f; do
         count=$((count + 1))

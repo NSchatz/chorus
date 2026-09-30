@@ -1,0 +1,12 @@
+# Canonical input for the session_refused_v1_peer golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly session_refused_v1_peer.hex, and decoding session_refused_v1_peer.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+
+message_type = session_refused
+reason = protocol_version
+detail = refused a chorus protocol v1 peer (its first frame was time_sync); this side speaks v2 only

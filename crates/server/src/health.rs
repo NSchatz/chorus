@@ -76,9 +76,19 @@ mod tests {
         let address = listener.local_addr().unwrap().to_string();
         thread::spawn(move || {
             let (mut conn, _) = listener.accept().unwrap();
+            // Read the whole request before answering: closing with unread bytes in the
+            // receive buffer makes the kernel reset the connection rather than close it,
+            // which is not the silent close `a_silent_close_is_unhealthy` means to test.
+            let mut request = Vec::new();
             let mut buf = [0u8; 512];
-            let n = conn.read(&mut buf).unwrap();
-            assert!(buf[..n].starts_with(b"GET /api/state HTTP/1.1\r\n"));
+            while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = conn.read(&mut buf).unwrap();
+                if n == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buf[..n]);
+            }
+            assert!(request.starts_with(b"GET /api/state HTTP/1.1\r\n"));
             conn.write_all(reply.as_bytes()).unwrap();
         });
         address

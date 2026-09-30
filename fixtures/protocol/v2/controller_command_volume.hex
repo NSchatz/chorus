@@ -1,0 +1,19 @@
+# chorus golden vector: controller command (volume step), protocol v2 message type 0x32.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# produce these exact bytes from the canonical input in controller_command_volume.fields, and recover
+# exactly those fields from them (docs/protocol.md, "Version 2").
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x32, payload length 4 (0x0004), big-endian
+32 00 04
+
+# command = 7 (volume_step)
+07
+
+# value = -5
+FF FB
+
+# target: length 0 (only join names one)
+00

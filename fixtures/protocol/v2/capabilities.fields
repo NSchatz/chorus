@@ -1,0 +1,18 @@
+# Canonical input for the capabilities golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly capabilities.hex, and decoding capabilities.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+
+message_type = capabilities
+codecs = pcm flac opus
+sample_formats = pcm_s16le pcm_s24le
+max_channels = 2
+sample_rates_hz = 44100 48000
+buffer_ms = 500
+intrinsic_latency_ns = 1500000
+led_count = 12
+visualizer_bands = 16

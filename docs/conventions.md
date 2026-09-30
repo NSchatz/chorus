@@ -139,6 +139,9 @@ implementations read: `fixtures/protocol`, `fixtures/sync`, `fixtures/sync/cross
 one language only. `check-shared-fixtures.sh` holds each directory to a Rust reader and a C
 reader and fails on a file of a kind neither reads. `fixtures/control`, `fixtures/discovery` and
 `fixtures/measure` are Rust-only by declaration (the endpoint does not speak them yet).
+`fixtures/protocol/v2` (protocol v2, goal 5) is shared, and its C reader arrives when the endpoint
+moves to v2 (goal 6): until then the check holds it to its Rust reader and prints the pending C
+reader, and goal 6 turns that row into a full one.
 **Review-only (no check):** fixtures are committed and regenerated only by their `make` targets,
 never by a test run.
 

@@ -1,0 +1,14 @@
+# Canonical input for the coded_chunk golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly coded_chunk.hex, and decoding coded_chunk.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+
+message_type = coded_chunk
+sequence = 4096
+timestamp_ns = 2000000000
+frames = 960
+data = fcfffe

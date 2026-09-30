@@ -1,0 +1,19 @@
+# Canonical input for the telemetry golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly telemetry.hex, and decoding telemetry.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+
+message_type = telemetry
+taken_ns = 5000000000
+sync_error_ns = -1250
+buffer_fill_us = 180000
+underruns = 1
+resyncs = 0
+correction_ppb = -3500
+link = wired
+rssi_dbm = -128
+temperature_centi_c = 4150

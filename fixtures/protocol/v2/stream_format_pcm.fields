@@ -1,0 +1,16 @@
+# Canonical input for the stream_format_pcm golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly stream_format_pcm.hex, and decoding stream_format_pcm.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+
+message_type = stream_format
+codec = pcm
+sample_format = pcm_s24le
+sample_rate_hz = 48000
+channel_map = FL FR FC LFE BL BR
+frames_per_chunk = 960
+codec_config =

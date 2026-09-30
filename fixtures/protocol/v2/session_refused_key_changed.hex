@@ -1,0 +1,23 @@
+# chorus golden vector: session refused (a changed key), protocol v2 message type 0x23.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# produce these exact bytes from the canonical input in session_refused_key_changed.fields, and recover
+# exactly those fields from them (docs/protocol.md, "Version 2").
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x23, payload length 129 (0x0081), big-endian
+23 00 81
+
+# reason = 2 (key_changed)
+02
+
+# detail: length 126, then UTF-8: the endpoint id, the offered key's fingerprint, the pinned key's
+00 7E 63 68 6F 72 75 73 2D 65 6E 64 70 6F 69 6E
+74 2D 74 65 73 74 20 70 72 65 73 65 6E 74 65 64
+20 6B 65 79 20 34 65 64 66 3A 36 37 35 61 3A 34
+30 35 39 3A 34 31 65 61 20 62 75 74 20 6B 65 79
+20 31 61 65 62 3A 34 34 63 34 3A 66 30 66 35 3A
+63 32 30 63 20 68 61 73 20 62 65 65 6E 20 70 69
+6E 6E 65 64 20 73 69 6E 63 65 20 69 74 73 20 61
+64 6F 70 74 69 6F 6E 3B 20 72 65 66 75 73 65 64

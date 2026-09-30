@@ -1,0 +1,16 @@
+# Canonical input for the color golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly color.hex, and decoding color.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+
+message_type = color
+timestamp_ns = 4000000000
+red = 255
+green = 128
+blue = 0
+brightness = 200
+transition_ms = 250

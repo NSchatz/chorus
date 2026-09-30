@@ -1,0 +1,16 @@
+# Canonical input for the stream_format_opus golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly stream_format_opus.hex, and decoding stream_format_opus.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+
+message_type = stream_format
+codec = opus
+sample_format = pcm_s16le
+sample_rate_hz = 48000
+channel_map = FL FR
+frames_per_chunk = 960
+codec_config = 4f707573486561640102380180bb0000000000

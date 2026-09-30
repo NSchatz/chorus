@@ -1,0 +1,36 @@
+# chorus golden vector: stream format (FLAC, stereo), protocol v2 message type 0x12.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# produce these exact bytes from the canonical input in stream_format_flac.fields, and recover
+# exactly those fields from them (docs/protocol.md, "Version 2").
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x12, payload length 49 (0x0031), big-endian
+12 00 31
+
+# codec = 2 (flac)
+02
+
+# sample_format = 1 (pcm_s16le, what the decoder produces)
+01
+
+# sample_rate_hz = 48000
+00 00 BB 80
+
+# channels = 2
+02
+
+# channel_map = FL FR
+01 02
+
+# frames_per_chunk = 4096 (one FLAC block)
+00 00 10 00
+
+# codec_config length = 34
+00 22
+
+# codec_config: the STREAMINFO body (RFC 9639 section 8.2): block sizes 4096/4096, frame sizes unknown (0), 48000 Hz, 2 channels, 16 bits, total samples unknown (0), MD5 unknown (0)
+10 00 10 00 00 00 00 00 00 00 0B B8 02 F0 00 00
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+00 00
