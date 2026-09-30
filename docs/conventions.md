@@ -295,7 +295,7 @@ run time) is why `check-flash-tools-refuse.sh` runs every flashing tool: every t
 reads the guard or calls esptool, espefuse or `idf.py flash` must be on its list, and each is run
 against a complete fixture image and port with shims for those programs, with the variable unset,
 empty, `0`, `true`, `yes`, ` 1`, `1 ` and `01`; each must exit non-zero naming the owner-at-bench
-variable with no shim called. The guarded tool is `tools/firmware-flash.sh` (ADR 0000).
+variable with no shim called. The guarded tool is `tools/firmware-flash.sh` (ADR 0062).
 
 ## 21. Commits
 

@@ -4,7 +4,7 @@
 #   tools/firmware-flash.sh [--port PORT] [--baud N] [--image-dir DIR]
 #   tools/firmware-flash.sh --print [--port PORT] [--baud N] [--image-dir DIR]
 #
-# THE GUARD (brief section 0.7, K4; docs/decisions/0061-*). This writes to a
+# THE GUARD (brief section 0.7, K4; docs/decisions/0062-*). This writes to a
 # device, so it refuses unless the owner-at-bench variable is exactly 1. Only the
 # owner sets it, on the bench machine's command line, as docs/bench-packet.md
 # shows; nothing in this repository sets it, and tools/conventions/check-flash-guard.sh

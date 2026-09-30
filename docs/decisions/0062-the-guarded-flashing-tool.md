@@ -1,4 +1,4 @@
-# 0000: chorus flashes through one guarded tool, and the flash guard is checked by a per-language whitelist and by running the tool
+# 0062: chorus flashes through one guarded tool, and the flash guard is checked by a per-language whitelist and by running the tool
 
 - Status: accepted (goal 9, 2026-09-30)
 - Decided by: the goal (brief section 13 item 3 and section 0.7; goal 3's adversarial caveats on
