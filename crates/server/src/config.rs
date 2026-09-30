@@ -11,12 +11,19 @@ use chorus_audio::UnsupportedFormat;
 use chorus_control::transport::{Transport, DEFAULT_TRANSPORT};
 
 /// How a server run is configured.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ServerConfig {
     /// Address to listen on.
     pub listen: String,
-    /// Where the PCM comes from: a file path, or `tone` for a generated one.
+    /// Where the PCM comes from: a file path, `tone` for a generated 440 Hz
+    /// tone, or `chirp` for the measurement rig's chirp.
     pub source: String,
+    /// Where the rig's declared values are read from for `--source chirp`:
+    /// the band, the period and the amplitude ceiling.
+    pub measure_config: String,
+    /// The chirp amplitude, in full-scale units, or `None` for the ceiling
+    /// `measure_config` declares. Above the ceiling is refused at start.
+    pub chirp_amplitude: Option<f64>,
     /// Frames per second.
     pub sample_rate_hz: u32,
     /// Channels per frame.
@@ -30,7 +37,7 @@ pub struct ServerConfig {
     /// deliberately so that a client's buffer climbs to its ceiling inside a
     /// bounded run.
     pub rate_skew_ppm: u64,
-    /// Length of a generated tone, milliseconds. Zero means endless.
+    /// Length of a generated tone or chirp, milliseconds. Zero means endless.
     pub tone_ms: u64,
     /// Real-time priority to ask for, clamped to the granted ceiling.
     pub rt_priority: u32,
@@ -101,6 +108,8 @@ impl Default for ServerConfig {
         ServerConfig {
             listen: "127.0.0.1:4010".to_string(),
             source: "tone".to_string(),
+            measure_config: chorus_measure::config::CONFIG_FILE.to_string(),
+            chirp_amplitude: None,
             sample_rate_hz: 48_000,
             channels: 2,
             sample_format: "pcm_s16le".to_string(),
@@ -261,6 +270,17 @@ impl ServerConfig {
             match arg.as_str() {
                 "--listen" => config.listen = value()?,
                 "--source" => config.source = value()?,
+                "--measure-config" => config.measure_config = value()?,
+                "--chirp-amplitude" => {
+                    let text = value()?;
+                    let amplitude =
+                        text.parse::<f64>()
+                            .map_err(|_| ServerConfigError::NotANumber {
+                                argument: arg.clone(),
+                                value: text.clone(),
+                            })?;
+                    config.chirp_amplitude = Some(amplitude);
+                }
                 "--format" => config.sample_format = value()?,
                 "--rate" => config.sample_rate_hz = number(&arg, &value()?)? as u32,
                 "--channels" => config.channels = number(&arg, &value()?)? as u32,

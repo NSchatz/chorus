@@ -13,10 +13,21 @@
 //!    Never a skip, never a green. `tools/lib.sh` carries the reason this
 //!    repository is emphatic about that.
 //!
+//! Two ways a recording is taken, and the difference matters:
+//!
+//! - **`--record-only`** is the real run. The chirp is already in the grouped
+//!   stream (`chorus-server --source chirp`, which builds it from the same
+//!   `config/measure.conf` values through the same `ChirpSpec`), both endpoints
+//!   play it, and this binary records their two line outputs and emits nothing.
+//! - **without it**, this binary also plays the chirp on a LOCAL playback
+//!   device, concurrently with the recording. That is a loopback rehearsal of
+//!   the interface, and it measures no endpoint.
+//!
 //! ```text
 //! chorus-measure-capture --probe-capture-device [--capture-device <name>]
 //! chorus-measure-capture --out <file.wav> [--seconds <n>] [--amplitude <a>]
-//!                        [--capture-device <name>] [--playback-device <name>]
+//!                        [--capture-device <name>]
+//!                        [--record-only | --playback-device <name>]
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -31,7 +42,13 @@ const USAGE: &str = "\
 usage:
   chorus-measure-capture --probe-capture-device [--capture-device <name>]
   chorus-measure-capture --out <file.wav> [--seconds <n>] [--amplitude <a>]
-                         [--capture-device <name>] [--playback-device <name>]
+                         [--capture-device <name>]
+                         [--record-only | --playback-device <name>]
+
+--record-only records the two endpoint line outputs and emits nothing: the chirp
+comes through the endpoints from `chorus-server --source chirp`. Without it the
+chirp is also played on a local device while recording, which rehearses the
+interface and measures no endpoint.
 
 The chirp amplitude ceiling is declared in config/measure.conf. A run above it
 refuses to start, names both numbers, and emits no audio.";
@@ -191,11 +208,22 @@ fn main() -> ExitCode {
         None => 10.0,
     };
     let frames = (seconds * f64::from(config.capture_sample_rate_hz)) as usize;
-    let playback_device =
-        value("playback-device").unwrap_or_else(|| default_device("CHORUS_CLIENT_DEVICE"));
+    let playback_device = if flag("record-only") {
+        if value("playback-device").is_some() {
+            eprintln!(
+                "chorus-measure-capture: --record-only emits nothing, so --playback-device has \
+                 nothing to play\n\n{}",
+                USAGE
+            );
+            return ExitCode::from(2);
+        }
+        None
+    } else {
+        Some(value("playback-device").unwrap_or_else(|| default_device("CHORUS_CLIENT_DEVICE")))
+    };
 
     match run(
-        &playback_device,
+        playback_device.as_deref(),
         &capture_device,
         config.capture_sample_rate_hz,
         frames,
@@ -218,27 +246,65 @@ fn default_device(variable: &str) -> String {
 }
 
 fn run(
-    playback_device: &str,
+    playback_device: Option<&str>,
     capture_device: &str,
     rate_hz: u32,
     frames: usize,
     chirp: &ChirpSpec,
     out: &Path,
 ) -> Result<PathBuf, String> {
-    // The emitter runs first and drains, so the recording that follows carries
-    // the chirp rather than racing it. Two endpoints playing the same grouped
-    // stream is what a real run measures; this single-device path is the
-    // loopback rehearsal an operator uses to check the interface before
-    // trusting a number from it.
-    let emitted_us = capture::emit(playback_device, rate_hz, frames, chirp)
-        .map_err(|e| format!("the chirp could not be played: {}", e))?;
-    let recorded = capture::record(capture_device, rate_hz, frames)
+    // The recording starts FIRST, on its own thread, and the chirp is emitted
+    // while it runs. Emitting first and recording afterwards records nothing:
+    // `emit` drains, so by the time it returns the chirp has finished playing.
+    // The emitter waits until the capture device is open, so it never plays
+    // into a recording that does not exist yet; the first stretch of the
+    // recording, before the chirp has left the playback ring, holds no chirp,
+    // and the windows over it fail the confidence floor and are not used.
+    //
+    // With `--record-only` (`playback_device` is `None`) nothing is emitted
+    // here at all: the chirp is in the grouped stream and the endpoints play
+    // it, which is the run that measures them.
+    let (opened_tx, opened_rx) = std::sync::mpsc::channel::<()>();
+    let capture_device = capture_device.to_string();
+    let recorder = std::thread::spawn(move || {
+        capture::record_once_open(&capture_device, rate_hz, frames, move || {
+            let _ = opened_tx.send(());
+        })
+    });
+    let emitted = match playback_device {
+        None => None,
+        Some(device) => {
+            if opened_rx.recv().is_err() {
+                // The recorder ended without opening its device; its own error
+                // is the one worth reporting, and nothing has been emitted.
+                let recorded = recorder
+                    .join()
+                    .map_err(|_| "the capture thread panicked".to_string())?;
+                return Err(match recorded {
+                    Err(e) => format!("the capture failed: {}; nothing was emitted", e),
+                    Ok(_) => "the capture ended before it opened".to_string(),
+                });
+            }
+            Some(capture::emit(device, rate_hz, frames, chirp))
+        }
+    };
+    let recorded = recorder
+        .join()
+        .map_err(|_| "the capture thread panicked".to_string())?
         .map_err(|e| format!("the capture failed: {}", e))?;
+    let emitted_us = match emitted {
+        None => None,
+        Some(result) => Some(result.map_err(|e| format!("the chirp could not be played: {}", e))?),
+    };
     std::fs::write(out, &recorded.wav)
         .map_err(|e| format!("{} could not be written: {}", out.display(), e))?;
+    let emitted = match emitted_us {
+        Some(us) => format!("emitted locally for {} us", us),
+        None => "emitted nothing (record-only: the chirp came through the endpoints)".to_string(),
+    };
     println!(
-        "chorus-measure-capture: emitted for {} us, recorded {} frames in {} us, overran={}",
-        emitted_us,
+        "chorus-measure-capture: {}, recorded {} frames in {} us, overran={}",
+        emitted,
         recorded.frames,
         recorded.elapsed_us,
         u8::from(recorded.overran)

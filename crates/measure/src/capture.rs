@@ -94,7 +94,24 @@ pub struct RecordedCapture {
 /// documentation gives: a settable clock read here would put a step in the
 /// middle of a recording's own timeline.
 pub fn record(device: &str, rate_hz: u32, frames: usize) -> Result<RecordedCapture, AlsaError> {
+    record_once_open(device, rate_hz, frames, || {})
+}
+
+/// [`record`], calling `opened` once the device is open and before the first
+/// frame is read.
+///
+/// This is what lets a caller emit the chirp WHILE the recording runs rather
+/// than before it: the emitter waits for `opened`, so it cannot start playing
+/// into a recording that does not exist yet, and a device that refuses to open
+/// never gets as far as a chirp.
+pub fn record_once_open<F: FnOnce()>(
+    device: &str,
+    rate_hz: u32,
+    frames: usize,
+    opened: F,
+) -> Result<RecordedCapture, AlsaError> {
     let mut pcm = Pcm::open_capture(device, Format::S16Le, 2, rate_hz, BUFFER_US)?;
+    opened();
     let frame_len = pcm.frame_len();
     let mut raw = vec![0u8; frames * frame_len];
     let timeline = MonotonicTimeline::new();

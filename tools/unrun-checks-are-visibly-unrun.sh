@@ -113,10 +113,15 @@ expect_missing_prerequisite "device-loss-run.sh" \
     env CHORUS_SKIP_BUILD=1 CHORUS_REMOVABLE_DEVICE= CHORUS_REMOVE_COMMAND= \
     bash "$REPO_ROOT/tools/device-loss-run.sh"
 
-# No capture device. Genuinely absent: the name does not exist, and a machine
-# with no sound card has none under any name.
+# No second endpoint, no playback device and no capture device. Genuinely
+# absent: the names do not exist, a machine with no sound card has none under
+# any name, and nothing has told this script where a second endpoint would be.
+# The run plays the chirp through two endpoints, so all three are its
+# prerequisites.
 expect_missing_prerequisite "capture-run.sh" \
-    env CHORUS_SKIP_BUILD=1 CHORUS_CAPTURE_DEVICE=chorus-no-such-capture-device \
+    env CHORUS_SKIP_BUILD=1 CHORUS_SECOND_ENDPOINT= \
+    CHORUS_CLIENT_DEVICE=chorus-no-such-device \
+    CHORUS_CAPTURE_DEVICE=chorus-no-such-capture-device \
     bash "$REPO_ROOT/tools/measure/capture-run.sh"
 
 # No second endpoint, no capture device and no playback device that paces.
@@ -147,12 +152,13 @@ expect_missing_prerequisite "endpoint-rig-run.sh" \
     CHORUS_CAPTURE_DEVICE=chorus-no-such-capture-device \
     bash "$REPO_ROOT/tools/endpoint-rig-run.sh"
 
-# No wireless network, no ESP32-S3 on one, no second endpoint in another room
-# and no capture rig. Genuinely absent, and the first of those is absent on
-# EVERY machine rather than only on this one: firmware/config/endpoint.conf
-# declares the network name and the secret `unknown` and will go on declaring
-# them unknown, because a credential committed once is in a git history no
-# rotation reaches. This is the entry point for AC-2 and AC-3 of the WIFI-7
+# No endpoint console and no offsets writer, no wireless network, no ESP32-S3
+# on one, no second endpoint in another room and no capture rig. Genuinely
+# absent, and the first two are absent on EVERY machine rather than only on
+# this one: the console and the writer are not built yet (audit A-13), and
+# firmware/config/endpoint.conf declares the network name and the secret
+# `unknown` and will go on declaring them unknown, because a credential
+# committed once is in a git history no rotation reaches. This is the entry point for AC-2 and AC-3 of the WIFI-7
 # phase, and neither is passed anywhere in this repository.
 expect_missing_prerequisite "wireless-characterization-run.sh" \
     env CHORUS_SKIP_BUILD=1 CHORUS_WIRELESS_AP= CHORUS_ESP32S3_PORT= \

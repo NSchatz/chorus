@@ -35,7 +35,11 @@
 # config/sync.conf moves because of it. The answer to a bad number here is a
 # deeper buffer in config/transport.conf or a zone declared wired.
 #
-# NEEDS AN ENVIRONMENT.
+# NEEDS AN ENVIRONMENT, and code that does not exist yet.
+#   - an endpoint serial console that sets the power-save mode and reads it
+#     back, and a client option that writes the `.offsets` series this run
+#     fetches. NEITHER EXISTS (audit A-13; goals 8 and 7), so this script
+#     refuses by name before it writes to a serial port or fetches a file
 #   - a wireless network the endpoint may join, in firmware/config/endpoint.conf,
 #     which this repository declares UNKNOWN and will go on declaring unknown
 #   - the access point the run is taken against, named (CHORUS_WIRELESS_AP)
@@ -45,16 +49,18 @@
 #     (CHORUS_SECOND_ENDPOINT)
 #   - both endpoints' line outputs wired into the L and R inputs of one audio
 #     interface, visible to ALSA as a capture device (CHORUS_CAPTURE_DEVICE)
-#   - a local ALSA playback device that reports a delay (CHORUS_CLIENT_DEVICE)
 #
-# The chirp leaves through a real amplifier into a real loudspeaker. The
-# amplitude ceiling in config/measure.conf is checked by the capture tool before
-# any device is opened; do not raise it to make a quiet capture louder, move the
-# interface's input gain instead.
+# The grouped stream IS the rig's chirp: the server runs `--source chirp`,
+# built from config/measure.conf, because the lag analyser refuses anything
+# without the chirp in it (audit A-7), and the capture tool records with
+# `--record-only` and emits nothing of its own. The chirp leaves through a real
+# amplifier into a real loudspeaker. The server holds it to the amplitude
+# ceiling in config/measure.conf before it binds a socket; do not raise that
+# ceiling to make a quiet capture louder, move the interface's input gain
+# instead.
 #
 #   CHORUS_WIRELESS_AP='ubiquiti-u6-lite 5GHz' CHORUS_ESP32S3_PORT=/dev/ttyACM0 \
 #   CHORUS_SECOND_ENDPOINT=user@endpoint-b CHORUS_CAPTURE_DEVICE=hw:1,0 \
-#   CHORUS_CLIENT_DEVICE=hw:0,0 \
 #       ./tools/wireless-characterization-run.sh   # or: make verify-wireless
 
 source "$(dirname "$0")/lib.sh"
@@ -70,7 +76,6 @@ DECLARED_MODE="$(endpoint_conf link_wifi_power_save)"
 COEXISTENCE="$(endpoint_conf link_wifi_coexistence)"
 WIRELESS_BOUND="$(transport_conf wireless_bound_us)"
 WIRELESS_LATENCY="$(transport_conf wireless_playout_latency_us)"
-DEVICE="$(audio_device)"
 CAPTURE_DEVICE="$(capture_device)"
 OUT_DIR="${CHORUS_MEASURE_OUT:-${TMPDIR:-/tmp}}"
 
@@ -91,18 +96,19 @@ say "  capture:         ${CAPTURE_SECONDS}s per mode"
 say "  access point:    ${CHORUS_WIRELESS_AP:-<unset>}"
 say "  endpoint:        ${CHORUS_ESP32S3_PORT:-<unset>}"
 say "  second endpoint: ${CHORUS_SECOND_ENDPOINT:-<unset>}"
-say "  local device:    $DEVICE"
 say "  capture device:  $CAPTURE_DEVICE"
 
 # Every prerequisite is checked before anything is started, so a run that cannot
-# be graded emits nothing at all. The wireless one is first because it is the
-# one this entry point is about, and because it is absent on every machine: the
-# network name and the secret are declared unknown in this repository and will
-# go on being declared unknown.
+# be graded emits nothing at all, and nothing is written to a serial port or
+# fetched from another machine. The first two are absent on every machine, not
+# only this one. The endpoint console and the offsets writer this run drives do
+# not exist yet (audit A-13; goals 7 and 8 build them), and the network name and
+# the secret are declared unknown in this repository and will go on being
+# declared unknown.
+require_endpoint_console_and_offsets_writer "$CRITERION"
 require_wireless_link "$CRITERION"
 require_esp32s3_endpoint "$CRITERION"
 require_second_endpoint "$CRITERION"
-require_pacing_audio_device "$CRITERION"
 require_capture_device "$CRITERION"
 
 PORT="$(free_port)"
@@ -111,7 +117,8 @@ CONTRACT_ARGS="$(server_contract_args)"
 say "chorus: starting the server; the zone the ESP32-S3 plays is declared WIRELESS"
 "$BIN_DIR/chorus-server" \
     --listen "0.0.0.0:$PORT" \
-    --source tone \
+    --source chirp \
+    --measure-config "$REPO_ROOT/config/measure.conf" \
     --rate "$(endpoint_conf i2s_sample_rate_hz)" \
     --channels "$(conf channels)" \
     --format "$(conf sample_format)" \
@@ -163,6 +170,7 @@ for MODE in $MODES; do
     WAV="$OUT_DIR/chorus-wireless-$MODE.wav"
     say "chorus: capturing both line outputs for ${CAPTURE_SECONDS}s"
     "$BIN_DIR/chorus-measure-capture" \
+        --record-only \
         --capture-device "$CAPTURE_DEVICE" \
         --seconds "$CAPTURE_SECONDS" \
         --out "$WAV"

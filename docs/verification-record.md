@@ -972,9 +972,18 @@ loudspeaker and this record will not pretend otherwise.
 What an operator with the environment runs:
 
 ```
+CHORUS_SECOND_ENDPOINT=user@endpoint-b \
 CHORUS_CAPTURE_DEVICE=hw:1,0 CHORUS_CLIENT_DEVICE=hw:0,0 \
     ./tools/measure/capture-run.sh 30          # or: make verify-measure-device
 ```
+
+Since audit A-3 the run plays the chirp THROUGH the two endpoints: the server
+streams `--source chirp`, built from `config/measure.conf` through the same
+`ChirpSpec` the analyser is written against, and the capture tool records with
+`--record-only`. The first version played the chirp on a local device and only
+started recording after it had drained, so it could not have captured one. The
+refusal quoted above is from that version; the current one refuses first on the
+missing second endpoint, in the same shape.
 
 Instructions: the script's own header, and
 `docs/decisions/0013-the-measurement-rig.md` for what every declared threshold

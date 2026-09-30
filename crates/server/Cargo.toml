@@ -12,6 +12,11 @@ chorus-audio = { path = "../audio" }
 chorus-hostctl = { path = "../hostctl" }
 chorus-control = { path = "../control" }
 chorus-discovery = { path = "../discovery" }
+# The rig's chirp, for `--source chirp`: the waveform and the amplitude ceiling
+# come from the one place that defines them, so what the endpoints play is what
+# the lag analyser looks for. A pure library with no third-party dependency; its
+# device half binds ALSA at run time, so nothing is added to this build.
+chorus-measure = { path = "../measure" }
 
 [dev-dependencies]
 # The end-to-end tests decode what the server put on a real socket with the
