@@ -25,8 +25,8 @@ every "snippet" and `ASSUMED` line in a browser before buying.
 | A3 | Raspberry Pi 27 W USB-C PSU | S0-S4 | 2 | $25.90 |
 | A4 | Raspberry Pi SD card 32 GB | S0 | 2 | $39.90 |
 | A5 | Behringer UMC202HD (2 in, 96 kHz capture used) | S1-S4 | 1 | $86.90 |
-| A6 | SparkFun USB logic analyzer 24 MHz (sigrok fx2lafw) | not used by S1-S4 (see section 6) | 1 | $26.95 |
-| A7 | Jumper wires | not used by S1-S4 | 2 | $3.90 |
+| A6 | SparkFun USB logic analyzer 24 MHz (sigrok fx2lafw) | S7.5 only (the GPIO marker) | 1 | $26.95 |
+| A7 | Jumper wires | S7.5 only | 2 | $3.90 |
 | A8 | 2 x RCA to 1/4" TS cable, 1 x RCA Y splitter | S1-S4 | 1 set | $30.00 |
 | B1-B10 | Esparagus Audio Brick x2 (pre-order, est. 2027-01-25), Waveshare ESP32-S3-ETH x2, PCM5102 DACs, PoE+ injector and splitter, 24 V supply, passive speaker pair, dummy loads, Cat6 | S5 and the EMBEDDED-5 and WIFI-7 packets of goals 8 and 9 | | $387.86 |
 | | **Recommended total** | | | **$791.31** |
