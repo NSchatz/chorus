@@ -22,7 +22,10 @@ server, and no optimistic value that could be wrong.
 There is nothing to log in to. The control listener has no authentication and
 this page adds none: anything that can reach the address the server was started
 on can drive it. That is a property of the deployment, stated here rather than
-implied.
+implied. What it does refuse is a command sent through a browser by a page from
+anywhere else: the page posts its commands as `application/json` from the
+server's own origin, and the listener refuses a command that is either not
+declared JSON or carries another origin (`docs/control-plane.md`).
 
 ## The header
 

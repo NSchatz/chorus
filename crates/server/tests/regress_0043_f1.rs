@@ -23,10 +23,11 @@
 //! SIGKILL and starts a new process on the same state file - exactly what
 //! `tools/restart-storm-run.sh` does, with a name that has a `#` in it.
 
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use chorus_control::catalog::decode_command;
@@ -88,68 +89,128 @@ fn a_zone_name_that_begins_with_a_hash_does_not_make_the_state_file_unreadable()
     }
 }
 
-struct Server(Child);
+struct Server {
+    child: Child,
+    /// The control channel's address, as the server reported binding it.
+    control: String,
+    /// What the child says, line by line. Held for the server's whole life so
+    /// the pumps carrying its output never stop draining it.
+    lines: mpsc::Receiver<String>,
+}
 
 impl Drop for Server {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
-fn free_port() -> u16 {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
-    port
-}
+/// How long a server gets to say it is listening, and how long an answer the
+/// control channel owes may take. Generous on purpose: this file grades what
+/// the state file holds, and a slow machine is not a finding about it.
+const PATIENCE: Duration = Duration::from_secs(30);
 
-fn start(audio: u16, control: u16, state: &Path) -> Server {
-    Server(
-        Command::new(env!("CARGO_BIN_EXE_chorus-server"))
-            .args([
-                "--listen",
-                &format!("127.0.0.1:{}", audio),
-                "--source",
-                "tone",
-                "--serve-forever",
-                "--allow-non-realtime",
-                "--allow-unlocked-memory",
-                "--control-listen",
-                &format!("127.0.0.1:{}", control),
-                "--state-file",
-                state.to_str().unwrap(),
-                "--zone",
-                "kitchen",
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("the server binary runs"),
-    )
-}
-
-fn wait_for_control(address: &str) -> bool {
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while Instant::now() < deadline {
-        if TcpStream::connect(address).is_ok() {
-            return true;
+fn pump<R: Read + Send + 'static>(stream: R, tx: mpsc::Sender<String>) {
+    std::thread::spawn(move || {
+        for line in BufReader::new(stream).lines().map_while(Result::ok) {
+            let _ = tx.send(line);
         }
-        std::thread::sleep(Duration::from_millis(200));
-    }
-    false
+    });
 }
 
+/// Start a server on ports the kernel picks, and read back where its control
+/// channel landed.
+///
+/// Nothing here chooses a port and hands it over: a port bound, released and
+/// passed on is a port anything else on the machine can take in between, and
+/// a replacement server started on the port its predecessor just left races
+/// that port's release. The server resolves port 0 when it binds and prints
+/// the result, so the process holding the socket is the one that picked it.
+/// Waiting for the audio socket's line, which comes after the scheduling
+/// report, means every control worker exists by the time this returns.
+fn start(state: &Path) -> Server {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_chorus-server"))
+        .args([
+            "--listen",
+            "127.0.0.1:0",
+            "--source",
+            "tone",
+            "--serve-forever",
+            "--allow-non-realtime",
+            "--allow-unlocked-memory",
+            "--control-listen",
+            "127.0.0.1:0",
+            "--state-file",
+            state.to_str().unwrap(),
+            "--zone",
+            "kitchen",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("the server binary runs");
+    let (tx, lines) = mpsc::channel();
+    pump(child.stdout.take().unwrap(), tx.clone());
+    pump(child.stderr.take().unwrap(), tx);
+    // Owned by the guard from here on, so every way out of this function kills
+    // and reaps it unless it is handed back.
+    let mut server = Server {
+        child,
+        control: String::new(),
+        lines,
+    };
+    let mut said = Vec::new();
+    let mut control = None;
+    let deadline = Instant::now() + PATIENCE;
+    while Instant::now() < deadline {
+        match server.lines.recv_timeout(Duration::from_millis(200)) {
+            Ok(line) => {
+                if let Some(at) = line.find("control listening on=") {
+                    let rest = &line[at + "control listening on=".len()..];
+                    control = rest.split_whitespace().next().map(str::to_string);
+                }
+                let ready = line.starts_with("chorus-server: listening on=");
+                said.push(line);
+                if let (true, Some(control)) = (ready, control.as_ref()) {
+                    server.control = control.clone();
+                    return server;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            // Both pipes closed: the server has gone, and what it said on the
+            // way out is in `said`.
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    drop(server);
+    panic!(
+        "the server never said it was listening (for the replacement server, that is AC-3's \
+         failure: no endpoint can come back to playback); it said:\n{}\nThe state file it was handed \
+         reads:\n{}",
+        said.join("\n"),
+        std::fs::read_to_string(state).unwrap_or_else(|e| format!("(unreadable: {})", e))
+    );
+}
+
+/// One request and the whole answer, or a failure that says how long it waited
+/// and what had arrived. An answer cut short by a timeout is never passed on as
+/// if it were the whole of one.
 fn request(address: &str, head: &str, body: &str) -> String {
+    let began = Instant::now();
     let mut socket = TcpStream::connect(address).expect("the control channel is listening");
-    socket
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .unwrap();
+    socket.set_read_timeout(Some(PATIENCE)).unwrap();
     write!(socket, "{}{}", head, body).expect("the request goes up");
     socket.flush().unwrap();
-    let mut response = String::new();
-    let _ = socket.read_to_string(&mut response);
-    response
+    let mut response = Vec::new();
+    if let Err(e) = socket.read_to_end(&mut response) {
+        panic!(
+            "no complete answer from the control channel after {:?} ({}); what had arrived: {:?}",
+            began.elapsed(),
+            e,
+            String::from_utf8_lossy(&response)
+        );
+    }
+    String::from_utf8_lossy(&response).to_string()
 }
 
 fn post(address: &str, body: &str) -> String {
@@ -173,9 +234,6 @@ fn state_of(address: &str) -> String {
 /// real command over a real socket, a SIGKILL, and a new process on the same
 /// state file.
 fn a_restart_gives_the_name_back(name: &str) {
-    let audio = free_port();
-    let control = free_port();
-    let address = format!("127.0.0.1:{}", control);
     let mut state = std::env::temp_dir();
     state.push(format!(
         "chorus-regress-0043-f1-{}-{}.state",
@@ -184,43 +242,31 @@ fn a_restart_gives_the_name_back(name: &str) {
     ));
     let _ = std::fs::remove_file(&state);
 
-    let first = start(audio, control, &state);
-    assert!(wait_for_control(&address), "the first server never came up");
+    let first = start(&state);
 
     let body = format!(r#"{{"v":1,"t":"name","zone":"kitchen","name":"{}"}}"#, name);
-    let applied = post(&address, &body);
+    let applied = post(&first.control, &body);
     assert!(
         applied.contains("200 OK"),
         "the control channel refused the name, so there is nothing to persist: {}",
         applied
     );
-    let before = state_of(&address);
+    let before = state_of(&first.control);
     assert!(
         before.contains(&format!(r#""name":"{}""#, name)),
         "the running server does not hold the name it accepted: {}",
         before
     );
 
-    // SIGKILL, exactly as tools/restart-storm-run.sh does, then a NEW process on
-    // the same state file.
+    // SIGKILL, exactly as tools/restart-storm-run.sh does (the drop waits for
+    // the process to be gone), then a NEW process on the same state file. It
+    // binds ports of its own, so nothing waits for the old ones to be released.
     drop(first);
-    std::thread::sleep(Duration::from_secs(1));
 
     let written = std::fs::read_to_string(&state).expect("the state file was written");
-    let _second = start(audio, control, &state);
-    let came_up = wait_for_control(&address);
-    let after = if came_up {
-        state_of(&address)
-    } else {
-        String::new()
-    };
+    let second = start(&state);
+    let after = state_of(&second.control);
     let _ = std::fs::remove_file(&state);
-    assert!(
-        came_up,
-        "AC-3: the replacement server never came up at all, so no endpoint can come back to \
-         playback. The state file it was handed reads:\n{}",
-        written
-    );
     assert!(
         after.contains(&format!(r#""name":"{}""#, name)),
         "AC-3: the zone did not come back to the name it had before the kill.\nbefore: \
