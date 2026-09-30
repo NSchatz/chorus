@@ -504,7 +504,7 @@ pub fn scan(root: &Path, list: &AudioPathList) -> Finding {
         // Check one: a settable clock.
         for (index, raw) in source.lines().enumerate() {
             let line = code_only(raw);
-            if let Some(name) = settable_clock_in(&line) {
+            if let Some(name) = settable_clock_in(line) {
                 finding.clock_reads.push(ClockRead {
                     unit: unit.clone(),
                     line: index + 1,
@@ -658,11 +658,7 @@ mod tests {
     fn a_clock_read_hidden_behind_a_url_in_a_string_is_still_found() {
         let line =
             code_only(r#"const D: &str = "see https://example.invalid"; SystemTime::now();"#);
-        assert!(
-            settable_clock_in(&line).is_some(),
-            "{}",
-            line
-        );
+        assert!(settable_clock_in(line).is_some(), "{}", line);
     }
 
     #[test]
