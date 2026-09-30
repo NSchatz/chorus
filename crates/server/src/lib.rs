@@ -47,6 +47,7 @@
 pub mod clients;
 pub mod config;
 pub mod control;
+pub mod health;
 pub mod hostreport;
 pub mod serve;
 pub mod source;

@@ -1,0 +1,79 @@
+# chorus-server under Docker Compose: the same contract as deploy/run-server.sh
+# (R14, decided 2026-09-29 by the owner, K24, K34). The homelab's stack is a
+# copy of this file in the homelab repo's own conventions, opened there as a PR
+# the owner merges and applies (K28); this file is the reference and is what a
+# host other than the homelab runs.
+#
+#   CHORUS_IMAGE=<ref> docker compose -f deploy/compose.yaml up -d
+#
+# The image is the release's OCI tarball pushed to a registry by the owner
+# (docs/release.md), pinned by its manifest digest, or a local build.
+
+---
+name: chorus
+
+services:
+  chorus-server:
+    image: ${CHORUS_IMAGE:-chorus-server:dev}
+    container_name: chorus-server
+    restart: unless-stopped
+    # Host networking (K34): multicast DNS works at all only on the host's
+    # network (BRIEF.md section 5.8), and endpoints reach the audio port with
+    # no NAT hop. With host networking nothing is published; the server binds
+    # the host's ports: 4010 audio (docs/decisions/0027-*), 4020 control.
+    network_mode: host
+    # The real-time contract (deploy/README.md): a priority CEILING of 20, far
+    # below anything the kernel runs, and 64 MiB of lockable memory, which is
+    # what the server asks to lock. The per-thread CPU-time bound is applied by
+    # the server itself (--rttime-us), not by a ulimit.
+    ulimits:
+      rtprio: 20
+      memlock: 67108864
+    # One CPU: the audio path is a handful of threads, and the host runs other
+    # work (the limit keeps a runaway real-time thread from taking more).
+    cpus: 1.0
+    volumes:
+      - chorus-state:/var/lib/chorus
+    # No capability is added: a priority up to RLIMIT_RTPRIO and a lock up to
+    # RLIMIT_MEMLOCK need neither CAP_SYS_NICE nor CAP_IPC_LOCK (sched(7),
+    # mlock(2)), which is why the ulimits above are the whole grant.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # The image has no shell: the server binary probes its own control plane
+    # (GET /api/state; exit 0 healthy, 1 unhealthy).
+    healthcheck:
+      test:
+        - CMD
+        - /usr/local/bin/chorus-server
+        - --health-check
+        - 127.0.0.1:4020
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    # The control plane is on (the page, the API, zones and groups) and zones
+    # persist. --advertise is NOT passed: on a host whose mDNS reflector already
+    # holds UDP 5353, the server refuses by name (exit 9) rather than run
+    # unadvertised (audit L-3), and endpoints use their static fallback address.
+    # On a host with no other responder, add --advertise to the command.
+    command:
+      - --listen
+      - 0.0.0.0:4010
+      - --control-listen
+      - 0.0.0.0:4020
+      - --state-file
+      - /var/lib/chorus/zones.state
+      - --source
+      - tone
+      - --rt-priority
+      - "20"
+      - --rttime-us
+      - "200000"
+      - --memlock-wanted-bytes
+      - "67108864"
+      - --serve-forever
+
+volumes:
+  chorus-state:

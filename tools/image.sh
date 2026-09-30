@@ -181,4 +181,12 @@ if ! printf '%s' "$STATE" | grep -q kitchen; then
     exit 1
 fi
 echo "image test: GET /api/state -> $(printf '%s' "$STATE" | head -c 160)"
+# The healthcheck a compose file runs (the image has no shell): healthy against
+# the running server, unhealthy against a port nothing listens on.
+"$BIN" --health-check "127.0.0.1:$CONTROL"
+read -r DEAD _ < <(free_ports)
+if "$BIN" --health-check "127.0.0.1:$DEAD"; then
+    echo "image test: FAIL: --health-check reported a dead port healthy"
+    exit 1
+fi
 echo "image test: PASS"

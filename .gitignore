@@ -7,3 +7,6 @@
 /firmware/sdkconfig
 /firmware/sdkconfig.old
 
+
+# Release artifacts (tools/release.sh); attached to GitHub releases, never committed.
+/dist
