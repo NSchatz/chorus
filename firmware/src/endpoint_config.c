@@ -54,8 +54,8 @@ static int optional_u8(const chorus_conf_t *conf, const char *key, uint8_t *valu
     return 0;
 }
 
-static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in,
-                     const char *path, char *detail, size_t detail_len);
+static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in, const char *path,
+                     char *detail, size_t detail_len);
 
 int chorus_endpoint_config_load(chorus_endpoint_config_t *out, const char *path, char *detail,
                                 size_t detail_len)
@@ -68,8 +68,8 @@ int chorus_endpoint_config_load(chorus_endpoint_config_t *out, const char *path,
     return from_conf(out, &conf, path, detail, detail_len);
 }
 
-int chorus_endpoint_config_parse(chorus_endpoint_config_t *out, const char *label,
-                                 const char *text, char *detail, size_t detail_len)
+int chorus_endpoint_config_parse(chorus_endpoint_config_t *out, const char *label, const char *text,
+                                 char *detail, size_t detail_len)
 {
     memset(out, 0, sizeof(*out));
     chorus_conf_t conf;
@@ -79,8 +79,8 @@ int chorus_endpoint_config_parse(chorus_endpoint_config_t *out, const char *labe
     return from_conf(out, &conf, label, detail, detail_len);
 }
 
-static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in,
-                     const char *path, char *detail, size_t detail_len)
+static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in, const char *path,
+                     char *detail, size_t detail_len)
 {
     const chorus_conf_t conf = *conf_in;
 
@@ -158,10 +158,10 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
                          detail_len));
     NEED(chorus_conf_u32(&conf, "i2s_slot_bit_width", &out->clock.slot_bit_width, detail,
                          detail_len));
-    NEED(chorus_conf_u32(&conf, "i2s_mclk_multiple", &out->clock.mclk_multiple, detail,
-                         detail_len));
-    NEED(chorus_conf_u32(&conf, "i2s_dma_frame_num", &out->clock.dma_frame_num, detail,
-                         detail_len));
+    NEED(
+        chorus_conf_u32(&conf, "i2s_mclk_multiple", &out->clock.mclk_multiple, detail, detail_len));
+    NEED(
+        chorus_conf_u32(&conf, "i2s_dma_frame_num", &out->clock.dma_frame_num, detail, detail_len));
     NEED(chorus_conf_u32(&conf, "i2s_dma_desc_num", &out->clock.dma_desc_num, detail, detail_len));
 
     NEED(chorus_conf_u32(&conf, "pin_i2s_mclk", &out->pins.mclk, detail, detail_len));
@@ -175,8 +175,8 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
     NEED(chorus_conf_bool(&conf, "board_octal_psram", &out->pins.octal_psram, detail, detail_len));
 
     char placement[CHORUS_ENDPOINT_TEXT];
-    NEED(chorus_conf_string(&conf, "dma_descriptor_placement", placement, sizeof(placement),
-                            detail, detail_len));
+    NEED(chorus_conf_string(&conf, "dma_descriptor_placement", placement, sizeof(placement), detail,
+                            detail_len));
     int placement_ok = 0;
     out->dma_placement = chorus_mem_placement_from_name(placement, &placement_ok);
     if (!placement_ok) {
@@ -229,8 +229,7 @@ size_t chorus_endpoint_config_validate(const chorus_endpoint_config_t *config,
      * than its own ceiling is refused where every other configuration rule is,
      * rather than only at bring-up. */
     if (config->gain.db > config->amp.analog_gain_ceiling_db && *count < capacity) {
-        snprintf(findings[*count].rule, sizeof(findings[*count].rule),
-                 "analog-gain-above-ceiling");
+        snprintf(findings[*count].rule, sizeof(findings[*count].rule), "analog-gain-above-ceiling");
         snprintf(findings[*count].detail, sizeof(findings[*count].detail),
                  "amp_analog_gain_db = %.3f is above amp_analog_gain_ceiling_db = %.3f, both "
                  "declared in %s",

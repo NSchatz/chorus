@@ -22,10 +22,9 @@
 
 static void usage(void)
 {
-    fprintf(stderr,
-            "usage: chorus-endpoint-session [--server host:port] [--run-seconds n]\n"
-            "                               [--log path] [--sync-interval-ms n]\n"
-            "                               [--first-backoff-ms n] [--max-backoff-ms n]\n");
+    fprintf(stderr, "usage: chorus-endpoint-session [--server host:port] [--run-seconds n]\n"
+                    "                               [--log path] [--sync-interval-ms n]\n"
+                    "                               [--first-backoff-ms n] [--max-backoff-ms n]\n");
 }
 
 int main(int argc, char **argv)
@@ -84,8 +83,8 @@ int main(int argc, char **argv)
     chorus_session_result_t result;
     int status = chorus_session_run(&config, &result);
     if (status != 0) {
-        fprintf(stderr, "chorus-endpoint-session: %s: %s\n",
-                chorus_session_end_name(result.end), result.detail);
+        fprintf(stderr, "chorus-endpoint-session: %s: %s\n", chorus_session_end_name(result.end),
+                result.detail);
         return 3;
     }
 
@@ -95,8 +94,8 @@ int main(int argc, char **argv)
     printf("chorus-endpoint-session: end=%s server=%s run_seconds=%u\n",
            chorus_session_end_name(result.end), config.server, config.run_seconds);
     printf("chorus-endpoint-session: rejoins=%" PRIu32 " attempts=%" PRIu32
-           " connections_that_played=%" PRIu32 " longest_outage_ns=%" PRIu64
-           " chunks=%" PRIu64 " frames=%" PRIu64 " exchanges=%" PRIu32 " skipped=%" PRIu64 "\n",
+           " connections_that_played=%" PRIu32 " longest_outage_ns=%" PRIu64 " chunks=%" PRIu64
+           " frames=%" PRIu64 " exchanges=%" PRIu32 " skipped=%" PRIu64 "\n",
            result.telemetry.rejoins, result.telemetry.connect_attempts,
            result.connections_that_played, result.longest_outage_ns,
            result.telemetry.chunks_received, result.telemetry.frames_received,

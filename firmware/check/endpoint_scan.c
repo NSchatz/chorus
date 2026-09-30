@@ -20,8 +20,8 @@
  * those five characters, and a rule that fired on the correct clock read would
  * be a rule nobody could satisfy. */
 static const char *const SETTABLE_CLOCK_NAMES[] = {
-    "CLOCK_REALTIME", "gettimeofday", "settimeofday",   "time(NULL)",     "time(0)",
-    "localtime",      "gmtime",       "mktime",         "ctime(",         "sntp_",
+    "CLOCK_REALTIME", "gettimeofday",   "settimeofday", "time(NULL)",    "time(0)",
+    "localtime",      "gmtime",         "mktime",       "ctime(",        "sntp_",
     "esp_sntp",       "esp_netif_sntp", "adjtime",      "clock_settime",
 };
 
@@ -44,30 +44,53 @@ static const char *const SETTABLE_CLOCK_NAMES[] = {
  * a spelling this textual list cannot see still has to get past the linker's
  * record of what was actually pulled in. */
 static const char *const EFUSE_WRITE_NAMES[] = {
-    "esp_efuse_write", "esp_efuse_burn",  "esp_efuse_batch_write", "esp_efuse_set_",
-    "espefuse",        "efuse_hal_write", "esp_secure_boot_enable",
+    "esp_efuse_write",
+    "esp_efuse_burn",
+    "esp_efuse_batch_write",
+    "esp_efuse_set_",
+    "espefuse",
+    "efuse_hal_write",
+    "esp_secure_boot_enable",
     "esp_flash_encryption_enable",
-    "esp_efuse_disable_", "esp_efuse_enable_", "esp_efuse_destroy_block",
-    "esp_efuse_update_secure_version", "esp_efuse_utility_burn", "esp_efuse_utility_write",
-    "esp_flash_encrypt_", "esp_flash_encryption_set_release_mode",
-    "esp_flash_write_protect_crypt_cnt", "esp_secure_boot_permanently_enable",
-    "esp_secure_boot_v2_permanently_enable", "efuse_hal_program", "efuse_ll_set_pgm_cmd",
-    "efuse_ll_set_conf_write_op_code", "EFUSE_WRITE_OP_CODE", "EFUSE_PGM_", "EFUSE.cmd",
-    "EFUSE.conf", "EFUSE.pgm", "ets_efuse_program", "ets_efuse_write_key",
+    "esp_efuse_disable_",
+    "esp_efuse_enable_",
+    "esp_efuse_destroy_block",
+    "esp_efuse_update_secure_version",
+    "esp_efuse_utility_burn",
+    "esp_efuse_utility_write",
+    "esp_flash_encrypt_",
+    "esp_flash_encryption_set_release_mode",
+    "esp_flash_write_protect_crypt_cnt",
+    "esp_secure_boot_permanently_enable",
+    "esp_secure_boot_v2_permanently_enable",
+    "efuse_hal_program",
+    "efuse_ll_set_pgm_cmd",
+    "efuse_ll_set_conf_write_op_code",
+    "EFUSE_WRITE_OP_CODE",
+    "EFUSE_PGM_",
+    "EFUSE.cmd",
+    "EFUSE.conf",
+    "EFUSE.pgm",
+    "ets_efuse_program",
+    "ets_efuse_write_key",
 };
 
 /* Activating an OTA image. chorus#FLEET-10 owns this, with a deliberately bad
  * image shipped and reverted as its evidence. */
 static const char *const OTA_NAMES[] = {
-    "esp_ota_set_boot_partition", "esp_ota_mark_app_valid", "esp_ota_mark_app_invalid",
-    "esp_ota_begin",              "esp_ota_write",          "esp_ota_end",
-    "esp_https_ota",              "esp_ota_get_next_update_partition",
+    "esp_ota_set_boot_partition",
+    "esp_ota_mark_app_valid",
+    "esp_ota_mark_app_invalid",
+    "esp_ota_begin",
+    "esp_ota_write",
+    "esp_ota_end",
+    "esp_https_ota",
+    "esp_ota_get_next_update_partition",
 };
 
 /* Placing anything in external RAM. */
 static const char *const EXTERNAL_RAM_NAMES[] = {
-    "EXT_RAM_BSS_ATTR", "EXT_RAM_NOINIT_ATTR", "EXT_RAM_ATTR", "MALLOC_CAP_SPIRAM",
-    "SPIRAM_MALLOC",
+    "EXT_RAM_BSS_ATTR", "EXT_RAM_NOINIT_ATTR", "EXT_RAM_ATTR", "MALLOC_CAP_SPIRAM", "SPIRAM_MALLOC",
 };
 
 #define COUNT_OF(a) (sizeof(a) / sizeof((a)[0]))
@@ -195,7 +218,11 @@ int chorus_unit_list_parse(chorus_unit_list_t *out, const char *text, char *deta
                            size_t detail_len)
 {
     memset(out, 0, sizeof(*out));
-    enum { NONE, ON_PATH, EXCLUDED } section = NONE;
+    enum {
+        NONE,
+        ON_PATH,
+        EXCLUDED
+    } section = NONE;
 
     const char *cursor = text;
     size_t line_no = 0;
@@ -346,8 +373,8 @@ static char *read_file(const char *path)
 }
 
 static void check_names(chorus_scan_result_t *out, const char *rule, const char *unit,
-                        size_t line_no, const char *code, const char *raw,
-                        const char *const *names, size_t name_count)
+                        size_t line_no, const char *code, const char *raw, const char *const *names,
+                        size_t name_count)
 {
     for (size_t i = 0; i < name_count; i++) {
         if (strstr(code, names[i]) != NULL) {
@@ -422,8 +449,8 @@ static void scan_unit(chorus_scan_result_t *out, const char *root, const char *u
                     SETTABLE_CLOCK_NAMES, COUNT_OF(SETTABLE_CLOCK_NAMES));
         check_names(out, "efuse-write-in-the-endpoint-tree", unit, line_no, code, raw,
                     EFUSE_WRITE_NAMES, COUNT_OF(EFUSE_WRITE_NAMES));
-        check_names(out, "ota-activation-in-the-endpoint-tree", unit, line_no, code, raw,
-                    OTA_NAMES, COUNT_OF(OTA_NAMES));
+        check_names(out, "ota-activation-in-the-endpoint-tree", unit, line_no, code, raw, OTA_NAMES,
+                    COUNT_OF(OTA_NAMES));
         check_names(out, "dma-descriptor-in-external-ram", unit, line_no, code, raw,
                     EXTERNAL_RAM_NAMES, COUNT_OF(EXTERNAL_RAM_NAMES));
 
@@ -566,10 +593,10 @@ static int kconfig_rules_load(const char *root, kconfig_rules_t *rules, char *de
         if (strcmp(kind, "refuse") == 0 && rules->refuse_count < KCONFIG_MAX_RULES) {
             snprintf(rules->refuse[rules->refuse_count++], sizeof(rules->refuse[0]), "%s", name);
         } else if (strcmp(kind, "derived") == 0 && rules->derived_count < KCONFIG_MAX_RULES) {
-            snprintf(rules->derived[rules->derived_count++], sizeof(rules->derived[0]), "%s",
-                     name);
+            snprintf(rules->derived[rules->derived_count++], sizeof(rules->derived[0]), "%s", name);
         } else {
-            snprintf(detail, detail_len, "%s:%zu: `%s` is neither refuse nor derived, or the "
+            snprintf(detail, detail_len,
+                     "%s:%zu: `%s` is neither refuse nor derived, or the "
                      "list is over %d entries",
                      CHORUS_EFUSE_KCONFIG_LIST, line_no, kind, KCONFIG_MAX_RULES);
             failed = 1;
@@ -684,8 +711,7 @@ static void scan_cmake_file(chorus_scan_result_t *out, const kconfig_rules_t *ru
         for (size_t r = 0; r < rules->refuse_count; r++) {
             const char *stem = rules->refuse[r] + 7; /* past "CONFIG_" */
             size_t stem_len = strlen(stem);
-            for (const char *hit = strstr(code, stem); hit != NULL;
-                 hit = strstr(hit + 1, stem)) {
+            for (const char *hit = strstr(code, stem); hit != NULL; hit = strstr(hit + 1, stem)) {
                 size_t at = (size_t)(hit - code);
                 int bare = (at == 0) || !is_ident_byte(code[at - 1]);
                 int prefixed = (at >= 7) && strncmp(hit - 7, "CONFIG_", 7) == 0 &&
@@ -705,8 +731,8 @@ static void scan_cmake_file(chorus_scan_result_t *out, const kconfig_rules_t *ru
                 }
                 snprintf(name, sizeof(name), "CONFIG_%.*s", (int)len, hit);
                 if (kconfig_refused(rules, name) != NULL) {
-                    add(out, "efuse-burning-option-in-the-build-configuration", unit, line_no,
-                        name, trim(shown));
+                    add(out, "efuse-burning-option-in-the-build-configuration", unit, line_no, name,
+                        trim(shown));
                     break;
                 }
             }

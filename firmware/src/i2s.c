@@ -72,8 +72,7 @@ size_t chorus_i2s_validate_clock(const chorus_i2s_clock_t *clock, chorus_finding
     if (clock->slot_bit_width != 8 && clock->slot_bit_width != 16 && clock->slot_bit_width != 24 &&
         clock->slot_bit_width != 32) {
         add_finding(findings, capacity, count, "slot-bit-width-not-supported",
-                    "i2s_slot_bit_width = %u is not one of 8, 16, 24 or 32",
-                    clock->slot_bit_width);
+                    "i2s_slot_bit_width = %u is not one of 8, 16, 24 or 32", clock->slot_bit_width);
     }
     if (clock->mclk_multiple == 0) {
         add_finding(findings, capacity, count, "mclk-multiple-is-zero",
@@ -148,8 +147,8 @@ static void check_one_pin(const char *name, uint32_t pin, int octal_psram,
 {
     if (pin > CHORUS_MAX_GPIO) {
         add_finding(findings, capacity, count, "gpio-out-of-range",
-                    "%s = GPIO%u is beyond GPIO%d, which is the highest an ESP32-S3 has", name,
-                    pin, CHORUS_MAX_GPIO);
+                    "%s = GPIO%u is beyond GPIO%d, which is the highest an ESP32-S3 has", name, pin,
+                    CHORUS_MAX_GPIO);
         return;
     }
     if (pin >= 26 && pin <= 32) {

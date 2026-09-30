@@ -397,8 +397,8 @@ static void the_committed_tree_passes(void)
                  list.on_path_count);
     /* firmware/sdkconfig.defaults, firmware/CMakeLists.txt and
      * firmware/main/CMakeLists.txt at the least. */
-    chorus_check(result.config_files_scanned >= 3,
-                 "the build configuration was read (%zu files)", result.config_files_scanned);
+    chorus_check(result.config_files_scanned >= 3, "the build configuration was read (%zu files)",
+                 result.config_files_scanned);
 }
 
 static void an_exclusion_without_a_reason_is_refused(void)
@@ -492,8 +492,7 @@ int main(void)
                       "efuse-burning-option-in-the-build-configuration",
                       "Flash Encryption switched on in sdkconfig.defaults");
     one_demonstration("sdkconfig-secure-boot", "firmware/sdkconfig.defaults",
-                      "\nCONFIG_SECURE_BOOT=y\n",
-                      "efuse-burning-option-in-the-build-configuration",
+                      "\nCONFIG_SECURE_BOOT=y\n", "efuse-burning-option-in-the-build-configuration",
                       "Secure Boot switched on in sdkconfig.defaults");
     one_demonstration("sdkconfig-old-name", "firmware/sdkconfig.defaults",
                       "\nCONFIG_APP_ANTI_ROLLBACK=y\n",
@@ -511,17 +510,17 @@ int main(void)
                       "CONFIG_SECURE_DISABLE_ROM_DL_MODE=y\n",
                       "efuse-burning-option-in-the-build-configuration",
                       "a stale generated firmware/sdkconfig, which idf.py prefers to the defaults");
-    one_demonstration("cmake-redirect", "firmware/CMakeLists.txt",
-                      "\nset(SDKCONFIG_DEFAULTS \"sdkconfig.defaults;/elsewhere/secure.defaults\")\n",
-                      "build-configuration-redirected-in-cmake",
-                      "CMake pointing the defaults at a file this scan never reads");
+    one_demonstration(
+        "cmake-redirect", "firmware/CMakeLists.txt",
+        "\nset(SDKCONFIG_DEFAULTS \"sdkconfig.defaults;/elsewhere/secure.defaults\")\n",
+        "build-configuration-redirected-in-cmake",
+        "CMake pointing the defaults at a file this scan never reads");
     one_demonstration("cmake-define", "firmware/main/CMakeLists.txt",
                       "\ntarget_compile_definitions(${COMPONENT_LIB} PRIVATE "
                       "CONFIG_SECURE_FLASH_ENC_ENABLED=1)\n",
                       "efuse-burning-option-in-the-build-configuration",
                       "a refused option handed to the compiler from CMake");
-    one_demonstration("cmake-module", "firmware/main/secure.cmake",
-                      "set(SECURE_BOOT y)\n",
+    one_demonstration("cmake-module", "firmware/main/secure.cmake", "set(SECURE_BOOT y)\n",
                       "efuse-burning-option-in-the-build-configuration",
                       "a refused name without its CONFIG_ prefix in a *.cmake file");
     one_green_demonstration("sdkconfig-off", "firmware/sdkconfig.defaults",

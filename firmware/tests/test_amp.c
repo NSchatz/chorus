@@ -45,8 +45,7 @@ static chorus_amp_config_t configured(void)
     config.fault_clear_value_known = 1;
     config.fault_clear_value = TEST_FAULT_CLEAR;
     config.analog_gain_ceiling_db = 0.0;
-    snprintf(config.ceiling_source, sizeof(config.ceiling_source),
-             "firmware/config/endpoint.conf");
+    snprintf(config.ceiling_source, sizeof(config.ceiling_source), "firmware/config/endpoint.conf");
     return config;
 }
 
@@ -183,8 +182,7 @@ static void a_part_that_reports_a_fault_at_bring_up_starts_no_clock(void)
         chorus_amp_bring_up(&config, &gain, &clock, &bus, &stage, &controller, &report);
     chorus_check(status == CHORUS_AMP_REPORTS_FAULT,
                  "a part reporting a fault at bring-up is %s (got %s)",
-                 chorus_amp_status_name(CHORUS_AMP_REPORTS_FAULT),
-                 chorus_amp_status_name(status));
+                 chorus_amp_status_name(CHORUS_AMP_REPORTS_FAULT), chorus_amp_status_name(status));
     chorus_check(fake.stage == FAKE_STAGE_HIGH_IMPEDANCE && report.output_in_high_impedance,
                  "the output stage is left in high impedance");
     chorus_check(fake_amp_count(&fake, FAKE_EV_CLOCK_APPLIED) == 0 && !report.clock_started,
@@ -201,8 +199,7 @@ static void a_part_that_reports_a_fault_at_bring_up_starts_no_clock(void)
     controller = fake_amp_controller(&other);
     status = chorus_amp_bring_up(&config, &gain, &clock, &bus, &stage, &controller, &report);
     chorus_check(status == CHORUS_AMP_IDENTITY_MISMATCH,
-                 "a part answering with the wrong device id is %s",
-                 chorus_amp_status_name(status));
+                 "a part answering with the wrong device id is %s", chorus_amp_status_name(status));
     chorus_check(other.stage == FAKE_STAGE_HIGH_IMPEDANCE &&
                      fake_amp_count(&other, FAKE_EV_CLOCK_APPLIED) == 0,
                  "the stage is dead and no clock started");
@@ -227,8 +224,7 @@ static void a_gain_above_the_ceiling_is_refused_before_anything_happens(void)
         chorus_amp_bring_up(&config, &gain, &clock, &bus, &stage, &controller, &report);
     chorus_check(status == CHORUS_AMP_GAIN_ABOVE_CEILING, "a gain above the ceiling is %s",
                  chorus_amp_status_name(status));
-    chorus_check(fake_amp_count(&fake, FAKE_EV_OUTPUT_ENABLE) == 0,
-                 "output is NOT enabled");
+    chorus_check(fake_amp_count(&fake, FAKE_EV_OUTPUT_ENABLE) == 0, "output is NOT enabled");
     chorus_check(fake.stage == FAKE_STAGE_HIGH_IMPEDANCE && report.output_in_high_impedance,
                  "the output stage is left in high impedance");
     chorus_check(fake_amp_i2c_transactions(&fake) == 0,
@@ -249,8 +245,8 @@ static void a_gain_above_the_ceiling_is_refused_before_anything_happens(void)
     bus = fake_amp_bus(&at_ceiling);
     stage = fake_amp_stage(&at_ceiling);
     controller = fake_amp_controller(&at_ceiling);
-    chorus_check(chorus_amp_bring_up(&config, &exact, &clock, &bus, &stage, &controller,
-                                     &report) == CHORUS_AMP_OK,
+    chorus_check(chorus_amp_bring_up(&config, &exact, &clock, &bus, &stage, &controller, &report) ==
+                     CHORUS_AMP_OK,
                  "a gain exactly at the ceiling is inside it");
 }
 
@@ -292,8 +288,7 @@ static void an_unconfigured_register_refuses_by_name(void)
         chorus_check(fake.stage == FAKE_STAGE_HIGH_IMPEDANCE &&
                          fake_amp_i2c_transactions(&fake) == 0 &&
                          fake_amp_count(&fake, FAKE_EV_CLOCK_APPLIED) == 0,
-                     "%s: the stage is dead, the bus untouched and no clock started",
-                     keys[i].key);
+                     "%s: the stage is dead, the bus untouched and no clock started", keys[i].key);
     }
 
     /* And the gain code, which is a datasheet value like every other. */
@@ -307,8 +302,8 @@ static void an_unconfigured_register_refuses_by_name(void)
     chorus_output_stage_t stage = fake_amp_stage(&fake);
     chorus_i2s_controller_t controller = fake_amp_controller(&fake);
     chorus_amp_report_t report;
-    chorus_check(chorus_amp_bring_up(&config, &gain, &clock, &bus, &stage, &controller,
-                                     &report) == CHORUS_AMP_REGISTER_NOT_CONFIGURED &&
+    chorus_check(chorus_amp_bring_up(&config, &gain, &clock, &bus, &stage, &controller, &report) ==
+                         CHORUS_AMP_REGISTER_NOT_CONFIGURED &&
                      strstr(report.detail, "amp_analog_gain_code") != NULL,
                  "an unknown gain code refuses by name (%s)", report.detail);
 }
@@ -337,8 +332,7 @@ static void a_refused_clock_configuration_never_reaches_the_controller(void)
                  "the controller was never asked to apply it");
     chorus_check(fake.stage == FAKE_STAGE_HIGH_IMPEDANCE, "the stage is left in high impedance");
     chorus_check(report.finding_count > 0 &&
-                     strcmp(report.findings[0].rule,
-                            "mclk-multiple-not-divisible-by-three") == 0,
+                     strcmp(report.findings[0].rule, "mclk-multiple-not-divisible-by-three") == 0,
                  "the finding names the rule: %s",
                  report.finding_count > 0 ? report.findings[0].rule : "<none>");
 }
@@ -356,13 +350,12 @@ static void a_fault_during_playback_stops_the_audio(void)
     chorus_output_stage_t stage = fake_amp_stage(&fake);
     chorus_i2s_controller_t controller = fake_amp_controller(&fake);
     chorus_amp_report_t report;
-    chorus_check(chorus_amp_bring_up(&config, &gain, &clock, &bus, &stage, &controller,
-                                     &report) == CHORUS_AMP_OK,
+    chorus_check(chorus_amp_bring_up(&config, &gain, &clock, &bus, &stage, &controller, &report) ==
+                     CHORUS_AMP_OK,
                  "the part is playing");
 
     /* A quiet poll changes nothing. */
-    chorus_amp_status_t status = chorus_amp_poll_fault(&config, &bus, &stage, &controller,
-                                                       &report);
+    chorus_amp_status_t status = chorus_amp_poll_fault(&config, &bus, &stage, &controller, &report);
     chorus_check(status == CHORUS_AMP_OK && fake.stage == FAKE_STAGE_ENABLED,
                  "a healthy poll leaves the output enabled");
 
@@ -387,10 +380,9 @@ static void a_fault_during_playback_stops_the_audio(void)
                                      &silent_controller, &report) == CHORUS_AMP_OK,
                  "the second part is playing");
     silent.answer = CHORUS_I2C_NACK;
-    status = chorus_amp_poll_fault(&config, &silent_bus, &silent_stage, &silent_controller,
-                                   &report);
-    chorus_check(status == CHORUS_AMP_DID_NOT_ANSWER &&
-                     silent.stage == FAKE_STAGE_HIGH_IMPEDANCE,
+    status =
+        chorus_amp_poll_fault(&config, &silent_bus, &silent_stage, &silent_controller, &report);
+    chorus_check(status == CHORUS_AMP_DID_NOT_ANSWER && silent.stage == FAKE_STAGE_HIGH_IMPEDANCE,
                  "an amplifier that stops answering mid-run stops the audio too (%s)",
                  chorus_amp_status_name(status));
 }
@@ -414,8 +406,8 @@ static void every_unwind_kills_the_output_before_it_stops_the_clock(void)
     chorus_output_stage_t stage = fake_amp_stage(&fake);
     chorus_i2s_controller_t controller = fake_amp_controller(&fake);
     chorus_amp_report_t report;
-    chorus_check(chorus_amp_bring_up(&config, &gain, &clock, &bus, &stage, &controller,
-                                     &report) == CHORUS_AMP_OK &&
+    chorus_check(chorus_amp_bring_up(&config, &gain, &clock, &bus, &stage, &controller, &report) ==
+                         CHORUS_AMP_OK &&
                      fake.stage == FAKE_STAGE_ENABLED,
                  "the part is playing with the output stage live");
 
@@ -466,16 +458,15 @@ static void every_unwind_kills_the_output_before_it_stops_the_clock(void)
     chorus_i2c_bus_t unconfigured_bus = fake_amp_bus(&unconfigured);
     chorus_output_stage_t unconfigured_stage = fake_amp_stage(&unconfigured);
     chorus_i2s_controller_t unconfigured_controller = fake_amp_controller(&unconfigured);
-    chorus_check(chorus_amp_bring_up(&config, &gain, &clock, &unconfigured_bus,
-                                     &unconfigured_stage, &unconfigured_controller, &report) ==
-                     CHORUS_AMP_OK,
+    chorus_check(chorus_amp_bring_up(&config, &gain, &clock, &unconfigured_bus, &unconfigured_stage,
+                                     &unconfigured_controller, &report) == CHORUS_AMP_OK,
                  "a third part is playing");
     unconfigured.event_count = 0;
     chorus_amp_config_t unknown_fault = config;
     unknown_fault.reg_fault_known = 0;
     chorus_check(chorus_amp_poll_fault(&unknown_fault, &unconfigured_bus, &unconfigured_stage,
-                                       &unconfigured_controller, &report) ==
-                     CHORUS_AMP_REGISTER_NOT_CONFIGURED,
+                                       &unconfigured_controller,
+                                       &report) == CHORUS_AMP_REGISTER_NOT_CONFIGURED,
                  "a poll against an unknown fault register refuses by name");
     hiz = fake_amp_first(&unconfigured, FAKE_EV_HIGH_IMPEDANCE);
     stopped = fake_amp_first(&unconfigured, FAKE_EV_CLOCK_STOPPED);
@@ -495,8 +486,8 @@ static void every_unwind_kills_the_output_before_it_stops_the_clock(void)
     chorus_output_stage_t refuses_stage = fake_amp_stage(&refuses);
     chorus_i2s_controller_t refuses_controller = fake_amp_controller(&refuses);
     chorus_check(chorus_amp_bring_up(&config, &gain, &clock, &refuses_bus, &refuses_stage,
-                                     &refuses_controller, &report) ==
-                     CHORUS_AMP_OUTPUT_STAGE_REFUSED,
+                                     &refuses_controller,
+                                     &report) == CHORUS_AMP_OUTPUT_STAGE_REFUSED,
                  "an output stage that refuses to enable is reported by name");
     int applied = fake_amp_first(&refuses, FAKE_EV_CLOCK_APPLIED);
     stopped = fake_amp_first(&refuses, FAKE_EV_CLOCK_STOPPED);

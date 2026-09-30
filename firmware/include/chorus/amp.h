@@ -180,8 +180,8 @@ chorus_amp_status_t chorus_amp_bring_up(const chorus_amp_config_t *config,
  * every clock change is made into a dead output. The caller is handed a status
  * with a name to publish. Continuing to play into a faulted amplifier is what
  * damages a driver, and docs/decisions/0015 records the choice. */
-chorus_amp_status_t chorus_amp_poll_fault(const chorus_amp_config_t *config,
-                                          chorus_i2c_bus_t *bus, chorus_output_stage_t *stage,
+chorus_amp_status_t chorus_amp_poll_fault(const chorus_amp_config_t *config, chorus_i2c_bus_t *bus,
+                                          chorus_output_stage_t *stage,
                                           chorus_i2s_controller_t *controller,
                                           chorus_amp_report_t *report);
 
