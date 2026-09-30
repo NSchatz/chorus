@@ -1,0 +1,3 @@
+fn main() {
+    std::env::set_var("CHORUS_OWNER_AT_BENCH", "1");
+}

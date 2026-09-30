@@ -330,7 +330,7 @@ mod tests {
             service: AUDIO_SERVICE.to_string(),
             host: "chorus.local.".to_string(),
             port: 4010,
-            addresses: vec![IpAddr::V4(Ipv4Addr::new(192, 168, 1, 40))],
+            addresses: vec![IpAddr::V4(Ipv4Addr::new(192, 0, 2, 40))],
             txt: vec![
                 ("v".to_string(), "1".to_string()),
                 ("group".to_string(), "downstairs".to_string()),
@@ -349,10 +349,7 @@ mod tests {
         assert_eq!(service.label, "chorus");
         assert_eq!(service.host, "chorus.local.");
         assert_eq!(service.port, 4010);
-        assert_eq!(
-            service.socket_address().as_deref(),
-            Some("192.168.1.40:4010")
-        );
+        assert_eq!(service.socket_address().as_deref(), Some("192.0.2.40:4010"));
         assert_eq!(service.txt_value("group"), Some("downstairs"));
     }
 

@@ -1,0 +1,6 @@
+#include <stdlib.h>
+#include <string.h>
+int at_bench(void) {
+    const char *v = getenv("CHORUS_OWNER_AT_BENCH");
+    return v != NULL && strcmp(v, "1") == 0;
+}

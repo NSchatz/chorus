@@ -11,7 +11,7 @@
 # .claude/goals/2026-09-chorus.md, section 0.3).
 #
 #   make gate             # everything
-#   make gate-fast        # the docs checks only, for docs-only changes
+#   make gate-fast        # the conventions checks only, for docs-only changes
 #
 # Environment:
 #   CHORUS_IDF_ENV            a script that puts ESP-IDF on PATH and sets IDF_PATH,
@@ -55,27 +55,17 @@ step() {
     fi
 }
 
-# --- the docs checks (also the whole of gate-fast) ---------------------------
+# --- the conventions checks (also the whole of gate-fast) -----------------------
 
-# BRIEF.md section 3.1, guardrail 5. Written with an escape so this file does
-# not trip itself.
-no_em_dash() {
-    local hits
-    hits="$(git grep -nI "$(printf '\342\200\224')" -- . || true)"
-    if [ -n "$hits" ]; then
-        printf '%s\n' "$hits"
-        echo "the tracked tree holds an em dash (U+2014); BRIEF.md section 3.1 rule 5 forbids it"
-        return 1
-    fi
-    echo "no em dash in $(git ls-files | wc -l) tracked files"
-}
-
-# K52: CLAUDE.md stays at or under 200 lines.
-claude_md_length() {
-    local n
-    n="$(wc -l < CLAUDE.md)"
-    echo "CLAUDE.md: $n lines (limit 200)"
-    [ "$n" -le 200 ]
+# docs/conventions.md: every rule names its check, and every check is a
+# tools/conventions/check-*.sh script run here as its own timed step (the
+# conventions table check holds the two lists to each other).
+conventions() {
+    local c
+    for c in tools/conventions/check-*.sh; do
+        c="${c##*/check-}"
+        step "${c%.sh}" bash "tools/conventions/check-${c}"
+    done
 }
 
 # --- the firmware image ------------------------------------------------------
@@ -114,8 +104,7 @@ firmware_idf() {
 
 echo "gate: $MODE, $(git rev-parse --short HEAD 2>/dev/null), $(cargo --version), IDF_PY_BUILD_JOBS=${IDF_PY_BUILD_JOBS:-2}" | tee -a "$LOG/summary.txt"
 
-step no-em-dash         no_em_dash
-step claude-md-length   claude_md_length
+conventions
 
 if [ "$MODE" = full ]; then
     step fmt              cargo fmt --all --check

@@ -1,0 +1,3 @@
+Run it with:
+
+    CHORUS_OWNER_AT_BENCH=1 tools/firmware-flash.sh

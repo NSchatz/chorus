@@ -8,7 +8,8 @@ export CHORUS_IDF_ENV
 
 # The gate: every check a change passes before it merges, each step timed
 # (tools/gate.sh says what it runs). Callers take chorus-heavy.lock; the recipe
-# never does. gate-fast is the docs checks alone, for docs-only changes.
+# never does. gate-fast is the conventions checks alone (tools/conventions/), for
+# docs-only changes.
 gate: tools-executable
 	bash tools/gate.sh full
 

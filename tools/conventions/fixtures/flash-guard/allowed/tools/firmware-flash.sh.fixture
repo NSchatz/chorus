@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+if [ "${CHORUS_OWNER_AT_BENCH:-}" != 1 ]; then
+    echo "refusing: the owner sets it at the bench (docs/bench.md)" >&2
+    exit 1
+fi

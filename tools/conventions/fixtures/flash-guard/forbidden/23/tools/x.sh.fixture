@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+declare -x CHORUS_OWNER_AT_BENCH

@@ -1,0 +1,44 @@
+# cargo-deny (pinned in mise.toml) over every crate the workspace builds, its own included.
+# Run by tools/conventions/check-licence.sh as `cargo deny --locked check licenses bans sources`.
+# The rule it enforces is docs/conventions.md "Dependencies and licences": chorus is
+# MIT OR Apache-2.0 (K26), and every dependency's licence is on the allowlist of the program
+# brief section 4.7 (MIT, Apache-2.0, BSD, ISC, Zlib, public domain). Anything else needs an ADR
+# that names the crate, and then an exception entry below citing that ADR (K95; for example
+# MPL-2.0 Symphonia under proposal P9, when goal 16 adds it).
+# Config keys: https://embarkstudios.github.io/cargo-deny/checks/cfg.html (read 2026-09-30).
+
+[graph]
+all-features = true
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "ISC",
+    "Zlib",
+    "Unlicense",
+    "CC0-1.0",
+]
+confidence-threshold = 0.93
+exceptions = []
+# The allowlist is policy, not a record of what is in use today.
+unused-allowed-license = "allow"
+
+# chorus's own crates are publish = false; they are checked like any other crate, so a crate
+# without `license.workspace = true` fails.
+[licenses.private]
+ignore = false
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
