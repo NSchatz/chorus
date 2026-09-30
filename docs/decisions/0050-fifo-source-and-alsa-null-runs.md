@@ -1,4 +1,4 @@
-# 0000: a FIFO source is held open and fills silence, and the ALSA null runs are a labelled host step in the gate
+# 0050: a FIFO source is held open and fills silence, and the ALSA null runs are a labelled host step in the gate
 
 - Status: accepted (goal 7, 2026-09-30)
 - Decided by: the goal (audit B-2's proposed fix; goal 7 item 3, brief section 11)

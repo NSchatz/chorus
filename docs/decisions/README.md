@@ -41,3 +41,4 @@ the number of the pull request that added it.
 | 0042 | [the endpoint moves to ESP-IDF v6.1](0042-esp-idf-v6-1.md) |
 | 0043 | [the endpoint's key exchange is chorus's own state machine over the PSA Crypto API, and its host build compiles the pinned ESP-IDF tree's library](0043-the-endpoint-crypto-over-psa.md) |
 | 0044 | [FLAC and Opus decode through vendored dr_flac and libopus on the endpoint, and Symphonia and the same libopus in the Linux client](0044-the-vendored-decoders.md) |
+| 0050 | [a FIFO source is held open and fills silence, and the ALSA null runs are a labelled host step in the gate](0050-fifo-source-and-alsa-null-runs.md) |
