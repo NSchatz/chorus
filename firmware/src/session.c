@@ -88,6 +88,14 @@ typedef struct {
     pin_t pins[CHORUS_SESSION_MAX_PINS];
 } session_state_t;
 
+/* The console's `status` reads what the run last published (audit A-13). */
+static void hand_on_telemetry(const session_state_t *state)
+{
+    if (state->config->on_telemetry != NULL) {
+        state->config->on_telemetry(state->config->telemetry_ctx, &state->telemetry);
+    }
+}
+
 /* The playout path's counters into the published telemetry: what the DMA
  * consumed, not what arrived. */
 static void refresh_playout(session_state_t *state)
@@ -110,6 +118,7 @@ static void refresh_playout(session_state_t *state)
 static void publish(session_state_t *state, const char *event)
 {
     refresh_playout(state);
+    hand_on_telemetry(state);
     char line[1024];
     chorus_telemetry_line(&state->telemetry, line, sizeof(line));
     if (state->log != NULL) {
@@ -123,6 +132,7 @@ static void publish(session_state_t *state, const char *event)
 static void publish_detail(session_state_t *state, const char *event, const char *detail)
 {
     refresh_playout(state);
+    hand_on_telemetry(state);
     char line[1024];
     chorus_telemetry_line(&state->telemetry, line, sizeof(line));
     if (state->log != NULL) {
@@ -1099,6 +1109,26 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
     }
 
     while (run_ns == 0 || chorus_monotonic_now_ns() - started_ns < run_ns) {
+        /* A server address set on the console since the last attempt
+         * (audit A-13) applies from this attempt on. */
+        char next[CHORUS_SESSION_ADDRESS_MAX];
+        if (config->server_update != NULL &&
+            config->server_update(config->server_update_ctx, next, sizeof(next)) == 1) {
+            char next_host[CHORUS_SESSION_ADDRESS_MAX];
+            char next_port[16];
+            char detail[CHORUS_SESSION_ADDRESS_MAX + 64];
+            if (split_address(next, next_host, sizeof(next_host), next_port, sizeof(next_port)) ==
+                0) {
+                memcpy(host, next_host, sizeof(host));
+                memcpy(port, next_port, sizeof(port));
+                backoff_ms = config->first_backoff_ms;
+                snprintf(detail, sizeof(detail), "server=%s", next);
+                publish_detail(&state, "server-changed", detail);
+            } else {
+                snprintf(detail, sizeof(detail), "'%s' is not host:port; kept the old one", next);
+                publish_detail(&state, "server-refused", detail);
+            }
+        }
         state.telemetry.link = CHORUS_LINK_CONNECTING;
         state.telemetry.connect_attempts++;
         int fd = connect_once(host, port);

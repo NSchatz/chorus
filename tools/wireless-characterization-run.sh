@@ -35,12 +35,14 @@
 # config/sync.conf moves because of it. The answer to a bad number here is a
 # deeper buffer in config/transport.conf or a zone declared wired.
 #
-# NEEDS AN ENVIRONMENT, and code that does not exist yet.
-#   - an endpoint serial console that sets the power-save mode and reads it
-#     back. IT DOES NOT EXIST (audit A-13; goal 8), so this script refuses by
-#     name before it writes to a serial port or fetches a file. The other half
-#     of A-13 does exist: the second endpoint writes the `.offsets` series this
-#     run fetches with `chorus-client --offsets-out` (goal 7), in the format
+# NEEDS AN ENVIRONMENT.
+#   - the endpoint's serial console (audit A-13, goal 8: firmware/src/console.c),
+#     which sets the power-save mode and replies with the mode the platform
+#     reports in force. The run checks the console answers before it drives it,
+#     records every readback in the run's raw data, and refuses a mode whose
+#     readback disagrees rather than report it under the requested name. The
+#     second endpoint writes the `.offsets` series this run fetches with
+#     `chorus-client --offsets-out` (goal 7), in the format
 #     crates/measure/src/freerun.rs reads
 #   - a wireless network the endpoint may join, in firmware/config/endpoint.conf,
 #     which this repository declares UNKNOWN and will go on declaring unknown
@@ -72,10 +74,6 @@
 #       ./tools/wireless-characterization-run.sh   # or: make verify-wireless
 #   ./tools/wireless-characterization-run.sh --report-from <run directory>
 
-# The run below require_endpoint_console is unreachable on purpose until that
-# prerequisite exists (audit A-13), so it stays unrun visibly.
-# shellcheck disable=SC2317
-
 source "$(dirname "$0")/lib.sh"
 source "$REPO_ROOT/tools/bench/lib.sh"
 bench_args "$@"
@@ -105,6 +103,9 @@ report_and_publish() {
             bench_field "jitter_us_$mode" "$jitter"
         else
             bench_field "jitter_us_$mode" "the series did not analyse"
+        fi
+        if [ -f "$BENCH_RUN_DIR/raw/power-save-$mode.txt" ]; then
+            bench_field "power_save_readback_$mode" "$(head -n 1 "$BENCH_RUN_DIR/raw/power-save-$mode.txt")"
         fi
         if [ -f "$BENCH_RUN_DIR/analysis/lag-capture-$mode.txt" ]; then
             read -r -a figures <<< "$(bench_lag_figures "$BENCH_RUN_DIR/analysis/lag-capture-$mode.txt")"
@@ -159,14 +160,13 @@ say "  capture device:  $CAPTURE_DEVICE"
 
 # Every prerequisite is checked before anything is started, so a run that cannot
 # be graded emits nothing at all, and nothing is written to a serial port or
-# fetched from another machine. The first two are absent on every machine, not
-# only this one. The endpoint console this run drives does not exist yet (audit
-# A-13; goal 8 builds it), and the network name and
-# the secret are declared unknown in this repository and will go on being
-# declared unknown.
-require_endpoint_console "$CRITERION"
+# fetched from another machine. The wireless link is absent on every machine,
+# not only this one: the network name and the secret are declared unknown in
+# this repository and will go on being declared unknown. The console is asked
+# for its `help` only once the port is known to exist.
 require_wireless_link "$CRITERION"
 require_esp32s3_endpoint "$CRITERION"
+require_endpoint_console "$CRITERION"
 require_second_endpoint "$CRITERION"
 require_capture_device "$CRITERION"
 
@@ -207,11 +207,28 @@ for MODE in $MODES; do
     say ""
     say "chorus: === power save $MODE ==="
     say "chorus: setting the endpoint's power save mode over its serial console"
-    # The endpoint SETS the mode it is told to and reports the mode it set; the
-    # line it publishes is what says which mode was actually in force, and the
-    # report below carries that word and not this one.
-    printf 'power-save %s\n' "$MODE" > "$CHORUS_ESP32S3_PORT"
-    printf 'server %s:%s\n' "$SERVER_HOST" "$PORT" > "$CHORUS_ESP32S3_PORT"
+    # The endpoint SETS the mode it is told to and replies with the mode the
+    # platform reports in force. The readback is kept with the run's raw data,
+    # and a readback that disagrees stops the run: a report filed under the
+    # requested word about a radio in another mode is the failure audit A-13
+    # found.
+    READBACK="$(endpoint_console "power-save $MODE" || true)"
+    printf '%s\n' "${READBACK:-no reply}" > "$OUT_DIR/power-save-$MODE.txt"
+    case "$READBACK" in
+        "power-save set=$MODE in-force=$MODE agrees=yes") ;;
+        *)
+            say "chorus: power save $MODE was not confirmed by the endpoint: ${READBACK:-no reply}"
+            exit 3
+            ;;
+    esac
+    SERVER_REPLY="$(endpoint_console "server $SERVER_HOST:$PORT" || true)"
+    case "$SERVER_REPLY" in
+        "server set=$SERVER_HOST:$PORT "*) ;;
+        *)
+            say "chorus: the endpoint did not take the server address: ${SERVER_REPLY:-no reply}"
+            exit 3
+            ;;
+    esac
 
     say "chorus: starting the second endpoint on $CHORUS_SECOND_ENDPOINT, in another room"
     REMOTE_COMMAND="chorus-client --ephemeral-identity --endpoint-id wireless-second-room --server ${SERVER_HOST}:${PORT} \

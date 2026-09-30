@@ -445,19 +445,54 @@ require_wireless_link() {
     fi
 }
 
-# Refuse to continue: the endpoint has no serial console to set its power-save
-# mode and read it back. `rg -i "uart|console|esp_console" firmware` finds no
-# console input of any kind, so the mode would stay whatever the image embeds
-# while the report named the other one (audit A-13). The client half of A-13,
-# the `.offsets` series, now exists (`chorus-client --offsets-out`, goal 7); the
-# console is goal 8's. This guard checks nothing and refuses: it is removed by
-# the change that builds the console, not satisfied by an environment variable.
+# Refuse to continue unless the endpoint on CHORUS_ESP32S3_PORT answers on its
+# serial console (audit A-13, goal 8: firmware/src/console.c). Without one, a
+# power-save mode written to the port would stay whatever the image embeds while
+# the report named the other one, which is exactly the failure A-13 found.
 require_endpoint_console() {
-    local criterion="$1"
-    missing_prerequisite \
-        "$criterion" \
-        "an endpoint serial console that sets the power-save mode and reads it back; it does not exist in this repository yet (audit A-13). The client's .offsets series does exist (chorus-client --offsets-out)" \
-        "build it first: the endpoint console is goal 8. Until then no run of this script can say which power-save mode was in force"
+    local criterion="$1" reply
+    # Called after require_esp32s3_endpoint, so the port exists. The console
+    # (audit A-13, firmware/src/console.c) answers `help` with the words below;
+    # anything else is not a chorus endpoint console, and nothing is driven
+    # through it.
+    reply="$(endpoint_console help 5 || true)"
+    case "$reply" in
+        "help "*values=runtime-only*) ;;
+        *)
+            missing_prerequisite \
+                "$criterion" \
+                "a chorus endpoint console on ${CHORUS_ESP32S3_PORT}; \`help\` answered '${reply:-nothing}'" \
+                "flash an image built from this checkout (its console is firmware/main/console_esp.c) and check the port with: printf 'help\\r\\n' > ${CHORUS_ESP32S3_PORT}"
+            ;;
+    esac
+}
+
+# Send one command to the endpoint console on CHORUS_ESP32S3_PORT and print
+# its one reply line (firmware/src/console.c: `<command> key=value ...` or
+# `error <command> ...`), or print nothing and return 1 when none arrives
+# within the timeout (seconds, default 10). The console echoes what it is sent
+# after its `chorus>` prompt; the echo is skipped because it is the command
+# itself, and the prompt and any terminal escapes are stripped first. Nothing
+# the console sets survives a reboot (values are runtime only).
+endpoint_console() {
+    local command="$1" wait="${2:-10}" word line fd
+    word="${command%% *}"
+    stty -F "$CHORUS_ESP32S3_PORT" 115200 raw -echo 2> /dev/null || true
+    exec {fd}<> "$CHORUS_ESP32S3_PORT"
+    printf '%s\r\n' "$command" >&"$fd"
+    while IFS= read -r -t "$wait" line <&"$fd"; do
+        line="$(printf '%s' "$line" | sed -e 's/\x1b\[[0-9;]*[A-Za-z]//g' -e 's/\r//g' -e 's/^.*chorus> *//')"
+        [ "$line" = "$command" ] && continue
+        case "$line" in
+            "$word "* | "error $word "* | "error console "*)
+                exec {fd}>&-
+                printf '%s\n' "$line"
+                return 0
+                ;;
+        esac
+    done
+    exec {fd}>&-
+    return 1
 }
 
 # Refuse to continue unless the operator gave this run the three days of wall

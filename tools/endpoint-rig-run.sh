@@ -53,9 +53,10 @@
 # Linux endpoint's delay log hashed (tools/bench/lib.sh), and with
 # CHORUS_BENCH_PR=1 it commits that on bench/<date>-embedded5-endpoint-rig and
 # opens the PR. `--report-from <run directory>` runs only that half. AC-3's
-# analysis, the sample rate the endpoint actually produced, recovered from the
-# capture, does not exist yet: chorus-measure has no such analyser, so the
-# report hashes the captures for it and says INCOMPLETE rather than PASS.
+# analysis is `chorus-measure rate` (audit A-11): the rate channel L (the
+# ESP32-S3) produced against the capture clock, recovered from where each
+# repeat of the chirp starts in each capture. It writes no report and no
+# baseline of its own; its lines are kept with the run's analyses.
 #
 #   CHORUS_ESP32S3_PORT=/dev/ttyACM0 CHORUS_SECOND_ENDPOINT=user@endpoint-b \
 #   CHORUS_CAPTURE_DEVICE=hw:1,0 \
@@ -71,11 +72,34 @@ CRITERION="an ESP32-S3 endpoint playing a grouped stream alongside a Linux endpo
 build_once
 
 # The report and PR half. AC-1 is graded from the captures exactly as SYNC-4's
-# hour is; AC-3 has no analyser yet, so the best this report can say is
-# INCOMPLETE (or FAIL when AC-1 fails).
+# hour is. AC-3 asks for the produced rate to be MEASURED rather than read back;
+# it names no ppm bound, so the one this report holds it to is the servo's own
+# correction authority (config/sync.conf max_correction_ppm): a rate error the
+# servo cannot correct is one no endpoint can be allowed. Each figure is against
+# the capture interface's clock, whose own crystal error is inside it. With no
+# figure resolved the report is INCOMPLETE (or FAIL when AC-1 fails); a figure
+# outside the bound is a FAIL.
 report_and_publish() {
-    local bound median
+    local bound median wav n rates="" resolved_rates=0 rates_outside=0 figure ppm authority
     bound="$(transport_conf wired_bound_us)"
+    authority="$(sync_conf max_correction_ppm)"
+    for wav in "$BENCH_RUN_DIR"/raw/capture-*.wav; do
+        [ -f "$wav" ] || continue
+        n="$(basename "$wav" .wav)"
+        n="${n#capture-}"
+        if bench_analysis "rate-capture-$n" "$BIN_DIR/chorus-measure" rate "$wav" --channel a; then
+            figure="$(sed -n 's/^chorus-measure: channel a produced rate \([^ ]*\) ppm (+\/-\([^ ]*\) ppm, 95%).*/\1 ppm +\/-\2/p' \
+                "$BENCH_RUN_DIR/analysis/rate-capture-$n.txt" | tail -n 1)"
+            resolved_rates=$((resolved_rates + 1))
+            ppm="${figure%% *}"
+            if ! awk -v p="${ppm#+}" -v a="$authority" 'BEGIN { if (p < 0) p = -p; exit !(p <= a) }'; then
+                rates_outside=$((rates_outside + 1))
+            fi
+            rates="$rates${rates:+; }capture $n: ${figure:-resolved}"
+        else
+            rates="$rates${rates:+; }capture $n: not resolved"
+        fi
+    done
     bench_lag_captures endpoint-rig
     median="$(printf '%s' "$BENCH_LAG_MEDIANS" | bench_median_abs)"
     if [ -f "$BENCH_RUN_DIR/raw/endpoint-rig-linux.log" ]; then
@@ -85,10 +109,14 @@ report_and_publish() {
     bench_field captures_analysed "$BENCH_LAG_RESOLVED of $BENCH_LAG_TOTAL resolved"
     bench_field median_of_medians_us "${median:-none}"
     bench_field bound_us "$bound (config/transport.conf wired_bound_us)"
-    bench_field produced_rate "not analysed: chorus-measure has no produced-sample-rate analyser yet; the captures are hashed for it (AC-3)"
-    local summary="AC-1: median of $BENCH_LAG_RESOLVED capture medians ${median} us against the ${bound} us bound; AC-3: produced sample rate not analysed (no analyser yet)"
+    bench_field produced_rate "${rates:-no capture} (channel L against the capture clock, chorus-measure rate; bound +/-$authority ppm, config/sync.conf max_correction_ppm)"
+    local summary="AC-1: median of $BENCH_LAG_RESOLVED capture medians ${median} us against the ${bound} us bound; AC-3: produced rate resolved in $resolved_rates capture(s), $rates_outside outside +/-$authority ppm"
+    if [ "$rates_outside" -gt 0 ]; then
+        bench_finish FAIL "$summary"
+    fi
     if [ "$BENCH_LAG_TOTAL" -gt 0 ] && [ "$BENCH_LAG_RESOLVED" = "$BENCH_LAG_TOTAL" ] \
         && awk -v m="$median" -v b="$bound" 'BEGIN { exit !(m < b) }'; then
+        [ "$resolved_rates" -gt 0 ] && bench_finish PASS "$summary"
         bench_finish INCOMPLETE "$summary"
     fi
     bench_finish FAIL "$summary"
@@ -123,6 +151,7 @@ say "  i2s:             ${SAMPLE_RATE} Hz, ${SLOT_WIDTH}-bit slots, MCLK x${MCLK
 # Every prerequisite is checked before anything is started, so a run that
 # cannot be graded emits nothing at all.
 require_esp32s3_endpoint "$CRITERION"
+require_endpoint_console "$CRITERION"
 require_amplifier_registers "$CRITERION"
 require_second_endpoint "$CRITERION"
 require_capture_device "$CRITERION"
@@ -162,9 +191,17 @@ sleep 1
 SERVER_HOST="${CHORUS_SERVER_HOST:-$(hostname)}"
 
 say "chorus: pointing the ESP32-S3 endpoint at ${SERVER_HOST}:${PORT}"
-# The endpoint takes its server address over the serial console. Everything
-# else it needs is in the image, from firmware/config/endpoint.conf.
-printf 'server %s:%s\n' "$SERVER_HOST" "$PORT" > "$CHORUS_ESP32S3_PORT"
+# The endpoint takes its server address over the serial console (audit A-13;
+# runtime only). Everything else it needs is in the image, from
+# firmware/config/endpoint.conf.
+SERVER_REPLY="$(endpoint_console "server $SERVER_HOST:$PORT" || true)"
+case "$SERVER_REPLY" in
+    "server set=$SERVER_HOST:$PORT "*) ;;
+    *)
+        say "chorus: the endpoint did not take the server address: ${SERVER_REPLY:-no reply}"
+        exit 3
+        ;;
+esac
 
 say "chorus: starting the Linux endpoint on $CHORUS_SECOND_ENDPOINT"
 REMOTE_COMMAND="chorus-client --ephemeral-identity --endpoint-id endpoint-rig-linux --server ${SERVER_HOST}:${PORT} \

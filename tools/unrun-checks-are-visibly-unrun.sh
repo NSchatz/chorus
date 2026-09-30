@@ -166,20 +166,27 @@ expect_missing_prerequisite "endpoint-rig-run.sh" \
     CHORUS_CAPTURE_DEVICE=chorus-no-such-capture-device \
     bash "$REPO_ROOT/tools/endpoint-rig-run.sh"
 
-# No endpoint console and no offsets writer, no wireless network, no ESP32-S3
-# on one, no second endpoint in another room and no capture rig. Genuinely
-# absent, and the first two are absent on EVERY machine rather than only on
-# this one: the console and the writer are not built yet (audit A-13), and
+# No wireless network, no ESP32-S3 on one (so no endpoint console to drive), no
+# second endpoint in another room and no capture rig. Genuinely absent, and the
+# network is absent on EVERY machine rather than only on this one:
 # firmware/config/endpoint.conf declares the network name and the secret
 # `unknown` and will go on declaring them unknown, because a credential
-# committed once is in a git history no rotation reaches. This is the entry point for AC-2 and AC-3 of the WIFI-7
-# phase, and neither is passed anywhere in this repository.
+# committed once is in a git history no rotation reaches. This is the entry
+# point for AC-2 and AC-3 of the WIFI-7 phase, and neither is passed anywhere in
+# this repository.
 expect_missing_prerequisite "wireless-characterization-run.sh" \
     env CHORUS_SKIP_BUILD=1 CHORUS_WIRELESS_AP= CHORUS_ESP32S3_PORT= \
     CHORUS_SECOND_ENDPOINT= \
     CHORUS_CLIENT_DEVICE=chorus-no-such-device \
     CHORUS_CAPTURE_DEVICE=chorus-no-such-capture-device \
     bash "$REPO_ROOT/tools/wireless-characterization-run.sh"
+
+# No ESP32-S3 and so no endpoint console to ask. Genuinely absent: this machine
+# has no serial port. The entry point for the S3's decode cost (goal 8's
+# console, audit A-13), which is recorded nowhere in this repository yet.
+expect_missing_prerequisite "decode-cost-run.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_ESP32S3_PORT= \
+    bash "$REPO_ROOT/tools/decode-cost-run.sh"
 
 # No playback device. Genuinely absent: the name does not exist. Both of these
 # are PRODUCT-6's entry points for AC-1 and AC-3, and both run real endpoints,

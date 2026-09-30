@@ -76,6 +76,21 @@ typedef struct {
      * its loop. NULL counts chunks as received and plays nothing (the host
      * session binary). */
     chorus_playout_t *playout;
+
+    /* The endpoint console's two seams (audit A-13), both optional. NULL
+     * leaves the run exactly as it was: `server` above for its whole length,
+     * and telemetry only in the event log.
+     *
+     * `server_update` is asked before every connection attempt; it returns 1
+     * and writes a `host:port` into `address` when the console set a new one,
+     * 0 otherwise. An address that does not split is refused by name in the
+     * event log and the old one kept. `on_telemetry` is handed the telemetry
+     * at every event the run publishes, which is what the console's `status`
+     * prints. Both run on the session's own task. */
+    int (*server_update)(void *ctx, char *address, size_t address_len);
+    void *server_update_ctx;
+    void (*on_telemetry)(void *ctx, const chorus_telemetry_t *telemetry);
+    void *telemetry_ctx;
 } chorus_session_config_t;
 
 /* Why a run ended. Never "the server went away": that is not an end, it is a
