@@ -139,23 +139,41 @@ echo "image test: $ (unpacked rootfs)/usr/local/bin/chorus-server --help"
 grep -q '^usage: chorus-server' "$T/help.txt"
 
 # The unpacked server, started the way the image's command starts it but on
-# loopback, and without the real-time grants no test machine gives.
-read -r AUDIO CONTROL < <(python3 -c '
+# loopback, and without the real-time grants no test machine gives. The ports
+# are picked free and then released, so another process can take one first;
+# a start that loses that race is retried on new ports, three times at most.
+free_ports() {
+    python3 -c '
 import socket
 s = [socket.socket() for _ in range(2)]
 for x in s: x.bind(("127.0.0.1", 0))
-print(*[x.getsockname()[1] for x in s])')
-"$BIN" --listen "127.0.0.1:$AUDIO" --control-listen "127.0.0.1:$CONTROL" \
-    --state-file "$T/zones.state" --zone kitchen --source tone --serve-forever \
-    --allow-non-realtime --no-lock-memory > "$T/server.log" 2>&1 &
-PID=$!
-trap 'kill "$PID" 2>/dev/null || true' EXIT
+print(*[x.getsockname()[1] for x in s])'
+}
 STATE=""
-for _ in $(seq 1 50); do
-    if STATE="$(curl -fsS "http://127.0.0.1:$CONTROL/api/state" 2>/dev/null)"; then
+PID=""
+trap 'if [ -n "$PID" ]; then kill "$PID" 2>/dev/null || true; fi' EXIT
+for attempt in 1 2 3; do
+    read -r AUDIO CONTROL < <(free_ports)
+    "$BIN" --listen "127.0.0.1:$AUDIO" --control-listen "127.0.0.1:$CONTROL" \
+        --state-file "$T/zones.state" --zone kitchen --source tone --serve-forever \
+        --allow-non-realtime --no-lock-memory > "$T/server.log" 2>&1 &
+    PID=$!
+    for _ in $(seq 1 50); do
+        if STATE="$(curl -fsS "http://127.0.0.1:$CONTROL/api/state" 2>/dev/null)"; then
+            break
+        fi
+        kill -0 "$PID" 2>/dev/null || break
+        sleep 0.1
+    done
+    if printf '%s' "$STATE" | grep -q kitchen; then
         break
     fi
-    sleep 0.1
+    kill "$PID" 2>/dev/null || true
+    wait "$PID" 2>/dev/null || true
+    if ! grep -q 'Address in use' "$T/server.log"; then
+        break
+    fi
+    echo "image test: attempt $attempt lost a port race, retrying on new ports"
 done
 if ! printf '%s' "$STATE" | grep -q kitchen; then
     echo "image test: FAIL: GET /api/state did not name the declared zone"
