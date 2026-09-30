@@ -1,4 +1,4 @@
-# 0000: the endpoint plays through a jitter buffer whose device delay is the frames the I2S DMA consumed, counted and stamped in the interrupt, and corrects by inserting and dropping frames
+# 0058: the endpoint plays through a jitter buffer whose device delay is the frames the I2S DMA consumed, counted and stamped in the interrupt, and corrects by inserting and dropping frames
 
 - Status: accepted (goal 8, 2026-09-30)
 - Decided by: the goal (brief section 12 item 2; audit A-9, A-12, A-18; goal 6's playout follow-ups)
@@ -124,5 +124,15 @@ so the endpoint has to produce the device delay itself.
   telemetry's `sync_error_ns` carries the loop's last error instead of "unknown".
 - A coded stream cannot yet be driven end to end through `session.c` from a real server: the server
   sends PCM only. The session hands decoded FLAC and Opus to the same `chorus_playout_offer` as PCM.
+- Image and RAM (`idf.py size` on the v6.1 build of this branch, 2026-09-30): the app is 1,075,696
+  bytes (goal 6: 1,062,864), and static DIRAM falls from 88.33 % (goal 6) to 259,202 of 341,760 bytes
+  (75.84 %), 82,558 remaining: the in-place record frees 65,535 bytes and the new code adds little.
+  At run time the path then borrows 57,600 bytes of jitter buffer, 32 KiB of session stack and 4 KiB
+  of writer stack from that remainder, beside what Wi-Fi and lwIP take. **Whether the internal heap
+  closes is not known here**: the binding logs the free internal heap after allocating and refuses
+  by name if it cannot, and the bench reads it. If it does not close, the follow-up is a proposal to
+  let the non-audio network buffers use the board's PSRAM (a deliberate change to
+  `firmware/endpoint-units.conf` rule 3, which today forbids any PSRAM placement), not a smaller
+  jitter buffer.
 - The bench packet's EMBEDDED-5 session (goal 9) reads the free internal heap the binding logs at
   boot, the tasks' stack high-water marks, and the path's telemetry.

@@ -511,8 +511,7 @@ afterwards, on any machine, by someone who did not take them.
 Until goal 8 the endpoint counted chunks as received and dropped them (audit
 A-9). It now plays them through `firmware/src/playout.c`: a jitter buffer, the
 frames the I2S DMA consumed, counted and stamped on the monotonic clock in the
-`on_sent` interrupt, and the servo that error feeds (the decision record for
-the playout path). `make firmware-check` runs `firmware/tests/test_playout.c`
+`on_sent` interrupt, and the servo that error feeds (`docs/decisions/0058-the-endpoint-playout-path.md`). `make firmware-check` runs `firmware/tests/test_playout.c`
 against a fake DMA on a fake clock, with PCM that carries a frame counter so
 the true error at the pins is graded beside the servo's own. That is a
 **model, labelled simulation, and not timing evidence**: AC-1 above is still

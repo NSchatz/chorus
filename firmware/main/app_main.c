@@ -49,10 +49,10 @@ extern const char sync_conf_end[] __asm__("_binary_sync_conf_end");
 /* The session task's stack. The session decodes FLAC and Opus inline, and
  * libopus (built with VAR_ARRAYS, third_party/opus/chorus-build.txt) keeps its
  * scratch on the caller's stack: decoding the RFC 8251 CELT stereo vector took
- * 22,056 bytes of stack on the host (x86-64, -O2; the decision record for this
- * path gives the method), FLAC 10,048. 32 KiB is that plus the session's own
- * frames with headroom for the Xtensa windowed ABI; ASSUMED until the bench
- * reads uxTaskGetStackHighWaterMark (ESP-IDF's xTaskCreate takes bytes). */
+ * 22,056 bytes of stack on the host (x86-64, -O2; the method is in
+ * docs/decisions/0058-the-endpoint-playout-path.md), FLAC 10,048. 32 KiB is that plus the session's
+ * own frames with headroom for the Xtensa windowed ABI; ASSUMED until the bench reads
+ * uxTaskGetStackHighWaterMark (ESP-IDF's xTaskCreate takes bytes). */
 #define SESSION_STACK_BYTES 32768
 #define SESSION_PRIORITY 5
 
