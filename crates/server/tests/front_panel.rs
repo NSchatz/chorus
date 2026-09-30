@@ -1,5 +1,5 @@
 //! The Linux front panel end to end, on fakes (goal 10, brief section 14
-//! item 3; K65, K70, K74, K96; docs/decisions/0080-*).
+//! item 3; K65, K70, K74, K96; docs/decisions/0067-*).
 //!
 //! A fake evdev device (a pipe carrying `input_event` records, written in
 //! real time as a person would press) and a fake LED (a directory shaped like
@@ -158,7 +158,9 @@ impl FakeKeys {
         ] {
             bytes.extend_from_slice(&e.encode());
         }
-        self.0.write_all(&bytes).expect("the fake device takes a record");
+        self.0
+            .write_all(&bytes)
+            .expect("the fake device takes a record");
     }
 
     /// Hold `code` for `ms`, then let go and wait 150 ms.
@@ -231,10 +233,7 @@ fn rack_amp_buttons_change_the_room_on_a_real_server_through_the_client_session(
     )
     .unwrap();
     let panel_config = PanelConfig::load(&panel_file).expect("the panel configuration loads");
-    assert_eq!(
-        panel_config.roles(),
-        roles::CONTROLLER | roles::VISUALIZER
-    );
+    assert_eq!(panel_config.roles(), roles::CONTROLLER | roles::VISUALIZER);
     let (keys_out, keys_in) = std::io::pipe().expect("a pipe");
     let mut keys = FakeKeys(keys_in);
     let timeline = MonotonicTimeline::new();
@@ -247,7 +246,7 @@ fn rack_amp_buttons_change_the_room_on_a_real_server_through_the_client_session(
     let panel = FrontPanel::start(
         &panel_config,
         "rack",
-        keys_out,
+        vec![keys_out],
         Some(LedWriter::open(&led_dir).expect("the fake LED opens")),
         Arc::clone(&now),
         now,
@@ -283,7 +282,10 @@ fn rack_amp_buttons_change_the_room_on_a_real_server_through_the_client_session(
     panel.set_playing(true);
     let session_line = server.wait_for("client session");
     assert!(
-        session_line.contains(&format!("roles={}", roles::PLAYER | roles::CONTROLLER | roles::VISUALIZER)),
+        session_line.contains(&format!(
+            "roles={}",
+            roles::PLAYER | roles::CONTROLLER | roles::VISUALIZER
+        )),
         "the server saw the controller role declared: {session_line}"
     );
     // Keep reading the session, so the server's controller_state reaches
@@ -318,20 +320,30 @@ fn rack_amp_buttons_change_the_room_on_a_real_server_through_the_client_session(
     keys.press(KEY_VOLUMEDOWN, 100);
     wait_until("the room's volume is 0.900", || rack(&link).1 == 900);
     let line = server.wait_for("command=volume_step value=-5");
-    assert!(line.contains("id=rack-amp zone=rack") && line.contains("applied"), "{line}");
+    assert!(
+        line.contains("id=rack-amp zone=rack") && line.contains("applied"),
+        "{line}"
+    );
 
     // Volume up once, held long enough to repeat once (600 ms): +10 points.
     keys.press(KEY_VOLUMEUP, 700);
-    wait_until("the room's volume is back at 1.000", || rack(&link).1 == 1_000);
+    wait_until("the room's volume is back at 1.000", || {
+        rack(&link).1 == 1_000
+    });
 
     // A short press of play/pause is a toggle, which waits for an input.
     keys.press(KEY_PLAYPAUSE, 100);
     let line = server.wait_for("command=toggle");
-    assert!(line.contains("transport-toggle-waits-for-an-input"), "{line}");
+    assert!(
+        line.contains("transport-toggle-waits-for-an-input"),
+        "{line}"
+    );
 
     // Held 1.5 s while alone: join the configured target.
     keys.press(KEY_PLAYPAUSE, 1_500);
-    wait_until("the room joined downstairs", || rack(&link).0 == "downstairs");
+    wait_until("the room joined downstairs", || {
+        rack(&link).0 == "downstairs"
+    });
     // The server answered with controller_state; the panel applied it ...
     wait_until("the panel heard the group", || {
         said.lock()

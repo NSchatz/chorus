@@ -2,7 +2,7 @@
 //! LED and its microphone gate, shared by every endpoint.
 //!
 //! The Rust twin of `firmware/src/controls.c` (`docs/decisions/0063-*`, and
-//! the decision that made it a twin, `docs/decisions/0080-*`). The two are one model in two
+//! the decision that made it a twin, `docs/decisions/0067-*`). The two are one model in two
 //! languages and are held to the same committed fixtures,
 //! `fixtures/controls/*`: `crates/controls/tests/shared_fixtures.rs` drives
 //! the exact input scripts of `firmware/tests/test_controls.c` and must

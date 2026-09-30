@@ -490,7 +490,9 @@ impl Controls {
             if !s.stable {
                 continue;
             }
-            if input == Input::PlayPause && !s.long_fired && now_ns >= s.pressed_at_ns + LONG_PRESS_NS
+            if input == Input::PlayPause
+                && !s.long_fired
+                && now_ns >= s.pressed_at_ns + LONG_PRESS_NS
             {
                 self.inputs[input.index()].long_fired = true;
                 self.long_press_group(s.pressed_at_ns + LONG_PRESS_NS);

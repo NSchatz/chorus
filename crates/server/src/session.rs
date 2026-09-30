@@ -673,11 +673,9 @@ pub fn route_controller(
             Ok(applied) => {
                 let did = match &applied.action {
                     ControllerAction::Apply(_) => "applied".to_string(),
-                    ControllerAction::Transport(request) => format!(
-                        "transport-{:?}-waits-for-an-input",
-                        request
-                    )
-                    .to_lowercase(),
+                    ControllerAction::Transport(request) => {
+                        format!("transport-{:?}-waits-for-an-input", request).to_lowercase()
+                    }
                 };
                 ctx.say(&format!(
                     "controller id={} zone={} command={} value={} target={} {} volume={} \

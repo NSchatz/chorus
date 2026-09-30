@@ -1,5 +1,5 @@
 //! The front panel: a Linux endpoint's buttons and status LED as the
-//! controller role (K65, K70, K74, K96; `docs/decisions/0080-*`).
+//! controller role (K65, K70, K74, K96; `docs/decisions/0067-*`).
 //!
 //! # One model, two bindings
 //!
@@ -127,8 +127,9 @@ pub struct PanelConfig {
     pub room: Option<String>,
     /// The group a long press of play/pause joins, or "" for none.
     pub join_target: String,
-    /// The evdev device the buttons arrive on.
-    pub input: PathBuf,
+    /// The evdev devices the buttons arrive on: one, or one per key where
+    /// the board's overlay makes a device per key.
+    pub inputs: Vec<PathBuf>,
     /// Key code to control.
     pub keys: Vec<(u16, Input)>,
     /// The LED class directory, if the panel has a light.
@@ -153,7 +154,7 @@ impl PanelConfig {
         let mut speaker_class = None;
         let mut room = None;
         let mut join_target = String::new();
-        let mut input = None;
+        let mut inputs = Vec::new();
         let mut keys: Vec<(u16, Input)> = Vec::new();
         let mut led = None;
         for (n, raw) in text.lines().enumerate() {
@@ -171,7 +172,7 @@ impl PanelConfig {
                 }
                 ["room", name] => room = Some(name.to_string()),
                 ["join-target", name] => join_target = name.to_string(),
-                ["input", path] => input = Some(PathBuf::from(path)),
+                ["input", path] => inputs.push(PathBuf::from(path)),
                 ["led", path] => led = Some(PathBuf::from(path)),
                 ["key", code, control] => {
                     let code: u16 = code.parse().map_err(|_| bad("a key code is 0 to 65535"))?;
@@ -186,7 +187,9 @@ impl PanelConfig {
         }
         let speaker_class =
             speaker_class.ok_or_else(|| PanelRefused("no `class` line".to_string()))?;
-        let input = input.ok_or_else(|| PanelRefused("no `input` line".to_string()))?;
+        if inputs.is_empty() {
+            return Err(PanelRefused("no `input` line".to_string()));
+        }
         let profile = speaker_class.profile();
         for (code, control) in &keys {
             if !profile.has(*control) {
@@ -208,7 +211,7 @@ impl PanelConfig {
             speaker_class,
             room,
             join_target,
-            input,
+            inputs,
             keys,
             led,
         })
@@ -345,8 +348,8 @@ impl fmt::Debug for FrontPanel {
 }
 
 impl FrontPanel {
-    /// Start the panel: one thread reading `keys` (the evdev device, or a
-    /// test's pipe), one running the model.
+    /// Start the panel: one thread per device in `devices` (the evdev
+    /// devices, or a test's pipe), one running the model.
     ///
     /// `now_ns` is the monotonic timeline every event is stamped with at read
     /// time; `server_now_ns` is the server timeline the LED shows visualizer
@@ -354,7 +357,7 @@ impl FrontPanel {
     pub fn start<R>(
         config: &PanelConfig,
         room: &str,
-        mut keys: R,
+        devices: Vec<R>,
         mut led: Option<LedWriter>,
         now_ns: Arc<dyn Fn() -> u64 + Send + Sync>,
         server_now_ns: Arc<dyn Fn() -> u64 + Send + Sync>,
@@ -375,9 +378,10 @@ impl FrontPanel {
         let counters = Arc::new(PanelCounters::default());
         let mut threads = Vec::new();
 
-        // The reader: blocks on the device, stamps each whole record with the
-        // monotonic timeline when the read returned, and hands key edges on.
-        {
+        // The readers: each blocks on its device, stamps each whole record
+        // with the monotonic timeline when the read returned, and hands key
+        // edges on.
+        for mut keys in devices {
             let events = events.clone();
             let now_ns = Arc::clone(&now_ns);
             let counters = Arc::clone(&counters);
@@ -402,10 +406,8 @@ impl FrontPanel {
                     let at_ns = now_ns();
                     pending.extend_from_slice(&buf[..n]);
                     let whole = pending.len() / EVENT_LEN * EVENT_LEN;
-                    for record in pending[..whole].chunks_exact(EVENT_LEN) {
-                        let mut r = [0u8; EVENT_LEN];
-                        r.copy_from_slice(record);
-                        let e = InputEvent::decode(&r);
+                    for record in pending[..whole].as_chunks::<EVENT_LEN>().0 {
+                        let e = InputEvent::decode(record);
                         // Autorepeat (2) is the kernel's; the model repeats
                         // by its own rule, so only press and release count.
                         if e.kind != EV_KEY || !(e.value == 0 || e.value == 1) {
@@ -503,13 +505,13 @@ impl FrontPanel {
         &self.counters
     }
 
-    /// Stop the model thread. The reader thread ends when its device does;
+    /// Stop the model thread. A reader thread ends when its device does;
     /// it is not waited for (a blocking read on a device cannot be woken
     /// without an ioctl or a signal, and the process is ending anyway).
     pub fn stop(mut self) {
         self.keep.store(false, Ordering::SeqCst);
-        if self.threads.len() == 2 {
-            let model = self.threads.remove(1);
+        // The model thread is the last one started.
+        if let Some(model) = self.threads.pop() {
             let _ = model.join();
         }
     }
@@ -553,14 +555,20 @@ fn run_model(
                     let _ = controls.level(input, level, at_ns);
                 }
                 None => {
-                    shared.counters.keys_unmapped.fetch_add(1, Ordering::Relaxed);
+                    shared
+                        .counters
+                        .keys_unmapped
+                        .fetch_add(1, Ordering::Relaxed);
                     log(&format!("front-panel key-unmapped code={}", code));
                 }
             },
             Ok(PanelEvent::Server(m)) => match &m {
                 Message::ControllerState(state) => {
                     controls.state(state);
-                    shared.counters.states_applied.fetch_add(1, Ordering::Relaxed);
+                    shared
+                        .counters
+                        .states_applied
+                        .fetch_add(1, Ordering::Relaxed);
                     log(&format!(
                         "front-panel controller-state volume={} muted={} playback={} group={}",
                         state.volume,
@@ -650,6 +658,51 @@ mod tests {
     }
 
     #[test]
+    fn the_committed_rack_amp_example_parses() {
+        let p = PanelConfig::parse(include_str!("../../../config/front-panel/rack-amp.conf"))
+            .expect("the example parses");
+        assert_eq!(p.speaker_class, SpeakerClass::StreamingAmp);
+        assert_eq!(p.keys.len(), 6);
+        assert_eq!(p.control_for(218), Some(Input::Pairing));
+        assert_eq!(p.roles(), roles::CONTROLLER | roles::VISUALIZER);
+    }
+
+    #[test]
+    fn a_single_colour_led_shows_brightness_and_a_multicolour_one_its_colour() {
+        let dir = std::env::temp_dir().join(format!("chorus-led-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("max_brightness"), "1\n").unwrap();
+        let mut single = LedWriter::open(&dir).unwrap();
+        let dim = LedOutput {
+            red: 255,
+            green: 255,
+            blue: 255,
+            brightness: 8,
+        };
+        single.show(dim).unwrap();
+        assert_eq!(fs::read_to_string(dir.join("brightness")).unwrap(), "1");
+        single.show(LedOutput::default()).unwrap();
+        assert_eq!(fs::read_to_string(dir.join("brightness")).unwrap(), "0");
+        fs::write(dir.join("max_brightness"), "255\n").unwrap();
+        fs::write(dir.join("multi_index"), "green red blue\n").unwrap();
+        let mut rgb = LedWriter::open(&dir).unwrap();
+        rgb.show(LedOutput {
+            red: 255,
+            green: 64,
+            blue: 0,
+            brightness: 48,
+        })
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.join("multi_intensity")).unwrap(),
+            "64 255 0"
+        );
+        assert_eq!(fs::read_to_string(dir.join("brightness")).unwrap(), "48");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn a_panel_config_is_held_to_its_class() {
         let ok = PanelConfig::parse(
             "class streaming-amp\ninput /dev/input/event0\nkey 164 play-pause # KEY_PLAYPAUSE\n",
@@ -661,9 +714,9 @@ mod tests {
             PanelConfig::parse("class two-way\ninput /dev/input/event0\nkey 115 volume-up\n");
         assert!(refused.unwrap_err().0.contains("does not have"));
         assert!(PanelConfig::parse("class streaming-amp\n").is_err());
-        assert!(PanelConfig::parse(
-            "class streaming-amp\ninput x\nkey 1 next\nkey 1 previous\n"
-        )
-        .is_err());
+        assert!(
+            PanelConfig::parse("class streaming-amp\ninput x\nkey 1 next\nkey 1 previous\n")
+                .is_err()
+        );
     }
 }

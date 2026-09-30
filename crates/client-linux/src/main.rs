@@ -57,12 +57,12 @@ use chorus_client_linux::front_panel::{FrontPanel, LedWriter, PanelConfig};
 use chorus_client_linux::receive::{handshake, HandshakeError};
 use chorus_client_linux::run::{counter_lines, header_for, run_session, StopReason};
 use chorus_client_linux::session::{self, EndpointIdentity};
-use chorus_protocol::v2::session::SecureWriter;
 use chorus_client_linux::sink::{AlsaSink, PcmSink};
 use chorus_client_linux::Counters;
 use chorus_control::transport::Transport;
 use chorus_discovery::dnssd::AUDIO_SERVICE;
 use chorus_discovery::net::locate;
+use chorus_protocol::v2::session::SecureWriter;
 
 const EXIT_CONFIG: u8 = 2;
 const EXIT_SERVER: u8 = 3;
@@ -281,8 +281,13 @@ fn start_panel(
     timeline: MonotonicTimeline,
 ) -> Result<(Option<FrontPanel>, ClientConfig), String> {
     let panel = PanelConfig::load(std::path::Path::new(path)).map_err(|e| e.to_string())?;
-    let keys = std::fs::File::open(&panel.input)
-        .map_err(|e| format!("front panel input {}: {}", panel.input.display(), e))?;
+    let mut keys = Vec::new();
+    for input in &panel.inputs {
+        keys.push(
+            std::fs::File::open(input)
+                .map_err(|e| format!("front panel input {}: {}", input.display(), e))?,
+        );
+    }
     let led = match &panel.led {
         Some(dir) => Some(
             LedWriter::open(dir)
@@ -298,20 +303,12 @@ fn start_panel(
     // visualizer stream at all).
     let now: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(move || timeline.now_ns());
     let log: Arc<dyn Fn(&str) + Send + Sync> = Arc::new(status);
-    let running = FrontPanel::start(
-        &panel,
-        &config.zone,
-        keys,
-        led,
-        Arc::clone(&now),
-        now,
-        log,
-    )
-    .map_err(|e| e.to_string())?;
+    let running = FrontPanel::start(&panel, &config.zone, keys, led, Arc::clone(&now), now, log)
+        .map_err(|e| e.to_string())?;
     status(&format!(
-        "front-panel class={} input={} keys={} led={} roles={}",
+        "front-panel class={} inputs={} keys={} led={} roles={}",
         panel.speaker_class.name(),
-        panel.input.display(),
+        panel.inputs.len(),
         panel.keys.len(),
         panel
             .led

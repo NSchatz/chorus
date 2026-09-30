@@ -597,7 +597,9 @@ server (K81, I10); a command is a request, never a bypass.
 
 #### 0x33 controller state
 
-Server to controller, whenever it changes.
+Server to controller, whenever it changes. The server sends it to an endpoint
+that declared the `controller` role after each of that endpoint's commands
+(ADR 0067); on changes made elsewhere, from goal 11.
 
 | offset | size | field | notes |
 |---|---|---|---|

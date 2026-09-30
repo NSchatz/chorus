@@ -90,7 +90,8 @@ fn compare_fixture(sink: &Sink, name: &str) {
     let expected = parse_hex(&fixture(name));
     assert!(!expected.is_empty(), "{name} is readable");
     assert_eq!(
-        sink.bytes, expected,
+        sink.bytes,
+        expected,
         "the Rust controls produced exactly {name} ({} bytes produced, {} committed)",
         sink.bytes.len(),
         expected.len()
@@ -138,9 +139,7 @@ fn the_profiles_are_the_owners_decisions() {
     ];
     let has_only = |class: SpeakerClass, want: &[Input]| {
         let p = class.profile();
-        Input::ALL
-            .iter()
-            .all(|i| p.has(*i) == want.contains(i))
+        Input::ALL.iter().all(|i| p.has(*i) == want.contains(i))
     };
     let mut compact = buttons.to_vec();
     compact.push(Input::MicMuteSwitch);
@@ -173,7 +172,8 @@ fn the_compact_class() {
 
     // Contact chatter: five edges 3 ms apart, then held down 80 ms.
     for i in 0..5u64 {
-        c.level(Input::PlayPause, i % 2 == 0, t + i * 3 * MS).unwrap();
+        c.level(Input::PlayPause, i % 2 == 0, t + i * 3 * MS)
+            .unwrap();
         drain(&mut c, t + i * 3 * MS, &mut sink);
     }
     c.level(Input::PlayPause, true, t + 15 * MS).unwrap();
@@ -244,24 +244,28 @@ fn the_mute_switch_cuts_the_microphone() {
     let mut sink = Sink::default();
     let input = [100i16, -200, 300, -400];
     let mut out = [0i16; 4];
-    assert_eq!(c.mic_pass(&input, &mut out), 0, "closed before the switch is read");
+    assert_eq!(
+        c.mic_pass(&input, &mut out),
+        0,
+        "closed before the switch is read"
+    );
     c.level(Input::MicMuteSwitch, false, 0).unwrap();
     run(&mut c, 0, 30 * MS, &mut sink);
     assert_eq!(c.mic_pass(&input, &mut out), 4);
     assert_eq!(out[3], -400);
     c.level(Input::MicMuteSwitch, true, 40 * MS).unwrap();
     run(&mut c, 40 * MS, 50 * MS, &mut sink);
-    assert!(c.mic_live(), "a muting edge not yet debounced has not closed the gate");
+    assert!(
+        c.mic_live(),
+        "a muting edge not yet debounced has not closed the gate"
+    );
     run(&mut c, 51 * MS, 70 * MS, &mut sink);
     let mut out = [0i16; 4];
     assert!(!c.mic_live());
     assert_eq!(c.mic_pass(&input, &mut out), 0);
     assert_eq!(out[0], 0);
     assert_eq!(sink.count(|k| matches!(k, ActionKind::MicMute(_))), 2);
-    assert_eq!(
-        sink.actions.last().unwrap().kind,
-        ActionKind::MicMute(true)
-    );
+    assert_eq!(sink.actions.last().unwrap().kind, ActionKind::MicMute(true));
     assert!(sink.bytes.is_empty(), "the mute switch sends nothing");
 
     let mut sub = Controls::new(SpeakerClass::Subwoofer, "den", "").unwrap();
@@ -323,7 +327,11 @@ fn the_subwoofer_class() {
     }
     drain(&mut c, 30 * MS, &mut sink);
     assert_eq!(sink.count(|k| matches!(k, ActionKind::SubPhase(_))), before);
-    assert_eq!(c.sub_phase_deg(), settled, "noise at a step edge does not chatter");
+    assert_eq!(
+        c.sub_phase_deg(),
+        settled,
+        "noise at a step edge does not chatter"
+    );
     c.knob(Input::SubPhaseKnob, KNOB_MAX, 40 * MS).unwrap();
     drain(&mut c, 40 * MS, &mut sink);
     assert_eq!(c.sub_phase_deg(), 180);
