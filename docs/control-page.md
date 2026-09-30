@@ -182,5 +182,5 @@ No state on the page is carried by colour alone. Muted from unmuted, live from
 last known, and available from unavailable are all differences in the rendered
 words, so a forced-colours or greyscale rendering loses none of them.
 
-`docs/frontend-conventions-record.md` maps each clause of the umbrella's frontend
-conventions to the rendered assertion that proves it here.
+The frontend conventions record and its rendered grader were retired on
+2026-09-30 (K18, R13); chorus's own conventions replace them.

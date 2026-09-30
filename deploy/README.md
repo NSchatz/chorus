@@ -38,8 +38,8 @@ say so:
 
 Both `FROM` lines in `Dockerfile` carry a tag AND the digest that tag resolved
 to. The tag is what a human reads; the digest is what actually resolves, and it
-is the only half that makes two builds of this file the same build. The umbrella
-records the rule as clauses P1 and P2 of `documentation/pinning-conventions.md`.
+is the only half that makes two builds of this file the same build. chorus's own
+pinning rule replaces the retired umbrella clauses (K18, R13).
 
 | stage | tag | digest | resolved |
 |---|---|---|---|
@@ -64,8 +64,8 @@ docker buildx imagetools inspect docker.io/library/rust:1.74-slim-bookworm --for
 docker buildx imagetools inspect docker.io/library/debian:bookworm-slim --format '{{.Manifest.Digest}}'
 ```
 
-`make verify-pinning` then confirms the new value has both halves. It resolves
-nothing itself, so it is the same check on a machine with no network.
+Check by eye that the new value has both halves: the umbrella-derived pinning
+check that used to confirm it was retired on 2026-09-30 (K18, R13).
 
 ### What each pin costs, said out loud
 
@@ -77,18 +77,18 @@ insurance against the day it does.
 move it again, which is precisely why the digest and not the tag is the
 reference here - and it is also the cost, because pinning it freezes Debian's
 security refreshes at that date until someone moves this pin on purpose. That is
-the trade P1 and P6 accept in exchange for a build that reproduces, and this
+the trade digest pinning accepts in exchange for a build that reproduces, and this
 section is the mitigation: moving the pin is the two commands above, not an
 archaeology exercise.
 
-There is no scheduled job watching these for rot, deliberately (P8). A stale pin
+There is no scheduled job watching these for rot, deliberately. A stale pin
 shows up when a build fails, and the failure names the pin.
 
 ## The action pin
 
 `.github/workflows/ci.yml` pins `actions/checkout` to the commit
 `11d5960a326750d5838078e36cf38b85af677262`, with `# v4` beside it so a reader
-can tell which release that is (P3). The `v4` tag is moved by its publisher
+can tell which release that is. The `v4` tag is moved by its publisher
 under every consumer that wrote `@v4`; when this pin was taken it resolved to a
 commit dated 2026-07-16 that had changed the fork-checkout guard. To move it:
 

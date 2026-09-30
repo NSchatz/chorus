@@ -345,54 +345,6 @@ require_wireless_link() {
     fi
 }
 
-# Refuse to continue unless node is here to run a check written in it.
-#
-# CHORUS_NODE names the interpreter, the way CHORUS_BROWSER names the engine, so
-# a run can be pointed at a different one and so tools/unrun-checks-are-visibly-
-# unrun.sh can point it at one that genuinely is not there. The variable is
-# exported rather than returned, because every caller needs the same answer.
-require_node() {
-    local criterion="$1"
-    CHORUS_NODE="${CHORUS_NODE:-node}"
-    export CHORUS_NODE
-    if ! command -v "$CHORUS_NODE" >/dev/null 2>&1; then
-        missing_prerequisite \
-            "$criterion" \
-            "node, to run the check; '$CHORUS_NODE' is not on PATH" \
-            "mise use node@22"
-    fi
-}
-
-# Refuse to continue unless there is a real browser engine AND a driver for it.
-#
-# Both halves matter and neither substitutes for the other. A criterion about a
-# RENDERED page is answered by rendering it: what a rule applies to, what wins
-# the cascade and what is actually painted are decided by an engine, and a check
-# that read the CSS instead would be a check on the stylesheet's text. So this
-# refuses rather than degrading, and the refusal names the exact install.
-require_browser_driver() {
-    local criterion="$1"
-    local browser="${CHORUS_BROWSER:-/usr/bin/chromium}"
-    if [ ! -x "$browser" ]; then
-        missing_prerequisite \
-            "$criterion" \
-            "a real browser engine to render the page in; '$browser' is not executable here" \
-            "install Chromium and point CHORUS_BROWSER at it. Reading the HTML or the CSS instead is not an option: the criterion is about the rendered box"
-    fi
-    if ! command -v node >/dev/null 2>&1; then
-        missing_prerequisite \
-            "$criterion" \
-            "node, to run the rendering driver; it is not on PATH" \
-            "mise use node@22"
-    fi
-    if [ ! -d "$REPO_ROOT/tools/ui/node_modules/@playwright/test" ]; then
-        missing_prerequisite \
-            "$criterion" \
-            "the @playwright/test driver under tools/ui; it is not installed" \
-            "cd tools/ui && pnpm install --ignore-scripts, with PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 since the browser is already here"
-    fi
-}
-
 # Refuse to continue unless the operator gave this run the three days of wall
 # clock the soak criterion asks for.
 #

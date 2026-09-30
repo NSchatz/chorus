@@ -3,17 +3,14 @@
  * Not one colour and not one length is written here. Every value resolves to a
  * token declared in tokens.css, which is the file that carries the palette, the
  * 4px scale, the type roles and the measured contrast ratio beside each pair.
- * tools/styling-check.sh reads this file and refuses a literal in it, and
- * tools/ui-render-run.sh renders the page and refuses a recorded ratio that no
- * longer matches what the engine measures.
+ * The source scan and the rendered grader that once held it to these rules
+ * were retired on 2026-09-30 (K18, R13); `docs/conventions.md` replaces them.
  *
  * TWO FACES, and which one a run gets is a rule rather than a habit. Anything
  * whose column alignment carries meaning - a volume, an endpoint figure, a
  * serial, an identifier standing in for a name that could not be read, the
  * command line in the empty notice - is set in the figure face with tabular
- * figures. Headings, sentences and control labels are set in the UI face. The
- * proof is a measurement, not this comment: `make verify-ui` lays out two
- * equal-length runs in each and compares the widths the engine painted.
+ * figures. Headings, sentences and control labels are set in the UI face.
  *
  * One density, and it is the compact one operator tools default to.
  */
@@ -95,8 +92,7 @@ h1 {
   text-decoration: underline;
   /* The underline is the mark that says "link" to somebody who cannot pick the
    * hue out of the line it sits in, so it runs the whole width of the text
-   * rather than breaking around a descender. tools/ui/contrast.js measures the
-   * longest unbroken run of it in the framebuffer. */
+   * rather than breaking around a descender. */
   text-decoration-skip-ink: none;
 }
 
@@ -131,8 +127,7 @@ main {
  * 360 pixels and paints the slider and the rename box off the right-hand edge.
  * `anywhere` rather than `break-word` on purpose: only `anywhere` lets the
  * engine count those break opportunities when it computes the min-content
- * contribution the grid track is sized from. tools/ui/ui.spec.js renames a zone
- * to an unbroken name at the catalog's maximum and measures the result. */
+ * contribution the grid track is sized from. */
 .zone h2,
 .notice h2 {
   margin: var(--reset-margin);

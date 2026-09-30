@@ -1,6 +1,6 @@
 # 0021: the comment density baseline
 
-- Status: decided
+- Status: superseded (R13, 2026-09-30; see the end of this record)
 - Recorded by: spec S0113-chorus-comment-prose
 - Implemented in: `crates/comment-density`, `make verify-comment-density`,
   `make verify-comment-density-suite`, `docs/comment-density-record.md`,
@@ -154,3 +154,10 @@ vendoring it is the same reason `crates/protocol` owns its own PRNG.
 A file is genuinely trimmed, which is what re-ratchets the ceiling downward; or
 a second language is measured, which needs its own entry and its own baseline
 rather than an amendment to this one.
+
+## Superseded (R13, decided 2026-09-29 by the owner, K18)
+
+The owner decided to "recreate your own conventions completely forgetting about supers
+conventions" (K18). This record, the check that implemented it and its demonstration trees were
+retired on 2026-09-30 by chorus goal 2; `docs/conventions.md` (chorus goal 3) is the rule that
+replaces it. The text below is kept as the record of what was decided then.

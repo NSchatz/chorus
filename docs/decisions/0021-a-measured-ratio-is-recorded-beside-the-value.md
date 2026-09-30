@@ -1,6 +1,6 @@
 # 0021: a measured contrast ratio is recorded beside the value
 
-- Status: decided
+- Status: superseded (R13, 2026-09-30; see the end of this record)
 - Recorded by: S0063-chorus-styling-tokens, against the umbrella's
   `.sdd/conventions/styling.md` clause S7
 - Implemented in: `crates/server/src/ui/tokens.css`, `tools/ui/reconcile.js`,
@@ -66,3 +66,10 @@ still WCAG 2.2 AA and they are still measured off the framebuffer by
 `tools/ui/contrast.js`; the recorded numbers are a record OF that measurement
 and never an input to it. No check reads a ratio out of the stylesheet and
 reports a floor as cleared.
+
+## Superseded (R13, decided 2026-09-29 by the owner, K18)
+
+The owner decided to "recreate your own conventions completely forgetting about supers
+conventions" (K18). This record, the check that implemented it and its demonstration trees were
+retired on 2026-09-30 by chorus goal 2; `docs/conventions.md` (chorus goal 3) is the rule that
+replaces it. The text below is kept as the record of what was decided then.
