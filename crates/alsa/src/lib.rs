@@ -734,7 +734,7 @@ impl Pcm {
             }
             return Err(Pcm::error(lib, "snd_pcm_avail", &self.device, code));
         }
-        Ok(Some(rc as i64))
+        Ok(Some(i64::from(rc)))
     }
 
     /// How long ago, in frames, the next frame a read returns was digitized.
@@ -770,7 +770,7 @@ impl Pcm {
             }
             return Err(Pcm::error(lib, "snd_pcm_delay", &self.device, code));
         }
-        Ok(Some(frames as i64))
+        Ok(Some(i64::from(frames)))
     }
 
     /// Frames the device still has to play before the next frame written
