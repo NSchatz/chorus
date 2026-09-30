@@ -11,7 +11,8 @@ The target is sub-millisecond inter-device error on wired endpoints, measured ra
 
 ## Where each phase stands
 
-Every phase of BRIEF.md section 8, graded against its "success looks like" there. The per-criterion
+Each of the ten phases of BRIEF.md section 8, graded against its "success looks like" there. The
+per-criterion
 record is `docs/verification-record.md`; the cold audit of every phase is
 `docs/audit/2026-09-audit.md`. Nothing has been heard, flashed or deployed: **every criterion that
 needs hardware is NOT PASSED**, and no report in `docs/measurements/` is a hardware measurement.
@@ -30,7 +31,7 @@ needs hardware is NOT PASSED**, and no report in `docs/measurements/` is a hardw
 | FLEET-10, fleet | not started |
 
 The program's later phases (protocol v2, rooms and groups, inputs, the Home Assistant integration,
-the app, and the hardware designs) are planned in BRIEF.md section 8 and the program plan,
+the app, and the hardware designs) are planned in BRIEF.md section 8 (8.1) and the program plan,
 `.claude/goals/2026-09-chorus.md`.
 
 ## What exists
