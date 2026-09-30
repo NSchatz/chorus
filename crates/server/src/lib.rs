@@ -50,6 +50,7 @@ pub mod control;
 pub mod health;
 pub mod hostreport;
 pub mod serve;
+pub mod session;
 pub mod source;
 pub mod stream;
 

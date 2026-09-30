@@ -101,6 +101,16 @@ pub struct ServerConfig {
     pub advertise: bool,
     /// The DNS-SD instance label this server advertises under.
     pub instance: String,
+    /// Where the server's long-term key (`server.key`) and its adopted
+    /// endpoints (`adopted-endpoints`) live. `None` uses the directory of
+    /// `state_file`; with neither, the server refuses to start unless
+    /// `ephemeral_identity` is set.
+    pub identity_dir: Option<String>,
+    /// The id this server presents in the protocol v2 handshake.
+    pub server_id: String,
+    /// Use a key made for this process alone and keep adoptions in memory:
+    /// for tests and throwaway runs, never for a house.
+    pub ephemeral_identity: bool,
 }
 
 impl Default for ServerConfig {
@@ -132,6 +142,9 @@ impl Default for ServerConfig {
             group_audio: Vec::new(),
             advertise: false,
             instance: "chorus".to_string(),
+            identity_dir: None,
+            server_id: crate::session::DEFAULT_SERVER_ID.to_string(),
+            ephemeral_identity: false,
         }
     }
 }
@@ -298,6 +311,9 @@ impl ServerConfig {
                 "--control-listen" => config.control_listen = Some(value()?),
                 "--control-workers" => config.control_workers = number(&arg, &value()?)? as usize,
                 "--state-file" => config.state_file = Some(value()?),
+                "--identity-dir" => config.identity_dir = Some(value()?),
+                "--server-id" => config.server_id = value()?,
+                "--ephemeral-identity" => config.ephemeral_identity = true,
                 // `--zone <id>` or `--zone <id>=<transport>`. One declaration
                 // site, because a zone's transport is a fact about the zone and
                 // `docs/control-plane.md` puts the set of zones on this command
