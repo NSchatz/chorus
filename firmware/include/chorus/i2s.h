@@ -20,6 +20,12 @@
 /* Highest GPIO number an ESP32-S3 has. */
 #define CHORUS_MAX_GPIO 48
 
+/* A pin the board does not route out, written `none` in the configuration
+ * (for example an I2S master clock a board leaves unconnected, or a reset line
+ * it ties high). Never a GPIO number, so no rule below can match it, and the
+ * binding passes the platform's own "unused" value for it. */
+#define CHORUS_PIN_NONE 0xFFFFFFFFu
+
 /* Longest rule text a finding carries. */
 #define CHORUS_FINDING_TEXT 320
 
@@ -66,6 +72,14 @@ typedef struct {
  * appended; `count` is advanced. */
 size_t chorus_i2s_validate_clock(const chorus_i2s_clock_t *clock, chorus_finding_t *findings,
                                  size_t capacity, size_t *count);
+
+/* Append a finding for every rule one pin breaks: out of range, reserved for
+ * flash and PSRAM (and, on an octal board, GPIO33 to GPIO37), USB-JTAG, or a
+ * strapping pin. CHORUS_PIN_NONE breaks none. Exported so every pin a board
+ * profile names (the audio pins here, the Ethernet pins in chorus/link.h) is
+ * held to the same rules. */
+size_t chorus_gpio_validate(const char *name, uint32_t pin, int octal_psram,
+                            chorus_finding_t *findings, size_t capacity, size_t *count);
 
 /* Append findings for every rule `pins` breaks. */
 size_t chorus_pin_map_validate(const chorus_pin_map_t *pins, chorus_finding_t *findings,

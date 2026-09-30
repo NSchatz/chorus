@@ -7,22 +7,73 @@
  * broke, with the rule's source quoted, because "the build refused" is only
  * useful if it says what to change.
  *
- *   chorus-endpoint-config-check [path/to/endpoint.conf] */
+ *   chorus-endpoint-config-check [path/to/endpoint.conf [path/to/board-profile.conf]]
+ *   chorus-endpoint-config-check --agrees path/to/endpoint.conf path/to/board-profile.conf
+ *
+ * With a board profile (firmware/boards/), the profile is laid over the base
+ * first, by the reader the image uses. `--agrees` checks that every key the
+ * profile sets already has that value in the base: endpoint.conf carries the
+ * default profile's values, and the two may not drift. */
 
+#include "chorus/conf.h"
 #include "chorus/endpoint_config.h"
 
 #include <stdio.h>
+#include <string.h>
+
+static chorus_conf_t base_table;
+static chorus_conf_t profile_table;
+
+static int agrees(const char *base_path, const char *profile_path)
+{
+    char detail[512];
+    detail[0] = '\0';
+    if (chorus_conf_load(&base_table, base_path, detail, sizeof(detail)) != CHORUS_CONF_OK ||
+        chorus_conf_load(&profile_table, profile_path, detail, sizeof(detail)) != CHORUS_CONF_OK) {
+        fprintf(stderr, "FAIL endpoint-configuration-unreadable :: %s\n", detail);
+        return 2;
+    }
+    const char *named = chorus_conf_get(&base_table, "board_profile");
+    int failures = 0;
+    for (size_t i = 0; i < profile_table.count; i++) {
+        const char *key = profile_table.pairs[i].key;
+        const char *want = profile_table.pairs[i].value;
+        const char *have = chorus_conf_get(&base_table, key);
+        if (have == NULL || strcmp(have, want) != 0) {
+            fprintf(stderr,
+                    "FAIL default-profile-drift :: %s sets %s = %s and %s carries %s = %s; "
+                    "endpoint.conf carries the default profile's values\n",
+                    profile_path, key, want, base_path, key, have == NULL ? "(nothing)" : have);
+            failures++;
+        }
+    }
+    if (failures > 0) {
+        return 1;
+    }
+    printf("pass default-profile-agrees: %s names board_profile = %s, and all %zu keys of %s "
+           "have the same values there\n",
+           base_path, named == NULL ? "(nothing)" : named, profile_table.count, profile_path);
+    return 0;
+}
 
 #define MAX_FINDINGS 32
 
 int main(int argc, char **argv)
 {
+    if (argc == 4 && strcmp(argv[1], "--agrees") == 0) {
+        return agrees(argv[2], argv[3]);
+    }
     const char *path = (argc > 1) ? argv[1] : chorus_endpoint_config_default_path();
+    const char *profile = (argc > 2) ? argv[2] : NULL;
 
-    chorus_endpoint_config_t config;
+    static chorus_endpoint_config_t config;
     char detail[512];
     detail[0] = '\0';
-    if (chorus_endpoint_config_load(&config, path, detail, sizeof(detail)) != 0) {
+    int loaded = (profile == NULL)
+                     ? chorus_endpoint_config_load(&config, path, detail, sizeof(detail))
+                     : chorus_endpoint_config_load_profile(&config, path, profile, detail,
+                                                           sizeof(detail));
+    if (loaded != 0) {
         fprintf(stderr, "FAIL endpoint-configuration-unreadable :: %s\n", detail);
         return 2;
     }
@@ -42,7 +93,29 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    printf("pass endpoint-configuration: %s\n", path);
+    if (profile == NULL) {
+        printf("pass endpoint-configuration: %s\n", path);
+    } else {
+        printf("pass endpoint-configuration: %s with board profile %s\n", path, profile);
+    }
+    printf("  board          profile=%s model=\"%s\" status=%s%s%s%s flash=%u MB\n",
+           config.board.profile, config.board.model,
+           chorus_board_status_name(config.board.model_status),
+           config.board.model_status == CHORUS_BOARD_ASSUMED ? " needs_item=\"" : "",
+           config.board.model_status == CHORUS_BOARD_ASSUMED ? config.board.needs_item : "",
+           config.board.model_status == CHORUS_BOARD_ASSUMED ? "\"" : "",
+           config.board.flash_size_mb);
+    if (config.link.transport == CHORUS_TRANSPORT_WIRED) {
+        printf("  link           transport=wired phy=w5500 spi=%s clock=%u MHz sclk=%u mosi=%u "
+               "miso=%u cs=%u int=%u\n",
+               chorus_spi_host_name(config.eth.spi_host), config.eth.spi_clock_mhz,
+               config.eth.sclk, config.eth.mosi, config.eth.miso, config.eth.cs,
+               config.eth.int_pin);
+    } else {
+        printf("  link           transport=wireless power_save=%s (the W5500 pins are not "
+               "driven)\n",
+               chorus_wifi_ps_name(config.link.power_save));
+    }
     printf("  i2s            %u Hz, %u-bit slots, MCLK x%u (%llu Hz), BCLK %llu Hz, integral "
            "division %s\n",
            config.clock.sample_rate_hz, config.clock.slot_bit_width, config.clock.mclk_multiple,
@@ -52,9 +125,15 @@ int main(int argc, char **argv)
     printf("  dma            %u frames x %u descriptors, placed in %s memory\n",
            config.clock.dma_frame_num, config.clock.dma_desc_num,
            chorus_mem_placement_name(config.dma_placement));
-    printf("  pins           mclk=%u bclk=%u ws=%u dout=%u sda=%u scl=%u amp_pdn=%u "
+    char mclk[16];
+    if (config.pins.mclk == CHORUS_PIN_NONE) {
+        snprintf(mclk, sizeof(mclk), "none");
+    } else {
+        snprintf(mclk, sizeof(mclk), "%u", config.pins.mclk);
+    }
+    printf("  pins           mclk=%s bclk=%u ws=%u dout=%u sda=%u scl=%u amp_pdn=%u "
            "octal_psram=%s\n",
-           config.pins.mclk, config.pins.bclk, config.pins.ws, config.pins.dout, config.pins.sda,
+           mclk, config.pins.bclk, config.pins.ws, config.pins.dout, config.pins.sda,
            config.pins.scl, config.pins.amp_power_down, config.pins.octal_psram ? "yes" : "no");
     printf("  analog gain    %.3f dB requested against a ceiling of %.3f dB\n", config.gain.db,
            config.amp.analog_gain_ceiling_db);

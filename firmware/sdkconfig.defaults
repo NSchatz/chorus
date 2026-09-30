@@ -38,6 +38,14 @@ CONFIG_MBEDTLS_ECP_DP_CURVE25519_ENABLED=y
 CONFIG_MBEDTLS_ECDH_C=y
 CONFIG_MBEDTLS_SHA256_C=y
 
+# The wired link (goal 8, P1): ESP-IDF's SPI Ethernet support, which the pinned
+# espressif/w5500 component (firmware/main/idf_component.yml) builds on. It
+# defaults to y in components/esp_eth/Kconfig of the pinned v6.1 ("ESP-IDF can
+# also support SPI-Ethernet. Actual chip drivers are available as components in
+# Component Registry", read 2026-09-30), and is stated so a change of default
+# cannot remove it silently.
+CONFIG_ETH_USE_SPI_ETHERNET=y
+
 # NOT SET HERE, deliberately:
 #
 # - Wi-Fi power save. chorus#WIFI-7 owns the wireless tier, asserts the mode by
