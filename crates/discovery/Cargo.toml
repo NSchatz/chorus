@@ -16,3 +16,6 @@ path = "src/bin/chorus-discovery-vectors.rs"
 [[bin]]
 name = "chorus-mdns-probe"
 path = "src/bin/chorus-mdns-probe.rs"
+
+[lints]
+workspace = true

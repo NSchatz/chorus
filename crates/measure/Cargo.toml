@@ -13,3 +13,6 @@ chorus-audio = { path = "../audio" }
 
 [dev-dependencies]
 chorus-audio-path = { path = "../audio-path" }
+
+[lints]
+workspace = true

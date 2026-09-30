@@ -16,3 +16,6 @@ license.workspace = true
 # what this costs, and it is the same trade crates/server already makes to
 # decode its own output with the client's receiver.
 chorus-server = { path = "../server" }
+
+[lints]
+workspace = true

@@ -9,3 +9,6 @@ license.workspace = true
 
 [dependencies]
 chorus-protocol = { path = "../protocol" }
+
+[lints]
+workspace = true
