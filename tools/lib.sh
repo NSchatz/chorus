@@ -13,7 +13,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export REPO_ROOT
 
 TARGET_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target}"
-BIN_DIR="$TARGET_DIR/debug"
+# CHORUS_BIN_DIR points the checks at binaries somewhere else: the Linux
+# endpoint package's `chorus-verify-host` runs the host contract and the spin
+# test against its installed probes (docs/linux-endpoint.md).
+BIN_DIR="${CHORUS_BIN_DIR:-$TARGET_DIR/debug}"
 export BIN_DIR
 
 say() { printf '%s\n' "$*"; }

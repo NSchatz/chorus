@@ -21,6 +21,13 @@ gate-fast: tools-executable
 image: tools-executable
 	bash tools/image.sh
 
+# The Linux endpoint package: one .deb per architecture (arm64, amd64), cross-built
+# rootless with zig and cargo-zigbuild at the glibc floor, and checked (readelf,
+# dpkg-deb, systemd-analyze verify of the unit). ARCHES="amd64" builds one
+# (tools/endpoint-package.sh; docs/linux-endpoint.md installs it).
+endpoint-packages: tools-executable
+	bash tools/endpoint-package.sh $(ARCHES)
+
 # The artifacts of one release into dist/v$(VERSION)/ (tools/release.sh;
 # docs/release.md says how a release is cut). Publishes nothing.
 release: tools-executable
@@ -257,7 +264,7 @@ verify-null-device: tools-executable
 	CHORUS_CLIENT_DEVICE=null bash tools/stream-end-and-loss.sh
 	CHORUS_CLIENT_DEVICE=null bash tools/start-fill-and-log-shape.sh
  \
-	.PHONY: release image build check discovery-vectors firmware-check firmware-golden-vectors  \
+	.PHONY: release image endpoint-packages build check discovery-vectors firmware-check firmware-golden-vectors  \
 	firmware-flash firmware-image firmware-image-guard firmware-safety-scans firmware-sync-scenarios  \
 	firmware-wireless gate gate-fast measure-fixture-reports measure-fixtures one  \
 	probe sim-house sync-vectors ten-minute-run ten-minute-run-null test tools-executable verify verify-alsa-null verify-control  \

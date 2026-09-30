@@ -1,0 +1,25 @@
+chorus-endpoint: the chorus Linux endpoint
+===========================================
+
+What is installed:
+
+  /usr/bin/chorus-client                          the endpoint
+  /usr/lib/systemd/system/chorus-client.service   runs it (not enabled on install)
+  /etc/chorus/client.conf                         its arguments (a conffile)
+  /usr/bin/chorus-verify-host                     the host contract and the spin test
+  /usr/lib/chorus/verify-host, /usr/lib/chorus/probe
+                                                  what chorus-verify-host runs
+  /usr/bin/chorus-wakeup-probe                    the wakeup-jitter probe
+
+To start it:
+
+  1. Edit /etc/chorus/client.conf: the endpoint's name, its zone, the server's
+     address, the ALSA device (`aplay -L` lists them).
+  2. sudo systemctl enable --now chorus-client
+  3. journalctl -u chorus-client -f
+
+Before turning real-time playout on in client.conf, run chorus-verify-host
+with the service's limits (the command is at the top of
+/usr/bin/chorus-verify-host).
+
+The repository's docs/linux-endpoint.md is the full install page.
