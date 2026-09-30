@@ -15,6 +15,23 @@ network. Both need syscalls the standard library does not expose: `clock_nanosle
 control messages. The rule "Rust lints and unsafe" requires a record for every new place unsafe
 code is allowed.
 
+## What was read
+
+All read 2026-09-30. No GPL source was opened: the Linux kernel is GPL, so its behaviour is
+taken from its documentation and man pages only, and from what the probes observe.
+
+- Documentation/networking/timestamping.rst, <https://docs.kernel.org/networking/timestamping.html>
+  (section 1 the control interfaces and flags, 2.1 `SCM_TIMESTAMPING` records, 2.1.2 receive timestamps).
+- man-pages 6.19 on man7.org: socket(7) (`SO_TIMESTAMP`, `SO_TIMESTAMPNS`),
+  clock_nanosleep(2), `PR_SET_TIMERSLACK(2const)`, icmp(7) (`ping_group_range`), adjtime(3).
+- The MIT/Apache `libc` crate 0.2.189 (permissive source, from the local cargo registry):
+  `src/unix/linux_like/mod.rs`, `src/unix/linux_like/linux/mod.rs`,
+  `src/unix/linux_like/linux/arch/generic/mod.rs`, `src/unix/linux_like/linux/gnu/mod.rs`,
+  `src/unix/linux_like/linux_l4re_shared.rs` (constant values and struct layouts).
+- chorus: `.claude/goals/2026-09-chorus-research/research-platform-network.md` section 5,
+  `crates/hostctl/src/lib.rs`, `crates/server/src/stream.rs`, `crates/server/src/bin/chorus-rt-spin.rs`,
+  `crates/audio-path/src/realtime.rs`, ADR 0020, ADR 0022, `tools/image.sh`, `deploy/`.
+
 ## Decision
 
 1. **A new crate, `chorus-hostprobe`, not `chorus-hostctl`.** `hostctl` is the server's
