@@ -346,10 +346,10 @@ else
 fi
 # Without the test-only flag every PR whose raw data includes a committed fixture
 # is refused by name (the guard against a fixture posing as a capture), and the
-# six whose raw data is only generated here (the soak, the ten-minute run, the
-# delay-log shape, the over-rate, the device-loss and the decode-cost runs)
-# still validate.
-GENERATED_ONLY=6
+# seven whose raw data is only generated here (the soak, the ten-minute run,
+# the delay-log shape, the over-rate, the device-loss, the decode-cost and the
+# EMBEDDED-5 bring-up runs) still validate.
+GENERATED_ONLY=7
 (cd "$CLONE" && CHORUS_BENCH_GH="$T/fake-gh" bash tools/bench/validate-open-prs.sh) \
     > "$T/open-prs-strict.log" 2>&1 || true
 INVALID="$(grep -c ': INVALID$' "$T/open-prs-strict.log" || true)"
