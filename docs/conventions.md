@@ -64,8 +64,17 @@ has to learn or argue about. Formatting-only changes land as their own commit.
 - `unsafe_code` is denied workspace-wide. It is allowed only where chorus talks to the operating
   system or the sound stack, at the narrowest scope, with a reason beside the allow; every
   `unsafe` block carries a `// SAFETY:` comment stating the invariant it relies on
-  (`clippy::undocumented_unsafe_blocks`). The allowed places are listed in
-  `check-rust-lints.sh`; adding one needs an ADR.
+  (`clippy::undocumented_unsafe_blocks`). Adding a place needs an ADR and a line in
+  `check-rust-lints.sh`, which holds the tree to this list:
+
+  | Where | Scope | Why |
+  |---|---|---|
+  | `crates/alsa` | the crate | the dlopen binding to libasound; every function crosses FFI |
+  | `crates/hostctl` | six functions | libc wrappers for getrlimit, setrlimit, `sched_*`, mlockall and gettid; the rest of the crate stays denied |
+  | `crates/server/tests/regress_0031_f6.rs` | one test | sets SCHED_BATCH through raw libc, which no chorus wrapper offers |
+
+  `protocol`, `sync`, `audio`, `audio-path` and `measure` go further with
+  `#![forbid(unsafe_code)]`.
 - `dbg!` and `todo!` do not merge (`clippy::dbg_macro`, `clippy::todo`).
 - Review guidance, not a rule: libraries return typed errors; nothing panics on input read from
   the network or a file; binaries map errors to documented exit codes.

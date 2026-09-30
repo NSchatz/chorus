@@ -22,8 +22,8 @@ echo "rust: rust-toolchain.toml $chan, rust-version $msrv, Dockerfile rust:$dock
 
 while IFS= read -r l; do
     [[ "$l" =~ @sha256:[0-9a-f]{64} ]] || bad "a FROM without a digest: $l"
-done < <(git grep -h -i -E '^FROM ' -- '*Dockerfile*')
-echo "dockerfile FROM lines: $(git grep -h -i -E '^FROM ' -- '*Dockerfile*' | wc -l)"
+done < <(git grep -h -i -E '^FROM ' -- '*Dockerfile*' ':!tools/conventions/fixtures/')
+echo "dockerfile FROM lines: $(git grep -h -i -E '^FROM ' -- '*Dockerfile*' ':!tools/conventions/fixtures/' | wc -l)"
 
 while IFS= read -r l; do
     [[ "$l" =~ uses:[[:space:]]*[^@[:space:]]+@[0-9a-f]{40}([[:space:]]|$) ]] || bad "a workflow action not pinned by commit: $l"
