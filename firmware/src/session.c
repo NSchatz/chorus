@@ -25,6 +25,12 @@
  * out of the receive buffer, never over it. */
 #define CHORUS_SESSION_BUFFER (CHORUS_FRAME_HEADER_LEN + CHORUS_MAX_PAYLOAD_LEN + 4096)
 
+/* What this endpoint itself sends is small: a handshake message, a refusal
+ * (at most a 1024-byte detail), and records carrying its greeting, a time-sync
+ * request or its telemetry. One buffer of this size holds any of them, so the
+ * only 64 KiB buffers are the two the receive side needs. */
+#define CHORUS_SESSION_SEND_BUFFER 1280u
+
 /* The pins this endpoint keeps: one per server id it has met. */
 #define CHORUS_SESSION_MAX_PINS 8
 
@@ -455,7 +461,7 @@ static const uint8_t PROLOGUE[7] = {
 
 static int send_message(int fd, const chorus_v2_message_t *m)
 {
-    static uint8_t frame[CHORUS_FRAME_HEADER_LEN + CHORUS_MAX_PAYLOAD_LEN];
+    static uint8_t frame[CHORUS_SESSION_SEND_BUFFER];
     size_t len = 0;
     if (chorus_v2_encode(m, frame, sizeof(frame), &len, NULL) != CHORUS_ENCODE_OK) {
         return -1;
@@ -667,7 +673,7 @@ static handshake_result_t handshake(session_state_t *state, int fd, receive_t *r
 static int send_sealed(session_state_t *state, int fd, chorus_noise_cipher_t *cipher,
                        const uint8_t *frames, size_t len)
 {
-    static uint8_t record[CHORUS_FRAME_HEADER_LEN + CHORUS_MAX_PAYLOAD_LEN];
+    static uint8_t record[CHORUS_SESSION_SEND_BUFFER];
     size_t written = 0;
     if (chorus_noise_seal_record(cipher, frames, len, record, sizeof(record), &written) !=
         CHORUS_NOISE_OK) {
