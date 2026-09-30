@@ -61,7 +61,8 @@ require_pacing_audio_device "$CRITERION"
 require_capture_device "$CRITERION"
 
 PORT="$(free_port)"
-CONTRACT_ARGS="$(server_contract_args)"
+read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
+read -r -a SERVER_EXTRA_ARGS <<< "${CHORUS_SERVER_EXTRA_ARGS:-}"
 
 say "chorus: starting the server on the rig's chirp; both endpoints join the SAME stream"
 "$BIN_DIR/chorus-server" \
@@ -75,7 +76,7 @@ say "chorus: starting the server on the rig's chirp; both endpoints join the SAM
     --rttime-us "$(conf rttime_us)" \
     --rt-priority "$(conf rt_priority)" \
     --memlock-wanted-bytes "$(conf memlock_wanted_bytes)" \
-    $CONTRACT_ARGS ${CHORUS_SERVER_EXTRA_ARGS:-} &
+    "${CONTRACT_ARGS[@]}" "${SERVER_EXTRA_ARGS[@]}" &
 SERVER_PID=$!
 trap 'kill_quietly "$SERVER_PID"' EXIT
 
@@ -99,15 +100,17 @@ client_args() {
 }
 
 say "chorus: starting endpoint A here"
+read -r -a CLIENT_ARGS <<< "$(client_args)"
 "$BIN_DIR/chorus-client" \
     --server "127.0.0.1:$PORT" \
     --device "$DEVICE" \
-    $(client_args) &
+    "${CLIENT_ARGS[@]}" &
 CLIENT_A_PID=$!
 trap 'kill_quietly "$CLIENT_A_PID"; kill_quietly "$SERVER_PID"' EXIT
 
 say "chorus: starting endpoint B on $CHORUS_SECOND_ENDPOINT"
 SERVER_HOST="${CHORUS_SERVER_HOST:-$(hostname)}"
+# shellcheck disable=SC2029 # the remote command line is built here on purpose, from this checkout's config
 ssh "$CHORUS_SECOND_ENDPOINT" "chorus-client --server ${SERVER_HOST}:${PORT} \
 --device ${CHORUS_SECOND_DEVICE:-default} $(client_args)" &
 CLIENT_B_PID=$!

@@ -32,7 +32,8 @@ SKEW="$(conf ac9_rate_skew_ppm)"
 SPAN_US=$(( $(conf max_us) - $(conf min_us) ))
 SECONDS_TO_CROSS=$(( SPAN_US / SKEW ))
 RUN_SECONDS=$(( SECONDS_TO_CROSS * 2 + 30 ))
-CONTRACT_ARGS="$(server_contract_args)"
+read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
+read -r -a SERVER_EXTRA_ARGS <<< "${CHORUS_SERVER_EXTRA_ARGS:-}"
 
 CONFIG_BEFORE="$(sha256sum "$REPO_ROOT/config/verification.conf" | cut -d' ' -f1)"
 
@@ -51,7 +52,7 @@ say "  log:        $LOG"
     --format "$(conf sample_format)" \
     --chunk-us "$(conf chunk_us)" \
     --rate-skew-ppm "$SKEW" \
-    $CONTRACT_ARGS ${CHORUS_SERVER_EXTRA_ARGS:-} &
+    "${CONTRACT_ARGS[@]}" "${SERVER_EXTRA_ARGS[@]}" &
 SERVER_PID=$!
 trap 'kill_quietly "$SERVER_PID"' EXIT
 

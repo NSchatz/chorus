@@ -23,6 +23,10 @@
 #                             (default 30; `make firmware-check` runs the committed 130)
 #   IDF_PY_BUILD_JOBS         idf.py's ninja job count; passed through explicitly
 
+# Every step function is invoked by name through step(), which shellcheck
+# cannot see.
+# shellcheck disable=SC2329
+
 set -u
 cd "$(dirname "$0")/.." || exit 2
 ROOT="$(pwd)"

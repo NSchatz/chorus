@@ -1,0 +1,6 @@
+# shellcheck 0.11.0 reads this for every script in the repository.
+# Scripts source tools/lib.sh through a path built at runtime from their own
+# location; resolve it relative to the script and follow it, so the sourced
+# functions and variables are checked with the script that uses them.
+source-path=SCRIPTDIR
+external-sources=true

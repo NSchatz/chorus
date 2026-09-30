@@ -70,7 +70,7 @@ OUT_DIR="${TMPDIR:-/tmp}/chorus-soak"
 mkdir -p "$OUT_DIR"
 AUDIO="$(free_port)"
 CONTROL="$(free_port)"
-CONTRACT_ARGS="$(server_contract_args)"
+read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
 
 "$BIN_DIR/chorus-server" \
     --listen "127.0.0.1:$AUDIO" \
@@ -80,7 +80,7 @@ CONTRACT_ARGS="$(server_contract_args)"
     --control-listen "127.0.0.1:$CONTROL" \
     --state-file "$OUT_DIR/zones.state" \
     --zone local --zone remote \
-    $CONTRACT_ARGS >"$OUT_DIR/server.log" 2>&1 &
+    "${CONTRACT_ARGS[@]}" >"$OUT_DIR/server.log" 2>&1 &
 SERVER=$!
 trap 'kill_quietly "$SERVER"' EXIT
 sleep 2
@@ -96,6 +96,7 @@ sleep 2
     --playout-latency-us "$(sync_conf playout_latency_us)" &
 LOCAL=$!
 
+# shellcheck disable=SC2029 # the remote command line is built here on purpose, from this checkout's config
 ssh "$CHORUS_SECOND_ENDPOINT" \
     "chorus-client --server $(hostname):$AUDIO --control $(hostname):$CONTROL \
      --zone remote --endpoint endpoint-remote --rejoin \

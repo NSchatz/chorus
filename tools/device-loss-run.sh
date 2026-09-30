@@ -25,7 +25,8 @@ require_removable_device "$CRITERION"
 DEVICE="$CHORUS_REMOVABLE_DEVICE"
 LOG="${TMPDIR:-/tmp}/chorus-device-loss.log"
 PORT="$(free_port)"
-CONTRACT_ARGS="$(server_contract_args)"
+read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
+read -r -a SERVER_EXTRA_ARGS <<< "${CHORUS_SERVER_EXTRA_ARGS:-}"
 
 say "chorus: device-loss run"
 say "  device: $DEVICE"
@@ -35,7 +36,7 @@ say "  remove: $CHORUS_REMOVE_COMMAND"
     --listen "127.0.0.1:$PORT" \
     --source tone \
     --chunk-us "$(conf chunk_us)" \
-    $CONTRACT_ARGS ${CHORUS_SERVER_EXTRA_ARGS:-} &
+    "${CONTRACT_ARGS[@]}" "${SERVER_EXTRA_ARGS[@]}" &
 SERVER_PID=$!
 trap 'kill_quietly "$SERVER_PID"' EXIT
 

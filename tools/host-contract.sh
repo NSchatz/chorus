@@ -135,6 +135,7 @@ require_rtprio "$CRITERION"
 CEILING="$(ulimit -r)"
 PORT="$(free_port)"
 REPORT="${TMPDIR:-/tmp}/chorus-host-contract.report"
+read -r -a SERVER_EXTRA_ARGS <<< "${CHORUS_SERVER_EXTRA_ARGS:-}"
 
 say "chorus: host contract"
 say "  granted rtprio ceiling: $CEILING"
@@ -146,7 +147,7 @@ say "  granted rtprio ceiling: $CEILING"
     --rttime-us "$(conf rttime_us)" \
     --memlock-wanted-bytes "$(conf memlock_wanted_bytes)" \
     --allow-unlocked-memory \
-    ${CHORUS_SERVER_EXTRA_ARGS:-} > "$REPORT" 2>&1 &
+    "${SERVER_EXTRA_ARGS[@]}" > "$REPORT" 2>&1 &
 SERVER_PID=$!
 trap 'kill_quietly "$SERVER_PID"' EXIT
 
