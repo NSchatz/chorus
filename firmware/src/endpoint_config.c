@@ -346,6 +346,8 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
                          detail_len));
     NEED(chorus_conf_u32(conf, "i2s_slot_bit_width", &out->clock.slot_bit_width, detail,
                          detail_len));
+    NEED(chorus_conf_u32(conf, "i2s_wire_slot_bit_width", &out->clock.wire_slot_bit_width, detail,
+                         detail_len));
     NEED(chorus_conf_u32(conf, "i2s_mclk_multiple", &out->clock.mclk_multiple, detail, detail_len));
     NEED(chorus_conf_u32(conf, "i2s_dma_frame_num", &out->clock.dma_frame_num, detail, detail_len));
     NEED(chorus_conf_u32(conf, "i2s_dma_desc_num", &out->clock.dma_desc_num, detail, detail_len));
@@ -386,24 +388,27 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
     NEED(chorus_conf_f64(conf, "amp_analog_gain_db", &out->gain.db, detail, detail_len));
     snprintf(out->amp.ceiling_source, sizeof(out->amp.ceiling_source), "%s", path);
 
-    if (optional_u8(conf, "amp_i2c_address", &out->amp.address, &out->amp.address_known, detail,
-                    detail_len) != 0 ||
-        optional_u8(conf, "amp_reg_device_id", &out->amp.reg_device_id,
-                    &out->amp.reg_device_id_known, detail, detail_len) != 0 ||
-        optional_u8(conf, "amp_reg_fault", &out->amp.reg_fault, &out->amp.reg_fault_known, detail,
-                    detail_len) != 0 ||
-        optional_u8(conf, "amp_reg_analog_gain", &out->amp.reg_analog_gain,
-                    &out->amp.reg_analog_gain_known, detail, detail_len) != 0 ||
-        optional_u8(conf, "amp_reg_state_control", &out->amp.reg_state_control,
-                    &out->amp.reg_state_control_known, detail, detail_len) != 0 ||
-        optional_u8(conf, "amp_device_id_value", &out->amp.device_id_value,
-                    &out->amp.device_id_value_known, detail, detail_len) != 0 ||
-        optional_u8(conf, "amp_fault_clear_value", &out->amp.fault_clear_value,
-                    &out->amp.fault_clear_value_known, detail, detail_len) != 0 ||
-        optional_u8(conf, "amp_analog_gain_code", &out->gain.code, &out->gain.code_known, detail,
+    /* Every register-map byte, by the same table the sequencer refuses from, so
+     * a key cannot be loaded under one name and refused under another. */
+    chorus_amp_key_t keys[32];
+    size_t key_count = chorus_amp_keys(&out->amp, keys, sizeof(keys) / sizeof(keys[0]));
+    for (size_t i = 0; i < key_count; i++) {
+        chorus_amp_byte_t *byte = (chorus_amp_byte_t *)keys[i].byte;
+        if (optional_u8(conf, keys[i].key, &byte->value, &byte->known, detail, detail_len) != 0) {
+            return -1;
+        }
+    }
+    if (optional_u8(conf, "amp_analog_gain_code", &out->gain.code, &out->gain.code_known, detail,
                     detail_len) != 0) {
         return -1;
     }
+    NEED(chorus_conf_u32(conf, "amp_power_up_wait_ms", &out->amp.power_up_wait_ms, detail,
+                         detail_len));
+    NEED(chorus_conf_u32(conf, "amp_dsp_settle_wait_ms", &out->amp.dsp_settle_wait_ms, detail,
+                         detail_len));
+    NEED(chorus_conf_u32(conf, "amp_shutdown_wait_ms", &out->amp.shutdown_wait_ms, detail,
+                         detail_len));
+    NEED(chorus_conf_u32(conf, "amp_sclk_per_frame", &out->amp.sclk_per_frame, detail, detail_len));
 
     NEED(chorus_conf_string(conf, "espidf_version", out->espidf_version,
                             sizeof(out->espidf_version), detail, detail_len));
@@ -464,6 +469,23 @@ size_t chorus_endpoint_config_validate(const chorus_endpoint_config_t *config,
                  "amp_analog_gain_db = %.3f is above amp_analog_gain_ceiling_db = %.3f, both "
                  "declared in %s",
                  config->gain.db, config->amp.analog_gain_ceiling_db, config->amp.ceiling_source);
+        (*count)++;
+    }
+
+    /* The bit clock per frame the I2S configuration produces has to be the one
+     * the amplifier is committed to (amp_sclk_per_frame, a ratio the TAS5825M
+     * datasheet lists as supported, pp. 7 and 29), or the part reports a clock
+     * error and stays in Hi-Z (p. 29). */
+    uint64_t per_frame = (config->clock.sample_rate_hz == 0)
+                             ? 0
+                             : chorus_i2s_bclk_hz(&config->clock) / config->clock.sample_rate_hz;
+    if (per_frame != config->amp.sclk_per_frame && *count < capacity) {
+        snprintf(findings[*count].rule, sizeof(findings[*count].rule),
+                 "bclk-ratio-unsupported-by-amplifier");
+        snprintf(findings[*count].detail, sizeof(findings[*count].detail),
+                 "i2s_sample_rate_hz, i2s_slot_bit_width and i2s_wire_slot_bit_width give %llu bit "
+                 "clocks per frame and amp_sclk_per_frame = %u",
+                 (unsigned long long)per_frame, (unsigned)config->amp.sclk_per_frame);
         (*count)++;
     }
 

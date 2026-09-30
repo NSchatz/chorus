@@ -49,7 +49,12 @@ typedef struct {
 
 typedef struct {
     uint32_t sample_rate_hz;
+    /* The sample's width in the DMA buffer (ESP-IDF's data bit width). */
     uint32_t slot_bit_width;
+    /* The slot's width on the wire (ESP-IDF's slot bit width), at least the
+     * sample's; 0 means the same as the sample's, as ESP-IDF's AUTO does. The
+     * bit clock is two of these per frame. */
+    uint32_t wire_slot_bit_width;
     uint32_t mclk_multiple;
     uint32_t dma_frame_num;
     uint32_t dma_desc_num;

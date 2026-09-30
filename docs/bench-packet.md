@@ -222,14 +222,17 @@ Never run `espefuse` or any eFuse command (BRIEF.md section 3.1 rule 2); the ima
 `make gate` already proves the image burns none.
 
 Expected: the boot log names ESP-IDF v6.1, the chorus app starts its serial console (ADR 0060),
-and it stops before any link or session because the amplifier map is still `unknown` (goal 9
-fills it): either the amplifier bring-up's refusal naming the first `unknown` key, or
-`the hardware could not be brought up; the output stage stays dead` if the I2C driver rejects the
-unset address. From goal 8 the default image is the `brick-s3-wired` board profile (ADR 0057, its
-board model ASSUMED until the boards Needs item is answered), so it configures that board's pins
-as outputs (the amplifier power-down line driven low, the I2S pins); on a bare development board
-wire nothing to them for this session. Paste the log lines from the ESP-IDF version line to the
-stop into the Needs item, with any `MAC:` line deleted (K27). What changes: goal 9 knows the v6.1
+and it then brings the amplifier up with the register map goal 9 read from TI's datasheet
+(ADR 0064). On a bare development board with no amplifier, or a board
+whose ADR strap is not the ASSUMED 0 ohm one, the bring-up stops by name with
+`amp=amplifier-did-not-answer` and the output stage dead (PDN low, no clock); on a TAS5825M board
+it reaches Play, or stops naming the fault register and its bits, then stops at the link or the
+session if no server is configured. From goal 8 the default image is the `brick-s3-wired` board
+profile (ADR 0057, its board model ASSUMED until the boards Needs item is answered), so it
+configures that board's pins as outputs (the amplifier power-down line driven low then high, the
+I2S pins, the I2C pins); on a bare development board wire nothing to them for this session. Paste
+the log lines from the ESP-IDF version line to the stop into the Needs item, with any `MAC:` line
+deleted (K27). What changes: goal 9 knows the v6.1
 image boots on this board, and S6 below can run on the same board right after, through the
 console.
 
