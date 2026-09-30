@@ -38,3 +38,4 @@ the number of the pull request that added it.
 | 0039 | [the v2 key exchange is Noise XX with trust-on-first-use pins, over vendored primitives](0039-the-v2-key-exchange.md) |
 | 0040 | [the server negotiates the codec in one step, from a per-link preference and the endpoint's capabilities](0040-codec-negotiation.md) |
 | 0041 | [protocol v2 keeps v1's frame, carries whole frames in records, and refuses v1 by name](0041-protocol-v2-framing.md) |
+| 0042 | [the endpoint moves to ESP-IDF v6.1](0042-esp-idf-v6-1.md) |
