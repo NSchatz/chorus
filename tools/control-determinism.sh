@@ -280,10 +280,12 @@ starved() {
 # Fewer workers than the event streams the checks hold open: the third
 # attachment has no worker to be served by, ever.
 starved 2 "the three event streams these checks attach"
-# Enough workers for those three streams and not one left over: every request
-# the checks make while holding them starves, which is the shape the reported
-# failures took.
-starved 3 "a request that needs a worker while three event streams are held"
+# Three workers, one of them kept for commands (crates/server/src/control.rs,
+# stream_slots), so only two streams can be held and the third attachment is
+# refused by name, however long it waits. Before that worker was kept, this was
+# the shape the reported failures took: three streams held and every request
+# made while holding them starved.
+starved 3 "the third of three event streams while one worker is kept for commands"
 
 say ""
 if [ "$FAILURES" -eq 0 ]; then

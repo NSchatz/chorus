@@ -243,9 +243,9 @@ The catalog above is the contract. The transport is HTTP on the address
 | `GET /chorus.css`, `GET /chorus.js` | what the page loads |
 | `GET /api/state` | the state message, once |
 | `GET /api/events` | a `text/event-stream`, one `data: <state message>` per change, starting with the state as it stands |
-| `GET /api/report` | one line of plain text: commands applied, commands refused, connections turned away, and the fanout's ceiling and drops |
-| `POST /api/command` | the body is one control message. `200` with the resulting state, `400` with an `error`, or `426` with a `refused` |
-| `POST /api/leaving` | the body is an endpoint identifier, which stops being `present` |
+| `GET /api/report` | one line of plain text: commands applied, commands refused, connections and streams turned away, and the fanout's ceiling and drops |
+| `POST /api/command` | the body is one control message, sent as `Content-Type: application/json`. `200` with the resulting state, `400` with an `error`, or `426` with a `refused`; `415` or `403` under the rules below |
+| `POST /api/leaving` | the body is an endpoint identifier, which stops being `present`. The same two rules as a command |
 
 A browser opens `/api/events` with `EventSource` and a shell script opens it
 with a socket and a `GET` line, so **the UI and the verification scripts are the
@@ -255,6 +255,47 @@ subscriber protocol would not be checking the thing the browser uses.
 Every request is answered with `Connection: close`. A connection arriving when
 every worker is busy is answered `503` naming the ceiling and closed, rather
 than served by a thread nobody declared; see below.
+
+### What a request may be
+
+A request is at most 16 KiB, request line, headers and body together, and every
+byte of it is read through that one bound, so a line that never ends is cut at
+the bound rather than grown. A request line or header block past it is answered
+`431`, a body that would take the request past it `413`, both unread. A request
+has 5 seconds from the moment a worker picks it up to arrive in full, measured
+on the monotonic clock; one still arriving then (a peer trickling a byte at a
+time) is answered `408` and the worker goes back to the pool.
+
+### What a command must carry
+
+There is no authentication (below), so what keeps a web page served from
+somewhere else from changing zones through a browser on this network is the
+browser's own rules, and the two `POST` routes are held to what makes them
+apply:
+
+- A body not declared `Content-Type: application/json` (parameters such as
+  `charset` allowed) is refused `415`. A page elsewhere can send `text/plain`
+  with no preflight; it cannot send `application/json` without one, and this
+  server approves no preflight.
+- An `Origin` header, when present, has to name this server: its host and port
+  have to be the request's `Host`. Any other `Origin`, `null` included, is
+  refused `403`. A browser sends `Origin` on every `POST`, and the control page
+  posts from this server's own origin; an endpoint or a script sends none and is
+  not refused for that. The scheme is not compared, so a page served over `https`
+  by a proxy in front of this listener is still its own origin.
+
+Neither refusal changes any state, and both count as refused in
+`GET /api/report`.
+
+### Event streams and the worker kept for commands
+
+An event stream holds its worker for as long as the subscriber stays. So at
+most `--control-workers` minus one workers hold streams at once, and a stream
+asked for past that is answered `503` saying so: the last worker is kept for
+everything else, and a command always has somewhere to go however many
+endpoints and pages are subscribed. (A plane of one worker has nothing to keep
+and lets it stream.) This is a stopgap; serving every stream from one writer
+thread, so that subscribers stop costing workers at all, is later work.
 
 ## The bound on a subscriber
 
