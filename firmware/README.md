@@ -22,6 +22,28 @@ clock rather than guessing. There is not one register literal in
 Read them off the datasheet at bring-up and write them into
 `config/endpoint.conf`. Nothing else needs to change.
 
+## Boards and the link
+
+P1 (approved at Checkpoint K): an ESP32-S3 in every speaker. The wired classes
+reach the network through a W5500 on SPI with its interrupt line wired, and
+that is the default link; the compact speakers may run the S3's own Wi-Fi (the
+Wi-Fi tier, K91). A board is a profile under `boards/`, laid over
+`config/endpoint.conf` (which carries the default profile's values) and
+embedded in the image:
+
+```
+boards/brick-s3-wired.conf    the default: the wired classes, W5500 on SPI2
+boards/compact-s3-wifi.conf   the compact speakers' Wi-Fi tier
+```
+
+Both name P1's bought reference board, the Esparagus Audio Brick (ESP32-S3), and
+mark it **ASSUMED** until the owner's own boards are identified (the Needs item
+"Your ESP32-S3 boards: module markings and a read-only chip report").
+`CHORUS_BOARD_PROFILE=compact-s3-wifi make firmware-image` builds the Wi-Fi
+image; `make gate` builds both. The W5500 driver is the Component Registry's
+`espressif/w5500`, pinned in `main/idf_component.yml` and `dependencies.lock`.
+Why: `docs/decisions/0056-board-profiles-and-the-wired-link.md`.
+
 ## Running it
 
 ```
@@ -46,6 +68,7 @@ run grades.
 
 ```
 config/endpoint.conf     every value the endpoint needs, committed once
+boards/                  board profiles laid over it (board keys only)
 endpoint-units.conf      the endpoint's source, enumerated, and what the scans
                          are true of
 include/chorus/          the headers

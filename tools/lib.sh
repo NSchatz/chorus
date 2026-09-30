@@ -256,15 +256,59 @@ require_second_endpoint() {
 # A value from firmware/config/endpoint.conf. Same shape as conf() and
 # sync_conf(): the endpoint's committed numbers are passed to a run from the
 # one file that declares them, so a check and the thing it checks cannot drift
-# apart.
+# apart. With CHORUS_BOARD_PROFILE set, a key the board profile
+# firmware/boards/$CHORUS_BOARD_PROFILE.conf sets is read from there first, the
+# way the image reads it (docs/decisions/0056-*).
 endpoint_conf() {
     local key="$1"
-    local value
-    value="$(sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*\\([^#]*\\).*/\\1/p" \
-        "$REPO_ROOT/firmware/config/endpoint.conf" | head -n 1 | tr -d '[:space:]')"
+    local value=""
+    local profile
+    profile="$(board_profile_path)"
+    if [ -n "$profile" ]; then
+        value="$(sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*\\([^#]*\\).*/\\1/p" \
+            "$profile" | head -n 1 | tr -d '[:space:]')"
+    fi
+    if [ -z "$value" ]; then
+        value="$(sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*\\([^#]*\\).*/\\1/p" \
+            "$REPO_ROOT/firmware/config/endpoint.conf" | head -n 1 | tr -d '[:space:]')"
+    fi
     if [ -z "$value" ]; then
         printf 'firmware/config/endpoint.conf has no %s\n' "$key" >&2
         exit 2
+    fi
+    printf '%s' "$value"
+}
+
+# The board profile a run or an image build is for: CHORUS_BOARD_PROFILE, or the
+# default endpoint.conf names. Prints the profile file's path; refuses a
+# profile that does not exist, naming the ones that do.
+board_profile_path() {
+    local name="${CHORUS_BOARD_PROFILE:-}"
+    if [ -z "$name" ]; then
+        name="$(sed -n 's/^[[:space:]]*board_profile[[:space:]]*=[[:space:]]*\([^#[:space:]]*\).*/\1/p' \
+            "$REPO_ROOT/firmware/config/endpoint.conf" | head -n 1)"
+    fi
+    [ -n "$name" ] || return 0
+    local path="$REPO_ROOT/firmware/boards/$name.conf"
+    if [ ! -f "$path" ]; then
+        printf 'no board profile %s; the profiles are: %s\n' "$name" \
+            "$(for f in "$REPO_ROOT"/firmware/boards/*.conf; do basename "$f" .conf; done | tr '\n' ' ')" >&2
+        exit 2
+    fi
+    printf '%s' "$path"
+}
+
+# A board key's value with its spaces kept (a model name has them): the profile
+# first, then endpoint.conf.
+board_value() {
+    local key="$1" profile value=""
+    profile="$(board_profile_path)"
+    if [ -n "$profile" ]; then
+        value="$(sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*//p" "$profile" | head -n 1)"
+    fi
+    if [ -z "$value" ]; then
+        value="$(sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*//p" \
+            "$REPO_ROOT/firmware/config/endpoint.conf" | head -n 1)"
     fi
     printf '%s' "$value"
 }
@@ -390,8 +434,8 @@ require_wireless_link() {
     if [ "$transport" != "wireless" ]; then
         missing_prerequisite \
             "$criterion" \
-            "an endpoint whose link is declared wireless; firmware/config/endpoint.conf declares link_transport = $transport" \
-            "set link_transport = wireless in firmware/config/endpoint.conf, and flash an image built from it"
+            "an endpoint whose link is declared wireless; board profile $(basename "$(board_profile_path)" .conf) over firmware/config/endpoint.conf declares link_transport = $transport" \
+            "run with CHORUS_BOARD_PROFILE=compact-s3-wifi (the compact speakers' Wi-Fi tier), and flash an image built with the same profile"
     fi
     if [ -z "${CHORUS_WIRELESS_AP:-}" ]; then
         missing_prerequisite \
