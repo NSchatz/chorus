@@ -158,7 +158,10 @@ mod tests {
                 let taken = take_for_playout(&config).unwrap().unwrap();
                 assert!(taken.line.contains("policy=SCHED_FIFO"), "{}", taken.line);
                 drop(taken);
-                assert_eq!(chorus_hostctl::current_policy(), chorus_hostctl::SCHED_OTHER);
+                assert_eq!(
+                    chorus_hostctl::current_policy(),
+                    chorus_hostctl::SCHED_OTHER
+                );
             })
             .join()
             .unwrap();

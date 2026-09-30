@@ -12,7 +12,9 @@ use std::path::PathBuf;
 use chorus_client_linux::config::ClientConfig;
 
 fn repo_file(relative: &str) -> String {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").join(relative);
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(relative);
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {}", path.display(), e))
 }
 
@@ -54,9 +56,18 @@ fn the_shipped_configuration_is_accepted_and_runs_without_real_time() {
     let (config, _) = ClientConfig::from_args(args).expect("the shipped arguments parse");
     config.validate().expect("the shipped arguments validate");
     assert!(config.rejoin, "the unit rejoins");
-    assert_eq!(config.identity_dir.as_deref(), Some("/var/lib/chorus-client"));
-    assert!(config.no_delay_log, "an installed endpoint keeps no growing delay log");
-    assert_eq!(config.rt_priority, None, "real-time playout is off by default");
+    assert_eq!(
+        config.identity_dir.as_deref(),
+        Some("/var/lib/chorus-client")
+    );
+    assert!(
+        config.no_delay_log,
+        "an installed endpoint keeps no growing delay log"
+    );
+    assert_eq!(
+        config.rt_priority, None,
+        "real-time playout is off by default"
+    );
 }
 
 #[test]

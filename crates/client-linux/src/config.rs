@@ -846,7 +846,8 @@ mod tests {
             "--no-delay-log",
         ]))
         .unwrap();
-        c.validate().expect("a real-time request with a bound is valid");
+        c.validate()
+            .expect("a real-time request with a bound is valid");
         assert_eq!(c.rt_priority, Some(20));
         assert_eq!(c.rttime_us, 150_000);
         assert!(c.no_delay_log);
