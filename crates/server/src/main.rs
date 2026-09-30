@@ -175,7 +175,9 @@ usage: chorus-server [options]
 
 audio:
   --listen <addr:port>        where endpoints connect for audio (default 127.0.0.1:4010)
-  --source <tone|path|->      PCM in: a test tone, a file or FIFO, or stdin (default tone)
+  --source <tone|chirp|path|->  PCM in: a test tone, the rig's chirp, a file or FIFO, or stdin (default tone)
+  --measure-config <path>     where the chirp is declared (default config/measure.conf)
+  --chirp-amplitude <x>       the chirp's amplitude, at most the declared ceiling (default the ceiling)
   --format <name>             pcm_s16le, pcm_s24le or pcm_f32le (default pcm_s16le)
   --rate <hz> --channels <n>  stream shape (default 48000, 2)
   --chunk-us <us>             chunk duration (default 20000)
