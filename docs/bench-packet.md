@@ -224,13 +224,13 @@ Expected: the boot log names ESP-IDF v6.1, the chorus app starts, and it stops a
 configuration has no link or amplifier map until goals 8 and 9); no pin is driven. Paste the log
 lines from the ESP-IDF version line to that refusal into the Needs item, with any `MAC:` line
 deleted (K27). What changes: goal 8 knows the v6.1 image boots on this board. From goal 8 the
-image also starts its serial console before that refusal (ADR 0059), so S6 below can run on the
+image also starts its serial console before that refusal (ADR 0060), so S6 below can run on the
 same board right after.
 
 ### S6. The ESP32-S3's decode cost, on the chip (the owner's own board, after S5)
 
 Needs: the board from S5, flashed with an image from the same checkout, on USB; S0's checkout on
-the machine it is plugged into. No bought part. Goal 8 adds this (ADR 0059): the image carries one
+the machine it is plugged into. No bought part. Goal 8 adds this (ADR 0060): the image carries one
 FLAC and one Opus stream from `fixtures/codec` and times their decode on its monotonic clock.
 
 ```
@@ -267,7 +267,7 @@ Needs items.
 - EMBEDDED-5 (the S3 + W5500 line-level sync against a Linux client, `tools/endpoint-rig-run.sh`)
   and WIFI-7 (`tools/wireless-characterization-run.sh`): they need goal 8's link and playout and
   goal 9's amplifier map; those goals write their packets. Both scripts now drive the endpoint
-  console (goal 8, ADR 0059), and the rig grades AC-3's produced rate with `chorus-measure rate`.
+  console (goal 8, ADR 0060), and the rig grades AC-3's produced rate with `chorus-measure rate`.
 - The production host's SCHED_FIFO wakeup-jitter run: a homelab-side Needs item, not a bench
   session (`docs/measurements/host-wakeup-jitter.md`). Its output files come back the bench way:
   committed under `docs/measurements/raw/production-wakeup-<date>/` on a

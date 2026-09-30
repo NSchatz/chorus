@@ -1,4 +1,4 @@
-# 0059: the endpoint has a serial console for the bench, with runtime-only values, and chorus-measure recovers the produced sample rate
+# 0060: the endpoint has a serial console for the bench, with runtime-only values, and chorus-measure recovers the produced sample rate
 
 - Status: accepted (goal 8, 2026-09-30)
 - Decided by: the goal (audit A-13 and A-11, assigned to goal 8 by goal 2; goal 7's deferred S3
