@@ -65,18 +65,24 @@ typedef struct {
     uint32_t exchanges;
 
     /* Playout. `audio` is the stream's state; the two counters are what
-     * arrived and decoded, NOT what reached the DAC. This endpoint has no
-     * jitter buffer and no I2S writer yet (audit A-9, goal 8), so a chunk is
-     * counted on receipt and then dropped, and calling that "played" would be
-     * a claim about sound nobody produced. The published line keeps the
-     * neutral keys `chunks=` and `frames=`; there is no telemetry message on
-     * the wire (docs/protocol.md, "Not in this catalog yet"), so no fixture or
-     * Rust decoder reads these names. */
+     * arrived and decoded, NOT what reached the DAC, under the neutral keys
+     * `chunks=` and `frames=`. What reached the DAC is the playout path's
+     * (firmware/src/playout.c, goal 8): `frames_played` counts only audio
+     * frames the I2S DMA has consumed, and it and the fields beside it read
+     * `not-applicable` on the published line when no playout path is
+     * attached (the host session binary). */
     chorus_audio_state_t audio;
     uint64_t chunks_received;
     uint64_t frames_received;
     int have_sequence;
     uint32_t last_sequence;
+    int playout_attached;
+    uint64_t frames_played;
+    uint64_t underrun_frames;
+    uint64_t late_chunks;
+    double correction_ppm;
+    int sync_error_known;
+    int64_t sync_error_ns;
     /* Frames of unassigned message types stepped over, which is not an error
      * and is counted so that it is visible when it happens. */
     uint64_t skipped_frames;

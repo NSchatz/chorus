@@ -28,7 +28,7 @@
 #include "chorus/wifi.h"
 
 /* A reply fits in this. */
-#define CHORUS_CONSOLE_REPLY 1024
+#define CHORUS_CONSOLE_REPLY 1536
 
 typedef struct {
     /* This endpoint's link, from the committed configuration. A wired endpoint

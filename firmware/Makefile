@@ -79,7 +79,9 @@ LIB_SRC := \
 	$(FW)/src/link.c \
 	$(FW)/src/endpoint_config.c \
 	$(FW)/src/console.c \
-	$(FW)/src/decode_cost.c
+	$(FW)/src/decode_cost.c \
+	$(FW)/src/sync_conf.c \
+	$(FW)/src/playout.c
 
 # The four units the configuration checker itself needs. It is built without
 # the gate below, because it IS the gate. wifi.c is here because the reader
@@ -132,7 +134,7 @@ LIB_SRC += $(CODEC_SRC)
 CFLAGS += $(DRFLAC_DEFS) $(CODEC_INC)
 
 .PHONY: all check config-check golden-vectors sync-scenarios safety-scans amplifier clocking \
-        telemetry wireless link console session-outage noise-vectors psa-tree codec codec-fixtures clean
+        telemetry wireless link console session-outage noise-vectors psa-tree codec codec-fixtures playout clean
 
 # Every binary this makefile builds, enumerated. There is no wildcard over
 # firmware/tests on purpose, and the cost of that is a test has to be named in
@@ -142,7 +144,7 @@ CFLAGS += $(DRFLAC_DEFS) $(CODEC_INC)
 all: $(BUILD)/chorus-endpoint-config-check $(BUILD)/chorus-endpoint-scan \
      $(BUILD)/chorus-endpoint-session $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 \
      $(BUILD)/test_noise $(BUILD)/test_sync $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_scan $(BUILD)/test_telemetry \
-     $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_codec $(BUILD)/opus_compare
+     $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_codec $(BUILD)/test_playout $(BUILD)/opus_compare
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -212,7 +214,7 @@ $(BUILD)/test_scan: $(SCAN_SRC) $(FW)/tests/test_scan.c | $(BUILD)
 
 $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 $(BUILD)/test_noise $(BUILD)/test_sync \
 $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_telemetry \
-$(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
+$(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_playout: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
                          $(FW)/tests/test_%.c $(STAMP) $(PSA_LIB) $(VENDOR_OBJ) | $(BUILD)
 	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(TEST_SUPPORT) $(FW)/tests/test_$*.c \
 		$(PSA_LIB) $(VENDOR_OBJ) $(LDLIBS)
@@ -289,6 +291,13 @@ link: $(BUILD)/test_link
 console: $(BUILD)/test_console
 	$(BUILD)/test_console
 
+# The playout path (audit A-9, goal 8): the jitter buffer, the DMA-consumed
+# frames the I2S interrupt stamps on the monotonic clock, and the servo they
+# feed, driven by a fake DMA on a fake clock; and config/sync.conf read by the
+# endpoint and held to the Linux client's constants (A-12).
+playout: $(BUILD)/test_playout
+	$(BUILD)/test_playout
+
 session-outage: $(BUILD)/chorus-endpoint-session
 	bash $(FW)/tests/session-outage.sh
 
@@ -306,7 +315,7 @@ codec-fixtures:
 		--vectors "$(OPUS_VECTORS)" --out $(REPO_ROOT)/fixtures/codec
 
 check: config-check golden-vectors sync-scenarios safety-scans clocking amplifier telemetry \
-       wireless link console session-outage codec
+       wireless link console playout session-outage codec
 
 clean:
 	rm -rf $(BUILD)

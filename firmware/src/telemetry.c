@@ -109,18 +109,38 @@ void chorus_telemetry_line(const chorus_telemetry_t *telemetry, char *out, size_
         snprintf(wireless_bound, sizeof(wireless_bound), "not-applicable");
     }
 
+    char playout[160];
+    if (telemetry->playout_attached) {
+        char error[32];
+        if (telemetry->sync_error_known) {
+            snprintf(error, sizeof(error), "%" PRId64, telemetry->sync_error_ns);
+        } else {
+            snprintf(error, sizeof(error), "none");
+        }
+        snprintf(playout, sizeof(playout),
+                 "played=%" PRIu64 " underrun_frames=%" PRIu64 " late_chunks=%" PRIu64
+                 " correction_ppm=%.3f sync_error_ns=%s",
+                 telemetry->frames_played, telemetry->underrun_frames, telemetry->late_chunks,
+                 telemetry->correction_ppm, error);
+    } else {
+        snprintf(playout, sizeof(playout),
+                 "played=not-applicable underrun_frames=not-applicable "
+                 "late_chunks=not-applicable correction_ppm=not-applicable "
+                 "sync_error_ns=not-applicable");
+    }
+
     snprintf(out, out_len,
              "chorus-endpoint: link=%s transport=%s wifi=%s wifi_ps_declared=%s "
              "wifi_ps_in_force=%s wireless_bound=%s rejoins=%" PRIu32 " attempts=%" PRIu32
              " audio=%s chunks=%" PRIu64 " frames=%" PRIu64 " sequence=%s skipped=%" PRIu64
              " exchanges=%" PRIu32 " offset_ns=%s round_trip_ns=%s bound_ns=%s amp=%s "
-             "amp_fault_bits=%s",
+             "amp_fault_bits=%s %s",
              chorus_link_state_name(telemetry->link), chorus_transport_name(telemetry->transport),
              wifi, ps_declared, ps_in_force, wireless_bound, telemetry->rejoins,
              telemetry->connect_attempts, chorus_audio_state_name(telemetry->audio),
              telemetry->chunks_received, telemetry->frames_received, sequence,
              telemetry->skipped_frames, telemetry->exchanges, offset, round_trip, bound,
-             chorus_amp_status_name(telemetry->amp), amp_fault);
+             chorus_amp_status_name(telemetry->amp), amp_fault, playout);
 }
 
 void chorus_telemetry_record_wifi(chorus_telemetry_t *telemetry, const chorus_wifi_report_t *report)

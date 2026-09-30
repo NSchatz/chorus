@@ -20,6 +20,7 @@
 
 #include "chorus/endpoint_config.h"
 #include "chorus/session.h"
+#include "chorus/sync_conf.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -53,14 +54,20 @@ int main(int argc, char **argv)
     config.first_backoff_ms = committed.reconnect_first_backoff_ms;
     config.max_backoff_ms = committed.reconnect_max_backoff_ms;
     config.run_seconds = 10;
-    /* The exchange cadence and the filter shape come from config/sync.conf on
-     * the Linux side; the endpoint takes the same values so both endpoints of
-     * a group filter the same way. They are overridable here because the
-     * outage runs are short and an exchange every half second in a twelve
-     * second run is four exchanges. */
-    config.sync_interval_ms = 500;
-    config.filter_window = 64;
-    config.smoothing_alpha = 0.0625;
+    /* The exchange cadence and the filter shape come from config/sync.conf,
+     * the file the Linux client is held to, read here as the board reads its
+     * embedded copy (audit A-12), so both endpoints of a group filter the same
+     * way. The interval is overridable because the outage runs are short and
+     * an exchange every half second in a twelve second run is four exchanges. */
+    chorus_sync_conf_t sync;
+    if (chorus_sync_conf_load(&sync, CHORUS_REPO_ROOT "/config/sync.conf", detail,
+                              sizeof(detail)) != 0) {
+        fprintf(stderr, "chorus-endpoint-session: %s\n", detail);
+        return 2;
+    }
+    config.sync_interval_ms = sync.sync_interval_ms;
+    config.filter_window = sync.filter_window;
+    config.smoothing_alpha = sync.smoothing_alpha;
 
     for (int i = 1; i < argc; i++) {
         const char *arg = argv[i];
@@ -113,7 +120,7 @@ int main(int argc, char **argv)
         return 3;
     }
 
-    char line[512];
+    char line[1024];
     chorus_telemetry_line(&result.telemetry, line, sizeof(line));
     printf("%s\n", line);
     printf("chorus-endpoint-session: end=%s server=%s run_seconds=%u\n",

@@ -506,6 +506,18 @@ Instructions: the script's own header, and
 passes in means. The captures it writes ARE the evidence and can be graded
 afterwards, on any machine, by someone who did not take them.
 
+### The playout path (chorus goal 8): host-graded, not heard
+
+Until goal 8 the endpoint counted chunks as received and dropped them (audit
+A-9). It now plays them through `firmware/src/playout.c`: a jitter buffer, the
+frames the I2S DMA consumed, counted and stamped on the monotonic clock in the
+`on_sent` interrupt, and the servo that error feeds (`docs/decisions/0058-the-endpoint-playout-path.md`). `make firmware-check` runs `firmware/tests/test_playout.c`
+against a fake DMA on a fake clock, with PCM that carries a frame counter so
+the true error at the pins is graded beside the servo's own. That is a
+**model, labelled simulation, and not timing evidence**: AC-1 above is still
+NOT PASSED and nothing here narrows it. The binding (`firmware/main/`) is
+compiled in the gate and has never run.
+
 ### The other three adopted criteria
 
 AC-2, AC-4 and AC-5 are the roadmap phase's own text, adopted verbatim. Each

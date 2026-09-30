@@ -21,15 +21,19 @@
 
 /* One DMA-sized read at a time, and a buffer big enough that the largest frame
  * the protocol can carry (65538 bytes) always fits whole. Sized once here
- * rather than grown, because the endpoint has no heap on the audio path. The
- * plaintext of one record has its own buffer beside it: a record is opened
- * out of the receive buffer, never over it. */
+ * rather than grown, because the endpoint has no heap on the audio path. A
+ * record is opened IN PLACE, over its own ciphertext in this buffer (goal 8):
+ * the PSA Crypto API lets an output buffer overlap an input buffer "with the
+ * same result as if the buffers did not overlap" (PSA Certified Crypto API 1.2,
+ * section 5.4.4, arm-software.github.io/psa-api/crypto/1.2/overview/
+ * conventions.html, read 2026-09-30), and firmware/tests/test_noise.c checks
+ * it. That frees the second 64 KiB buffer the jitter buffer needs. */
 #define CHORUS_SESSION_BUFFER (CHORUS_FRAME_HEADER_LEN + CHORUS_MAX_PAYLOAD_LEN + 4096)
 
 /* What this endpoint itself sends is small: a handshake message, a refusal
  * (at most a 1024-byte detail), and records carrying its greeting, a time-sync
  * request or its telemetry. One buffer of this size holds any of them, so the
- * only 64 KiB buffers are the two the receive side needs. */
+ * only 64 KiB buffer is the one the receive side needs. */
 #define CHORUS_SESSION_SEND_BUFFER 1280u
 
 /* The pins this endpoint keeps: one per server id it has met. */
@@ -39,10 +43,11 @@
  * Opus decoders are a sibling track's, and advertising a codec with no
  * decoder behind it would be negotiating a stream this endpoint cannot play.
  * The rates, formats and channels are what its I2S path is configured for
- * (firmware/config/endpoint.conf); buffer and latency are ASSUMED until the
- * jitter buffer and the output stage are measured (goal 8). */
+ * (firmware/config/endpoint.conf); the buffer is the playout path's jitter
+ * buffer (chorus/playout.h) and, like the intrinsic latency, ASSUMED until the
+ * output stage is measured on a bench. */
 #define CHORUS_SESSION_SOFTWARE "chorus-endpoint 0.2.0"
-#define CHORUS_SESSION_BUFFER_MS 200u
+#define CHORUS_SESSION_BUFFER_MS CHORUS_PLAYOUT_BUFFER_MS
 #define CHORUS_SESSION_INTRINSIC_LATENCY_NS 0u
 
 /* About once a second, which is docs/protocol.md's intent for telemetry. */
@@ -91,10 +96,30 @@ static void hand_on_telemetry(const session_state_t *state)
     }
 }
 
+/* The playout path's counters into the published telemetry: what the DMA
+ * consumed, not what arrived. */
+static void refresh_playout(session_state_t *state)
+{
+    chorus_playout_t *playout = state->config->playout;
+    if (playout == NULL) {
+        return;
+    }
+    chorus_playout_stats_t st;
+    chorus_playout_stats(playout, &st);
+    state->telemetry.playout_attached = 1;
+    state->telemetry.frames_played = st.frames_played;
+    state->telemetry.underrun_frames = st.underrun_frames;
+    state->telemetry.late_chunks = st.late_chunks;
+    state->telemetry.correction_ppm = st.correction_ppm;
+    state->telemetry.sync_error_known = st.error_known;
+    state->telemetry.sync_error_ns = (int64_t)st.last_error_ns;
+}
+
 static void publish(session_state_t *state, const char *event)
 {
+    refresh_playout(state);
     hand_on_telemetry(state);
-    char line[512];
+    char line[1024];
     chorus_telemetry_line(&state->telemetry, line, sizeof(line));
     if (state->log != NULL) {
         fprintf(state->log, "%s event=%s\n", line, event);
@@ -106,8 +131,9 @@ static void publish(session_state_t *state, const char *event)
  * a refusal, a pin, a key change. */
 static void publish_detail(session_state_t *state, const char *event, const char *detail)
 {
+    refresh_playout(state);
     hand_on_telemetry(state);
-    char line[512];
+    char line[1024];
     chorus_telemetry_line(&state->telemetry, line, sizeof(line));
     if (state->log != NULL) {
         fprintf(state->log, "%s event=%s detail=\"%s\"\n", line, event, detail);
@@ -753,8 +779,9 @@ static int send_time_sync_request(session_state_t *state, int fd, chorus_noise_c
     return send_sealed(state, fd, cipher, frame, written);
 }
 
-/* The endpoint's periodic report. What it does not know yet (a playout error,
- * a buffer, a servo) it says it does not know, rather than reporting zero. */
+/* The endpoint's periodic report. What it does not know (a playout error before
+ * the loop has formed one, the link, the radio, the temperature) it says it
+ * does not know, rather than reporting zero. */
 static int send_telemetry(session_state_t *state, int fd, chorus_noise_cipher_t *cipher)
 {
     chorus_v2_message_t m;
@@ -762,6 +789,16 @@ static int send_telemetry(session_state_t *state, int fd, chorus_noise_cipher_t 
     m.type = CHORUS_V2_TELEMETRY;
     m.as.telemetry.taken_ns = chorus_monotonic_now_ns();
     m.as.telemetry.sync_error_ns = INT64_MIN;
+    if (state->config->playout != NULL) {
+        chorus_playout_stats_t st;
+        chorus_playout_stats(state->config->playout, &st);
+        if (st.error_known) {
+            /* The last error the playout loop formed from DMA-consumed frames
+             * (firmware/src/playout.c): this endpoint's own view of its playout
+             * against the timeline, not a measured inter-device error. */
+            m.as.telemetry.sync_error_ns = (int64_t)st.last_error_ns;
+        }
+    }
     m.as.telemetry.link = 0; /* unknown */
     m.as.telemetry.rssi_dbm = INT8_MIN;
     m.as.telemetry.temperature_centi_c = INT16_MIN;
@@ -813,11 +850,16 @@ static int handle_inner(session_state_t *state, stream_state_t *stream,
         }
         size_t sample_bytes = chorus_sample_format_bytes(chunk->sample_format);
         size_t frame_bytes = (size_t)chunk->channels * sample_bytes;
-        /* Counted as received and then dropped: there is no jitter buffer or
-         * I2S writer here yet (audit A-9, goal 8). */
+        size_t frames = (frame_bytes == 0) ? 0 : chunk->audio_data_len / frame_bytes;
+        /* Counted as received; what plays is what the playout path's DMA
+         * consumes (audit A-9, goal 8). */
         state->telemetry.chunks_received++;
-        state->telemetry.frames_received +=
-            (frame_bytes == 0) ? 0 : chunk->audio_data_len / frame_bytes;
+        state->telemetry.frames_received += frames;
+        if (config->playout != NULL) {
+            (void)chorus_playout_offer(config->playout, chunk->timestamp_ns, chunk->sequence,
+                                       chunk->sample_format, chunk->channels, chunk->sample_rate_hz,
+                                       chunk->audio_data, (uint32_t)frames);
+        }
         state->telemetry.last_sequence = chunk->sequence;
         state->telemetry.have_sequence = 1;
         if (state->telemetry.audio == CHORUS_AUDIO_IDLE) {
@@ -847,6 +889,10 @@ static int handle_inner(session_state_t *state, stream_state_t *stream,
              * RFC 5905 section 4 makes the bound on that offset. */
             state->telemetry.bound_ns = state->telemetry.round_trip_ns / 2;
             state->telemetry.exchanges++;
+            if (config->playout != NULL) {
+                /* The loop forms its error from this offset (playout.h). */
+                chorus_playout_set_offset(config->playout, filtered, exchange.t3_ns);
+            }
             stream->exchange_outstanding = 0;
             stream->next_exchange_ns =
                 chorus_monotonic_now_ns() + (uint64_t)config->sync_interval_ms * 1000000ull;
@@ -858,6 +904,10 @@ static int handle_inner(session_state_t *state, stream_state_t *stream,
         stream->format = *f;
         stream->format.codec_config.data = NULL;
         stream->announced = 1;
+        if (config->playout != NULL) {
+            /* A new stream starts from an empty buffer and a fresh loop. */
+            chorus_playout_reset_stream(config->playout);
+        }
         chorus_codec_close(stream->decoder);
         stream->decoder = NULL;
         if (f->codec != CHORUS_V2_CODEC_PCM) {
@@ -887,7 +937,7 @@ static int handle_inner(session_state_t *state, stream_state_t *stream,
     }
     case CHORUS_V2_CODED_CHUNK: {
         /* One FLAC frame or Opus packet, decoded through the seam into the
-         * same accounting a PCM chunk gets; the playout path is goal 8's. */
+         * same accounting and the same playout path a PCM chunk gets. */
         const chorus_v2_coded_chunk_t *chunk = &frame->message.as.coded_chunk;
         if (!stream->announced || stream->decoder == NULL) {
             *why = "coded-chunk-without-a-coded-stream-format";
@@ -906,6 +956,11 @@ static int handle_inner(session_state_t *state, stream_state_t *stream,
         }
         state->telemetry.chunks_received++;
         state->telemetry.frames_received += got;
+        if (config->playout != NULL) {
+            (void)chorus_playout_offer(
+                config->playout, chunk->timestamp_ns, chunk->sequence, stream->format.sample_format,
+                (uint16_t)stream->format.channels, stream->format.sample_rate_hz, pcm, got);
+        }
         state->telemetry.last_sequence = chunk->sequence;
         state->telemetry.have_sequence = 1;
         if (state->telemetry.audio == CHORUS_AUDIO_IDLE) {
@@ -936,12 +991,14 @@ static int handle_inner(session_state_t *state, stream_state_t *stream,
  * that travels in the clear ends the session, because nothing after it can be
  * trusted to be aligned or authentic. */
 static int take_record(session_state_t *state, stream_state_t *stream,
-                       chorus_noise_cipher_t *receive, const uint8_t *ciphertext, size_t len,
+                       chorus_noise_cipher_t *receive, uint8_t *ciphertext, size_t len,
                        const char **why)
 {
-    static uint8_t plain[CHORUS_MAX_PAYLOAD_LEN];
+    /* Opened in place (see CHORUS_SESSION_BUFFER): the plaintext overwrites
+     * the ciphertext it came from, which nothing reads again. */
+    uint8_t *plain = ciphertext;
     size_t plain_len = 0;
-    if (chorus_noise_open_record(receive, ciphertext, len, plain, sizeof(plain), &plain_len) !=
+    if (chorus_noise_open_record(receive, ciphertext, len, plain, len, &plain_len) !=
         CHORUS_NOISE_OK) {
         *why = "record-did-not-decrypt";
         return -1;
@@ -1213,6 +1270,7 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
             (backoff_ms * 2 > config->max_backoff_ms) ? config->max_backoff_ms : backoff_ms * 2;
     }
 
+    refresh_playout(&state);
     out->telemetry = state.telemetry;
     if (key_changed) {
         out->end = CHORUS_SESSION_SERVER_KEY_CHANGED;

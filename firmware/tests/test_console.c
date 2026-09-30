@@ -207,7 +207,7 @@ static void status_prints_the_telemetry_line(void)
     published.link = CHORUS_LINK_UP;
     published.frames_received = 4800;
     have_telemetry = 1;
-    char line[768];
+    char line[1024];
     chorus_telemetry_line(&published, line, sizeof(line));
     rc = chorus_console_execute(&c, "status", out, sizeof(out));
     chorus_check(rc == 0 && strncmp(out, "status ", 7) == 0 && strcmp(out + 7, line) == 0,

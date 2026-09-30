@@ -492,6 +492,15 @@ static void the_handshake_fails_closed(void)
     status = chorus_noise_open_record(&tr.receive, record + 3, record_len - 3, p, sizeof(p), &got);
     chorus_check(status == CHORUS_NOISE_OK && got == sizeof(frames),
                  "the unaltered record still opens: a failure did not advance the nonce");
+    /* The session opens records in place (goal 8: no second 64 KiB buffer);
+     * PSA Crypto API 1.2 section 5.4.4 lets an output buffer overlap an input
+     * buffer with the same result. */
+    chorus_noise_seal_record(&ti.send, frames, sizeof(frames), record, sizeof(record), &record_len);
+    status = chorus_noise_open_record(&tr.receive, record + 3, record_len - 3, record + 3,
+                                      record_len - 3, &got);
+    chorus_check(status == CHORUS_NOISE_OK && got == sizeof(frames) &&
+                     memcmp(record + 3, frames, sizeof(frames)) == 0,
+                 "a record opens in place, over its own ciphertext, to the same plaintext");
     chorus_noise_transport_clear(&ti);
     chorus_noise_transport_clear(&tr);
 }
