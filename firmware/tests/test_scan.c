@@ -137,6 +137,24 @@ static int scratch_copy(const char *name, char *out, size_t out_len)
     if (copy_tree(source, target) != 0) {
         return -1;
     }
+    /* The build configuration the eFuse configuration rule reads, and the
+     * list it reads it against (audit A-15). */
+    snprintf(target, sizeof(target), "%.1900s/check", firmware);
+    if (mkdir(target, 0755) != 0 && errno != EEXIST) {
+        return -1;
+    }
+    const char *const configuration[] = {
+        CHORUS_EFUSE_KCONFIG_LIST,
+        "firmware/sdkconfig.defaults",
+        "firmware/CMakeLists.txt",
+    };
+    for (size_t i = 0; i < sizeof(configuration) / sizeof(configuration[0]); i++) {
+        chorus_repo_path(source, sizeof(source), configuration[i]);
+        snprintf(target, sizeof(target), "%.1000s/%.1000s", out, configuration[i]);
+        if (copy_file(source, target) != 0) {
+            return -1;
+        }
+    }
     chorus_repo_path(source, sizeof(source), "firmware/endpoint-units.conf");
     snprintf(target, sizeof(target), "%.1900s/endpoint-units.conf", firmware);
     return copy_file(source, target);
@@ -212,6 +230,60 @@ static void one_demonstration(const char *name, const char *unit, const char *bo
     if (!has_rule(&result, rule, unit)) {
         print_findings(&result);
     }
+    remove_tree(scratch);
+}
+
+/* A line that names a refused option and leaves it OFF, or that sets one of
+ * the derived capability flags, has to stay green: a rule that fired on the
+ * stock configuration would be a rule nobody could satisfy. */
+static void one_green_demonstration(const char *name, const char *unit, const char *body,
+                                    const char *what)
+{
+    chorus_unit_list_t list;
+    if (!load_committed_list(&list)) {
+        return;
+    }
+    char scratch[2048];
+    if (scratch_copy(name, scratch, sizeof(scratch)) != 0) {
+        chorus_check(0, "a scratch copy for the %s demonstration is makeable", what);
+        return;
+    }
+    if (smuggle_into(scratch, unit, body) != 0) {
+        chorus_check(0, "%s is writable in the scratch copy", unit);
+        remove_tree(scratch);
+        return;
+    }
+    chorus_scan_result_t result;
+    chorus_endpoint_scan(scratch, &list, &result);
+    if (!chorus_scan_ok(&result)) {
+        print_findings(&result);
+    }
+    chorus_check(chorus_scan_ok(&result), "%s stays green", what);
+    remove_tree(scratch);
+}
+
+/* The list the configuration rule reads is itself required: without it the
+ * rule would have nothing to refuse, and a guard that checked nothing is not a
+ * clean one. */
+static void a_missing_kconfig_list_turns_it_red(void)
+{
+    chorus_unit_list_t list;
+    if (!load_committed_list(&list)) {
+        return;
+    }
+    char scratch[2048];
+    if (scratch_copy("no-kconfig-list", scratch, sizeof(scratch)) != 0) {
+        chorus_check(0, "a scratch copy for the missing-list demonstration is makeable");
+        return;
+    }
+    char path[2048];
+    snprintf(path, sizeof(path), "%.1000s/%.1000s", scratch, CHORUS_EFUSE_KCONFIG_LIST);
+    remove(path);
+    chorus_scan_result_t result;
+    chorus_endpoint_scan(scratch, &list, &result);
+    chorus_check(!chorus_scan_ok(&result) &&
+                     has_rule(&result, "efuse-kconfig-list-unreadable", "efuse-kconfig.list"),
+                 "a tree without %s is red, not clean", CHORUS_EFUSE_KCONFIG_LIST);
     remove_tree(scratch);
 }
 
@@ -323,6 +395,10 @@ static void the_committed_tree_passes(void)
     chorus_check(result.units_scanned == list.on_path_count,
                  "every listed unit exists and was scanned (%zu of %zu)", result.units_scanned,
                  list.on_path_count);
+    /* firmware/sdkconfig.defaults, firmware/CMakeLists.txt and
+     * firmware/main/CMakeLists.txt at the least. */
+    chorus_check(result.config_files_scanned >= 3,
+                 "the build configuration was read (%zu files)", result.config_files_scanned);
 }
 
 static void an_exclusion_without_a_reason_is_refused(void)
@@ -397,6 +473,67 @@ int main(void)
                       "    esp_efuse_write_field_bit(handle);\n"
                       "}\n",
                       "efuse-write-in-the-endpoint-tree", "an eFuse write");
+
+    /* A-16: the same act by a name the original list did not have, reached
+     * through the eFuse controller's programming registers. */
+    one_demonstration("efuse-register", "firmware/main/esp_hal.c",
+                      "\n/* Introduced by the endpoint-scan demonstration. */\n"
+                      "void chorus_demonstration_efuse_register(void)\n"
+                      "{\n"
+                      "    REG_WRITE(EFUSE_PGM_DATA0_REG, 1);\n"
+                      "}\n",
+                      "efuse-write-in-the-endpoint-tree",
+                      "an eFuse programming register written directly");
+
+    chorus_section("an eFuse-burning option, smuggled into the build configuration");
+    one_demonstration("sdkconfig-flash-encryption", "firmware/sdkconfig.defaults",
+                      "\n# Introduced by the endpoint-scan demonstration.\n"
+                      "CONFIG_SECURE_FLASH_ENC_ENABLED=y\n",
+                      "efuse-burning-option-in-the-build-configuration",
+                      "Flash Encryption switched on in sdkconfig.defaults");
+    one_demonstration("sdkconfig-secure-boot", "firmware/sdkconfig.defaults",
+                      "\nCONFIG_SECURE_BOOT=y\n",
+                      "efuse-burning-option-in-the-build-configuration",
+                      "Secure Boot switched on in sdkconfig.defaults");
+    one_demonstration("sdkconfig-old-name", "firmware/sdkconfig.defaults",
+                      "\nCONFIG_APP_ANTI_ROLLBACK=y\n",
+                      "efuse-burning-option-in-the-build-configuration",
+                      "anti-rollback under the deprecated name ESP-IDF still maps");
+    one_demonstration("sdkconfig-rom-log", "firmware/sdkconfig.defaults",
+                      "\nCONFIG_BOOT_ROM_LOG_ALWAYS_OFF=y\n",
+                      "efuse-burning-option-in-the-build-configuration",
+                      "a ROM log scheme, which burns at app boot outside SECURE_");
+    one_demonstration("sdkconfig-target-defaults", "firmware/sdkconfig.defaults.esp32s3",
+                      "CONFIG_NVS_ENCRYPTION=y\nCONFIG_NVS_SEC_KEY_PROTECT_USING_HMAC=y\n",
+                      "efuse-burning-option-in-the-build-configuration",
+                      "NVS encryption keyed from eFuse, in a target-specific defaults file");
+    one_demonstration("sdkconfig-generated", "firmware/sdkconfig",
+                      "CONFIG_SECURE_DISABLE_ROM_DL_MODE=y\n",
+                      "efuse-burning-option-in-the-build-configuration",
+                      "a stale generated firmware/sdkconfig, which idf.py prefers to the defaults");
+    one_demonstration("cmake-redirect", "firmware/CMakeLists.txt",
+                      "\nset(SDKCONFIG_DEFAULTS \"sdkconfig.defaults;/elsewhere/secure.defaults\")\n",
+                      "build-configuration-redirected-in-cmake",
+                      "CMake pointing the defaults at a file this scan never reads");
+    one_demonstration("cmake-define", "firmware/main/CMakeLists.txt",
+                      "\ntarget_compile_definitions(${COMPONENT_LIB} PRIVATE "
+                      "CONFIG_SECURE_FLASH_ENC_ENABLED=1)\n",
+                      "efuse-burning-option-in-the-build-configuration",
+                      "a refused option handed to the compiler from CMake");
+    one_demonstration("cmake-module", "firmware/main/secure.cmake",
+                      "set(SECURE_BOOT y)\n",
+                      "efuse-burning-option-in-the-build-configuration",
+                      "a refused name without its CONFIG_ prefix in a *.cmake file");
+    one_green_demonstration("sdkconfig-off", "firmware/sdkconfig.defaults",
+                            "\n# CONFIG_SECURE_BOOT is not set\n"
+                            "CONFIG_SECURE_FLASH_ENC_ENABLED=n\n"
+                            "CONFIG_SECURE_ROM_DL_MODE_ENABLED=y\n"
+                            "CONFIG_SECURE_BOOT_IMAGE_DIGEST_LEN=32\n"
+                            "CONFIG_BOOT_ROM_LOG_ALWAYS_ON=y\n"
+                            "CONFIG_EFUSE_VIRTUAL=y\n",
+                            "refused options written as off, a derived capability flag, a "
+                            "number, the default ROM log scheme and virtual eFuses");
+    a_missing_kconfig_list_turns_it_red();
 
     chorus_section("an OTA activation, smuggled into the endpoint tree");
     one_demonstration("ota", "firmware/src/session.c",
