@@ -117,6 +117,11 @@ All read 2026-09-30.
   warnings. The C session opens the decoder from a FLAC or Opus `stream_format`, decodes each
   `coded_chunk` into the accounting a PCM chunk gets, and lists FLAC and Opus in its
   `capabilities`; the jitter buffer and I2S playout that both feed are goal 8's.
+- The linked decoders took the S3 image past ESP-IDF's default 1 MB single-app partition, so
+  `firmware/sdkconfig.defaults` selects ESP-IDF's "Single factory app (large), no OTA" table
+  (1.5 MB app in the default 2 MB flash). A cheap call, made here and reversible: the partition
+  layout OTA needs is goal 14's, which revisits the table and the flash size together. Sizes
+  before and after are in the measurement report.
 - libopus with `VAR_ARRAYS` takes its scratch from the calling task's stack; the S3 task that
   decodes needs a stack sized for it, which goal 8 measures on the device (not claimed here).
 - Host cost and size are in `docs/measurements/codec-decode-cost-host.md` (host only; nothing
