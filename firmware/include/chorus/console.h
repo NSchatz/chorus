@@ -62,8 +62,7 @@ typedef struct {
 /* Run one command line and write its one reply line (no newline) into `out`.
  * Returns 0 when the command did what it says, nonzero when the reply is an
  * `error` line. */
-int chorus_console_execute(chorus_console_t *console, const char *line, char *out,
-                           size_t out_len);
+int chorus_console_execute(chorus_console_t *console, const char *line, char *out, size_t out_len);
 
 /* The commands, for a help line and the binding's registration. */
 extern const char *const chorus_console_commands[];

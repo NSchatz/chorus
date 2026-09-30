@@ -128,8 +128,8 @@ static void power_save_sets_and_reads_back(void)
                  "the simulated radio saw one set and one readback and is in `none`");
 
     rc = chorus_console_execute(&c, "power-save min-modem", out, sizeof(out));
-    chorus_check(rc == 0 && strcmp(out, "power-save set=min-modem in-force=min-modem agrees=yes") ==
-                                0,
+    chorus_check(rc == 0 &&
+                     strcmp(out, "power-save set=min-modem in-force=min-modem agrees=yes") == 0,
                  "`power-save min-modem` replies `%s`", out);
 
     fake.readback_overridden = 1;
@@ -165,8 +165,8 @@ static void a_wired_endpoint_has_no_radio_to_set(void)
     chorus_console_t c = a_console(CHORUS_TRANSPORT_WIRED, &radio);
     char out[CHORUS_CONSOLE_REPLY];
     int rc = chorus_console_execute(&c, "power-save none", out, sizeof(out));
-    chorus_check(rc != 0 && strstr(out, "error power-save reason=not-wireless") == out,
-                 "`%s`", out);
+    chorus_check(rc != 0 && strstr(out, "error power-save reason=not-wireless") == out, "`%s`",
+                 out);
     chorus_check(fake.event_count == 0, "the simulated radio saw %zu events", fake.event_count);
 }
 
@@ -176,10 +176,11 @@ static void server_takes_a_checked_address(void)
     chorus_console_t c = a_console(CHORUS_TRANSPORT_WIRED, NULL);
     char out[CHORUS_CONSOLE_REPLY];
     int rc = chorus_console_execute(&c, "server bench-host:4010", out, sizeof(out));
-    chorus_check(rc == 0 && strcmp(out, "server set=bench-host:4010 applies=next-connection") == 0 &&
+    chorus_check(rc == 0 &&
+                     strcmp(out, "server set=bench-host:4010 applies=next-connection") == 0 &&
                      strcmp(server_given, "bench-host:4010") == 0,
                  "`%s`, the session was given `%s`", out, server_given);
-    const char *bad[] = {"server bench-host", "server :4010", "server bench-host:0",
+    const char *bad[] = {"server bench-host",       "server :4010",          "server bench-host:0",
                          "server bench-host:65536", "server bench-host:40x", "server"};
     for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
         server_given[0] = '\0';
@@ -234,11 +235,11 @@ static void decode_cost_times_only_the_decode(void)
                      cost.elapsed_ns == 11ull * 1000000ull && cost.decode_matches,
                  "flac: %u chunks, %llu frames, %llu ns timed (one fake ms per decode call), "
                  "decode hashes to decode_fnv1a64: %s",
-                 cost.chunks, (unsigned long long)cost.frames,
-                 (unsigned long long)cost.elapsed_ns, cost.decode_matches ? "yes" : "no");
+                 cost.chunks, (unsigned long long)cost.frames, (unsigned long long)cost.elapsed_ns,
+                 cost.decode_matches ? "yes" : "no");
     chorus_check(rc == 0 && cost.cpu_fraction > 0.0107 / audio_s * 1.0 &&
-                     cost.cpu_fraction < 0.0111 / audio_s &&
-                     cost.frames_per_s > 44877.0 / 0.0111 && cost.frames_per_s < 44877.0 / 0.0109,
+                     cost.cpu_fraction < 0.0111 / audio_s && cost.frames_per_s > 44877.0 / 0.0111 &&
+                     cost.frames_per_s < 44877.0 / 0.0109,
                  "flac: cpu_fraction %.6f = 0.011 s over %.4f s of audio; %.0f frames/s",
                  cost.cpu_fraction, audio_s, cost.frames_per_s);
 
@@ -252,6 +253,10 @@ static void decode_cost_times_only_the_decode(void)
 
     /* A corrupted chunk is not a figure. */
     uint8_t *broken = malloc(fx[0].chunks_len);
+    if (broken == NULL) {
+        chorus_check(0, "memory for a corrupted copy of the FLAC chunks");
+        return;
+    }
     memcpy(broken, fx[0].chunks, fx[0].chunks_len);
     for (size_t i = 40; i < 200; i++) {
         broken[i] ^= 0x5a;
@@ -369,7 +374,8 @@ static void the_session_connects_where_the_console_says(void)
     (void)chorus_session_run(&config, &result);
 
     int accepted = accept(listener, NULL, NULL);
-    chorus_check(accepted >= 0, "the listener the console named was connected to (%d updates asked)",
+    chorus_check(accepted >= 0,
+                 "the listener the console named was connected to (%d updates asked)",
                  updates_asked);
     if (accepted >= 0) {
         close(accepted);

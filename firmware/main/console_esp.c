@@ -25,14 +25,14 @@ static const char *TAG = "chorus-console";
 /* The decode-cost fixtures, embedded from fixtures/codec by the component's
  * CMakeLists (EMBED_FILES): the same files the host test and the Linux client
  * read, so a figure on the chip is about the decode the host checked. */
-extern const uint8_t flac_fields_start[] asm("_binary_flac_s16_stereo_44k1_fields_start");
-extern const uint8_t flac_fields_end[] asm("_binary_flac_s16_stereo_44k1_fields_end");
-extern const uint8_t flac_chunks_start[] asm("_binary_flac_s16_stereo_44k1_chunks_start");
-extern const uint8_t flac_chunks_end[] asm("_binary_flac_s16_stereo_44k1_chunks_end");
-extern const uint8_t opus_fields_start[] asm("_binary_opus_tv10_celt_stereo_fields_start");
-extern const uint8_t opus_fields_end[] asm("_binary_opus_tv10_celt_stereo_fields_end");
-extern const uint8_t opus_chunks_start[] asm("_binary_opus_tv10_celt_stereo_chunks_start");
-extern const uint8_t opus_chunks_end[] asm("_binary_opus_tv10_celt_stereo_chunks_end");
+extern const uint8_t flac_fields_start[] __asm__("_binary_flac_s16_stereo_44k1_fields_start");
+extern const uint8_t flac_fields_end[] __asm__("_binary_flac_s16_stereo_44k1_fields_end");
+extern const uint8_t flac_chunks_start[] __asm__("_binary_flac_s16_stereo_44k1_chunks_start");
+extern const uint8_t flac_chunks_end[] __asm__("_binary_flac_s16_stereo_44k1_chunks_end");
+extern const uint8_t opus_fields_start[] __asm__("_binary_opus_tv10_celt_stereo_fields_start");
+extern const uint8_t opus_fields_end[] __asm__("_binary_opus_tv10_celt_stereo_fields_end");
+extern const uint8_t opus_chunks_start[] __asm__("_binary_opus_tv10_celt_stereo_chunks_start");
+extern const uint8_t opus_chunks_end[] __asm__("_binary_opus_tv10_celt_stereo_chunks_end");
 
 static size_t span(const uint8_t *start, const uint8_t *end)
 {
@@ -153,14 +153,14 @@ int chorus_esp_console_start(const chorus_endpoint_config_t *config)
         return -1;
     }
 
-    fixtures[0] = (chorus_decode_fixture_t){
-        "flac-s16-stereo-44k1", (const char *)flac_fields_start,
-        span(flac_fields_start, flac_fields_end), flac_chunks_start,
-        span(flac_chunks_start, flac_chunks_end)};
-    fixtures[1] = (chorus_decode_fixture_t){
-        "opus-tv10-celt-stereo", (const char *)opus_fields_start,
-        span(opus_fields_start, opus_fields_end), opus_chunks_start,
-        span(opus_chunks_start, opus_chunks_end)};
+    fixtures[0] =
+        (chorus_decode_fixture_t){"flac-s16-stereo-44k1", (const char *)flac_fields_start,
+                                  span(flac_fields_start, flac_fields_end), flac_chunks_start,
+                                  span(flac_chunks_start, flac_chunks_end)};
+    fixtures[1] =
+        (chorus_decode_fixture_t){"opus-tv10-celt-stereo", (const char *)opus_fields_start,
+                                  span(opus_fields_start, opus_fields_end), opus_chunks_start,
+                                  span(opus_chunks_start, opus_chunks_end)};
 
     memset(&console, 0, sizeof(console));
     console.transport = config->link.transport;

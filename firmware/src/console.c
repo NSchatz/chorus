@@ -67,11 +67,10 @@ static int power_save(chorus_console_t *c, int argc, char words[MAX_WORDS][WORD_
                       size_t out_len)
 {
     int ok = 0;
-    chorus_wifi_ps_t mode = (argc == 2) ? chorus_wifi_ps_from_name(words[1], &ok)
-                                        : CHORUS_WIFI_PS_UNKNOWN;
+    chorus_wifi_ps_t mode =
+        (argc == 2) ? chorus_wifi_ps_from_name(words[1], &ok) : CHORUS_WIFI_PS_UNKNOWN;
     if (argc != 2 || !ok || mode == CHORUS_WIFI_PS_UNKNOWN) {
-        return refuse(out, out_len, "power-save", "usage",
-                      "power-save none|min-modem|max-modem");
+        return refuse(out, out_len, "power-save", "usage", "power-save none|min-modem|max-modem");
     }
     if (c->transport != CHORUS_TRANSPORT_WIRELESS || c->radio == NULL) {
         return refuse(out, out_len, "power-save", "not-wireless",
@@ -183,8 +182,7 @@ static int decode_cost(chorus_console_t *c, int argc, char words[MAX_WORDS][WORD
     return 0;
 }
 
-int chorus_console_execute(chorus_console_t *console, const char *line, char *out,
-                           size_t out_len)
+int chorus_console_execute(chorus_console_t *console, const char *line, char *out, size_t out_len)
 {
     char words[MAX_WORDS][WORD_LEN];
     int argc = split(line, words);
