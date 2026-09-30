@@ -35,4 +35,4 @@ the number of the pull request that added it.
 | 0025 | [multicast DNS and DNS-SD are hand-written, with no external crate](0025-hand-written-mdns.md) |
 | 0026 | [the control plane is HTTP with server-sent events, not WebSocket](0026-http-and-server-sent-events-for-the-control-plane.md) |
 | 0027 | [the audio port is 4010 and the control port is 4020](0027-the-audio-port-4010-and-the-control-port-4020.md) |
-| 0000 | [the v2 key exchange is Noise XX with trust-on-first-use pins, over vendored primitives](0000-the-v2-key-exchange.md) |
+| 0039 | [the v2 key exchange is Noise XX with trust-on-first-use pins, over vendored primitives](0039-the-v2-key-exchange.md) |

@@ -11,7 +11,7 @@ those fields, not when it matches the Rust code (`crates/protocol`, the v2
 half in `crates/protocol/src/v2/`).
 
 Why it is shaped this way: `docs/decisions/0003-wire-protocol-framing.md` (the
-frame) and `docs/decisions/0000-the-v2-key-exchange.md` (the session, and the
+frame) and `docs/decisions/0039-the-v2-key-exchange.md` (the session, and the
 vendored crypto primitives).
 What a decoder does when it cannot accept a frame:
 `docs/decisions/0005-decoder-frame-validation.md`.
@@ -209,7 +209,7 @@ the unassigned type space is for.
 Decisions K62 and K92: speaker sessions are encrypted, and pairing is trust on
 first use. An endpoint's long-term key is pinned when it is first adopted; a
 changed key is refused and surfaced. Why Noise XX and not TLS with a
-pre-shared key: `docs/decisions/0000-the-v2-key-exchange.md`.
+pre-shared key: `docs/decisions/0039-the-v2-key-exchange.md`.
 
 ### The construction
 

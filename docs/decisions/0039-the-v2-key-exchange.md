@@ -1,4 +1,4 @@
-# 0000: the v2 key exchange is Noise XX with trust-on-first-use pins, over vendored primitives
+# 0039: the v2 key exchange is Noise XX with trust-on-first-use pins, over vendored primitives
 
 - Status: accepted (goal 5, 2026-09-30)
 - Decided by: the goal, on decisions K62 (encrypted speaker sessions), K92 (auto-adoption, the key

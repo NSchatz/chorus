@@ -1,7 +1,7 @@
 # Protocol v2 sources: Noise, TLS PSK, the crypto crates, FLAC, Opus and channel orders
 
 Research for goal 5 (protocol v2), 2026-09-30, by a research agent with the lead's questions;
-what `docs/protocol.md` v2 and `docs/decisions/0000-the-v2-key-exchange.md` rest on. Paths under
+what `docs/protocol.md` v2 and `docs/decisions/0039-the-v2-key-exchange.md` rest on. Paths under
 `/cache/tmp/chorus-g5/` were the agent's working files (not in the repository); the Noise vector
 it extracted is committed as `fixtures/protocol/v2/noise/cacophony_xx.fields`.
 

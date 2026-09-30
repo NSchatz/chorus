@@ -9,7 +9,7 @@ license.workspace = true
 
 # The v2 session's crypto primitives (BRIEF.md 3.2: crypto primitives are platform, vendored).
 # Exact pins; versions, licences and the one-version-each check:
-# docs/decisions/0031-the-crypto-dependencies.md.
+# docs/decisions/0039-the-v2-key-exchange.md.
 [dependencies]
 x25519-dalek = { version = "=3.0.0", default-features = false, features = ["static_secrets", "zeroize"] }
 chacha20poly1305 = { version = "=0.11.0", default-features = false, features = ["alloc"] }

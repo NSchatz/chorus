@@ -8,7 +8,7 @@
 //! primitives are platform); only the state machine is chorus's, and it is
 //! held to the published cacophony test vector for this protocol name
 //! (`crates/protocol/tests/noise_vector.rs`). Why XX and not TLS-PSK:
-//! `docs/decisions/0029-the-v2-key-exchange.md`.
+//! `docs/decisions/0039-the-v2-key-exchange.md`.
 //!
 //! ```text
 //! XX:
