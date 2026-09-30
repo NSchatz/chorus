@@ -1,6 +1,7 @@
-# 0012: the CPU-time bound goes on first, and a check says so
+# 0022: the CPU-time bound goes on first, and a check says so
 
 - Status: decided
+- Renumbered from 0012 on 2026-09-30 (duplicate number, decided 2026-09-29 by the owner, K48)
 - Recorded by: umbrella spec S0020-chorus-sound-2-docs-fix
 - Follows: `docs/decisions/0010-the-host-contract.md`,
   `docs/decisions/0011-the-audio-path-is-a-list.md`

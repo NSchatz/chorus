@@ -1,8 +1,11 @@
 # Free-run drift: noiseless-fixture
 
 Date: 2026-09-03
-Build measured: `60b639b98586ed9e1d0bf0c195870a2bf95a1172`
-Tree at that commit: clean
+Source: synthetic
+Build measured: `ba6ca4f783bd4a89f26360a900f045a911e0b162`
+Build note (written 2026-09-30, K48, audit A-6): the build commit this report first named, `60b639b98586ed9e1d0bf0c195870a2bf95a1172`, no longer exists in this history (a branch commit the squash merge discarded). The commit above is the one that first added this report (the squash merge of PR #8); the figures were not re-run on it.
+Timing evidence: none. The input is a series generated from committed parameters (`fixtures/measure/10-free-run-noiseless.params`), not a capture from any device; only a `hardware` report is timing evidence (BRIEF.md section 3.1 rule 3).
+Tree at the original build commit: clean
 Reproduce with: `cargo run -p chorus-measure --bin chorus-measure -- free-run fixtures/measure/10-free-run-noiseless.offsets --label noiseless-fixture --source fixture`
 
 ## Figures

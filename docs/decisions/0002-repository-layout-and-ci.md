@@ -109,6 +109,14 @@ no dependency graph the lock records nothing. Both decisions flip the day the
 first external dependency lands, which is itself a decision-log entry (a new
 dependency is not a quiet change).
 
+**Correction (2026-09-30, goal 4, K48, audit B-20):** the paragraph above no longer
+holds. `Cargo.lock` came out of `.gitignore` and was committed on 2026-09-08 by the pinning
+change (`9b9decc`, PR #13), and every cargo build in the gate and the image passes `--locked`
+(`tools/gate.sh`, `deploy/Dockerfile`). The workspace still has no external crate: every
+package in `Cargo.lock` is a workspace member and none carries a `source` line. The lockfile
+is committed so that `--locked` fails loudly on the day a resolution would change, not
+because the graph has anything external in it yet.
+
 ## Consequences
 
 - CI needs no network beyond checking the repository out, so it stays fast and

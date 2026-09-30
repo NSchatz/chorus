@@ -12,7 +12,7 @@ the table above it be mistaken for evidence.
 Every number here is committed in `config/transport.conf` and nowhere else, and
 `tools/wireless-expectations-check.sh` (run by `make verify`) fails when this
 document and that file disagree. The reasoning behind each is in
-`docs/decisions/0021-the-wireless-tier.md`.
+`docs/decisions/0024-the-wireless-tier.md`.
 
 ## The two tiers
 

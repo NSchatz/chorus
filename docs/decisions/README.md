@@ -1,1 +1,37 @@
-One markdown file per significant decision (BRIEF.md section 12).
+# Decision records
+
+One markdown file per significant decision (BRIEF.md section 12). The rule for numbers, the
+first line and the Status line is `docs/conventions.md` rule 15, held by
+`tools/conventions/check-adrs.sh`. 0022-0024 were numbered 0012, 0021 and 0021 until 2026-09-30
+(K48); 0025-0027 record decisions made before the program. From 0032 on, a record's number is
+the number of the pull request that added it.
+
+| Number | Record |
+|---|---|
+| 0001 | [Rust for the server and the Linux client](0001-language-rust.md) |
+| 0002 | [repository layout and CI shape](0002-repository-layout-and-ci.md) |
+| 0003 | [wire protocol framing, field layout and connection model](0003-wire-protocol-framing.md) |
+| 0004 | [the audio chunk header reserves 14 opaque bytes for the TV path](0004-audio-chunk-reserved-bytes.md) |
+| 0005 | [what a decoder does with a frame it cannot accept](0005-decoder-frame-validation.md) |
+| 0006 | [the deterministic sync simulator and the servo it exercises](0006-sync-simulator-and-servo.md) |
+| 0007 | [the server and Linux client language, argued on the merits](0007-server-client-language.md) |
+| 0008 | [how the client reaches ALSA](0008-alsa-binding-and-the-audio-sink.md) |
+| 0009 | [the transport, and telling a finished stream from a lost one](0009-stream-transport-and-end-of-stream.md) |
+| 0010 | [the scheduling and memory contract, and why refusing is the safe answer](0010-the-host-contract.md) |
+| 0011 | [the audio path is an enumeration, and the list is graded too](0011-the-audio-path-is-a-list.md) |
+| 0012 | [the thread inventory is complete, or it is an error](0012-the-thread-inventory-is-complete-or-it-is-an-error.md) |
+| 0013 | [the measurement rig, and the error it publishes with its numbers](0013-the-measurement-rig.md) |
+| 0014 | [the sync loop on the real path, and every constant it fixed](0014-the-sync-loop-on-the-real-path.md) |
+| 0015 | [the ESP32-S3 endpoint, and every constant it fixed](0015-the-esp32-s3-endpoint.md) |
+| 0016 | [the control catalog, its version, and the volume range and curve](0016-the-control-catalog.md) |
+| 0017 | [the control subscriber queue ceiling, and dropping the subscriber](0017-the-control-fanout.md) |
+| 0018 | [the persisted zone state, its format, and what is deliberately not in it](0018-the-persisted-zone-state.md) |
+| 0019 | [a persisted endpoint that never reconnects](0019-a-persisted-endpoint-that-never-comes-back.md) |
+| 0020 | [checks that take a worker from the pool they grade](0020-checks-that-take-a-worker-from-the-pool-they-grade.md) |
+| 0021 | [the comment density baseline](0021-the-comment-density-baseline.md) |
+| 0022 | [the CPU-time bound goes on first, and a check says so](0022-the-cpu-time-bound-goes-on-first.md) |
+| 0023 | [a measured contrast ratio is recorded beside the value](0023-a-measured-ratio-is-recorded-beside-the-value.md) |
+| 0024 | [the wireless tier](0024-the-wireless-tier.md) |
+| 0025 | [multicast DNS and DNS-SD are hand-written, with no external crate](0025-hand-written-mdns.md) |
+| 0026 | [the control plane is HTTP with server-sent events, not WebSocket](0026-http-and-server-sent-events-for-the-control-plane.md) |
+| 0027 | [the audio port is 4010 and the control port is 4020](0027-the-audio-port-4010-and-the-control-port-4020.md) |

@@ -1,6 +1,7 @@
-# 0021: the wireless tier
+# 0024: the wireless tier
 
 - Status: decided
+- Renumbered from 0021 on 2026-09-30 (duplicate number, decided 2026-09-29 by the owner, K48)
 - Recorded by: WIFI-7
 - Implemented in: `config/transport.conf`, `firmware/config/endpoint.conf` (the
   link section), `firmware/src/wifi.c`, `crates/control/src/transport.rs`,
