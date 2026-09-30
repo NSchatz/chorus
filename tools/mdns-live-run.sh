@@ -49,7 +49,7 @@ rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 AUDIO="$(free_port)"
 CONTROL="$(free_port)"
-CONTRACT_ARGS="$(server_contract_args)"
+read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
 
 SERVER=""
 trap 'kill_quietly "$SERVER"' EXIT
@@ -62,7 +62,7 @@ trap 'kill_quietly "$SERVER"' EXIT
     --zone kitchen \
     --advertise \
     --instance chorus-live \
-    $CONTRACT_ARGS >"$OUT_DIR/server.log" 2>&1 &
+    "${CONTRACT_ARGS[@]}" >"$OUT_DIR/server.log" 2>&1 &
 SERVER=$!
 sleep 2
 

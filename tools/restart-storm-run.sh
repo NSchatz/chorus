@@ -58,7 +58,7 @@ OUT_DIR="${TMPDIR:-/tmp}/chorus-restart-storm"
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 DEVICE="$(audio_device)"
-CONTRACT_ARGS="$(server_contract_args)"
+read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
 AUDIO="$(free_port)"
 CONTROL="$(free_port)"
 STATE_FILE="$OUT_DIR/zones.state"
@@ -84,7 +84,7 @@ start_server() {
         --control-workers 16 \
         --state-file "$STATE_FILE" \
         --zone kitchen --zone study --zone hall --zone porch \
-        $CONTRACT_ARGS >"$log" 2>&1 &
+        "${CONTRACT_ARGS[@]}" >"$log" 2>&1 &
     SERVER_PID=$!
     local waited=0
     while [ "$waited" -lt 100 ]; do
@@ -120,7 +120,7 @@ stop_everything() {
 }
 trap stop_everything EXIT
 
-command() {
+send_command() {
     python3 - "$CONTROL" "$1" <<'PY'
 import socket, sys
 port, body = int(sys.argv[1]), sys.argv[2].encode()
@@ -171,7 +171,7 @@ for SET in \
     '{"v":1,"t":"group","zone":"kitchen","group":"downstairs"}' \
     '{"v":1,"t":"group","zone":"study","group":"downstairs"}'
 do
-    ANSWER="$(command "$SET")"
+    ANSWER="$(send_command "$SET")"
     if ! printf '%s' "$ANSWER" | grep -q '200 OK'; then
         say "FAIL the setup command $SET was refused: $(printf '%s' "$ANSWER" | head -n 1)"
         exit 1
@@ -259,8 +259,6 @@ say ""
 for ZONE in kitchen study hall porch; do
     OUT="$OUT_DIR/endpoint-$ZONE.out"
     SESSIONS="$(grep -c 'session n=' "$OUT" || true)"
-    PLAYED_AFTER="$(awk '/session n=/ { n=$0 } END { print n }' "$OUT" \
-        | grep -o 'total_frames_played=[0-9]*' | cut -d= -f2 || true)"
     FIRST_PLAYED="$(grep -m1 'session n=1 ' "$OUT" | grep -o 'frames_played=[0-9]*' \
         | head -n 1 | cut -d= -f2 || true)"
     LATER_PLAYED="$(grep 'session n=' "$OUT" | grep -v 'session n=1 ' \
@@ -305,7 +303,7 @@ EXPECTED=(
 # here is one `is_display_name` admits and one the state file gives a meaning.
 AWKWARD=1
 MISSING=""
-for CH in '#' '\' '[' ']' '='; do
+for CH in '#' "\\" '[' ']' '='; do
     if ! printf '%s\n' "${EXPECTED[@]}" | grep -qF -- "$CH"; then
         AWKWARD=0
         MISSING="$MISSING $CH"

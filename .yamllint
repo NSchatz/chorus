@@ -1,0 +1,16 @@
+---
+# yamllint 1.38.0, run strict over the repository: yamllint -s .
+extends: default
+
+# Build outputs (CMake's configure logs under firmware/build) are not ours.
+ignore-from-file: .gitignore
+
+rules:
+  # GitHub Actions spells the trigger key `on:`, which YAML 1.1 reads as a
+  # boolean. Check values, not keys.
+  truthy:
+    check-keys: false
+  # The default 80 columns fits every YAML file here; long values that need
+  # more can use a folded scalar instead.
+  line-length:
+    max: 80

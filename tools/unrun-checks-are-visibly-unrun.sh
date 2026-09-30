@@ -99,10 +99,12 @@ expect_missing_prerequisite "stream-end-and-loss.sh" \
 
 # No granted real-time priority. Genuinely absent: a soft limit can always be
 # lowered, so this is the real thing rather than a pretend one.
+# shellcheck disable=SC2016 # $0 is expanded by the inner bash, which receives the script path as $0
 expect_missing_prerequisite "spin-test.sh" \
     bash -c 'ulimit -r 0 2>/dev/null; CHORUS_SKIP_BUILD=1 exec bash "$0"' \
     "$REPO_ROOT/tools/spin-test.sh"
 
+# shellcheck disable=SC2016 # $0 is expanded by the inner bash, which receives the script path as $0
 expect_missing_prerequisite "host-contract.sh" \
     bash -c 'ulimit -r 0 2>/dev/null; CHORUS_SKIP_BUILD=1 exec bash "$0"' \
     "$REPO_ROOT/tools/host-contract.sh"

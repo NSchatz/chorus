@@ -1,9 +1,10 @@
+---
 name: ci
 
 # The gate is `make gate` (tools/gate.sh): this job installs what the gate needs
 # on a fresh runner and calls it, nothing more, so CI and a local run cannot
-# drift apart. It is an informational signal: GitHub Actions jobs do not start on
-# this private repository, and the merge rule is the local gate run pasted in
+# drift apart. It is an informational signal: GitHub Actions jobs do not start
+# on this private repository, and the merge rule is the local gate run pasted in
 # the pull request (docs/decisions/0002-repository-layout-and-ci.md, R12).
 on:
   push:
@@ -27,7 +28,7 @@ jobs:
       CHORUS_CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
       - name: Check out
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       # The gate's pinned tools from mise.toml, checked against mise.lock's
       # digests (gitleaks, cargo-deny, the linters). mise-action v5.0.0,
