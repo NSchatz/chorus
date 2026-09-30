@@ -11,6 +11,8 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "nvs_flash.h"
 
 static const char *TAG = "chorus-hal";
@@ -71,19 +73,31 @@ static chorus_i2c_result_t hal_write(void *ctx, uint8_t address, uint8_t reg, ui
 }
 
 /* High impedance is a PIN, not a register. Driving the amplifier's power-down
- * line low needs no address and therefore no datasheet, which is what lets the
- * endpoint reach its one safe state before it knows anything about the part -
- * including before it knows whether the part is there. */
+ * line low needs no address, which is what lets the endpoint reach its one safe
+ * state before it knows anything about the part - including before it knows
+ * whether the part is there. With PDN low the TAS5825M is in shutdown and does
+ * not answer I2C (TAS5825M datasheet SLASEH7H, p. 4), so the sequencer powers
+ * it up before its first transaction. */
 static int hal_high_impedance(void *ctx)
 {
     (void)ctx;
     return (gpio_set_level(hal.power_down, 0) == ESP_OK) ? 0 : -1;
 }
 
-static int hal_enable(void *ctx)
+/* PDN high: the part leaves shutdown in Deep Sleep, its output not switching
+ * until it is commanded to Play over I2C (p. 48). */
+static int hal_power_up(void *ctx)
 {
     (void)ctx;
     return (gpio_set_level(hal.power_down, 1) == ESP_OK) ? 0 : -1;
+}
+
+/* At least `ms`: one tick more than the rounded-down count, so tick rounding
+ * never shortens a datasheet minimum. */
+static void hal_wait_ms(void *ctx, uint32_t ms)
+{
+    (void)ctx;
+    vTaskDelay(pdMS_TO_TICKS(ms) + 1);
 }
 
 static int hal_apply_clock(void *ctx, const chorus_i2s_clock_t *clock)
@@ -241,6 +255,10 @@ int chorus_esp_hal_init(const chorus_endpoint_config_t *config, chorus_i2c_bus_t
                 .invert_flags = {0},
             },
     };
+    /* The sample sits in a wider slot on the wire: two 32-bit slots are the 64
+     * bit clocks per frame the TAS5825M accepts (datasheet SLASEH7H, pp. 7, 29),
+     * where two 24-bit ones would be 48. */
+    std.slot_cfg.slot_bit_width = (i2s_slot_bit_width_t)config->clock.wire_slot_bit_width;
     if (i2s_channel_init_std_mode(hal.tx, &std) != ESP_OK) {
         ESP_LOGE(TAG, "the I2S channel could not be configured");
         return -1;
@@ -264,7 +282,8 @@ int chorus_esp_hal_init(const chorus_endpoint_config_t *config, chorus_i2c_bus_t
     bus->write = hal_write;
     stage->ctx = &hal;
     stage->high_impedance = hal_high_impedance;
-    stage->enable = hal_enable;
+    stage->power_up = hal_power_up;
+    stage->wait_ms = hal_wait_ms;
     controller->ctx = &hal;
     controller->apply_clock = hal_apply_clock;
     controller->stop_clock = hal_stop_clock;

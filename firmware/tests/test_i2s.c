@@ -24,6 +24,7 @@ static chorus_i2s_clock_t committed_clock(void)
     chorus_i2s_clock_t clock;
     clock.sample_rate_hz = 48000;
     clock.slot_bit_width = 24;
+    clock.wire_slot_bit_width = 32;
     clock.mclk_multiple = 384;
     clock.dma_frame_num = 240;
     clock.dma_desc_num = 6;
@@ -267,10 +268,21 @@ static void the_committed_configuration_and_the_gate(void)
                  config.clock.mclk_multiple);
     chorus_check(config.dma_placement == CHORUS_MEM_INTERNAL,
                  "the committed DMA descriptor placement is internal");
-    chorus_check(!config.amp.address_known && !config.amp.reg_device_id_known &&
-                     !config.amp.reg_fault_known && !config.amp.reg_analog_gain_known &&
-                     !config.amp.reg_state_control_known && !config.gain.code_known,
-                 "every amplifier register in the committed configuration is DECLARED UNKNOWN");
+    /* Until chorus goal 9 this asserted the opposite: the register map was
+     * DECLARED UNKNOWN because no datasheet had been read. Goal 9 read TI's
+     * (SLASEH7H), and every value is now known and cited in the file. */
+    chorus_amp_key_t keys[32];
+    size_t key_count = chorus_amp_keys(&config.amp, keys, sizeof(keys) / sizeof(keys[0]));
+    size_t unknown = config.gain.code_known ? 0u : 1u;
+    for (size_t i = 0; i < key_count; i++) {
+        unknown += keys[i].byte->known ? 0u : 1u;
+    }
+    chorus_check(key_count > 0 && unknown == 0,
+                 "every amplifier register-map value in the committed configuration is known "
+                 "(%zu unknown)",
+                 unknown);
+    chorus_check(config.clock.wire_slot_bit_width == 32 && config.amp.sclk_per_frame == 64,
+                 "the committed wire slot is 32 bits, 64 bit clocks per frame for the amplifier");
     chorus_check(config.gain.db <= config.amp.analog_gain_ceiling_db,
                  "the requested analog gain (%.3f dB) is at or below the ceiling (%.3f dB)",
                  config.gain.db, config.amp.analog_gain_ceiling_db);
@@ -291,6 +303,8 @@ static void the_committed_configuration_and_the_gate(void)
          "a DMA descriptor placed in external RAM"},
         {"amp_analog_gain_db = 0.0", "amp_analog_gain_db = 9.0",
          "a requested analog gain above the committed ceiling"},
+        {"i2s_wire_slot_bit_width = 32", "i2s_wire_slot_bit_width = 24",
+         "24-bit slots on the wire, 48 bit clocks per frame, which the amplifier does not accept"},
     };
 
     char source_path[1024];

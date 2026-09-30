@@ -373,27 +373,22 @@ require_esp32s3_endpoint() {
     fi
 }
 
-# Refuse to continue unless the amplifier's register map has been read off the
+# Refuse to continue unless the amplifier's register map is read off the
 # datasheet and written into firmware/config/endpoint.conf.
 #
-# This phase declares every one of those values `unknown` and names no address.
-# A hardware run cannot happen until somebody has read them, and refusing here
-# is how that stays visible rather than becoming a silent zero.
+# Chorus goal 9 read it (TI's TAS5825M datasheet, SLASEH7H), so on main this
+# passes; it stays so that a map edited back to `unknown` on a bench branch is
+# refused here by name rather than found as a silent zero.
 require_amplifier_registers() {
     local criterion="$1"
-    local unknown=""
-    local key
-    for key in amp_i2c_address amp_reg_device_id amp_reg_fault amp_reg_analog_gain \
-        amp_reg_state_control amp_device_id_value amp_fault_clear_value amp_analog_gain_code; do
-        if [ "$(endpoint_conf "$key")" = "unknown" ]; then
-            unknown="$unknown $key"
-        fi
-    done
+    local unknown
+    unknown="$(sed -n 's/^[[:space:]]*\(amp_[a-z0-9_]*\)[[:space:]]*=[[:space:]]*unknown[[:space:]]*\(#.*\)\{0,1\}$/\1/p' \
+        "$REPO_ROOT/firmware/config/endpoint.conf" | tr '\n' ' ')"
     if [ -n "$unknown" ]; then
         missing_prerequisite \
             "$criterion" \
-            "the TAS5825M register map; firmware/config/endpoint.conf still declares these UNKNOWN:$unknown" \
-            "read each value off TI's TAS5825M datasheet at bring-up and write it into firmware/config/endpoint.conf. This phase asserts the bring-up behaviour and names no address, which is why they are unknown here"
+            "the TAS5825M register map; firmware/config/endpoint.conf declares these UNKNOWN: $unknown" \
+            "read each value off TI's TAS5825M datasheet and write it into firmware/config/endpoint.conf with its page (docs/research/tas5825m-register-map.md)"
     fi
 }
 

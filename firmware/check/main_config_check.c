@@ -115,9 +115,11 @@ int main(int argc, char **argv)
                "driven)\n",
                chorus_wifi_ps_name(config.link.power_save));
     }
-    printf("  i2s            %u Hz, %u-bit slots, MCLK x%u (%llu Hz), BCLK %llu Hz, integral "
+    printf("  i2s            %u Hz, %u-bit samples in %u-bit slots, MCLK x%u (%llu Hz), BCLK %llu "
+           "Hz, integral "
            "division %s\n",
-           config.clock.sample_rate_hz, config.clock.slot_bit_width, config.clock.mclk_multiple,
+           config.clock.sample_rate_hz, config.clock.slot_bit_width,
+           config.clock.wire_slot_bit_width, config.clock.mclk_multiple,
            (unsigned long long)chorus_i2s_mclk_hz(&config.clock),
            (unsigned long long)chorus_i2s_bclk_hz(&config.clock),
            chorus_i2s_bclk_division_is_integral(&config.clock) ? "yes" : "no");
@@ -136,13 +138,16 @@ int main(int argc, char **argv)
            config.pins.scl, config.pins.amp_power_down, config.pins.octal_psram ? "yes" : "no");
     printf("  analog gain    %.3f dB requested against a ceiling of %.3f dB\n", config.gain.db,
            config.amp.analog_gain_ceiling_db);
-    printf("  amplifier      i2c address %s, gain code %s, registers %s\n",
-           config.amp.address_known ? "configured" : "DECLARED UNKNOWN",
-           config.gain.code_known ? "configured" : "DECLARED UNKNOWN",
-           (config.amp.reg_device_id_known && config.amp.reg_fault_known &&
-            config.amp.reg_analog_gain_known && config.amp.reg_state_control_known)
-               ? "configured"
-               : "DECLARED UNKNOWN");
+    chorus_amp_key_t keys[32];
+    size_t key_count = chorus_amp_keys(&config.amp, keys, sizeof(keys) / sizeof(keys[0]));
+    size_t unknown = 0;
+    for (size_t i = 0; i < key_count; i++) {
+        unknown += keys[i].byte->known ? 0u : 1u;
+    }
+    unknown += config.gain.code_known ? 0u : 1u;
+    printf("  amplifier      i2c address 0x%02x, %zu register-map values, %zu DECLARED UNKNOWN, "
+           "%u bit clocks per frame\n",
+           config.amp.address.value, key_count + 1u, unknown, config.amp.sclk_per_frame);
     printf("  toolchain      esp-idf %s\n", config.espidf_version);
     return 0;
 }

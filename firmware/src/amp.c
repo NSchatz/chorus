@@ -44,6 +44,8 @@ const char *chorus_amp_status_name(chorus_amp_status_t status)
         return "i2s-clock-refused";
     case CHORUS_AMP_CLOCK_CONFIGURATION_REFUSED:
         return "i2s-clock-configuration-refused";
+    case CHORUS_AMP_DID_NOT_REACH_PLAY:
+        return "amplifier-did-not-reach-play";
     }
     return "unknown-status";
 }
@@ -56,9 +58,41 @@ static void report_detail(chorus_amp_report_t *report, const char *fmt, ...)
     va_end(args);
 }
 
-/* Put the stage in high impedance and record that it is there. A stage that
- * refuses to go dead is the one condition that is worse than every other
- * condition here, so it is its own status. */
+size_t chorus_amp_keys(const chorus_amp_config_t *config, chorus_amp_key_t *out, size_t capacity)
+{
+    const chorus_amp_key_t keys[] = {
+        {"amp_i2c_address", &config->address},
+        {"amp_reg_page_select", &config->reg_page_select},
+        {"amp_reg_book_select", &config->reg_book_select},
+        {"amp_page_book_zero", &config->page_book_zero},
+        {"amp_reg_device_id", &config->reg_device_id},
+        {"amp_device_id_value", &config->device_id_value},
+        {"amp_reg_fault_channel", &config->reg_fault[0]},
+        {"amp_reg_fault_global1", &config->reg_fault[1]},
+        {"amp_reg_fault_global2", &config->reg_fault[2]},
+        {"amp_fault_clear_value", &config->fault_clear_value},
+        {"amp_clock_fault_bit", &config->clock_fault_bit},
+        {"amp_reg_fault_clear", &config->reg_fault_clear},
+        {"amp_fault_clear_command", &config->fault_clear_command},
+        {"amp_reg_analog_gain", &config->reg_analog_gain},
+        {"amp_reg_audio_format", &config->reg_audio_format},
+        {"amp_audio_format_value", &config->audio_format_value},
+        {"amp_reg_state_control", &config->reg_state_control},
+        {"amp_state_hiz", &config->state_hiz},
+        {"amp_state_play", &config->state_play},
+        {"amp_reg_power_state", &config->reg_power_state},
+        {"amp_power_state_play", &config->power_state_play},
+    };
+    size_t n = sizeof(keys) / sizeof(keys[0]);
+    for (size_t i = 0; i < n && i < capacity; i++) {
+        out[i] = keys[i];
+    }
+    return n < capacity ? n : capacity;
+}
+
+/* Put the stage in high impedance (PDN low) and record that it is there. A
+ * stage that refuses to go dead is the one condition that is worse than every
+ * other condition here, so it is its own status. */
 static int go_high_impedance(chorus_output_stage_t *stage, chorus_amp_report_t *report)
 {
     if (stage->high_impedance(stage->ctx) != 0) {
@@ -70,6 +104,22 @@ static int go_high_impedance(chorus_output_stage_t *stage, chorus_amp_report_t *
     }
     report->output_in_high_impedance = 1;
     return 0;
+}
+
+/* A refusal after the clock has started: PDN low first, the clock after it. */
+static void unwind_after_clock(chorus_output_stage_t *stage, chorus_i2s_controller_t *controller,
+                               chorus_amp_report_t *report)
+{
+    chorus_amp_status_t status = report->status;
+    char detail[CHORUS_AMP_DETAIL];
+    memcpy(detail, report->detail, sizeof(detail));
+    if (go_high_impedance(stage, report) != 0) {
+        return;
+    }
+    (void)controller->stop_clock(controller->ctx);
+    report->clock_started = 0;
+    report->status = status;
+    memcpy(report->detail, detail, sizeof(detail));
 }
 
 static chorus_amp_status_t status_for_i2c(chorus_i2c_result_t result)
@@ -87,35 +137,110 @@ static chorus_amp_status_t status_for_i2c(chorus_i2c_result_t result)
     return CHORUS_AMP_I2C_BUS_ERROR;
 }
 
-/* Every configuration value this sequencer must have before it may touch the
- * bus, with the key each one is written under, so a refusal names the line of
+/* Every register-map value this sequencer must have before it may touch the
+ * bus, checked by the key it is written under, so a refusal names the line of
  * endpoint.conf a reader has to fill in. */
 static chorus_amp_status_t require_configured(const chorus_amp_config_t *config,
                                               chorus_amp_report_t *report)
 {
-    const struct {
-        int known;
-        const char *key;
-    } required[] = {
-        {config->address_known, "amp_i2c_address"},
-        {config->reg_device_id_known, "amp_reg_device_id"},
-        {config->reg_fault_known, "amp_reg_fault"},
-        {config->reg_analog_gain_known, "amp_reg_analog_gain"},
-        {config->reg_state_control_known, "amp_reg_state_control"},
-        {config->device_id_value_known, "amp_device_id_value"},
-        {config->fault_clear_value_known, "amp_fault_clear_value"},
-    };
-    for (size_t i = 0; i < sizeof(required) / sizeof(required[0]); i++) {
-        if (!required[i].known) {
+    chorus_amp_key_t keys[32];
+    size_t n = chorus_amp_keys(config, keys, sizeof(keys) / sizeof(keys[0]));
+    for (size_t i = 0; i < n; i++) {
+        if (!keys[i].byte->known) {
             report_detail(report,
-                          "%s is declared unknown in %s. This phase names no register address: "
-                          "read it off the TAS5825M datasheet at bring-up and write it there. "
+                          "%s is declared unknown in %s. No register-map value is defaulted: "
+                          "read it off TI's TAS5825M datasheet and write it there, with its page. "
                           "The output stage stays in high impedance and no I2S clock is started.",
-                          required[i].key, config->ceiling_source);
+                          keys[i].key, config->ceiling_source);
             return CHORUS_AMP_REGISTER_NOT_CONFIGURED;
         }
     }
     return CHORUS_AMP_OK;
+}
+
+/* One I2C transaction, with the failure written into the report by name.
+ * Returns 0 on an ACK. */
+static int amp_read(const chorus_amp_config_t *config, chorus_i2c_bus_t *bus, uint8_t reg,
+                    const char *what, uint8_t *value, chorus_amp_report_t *report)
+{
+    chorus_i2c_result_t result = bus->read(bus->ctx, config->address.value, reg, value);
+    if (result != CHORUS_I2C_ACK) {
+        report_detail(report,
+                      "the amplifier at I2C address 0x%02x answered %s to the %s read. The "
+                      "output stage is in high impedance and no I2S clock is running.",
+                      config->address.value, chorus_i2c_result_name(result), what);
+        report->status = status_for_i2c(result);
+        return -1;
+    }
+    return 0;
+}
+
+static int amp_write(const chorus_amp_config_t *config, chorus_i2c_bus_t *bus, uint8_t reg,
+                     uint8_t value, const char *what, chorus_amp_report_t *report)
+{
+    chorus_i2c_result_t result = bus->write(bus->ctx, config->address.value, reg, value);
+    if (result != CHORUS_I2C_ACK) {
+        report_detail(report,
+                      "the amplifier at I2C address 0x%02x answered %s to the %s write. The "
+                      "output stage is in high impedance and no I2S clock is running.",
+                      config->address.value, chorus_i2c_result_name(result), what);
+        report->status = status_for_i2c(result);
+        return -1;
+    }
+    return 0;
+}
+
+/* Read every fault register. `excused` is a bit of GLOBAL_FAULT1 (the second
+ * register) that is not a fault at this point; zero excuses nothing. Returns 0
+ * when every register reads clear. */
+static int read_faults(const chorus_amp_config_t *config, chorus_i2c_bus_t *bus, uint8_t excused,
+                       const char *when, chorus_amp_report_t *report)
+{
+    static const char *const names[CHORUS_AMP_FAULT_REGISTERS] = {"channel-fault", "global-fault-1",
+                                                                  "global-fault-2"};
+    for (size_t i = 0; i < CHORUS_AMP_FAULT_REGISTERS; i++) {
+        uint8_t reg = config->reg_fault[i].value;
+        uint8_t value = 0;
+        if (amp_read(config, bus, reg, names[i], &value, report) != 0) {
+            return -1;
+        }
+        uint8_t graded = (i == 1) ? (uint8_t)(value & (uint8_t)~excused) : value;
+        report->fault_read = 1;
+        report->fault_register = reg;
+        report->fault_bits = value;
+        if (graded != config->fault_clear_value.value) {
+            report_detail(report,
+                          "the amplifier at I2C address 0x%02x reports a fault %s: register 0x%02x "
+                          "(%s) reads 0x%02x and a part with no fault reads 0x%02x. The output "
+                          "stage is in high impedance.",
+                          config->address.value, when, reg, names[i], value,
+                          config->fault_clear_value.value);
+            report->status = CHORUS_AMP_REPORTS_FAULT;
+            return -1;
+        }
+    }
+    return 0;
+}
+
+/* A clock ratio the part accepts: the bit clock per frame the configuration
+ * commits the part to, and the one the I2S configuration produces, agree. */
+static int clock_ratio_matches(const chorus_amp_config_t *config, const chorus_i2s_clock_t *clock,
+                               chorus_amp_report_t *report)
+{
+    uint64_t per_frame =
+        (clock->sample_rate_hz == 0) ? 0 : chorus_i2s_bclk_hz(clock) / clock->sample_rate_hz;
+    if (per_frame == config->sclk_per_frame) {
+        return 0;
+    }
+    if (report->finding_count < sizeof(report->findings) / sizeof(report->findings[0])) {
+        chorus_finding_t *f = &report->findings[report->finding_count++];
+        snprintf(f->rule, sizeof(f->rule), "bclk-ratio-unsupported-by-amplifier");
+        snprintf(f->detail, sizeof(f->detail),
+                 "the I2S configuration gives %llu bit clocks per frame and amp_sclk_per_frame "
+                 "commits the amplifier to %u",
+                 (unsigned long long)per_frame, config->sclk_per_frame);
+    }
+    return -1;
 }
 
 chorus_amp_status_t chorus_amp_bring_up(const chorus_amp_config_t *config,
@@ -128,13 +253,12 @@ chorus_amp_status_t chorus_amp_bring_up(const chorus_amp_config_t *config,
     memset(report, 0, sizeof(*report));
     report->status = CHORUS_AMP_OK;
 
-    /* 1. High impedance, before anything else. */
+    /* 1. PDN low, before anything else. */
     if (go_high_impedance(stage, report) != 0) {
         return report->status;
     }
 
-    /* 2. The gain ceiling. Checked before the bus is touched, so a refusal
-     *    here is provably before any register write and before any clock. */
+    /* 2. Everything that can be refused without the bus. */
     if (gain->db > config->analog_gain_ceiling_db) {
         report_detail(report,
                       "a requested analog gain of %.3f dB is above the ceiling of %.3f dB "
@@ -144,8 +268,6 @@ chorus_amp_status_t chorus_amp_bring_up(const chorus_amp_config_t *config,
         report->status = CHORUS_AMP_GAIN_ABOVE_CEILING;
         return report->status;
     }
-
-    /* 3. Registers this phase declares unknown. */
     chorus_amp_status_t configured = require_configured(config, report);
     if (configured != CHORUS_AMP_OK) {
         report->status = configured;
@@ -154,19 +276,17 @@ chorus_amp_status_t chorus_amp_bring_up(const chorus_amp_config_t *config,
     if (!gain->code_known) {
         report_detail(report,
                       "amp_analog_gain_code is declared unknown in %s, so the register value that "
-                      "produces %.3f dB on this part is not known. This phase names no register "
-                      "value: read it off the TAS5825M datasheet at bring-up. The output stage "
-                      "stays in high impedance and no I2S clock is started.",
+                      "produces %.3f dB on this part is not known. It is never derived from the "
+                      "dB figure: read it off TI's TAS5825M datasheet. The output stage stays in "
+                      "high impedance and no I2S clock is started.",
                       config->ceiling_source, gain->db);
         report->status = CHORUS_AMP_REGISTER_NOT_CONFIGURED;
         return report->status;
     }
-
-    /* Refuse a clock configuration that breaks a platform rule before it can
-     * reach a pin, rather than after. */
     if (chorus_i2s_validate_clock(clock, report->findings,
                                   sizeof(report->findings) / sizeof(report->findings[0]),
-                                  &report->finding_count) > 0) {
+                                  &report->finding_count) > 0 ||
+        clock_ratio_matches(config, clock, report) != 0) {
         report_detail(report,
                       "the I2S clock configuration is refused (%s). No clock is started and the "
                       "output stage stays in high impedance.",
@@ -175,86 +295,108 @@ chorus_amp_status_t chorus_amp_bring_up(const chorus_amp_config_t *config,
         return report->status;
     }
 
-    /* 4. Does the part answer, and is it the part we think it is? */
-    uint8_t device_id = 0;
-    chorus_i2c_result_t result =
-        bus->read(bus->ctx, config->address, config->reg_device_id, &device_id);
-    if (result != CHORUS_I2C_ACK) {
-        report_detail(report,
-                      "the amplifier at I2C address 0x%02x answered %s to the device-id read. "
-                      "The output stage stays in high impedance and no I2S clock is started.",
-                      config->address, chorus_i2c_result_name(result));
-        report->status = status_for_i2c(result);
+    /* 3. PDN high: Deep Sleep, output not switching; the power-up wait. */
+    if (stage->power_up(stage->ctx) != 0) {
+        (void)go_high_impedance(stage, report);
+        report_detail(report, "the amplifier's power-down line could not be released");
+        report->status = CHORUS_AMP_OUTPUT_STAGE_REFUSED;
         return report->status;
     }
-    if (device_id != config->device_id_value) {
+    report->output_in_high_impedance = 0;
+    stage->wait_ms(stage->ctx, config->power_up_wait_ms);
+
+    /* 4. Book 0, page 0, and is it the part we think it is? */
+    uint8_t device_id = 0;
+    if (amp_write(config, bus, config->reg_page_select.value, config->page_book_zero.value,
+                  "page-select", report) != 0 ||
+        amp_write(config, bus, config->reg_book_select.value, config->page_book_zero.value,
+                  "book-select", report) != 0 ||
+        amp_read(config, bus, config->reg_device_id.value, "device-id", &device_id, report) != 0) {
+        (void)go_high_impedance(stage, report);
+        return report->status;
+    }
+    if (device_id != config->device_id_value.value) {
         report_detail(report,
                       "the part at I2C address 0x%02x reported device id 0x%02x and %s declares "
                       "0x%02x. The output stage stays in high impedance and no I2S clock is "
                       "started.",
-                      config->address, device_id, config->ceiling_source, config->device_id_value);
+                      config->address.value, device_id, config->ceiling_source,
+                      config->device_id_value.value);
         report->status = CHORUS_AMP_IDENTITY_MISMATCH;
+        (void)go_high_impedance(stage, report);
         return report->status;
     }
 
-    /* 5. Does it report a fault? */
-    uint8_t fault = 0;
-    result = bus->read(bus->ctx, config->address, config->reg_fault, &fault);
-    if (result != CHORUS_I2C_ACK) {
-        report_detail(report,
-                      "the amplifier at I2C address 0x%02x answered %s to the fault read. The "
-                      "output stage stays in high impedance and no I2S clock is started.",
-                      config->address, chorus_i2c_result_name(result));
-        report->status = status_for_i2c(result);
-        return report->status;
-    }
-    report->fault_read = 1;
-    report->fault_bits = fault;
-    if (fault != config->fault_clear_value) {
-        report_detail(report,
-                      "the amplifier at I2C address 0x%02x reports a fault: its fault register "
-                      "reads 0x%02x and a part with no fault reads 0x%02x. The output stage "
-                      "stays in high impedance and no I2S clock is started.",
-                      config->address, fault, config->fault_clear_value);
-        report->status = CHORUS_AMP_REPORTS_FAULT;
+    /* 5. Faults, before any clock; only the clock-fault bit is excused. */
+    if (read_faults(config, bus, config->clock_fault_bit.value, "before the clock starts",
+                    report) != 0) {
+        chorus_amp_status_t status = report->status;
+        (void)go_high_impedance(stage, report);
+        report->status = status;
         return report->status;
     }
 
-    /* 6. The gain, now known to be inside the ceiling. */
-    result = bus->write(bus->ctx, config->address, config->reg_analog_gain, gain->code);
-    if (result != CHORUS_I2C_ACK) {
-        report_detail(report,
-                      "the amplifier at I2C address 0x%02x answered %s to the analog-gain write. "
-                      "The output stage stays in high impedance and no I2S clock is started.",
-                      config->address, chorus_i2c_result_name(result));
-        report->status = status_for_i2c(result);
+    /* 6. The gain, now known to be inside the ceiling, and the audio format. */
+    if (amp_write(config, bus, config->reg_analog_gain.value, gain->code, "analog-gain", report) !=
+            0 ||
+        amp_write(config, bus, config->reg_audio_format.value, config->audio_format_value.value,
+                  "audio-format", report) != 0) {
+        chorus_amp_status_t status = report->status;
+        (void)go_high_impedance(stage, report);
+        report->status = status;
         return report->status;
     }
 
-    /* 7. The clock, into a stage that has been dead since step 1. */
+    /* 7. The clock, into a part in Deep Sleep. */
     if (controller->apply_clock(controller->ctx, clock) != 0) {
+        (void)go_high_impedance(stage, report);
         report_detail(report, "the I2S controller refused the clock configuration");
         report->status = CHORUS_AMP_CLOCK_REFUSED;
         return report->status;
     }
     report->clock_started = 1;
 
-    /* 8. Output. */
-    if (stage->enable(stage->ctx) != 0) {
-        (void)go_high_impedance(stage, report);
-        (void)controller->stop_clock(controller->ctx);
-        report->clock_started = 0;
-        report_detail(report, "the output stage refused to enable");
-        report->status = CHORUS_AMP_OUTPUT_STAGE_REFUSED;
+    /* 8. Clear what latched without a clock, Hi-Z with the DSP on, settle. */
+    if (amp_write(config, bus, config->reg_fault_clear.value, config->fault_clear_command.value,
+                  "fault-clear", report) != 0 ||
+        amp_write(config, bus, config->reg_state_control.value, config->state_hiz.value,
+                  "state-control (Hi-Z)", report) != 0) {
+        unwind_after_clock(stage, controller, report);
         return report->status;
     }
-    report->output_in_high_impedance = 0;
+    stage->wait_ms(stage->ctx, config->dsp_settle_wait_ms);
+
+    /* 9. Faults again, nothing excused. */
+    if (read_faults(config, bus, 0, "with the clock running", report) != 0) {
+        unwind_after_clock(stage, controller, report);
+        return report->status;
+    }
+
+    /* 10. Play, and did it get there? */
+    uint8_t power_state = 0;
+    if (amp_write(config, bus, config->reg_state_control.value, config->state_play.value,
+                  "state-control (Play)", report) != 0 ||
+        amp_read(config, bus, config->reg_power_state.value, "power-state", &power_state, report) !=
+            0) {
+        unwind_after_clock(stage, controller, report);
+        return report->status;
+    }
+    if (power_state != config->power_state_play.value) {
+        report_detail(report,
+                      "the amplifier at I2C address 0x%02x was commanded to Play and its power "
+                      "state reads 0x%02x, not 0x%02x. Audio is stopped and the output stage is "
+                      "in high impedance.",
+                      config->address.value, power_state, config->power_state_play.value);
+        report->status = CHORUS_AMP_DID_NOT_REACH_PLAY;
+        unwind_after_clock(stage, controller, report);
+        return report->status;
+    }
 
     report_detail(report,
-                  "the amplifier at I2C address 0x%02x answered, reported no fault, took %.3f dB "
-                  "of analog gain against a ceiling of %.3f dB, and its output was enabled after "
-                  "the clock was applied into a high-impedance stage",
-                  config->address, gain->db, config->analog_gain_ceiling_db);
+                  "the amplifier at I2C address 0x%02x answered as device 0x%02x, reported no "
+                  "fault, took %.3f dB of analog gain against a ceiling of %.3f dB, and reached "
+                  "Play after its clock was applied in Deep Sleep",
+                  config->address.value, device_id, gain->db, config->analog_gain_ceiling_db);
     report->status = CHORUS_AMP_OK;
     return report->status;
 }
@@ -268,48 +410,38 @@ chorus_amp_status_t chorus_amp_poll_fault(const chorus_amp_config_t *config, cho
     report->status = CHORUS_AMP_OK;
     report->clock_started = 1;
 
-    if (!config->reg_fault_known || !config->fault_clear_value_known || !config->address_known) {
-        chorus_amp_status_t configured = require_configured(config, report);
+    chorus_amp_status_t configured = require_configured(config, report);
+    if (configured != CHORUS_AMP_OK) {
         report->status = configured;
-        (void)go_high_impedance(stage, report);
-        (void)controller->stop_clock(controller->ctx);
-        report->clock_started = 0;
+        unwind_after_clock(stage, controller, report);
         return report->status;
     }
-
-    uint8_t fault = 0;
-    chorus_i2c_result_t result = bus->read(bus->ctx, config->address, config->reg_fault, &fault);
-    if (result != CHORUS_I2C_ACK) {
-        /* An amplifier that has stopped answering during playback is not a
-         * healthy amplifier. It is surfaced by name and the audio stops, for
-         * the same reason a reported fault does. */
-        (void)go_high_impedance(stage, report);
-        (void)controller->stop_clock(controller->ctx);
-        report->clock_started = 0;
-        report_detail(report,
-                      "the amplifier at I2C address 0x%02x answered %s to a fault read during "
-                      "playback. Audio is stopped and the output stage is in high impedance.",
-                      config->address, chorus_i2c_result_name(result));
-        report->status = status_for_i2c(result);
+    if (read_faults(config, bus, 0, "during playback", report) != 0) {
+        /* A fault, or a part that stopped answering: either way the audio
+         * stops at the pins, and the condition is surfaced by name. */
+        unwind_after_clock(stage, controller, report);
         return report->status;
     }
+    report_detail(report, "the amplifier reports no fault (0x%02x)", report->fault_bits);
+    return CHORUS_AMP_OK;
+}
 
-    report->fault_read = 1;
-    report->fault_bits = fault;
-    if (fault == config->fault_clear_value) {
-        report->output_in_high_impedance = 0;
-        report_detail(report, "the amplifier reports no fault (0x%02x)", fault);
-        return CHORUS_AMP_OK;
+int chorus_amp_shut_down(const chorus_amp_config_t *config, chorus_i2c_bus_t *bus,
+                         chorus_output_stage_t *stage, chorus_i2s_controller_t *controller)
+{
+    int rc = 0;
+    if (config->address.known && config->reg_state_control.known && config->state_hiz.known &&
+        bus->write(bus->ctx, config->address.value, config->reg_state_control.value,
+                   config->state_hiz.value) == CHORUS_I2C_ACK) {
+        stage->wait_ms(stage->ctx, config->shutdown_wait_ms);
+    } else {
+        rc = -1;
     }
-
-    (void)go_high_impedance(stage, report);
-    (void)controller->stop_clock(controller->ctx);
-    report->clock_started = 0;
-    report_detail(report,
-                  "the amplifier at I2C address 0x%02x reports a fault: its fault register reads "
-                  "0x%02x and a part with no fault reads 0x%02x. Audio is stopped and the output "
-                  "stage is in high impedance.",
-                  config->address, fault, config->fault_clear_value);
-    report->status = CHORUS_AMP_REPORTS_FAULT;
-    return report->status;
+    if (stage->high_impedance(stage->ctx) != 0) {
+        rc = -1;
+    }
+    if (controller->stop_clock(controller->ctx) != 0) {
+        rc = -1;
+    }
+    return rc;
 }

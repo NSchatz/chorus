@@ -49,6 +49,7 @@ How the rules work:
 | 20 | The flash guard | `tools/conventions/check-flash-guard.sh`; `tools/conventions/check-flash-guard-fixtures.sh` |
 | 21 | Commits | `tools/conventions/check-commits.sh` |
 | 22 | Every rule has a check | `tools/conventions/check-conventions.sh` |
+| 23 | Datasheet-cited amplifier map | `tools/conventions/check-amp-map.sh`; gate step `firmware-check` (`test_amp` drives the datasheet-modelled part with the committed map) |
 
 The rest of this file is each rule in full, in table order.
 
@@ -297,3 +298,14 @@ is never rewritten.
 `check-conventions.sh` reads the table at the top of this file: every rule names at least one
 check, every named script exists and is run by the gate, every named gate step exists in
 `tools/gate.sh`, and every `tools/conventions/check-*.sh` is named in the table.
+
+## 23. Datasheet-cited amplifier map
+
+Every `amp_` key in `firmware/config/endpoint.conf` has a value, never `unknown`, and cites on its
+own line the page of TI's TAS5825M datasheet it was read from, in the form `TAS5825M datasheet
+SLASEH7H rev H, p. N` (or `pp. N, M`), with every page inside the datasheet's 106. A register
+value nobody can trace to a page is a value nobody can check, and an over-set amplifier damages a
+loudspeaker rather than failing a test. `check-amp-map.sh` grades the file and first proves itself
+on three scratch maps (an `unknown` key, an uncited key and an out-of-range page must each fail).
+The reading behind the values is `docs/research/tas5825m-register-map.md`; a new amplifier part
+brings its own datasheet revision and this rule's citation form with it.

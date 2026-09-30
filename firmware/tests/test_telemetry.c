@@ -10,17 +10,10 @@
  * is graded in test_amp.c against the simulated part. This file grades what a
  * reader of the telemetry sees. */
 
+#include "chorus/endpoint_config.h"
 #include "chorus/telemetry.h"
 #include "fake_amp.h"
 #include "harness.h"
-
-#define TEST_ADDRESS 0x4C
-#define TEST_REG_DEVICE_ID 0x00
-#define TEST_REG_FAULT 0x71
-#define TEST_REG_ANALOG_GAIN 0x54
-#define TEST_REG_STATE_CONTROL 0x03
-#define TEST_DEVICE_ID_VALUE 0x95
-#define TEST_FAULT_CLEAR 0x00
 
 static void a_line_carries_all_three_surfaces(void)
 {
@@ -122,40 +115,17 @@ static void a_fault_is_surfaced_by_name_and_the_audio_stops(void)
 static void the_amplifier_and_the_telemetry_agree(void)
 {
     fake_amp_t fake;
-    fake_amp_init(&fake, TEST_ADDRESS);
-    fake.registers[TEST_REG_DEVICE_ID] = TEST_DEVICE_ID_VALUE;
-    fake.registers[TEST_REG_FAULT] = TEST_FAULT_CLEAR;
+    fake_amp_init(&fake);
 
-    chorus_amp_config_t config;
-    memset(&config, 0, sizeof(config));
-    config.address_known = 1;
-    config.address = TEST_ADDRESS;
-    config.reg_device_id_known = 1;
-    config.reg_device_id = TEST_REG_DEVICE_ID;
-    config.reg_fault_known = 1;
-    config.reg_fault = TEST_REG_FAULT;
-    config.reg_analog_gain_known = 1;
-    config.reg_analog_gain = TEST_REG_ANALOG_GAIN;
-    config.reg_state_control_known = 1;
-    config.reg_state_control = TEST_REG_STATE_CONTROL;
-    config.device_id_value_known = 1;
-    config.device_id_value = TEST_DEVICE_ID_VALUE;
-    config.fault_clear_value_known = 1;
-    config.fault_clear_value = TEST_FAULT_CLEAR;
-    config.analog_gain_ceiling_db = 0.0;
-    snprintf(config.ceiling_source, sizeof(config.ceiling_source), "firmware/config/endpoint.conf");
-
-    chorus_amp_gain_t gain;
-    gain.db = 0.0;
-    gain.code_known = 1;
-    gain.code = 0x1F;
-
-    chorus_i2s_clock_t clock;
-    clock.sample_rate_hz = 48000;
-    clock.slot_bit_width = 24;
-    clock.mclk_multiple = 384;
-    clock.dma_frame_num = 240;
-    clock.dma_desc_num = 6;
+    /* The committed register map, against the datasheet-modelled part. */
+    chorus_endpoint_config_t committed;
+    char detail[512];
+    chorus_check(chorus_endpoint_config_load(&committed, chorus_endpoint_config_default_path(),
+                                             detail, sizeof(detail)) == 0,
+                 "the committed endpoint.conf loads");
+    chorus_amp_config_t config = committed.amp;
+    chorus_amp_gain_t gain = committed.gain;
+    chorus_i2s_clock_t clock = committed.clock;
 
     chorus_i2c_bus_t bus = fake_amp_bus(&fake);
     chorus_output_stage_t stage = fake_amp_stage(&fake);
@@ -174,15 +144,14 @@ static void the_amplifier_and_the_telemetry_agree(void)
     chorus_check(telemetry.audio == CHORUS_AUDIO_RUNNING && strstr(line, "amp=ok") != NULL,
                  "a healthy bring-up leaves the audio running");
 
-    fake.registers[TEST_REG_FAULT] = 0x40;
+    fake.persistent_fault[0] = 0x08;
     chorus_amp_poll_fault(&config, &bus, &stage, &controller, &report);
     chorus_telemetry_record_amp(&telemetry, &report);
     chorus_telemetry_line(&telemetry, line, sizeof(line));
     printf("     %s\n", line);
-    chorus_check(fake.stage == FAKE_STAGE_HIGH_IMPEDANCE &&
-                     telemetry.audio == CHORUS_AUDIO_STOPPED_ON_AMP_FAULT &&
+    chorus_check(fake.pdn == FAKE_PDN_LOW && telemetry.audio == CHORUS_AUDIO_STOPPED_ON_AMP_FAULT &&
                      strstr(line, "amp=amplifier-reports-fault") != NULL &&
-                     strstr(line, "amp_fault_bits=0x40") != NULL,
+                     strstr(line, "amp_fault_bits=0x08") != NULL,
                  "a fault stops the output stage AND is named in the published line");
 }
 

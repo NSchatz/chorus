@@ -86,6 +86,8 @@ typedef struct {
     chorus_session_config_t session;
     chorus_i2s_controller_t *controller;
     chorus_output_stage_t *stage;
+    const chorus_amp_config_t *amp;
+    chorus_i2c_bus_t *bus;
 } session_task_t;
 
 /* AC-5, on the board: read the fault register, and on a fault stop the audio
@@ -125,8 +127,7 @@ static void session_task(void *argument)
     /* run_seconds is zero, so the line above does not return while the board
      * has power. If it ever does, the output stage goes dead rather than being
      * left live with nothing feeding it. */
-    (void)task->stage->high_impedance(task->stage->ctx);
-    (void)task->controller->stop_clock(task->controller->ctx);
+    (void)chorus_amp_shut_down(task->amp, task->bus, task->stage, task->controller);
     ESP_LOGE(TAG, "the session ended; the output stage is in high impedance");
     vTaskDelete(NULL);
 }
@@ -272,15 +273,13 @@ void app_main(void)
     if (!link.link_up) {
         ESP_LOGE(TAG, "the link is down (%s); no session is opened",
                  chorus_bring_up_status_name(link_status));
-        (void)stage.high_impedance(stage.ctx);
-        (void)controller.stop_clock(controller.ctx);
+        (void)chorus_amp_shut_down(&config.amp, &bus, &stage, &controller);
         return;
     }
 
     /* The writer, now that the clock runs: it paces itself on the DMA. */
     if (chorus_esp_playout_start(playout) != 0) {
-        (void)stage.high_impedance(stage.ctx);
-        (void)controller.stop_clock(controller.ctx);
+        (void)chorus_amp_shut_down(&config.amp, &bus, &stage, &controller);
         return;
     }
 
@@ -298,6 +297,8 @@ void app_main(void)
     session->playout = playout;
     task.controller = &controller;
     task.stage = &stage;
+    task.amp = &config.amp;
+    task.bus = &bus;
 
     /* The fault poll runs BESIDE the session, in its own task, rather than
      * between slices of it: the supervisor's state - the backoff, the filter,
@@ -316,8 +317,7 @@ void app_main(void)
     if (xTaskCreate(fault_watch, "chorus-amp-fault", 4096, &watch, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "the amplifier fault watch could not be started; nothing would notice a "
                       "fault, so the output stage goes back to high impedance");
-        (void)stage.high_impedance(stage.ctx);
-        (void)controller.stop_clock(controller.ctx);
+        (void)chorus_amp_shut_down(&config.amp, &bus, &stage, &controller);
         return;
     }
 
@@ -328,8 +328,7 @@ void app_main(void)
                     NULL) != pdPASS) {
         ESP_LOGE(TAG, "the session task could not be started; the output stage goes back to "
                       "high impedance");
-        (void)stage.high_impedance(stage.ctx);
-        (void)controller.stop_clock(controller.ctx);
+        (void)chorus_amp_shut_down(&config.amp, &bus, &stage, &controller);
     }
     /* app_main returns and its task is deleted (CONFIG_ESP_MAIN_TASK_STACK_SIZE
      * help: "If app_main() returns then this task is deleted"); everything the
