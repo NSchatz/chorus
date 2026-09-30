@@ -12,7 +12,6 @@
 //! order.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::TryRecvError;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -62,11 +61,9 @@ fn a_stalled_subscriber_is_dropped_at_the_ceiling_and_what_it_lost_is_counted() 
     // Everything the stalled one had queued is still readable from its end;
     // dropping a subscriber closes the sender, it does not empty the queue.
     let mut held = 0;
-    loop {
-        match stalled.try_recv() {
-            Ok(_) => held += 1,
-            Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
-        }
+    // Empty and Disconnected both end it.
+    while stalled.try_recv().is_ok() {
+        held += 1;
     }
     assert_eq!(held, CONTROL_QUEUE_LIMIT, "it held exactly its ceiling");
 }

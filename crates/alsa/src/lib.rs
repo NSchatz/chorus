@@ -523,7 +523,7 @@ impl Pcm {
         let lib = lib()?;
         let frame_len = self.frame_len();
         debug_assert!(frame_len > 0);
-        if pcm.len() % frame_len != 0 {
+        if !pcm.len().is_multiple_of(frame_len) {
             // The caller is the client's own playout loop, which only ever
             // hands whole frames; a partial frame here is a bug, not input.
             debug_assert!(false, "partial frame handed to the sink");

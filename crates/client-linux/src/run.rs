@@ -561,12 +561,9 @@ fn play<S: PcmSink>(
                         .timestamp_ns
                         .saturating_add(frames * 1_000_000_000 / u64::from(rate_hz));
                 }
-                match read_delay!() {
-                    Some(delay) => {
-                        buffer.set_device_delay_frames(delay);
-                        sample_if_due!(frames_to_us(delay.max(0) as u64, rate_hz) as i64, true);
-                    }
-                    None => {}
+                if let Some(delay) = read_delay!() {
+                    buffer.set_device_delay_frames(delay);
+                    sample_if_due!(frames_to_us(delay.max(0) as u64, rate_hz) as i64, true);
                 }
             }
             Err(e) => device_error = Some(e),

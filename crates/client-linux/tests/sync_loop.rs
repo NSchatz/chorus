@@ -511,7 +511,7 @@ fn the_modelled_hour_holds_at_the_worst_realistic_crystal_pair_too() {
             epoch_offset_ns: -8_000_000,
             base_one_way_ns: 250_000.0,
             jitter: JitterModel::Exponential { mean_us: 150.0 },
-            seed: 0xC0FFEE_11,
+            seed: 0xC0FF_EE11,
             ..params()
         },
         sync(),
@@ -626,7 +626,7 @@ fn the_sweep_that_fixed_the_window_the_alpha_and_the_interval_reruns() {
         epoch_offset_ns: -8_000_000,
         base_one_way_ns: 250_000.0,
         jitter: JitterModel::Exponential { mean_us: 150.0 },
-        seed: 0xC0FFEE_11,
+        seed: 0xC0FF_EE11,
         ..params()
     };
     // window, alpha, interval_ms - the table's own rows, in its own order.

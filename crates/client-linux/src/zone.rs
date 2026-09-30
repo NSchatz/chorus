@@ -74,14 +74,14 @@ impl ZoneGain {
         let denominator = i64::from(VOLUME_SCALE);
         match self.format {
             SampleFormat::PcmS16Le => {
-                for sample in pcm.chunks_exact_mut(2) {
+                for sample in pcm.as_chunks_mut::<2>().0 {
                     let value = i64::from(i16::from_le_bytes([sample[0], sample[1]]));
                     let scaled = (value * numerator / denominator) as i16;
                     sample.copy_from_slice(&scaled.to_le_bytes());
                 }
             }
             SampleFormat::PcmS24Le => {
-                for sample in pcm.chunks_exact_mut(3) {
+                for sample in pcm.as_chunks_mut::<3>().0 {
                     let value = sign_extend_24(sample);
                     let scaled = value * numerator / denominator;
                     let bytes = (scaled as i32).to_le_bytes();
@@ -90,7 +90,7 @@ impl ZoneGain {
             }
             SampleFormat::PcmF32Le => {
                 let factor = gain.thousandths() as f32 / VOLUME_SCALE as f32;
-                for sample in pcm.chunks_exact_mut(4) {
+                for sample in pcm.as_chunks_mut::<4>().0 {
                     let value = f32::from_le_bytes([sample[0], sample[1], sample[2], sample[3]]);
                     sample.copy_from_slice(&(value * factor).to_le_bytes());
                 }
@@ -118,8 +118,10 @@ mod tests {
     }
 
     fn read_s16(pcm: &[u8]) -> Vec<i16> {
-        pcm.chunks_exact(2)
-            .map(|c| i16::from_le_bytes([c[0], c[1]]))
+        pcm.as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| i16::from_le_bytes(*c))
             .collect()
     }
 
@@ -167,7 +169,12 @@ mod tests {
             0x00, 0x00, 0x80, 0xFF, 0xFF, 0xFF, 0x01, 0x00, 0x00, 0xFF, 0xFF, 0x7F,
         ];
         ZoneGain::new(SampleFormat::PcmS24Le).apply(gain, &mut pcm);
-        let values: Vec<i64> = pcm.chunks_exact(3).map(sign_extend_24).collect();
+        let values: Vec<i64> = pcm
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .map(|c| sign_extend_24(c))
+            .collect();
         assert_eq!(values, vec![-4_194_304, 0, 0, 4_194_303]);
     }
 
@@ -180,8 +187,10 @@ mod tests {
             .collect();
         ZoneGain::new(SampleFormat::PcmF32Le).apply(gain, &mut pcm);
         let values: Vec<f32> = pcm
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| f32::from_le_bytes(*c))
             .collect();
         assert_eq!(values, vec![-0.25, -0.125, 0.0, 0.125, 0.25]);
     }

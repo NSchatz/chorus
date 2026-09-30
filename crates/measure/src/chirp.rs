@@ -122,6 +122,11 @@ impl ChirpSpec {
     /// The ceiling is passed in rather than read here so that this stays a pure
     /// function of its arguments; `config/measure.conf` is where the number
     /// comes from and [`crate::config::MeasureConfig`] is what reads it.
+    ///
+    /// Every bound below is written as a negated comparison on purpose: a NaN
+    /// argument fails each one and is refused, where `amplitude <= 0.0` would let
+    /// it through.
+    #[allow(clippy::neg_cmp_op_on_partial_ord)]
     pub fn new(
         start_hz: f64,
         end_hz: f64,

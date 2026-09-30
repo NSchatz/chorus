@@ -25,7 +25,7 @@
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -104,7 +104,7 @@ fn free_port() -> u16 {
     port
 }
 
-fn start(audio: u16, control: u16, state: &PathBuf) -> Server {
+fn start(audio: u16, control: u16, state: &Path) -> Server {
     Server(
         Command::new(env!("CARGO_BIN_EXE_chorus-server"))
             .args([

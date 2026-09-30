@@ -940,7 +940,7 @@ impl ModelledEndpoint {
                 let frames =
                     (self.initial_misalignment_ns.unsigned_abs() as f64 / 1e9 * rate) as usize;
                 if self.initial_misalignment_ns > 0 {
-                    primed.extend(std::iter::repeat(0u8).take(frames * self.params.frame_len));
+                    primed.extend(std::iter::repeat_n(0u8, frames * self.params.frame_len));
                 } else {
                     let cut = (frames * self.params.frame_len).min(primed.len());
                     primed.truncate(primed.len() - cut);

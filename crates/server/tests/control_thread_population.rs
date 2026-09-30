@@ -551,7 +551,7 @@ impl Plane {
                         .collect::<String>()
                 );
             }
-            if tries % PROVOKE_EVERY == 0 {
+            if tries.is_multiple_of(PROVOKE_EVERY) {
                 self.provoke();
             }
             thread::sleep(RETRY_PAUSE);

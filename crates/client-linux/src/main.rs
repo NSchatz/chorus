@@ -3,21 +3,21 @@
 //! # Exit codes, which are the contract a script grades
 //!
 //! - `0`  the stream ended with the in-band end-of-stream signal, or the
-//!        configured run length was reached. Both are the run finishing the
-//!        way it said it would.
+//!   configured run length was reached. Both are the run finishing the
+//!   way it said it would.
 //! - `2`  the configuration was refused.
 //! - `3`  the server could not be reached at start, or the connection was lost
-//!        during the run with no end-of-stream signal. The report says which.
+//!   during the run with no end-of-stream signal. The report says which.
 //! - `4`  the audio device could not be opened, failed during the run, or
-//!        refused to report its delay to the DAC. The last is its own reported
-//!        reason, `delay-refused`, because it is the one signal the sync loop
-//!        is entitled to use and there is no substitute for it.
+//!   refused to report its delay to the DAC. The last is its own reported
+//!   reason, `delay-refused`, because it is the one signal the sync loop
+//!   is entitled to use and there is no substitute for it.
 //! - `5`  the client closed the session on a framing error.
 //! - `6`  the delay log could not be written.
 //! - `7`  this endpoint has no server address at all: discovery returned
-//!        nothing, or was not attempted, and no static address was configured.
-//!        The message says which of the two it lacked, because those are two
-//!        different things to fix.
+//!   nothing, or was not attempted, and no static address was configured.
+//!   The message says which of the two it lacked, because those are two
+//!   different things to fix.
 //!
 //! Nothing exits zero while producing no audio, and nothing reports itself as
 //! playing while it is not.

@@ -271,10 +271,12 @@ mod tests {
         assert_eq!(transports.of("kitchen").bound_us(), WIRED_BOUND_US);
         assert_eq!(transports.of("bedroom"), Transport::Wireless);
         assert_eq!(transports.of("bedroom").bound_us(), WIRELESS_BOUND_US);
-        assert!(
-            WIRELESS_BOUND_US > WIRED_BOUND_US,
-            "the wireless tier is the looser one, or none of this means anything"
-        );
+        const {
+            assert!(
+                WIRELESS_BOUND_US > WIRED_BOUND_US,
+                "the wireless tier is the looser one, or none of this means anything"
+            )
+        };
     }
 
     #[test]

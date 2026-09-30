@@ -167,7 +167,7 @@ impl StreamFormat {
             });
         }
         let numerator = chunk_us * u64::from(self.sample_rate_hz);
-        if numerator % 1_000_000 != 0 {
+        if !numerator.is_multiple_of(1_000_000) {
             return Err(UnsupportedFormat::ChunkDuration {
                 chunk_us,
                 sample_rate_hz: self.sample_rate_hz,

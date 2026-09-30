@@ -11,8 +11,8 @@
 //!
 //! Every message carries `v`, the catalog version. A peer that announces a
 //! version this build does not implement is refused the session, told which
-//! version it offered and which this build has, and nothing it sent is applied
-//! - including the rest of the message the version arrived on. The audio wire
+//! version it offered and which this build has, and nothing it sent is applied,
+//! including the rest of the message the version arrived on. The audio wire
 //! took the opposite decision for an unassigned type byte, and
 //! `docs/control-plane.md` records why the control catalog cannot: an audio
 //! frame a decoder skips costs 20 ms of one stream, and a control message a
