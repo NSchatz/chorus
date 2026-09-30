@@ -786,4 +786,23 @@ mod tests {
             "sample-format-not-playable"
         );
     }
+
+    /// The Linux client lists FLAC and Opus once it decodes them (goal 6), and
+    /// this server still sends only PCM: the negotiation picks from what the
+    /// server can send, so a client that decodes more still gets PCM.
+    #[test]
+    fn an_endpoint_that_also_decodes_flac_and_opus_still_gets_pcm() {
+        let offer = Offer::new(&PcmFormat::new(48_000, 2, "pcm_s16le").unwrap(), 20_000).unwrap();
+        let caps = Capabilities {
+            codecs: Codec::Pcm.bit() | Codec::Flac.bit() | Codec::Opus.bit(),
+            sample_formats: 0b111,
+            max_channels: 8,
+            sample_rates_hz: vec![44_100, 48_000],
+            buffer_ms: 300,
+            intrinsic_latency_ns: 0,
+            led_count: 0,
+            visualizer_bands: 0,
+        };
+        assert_eq!(offer.negotiate(&caps), Ok(Codec::Pcm));
+    }
 }

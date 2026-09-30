@@ -42,6 +42,7 @@ use chorus_protocol::v2::{
 };
 use chorus_protocol::{SampleFormat, MAX_CHANNELS, MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ};
 
+use crate::coded::CodedStream;
 use crate::config::ClientConfig;
 use crate::receive::StreamShape;
 
@@ -230,6 +231,8 @@ pub struct Announced {
     pub output_delay_ns: Option<u64>,
     /// Other v2 messages received and not acted on.
     pub other: u64,
+    /// `coded_chunk`s decoded into the receive path (`coded.rs`).
+    pub decoded_chunks: u64,
 }
 
 /// An open session.
@@ -322,8 +325,9 @@ pub fn hello(config: &ClientConfig) -> Hello {
 }
 
 /// The `capabilities` this endpoint sends: what its receive path and its
-/// ALSA sink accept. PCM only (FLAC and Opus decoding arrive later); all
-/// three sample formats (`AlsaSink::open` maps each, `ZoneGain` scales each);
+/// ALSA sink accept. PCM, FLAC and Opus (`decode.rs`: Opus in mapping family
+/// 0, one or two channels, which the server's choice checks against the
+/// stream); all three sample formats (`AlsaSink::open` maps each, `ZoneGain` scales each);
 /// up to `MAX_CHANNELS`; the standard rates of [`OFFERED_RATES_HZ`].
 pub fn capabilities(config: &ClientConfig) -> Capabilities {
     let formats = [
@@ -337,7 +341,7 @@ pub fn capabilities(config: &ClientConfig) -> Capabilities {
         .filter(|r| (MIN_SAMPLE_RATE_HZ..=MAX_SAMPLE_RATE_HZ).contains(r))
         .collect();
     Capabilities {
-        codecs: Codec::Pcm.bit(),
+        codecs: Codec::Pcm.bit() | Codec::Flac.bit() | Codec::Opus.bit(),
         sample_formats: formats
             .iter()
             .fold(0u8, |bits, f| bits | 1 << (f.to_wire() - 1)),
@@ -451,8 +455,9 @@ pub fn open(
         }
     }
     {
-        let announced = Arc::clone(&announced);
-        reader.set_handler(Box::new(move |m| record(&announced, m)));
+        let recorder = Arc::clone(&announced);
+        reader.set_handler(Box::new(move |m| record(&recorder, m)));
+        reader.set_translator(CodedStream::new(Arc::clone(&announced)).into_translator());
     }
     let stream_timeout = writer_timeout_handle.set_read_timeout(before);
     stream_timeout.map_err(failed)?;
@@ -498,7 +503,10 @@ pub fn check_announcement(announced: &Announced, shape: &StreamShape) -> Result<
                 .to_string(),
         );
     };
-    if f.codec != Codec::Pcm {
+    // A FLAC or Opus stream reaches the receive path as the audio_chunk frames
+    // its decoded coded_chunks were cut into (coded.rs); plain audio_chunk
+    // frames under a coded announcement are a framing error.
+    if f.codec != Codec::Pcm && announced.decoded_chunks == 0 {
         return Err(format!(
             "framing error: the stream was announced as {} and arrived as pcm audio_chunk frames",
             f.codec.name()
@@ -528,9 +536,12 @@ mod tests {
     use chorus_protocol::v2::ChannelPosition;
 
     #[test]
-    fn the_capabilities_name_pcm_all_three_formats_and_rates_inside_the_band() {
+    fn the_capabilities_name_all_three_codecs_all_three_formats_and_rates_inside_the_band() {
         let c = capabilities(&ClientConfig::default());
-        assert_eq!(c.codecs, Codec::Pcm.bit());
+        assert_eq!(
+            c.codecs,
+            Codec::Pcm.bit() | Codec::Flac.bit() | Codec::Opus.bit()
+        );
         assert_eq!(c.sample_formats, 0b111);
         assert_eq!(c.max_channels, 8);
         assert!(c.sample_rates_hz.contains(&48_000) && c.sample_rates_hz.contains(&44_100));

@@ -17,6 +17,7 @@ shared=(
     "fixtures/dsp|*|crates/dsp/tests|firmware/tests/test_dsp.c"
     "fixtures/protocol/v2|hex fields|crates/protocol/tests|goal 6"
     "fixtures/protocol/v2/noise|fields|crates/protocol/tests|goal 6"
+    "fixtures/codec|fields chunks pcm|crates/client-linux/tests|firmware/tests/test_codec.c"
 )
 rc=0
 bad() { fail "Shared fixtures" "$1"; rc=1; }

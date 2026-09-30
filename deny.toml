@@ -4,7 +4,7 @@
 # MIT OR Apache-2.0 (K26), and every dependency's licence is on the allowlist of the program
 # brief section 4.7 (MIT, Apache-2.0, BSD, ISC, Zlib, public domain). Anything else needs an ADR
 # that names the crate, and then an exception entry below citing that ADR (K95; for example
-# MPL-2.0 Symphonia under proposal P9, when goal 16 adds it).
+# MPL-2.0 Symphonia under proposal P9, below).
 # Config keys: https://embarkstudios.github.io/cargo-deny/checks/cfg.html (read 2026-09-30).
 
 [graph]
@@ -27,7 +27,17 @@ confidence-threshold = 0.93
 # proc macro curve25519-dalek-derive (x25519-dalek's backend on x86_64), permissive, no copyleft
 # (https://spdx.org/licenses/Unicode-3.0.html, read 2026-09-30). Allowed for that crate only by
 # docs/decisions/0039-the-v2-key-exchange.md.
-exceptions = [{ crate = "unicode-ident", allow = ["Unicode-3.0"] }]
+# Symphonia's FLAC decoder and the Symphonia crates it pulls in are MPL-2.0: file-level copyleft
+# on Symphonia's own files only, used unmodified from crates.io (https://www.mozilla.org/en-US/MPL/2.0/,
+# https://crates.io/crates/symphonia-bundle-flac, both read 2026-09-30). Allowed for these four
+# crates only by the vendored decoders record in docs/decisions/ (proposal P9, Option A).
+exceptions = [
+    { crate = "unicode-ident", allow = ["Unicode-3.0"] },
+    { crate = "symphonia-core", allow = ["MPL-2.0"] },
+    { crate = "symphonia-common", allow = ["MPL-2.0"] },
+    { crate = "symphonia-metadata", allow = ["MPL-2.0"] },
+    { crate = "symphonia-bundle-flac", allow = ["MPL-2.0"] },
+]
 # The allowlist is policy, not a record of what is in use today.
 unused-allowed-license = "allow"
 

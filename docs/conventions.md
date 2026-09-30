@@ -111,6 +111,12 @@ code), checked with
 must keep its layout (a table, a register map) is fenced with `// clang-format off` and `on` and
 a reason.
 
+Vendored C under `third_party/` (upstream's code, byte for byte, pinned in
+`third_party/README.md`) is outside this rule and rule 6 by scope, deliberately: both cover
+`firmware/` only, and the vendored trees are compiled without the warning set. They are not outside
+the safety scan (the endpoint scan walks every tree its unit list names under `[vendored]`) nor
+the repository-wide rules (em dashes, identity).
+
 ## 6. C static analysis
 
 `cppcheck` (pinned) over `firmware/src`, `firmware/main`, `firmware/check` and `firmware/tests`
@@ -142,6 +148,9 @@ reader and fails on a file of a kind neither reads. `fixtures/control`, `fixture
 `fixtures/protocol/v2` (protocol v2, goal 5) is shared, and its C reader arrives when the endpoint
 moves to v2 (goal 6): until then the check holds it to its Rust reader and prints the pending C
 reader, and goal 6 turns that row into a full one.
+`fixtures/codec` (goal 6) holds FLAC and Opus streams as the wire carries them with their
+reference decodes, read by `firmware/tests/test_codec.c` and
+`crates/client-linux/tests/codec_fixtures.rs`; `fixtures/README.md` says what each file is.
 **Review-only (no check):** fixtures are committed and regenerated only by their `make` targets,
 never by a test run.
 
@@ -173,7 +182,9 @@ root, and `license.workspace = true` in every crate, which the workspace sets to
 - Every crate the workspace builds, chorus's own included, has a licence on the allowlist of
   `deny.toml`: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, 0BSD, ISC, Zlib, Unlicense and
   CC0-1.0 (brief section 4.7). Anything else needs an ADR naming the crate, then an exception in
-  `deny.toml` citing it (K95; MPL-2.0 Symphonia under P9 is the first expected).
+  `deny.toml` citing it (K95). The exceptions so far: Unicode-3.0 for `unicode-ident` (ADR
+  0039) and MPL-2.0 for the four Symphonia crates FLAC decoding uses (the vendored decoders
+  record, P9).
 - Crates come from crates.io only, one version of each (`cargo deny check sources bans`).
 - **Review-only (no check):** a new external crate comes with an ADR answering BRIEF §3.2's
   question (why not build it); cargo-deny checks its licence and source, not the ADR.

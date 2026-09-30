@@ -12,6 +12,7 @@ members = [
     "crates/measure",
     "crates/server",
     "crates/client-linux",
+    "crates/opus-sys",
 ]
 
 [workspace.package]

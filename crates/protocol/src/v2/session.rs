@@ -593,6 +593,24 @@ fn to_io(e: SessionError) -> io::Error {
 /// What a [`SecureReader`] does with a v2 message that is not one of v1's.
 pub type MessageHandler = Box<dyn FnMut(Message) + Send>;
 
+/// What a [`Translator`] decides about one decoded message inside a record.
+#[derive(Debug)]
+pub enum Translation {
+    /// Handle the message as the reader otherwise would.
+    Pass,
+    /// Yield these v1 frame bytes in its place (possibly none).
+    Replace(Vec<u8>),
+    /// Yield these v1 frame bytes, then handle the message as usual.
+    Before(Vec<u8>),
+}
+
+/// Sees every message decoded inside a record, in order, before the reader
+/// handles it, and may put v1 frames in the byte stream `read` yields. This is
+/// how an endpoint that decodes `coded_chunk` hands its v1 receive path PCM
+/// `audio_chunk` frames, in the order the stream carried them. An error ends
+/// the stream with that error.
+pub type Translator = Box<dyn FnMut(&Message) -> io::Result<Translation> + Send>;
+
 /// Reads records and yields the v1 frames inside them as plain bytes.
 ///
 /// v1's three messages come out of `read` byte for byte, so a v1 reader runs
@@ -607,6 +625,7 @@ pub struct SecureReader<R: Read> {
     raw: Vec<u8>,
     plain: VecDeque<u8>,
     handler: Option<MessageHandler>,
+    translator: Option<Translator>,
     queued: VecDeque<Message>,
     skipped: u64,
     rejected: u64,
@@ -621,6 +640,7 @@ impl<R: Read> SecureReader<R> {
             raw: Vec::new(),
             plain: VecDeque::new(),
             handler: None,
+            translator: None,
             queued: VecDeque::new(),
             skipped: 0,
             rejected: 0,
@@ -634,6 +654,12 @@ impl<R: Read> SecureReader<R> {
             handler(m);
         }
         self.handler = Some(handler);
+    }
+
+    /// From now on, show every message decoded inside a record to
+    /// `translator` first (see [`Translator`]).
+    pub fn set_translator(&mut self, translator: Translator) {
+        self.translator = Some(translator);
     }
 
     /// Frames of unassigned types stepped over inside records.
@@ -725,6 +751,19 @@ impl<R: Read> SecureReader<R> {
             }
             let bytes = &plaintext[at..at + d.consumed];
             let type_byte = bytes[0];
+            if let (Outcome::Decoded(m), Some(t)) = (&d.outcome, self.translator.as_mut()) {
+                if !m.message_type().is_plaintext() {
+                    match t(m)? {
+                        Translation::Pass => {}
+                        Translation::Before(v1) => self.plain.extend(v1),
+                        Translation::Replace(v1) => {
+                            self.plain.extend(v1);
+                            at += d.consumed;
+                            continue;
+                        }
+                    }
+                }
+            }
             match d.outcome {
                 Outcome::Decoded(m) if m.message_type().is_plaintext() => {
                     return Err(io::Error::new(
