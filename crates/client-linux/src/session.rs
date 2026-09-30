@@ -434,10 +434,10 @@ pub fn open(
             }
             Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => {
                 let text = e.to_string();
-                return Err(SessionRefusal::RefusedByServer {
-                    reason: refusal_name(&text),
-                    detail: text,
-                });
+                let reason = refusal_name(&text);
+                let prefix = format!("the peer refused the session ({}): ", reason);
+                let detail = text.strip_prefix(&prefix).unwrap_or(&text).to_string();
+                return Err(SessionRefusal::RefusedByServer { reason, detail });
             }
             Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
                 return Err(SessionRefusal::Failed {
