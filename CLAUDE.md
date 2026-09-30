@@ -10,7 +10,11 @@ recommendations, and open decisions. It recommends; it does not dictate.
    make them, note them in docs/decisions/.
 2. Hard guardrails (BRIEF.md 3.1): clean-room vs GPL references; no eFuse burns on
    dev hardware; measurement-backed timing claims; monotonic clocks in the audio
-   path; no em dashes anywhere.
+   path; no em dashes anywhere. Clean-room means agents never open the source
+   files of GPL projects or the design files of reciprocally licensed hardware
+   (CERN-OHL-S, GPL); their docs, issues and specs only, and permissive source
+   may be read and cited (`docs/clean-room.md`). (R3, decided 2026-09-29 by the
+   owner, K33, K39.)
 3. Prefer building over vendoring when small and instructive; vendor the large and
    undifferentiated; log gray-zone calls.
 4. The sync engine is the project. Simulator first, hardware second, measurement
@@ -22,25 +26,26 @@ recommendations, and open decisions. It recommends; it does not dictate.
 8. A technology or toolchain choice here is justified on fitness for chorus's own
    requirements alone. Which toolchains happen to be installed, on `PATH`, or
    absent in any development container is never an admissible reason for or
-   against one (umbrella ADR-0035): an absent toolchain is installed, not
-   designed around. A decision record that cites availability is a defect.
+   against one: an absent toolchain is installed, not designed around. A
+   decision record that cites availability is a defect. (R4, decided 2026-09-29
+   by the owner, K11: the old umbrella citation dropped, the rule kept.)
 
-## This repo is a submodule of the SDD umbrella
+## The plan of record
 
-Everything above is the owner's working agreement and governs the code. This
-section is the umbrella's half of the contract, and it binds any session that
-reaches this checkout through `just implement`:
+(R1, decided 2026-09-29 by the owner, K1, K4, K11, K12, K28, K93: the retired
+umbrella's section, its specs, stages and pointers, is removed.)
 
-- Work here arrives as an approved spec and rides the umbrella stages. A change
-  made directly in this checkout with no spec is invisible to the ledger and
-  will not land: `just land` moves the pin, nothing else does.
-- Tier floor is `sensitive` (`documentation/tier-map.md` in the umbrella). It is
-  a FLOOR: a spec that burns eFuses, deploys onto the Proxmox host, or ships an
-  OTA image to a wall-mounted device proposes `critical` and takes the human
-  gate. Guardrail 2 above is not softened by any tier.
-- The direction lives in `documentation/roadmaps/chorus.md` on the umbrella side,
-  derived from BRIEF.md section 8. A spec cites a phase as `chorus#<phase-id>`
-  and INHERITS its acceptance rather than restating it, so the brief stays the
-  one source of truth for what a phase means.
-- BRIEF.md is the owner's document. When measurement contradicts it, say so in
-  `docs/decisions/` and propose the change; do not silently edit the brief.
+- The plan of record is the /goal program in `.claude/goals/2026-09-chorus.md`
+  (its §0-§4 are the contract; each goal's ledger is
+  `.claude/goals/2026-09-chorus-g<n>.status.md`). A phase's acceptance comes from
+  BRIEF.md section 8's "success looks like" and the program's done-when lines.
+- Conventions and the rule-to-check table: `docs/conventions.md`. The gate is
+  `make gate` (callers take `/cache/locks/chorus-heavy.lock`); `make gate-fast`
+  is the conventions checks alone.
+- Flashing, eFuses, deploys to the homelab and OTA installs on installed speakers are the owner's actions (K4, K28, K93); nothing in this repo sets `CHORUS_OWNER_AT_BENCH`.
+- BRIEF.md is kept current by the program: verified corrections and the owner's
+  decisions are written into it, each dated with its decision IDs. Its section
+  3.1 guardrails are never relaxed or removed by the program; they may only be
+  tightened. When measurement contradicts BRIEF.md, say so in `docs/decisions/`
+  and correct the brief in the same change. (R2, decided 2026-09-29 by the owner,
+  K47; limit I2.)
