@@ -37,3 +37,4 @@ the number of the pull request that added it.
 | 0027 | [the audio port is 4010 and the control port is 4020](0027-the-audio-port-4010-and-the-control-port-4020.md) |
 | 0039 | [the v2 key exchange is Noise XX with trust-on-first-use pins, over vendored primitives](0039-the-v2-key-exchange.md) |
 | 0040 | [the server negotiates the codec in one step, from a per-link preference and the endpoint's capabilities](0040-codec-negotiation.md) |
+| 0000 | [protocol v2 keeps v1's frame, carries whole frames in records, and refuses v1 by name](0000-protocol-v2-framing.md) |
