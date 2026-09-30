@@ -9,6 +9,23 @@ ceiling and a locked-memory allowance. A Dockerfile cannot grant either: they
 arrive per container, on the run command, which is why the scheduling contract
 lives in a shell script beside the image rather than inside it.
 
+`run-server.sh` runs the deployable shape (B-15): host networking, so
+multicast DNS works at all (K34; the homelab's host-network exception list
+carries it, goal 4's deploy PR); the control plane on port 4020; the zone
+state in a named volume at `/var/lib/chorus`; and `--advertise`, which
+`CHORUS_ADVERTISE=0` turns off on a host where another responder holds UDP 5353
+(audit L-3). The compose file for the homelab lands with goal 4.
+
+## The daemonless image (`make image`)
+
+`make image` builds the same server as an OCI image tarball without a container
+daemon (`tools/image.sh`): a static musl `chorus-server` on the digest-pinned
+`gcr.io/distroless/static-debian12:nonroot`, assembled with umoci, written to
+`target/image/chorus-server-oci.tar`. Its test unpacks the tarball rootless,
+runs `chorus-server --help`, starts the unpacked server and reads
+`GET /api/state` back, and checks that this Dockerfile's build context compiles.
+Pushing the tarball to a registry is the owner's step, never the build's.
+
 ## What the server does with what it is granted
 
 - Reads `RLIMIT_RTPRIO` and asks for a priority no greater than it. Never more.

@@ -48,7 +48,16 @@ make -f "$REPO_ROOT/firmware/Makefile" config-check
 
 mkdir -p "$OUT_DIR"
 say "chorus: building"
-(cd "$REPO_ROOT/firmware" && idf.py -B "$OUT_DIR" build)
+# The generated sdkconfig lives in the build directory, not in firmware/, so two
+# build directories never share one and the image guard reads the configuration
+# this build actually used. CHORUS_IDF_CCACHE=1 builds through ccache (the gate
+# sets it); idf.py takes its job count from IDF_PY_BUILD_JOBS.
+CCACHE_FLAG=()
+if [ "${CHORUS_IDF_CCACHE:-0}" = 1 ]; then
+    CCACHE_FLAG=(--ccache)
+fi
+say "  jobs:       IDF_PY_BUILD_JOBS=${IDF_PY_BUILD_JOBS:-<unset: the ninja default>}"
+(cd "$REPO_ROOT/firmware" && idf.py -B "$OUT_DIR" -D SDKCONFIG="$OUT_DIR/sdkconfig" "${CCACHE_FLAG[@]}" build)
 
 # Guardrail 2 over what was just built: the generated configuration and both
 # linked images, before anything is reported as an image.
