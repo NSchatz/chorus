@@ -57,6 +57,23 @@ at once. K75 sizes everything to 8 rooms, about 20 speakers.
   move them together, which would help inter-device error and hurt absolute error), DAC and
   acoustic delay, the client's round-trip admission and staleness rules, loss and reordering.
 
+## What was read
+
+All read 2026-09-30. No external source code was opened; everything below is this repository's
+own documents and code.
+
+- BRIEF.md sections 2.2 (the inter-device targets), 3.1, 5.3 and 6 (crystal range);
+  `.claude/goals/2026-09-chorus.md` sections 0 to 4 and 11, K75 and K91.
+- `docs/audit/2026-09-audit.md` findings A-1 and A-2.
+- ADR 0006, ADR 0014, ADR 0024 (`wireless_bound_us`), `config/sync.conf`,
+  `crates/client-linux/src/sync.rs` (SERVO_KP, SERVO_KI).
+- `docs/proposals/P3-speaker-network.md` and
+  `.claude/goals/2026-09-chorus-research/research-platform-network.md` section 4.2 (the router
+  hop, ASSUMED tens of microseconds).
+- RFC 5905 section 8 (the offset estimate is exact only for a symmetric path), cited through
+  ADR 0006 and BRIEF.md 5.3.
+- `tools/conventions/check-shared-fixtures.sh` (why the house files are not under `fixtures/`).
+
 ## Revisit when
 
 The owner's room list arrives (replace the ASSUMED layout), WIFI-7 characterizes a real Wi-Fi
