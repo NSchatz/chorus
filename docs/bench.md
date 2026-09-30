@@ -59,6 +59,21 @@ the report and PR half.
 | `wifi7-wireless` | `tools/wireless-characterization-run.sh` | WIFI-7 AC-2 and AC-3 | as above on Wi-Fi, plus the endpoint console (goal 8; refuses until then) |
 | `product6-soak` | `CHORUS_SOAK_SECONDS=259200 tools/soak-run.sh` | PRODUCT-6 AC-4, three days | two endpoints, three days |
 | `sound2-ten-minute` | `tools/ten-minute-run.sh` | SOUND-2, ten minutes on a real device | a playback device that reports a delay (not ALSA `null`) |
+| `sound2-stream-end-and-loss` | `tools/stream-end-and-loss.sh` | SOUND-2, a clean end signalled in band and a lost server told apart, neither drain an underrun | a playback device that opens (a real one; on ALSA `null` no report) |
+| `sound2-start-fill` | `tools/start-fill-and-log-shape.sh` | SOUND-2, output withheld until the start fill, the delay log's shape, the bound relations | as `sound2-stream-end-and-loss` |
+| `sound2-delay-log-shape` | `tools/delay-log-shape.sh` | SOUND-2, a one-minute delay log with the reported delay inside its bounds | a playback device that reports a delay (not ALSA `null`) |
+| `sound2-overflow` | `tools/overflow-run.sh` | SOUND-2, the over-rate run: crossing and discard at the maximum, no rate change | as `sound2-delay-log-shape` |
+| `sound2-device-loss` | `CHORUS_REMOVABLE_DEVICE=<dev> CHORUS_REMOVE_COMMAND=<cmd> tools/device-loss-run.sh` | SOUND-2, a device removed mid-run reported with its reason, non-zero exit | a device the owner can remove mid-run (not ALSA `null`) |
+
+`make verify-device` runs the first four of these (stream end and loss, start
+fill, delay-log shape, over-rate), all four even when one fails, so on a real
+device with `CHORUS_BENCH_PR=1` it opens one PR per script. Each script grades
+inline as before and still exits non-zero on a failure, but a failure is a
+result: the report is written with `Result: FAIL` and its PR is opened before
+the non-zero exit, so a failing hardware run reaches the repository too. On the
+ALSA `null` device (`make verify-null-device`, `make verify-alsa-null`) the
+scripts behave as before and write no bench report: that is host evidence, not
+hardware.
 
 The measure half of every script still refuses by name when its hardware is
 absent (`tools/unrun-checks-are-visibly-unrun.sh` holds that); the report half
@@ -81,6 +96,9 @@ needs no hardware.
   `source = hardware`, citing the report and the paired series.
 - The PR body: the result line, the report path, the build, and the report's
   field table.
+- Once the branch is pushed and the PR opened, the checkout switches back to
+  where it was (main, clean), so the next bench script of the session can
+  report from the same build.
 
 ## The report schema (`chorus-bench-report/1`)
 
@@ -129,6 +147,6 @@ checkout's validator on its files. A valid PR is merged with the usual gate; an
 invalid one gets a comment quoting the failures.
 
 `make verify` runs `tools/bench/e2e-test.sh`, which drives every script's report
-and PR half from committed fixture captures into a throwaway clone with a local
+and PR half from committed fixture captures (`fixtures/measure/`, `fixtures/bench/`) into a throwaway clone with a local
 bare remote and a fake `gh`, and checks the report, the hashes, the branch, the
 push and the `pr create` call.

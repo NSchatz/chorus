@@ -1,0 +1,23 @@
+chorus-server: identity id=chorus-server key=1353:e4a5:30bd:baa7 store=ephemeral scheduling=no-real-time-policy-by-configuration rtprio_ceiling=0 rtprio_wanted=20 memory=unlocked-by-configuration memlock_limit_bytes=8388608 memlock_wanted_bytes=67108864
+chorus-server: thread role=supervisor tid=888875 declared_real_time=0 declared_priority=- declared_rttime_us=- kernel_policy=SCHED_OTHER kernel_priority=0
+chorus-server: thread role=audio tid=888882 declared_real_time=0 declared_priority=- declared_rttime_us=- kernel_policy=SCHED_OTHER kernel_priority=0
+chorus-server: thread role=client-writer-0 tid=888883 declared_real_time=0 declared_priority=- declared_rttime_us=- kernel_policy=SCHED_OTHER kernel_priority=0
+chorus-server: thread role=client-reader-0 tid=888884 declared_real_time=0 declared_priority=- declared_rttime_us=- kernel_policy=SCHED_OTHER kernel_priority=0
+chorus-server: thread role=client-writer-1 tid=888885 declared_real_time=0 declared_priority=- declared_rttime_us=- kernel_policy=SCHED_OTHER kernel_priority=0
+chorus-server: thread role=client-reader-1 tid=888886 declared_real_time=0 declared_priority=- declared_rttime_us=- kernel_policy=SCHED_OTHER kernel_priority=0
+chorus-server: thread role=client-writer-2 tid=888887 declared_real_time=0 declared_priority=- declared_rttime_us=- kernel_policy=SCHED_OTHER kernel_priority=0
+chorus-server: thread role=client-reader-2 tid=888888 declared_real_time=0 declared_priority=- declared_rttime_us=- kernel_policy=SCHED_OTHER kernel_priority=0
+chorus-server: thread role=client-writer-3 tid=888889 declared_real_time=0 declared_priority=- declared_rttime_us=- kernel_policy=SCHED_OTHER kernel_priority=0
+chorus-server: thread role=client-reader-3 tid=888890 declared_real_time=0 declared_priority=- declared_rttime_us=- kernel_policy=SCHED_OTHER kernel_priority=0
+chorus-server: thread role=acceptor tid=888891 declared_real_time=0 declared_priority=- declared_rttime_us=- kernel_policy=SCHED_OTHER kernel_priority=0
+chorus-server: scheduling-report threads=11 vanished=0 real_time_declared=0 undeclared_real_time=0
+chorus-server: starting listen=127.0.0.1:52381 source=tone rate_hz=48000 channels=2 sample_format=pcm_s16le chunk_us=20000 rate_skew_ppm=0 max_clients=4 scheduling=no-real-time-policy-by-configuration rtprio_ceiling=0 rtprio_wanted=20 memory=unlocked-by-configuration memlock_limit_bytes=8388608 memlock_wanted_bytes=67108864
+chorus-server: note this run holds no locked memory scheduling=no-real-time-policy-by-configuration rtprio_ceiling=0 rtprio_wanted=20 memory=unlocked-by-configuration memlock_limit_bytes=8388608 memlock_wanted_bytes=67108864
+chorus-server: note this run has no real-time policy scheduling=no-real-time-policy-by-configuration rtprio_ceiling=0 rtprio_wanted=20 memory=unlocked-by-configuration memlock_limit_bytes=8388608 memlock_wanted_bytes=67108864
+chorus-server: listening on=127.0.0.1:52381 scheduling=no-real-time-policy-by-configuration rtprio_ceiling=0 rtprio_wanted=20 memory=unlocked-by-configuration memlock_limit_bytes=8388608 memlock_wanted_bytes=67108864
+chorus-server: client connected peer=127.0.0.1:43022 clients=1 scheduling=no-real-time-policy-by-configuration rtprio_ceiling=0 rtprio_wanted=20 memory=unlocked-by-configuration memlock_limit_bytes=8388608 memlock_wanted_bytes=67108864
+chorus-server: endpoint adopted id=endpoint key=c3eb:08a1:b830:6a6a scheduling=no-real-time-policy-by-configuration rtprio_ceiling=0 rtprio_wanted=20 memory=unlocked-by-configuration memlock_limit_bytes=8388608 memlock_wanted_bytes=67108864
+chorus-server: client session peer=127.0.0.1:43022 id=endpoint key=c3eb:08a1:b830:6a6a verdict=adopted roles=1 software="chorus-client 0.1.0" codec=pcm rate_hz=48000 channels=2 sample_format=pcm_s16le scheduling=no-real-time-policy-by-configuration rtprio_ceiling=0 rtprio_wanted=20 memory=unlocked-by-configuration memlock_limit_bytes=8388608 memlock_wanted_bytes=67108864
+chorus-server: source generated 440 Hz tone, 96480 frames scheduling=no-real-time-policy-by-configuration rtprio_ceiling=0 rtprio_wanted=20 memory=unlocked-by-configuration memlock_limit_bytes=8388608 memlock_wanted_bytes=67108864
+chorus-server: stream done chunks_sent=101 frames_sent=96480 bytes_discarded=0 ended_cleanly=1 final_sequence=100 clients=1 dropped_for_slow_clients=0 scheduling=no-real-time-policy-by-configuration rtprio_ceiling=0 rtprio_wanted=20 memory=unlocked-by-configuration memlock_limit_bytes=8388608 memlock_wanted_bytes=67108864
+chorus-server: stopped reason=stream-ended clients_finished=1 scheduling=no-real-time-policy-by-configuration rtprio_ceiling=0 rtprio_wanted=20 memory=unlocked-by-configuration memlock_limit_bytes=8388608 memlock_wanted_bytes=67108864

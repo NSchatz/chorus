@@ -69,12 +69,14 @@ tools-executable:
 	chmod +x tools/*.sh tools/measure/*.sh tools/bench/*.sh
 
 # The verifications that need an environment. Each one exits non-zero naming
-# its missing prerequisite rather than reporting green.
+# its missing prerequisite rather than reporting green. All four run even when
+# one fails, because on a real device each writes its own bench report (and with
+# CHORUS_BENCH_PR=1 opens its own PR, a FAIL included); the target still exits
+# non-zero if any did.
 verify-device: tools-executable
-	bash tools/stream-end-and-loss.sh
-	bash tools/start-fill-and-log-shape.sh
-	bash tools/delay-log-shape.sh
-	bash tools/overflow-run.sh
+	@rc=0; for s in stream-end-and-loss start-fill-and-log-shape delay-log-shape overflow-run; do \
+		echo "bash tools/$$s.sh"; bash tools/$$s.sh || rc=1; \
+	done; exit $$rc
 
 verify-host: tools-executable
 	bash tools/host-contract.sh

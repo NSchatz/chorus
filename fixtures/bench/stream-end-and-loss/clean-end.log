@@ -1,0 +1,40 @@
+# chorus delay log v1
+# written by the delay-log writer, which is excluded from the audio or timestamp path; see audio-path.conf
+# started_wall_unix_s=1790783315
+config min_us=60000 max_us=300000 start_fill_us=120000 device_target_us=120000 device=null rate_hz=48000 channels=2 sample_format=pcm_s16le frames_per_chunk=960 overflow_skew_ppm=2000
+sample mono_us=43425 delay_us=0 occupancy_us=0 graded=0
+event mono_us=101905 kind=zone zone=near-minimum occupancy_us=80000 min_us=60000 max_us=300000
+event mono_us=123643 kind=zone zone=mid occupancy_us=100000 min_us=60000 max_us=300000
+event mono_us=142714 kind=start-fill start_fill_us=120000 filled_us=120000 filled_frames=5760
+sample mono_us=142735 delay_us=0 occupancy_us=0 graded=1
+event mono_us=142741 kind=sync-no-device-delay device=null corrected=0 detail=the device reports a delay of zero, which is not a distance to a DAC
+event mono_us=142741 kind=sync offset_ns=none round_trip_ns=none bound_ns=none stale=0 age_ns=none correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=0 discarded=0
+event mono_us=163448 kind=zone zone=at-or-below-minimum occupancy_us=20000 min_us=60000 max_us=300000
+sample mono_us=243961 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=344762 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=445908 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=547126 delay_us=0 occupancy_us=0 graded=1
+event mono_us=644000 kind=sync-exchange accepted=1 rtt_ns=1223486 offset_ns=996524570
+event mono_us=644000 kind=sync offset_ns=996524570 round_trip_ns=1223486 bound_ns=611743 stale=0 age_ns=499965500 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=1 discarded=0
+sample mono_us=648565 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=749717 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=850673 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=951385 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1053042 delay_us=0 occupancy_us=0 graded=1
+event mono_us=1145449 kind=sync-exchange accepted=1 rtt_ns=1200900 offset_ns=996518164
+event mono_us=1145449 kind=sync offset_ns=996524169 round_trip_ns=1200900 bound_ns=600450 stale=0 age_ns=500166102 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=2 discarded=0
+sample mono_us=1154238 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1255293 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1356288 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1457436 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1557654 delay_us=0 occupancy_us=0 graded=1
+event mono_us=1645836 kind=sync-exchange accepted=1 rtt_ns=1184184 offset_ns=996502782
+event mono_us=1645836 kind=sync offset_ns=996522832 round_trip_ns=1184184 bound_ns=592092 stale=0 age_ns=499117863 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=3 discarded=0
+sample mono_us=1658776 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1759468 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1860310 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1961217 delay_us=0 occupancy_us=0 graded=1
+event mono_us=2039131 kind=graded-close reason=end-of-stream graded=0
+event mono_us=2039163 kind=drain-begin graded=0
+sample mono_us=2039166 delay_us=0 occupancy_us=0 graded=0
+summary graded_span_us=1818482 graded_samples=19 delay_min_us=0 delay_max_us=0 margin_to_min_us=-60000 margin_to_max_us=300000 underruns=0 discarded_overflow=0 discarded_late=0 discarded_duplicate=0 discarded_malformed=0 frames_written=96480 frames_played=96480 nominal_frames=91028

@@ -189,7 +189,7 @@ bench_load() {
 
 # Add one key and value to the report's `## Fields` table.
 bench_field() {
-    BENCH_FIELDS+=("$1|$2")
+    BENCH_FIELDS+=("$1|${2:-none}")
 }
 
 # One more tracked file for the bench commit (the free-run baseline): the
@@ -382,8 +382,12 @@ bench_finish() {
 # shellcheck disable=SC2016 # the backticks are literal Markdown in the PR body
 bench_publish() {
     local topic="$1" date="$2" result="$3" summary="$4" rel="$5" rawrel="$6" branch="$7"
-    local body
+    local body back
     body="$(mktemp "${TMPDIR:-/tmp}/chorus-bench-pr-XXXXXX")"
+    # Where the checkout was, to go back to once the branch is pushed: the next
+    # bench script of a session (`make verify-device` runs four) starts from the
+    # same clean commit on main, not from this bench commit.
+    back="$(git -C "$REPO_ROOT" symbolic-ref -q --short HEAD || git -C "$REPO_ROOT" rev-parse HEAD)"
     git -C "$REPO_ROOT" switch -q -c "$branch"
     git -C "$REPO_ROOT" add -- "$rel"
     [ -d "$REPO_ROOT/$rawrel" ] && git -C "$REPO_ROOT" add -- "$rawrel"
@@ -406,7 +410,13 @@ bench_publish() {
     "$BENCH_GH" pr create --base main --head "$branch" \
         --title "bench: $topic $date ($result)" --body-file "$body"
     rm -f "$body"
-    bench_say "pushed $branch and opened its PR"
+    if git -C "$REPO_ROOT" symbolic-ref -q HEAD > /dev/null && [ "$back" != "$(git -C "$REPO_ROOT" rev-parse HEAD)" ] \
+        && git -C "$REPO_ROOT" rev-parse -q --verify "refs/heads/$back" > /dev/null; then
+        git -C "$REPO_ROOT" switch -q "$back"
+    else
+        git -C "$REPO_ROOT" switch -q --detach "$back"
+    fi
+    bench_say "pushed $branch and opened its PR; the checkout is back at $back"
 }
 
 # The figures of one `chorus-measure lag` run, from its kept output:
