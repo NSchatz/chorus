@@ -64,6 +64,9 @@ number it chose and the arithmetic behind them, and where each part of BRIEF.md'
 - `crates/hostctl` and `deploy/` - the container's scheduling contract: the
   granted `rtprio` ceiling, a CPU-time bound on every real-time thread, and the
   memory-locking decision (`docs/decisions/0010`).
+- `crates/hostprobe` - host evidence: a wakeup-jitter probe and a kernel
+  receive-timestamp check, run here and in the deployed container
+  (`docs/measurements/host-*.md`).
 - `crates/audio-path` and `audio-path.conf` - the audio path enumerated, and
   the two checks that keep the enumeration honest (`docs/decisions/0011`); plus
   `real-time-acquisitions.conf` and the third check on it, that every
