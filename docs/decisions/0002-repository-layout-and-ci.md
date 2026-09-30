@@ -1,6 +1,6 @@
 # 0002: repository layout and CI shape
 
-- Status: decided
+- Status: decided; the CI shape is reversed by R12 (see "The gate is `make gate`" below)
 - BRIEF.md section 12, decision 2
 - Recorded by: FOUNDATION-1 (spec S0001-chorus-foundation-1)
 - Evidence commit: `7e50d3fd0295c119efc122608b56460906354015` in this
@@ -74,6 +74,26 @@ the workflow.
 formatting or lint baseline has been agreed for this repository, and a gate
 nobody has agreed on only teaches people to ignore red. They arrive with the
 first entry that agrees the baseline.
+
+## The gate is `make gate` (R12, decided 2026-09-29 by the owner, K19)
+
+Reversal R12, written 2026-09-30 by chorus goal 2. The CI shape above (one CI job is the
+gate) no longer holds:
+
+- **`make gate` is the gate.** One Makefile target (`tools/gate.sh`) runs, each step timed:
+  no em dash and the CLAUDE.md length, `cargo fmt --check`, `cargo clippy -D warnings`, the
+  build, `cargo test --workspace`, the control-plane determinism run, `make firmware-check`
+  (with the outage of minutes shortened for the gate), `make verify`, and the ESP-IDF build of
+  the endpoint image for esp32s3 through ccache in a persistent build directory. A change
+  merges only when `make gate` passes on its branch up to date with `main`, and the pull
+  request carries the run's tail and timings.
+- **fmt and clippy are gates** from this reversal on, on the toolchain `rust-toolchain.toml`
+  pins, after one formatting commit; the baseline the paragraph above waited for is "no
+  diff and no warning".
+- **CI calls `make gate` and is informational.** `.github/workflows/ci.yml` installs what the
+  gate needs and runs it; GitHub Actions jobs do not start on this private repository, so a CI
+  result is never a merge condition.
+- `make gate-fast` runs the docs checks alone, for changes that touch only documents.
 
 ## Dependencies and the lockfile
 

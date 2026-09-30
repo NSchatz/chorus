@@ -254,6 +254,17 @@ require_espidf() {
             "the ESP-IDF toolchain at version $wanted; the installed one reports '${found:-nothing}'" \
             "install ESP-IDF $wanted, or change espidf_version in firmware/config/endpoint.conf deliberately and say why in docs/decisions/"
     fi
+    # The tag names a release; the commit is what was actually built. A checkout
+    # that is not a git tree cannot show its commit and is refused the same way.
+    local commit found_commit
+    commit="$(endpoint_conf espidf_commit)"
+    found_commit="$(git -C "$IDF_PATH" rev-parse HEAD 2>/dev/null || true)"
+    if [ "$found_commit" != "$commit" ]; then
+        missing_prerequisite \
+            "$criterion" \
+            "the ESP-IDF toolchain at version $wanted, commit $commit; the tree at $IDF_PATH is at '${found_commit:-no git commit}'" \
+            "check out ESP-IDF $wanted (git checkout $wanted in IDF_PATH), or change espidf_commit in firmware/config/endpoint.conf deliberately"
+    fi
 }
 
 # Refuse to continue unless the operator named an ESP32-S3 endpoint to run on.

@@ -162,6 +162,14 @@ check "short-outage-needed-no-human" \
 # --- 2. an outage of minutes ---------------------------------------------------
 
 OUTAGE_SECONDS="$(endpoint_conf outage_minutes_seconds)"
+# `make gate` shortens this one run with CHORUS_OUTAGE_SECONDS so the gate stays
+# inside its budget; every check below still grades the outage it was given, and
+# the committed value above stays what `make firmware-check` runs. The shortened
+# run says so, so a log never reads as the committed outage when it was not.
+if [ -n "${CHORUS_OUTAGE_SECONDS:-}" ]; then
+    say "chorus: outage of minutes shortened by CHORUS_OUTAGE_SECONDS to ${CHORUS_OUTAGE_SECONDS}s (committed: ${OUTAGE_SECONDS}s)"
+    OUTAGE_SECONDS="$CHORUS_OUTAGE_SECONDS"
+fi
 say ""
 say "chorus: outage 2 of 3, an outage of minutes (${OUTAGE_SECONDS}s, which is real wall clock)"
 

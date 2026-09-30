@@ -1,3 +1,20 @@
+.DEFAULT_GOAL := check
+
+# The ESP-IDF environment `make gate` sources when IDF_PATH is unset: the
+# rootless install this repository is built with (ESP-IDF v5.3.6 under /cache,
+# see firmware/config/endpoint.conf). Point it elsewhere for another install.
+CHORUS_IDF_ENV ?= /cache/esp/chorus-idf-export.sh
+export CHORUS_IDF_ENV
+
+# The gate: every check a change passes before it merges, each step timed
+# (tools/gate.sh says what it runs). Callers take chorus-heavy.lock; the recipe
+# never does. gate-fast is the docs checks alone, for docs-only changes.
+gate: tools-executable
+	bash tools/gate.sh full
+
+gate-fast: tools-executable
+	bash tools/gate.sh fast
+
 check:
 	cargo build --workspace --all-targets
 	cargo test --workspace
@@ -190,3 +207,12 @@ ten-minute-run: tools-executable
 verify-null-device: tools-executable
 	CHORUS_CLIENT_DEVICE=null bash tools/stream-end-and-loss.sh
 	CHORUS_CLIENT_DEVICE=null bash tools/start-fill-and-log-shape.sh
+ \
+	.PHONY: build check discovery-vectors firmware-check firmware-golden-vectors  \
+	firmware-image firmware-safety-scans firmware-sync-scenarios  \
+	firmware-wireless gate gate-fast measure-fixture-reports measure-fixtures one  \
+	probe sync-vectors ten-minute-run test tools-executable verify verify-control  \
+	verify-control-determinism verify-device verify-discovery-fallback  \
+	verify-endpoint-rig verify-host verify-mdns verify-measure-device  \
+	verify-null-device verify-restart-storm verify-soak verify-sync-hour  \
+	verify-wireless 
