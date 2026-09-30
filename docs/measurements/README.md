@@ -10,6 +10,6 @@ Every report carries two lines, held by `tools/conventions/check-measurements.sh
 - `Build measured: <40-hex sha>`: a commit in this history (a squash-merged change cites the
   merge commit, not a branch commit).
 
-As of 2026-09-30 no report here is `hardware`: four are `synthetic` and one is `host`. The build
+As of 2026-09-30 no report here is `hardware`: four are `synthetic` and two are `host`. The build
 commits the reports written before the rule first named no longer exist; each report says which
 commit replaced it and why (K48, audit A-6).

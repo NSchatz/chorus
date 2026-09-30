@@ -2,10 +2,10 @@
 
 Vendored C that chorus compiles but does not own: the FLAC and Opus decoders for `coded_chunk`
 (docs/protocol.md, "Codecs: PCM, FLAC and Opus"), chosen by proposal P9 (Option A, approved at
-Checkpoint K) and recorded in the decision record of the pull request that added them
-(`docs/decisions/`, "vendored decoders"). The same files are compiled by the endpoint's host
-build (`firmware/Makefile`), the endpoint image, and the Linux client's sys crate
-(`crates/opus-sys`), so every side runs the same decoder code.
+Checkpoint K) and recorded in `docs/decisions/0044-the-vendored-decoders.md`. The same files are
+compiled by the endpoint's host build (`firmware/Makefile`), the endpoint image
+(`firmware/main/CMakeLists.txt`), and the Linux client's sys crate (`crates/opus-sys`), so every
+side runs the same decoder code.
 
 Every upstream file here is byte for byte the upstream file at the pin below (checked with `cmp`
 against the archive on 2026-09-30). chorus's own files beside them are named in the last column

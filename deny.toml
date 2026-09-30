@@ -30,7 +30,7 @@ confidence-threshold = 0.93
 # Symphonia's FLAC decoder and the Symphonia crates it pulls in are MPL-2.0: file-level copyleft
 # on Symphonia's own files only, used unmodified from crates.io (https://www.mozilla.org/en-US/MPL/2.0/,
 # https://crates.io/crates/symphonia-bundle-flac, both read 2026-09-30). Allowed for these four
-# crates only by the vendored decoders record in docs/decisions/ (proposal P9, Option A).
+# crates only by docs/decisions/0044-the-vendored-decoders.md (proposal P9, Option A).
 exceptions = [
     { crate = "unicode-ident", allow = ["Unicode-3.0"] },
     { crate = "symphonia-core", allow = ["MPL-2.0"] },

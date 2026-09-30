@@ -50,7 +50,6 @@ idf_component_register(
     PRIV_INCLUDE_DIRS
         "${CHORUS_THIRD_PARTY}/opus/celt"
         "${CHORUS_THIRD_PARTY}/opus/silk"
-        "${CHORUS_THIRD_PARTY}/opus/silk/fixed"
         "${CHORUS_THIRD_PARTY}/opus/src"
     # ESP-IDF v6 split the old `driver` component into one component per
     # peripheral (docs.espressif.com/projects/esp-idf/en/v6.1/esp32s3/

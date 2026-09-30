@@ -209,7 +209,7 @@ $(BUILD)/vendor/dr_flac.o: $(THIRD_PARTY)/dr_flac/dr_flac.c $(THIRD_PARTY)/dr_fl
 $(BUILD)/vendor/opus/%.o: $(OPUS_DIR)/%.c $(OPUS_LIST) | $(BUILD)
 	mkdir -p $(dir $@)
 	$(CC) $(VENDOR_CFLAGS) $(OPUS_DEFS) -I$(OPUS_DIR)/include -I$(OPUS_DIR)/celt \
-		-I$(OPUS_DIR)/silk -I$(OPUS_DIR)/silk/fixed -I$(OPUS_DIR)/src -c -o $@ $<
+		-I$(OPUS_DIR)/silk -I$(OPUS_DIR)/src -c -o $@ $<
 
 $(BUILD)/test_codec: $(CODEC_SRC) $(VENDOR_OBJ) $(FW)/tests/test_codec.c $(STAMP) | $(BUILD)
 	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(CODEC_SRC) \

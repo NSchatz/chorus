@@ -5,7 +5,7 @@
 //! the codec setup (FLAC: the 34-byte STREAMINFO body; Opus: the OpusHead, RFC
 //! 7845 section 5.1) and each chunk ONE FLAC frame or ONE Opus packet with the
 //! frames it decodes to. The decoders are the ones proposal P9 settled
-//! (`docs/decisions/`, the vendored decoders record): Symphonia's FLAC decoder
+//! (`docs/decisions/0044-the-vendored-decoders.md`): Symphonia's FLAC decoder
 //! (MPL-2.0, used unmodified from crates.io), and for Opus the same libopus
 //! the endpoint compiles (`chorus-opus-sys`). Output is interleaved
 //! little-endian PCM in the stream's `sample_format`, channels in the codec's

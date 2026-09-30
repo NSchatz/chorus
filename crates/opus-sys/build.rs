@@ -22,7 +22,6 @@ fn main() {
         .include(opus.join("include"))
         .include(opus.join("celt"))
         .include(opus.join("silk"))
-        .include(opus.join("silk/fixed"))
         .include(opus.join("src"))
         .flag_if_supported("-std=c11")
         .flag_if_supported("-ffp-contract=off")

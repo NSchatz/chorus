@@ -183,8 +183,7 @@ root, and `license.workspace = true` in every crate, which the workspace sets to
   `deny.toml`: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, 0BSD, ISC, Zlib, Unlicense and
   CC0-1.0 (brief section 4.7). Anything else needs an ADR naming the crate, then an exception in
   `deny.toml` citing it (K95). The exceptions so far: Unicode-3.0 for `unicode-ident` (ADR
-  0039) and MPL-2.0 for the four Symphonia crates FLAC decoding uses (the vendored decoders
-  record, P9).
+  0039) and MPL-2.0 for the four Symphonia crates FLAC decoding uses (ADR 0044, P9).
 - Crates come from crates.io only, one version of each (`cargo deny check sources bans`).
 - **Review-only (no check):** a new external crate comes with an ADR answering BRIEF §3.2's
   question (why not build it); cargo-deny checks its licence and source, not the ADR.

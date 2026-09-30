@@ -270,7 +270,7 @@ def build_tools(work):
     lines = open(os.path.join(OPUS, "chorus-build.txt")).read().splitlines()
     defs = ["-D" + l.split()[1] for l in lines if l.startswith("define ")]
     srcs = [os.path.join(OPUS, l.split()[1]) for l in lines if l.startswith("source ")]
-    inc = ["-I" + os.path.join(OPUS, d) for d in ("include", "celt", "silk", "silk/fixed", "src")]
+    inc = ["-I" + os.path.join(OPUS, d) for d in ("include", "celt", "silk", "src")]
     ref = os.path.join(work, "opus_ref")
     cmp_ = os.path.join(work, "opus_compare")
     flags = ["-std=c11", "-O2", "-ffp-contract=off", "-fno-fast-math"]

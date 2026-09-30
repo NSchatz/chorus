@@ -513,8 +513,8 @@ static void bench(const fixture_t *fx)
         double per = (now_s() - start) / (rounds * audio_s);
         best = per < best ? per : best;
     }
-    printf("bench %s: %.3f ms of host CPU per second of audio (best of 5 runs of %.1f s of "
-           "audio; %u Hz, %u channels)\n",
+    printf("bench %s: %.3f ms of host wall-clock time per second of audio "
+           "(best of 5 runs of %.1f s of audio; %u Hz, %u channels)\n",
            fx->name, best * 1e3, rounds * audio_s, (unsigned)fx->rate, (unsigned)fx->channels);
 }
 

@@ -1,4 +1,4 @@
-# 0000: FLAC and Opus decode through vendored dr_flac and libopus on the endpoint, and Symphonia and the same libopus in the Linux client
+# 0044: FLAC and Opus decode through vendored dr_flac and libopus on the endpoint, and Symphonia and the same libopus in the Linux client
 
 - Status: accepted (goal 6, 2026-09-30)
 - Decided by: the owner at Checkpoint K (proposal P9, Option A, decision K79; K62 put FLAC and
