@@ -235,15 +235,25 @@ struct ModelledDevice {
     played: u64,
     last: Instant,
     running: bool,
+    frame_len: usize,
+    tape: Arc<Mutex<Vec<u8>>>,
 }
 
 impl ModelledDevice {
     fn new() -> ModelledDevice {
+        ModelledDevice::with_frame_len(FRAME_LEN)
+    }
+
+    /// A device of any channel count and format: `frame_len` bytes a frame.
+    /// It keeps every byte it accepts on its tape.
+    fn with_frame_len(frame_len: usize) -> ModelledDevice {
         ModelledDevice {
             queued: 0.0,
             played: 0,
             last: Instant::now(),
             running: false,
+            frame_len,
+            tape: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -264,7 +274,7 @@ impl PcmSink for ModelledDevice {
         "modelled"
     }
     fn frame_len(&self) -> usize {
-        FRAME_LEN
+        self.frame_len
     }
     fn rate_hz(&self) -> u32 {
         RATE_HZ
@@ -272,7 +282,8 @@ impl PcmSink for ModelledDevice {
     fn write(&mut self, pcm: &[u8]) -> Result<SinkWrite, SinkError> {
         self.tick();
         self.running = true;
-        let frames = (pcm.len() / FRAME_LEN) as f64;
+        self.tape.lock().unwrap().extend_from_slice(pcm);
+        let frames = (pcm.len() / self.frame_len) as f64;
         // A ring of 400 ms: a write that would overfill it blocks until it
         // has room, as a blocking ALSA write does.
         let ring = f64::from(RATE_HZ) * 0.4;
@@ -522,6 +533,131 @@ fn encryption_on_the_real_server_and_the_linux_client_stream_pcm_end_to_end_as_s
         down_records,
         endpoint_id,
         endpoint_key
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Goal 10 line A, end to end: the real server serves a 5.1 PCM stream and
+/// the Linux client's real session and playout path play it through an output
+/// map onto a modelled 8-channel device in another order.
+#[test]
+fn a_5_1_stream_from_the_real_server_plays_through_an_output_map_onto_8_channels() {
+    use chorus_client_linux::outmap::{MappedSink, OutputMap};
+
+    const CHANNELS: usize = 6;
+    const FRAME: usize = CHANNELS * 2; // pcm_s16le
+    const FRAMES: usize = 960;
+    let dir = scratch("multichannel");
+    let pcm = known_pcm(CHUNKS * FRAMES * FRAME);
+    let source = dir.join("known-5-1.pcm");
+    std::fs::write(&source, &pcm).unwrap();
+
+    let port = free_port();
+    let _server = Server::start(
+        port,
+        &[
+            "--source",
+            source.to_str().unwrap(),
+            "--channels",
+            "6",
+            "--identity-dir",
+            dir.join("identity").to_str().unwrap(),
+        ],
+    );
+
+    // The device's order: ALSA surround51 (FL FR RL RR FC LFE), then a stereo
+    // downmix and one unmapped output.
+    let outputs: Vec<String> = ["0=FL", "1=FR", "2=BL", "3=BR", "4=FC", "5=LFE", "6=FL+FR"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let map = OutputMap::from_args(Some("8"), &outputs).unwrap().unwrap();
+    let mut me = EndpointIdentity::ephemeral(&common::fresh_id("e2e-multichannel")).unwrap();
+    let config = ClientConfig {
+        delay_log: dir.join("delay.log").to_str().unwrap().to_string(),
+        output_map: Some(map.clone()),
+        ..ClientConfig::default()
+    };
+    config.validate().unwrap();
+    assert_eq!(session::capabilities(&config).max_channels, 6);
+    let stream = TcpStream::connect(("127.0.0.1", port)).expect("the server listens");
+    stream
+        .set_read_timeout(Some(Duration::from_millis(200)))
+        .unwrap();
+    let secure = session::open(stream, &mut me, &config)
+        .unwrap_or_else(|e| panic!("the session opens: {}", e));
+    let mut reader = secure.reader;
+    let hand = handshake(&mut reader, &|| true).expect("the stream starts");
+    let announced = secure.announced.lock().unwrap().clone();
+    session::check_announcement(&announced, &hand.shape).expect("the announcement holds");
+    let stream_map = announced.stream_format.clone().unwrap().channel_map;
+    assert_eq!(
+        stream_map.iter().map(|p| p.name()).collect::<Vec<_>>(),
+        ["FL", "FR", "FC", "LFE", "BL", "BR"]
+    );
+
+    let device = ModelledDevice::with_frame_len(8 * 2);
+    let tape = Arc::clone(&device.tape);
+    let (mut sink, resolved) =
+        MappedSink::new(device, &map, &stream_map, hand.shape.sample_format).unwrap();
+    let header = header_for(&config, "modelled-8", &hand.shape);
+    let mut log = DelayLog::open(&config.delay_log, &header).expect("the log opens");
+    // No time-sync exchange (`None`): the loop then corrects nothing, so every
+    // device frame is exactly one source frame and the tape can be compared
+    // with the source byte for byte.
+    let _writer = secure.writer;
+    let outcome = run_session(
+        &config,
+        reader,
+        hand,
+        &mut sink,
+        &mut log,
+        MonotonicTimeline::new(),
+        Arc::new(Counters::new()),
+        None,
+        Arc::new(ZoneWatch::new()),
+    )
+    .expect("the run writes its log");
+    assert!(
+        matches!(outcome.stop, StopReason::EndOfStream(_)),
+        "{:?}",
+        outcome.stop
+    );
+
+    let tape = tape.lock().unwrap().clone();
+    assert_eq!(
+        tape.len(),
+        CHUNKS * FRAMES * 16,
+        "every source frame, as one device frame"
+    );
+    // device channel <- stream channel: FL FR BL BR FC LFE.
+    let order = [0usize, 1, 4, 5, 2, 3];
+    for (f, (src, dev)) in pcm
+        .as_chunks::<FRAME>()
+        .0
+        .iter()
+        .zip(tape.as_chunks::<16>().0)
+        .enumerate()
+    {
+        for (d, s) in order.iter().enumerate() {
+            assert_eq!(
+                &dev[d * 2..d * 2 + 2],
+                &src[s * 2..s * 2 + 2],
+                "frame {} device channel {}",
+                f,
+                d
+            );
+        }
+        let l = i16::from_le_bytes([src[0], src[1]]) as f64;
+        let r = i16::from_le_bytes([src[2], src[3]]) as f64;
+        let mix = i16::from_le_bytes([dev[12], dev[13]]) as f64;
+        assert_eq!(mix, ((l + r) / 2.0).round(), "frame {} downmix", f);
+        assert_eq!(&dev[14..16], &[0, 0], "frame {} unmapped output", f);
+    }
+    println!(
+        "5.1 end to end: {} frames from the real server onto 8 channels; {}",
+        tape.len() / 16,
+        resolved.report().join(" | ")
     );
     let _ = std::fs::remove_dir_all(&dir);
 }

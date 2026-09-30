@@ -89,6 +89,36 @@ pub trait PcmSink: Send {
     fn frames_played(&mut self) -> Result<u64, SinkError>;
 }
 
+/// A boxed sink is a sink, so the client can choose at run time between the
+/// device as it is and the device behind an output map
+/// (`crate::outmap::MappedSink`) without a second copy of the session.
+impl<T: PcmSink + ?Sized> PcmSink for Box<T> {
+    fn device(&self) -> &str {
+        (**self).device()
+    }
+    fn frame_len(&self) -> usize {
+        (**self).frame_len()
+    }
+    fn rate_hz(&self) -> u32 {
+        (**self).rate_hz()
+    }
+    fn write(&mut self, pcm: &[u8]) -> Result<SinkWrite, SinkError> {
+        (**self).write(pcm)
+    }
+    fn delay_frames(&mut self) -> Result<i64, SinkError> {
+        (**self).delay_frames()
+    }
+    fn in_xrun(&mut self) -> Result<bool, SinkError> {
+        (**self).in_xrun()
+    }
+    fn drain(&mut self) -> Result<(), SinkError> {
+        (**self).drain()
+    }
+    fn frames_played(&mut self) -> Result<u64, SinkError> {
+        (**self).frames_played()
+    }
+}
+
 /// The ALSA device the shipped client plays through.
 pub struct AlsaSink {
     pcm: Pcm,

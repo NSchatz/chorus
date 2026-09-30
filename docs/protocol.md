@@ -448,6 +448,20 @@ The map describes the order of the channels as they arrive at the receiver:
 for PCM the interleave order on the wire, for FLAC and Opus the order the
 decoder outputs them in (for Opus family 1, Vorbis order).
 
+The Linux client (`chorus-client`) remaps at its ALSA edge when it is given an
+output map (`--output-channels N` and one `--output <index>=<source>` per used
+device channel; `crates/client-linux/src/outmap.rs`): each device channel plays
+one position, an equal-weight downmix of positions (`FL+FR`) or silence, with
+its own gain and delay. It then advertises `max_channels` as the number of
+distinct positions its map reads, since a stream with more would carry
+channels it discards; without a map it advertises 8 and plays the stream's
+channels in the stream's order, as before. A position the map reads and the
+stream lacks is silence on that output and is reported on an
+`output-map-missing` line; the one fallback, also reported, is a `MONO` stream
+feeding outputs that read `FL`, `FR` or `FC`. Semantics and bounds are ADR
+0068's (`docs/decisions/0068-the-output-map.md`); the hardware it drives is
+`docs/hardware/linux-multichannel.md`.
+
 ## Codecs: PCM, FLAC and Opus
 
 Negotiation is the server's, in one step, from the endpoint's `capabilities`

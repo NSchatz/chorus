@@ -20,6 +20,7 @@ use std::fmt;
 
 use chorus_control::transport::{Transport, DEFAULT_TRANSPORT, WIRELESS_POLICY};
 
+use crate::outmap::{MapError, OutputMap};
 use crate::sync::SyncConfig;
 
 /// The deliberate rate difference the overflow verification applies, in parts
@@ -156,6 +157,11 @@ pub struct ClientConfig {
     /// command line: the front panel sets it once its configuration has
     /// loaded, so `hello` claims only what this process can do.
     pub extra_roles: u16,
+    /// The output map (`--output-channels`, `--output`): N device channels,
+    /// each fed from stream positions with its own gain and delay
+    /// (`crate::outmap`). `None` opens the device with the stream's own
+    /// channels in the stream's own order, as the client always has.
+    pub output_map: Option<OutputMap>,
 }
 
 impl Default for ClientConfig {
@@ -187,6 +193,7 @@ impl Default for ClientConfig {
             endpoint_id: None,
             front_panel: None,
             extra_roles: 0,
+            output_map: None,
         }
     }
 }
@@ -283,6 +290,8 @@ pub enum ConfigError {
         /// The argument as it was given.
         argument: String,
     },
+    /// The output map was refused (`--output-channels`, `--output`).
+    OutputMap(MapError),
     /// A value that is not a number.
     NotANumber {
         /// The argument as it was given.
@@ -383,6 +392,7 @@ impl fmt::Display for ConfigError {
             ConfigError::MissingValue { argument } => {
                 write!(f, "argument '{}' needs a value", argument)
             }
+            ConfigError::OutputMap(e) => write!(f, "{}", e),
             ConfigError::NotANumber { argument, value } => {
                 write!(
                     f,
@@ -514,6 +524,8 @@ impl ClientConfig {
         let mut given_start_fill = false;
         let mut given_device_target = false;
         let mut given_playout_latency = false;
+        let mut output_channels: Option<String> = None;
+        let mut outputs: Vec<String> = Vec::new();
         let mut it = args.into_iter().peekable();
         while let Some(arg) = it.next() {
             let mut value = || -> Result<String, ConfigError> {
@@ -594,6 +606,8 @@ impl ClientConfig {
                     given_playout_latency = true;
                 }
                 "--mute-us" => config.sync.mute_ns = number(&arg, &value()?)? * 1_000,
+                "--output-channels" => output_channels = Some(value()?),
+                "--output" => outputs.push(value()?),
                 other => {
                     return Err(ConfigError::UnknownArgument {
                         argument: other.to_string(),
@@ -630,6 +644,8 @@ impl ClientConfig {
                 config.sync.playout_latency_ns = declared_us * 1_000;
             }
         }
+        config.output_map = OutputMap::from_args(output_channels.as_deref(), &outputs)
+            .map_err(ConfigError::OutputMap)?;
         Ok((config, mode))
     }
 }

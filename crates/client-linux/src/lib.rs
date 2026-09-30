@@ -45,6 +45,8 @@
 //! - [`zone`]: applying that to the PCM, at the last point before the sink.
 //! - [`front_panel`]: the endpoint's buttons and status LED as the controller
 //!   role, read through evdev and the LED class, decided by `chorus-controls`.
+//! - [`outmap`]: the output map, N device channels fed from stream positions
+//!   with per-channel gain and delay, at the sink's own edge.
 
 #![warn(missing_docs)]
 
@@ -57,6 +59,7 @@ pub mod delaylog;
 pub mod front_panel;
 pub mod logcheck;
 pub mod offsets;
+pub mod outmap;
 pub mod receive;
 pub mod run;
 pub mod session;
@@ -67,6 +70,7 @@ pub mod zone;
 pub use buffer::{Buffer, Counters};
 pub use config::{ClientConfig, ClientMode, ConfigError};
 pub use control::{ControlLink, ZoneFacts, ZoneWatch};
+pub use outmap::{MappedSink, OutputMap};
 pub use run::{run_session, RunOutcome, StopReason};
 pub use sink::{AlsaSink, PcmSink, SinkError, SinkWrite};
 pub use sync::{Correction, PlayoutCorrector, SyncConfig, SyncLoop, Telemetry};
