@@ -213,7 +213,7 @@ int chorus_esp_hal_init(const chorus_endpoint_config_t *config, chorus_i2c_bus_t
      * by name in that case, so this only ever runs with a real value. */
     i2c_device_config_t device = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = config->amp.address,
+        .device_address = config->amp.address.value,
         .scl_speed_hz = 100000,
     };
     if (i2c_master_bus_add_device(hal.i2c_bus, &device, &hal.amp) != ESP_OK) {

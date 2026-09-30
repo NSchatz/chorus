@@ -238,7 +238,7 @@ static int clock_ratio_matches(const chorus_amp_config_t *config, const chorus_i
         snprintf(f->detail, sizeof(f->detail),
                  "the I2S configuration gives %llu bit clocks per frame and amp_sclk_per_frame "
                  "commits the amplifier to %u",
-                 (unsigned long long)per_frame, config->sclk_per_frame);
+                 (unsigned long long)per_frame, (unsigned)config->sclk_per_frame);
     }
     return -1;
 }

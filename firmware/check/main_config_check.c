@@ -147,7 +147,7 @@ int main(int argc, char **argv)
     unknown += config.gain.code_known ? 0u : 1u;
     printf("  amplifier      i2c address 0x%02x, %zu register-map values, %zu DECLARED UNKNOWN, "
            "%u bit clocks per frame\n",
-           config.amp.address.value, key_count + 1u, unknown, config.amp.sclk_per_frame);
+           config.amp.address.value, key_count + 1u, unknown, (unsigned)config.amp.sclk_per_frame);
     printf("  toolchain      esp-idf %s\n", config.espidf_version);
     return 0;
 }

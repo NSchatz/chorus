@@ -10,6 +10,13 @@
   `firmware/tests/fake_amp.c`, `firmware/tests/test_amp.c`, `tools/conventions/check-amp-map.sh`
 - The reading: `docs/research/tas5825m-register-map.md`
 
+## What was read
+
+TI's TAS5825M datasheet SLASEH7H rev H (https://www.ti.com/lit/ds/symlink/tas5825m.pdf, read
+2026-09-30), the reference board maker's Apache-2.0 configuration files, the README (only) of the
+maker's GPL-3.0 driver, and ESP-IDF v6.1's I2S driver at the pinned commit (Apache-2.0); the
+list, file by file, is `docs/research/tas5825m-register-map.md` "What was read". No GPL source.
+
 ## Context
 
 Since EMBEDDED-5 the amplifier's register map was eight keys reading `unknown`, because the

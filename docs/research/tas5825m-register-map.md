@@ -14,6 +14,17 @@ per the GitHub licence API); the README of `sonocotta/esp32-tas5805m-dac` (the r
 GPL-3.0 per the GitHub licence API, so only its README, a document, was read, and none of its
 source); ESP-IDF v6.1's I2S driver at the pinned commit (Apache-2.0).
 
+## What was read
+
+- TI's TAS5825M datasheet, SLASEH7H rev H (https://www.ti.com/lit/ds/symlink/tas5825m.pdf, read
+  2026-09-30; TI's own document), every page cited below.
+- `sonocotta/esparagus-media-center` at `d5e4c58` (Apache-2.0): `firmware/esphome/5-audio-brick-s3/audio-brick-s3-idf.yaml`
+  and `firmware/esphome/packages/dac-tas58xx.yaml`, configuration files, read 2026-09-30.
+- `sonocotta/esp32-tas5805m-dac` (GPL-3.0): its README only, read 2026-09-30; no source file.
+- ESP-IDF v6.1 at `fff9895c82d744c7237be8847347bdd1b07c6643` (Apache-2.0): `components/esp_driver_i2s/include/driver/i2s_std.h`,
+  `components/esp_driver_i2s/i2s_std.c`, `components/esp_driver_i2s/i2s_common.c`,
+  `components/esp_hal_i2s/include/hal/i2s_types.h`.
+
 ## The source
 
 - **TI, "TAS5825M 4.5 V to 26.4 V, 38-W Stereo, Inductor-Less, Digital Input, Closed-Loop
