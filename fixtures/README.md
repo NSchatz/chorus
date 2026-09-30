@@ -38,6 +38,36 @@ splitter to read.
 
 The field layout each of these follows is `docs/protocol.md`.
 
+### `protocol/v2/`
+
+Protocol v2's vectors, in the same two-file shape: at least one pair for every
+message type v2 added (the three v1 types keep their vectors above, since v2
+carries them byte for byte). A `.fields` file names its type in
+`message_type`, so one type can have several vectors (`stream_format_pcm`,
+`stream_format_flac`, `stream_format_opus`). Text values are the rest of the
+line, trimmed; lists and bit sets are space-separated names.
+
+The session vectors (`handshake_init`, `handshake_response`,
+`handshake_finish`, `secure_record`, `session_refused_key_changed`) are made
+with public test keys that their `.fields` files list; those keys must never be
+used for a device. They were written by an implementation independent of the
+Rust one (the layouts typed from `docs/protocol.md`, the handshake from the
+Noise specification over pyca/cryptography), and a real handshake between the
+Rust server and endpoint sides reproduces them byte for byte.
+
+`crates/protocol/tests/v2_vectors.rs` DISCOVERS the vectors from this
+directory and asserts both round trips, that every v2 type has a vector, and
+the session vectors on the wire.
+
+`protocol/v2/noise/cacophony_xx.fields` is the published Noise test vector for
+`Noise_XX_25519_ChaChaPoly_SHA256`, converted from cacophony's JSON with its
+source, date read and licence (Unlicense) in its header;
+`crates/protocol/tests/noise_vector.rs` holds the key exchange to it.
+
+The C endpoint reads these when it moves to v2 (goal 6); until then
+`tools/conventions/check-shared-fixtures.sh` holds them to their Rust reader and
+prints that the C reader is pending.
+
 ## `control/`
 
 The control catalog's golden vectors, in the same two-file shape as
