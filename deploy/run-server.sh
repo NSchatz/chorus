@@ -8,6 +8,16 @@
 # real-time scheduling priority" and `memlock` as "Maximum locked-in-memory
 # address space".
 #
+# The network is the HOST's (K34, B-15). The server advertises itself by
+# multicast DNS and endpoints find it that way; BRIEF section 5.8 says a
+# containerized server "should use host networking for multicast to work at
+# all", and a bridge publishes ports but carries no multicast. With host
+# networking there is nothing to publish: the server binds the host's ports.
+#
+# The control plane is on (the page, the API, zones and groups), and the zone
+# state persists in a named volume, so a restart keeps every zone's name and
+# volume.
+#
 # What each grant is for, and what it costs the host:
 #
 #   --ulimit rtprio=<n>
@@ -37,7 +47,9 @@ set -euo pipefail
 
 IMAGE="${CHORUS_IMAGE:-chorus-server:dev}"
 NAME="${CHORUS_CONTAINER:-chorus-server}"
-PORT="${CHORUS_PORT:-4010}"
+AUDIO_PORT="${CHORUS_PORT:-4010}"
+CONTROL_PORT="${CHORUS_CONTROL_PORT:-4020}"
+STATE_VOLUME="${CHORUS_STATE_VOLUME:-chorus-state}"
 
 # The ceiling this container is granted. 20 is comfortably above an ordinary
 # thread and far below anything the kernel runs.
@@ -49,15 +61,28 @@ MEMLOCK="${CHORUS_MEMLOCK:-67108864}"
 # The per-thread CPU-time bound, in microseconds, applied by the server itself.
 RTTIME_US="${CHORUS_RTTIME_US:-200000}"
 
+# --advertise is the default because discovery is how endpoints find the
+# server; CHORUS_ADVERTISE=0 leaves it off for a host where another responder
+# already holds UDP 5353 (audit L-3; the server refuses by name, exit 9, rather
+# than run unadvertised). Endpoints then use their static fallback address.
+ADVERTISE=(--advertise)
+if [ "${CHORUS_ADVERTISE:-1}" = 0 ]; then
+    ADVERTISE=()
+fi
+
 exec docker run \
     --rm \
     --name "$NAME" \
-    --publish "$PORT:4010" \
+    --network host \
+    --volume "$STATE_VOLUME:/var/lib/chorus" \
     --ulimit "rtprio=$RTPRIO" \
     --ulimit "memlock=$MEMLOCK" \
     --cpus "${CHORUS_CPUS:-1.0}" \
     "$IMAGE" \
-    --listen "0.0.0.0:4010" \
+    --listen "0.0.0.0:$AUDIO_PORT" \
+    --control-listen "0.0.0.0:$CONTROL_PORT" \
+    --state-file /var/lib/chorus/zones.state \
+    "${ADVERTISE[@]}" \
     --source "${CHORUS_SOURCE:-tone}" \
     --rt-priority "$RTPRIO" \
     --rttime-us "$RTTIME_US" \

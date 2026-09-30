@@ -58,6 +58,33 @@ pub const SETTABLE_CLOCK_NAMES: &[&str] = &[
     "time::SystemTime",
 ];
 
+/// The same clocks as bare identifiers, matched as whole words rather than as
+/// substrings (audit A-19). A path spelling can be walked past with a renaming
+/// import, `use std::time::{SystemTime as Wall}; Wall::now()`, which holds none
+/// of the strings above; the import itself still names the type, and a whole-word
+/// match finds it there. `Local` and `Utc` are chrono's settable clocks.
+pub const SETTABLE_CLOCK_IDENTIFIERS: &[&str] = &[
+    "SystemTime",
+    "UNIX_EPOCH",
+    "CLOCK_REALTIME",
+    "gettimeofday",
+    "Utc",
+    "Local",
+    "OffsetDateTime",
+];
+
+/// The settable-clock name a line of code reads, if any: a path spelling from
+/// [`SETTABLE_CLOCK_NAMES`] as a substring, else an identifier from
+/// [`SETTABLE_CLOCK_IDENTIFIERS`] as a whole word.
+pub fn settable_clock_in(line: &str) -> Option<&'static str> {
+    if let Some(name) = SETTABLE_CLOCK_NAMES.iter().find(|n| line.contains(*n)) {
+        return Some(name);
+    }
+    line.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .find_map(|word| SETTABLE_CLOCK_IDENTIFIERS.iter().find(|i| **i == word))
+        .copied()
+}
+
 /// One place a listed unit reads a settable clock.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClockRead {
@@ -477,15 +504,13 @@ pub fn scan(root: &Path, list: &AudioPathList) -> Finding {
         // Check one: a settable clock.
         for (index, raw) in source.lines().enumerate() {
             let line = code_only(raw);
-            for name in SETTABLE_CLOCK_NAMES {
-                if line.contains(name) {
-                    finding.clock_reads.push(ClockRead {
-                        unit: unit.clone(),
-                        line: index + 1,
-                        name: (*name).to_string(),
-                        text: raw.trim().to_string(),
-                    });
-                }
+            if let Some(name) = settable_clock_in(line) {
+                finding.clock_reads.push(ClockRead {
+                    unit: unit.clone(),
+                    line: index + 1,
+                    name: name.to_string(),
+                    text: raw.trim().to_string(),
+                });
             }
         }
 
@@ -633,10 +658,18 @@ mod tests {
     fn a_clock_read_hidden_behind_a_url_in_a_string_is_still_found() {
         let line =
             code_only(r#"const D: &str = "see https://example.invalid"; SystemTime::now();"#);
-        assert!(
-            SETTABLE_CLOCK_NAMES.iter().any(|name| line.contains(name)),
-            "{}",
-            line
+        assert!(settable_clock_in(line).is_some(), "{}", line);
+    }
+
+    #[test]
+    fn a_clock_read_behind_a_renaming_import_is_still_found() {
+        assert_eq!(
+            settable_clock_in("use std::time::{SystemTime as Wall};"),
+            Some("SystemTime")
         );
+        assert_eq!(settable_clock_in("use chrono::{Utc as U};"), Some("Utc"));
+        // A word that merely contains a name is not that name.
+        assert_eq!(settable_clock_in("let local_time = Instant::now();"), None);
+        assert_eq!(settable_clock_in("struct SystemTimeline;"), None);
     }
 }

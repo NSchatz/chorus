@@ -15,6 +15,11 @@ gate: tools-executable
 gate-fast: tools-executable
 	bash tools/gate.sh fast
 
+# The chorus-server OCI image as a tarball, built with no container daemon, and
+# its test: unpacked, `--help` run, the control plane read back (tools/image.sh).
+image: tools-executable
+	bash tools/image.sh
+
 check:
 	cargo build --workspace --all-targets
 	cargo test --workspace
@@ -208,7 +213,7 @@ verify-null-device: tools-executable
 	CHORUS_CLIENT_DEVICE=null bash tools/stream-end-and-loss.sh
 	CHORUS_CLIENT_DEVICE=null bash tools/start-fill-and-log-shape.sh
  \
-	.PHONY: build check discovery-vectors firmware-check firmware-golden-vectors  \
+	.PHONY: image build check discovery-vectors firmware-check firmware-golden-vectors  \
 	firmware-image firmware-safety-scans firmware-sync-scenarios  \
 	firmware-wireless gate gate-fast measure-fixture-reports measure-fixtures one  \
 	probe sync-vectors ten-minute-run test tools-executable verify verify-control  \
