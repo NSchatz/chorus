@@ -61,6 +61,10 @@ cat > "$T/fake-gh" <<EOF
 # Records every call; answers 'pr create' with a URL and 'pr list' with the PRs
 # created so far, as "<n> <head>" lines (what --jq would print).
 printf '%s\n' "\$*" >> "$GH_LOG"
+# Keep each PR body, so the test can read what the owner's PR would say.
+body=""; prev=""
+for a in "\$@"; do [ "\$prev" = "--body-file" ] && body="\$a"; prev="\$a"; done
+[ -n "\$body" ] && cp "\$body" "$T/pr-body-\$(grep -c '^pr create' "$GH_LOG").md"
 case "\$1 \$2" in
     "pr create")
         n=\$(grep -c '^pr create' "$GH_LOG")
@@ -88,6 +92,10 @@ delay_log() {
     }' > "$file"
 }
 
+# The owner runs the rig scripts with the second endpoint as an ssh target and
+# may name the server host; neither may reach a report or a PR body (K27).
+export CHORUS_SECOND_ENDPOINT="owner@endpoint-b.example" CHORUS_SERVER_HOST="bench-host.example"
+
 # A run directory as the measure half leaves one.
 new_run() {
     local topic="$1"
@@ -100,6 +108,8 @@ new_run() {
         printf 'build = %s\n' "$HEAD_SHA"
         printf 'criterion = the fixture-driven test of the report and PR path\n'
         printf 'device = fixture capture from fixtures/measure (NOT A MEASUREMENT)\n'
+        # What a careless device note would carry: the scrub has to take it out.
+        printf 'device = second endpoint %s, served from %s\n' "$CHORUS_SECOND_ENDPOINT" "$CHORUS_SERVER_HOST"
     } > "$RUN/bench-run.conf"
 }
 
@@ -203,6 +213,18 @@ while IFS='|' read -r name topic want; do
         "$([ "$report_ok" = 1 ] && echo ok || echo FAILED)" "$([ "$pr_ok" = 1 ] && echo ok || echo FAILED)"
 done <<< "$CASES"
 git -C "$CLONE" switch -q main
+
+# No report and no PR body carries the ssh target or the server host.
+LEAKS="$( (for b in "$T"/pr-body-*.md; do cat "$b"; done
+    for topic in $(printf '%s\n' "$CASES" | cut -d'|' -f2); do
+        git -C "$REMOTE" show "bench/$DATE-$topic:docs/measurements/$topic-$DATE.md" 2>/dev/null || true
+    done) | grep -cE 'endpoint-b\.example|bench-host\.example|@' || true)"
+BODIES="$(find "$T" -maxdepth 1 -name 'pr-body-*.md' | wc -l | tr -d ' ')"
+if [ "$LEAKS" = 0 ] && [ "$BODIES" = "$(printf '%s\n' "$CASES" | grep -c .)" ]; then
+    echo "bench-pr: CHORUS_SECOND_ENDPOINT=owner@endpoint-b.example and the server host appear in no report and no PR body ($BODIES bodies read)"
+else
+    fail "the ssh target or server host leaked: $LEAKS line(s) across the reports and $BODIES PR bodies"
+fi
 
 # The free-run report updated the baseline to hardware, pointing at itself.
 FREE_RUN_BASELINE="$(git -C "$REMOTE" show "bench/$DATE-rig3-free-run:docs/measurements/free-run-baseline.conf" 2>/dev/null || true)"

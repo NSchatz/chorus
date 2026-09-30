@@ -17,6 +17,18 @@ merges them. It left open the schema, where raw data lives, how big it may be, h
 whose measurement needs hardware is tested here, and how the free-run baseline (audit A-4) gets
 real series at all.
 
+## What was read
+
+All read 2026-09-30.
+
+- The program brief's K45 row, section 0.6 and goal 7's section; audit A-4, A-6 and A-13
+  (`docs/audit/2026-09-audit.md`); ADR 0013 (the measurement rig).
+- This repository's `tools/lib.sh`, the seven entry points, `crates/measure` and
+  `crates/client-linux/src/sync.rs`, `run.rs` and `delaylog.rs`.
+- GitHub's large-file limits:
+  <https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github>.
+- No GPL source and no reciprocally licensed design file.
+
 ## Decision
 
 1. **One library, two halves per entry point.** Each hardware entry point keeps its measure half

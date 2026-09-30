@@ -214,14 +214,31 @@ bench_analysis() {
     return "$rc"
 }
 
-# A path with the run directory, the checkout and the home directory taken out,
-# so no local directory layout lands in a committed file.
+# The run directory, the checkout and the home directory taken out, so no local
+# directory layout lands in a committed file; and the second endpoint's ssh
+# target (CHORUS_SECOND_ENDPOINT, `user@host`) and the server host the owner
+# named (CHORUS_SERVER_HOST) replaced by what they are, so no address or
+# hostname does either (K27). The report never prints them itself; this is for
+# anything a tool echoed into the analysis output or a device note.
 bench_scrub() {
-    local stem="$1"
-    sed -e "s#$BENCH_RUN_DIR/raw/#docs/measurements/raw/$stem/#g" \
-        -e "s#$BENCH_RUN_DIR#<run>#g" \
-        -e "s#$REPO_ROOT/##g" \
-        -e "s#${HOME:-/nonexistent-home}#~#g"
+    local stem="$1" endpoint="${CHORUS_SECOND_ENDPOINT:-}" server="${CHORUS_SERVER_HOST:-}"
+    local args=(-e "s#$BENCH_RUN_DIR/raw/#docs/measurements/raw/$stem/#g"
+        -e "s#$BENCH_RUN_DIR#<run>#g"
+        -e "s#$REPO_ROOT/##g"
+        -e "s#${HOME:-/nonexistent-home}#~#g")
+    if [ -n "$endpoint" ]; then
+        args+=(-e "s#$(bench_sed_escape "$endpoint")#<second endpoint>#g")
+        local host="${endpoint#*@}"
+        [ "$host" != "$endpoint" ] && [ "${#host}" -gt 3 ] \
+            && args+=(-e "s#$(bench_sed_escape "$host")#<second endpoint>#g")
+    fi
+    [ -n "$server" ] && args+=(-e "s#$(bench_sed_escape "$server")#<server host>#g")
+    sed "${args[@]}"
+}
+
+# A literal string made safe for the left side of a sed s### expression.
+bench_sed_escape() {
+    printf '%s' "$1" | sed -e 's/[]\/#.*^$[]/\\&/g'
 }
 
 # The report's file stem: <topic>-<date>, or with -2, -3 ... when that name
