@@ -1,4 +1,4 @@
-# 0000: the house-scale simulation is many single-client runs against one server timeline, configured under config/sim-house
+# 0048: the house-scale simulation is many single-client runs against one server timeline, configured under config/sim-house
 
 - Status: accepted (goal 7, 2026-09-30)
 - Decided by: the goal (item 1, K75 sizes it; K91 fixes the Wi-Fi speakers' place); cheap to

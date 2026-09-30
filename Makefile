@@ -144,7 +144,7 @@ measure-fixtures:
 sync-vectors:
 	cargo run --quiet -p chorus-sync --bin chorus-sync-vectors
 
-# The house-scale simulation report (ADR for config/sim-house). A simulation,
+# The house-scale simulation report (docs/decisions/0048-the-house-scale-simulation.md). A simulation,
 # never timing evidence; it names the commit it was built from, which has to be
 # on main for docs/measurements/ to accept it.
 sim-house:

@@ -306,7 +306,7 @@ to pull it in against the clamp. Goal 7 added an asymmetric path, a Wi-Fi-like
 burst link held to the wireless tier's 5 ms, and a wandering crystal.
 
 The house-scale layer built on this model (many endpoints, one server
-timeline) is recorded separately, with why its configurations are not in
+timeline) is recorded in ADR 0048, with why its configurations are not in
 `fixtures/sync/`.
 
 ## Revisit when

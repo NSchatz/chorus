@@ -19,7 +19,7 @@
 //! A house is a text file under `config/sim-house/`, not `fixtures/sync/`:
 //! the endpoint's C core does not read it (it models one endpoint, not a
 //! house), and every file under `fixtures/sync/` is read by both. Why is in
-//! the decision record that added this module.
+//! `docs/decisions/0048-the-house-scale-simulation.md`.
 //!
 //! Everything here is a simulation. None of it is timing evidence (BRIEF.md
 //! section 3.1 rule 3).
