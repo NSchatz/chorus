@@ -119,9 +119,14 @@ golden-vectors: $(BUILD)/test_protocol
 sync-scenarios: $(BUILD)/test_sync
 	$(BUILD)/test_sync
 
+# The source scan and its demonstrations, then the post-build eFuse guard's
+# self-test (tools/firmware-image-guard.sh): the guard itself needs a built
+# image and runs after the ESP-IDF build, but the demonstration that it goes
+# red on a smuggled option, writer or ROM call needs nothing, so it runs here.
 safety-scans: $(BUILD)/chorus-endpoint-scan $(BUILD)/test_scan
 	$(BUILD)/chorus-endpoint-scan $(REPO_ROOT)
 	$(BUILD)/test_scan
+	bash $(REPO_ROOT)/tools/firmware-image-guard.sh --self-test
 
 amplifier: $(BUILD)/test_amp
 	$(BUILD)/test_amp

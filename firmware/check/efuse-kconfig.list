@@ -1,0 +1,86 @@
+# ESP-IDF configuration options that burn an eFuse, or build an image that
+# burns one on first boot. Guardrail 2 forbids every one of them on development
+# hardware: an eFuse bit "can be programmed to 1 after which it cannot be
+# reverted back to 0".
+#
+# Read by BOTH halves of the guard, so the two cannot drift apart:
+#   - firmware/check/endpoint_scan.c (make firmware-safety-scans), over every
+#     firmware/sdkconfig* and every CMakeLists.txt / *.cmake under firmware/,
+#     before anything is built;
+#   - tools/firmware-image-guard.sh, over the sdkconfig an ESP-IDF build
+#     actually GENERATED, after it is built.
+#
+# `refuse PREFIX = reason`: any option whose name starts with PREFIX, set to
+# `y`, is a finding. `# CONFIG_X is not set`, `=n` and an absent option are
+# clean, and so is a number or a string: every bool that burns is caught as a
+# bool, and the numbers under it only exist once it is on. A prefix and not a name, so a sibling option added by a later
+# ESP-IDF release is refused until someone reads it and says otherwise.
+#
+# `derived NAME = reason`: an exact name that a refuse prefix covers and that
+# is nonetheless allowed to read `y`. Only promptless Kconfig symbols whose
+# default depends on the SoC and on nothing a person sets belong here: they say
+# what the chip COULD do and burn nothing. Each cites its Kconfig line.
+#
+# Every citation below is ESP-IDF v5.3.6 (Apache-2.0), the version
+# firmware/config/endpoint.conf declares, read from the local copy at
+# /cache/esp/esp-idf-v5.3.6 on 2026-09-30.
+
+# Secure Boot, Flash Encryption, signed-app verification and the ROM download
+# mode choices: the whole "Security features" menu,
+# components/bootloader/Kconfig.projbuild:505-1290. `config SECURE_BOOT`
+# (:704) "Enable hardware Secure Boot in bootloader (READ DOCS FIRST)";
+# `config SECURE_FLASH_ENC_ENABLED` (:920) "Enable flash encryption on boot
+# (READ DOCS FIRST)"; `config SECURE_DISABLE_ROM_DL_MODE` (:1241) "during
+# startup the app will burn an eFuse bit to permanently disable the UART ROM
+# Download Mode"; `config SECURE_ENABLE_SECURE_ROM_DL_MODE` (:1256) the same
+# for Secure Download mode.
+refuse CONFIG_SECURE_ = Secure Boot, Flash Encryption and ROM download mode (components/bootloader/Kconfig.projbuild:505-1290)
+
+# The deprecated spellings components/bootloader/sdkconfig.rename:13,18-22
+# still maps onto the options above, so a defaults file using the old name is
+# the same act.
+refuse CONFIG_FLASH_ENCRYPTION_ = the pre-v4 names of SECURE_FLASH_ENC_* (components/bootloader/sdkconfig.rename:18-22)
+
+# Anti-rollback records the app's secure version as burned eFuse bits
+# (components/bootloader/Kconfig.projbuild:331 `config BOOTLOADER_APP_ANTI_ROLLBACK`,
+# :344-345 "version is recorded in the eFuse field as the number of set ones").
+refuse CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK = the app's secure version is burned into eFuse (components/bootloader/Kconfig.projbuild:331)
+refuse CONFIG_APP_ANTI_ROLLBACK = the deprecated name of BOOTLOADER_APP_ANTI_ROLLBACK (components/bootloader/sdkconfig.rename:13)
+
+# Boot ROM log scheme. NOT under SECURE_ and it burns all the same:
+# components/esp_rom/Kconfig.projbuild:6-13 "specific eFuse bit(s) will be
+# burned at app boot stage", done by components/efuse/src/esp_efuse_startup.c:148-163.
+# BOOT_ROM_LOG_ALWAYS_ON is the default and burns nothing, so the three others
+# are listed by name rather than by a shared prefix.
+refuse CONFIG_BOOT_ROM_LOG_ALWAYS_OFF = burns ROM_LOG_MODE at app boot (components/esp_rom/Kconfig.projbuild:19)
+refuse CONFIG_BOOT_ROM_LOG_ON_GPIO_HIGH = burns ROM_LOG_MODE at app boot (components/esp_rom/Kconfig.projbuild:23)
+refuse CONFIG_BOOT_ROM_LOG_ON_GPIO_LOW = burns ROM_LOG_MODE at app boot (components/esp_rom/Kconfig.projbuild:29)
+
+# NVS encryption. Under the HMAC scheme nvs_flash_init() writes a generated key
+# into an empty eFuse key block (components/nvs_sec_provider/Kconfig:22-28,
+# components/nvs_sec_provider/nvs_sec_provider.c:168 `esp_efuse_write_key`),
+# and under the other scheme it needs Flash Encryption. The endpoint calls
+# nvs_flash_init, so this one is live and not theoretical.
+refuse CONFIG_NVS_ENCRYPTION = needs Flash Encryption or burns an HMAC key block (components/nvs_flash/Kconfig:3)
+refuse CONFIG_NVS_SEC_KEY_PROTECT_USING_HMAC = nvs_flash_init burns an HMAC key into eFuse (components/nvs_sec_provider/Kconfig:22)
+
+# The remaining startup burns in components/efuse/src/esp_efuse_startup.c:103-139.
+# None is selectable on an ESP32-S3 today; they are here so that a board or
+# ESP-IDF change that makes one selectable is refused rather than trusted.
+refuse CONFIG_ESP_CRYPTO_FORCE_ECC_CONSTANT_TIME_POINT_MUL = burns ECC_FORCE_CONST_TIME at app boot (components/esp_hw_support/Kconfig:327)
+refuse CONFIG_ESP_ECDSA_ENABLE_P192_CURVE = sets the ECDSA curve-mode eFuse at app boot (components/esp_hw_support/Kconfig:375)
+refuse CONFIG_ESP32_DISABLE_BASIC_ROM_CONSOLE = burns the ROM console disable at app boot (components/esp_system/port/soc/esp32/Kconfig.system:54)
+refuse CONFIG_DISABLE_BASIC_ROM_CONSOLE = the deprecated name of ESP32_DISABLE_BASIC_ROM_CONSOLE (components/esp_system/sdkconfig.rename.esp32:31)
+
+# Promptless capability flags under SECURE_ that the stock esp32s3 sdkconfig
+# this project generates sets to y (read off a real v5.3.6 build, 2026-09-30).
+# They enable nothing: they cannot be set by a person, and the options that do
+# burn (SECURE_BOOT, SECURE_FLASH_ENC_ENABLED, the SECURE_UART_ROM_DL_MODE
+# choice, which `depends on SECURE_BOOT_V2_ENABLED || SECURE_FLASH_ENC_ENABLED`)
+# are all held off by the refuse lines above. The same build also carries two
+# promptless numbers, CONFIG_SECURE_BOOT_IMAGE_DIGEST_LEN=32 and
+# CONFIG_SECURE_BOOT_ROM_FAST_WAKE_RESERVE_SIZE=0 (:657, :667); they are not `y`
+# and so are not findings, and need no line here.
+derived CONFIG_SECURE_BOOT_V2_RSA_SUPPORTED = promptless, default y on SOC_SECURE_BOOT_V2_RSA (components/bootloader/Kconfig.projbuild:530-534)
+derived CONFIG_SECURE_BOOT_V2_PREFERRED = promptless, default y on ESP32_REV_MIN_FULL >= 300, which a non-ESP32 target leaves unconstrained; it only picks the default scheme of a Secure Boot that is off (components/bootloader/Kconfig.projbuild:558-561)
+derived CONFIG_SECURE_ROM_DL_MODE_ENABLED = promptless, default y if SOC_SUPPORTS_SECURE_DL_MODE and not the development flash-encryption mode; it is only the default of the SECURE_UART_ROM_DL_MODE choice, which itself depends on SECURE_BOOT_V2_ENABLED or SECURE_FLASH_ENC_ENABLED (components/bootloader/Kconfig.projbuild:1230-1238)

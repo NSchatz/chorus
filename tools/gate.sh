@@ -92,6 +92,12 @@ firmware_idf() {
         return 1
     fi
     export CCACHE_DIR="${CHORUS_CCACHE_DIR:-/cache/ccache/chorus}"
+    # Every checkout builds in its own directory, so absolute paths differ
+    # between worktrees and would make every compile a miss. ccache rewrites
+    # paths under the checkout as relative ones and leaves the working
+    # directory out of the hash, so a new worktree's first build hits the cache.
+    export CCACHE_BASEDIR="$ROOT"
+    export CCACHE_NOHASHDIR=true
     mkdir -p "$CCACHE_DIR"
     echo "ccache: $(ccache --version | head -n 1), CCACHE_DIR=$CCACHE_DIR"
     ccache --zero-stats > /dev/null

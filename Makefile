@@ -160,6 +160,15 @@ firmware-check: tools-executable
 firmware-image: tools-executable
 	bash tools/firmware-image.sh
 
+# Guardrail 2 over a BUILT image: the configuration the build generated and
+# what the app and the bootloader actually link (audit A-15, A-16). Needs the
+# exported ESP-IDF environment and a build directory:
+#   make firmware-image-guard FIRMWARE_BUILD_DIR=<the idf.py -B directory>
+# Its self-test, which needs neither, runs in firmware-safety-scans.
+FIRMWARE_BUILD_DIR ?= firmware/build/image
+firmware-image-guard: tools-executable
+	bash tools/firmware-image-guard.sh $(FIRMWARE_BUILD_DIR)
+
 # The three things CI names as separate, fail-on-red steps.
 firmware-golden-vectors:
 	$(MAKE) -f firmware/Makefile golden-vectors

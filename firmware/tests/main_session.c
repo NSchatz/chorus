@@ -99,7 +99,7 @@ int main(int argc, char **argv)
            " chunks=%" PRIu64 " frames=%" PRIu64 " exchanges=%" PRIu32 " skipped=%" PRIu64 "\n",
            result.telemetry.rejoins, result.telemetry.connect_attempts,
            result.connections_that_played, result.longest_outage_ns,
-           result.telemetry.chunks_played, result.telemetry.frames_played,
+           result.telemetry.chunks_received, result.telemetry.frames_received,
            result.telemetry.exchanges, result.telemetry.skipped_frames);
     return 0;
 }
