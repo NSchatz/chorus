@@ -1,4 +1,4 @@
-# 0000: host evidence comes from a chorus-owned probe crate with two small FFI modules
+# 0047: host evidence comes from a chorus-owned probe crate with two small FFI modules
 
 - Status: accepted (goal 7, 2026-09-30)
 - Decided by: the goal (brief section 11 item 2, K34; research-platform-network.md section 5)
