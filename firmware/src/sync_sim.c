@@ -44,7 +44,7 @@ uint64_t chorus_sim_steps(const chorus_sim_config_t *config)
     return config->duration_ms / config->step_ms;
 }
 
-static int finite(double value)
+static int chorus_finite(double value)
 {
     return isfinite(value) ? 1 : 0;
 }
@@ -52,7 +52,7 @@ static int finite(double value)
 static chorus_sim_status_t check_skew(double ppm)
 {
     double magnitude = (ppm < 0.0) ? -ppm : ppm;
-    if (!finite(ppm) || magnitude > CHORUS_MAX_SKEW_PPM) {
+    if (!chorus_finite(ppm) || magnitude > CHORUS_MAX_SKEW_PPM) {
         return CHORUS_SIM_ERR_SKEW_OUT_OF_RANGE;
     }
     return CHORUS_SIM_OK;
@@ -60,7 +60,7 @@ static chorus_sim_status_t check_skew(double ppm)
 
 static chorus_sim_status_t check_delay(double value_us)
 {
-    if (!finite(value_us) || value_us < 0.0 || value_us > CHORUS_MAX_DELAY_US) {
+    if (!chorus_finite(value_us) || value_us < 0.0 || value_us > CHORUS_MAX_DELAY_US) {
         return CHORUS_SIM_ERR_DELAY_OUT_OF_RANGE;
     }
     return CHORUS_SIM_OK;
@@ -72,17 +72,17 @@ static chorus_sim_status_t check_servo(const chorus_servo_config_t *servo)
      * case that proves a regression is asserting something. */
     const double non_negative[2] = {servo->kp, servo->ki};
     for (int i = 0; i < 2; i++) {
-        if (!finite(non_negative[i]) || non_negative[i] < 0.0) {
+        if (!chorus_finite(non_negative[i]) || non_negative[i] < 0.0) {
             return CHORUS_SIM_ERR_INVALID_SERVO_PARAMETER;
         }
     }
     const double positive[2] = {servo->max_correction_ppm, servo->hard_resync_threshold_ns};
     for (int i = 0; i < 2; i++) {
-        if (!finite(positive[i]) || positive[i] <= 0.0) {
+        if (!chorus_finite(positive[i]) || positive[i] <= 0.0) {
             return CHORUS_SIM_ERR_INVALID_SERVO_PARAMETER;
         }
     }
-    if (!finite(servo->smoothing_alpha) || servo->smoothing_alpha <= 0.0 ||
+    if (!chorus_finite(servo->smoothing_alpha) || servo->smoothing_alpha <= 0.0 ||
         servo->smoothing_alpha > 1.0) {
         return CHORUS_SIM_ERR_INVALID_SERVO_PARAMETER;
     }
