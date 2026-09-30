@@ -188,22 +188,35 @@ int chorus_endpoint_config_load(chorus_endpoint_config_t *out, const char *path,
                                 size_t detail_len)
 {
     memset(out, 0, sizeof(*out));
-    chorus_conf_t conf;
-    if (chorus_conf_load(&conf, path, detail, detail_len) != CHORUS_CONF_OK) {
+    /* The pairs are 64 KiB (chorus/conf.h): too large for a task's stack and
+     * not worth keeping in static RAM after start-up, so they are borrowed
+     * from the heap for the parse and handed back. */
+    chorus_conf_t *conf = malloc(sizeof(*conf));
+    if (conf == NULL) {
+        snprintf(detail, detail_len, "%s: no memory to parse the configuration", path);
         return -1;
     }
-    return from_conf(out, &conf, path, detail, detail_len);
+    int status = (chorus_conf_load(conf, path, detail, detail_len) == CHORUS_CONF_OK)
+                     ? from_conf(out, conf, path, detail, detail_len)
+                     : -1;
+    free(conf);
+    return status;
 }
 
 int chorus_endpoint_config_parse(chorus_endpoint_config_t *out, const char *label, const char *text,
                                  char *detail, size_t detail_len)
 {
     memset(out, 0, sizeof(*out));
-    chorus_conf_t conf;
-    if (chorus_conf_parse(&conf, label, text, detail, detail_len) != CHORUS_CONF_OK) {
+    chorus_conf_t *conf = malloc(sizeof(*conf));
+    if (conf == NULL) {
+        snprintf(detail, detail_len, "%s: no memory to parse the configuration", label);
         return -1;
     }
-    return from_conf(out, &conf, label, detail, detail_len);
+    int status = (chorus_conf_parse(conf, label, text, detail, detail_len) == CHORUS_CONF_OK)
+                     ? from_conf(out, conf, label, detail, detail_len)
+                     : -1;
+    free(conf);
+    return status;
 }
 
 static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in, const char *path,

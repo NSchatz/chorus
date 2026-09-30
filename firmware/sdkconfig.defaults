@@ -65,3 +65,13 @@ CONFIG_ETH_USE_SPI_ETHERNET=y
 # pinned ESP-IDF v6.1, read 2026-09-30). Still no OTA partition: the layout OTA needs is
 # chorus#FLEET-10's (goal 14), which revisits this table and the flash size together.
 CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
+# app_main's own stack (goal 8). Its large objects are static and the session and
+# playout writer run in their own tasks (firmware/main/app_main.c), but the bring-up
+# calls it makes (the configuration parse, the amplifier sequencer, the radio) still
+# run on it, and ESP-IDF's 3584-byte default (components/esp_system/Kconfig,
+# ESP_MAIN_TASK_STACK_SIZE, pinned v6.1, read 2026-09-30) leaves no headroom that
+# anyone has measured. The stack is freed when app_main returns ("If app_main()
+# returns then this task is deleted and its stack memory is freed"). ASSUMED until
+# the bench reads the high-water mark.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

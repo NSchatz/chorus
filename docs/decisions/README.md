@@ -47,3 +47,4 @@ the number of the pull request that added it.
 | 0050 | [a FIFO source is held open and fills silence, and the ALSA null runs are a labelled host step in the gate](0050-fifo-source-and-alsa-null-runs.md) |
 | 0054 | [the device-class scripts report on a real device only, a FAIL is published, and a published run hands the checkout back](0054-device-class-bench-reports.md) |
 | 0057 | [board profiles over endpoint.conf, the W5500 as the default link, and one image per link profile in the gate](0057-board-profiles-and-the-wired-link.md) |
+| 0058 | [the endpoint plays through a jitter buffer whose device delay is the frames the I2S DMA consumed, counted and stamped in the interrupt, and corrects by inserting and dropping frames](0058-the-endpoint-playout-path.md) |

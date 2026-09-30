@@ -16,8 +16,11 @@
 #ifndef CHORUS_ESP_HAL_H
 #define CHORUS_ESP_HAL_H
 
+#include "driver/i2s_std.h"
+
 #include "chorus/amp.h"
 #include "chorus/endpoint_config.h"
+#include "chorus/playout.h"
 #include "chorus/wifi.h"
 
 /* Bring up the I2C bus, the amplifier's power-down line and the I2S channel
@@ -30,6 +33,20 @@
  * high impedance itself, and firmware/tests/test_amp.c grades that it does. */
 int chorus_esp_hal_init(const chorus_endpoint_config_t *config, chorus_i2c_bus_t *bus,
                         chorus_output_stage_t *stage, chorus_i2s_controller_t *controller);
+
+/* The largest DMA buffer the playout binding preloads, in bytes: 240 frames of
+ * two 32-bit slots, above the committed 240 x 2 x 3 (firmware/config/endpoint.conf). */
+#define CHORUS_ESP_HAL_MAX_DMA_BYTES 1920u
+
+/* Attach the playout path to the I2S TX interrupt and preload the stopped
+ * channel's DMA buffers with silence, counted as written. Must run after
+ * chorus_esp_hal_init and BEFORE the amplifier's bring-up first starts the
+ * clock. Returns 0. */
+int chorus_esp_hal_attach_playout(chorus_playout_t *playout,
+                                  const chorus_endpoint_config_t *config);
+
+/* The TX channel the playout writer writes to. */
+i2s_chan_handle_t chorus_esp_hal_i2s_tx(void);
 
 /* The radio, as the wireless bring-up takes it.
  *

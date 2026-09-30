@@ -40,6 +40,7 @@ idf_component_register(
         "app_main.c"
         "esp_hal.c"
         "esp_link.c"
+        "esp_playout.c"
         "../src/conf.c"
         "../src/protocol.c"
         "../src/protocol_v2.c"
@@ -56,6 +57,8 @@ idf_component_register(
         "../src/wifi.c"
         "../src/link.c"
         "../src/endpoint_config.c"
+        "../src/sync_conf.c"
+        "../src/playout.c"
         "../src/codec.c"
         "../src/codec_flac.c"
         "../src/codec_opus.c"
@@ -91,6 +94,9 @@ idf_component_register(
     EMBED_TXTFILES
         "../config/endpoint.conf"
         "${CMAKE_CURRENT_BINARY_DIR}/board_profile.conf"
+        # audit A-12: the endpoint reads the loop's constants from the file
+        # the Linux client is held to, not from literals.
+        "../../config/sync.conf"
 )
 
 # CHORUS_TARGET_ESP32S3 selects the target clock reader in

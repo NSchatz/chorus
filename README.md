@@ -22,7 +22,7 @@ needs hardware is NOT PASSED**, and no report in `docs/measurements/` is a hardw
 | SOUND-2, first sound | code written; nothing heard; the hardware criteria NOT PASSED (`docs/sound-2.md`) |
 | RIG-3, measurement rig | analysis written and checked against synthetic fixtures; no capture from real devices; the hardware criteria NOT PASSED |
 | SYNC-4, synchronization | the sync loop is written on the real path; the one-hour two-endpoint criterion NOT PASSED (no rig, no endpoints) |
-| EMBEDDED-5, embedded bring-up | host-built C cores and an ESP32-S3 image that compiles in the gate; the endpoint session does not yet play what it receives or run the servo (audit A-9); never flashed, never driven a pin; the hardware criteria NOT PASSED |
+| EMBEDDED-5, embedded bring-up | host-built C cores and an ESP32-S3 image that compiles in the gate; the playout path (jitter buffer, DMA-consumed frames stamped in the I2S interrupt, the servo) is written and graded on a host against a fake DMA (ADR 0058); never flashed, never driven a pin; the hardware criteria NOT PASSED |
 | PRODUCT-6, product hardening | zones, groups, volume, the control plane, the page and discovery work in software for Linux endpoints; the multi-day soak NOT PASSED; not deployed |
 | WIFI-7, Wi-Fi tier | expectations published and the jitter analysis written; no wireless endpoint characterized; the hardware criteria NOT PASSED |
 | DSP-8, DSP | not started |

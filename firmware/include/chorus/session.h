@@ -29,6 +29,7 @@
 #include <stdint.h>
 
 #include "chorus/noise.h"
+#include "chorus/playout.h"
 #include "chorus/sync.h"
 #include "chorus/telemetry.h"
 
@@ -70,6 +71,11 @@ typedef struct {
      * test hands in fixed keys. */
     chorus_noise_random_fn random;
     void *random_ctx;
+    /* The playout path (firmware/include/chorus/playout.h): audio chunks, PCM
+     * or decoded, go into its jitter buffer and the filtered offset goes to
+     * its loop. NULL counts chunks as received and plays nothing (the host
+     * session binary). */
+    chorus_playout_t *playout;
 } chorus_session_config_t;
 
 /* Why a run ended. Never "the server went away": that is not an end, it is a
