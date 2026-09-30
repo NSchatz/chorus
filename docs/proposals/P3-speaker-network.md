@@ -3,6 +3,7 @@
 - Decisions: K35
 - Status: PROPOSED (chorus goal 1, 2026-09-30); decided at Checkpoint K
 - If deferred: The homelab PR is drafted on a branch and not opened; the line reads PROPOSED
+- Deferred at Checkpoint K (2026-09-30). Goal 7 drafted Option B' on the NSchatz/homelab branch `chorus-g7/speaker-network` (commit `0d03e7c`, no pull request); the body to open it with, including the owner action, is `docs/proposals/P3-speaker-network-homelab-pr.md`. Goal 7's house simulation compares the switched (B') and routed (B) paths (`docs/measurements/sim-house-8-rooms.md`, simulation, not timing evidence)
 - Builds on: goal 7 (§11 item 6, "the homelab PR per §0.1, or the drafted branch if P3 was deferred", done-when F; I9 places the speaker-network PR there); goal 14 (§18, adoption and Wi-Fi provisioning onto this network, K92); goal 24 (§28 item 2, the compact speaker's PoE class "against the switch's 250 W at 8 rooms"); the goal-4 deploy PR (§8, K34 host networking) is its prerequisite in homelab
 
 ## Question
