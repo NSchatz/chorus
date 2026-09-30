@@ -13,6 +13,8 @@ chorus-audio = { path = "../audio" }
 chorus-alsa = { path = "../alsa" }
 chorus-sync = { path = "../sync" }
 chorus-control = { path = "../control" }
+# The one controller model shared with the firmware (docs/decisions/0080-*).
+chorus-controls = { path = "../controls" }
 chorus-discovery = { path = "../discovery" }
 chorus-opus-sys = { path = "../opus-sys" }
 # MPL-2.0, used unmodified from crates.io for FLAC only: docs/decisions/0044-the-vendored-decoders.md

@@ -100,6 +100,7 @@ dependencies = [
  "chorus-alsa",
  "chorus-audio",
  "chorus-control",
+ "chorus-controls",
  "chorus-discovery",
  "chorus-opus-sys",
  "chorus-protocol",
@@ -113,6 +114,13 @@ name = "chorus-control"
 version = "0.1.0"
 dependencies = [
  "chorus-server",
+]
+
+[[package]]
+name = "chorus-controls"
+version = "0.1.0"
+dependencies = [
+ "chorus-protocol",
 ]
 
 [[package]]

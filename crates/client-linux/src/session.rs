@@ -314,11 +314,13 @@ impl fmt::Display for SessionRefusal {
 
 impl std::error::Error for SessionRefusal {}
 
-/// The `hello` this endpoint sends.
+/// The `hello` this endpoint sends: `player`, and the roles a configured
+/// front panel adds (`controller`, and `visualizer` for a light that follows
+/// it; `front_panel.rs`).
 pub fn hello(config: &ClientConfig) -> Hello {
     Hello {
         protocol_version: PROTOCOL_VERSION,
-        roles: roles::PLAYER,
+        roles: roles::PLAYER | (config.extra_roles & roles::DEFINED),
         name: config.endpoint.clone(),
         software: format!("chorus-client {}", env!("CARGO_PKG_VERSION")),
     }
@@ -349,7 +351,8 @@ pub fn capabilities(config: &ClientConfig) -> Capabilities {
         sample_rates_hz: rates,
         buffer_ms: (config.max_us / 1_000).min(u64::from(u16::MAX)) as u16,
         intrinsic_latency_ns: 0,
-        led_count: 0,
+        // One status light when the front panel declared the visualizer role.
+        led_count: u16::from(config.extra_roles & roles::VISUALIZER != 0),
         visualizer_bands: 0,
     }
 }
@@ -469,6 +472,21 @@ pub fn open(
         server_key: fingerprint(&established.peer_key),
         pinned_now: established.verdict == Verdict::Adopted,
     })
+}
+
+/// From now on, also show every v2 message the session receives to `also`
+/// (the front panel takes `controller_state`, `visualizer_frame` and
+/// `color`); what [`open`] records is recorded as before.
+pub fn also_hand(
+    reader: &mut SecureReader<TcpStream>,
+    announced: &Arc<Mutex<Announced>>,
+    mut also: Box<dyn FnMut(&Message) + Send>,
+) {
+    let recorder = Arc::clone(announced);
+    reader.set_handler(Box::new(move |m| {
+        also(&m);
+        record(&recorder, m);
+    }));
 }
 
 fn record(announced: &Arc<Mutex<Announced>>, m: Message) {

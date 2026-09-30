@@ -652,6 +652,9 @@ fn main() -> ExitCode {
         },
         hellos: Default::default(),
         telemetry: Default::default(),
+        // An endpoint's buttons change its zone through the control plane,
+        // when this server runs one (ADR 0063, docs/decisions/0080-*).
+        control: control.as_ref().map(|(_, state)| Arc::clone(state)),
     });
     drop(arrived);
 

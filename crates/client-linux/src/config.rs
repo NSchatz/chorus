@@ -149,6 +149,13 @@ pub struct ClientConfig {
     /// The id the server pins this endpoint's key to, or `None` to use
     /// `endpoint`. It must be stable across restarts.
     pub endpoint_id: Option<String>,
+    /// The front panel's configuration file (`--front-panel`), or `None` for
+    /// an endpoint with no buttons or light (`crates/client-linux/src/front_panel.rs`).
+    pub front_panel: Option<String>,
+    /// Roles this endpoint declares beyond `player`. Never read from the
+    /// command line: the front panel sets it once its configuration has
+    /// loaded, so `hello` claims only what this process can do.
+    pub extra_roles: u16,
 }
 
 impl Default for ClientConfig {
@@ -178,6 +185,8 @@ impl Default for ClientConfig {
             identity_dir: None,
             ephemeral_identity: false,
             endpoint_id: None,
+            front_panel: None,
+            extra_roles: 0,
         }
     }
 }
@@ -532,6 +541,7 @@ impl ClientConfig {
                 "--zone" => config.zone = value()?,
                 "--endpoint" => config.endpoint = value()?,
                 "--endpoint-id" => config.endpoint_id = Some(value()?),
+                "--front-panel" => config.front_panel = Some(value()?),
                 "--identity-dir" => config.identity_dir = Some(value()?),
                 "--ephemeral-identity" => config.ephemeral_identity = true,
                 "--rejoin" => config.rejoin = true,
