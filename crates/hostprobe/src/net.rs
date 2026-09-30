@@ -19,7 +19,7 @@
 //! old and new layouts are the same: `struct timespec` is two 64-bit fields.
 
 // Unsafe allowed in this module: it is the socket FFI boundary of the receive-
-// timestamp check (docs/decisions/0000-host-probes.md); every block names its invariant.
+// timestamp check (docs/decisions/0047-host-probes.md); every block names its invariant.
 #![allow(unsafe_code)]
 
 use std::io;

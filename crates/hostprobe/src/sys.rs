@@ -20,7 +20,7 @@
 //! (`audio-path.conf`) so that the scanner holds it to that.
 
 // Unsafe allowed in this module: it is the libc FFI boundary of the wakeup probe
-// (docs/decisions/0000-host-probes.md); every block names its invariant.
+// (docs/decisions/0047-host-probes.md); every block names its invariant.
 #![allow(unsafe_code)]
 
 use std::io;

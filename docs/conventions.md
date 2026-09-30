@@ -74,7 +74,7 @@ has to learn or argue about. Formatting-only changes land as their own commit.
   |---|---|---|
   | `crates/alsa` | the crate | the dlopen binding to libasound; every function crosses FFI |
   | `crates/hostctl` | six functions | libc wrappers for getrlimit, setrlimit, `sched_*`, mlockall and gettid; the rest of the crate stays denied |
-  | `crates/hostprobe/src/sys.rs`, `crates/hostprobe/src/net.rs` | two modules | the host probes' FFI: clock_nanosleep, prctl timer slack, setsockopt and recvmsg for kernel receive stamps (ADR 0000) |
+  | `crates/hostprobe/src/sys.rs`, `crates/hostprobe/src/net.rs` | two modules | the host probes' FFI: clock_nanosleep, prctl timer slack, setsockopt and recvmsg for kernel receive stamps (ADR 0047) |
   | `crates/server/tests/regress_0031_f6.rs` | one test | sets SCHED_BATCH through raw libc, which no chorus wrapper offers |
 
   `protocol`, `sync`, `audio`, `audio-path` and `measure` go further with
