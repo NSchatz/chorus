@@ -42,6 +42,10 @@ VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
 
 echo "image: building chorus-server for $TARGET"
 cargo build --release --locked --target "$TARGET" -p chorus-server --bins
+# The wakeup-jitter probe rides along for the owner's production run inside the
+# deployed container (docs/measurements/host-wakeup-jitter.md, "Next"); it never
+# runs unless invoked.
+cargo build --release --locked --target "$TARGET" -p chorus-hostprobe --bin chorus-wakeup-probe
 
 if [ ! -f "$BASE_CACHE/index.json" ]; then
     echo "image: pulling $BASE_REF@$BASE_DIGEST"
@@ -67,6 +71,7 @@ STAGE="$WORK/stage"
 mkdir -p "$STAGE/usr/local/bin" "$STAGE/etc/chorus"
 install -m 0755 "$TD/$TARGET/release/chorus-server" "$STAGE/usr/local/bin/chorus-server"
 install -m 0755 "$TD/$TARGET/release/chorus-rt-spin" "$STAGE/usr/local/bin/chorus-rt-spin"
+install -m 0755 "$TD/$TARGET/release/chorus-wakeup-probe" "$STAGE/usr/local/bin/chorus-wakeup-probe"
 install -m 0644 config/verification.conf "$STAGE/etc/chorus/verification.conf"
 # The zone state directory. A rootless insert records every file as root's, and
 # the image runs as 65532, so the directory is world-writable with the sticky
@@ -189,4 +194,9 @@ if "$BIN" --health-check "127.0.0.1:$DEAD"; then
     echo "image test: FAIL: --health-check reported a dead port healthy"
     exit 1
 fi
+# The probe the owner runs in the deployed container: present, static, and it runs.
+PROBE="$T/bundle/rootfs/usr/local/bin/chorus-wakeup-probe"
+"$PROBE" --period-us 5000 --seconds 1 > "$T/probe.txt"
+grep -q '^count  *200$' "$T/probe.txt"
+echo "image test: chorus-wakeup-probe ran: $(grep '^lateness_us' "$T/probe.txt")"
 echo "image test: PASS"

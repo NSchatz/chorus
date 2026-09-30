@@ -124,6 +124,13 @@ name = "chorus-hostctl"
 version = "0.1.0"
 
 [[package]]
+name = "chorus-hostprobe"
+version = "0.1.0"
+dependencies = [
+ "chorus-hostctl",
+]
+
+[[package]]
 name = "chorus-measure"
 version = "0.1.0"
 dependencies = [
