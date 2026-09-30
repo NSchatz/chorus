@@ -3,6 +3,7 @@
 #include "chorus/conf.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifndef CHORUS_ENDPOINT_CONFIG_PATH
@@ -61,28 +62,43 @@ int chorus_endpoint_config_load(chorus_endpoint_config_t *out, const char *path,
                                 size_t detail_len)
 {
     memset(out, 0, sizeof(*out));
-    chorus_conf_t conf;
-    if (chorus_conf_load(&conf, path, detail, detail_len) != CHORUS_CONF_OK) {
+    /* The pairs are 64 KiB (chorus/conf.h): too large for a task's stack and
+     * not worth keeping in static RAM after start-up, so they are borrowed
+     * from the heap for the parse and handed back. */
+    chorus_conf_t *conf = malloc(sizeof(*conf));
+    if (conf == NULL) {
+        snprintf(detail, detail_len, "%s: no memory to parse the configuration", path);
         return -1;
     }
-    return from_conf(out, &conf, path, detail, detail_len);
+    int status = (chorus_conf_load(conf, path, detail, detail_len) == CHORUS_CONF_OK)
+                     ? from_conf(out, conf, path, detail, detail_len)
+                     : -1;
+    free(conf);
+    return status;
 }
 
 int chorus_endpoint_config_parse(chorus_endpoint_config_t *out, const char *label, const char *text,
                                  char *detail, size_t detail_len)
 {
     memset(out, 0, sizeof(*out));
-    chorus_conf_t conf;
-    if (chorus_conf_parse(&conf, label, text, detail, detail_len) != CHORUS_CONF_OK) {
+    chorus_conf_t *conf = malloc(sizeof(*conf));
+    if (conf == NULL) {
+        snprintf(detail, detail_len, "%s: no memory to parse the configuration", label);
         return -1;
     }
-    return from_conf(out, &conf, label, detail, detail_len);
+    int status = (chorus_conf_parse(conf, label, text, detail, detail_len) == CHORUS_CONF_OK)
+                     ? from_conf(out, conf, label, detail, detail_len)
+                     : -1;
+    free(conf);
+    return status;
 }
 
 static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in, const char *path,
                      char *detail, size_t detail_len)
 {
-    const chorus_conf_t conf = *conf_in;
+    /* Read in place: the pairs are 64 KiB (chorus/conf.h), too large to copy
+     * onto a task's stack. */
+    const chorus_conf_t *conf = conf_in;
 
 #define NEED(call)                                                                                 \
     do {                                                                                           \
@@ -97,16 +113,16 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
      * unknown; `known` is 0 and the buffer is left empty, so there is no
      * default network anywhere for a join to fall back to. */
     char link_text[CHORUS_ENDPOINT_TEXT];
-    NEED(chorus_conf_string(&conf, "link_transport", link_text, sizeof(link_text), detail,
+    NEED(chorus_conf_string(conf, "link_transport", link_text, sizeof(link_text), detail,
                             detail_len));
     int link_ok = 0;
     out->link.transport = chorus_transport_from_name(link_text, &link_ok);
     if (!link_ok) {
         snprintf(detail, detail_len, "%s: link_transport = %s is not `wired` or `wireless`",
-                 conf.path, link_text);
+                 conf->path, link_text);
         return -1;
     }
-    NEED(chorus_conf_string(&conf, "link_wifi_power_save", link_text, sizeof(link_text), detail,
+    NEED(chorus_conf_string(conf, "link_wifi_power_save", link_text, sizeof(link_text), detail,
                             detail_len));
     out->link.power_save = chorus_wifi_ps_from_name(link_text, &link_ok);
     if (!link_ok) {
@@ -114,103 +130,101 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
                  "%s: link_wifi_power_save = %s is not `none`, `min-modem` or `max-modem`. It is "
                  "not a value this repository declares unknown either: the whole point of the "
                  "phase is that the mode is SET rather than inherited",
-                 conf.path, link_text);
+                 conf->path, link_text);
         return -1;
     }
-    NEED(chorus_conf_bool(&conf, "link_wifi_coexistence", &out->link.coexistence, detail,
+    NEED(chorus_conf_bool(conf, "link_wifi_coexistence", &out->link.coexistence, detail,
                           detail_len));
-    if (chorus_conf_get(&conf, "link_wifi_ssid") == NULL) {
-        snprintf(detail, detail_len, "%s has no link_wifi_ssid", conf.path);
+    if (chorus_conf_get(conf, "link_wifi_ssid") == NULL) {
+        snprintf(detail, detail_len, "%s has no link_wifi_ssid", conf->path);
         return -1;
     }
-    if (chorus_conf_is_unknown(&conf, "link_wifi_ssid")) {
+    if (chorus_conf_is_unknown(conf, "link_wifi_ssid")) {
         out->link.ssid_known = 0;
         out->link.ssid[0] = '\0';
     } else {
-        NEED(chorus_conf_string(&conf, "link_wifi_ssid", out->link.ssid, sizeof(out->link.ssid),
+        NEED(chorus_conf_string(conf, "link_wifi_ssid", out->link.ssid, sizeof(out->link.ssid),
                                 detail, detail_len));
         out->link.ssid_known = 1;
     }
-    if (chorus_conf_get(&conf, "link_wifi_secret") == NULL) {
-        snprintf(detail, detail_len, "%s has no link_wifi_secret", conf.path);
+    if (chorus_conf_get(conf, "link_wifi_secret") == NULL) {
+        snprintf(detail, detail_len, "%s has no link_wifi_secret", conf->path);
         return -1;
     }
-    if (chorus_conf_is_unknown(&conf, "link_wifi_secret")) {
+    if (chorus_conf_is_unknown(conf, "link_wifi_secret")) {
         out->link.secret_known = 0;
         out->link.secret[0] = '\0';
     } else {
-        NEED(chorus_conf_string(&conf, "link_wifi_secret", out->link.secret,
+        NEED(chorus_conf_string(conf, "link_wifi_secret", out->link.secret,
                                 sizeof(out->link.secret), detail, detail_len));
         out->link.secret_known = 1;
     }
     snprintf(out->link.source, sizeof(out->link.source), "%s", path);
 
-    NEED(chorus_conf_string(&conf, "server_address", out->server_address,
+    NEED(chorus_conf_string(conf, "server_address", out->server_address,
                             sizeof(out->server_address), detail, detail_len));
-    NEED(chorus_conf_u32(&conf, "reconnect_first_backoff_ms", &out->reconnect_first_backoff_ms,
+    NEED(chorus_conf_u32(conf, "reconnect_first_backoff_ms", &out->reconnect_first_backoff_ms,
                          detail, detail_len));
-    NEED(chorus_conf_u32(&conf, "reconnect_max_backoff_ms", &out->reconnect_max_backoff_ms, detail,
+    NEED(chorus_conf_u32(conf, "reconnect_max_backoff_ms", &out->reconnect_max_backoff_ms, detail,
                          detail_len));
-    NEED(chorus_conf_u32(&conf, "outage_minutes_seconds", &out->outage_minutes_seconds, detail,
+    NEED(chorus_conf_u32(conf, "outage_minutes_seconds", &out->outage_minutes_seconds, detail,
                          detail_len));
 
-    NEED(chorus_conf_u32(&conf, "i2s_sample_rate_hz", &out->clock.sample_rate_hz, detail,
+    NEED(chorus_conf_u32(conf, "i2s_sample_rate_hz", &out->clock.sample_rate_hz, detail,
                          detail_len));
-    NEED(chorus_conf_u32(&conf, "i2s_slot_bit_width", &out->clock.slot_bit_width, detail,
+    NEED(chorus_conf_u32(conf, "i2s_slot_bit_width", &out->clock.slot_bit_width, detail,
                          detail_len));
-    NEED(
-        chorus_conf_u32(&conf, "i2s_mclk_multiple", &out->clock.mclk_multiple, detail, detail_len));
-    NEED(
-        chorus_conf_u32(&conf, "i2s_dma_frame_num", &out->clock.dma_frame_num, detail, detail_len));
-    NEED(chorus_conf_u32(&conf, "i2s_dma_desc_num", &out->clock.dma_desc_num, detail, detail_len));
+    NEED(chorus_conf_u32(conf, "i2s_mclk_multiple", &out->clock.mclk_multiple, detail, detail_len));
+    NEED(chorus_conf_u32(conf, "i2s_dma_frame_num", &out->clock.dma_frame_num, detail, detail_len));
+    NEED(chorus_conf_u32(conf, "i2s_dma_desc_num", &out->clock.dma_desc_num, detail, detail_len));
 
-    NEED(chorus_conf_u32(&conf, "pin_i2s_mclk", &out->pins.mclk, detail, detail_len));
-    NEED(chorus_conf_u32(&conf, "pin_i2s_bclk", &out->pins.bclk, detail, detail_len));
-    NEED(chorus_conf_u32(&conf, "pin_i2s_ws", &out->pins.ws, detail, detail_len));
-    NEED(chorus_conf_u32(&conf, "pin_i2s_dout", &out->pins.dout, detail, detail_len));
-    NEED(chorus_conf_u32(&conf, "pin_i2c_sda", &out->pins.sda, detail, detail_len));
-    NEED(chorus_conf_u32(&conf, "pin_i2c_scl", &out->pins.scl, detail, detail_len));
-    NEED(chorus_conf_u32(&conf, "pin_amp_power_down", &out->pins.amp_power_down, detail,
-                         detail_len));
-    NEED(chorus_conf_bool(&conf, "board_octal_psram", &out->pins.octal_psram, detail, detail_len));
+    NEED(chorus_conf_u32(conf, "pin_i2s_mclk", &out->pins.mclk, detail, detail_len));
+    NEED(chorus_conf_u32(conf, "pin_i2s_bclk", &out->pins.bclk, detail, detail_len));
+    NEED(chorus_conf_u32(conf, "pin_i2s_ws", &out->pins.ws, detail, detail_len));
+    NEED(chorus_conf_u32(conf, "pin_i2s_dout", &out->pins.dout, detail, detail_len));
+    NEED(chorus_conf_u32(conf, "pin_i2c_sda", &out->pins.sda, detail, detail_len));
+    NEED(chorus_conf_u32(conf, "pin_i2c_scl", &out->pins.scl, detail, detail_len));
+    NEED(
+        chorus_conf_u32(conf, "pin_amp_power_down", &out->pins.amp_power_down, detail, detail_len));
+    NEED(chorus_conf_bool(conf, "board_octal_psram", &out->pins.octal_psram, detail, detail_len));
 
     char placement[CHORUS_ENDPOINT_TEXT];
-    NEED(chorus_conf_string(&conf, "dma_descriptor_placement", placement, sizeof(placement), detail,
+    NEED(chorus_conf_string(conf, "dma_descriptor_placement", placement, sizeof(placement), detail,
                             detail_len));
     int placement_ok = 0;
     out->dma_placement = chorus_mem_placement_from_name(placement, &placement_ok);
     if (!placement_ok) {
         snprintf(detail, detail_len,
-                 "%s: dma_descriptor_placement = %s is not `internal` or `external`", conf.path,
+                 "%s: dma_descriptor_placement = %s is not `internal` or `external`", conf->path,
                  placement);
         return -1;
     }
 
-    NEED(chorus_conf_f64(&conf, "amp_analog_gain_ceiling_db", &out->amp.analog_gain_ceiling_db,
+    NEED(chorus_conf_f64(conf, "amp_analog_gain_ceiling_db", &out->amp.analog_gain_ceiling_db,
                          detail, detail_len));
-    NEED(chorus_conf_f64(&conf, "amp_analog_gain_db", &out->gain.db, detail, detail_len));
+    NEED(chorus_conf_f64(conf, "amp_analog_gain_db", &out->gain.db, detail, detail_len));
     snprintf(out->amp.ceiling_source, sizeof(out->amp.ceiling_source), "%s", path);
 
-    if (optional_u8(&conf, "amp_i2c_address", &out->amp.address, &out->amp.address_known, detail,
+    if (optional_u8(conf, "amp_i2c_address", &out->amp.address, &out->amp.address_known, detail,
                     detail_len) != 0 ||
-        optional_u8(&conf, "amp_reg_device_id", &out->amp.reg_device_id,
+        optional_u8(conf, "amp_reg_device_id", &out->amp.reg_device_id,
                     &out->amp.reg_device_id_known, detail, detail_len) != 0 ||
-        optional_u8(&conf, "amp_reg_fault", &out->amp.reg_fault, &out->amp.reg_fault_known, detail,
+        optional_u8(conf, "amp_reg_fault", &out->amp.reg_fault, &out->amp.reg_fault_known, detail,
                     detail_len) != 0 ||
-        optional_u8(&conf, "amp_reg_analog_gain", &out->amp.reg_analog_gain,
+        optional_u8(conf, "amp_reg_analog_gain", &out->amp.reg_analog_gain,
                     &out->amp.reg_analog_gain_known, detail, detail_len) != 0 ||
-        optional_u8(&conf, "amp_reg_state_control", &out->amp.reg_state_control,
+        optional_u8(conf, "amp_reg_state_control", &out->amp.reg_state_control,
                     &out->amp.reg_state_control_known, detail, detail_len) != 0 ||
-        optional_u8(&conf, "amp_device_id_value", &out->amp.device_id_value,
+        optional_u8(conf, "amp_device_id_value", &out->amp.device_id_value,
                     &out->amp.device_id_value_known, detail, detail_len) != 0 ||
-        optional_u8(&conf, "amp_fault_clear_value", &out->amp.fault_clear_value,
+        optional_u8(conf, "amp_fault_clear_value", &out->amp.fault_clear_value,
                     &out->amp.fault_clear_value_known, detail, detail_len) != 0 ||
-        optional_u8(&conf, "amp_analog_gain_code", &out->gain.code, &out->gain.code_known, detail,
+        optional_u8(conf, "amp_analog_gain_code", &out->gain.code, &out->gain.code_known, detail,
                     detail_len) != 0) {
         return -1;
     }
 
-    NEED(chorus_conf_string(&conf, "espidf_version", out->espidf_version,
+    NEED(chorus_conf_string(conf, "espidf_version", out->espidf_version,
                             sizeof(out->espidf_version), detail, detail_len));
 
 #undef NEED

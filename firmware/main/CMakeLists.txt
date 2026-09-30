@@ -22,6 +22,7 @@ idf_component_register(
     SRCS
         "app_main.c"
         "esp_hal.c"
+        "esp_playout.c"
         "../src/conf.c"
         "../src/protocol.c"
         "../src/protocol_v2.c"
@@ -37,6 +38,8 @@ idf_component_register(
         "../src/session.c"
         "../src/wifi.c"
         "../src/endpoint_config.c"
+        "../src/sync_conf.c"
+        "../src/playout.c"
         "../src/codec.c"
         "../src/codec_flac.c"
         "../src/codec_opus.c"
@@ -69,6 +72,9 @@ idf_component_register(
         mbedtls
     EMBED_TXTFILES
         "../config/endpoint.conf"
+        # audit A-12: the endpoint reads the loop's constants from the file
+        # the Linux client is held to, not from literals.
+        "../../config/sync.conf"
 )
 
 # CHORUS_TARGET_ESP32S3 selects the target clock reader in

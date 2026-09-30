@@ -25,9 +25,13 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "esp_playout.h"
+
 #include "chorus/amp.h"
 #include "chorus/endpoint_config.h"
+#include "chorus/playout.h"
 #include "chorus/session.h"
+#include "chorus/sync_conf.h"
 #include "chorus/telemetry.h"
 #include "chorus/wifi.h"
 
@@ -37,15 +41,30 @@ static const char *TAG = "chorus-endpoint";
 extern const char endpoint_conf_start[] __asm__("_binary_endpoint_conf_start");
 extern const char endpoint_conf_end[] __asm__("_binary_endpoint_conf_end");
 
+/* config/sync.conf, embedded the same way (audit A-12): the loop's constants
+ * come from the one file the Linux client is held to, not from literals. */
+extern const char sync_conf_start[] __asm__("_binary_sync_conf_start");
+extern const char sync_conf_end[] __asm__("_binary_sync_conf_end");
+
+/* The session task's stack. The session decodes FLAC and Opus inline, and
+ * libopus (built with VAR_ARRAYS, third_party/opus/chorus-build.txt) keeps its
+ * scratch on the caller's stack: decoding the RFC 8251 CELT stereo vector took
+ * 22,056 bytes of stack on the host (x86-64, -O2; the decision record for this
+ * path gives the method), FLAC 10,048. 32 KiB is that plus the session's own
+ * frames with headroom for the Xtensa windowed ABI; ASSUMED until the bench
+ * reads uxTaskGetStackHighWaterMark (ESP-IDF's xTaskCreate takes bytes). */
+#define SESSION_STACK_BYTES 32768
+#define SESSION_PRIORITY 5
+
 /* How often the amplifier's fault register is read while audio is playing. A
  * fault that is surfaced a second late is still surfaced; one that is never
  * read is not. */
 #define FAULT_POLL_MS 1000
 
-/* Everything the fault watch needs. It shares the I2C bus, the output stage
- * and the I2S controller with nothing else: the session supervisor touches a
- * socket and a filter and no hardware at all, so there is no contention to
- * guard against here. */
+/* Everything the fault watch needs. It shares the I2C bus and the output stage
+ * with nothing else: the session supervisor touches a socket, a filter and the
+ * playout buffer, and the playout writer only writes to the I2S channel, which
+ * the driver serialises itself (ESP-IDF v6.1 I2S guide, "Thread Safety"). */
 typedef struct {
     const chorus_endpoint_config_t *config;
     chorus_i2c_bus_t *bus;
@@ -54,6 +73,14 @@ typedef struct {
     chorus_telemetry_t *telemetry;
 } fault_watch_t;
 
+/* Everything the session task needs; static, like the rest of what app_main
+ * hands to a task that outlives it. */
+typedef struct {
+    chorus_session_config_t session;
+    chorus_i2s_controller_t *controller;
+    chorus_output_stage_t *stage;
+} session_task_t;
+
 /* AC-5, on the board: read the fault register, and on a fault stop the audio
  * and say which fault by name. Never swallow one, and never keep playing
  * through one. */
@@ -61,7 +88,7 @@ static void fault_watch(void *argument)
 {
     fault_watch_t *watch = (fault_watch_t *)argument;
     chorus_amp_report_t report;
-    char line[512];
+    char line[1024];
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(FAULT_POLL_MS));
         chorus_amp_status_t status = chorus_amp_poll_fault(
@@ -78,6 +105,23 @@ static void fault_watch(void *argument)
             return;
         }
     }
+}
+
+/* The session runs in its own task, sized for the decoders, rather than on
+ * app_main's (CONFIG_ESP_MAIN_TASK_STACK_SIZE). */
+static void session_task(void *argument)
+{
+    session_task_t *task = (session_task_t *)argument;
+    static chorus_session_result_t result;
+    (void)chorus_session_run(&task->session, &result);
+
+    /* run_seconds is zero, so the line above does not return while the board
+     * has power. If it ever does, the output stage goes dead rather than being
+     * left live with nothing feeding it. */
+    (void)task->stage->high_impedance(task->stage->ctx);
+    (void)task->controller->stop_clock(task->controller->ctx);
+    ESP_LOGE(TAG, "the session ended; the output stage is in high impedance");
+    vTaskDelete(NULL);
 }
 
 void app_main(void)
@@ -109,7 +153,7 @@ void app_main(void)
     /* The same validation the host build gates its compile on. A board that
      * somehow booted an image built from a configuration that breaks a
      * platform rule stops here rather than driving a loudspeaker with it. */
-    chorus_finding_t findings[16];
+    static chorus_finding_t findings[16];
     size_t finding_count = 0;
     chorus_endpoint_config_validate(&config, findings, 16, &finding_count);
     for (size_t i = 0; i < finding_count; i++) {
@@ -128,15 +172,37 @@ void app_main(void)
         return;
     }
 
+    /* config/sync.conf, then the playout path, BEFORE the amplifier's
+     * bring-up starts the I2S clock: the path preloads the stopped channel's
+     * DMA ring so that written and consumed count the same frames. */
+    static char sync_text[4096];
+    size_t sync_length = (size_t)((uintptr_t)sync_conf_end - (uintptr_t)sync_conf_start);
+    if (sync_length >= sizeof(sync_text)) {
+        ESP_LOGE(TAG, "the embedded config/sync.conf does not fit");
+        return;
+    }
+    memcpy(sync_text, sync_conf_start, sync_length);
+    sync_text[sync_length] = '\0';
+    static chorus_sync_conf_t sync;
+    if (chorus_sync_conf_parse(&sync, "config/sync.conf", sync_text, detail, sizeof(detail)) != 0) {
+        ESP_LOGE(TAG, "%s", detail);
+        return;
+    }
+    chorus_playout_t *playout = chorus_esp_playout_create(&config, &sync);
+    if (playout == NULL) {
+        ESP_LOGE(TAG, "no playout path; the output stage stays dead");
+        return;
+    }
+
     static chorus_telemetry_t telemetry;
     chorus_telemetry_init(&telemetry);
 
-    chorus_amp_report_t report;
+    static chorus_amp_report_t report;
     chorus_amp_status_t status = chorus_amp_bring_up(&config.amp, &config.gain, &config.clock, &bus,
                                                      &stage, &controller, &report);
     chorus_telemetry_record_amp(&telemetry, &report);
     if (status != CHORUS_AMP_OK) {
-        char line[512];
+        static char line[1024];
         chorus_telemetry_line(&telemetry, line, sizeof(line));
         /* Surfaced, not swallowed, and the endpoint stops here rather than
          * starting a session it cannot play. */
@@ -156,11 +222,11 @@ void app_main(void)
      * feeding it. */
     chorus_radio_t radio;
     chorus_esp_hal_radio(&radio);
-    chorus_wifi_report_t link;
+    static chorus_wifi_report_t link;
     chorus_wifi_status_t link_status = chorus_wifi_bring_up(&config.link, &radio, &link);
     chorus_telemetry_record_wifi(&telemetry, &link);
     {
-        char line[768];
+        static char line[1024];
         chorus_telemetry_line(&telemetry, line, sizeof(line));
         if (link.link_up) {
             ESP_LOGI(TAG, "%s", line);
@@ -178,16 +244,27 @@ void app_main(void)
         return;
     }
 
-    chorus_session_config_t session;
-    memset(&session, 0, sizeof(session));
-    snprintf(session.server, sizeof(session.server), "%s", config.server_address);
-    session.first_backoff_ms = config.reconnect_first_backoff_ms;
-    session.max_backoff_ms = config.reconnect_max_backoff_ms;
-    session.run_seconds = 0; /* until the power goes away */
-    session.sync_interval_ms = 500;
-    session.filter_window = 64;
-    session.smoothing_alpha = 0.0625;
-    session.event_log_path = NULL;
+    /* The writer, now that the clock runs: it paces itself on the DMA. */
+    if (chorus_esp_playout_start(playout) != 0) {
+        (void)stage.high_impedance(stage.ctx);
+        (void)controller.stop_clock(controller.ctx);
+        return;
+    }
+
+    static session_task_t task;
+    chorus_session_config_t *session = &task.session;
+    memset(session, 0, sizeof(*session));
+    snprintf(session->server, sizeof(session->server), "%s", config.server_address);
+    session->first_backoff_ms = config.reconnect_first_backoff_ms;
+    session->max_backoff_ms = config.reconnect_max_backoff_ms;
+    session->run_seconds = 0; /* until the power goes away */
+    session->sync_interval_ms = sync.sync_interval_ms;
+    session->filter_window = sync.filter_window;
+    session->smoothing_alpha = sync.smoothing_alpha;
+    session->event_log_path = NULL;
+    session->playout = playout;
+    task.controller = &controller;
+    task.stage = &stage;
 
     /* The fault poll runs BESIDE the session, in its own task, rather than
      * between slices of it: the supervisor's state - the backoff, the filter,
@@ -211,13 +288,14 @@ void app_main(void)
         return;
     }
 
-    chorus_session_result_t result;
-    (void)chorus_session_run(&session, &result);
-
-    /* run_seconds is zero, so the line above does not return while the board
-     * has power. If it ever does, the output stage goes dead rather than being
-     * left live with nothing feeding it. */
-    (void)stage.high_impedance(stage.ctx);
-    (void)controller.stop_clock(controller.ctx);
-    ESP_LOGE(TAG, "the session ended; the output stage is in high impedance");
+    if (xTaskCreate(session_task, "chorus-session", SESSION_STACK_BYTES, &task, SESSION_PRIORITY,
+                    NULL) != pdPASS) {
+        ESP_LOGE(TAG, "the session task could not be started; the output stage goes back to "
+                      "high impedance");
+        (void)stage.high_impedance(stage.ctx);
+        (void)controller.stop_clock(controller.ctx);
+    }
+    /* app_main returns and its task is deleted (CONFIG_ESP_MAIN_TASK_STACK_SIZE
+     * help: "If app_main() returns then this task is deleted"); everything the
+     * tasks above use is static. */
 }

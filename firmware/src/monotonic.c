@@ -8,8 +8,23 @@
 
 uint64_t chorus_monotonic_now_ns(void)
 {
-    /* Microseconds since boot. Not settable, not steppable, and the same
-     * counter the I2S driver's own timing is derived from. */
+    /* Microseconds since esp_timer's initialisation "shortly before the
+     * app_main function is called"; no settable or steppable source, and safe
+     * "in tasks as well as in ISR routines", which is why the playout path's
+     * I2S interrupt stamps with it (the esp_timer guide in the pinned
+     * ESP-IDF v6.1 tree, docs/en/api-reference/system/esp_timer.rst,
+     * "Obtaining Current Time", read 2026-09-30).
+     *
+     * It is NOT the I2S clock's counter (audit A-18). On the ESP32-S3 the
+     * esp_timer counts on the SYSTIMER, whose default source is the 40 MHz
+     * XTAL (SYSTIMER_CLK_SRC_DEFAULT = SOC_MOD_CLK_XTAL), while I2S defaults
+     * to PLL_F160M (I2S_CLK_SRC_DEFAULT = SOC_MOD_CLK_PLL_F160M) through a
+     * fractional divider; both trace to the one external crystal, the root
+     * the same header lists, but through different dividers and counters
+     * (components/soc/esp32s3/include/soc/clk_tree_defs.h in the pinned
+     * ESP-IDF v6.1, Apache-2.0, read 2026-09-30). So the endpoint never
+     * assumes the DAC's rate from this clock: it measures it, by stamping the
+     * frames the I2S DMA consumed on this clock (firmware/src/playout.c). */
     return (uint64_t)esp_timer_get_time() * 1000ull;
 }
 

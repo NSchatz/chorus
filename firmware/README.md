@@ -22,6 +22,21 @@ clock rather than guessing. There is not one register literal in
 Read them off the datasheet at bring-up and write them into
 `config/endpoint.conf`. Nothing else needs to change.
 
+## The playout path
+
+`src/playout.c` is the endpoint's jitter buffer and the loop that disciplines
+it (chorus goal 8, audit A-9). Its device delay is measured at the DMA: the I2S
+TX `on_sent` interrupt reports each DMA buffer it finished, and the hook counts
+those frames and stamps them there on the monotonic clock. Written minus
+consumed, less the part of the current buffer played since the stamp, is how
+far the next frame written is from the pins; the error and the servo are the
+Linux client's, and the correction inserts or drops frames. Its constants come
+from `config/sync.conf`, embedded in the image (audit A-12).
+`tests/test_playout.c` grades it on a host against a fake DMA on a fake clock
+(`make -f firmware/Makefile playout`); that is a model, not timing evidence.
+Nothing has been heard: the binding in `main/esp_playout.c` and
+`main/esp_hal.c` is compiled, not run.
+
 ## Running it
 
 ```

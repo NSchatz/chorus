@@ -23,6 +23,8 @@ typedef struct {
     i2s_chan_handle_t tx;
     gpio_num_t power_down;
     int channel_created;
+    /* The playout path the TX interrupt counts for; NULL until attached. */
+    chorus_playout_t *volatile playout;
 } esp_hal_t;
 
 static esp_hal_t hal;
@@ -142,6 +144,23 @@ static int hal_stop_clock(void *ctx)
     return (i2s_channel_disable(hal.tx) == ESP_OK) ? 0 : -1;
 }
 
+/* The I2S TX `on_sent` callback: the DMA just finished sending one buffer of
+ * `event->size` bytes. It runs in the interrupt (ESP-IDF v6.1 I2S guide: "it is
+ * an interrupt callback, so do not add complex logic, run floating operation,
+ * or call non-reentrant functions in the callback"), so it only counts: the
+ * frames and their monotonic stamp go to the playout path's hook, which takes
+ * no lock and does no float. Returns false: no task was woken. */
+static bool hal_on_sent(i2s_chan_handle_t handle, i2s_event_data_t *event, void *ctx)
+{
+    (void)handle;
+    (void)ctx;
+    chorus_playout_t *playout = hal.playout;
+    if (playout != NULL) {
+        chorus_playout_on_dma_sent(playout, event->size);
+    }
+    return false;
+}
+
 int chorus_esp_hal_init(const chorus_endpoint_config_t *config, chorus_i2c_bus_t *bus,
                         chorus_output_stage_t *stage, chorus_i2s_controller_t *controller)
 {
@@ -225,6 +244,19 @@ int chorus_esp_hal_init(const chorus_endpoint_config_t *config, chorus_i2c_bus_t
         return -1;
     }
 
+    /* The DMA-consumed-frames measure. DMA event callbacks "can only be
+     * registered or deregistered before the channel is enabled"
+     * (components/esp_driver_i2s/include/driver/i2s_common.h, v6.1), so it is
+     * registered here, before the amplifier's bring-up first starts the clock;
+     * it counts nothing until a playout path is attached. */
+    i2s_event_callbacks_t callbacks = {
+        .on_sent = hal_on_sent,
+    };
+    if (i2s_channel_register_event_callback(hal.tx, &callbacks, NULL) != ESP_OK) {
+        ESP_LOGE(TAG, "the I2S sent-buffer callback could not be registered");
+        return -1;
+    }
+
     bus->ctx = &hal;
     bus->read = hal_read;
     bus->write = hal_write;
@@ -235,6 +267,51 @@ int chorus_esp_hal_init(const chorus_endpoint_config_t *config, chorus_i2c_bus_t
     controller->apply_clock = hal_apply_clock;
     controller->stop_clock = hal_stop_clock;
     return 0;
+}
+
+/* --- the playout path ----------------------------------------------------------- */
+
+int chorus_esp_hal_attach_playout(chorus_playout_t *playout, const chorus_endpoint_config_t *config)
+{
+    if (hal.channel_created) {
+        /* Preloading needs the channel READY (never started): once the
+         * amplifier has started the clock, the DMA is already cycling buffers
+         * nobody counted, and written and consumed would not count the same
+         * frames. */
+        ESP_LOGE(TAG, "the playout path is attached before the clock starts, not after");
+        return -1;
+    }
+    /* One DMA buffer of silence at a time until the DMA ring is full
+     * (i2s_channel_preload_data: "when the bytes_loaded is smaller than the
+     * size, it means the DMA buffers are full"). Every frame loaded counts as
+     * written, so the first interrupt consumes frames the count knows about. */
+    static uint8_t silence[CHORUS_ESP_HAL_MAX_DMA_BYTES];
+    size_t frame_bytes = 2u * ((size_t)config->clock.slot_bit_width / 8u);
+    size_t block = (size_t)config->clock.dma_frame_num * frame_bytes;
+    if (block == 0 || block > sizeof(silence)) {
+        ESP_LOGE(TAG, "a DMA buffer of %u frames does not fit the preload buffer",
+                 (unsigned)config->clock.dma_frame_num);
+        return -1;
+    }
+    memset(silence, 0, block);
+    chorus_playout_dma_reset(playout);
+    for (uint32_t i = 0; i < config->clock.dma_desc_num + 1u; i++) {
+        size_t loaded = 0;
+        if (i2s_channel_preload_data(hal.tx, silence, block, &loaded) != ESP_OK) {
+            return -1;
+        }
+        chorus_playout_note_preloaded(playout, (uint32_t)(loaded / frame_bytes));
+        if (loaded < block) {
+            break;
+        }
+    }
+    hal.playout = playout;
+    return 0;
+}
+
+i2s_chan_handle_t chorus_esp_hal_i2s_tx(void)
+{
+    return hal.tx;
 }
 
 /* --- the radio ---------------------------------------------------------------
