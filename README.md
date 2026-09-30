@@ -177,7 +177,7 @@ make firmware-check        # the ESP32-S3 endpoint, on a host, with no ESP-IDF
 `make gate` is the check every change passes before it merges: formatting,
 clippy with warnings denied, the build and every test, the control-plane
 determinism run, the endpoint's host checks, the refusal paths, the ESP32-S3
-image compile (ESP-IDF v5.3.6 through ccache) and the daemonless server image,
+image compile (ESP-IDF v6.1 through ccache) and the daemonless server image,
 each step timed. `make gate-fast` runs the docs checks alone. The toolchain is
 pinned in `rust-toolchain.toml`. CI (`.github/workflows/ci.yml`) calls
 `make gate`, but GitHub Actions does not run on this private repository, so the

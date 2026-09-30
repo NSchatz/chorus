@@ -24,8 +24,15 @@ idf_component_register(
     INCLUDE_DIRS
         "."
         "../include"
+    # ESP-IDF v6 split the old `driver` component into one component per
+    # peripheral (docs.espressif.com/projects/esp-idf/en/v6.1/esp32s3/
+    # migration-guides/release-6.x/6.0/peripherals.html, read 2026-09-30); the
+    # endpoint names the three it includes: driver/gpio.h, driver/i2c_master.h
+    # and driver/i2s_std.h.
     REQUIRES
-        driver
+        esp_driver_gpio
+        esp_driver_i2c
+        esp_driver_i2s
         esp_timer
         esp_netif
         esp_wifi

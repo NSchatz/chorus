@@ -19,18 +19,24 @@ CONFIG_SPIRAM_MODE_OCT=y
 # default.
 CONFIG_SPIRAM_USE_MALLOC=n
 
-# Protocol v2's cipher (docs/decisions/0039-the-v2-key-exchange.md): the
-# session is Noise_XX_25519_ChaChaPoly_SHA256, and firmware/src/noise.c reaches
-# ChaCha20-Poly1305 through the PSA Crypto API. ESP-IDF's mbedtls component
-# leaves both off by default (components/mbedtls/Kconfig in the pinned v6.1
-# tree, "Stream Cipher" menu, read 2026-09-30). X25519 (CURVE25519) and ECDH
-# are on by default there. v5.3.6's Kconfig also makes ChaCha20-Poly1305
-# depend on a separate Poly1305 option (read 2026-09-30); v6.1 has no such
-# option (ASSUMED: ESP-IDF's config tool warns about, and does not fail on, an
-# option its Kconfig does not define; the image build is what checks it).
+# The v2 session's crypto (docs/decisions/0039-the-v2-key-exchange.md):
+# Noise_XX_25519_ChaChaPoly_SHA256 through Mbed TLS 4's PSA Crypto API, which
+# ESP-IDF v6 ships (docs.espressif.com/projects/esp-idf/en/v6.1/esp32s3/
+# migration-guides/release-6.x/6.0/security.html, read 2026-09-30).
+# components/mbedtls/port/include/mbedtls/esp_config.h in v6.1 maps each option
+# onto the PSA_WANT_ symbol the endpoint's calls need: CHACHA20_C to
+# PSA_WANT_KEY_TYPE_CHACHA20 (:1984), CHACHAPOLY_C to
+# PSA_WANT_ALG_CHACHA20_POLY1305 (:1999), ECP_DP_CURVE25519_ENABLED to PSA_WANT_ECC_MONTGOMERY_255 (:567), ECDH_C
+# to PSA_WANT_ALG_ECDH (:2088) and SHA256_C to PSA_WANT_ALG_SHA_256 (:2631).
+# ChaCha20 and ChaCha20-Poly1305 default to n in components/mbedtls/Kconfig
+# (:1625-1636); the other three default to y and are stated here so that a
+# change of default cannot remove them silently.
 CONFIG_MBEDTLS_CHACHA20_C=y
-CONFIG_MBEDTLS_POLY1305_C=y
 CONFIG_MBEDTLS_CHACHAPOLY_C=y
+CONFIG_MBEDTLS_ECP_C=y
+CONFIG_MBEDTLS_ECP_DP_CURVE25519_ENABLED=y
+CONFIG_MBEDTLS_ECDH_C=y
+CONFIG_MBEDTLS_SHA256_C=y
 
 # NOT SET HERE, deliberately:
 #

@@ -30,7 +30,10 @@ static const char *const SETTABLE_CLOCK_NAMES[] = {
  * no place for one of these in this phase.
  *
  * The first row is the original list. The rest were read out of ESP-IDF
- * v5.3.6's own headers (local copy, 2026-09-30, audit A-16):
+ * v5.3.6's own headers (local copy, 2026-09-30, audit A-16) and re-read out of
+ * v6.1's (commit fff9895c, local copy, 2026-09-30, chorus goal 6), which adds
+ * esp_efuse_set_recovery_bootloader_offset (caught by "esp_efuse_set_") and
+ * esp_flash_encryption_use_efuse_key (named below):
  * components/efuse/include/esp_efuse.h (the enable_/disable_ burns, the
  * secure-version update, destroy_block), components/efuse/private_include/
  * esp_efuse_utility.h (the burn and write helpers every public writer ends
@@ -60,6 +63,7 @@ static const char *const EFUSE_WRITE_NAMES[] = {
     "esp_efuse_utility_write",
     "esp_flash_encrypt_",
     "esp_flash_encryption_set_release_mode",
+    "esp_flash_encryption_use_efuse_key",
     "esp_flash_write_protect_crypt_cnt",
     "esp_secure_boot_permanently_enable",
     "esp_secure_boot_v2_permanently_enable",
