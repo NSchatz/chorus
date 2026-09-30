@@ -46,6 +46,27 @@ require_espidf "$CRITERION"
 # MCLK multiple not divisible by three, refuses rather than builds.
 make -f "$REPO_ROOT/firmware/Makefile" config-check
 
+# A persistent build directory configured against another ESP-IDF tree (the
+# gate's directory from before the v6.1 move, ADR 0042) fails in the bootloader
+# subproject: CMake refuses a cache made from a different source directory. Such
+# a directory is discarded and configured afresh; ccache keeps the rebuild cheap.
+stale_idf() {
+    local top="$OUT_DIR/CMakeCache.txt" boot="$OUT_DIR/bootloader/CMakeCache.txt" v
+    if [ -f "$top" ]; then
+        v="$(sed -n 's/^IDF_PATH:[A-Z]*=//p' "$top" | head -n 1)"
+        [ -n "$v" ] && [ "$v" != "$IDF_PATH" ] && return 0
+    fi
+    if [ -f "$boot" ]; then
+        v="$(sed -n 's/^CMAKE_HOME_DIRECTORY:INTERNAL=//p' "$boot" | head -n 1)"
+        [ -n "$v" ] && [ "${v#"$IDF_PATH"/}" = "$v" ] && return 0
+    fi
+    return 1
+}
+if stale_idf; then
+    say "chorus: $OUT_DIR was configured against another ESP-IDF tree; configuring it afresh"
+    rm -rf "$OUT_DIR"
+fi
+
 mkdir -p "$OUT_DIR"
 say "chorus: building"
 # The generated sdkconfig lives in the build directory, not in firmware/, so two
