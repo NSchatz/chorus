@@ -1,4 +1,4 @@
-# 0000: protocol v2 keeps v1's frame, carries whole frames in records, and refuses v1 by name
+# 0041: protocol v2 keeps v1's frame, carries whole frames in records, and refuses v1 by name
 
 - Status: accepted (goal 5, 2026-09-30)
 - Decided by: the goal, on decisions K62 (encrypted sessions), K65 (the four roles), K92
