@@ -47,6 +47,7 @@ TOPIC=sound2-delay-log-shape
 
 # Grade one run: <log> <client exit status>. Prints what it found and returns
 # non-zero on the first failure, as the inline grading always did.
+# shellcheck disable=SC2329 # run by bench_analysis, which shellcheck cannot follow
 grade() {
     local log="$1" client_status="$2"
     if [ "$client_status" -ne 0 ]; then

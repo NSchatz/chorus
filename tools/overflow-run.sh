@@ -42,6 +42,7 @@ run_status() {
 
 # Grade one run from its raw files. Prints what it found and returns non-zero
 # on the first failure, as the inline grading always did.
+# shellcheck disable=SC2329 # run by bench_analysis, which shellcheck cannot follow
 grade() {
     local log="$BENCH_RUN_DIR/raw/overflow-run.log" stdout="$BENCH_RUN_DIR/raw/client.stdout"
     local client_status crossings overflow

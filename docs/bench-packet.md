@@ -108,17 +108,24 @@ Needs item (no hostnames, no addresses).
 Needs: S0, endpoint A with A2, A5, headphones. BRIEF.md section 8 item 2: "clean audio, plausible
 reported DAC delay, stable buffer".
 
-1. Listen first (nothing is recorded): `CHORUS_CLIENT_DEVICE=hw:<dac card>,0 make verify-null-device`
-   is the software check; then the real device:
-   `CHORUS_CLIENT_DEVICE=hw:<dac card>,0 make verify-device` (the device-class checks of
-   `docs/sound-2.md`). Listen on the headphones while it plays.
+1. The software check first (nothing is recorded): `make verify-null-device` (it runs on the
+   ALSA `null` device whatever `CHORUS_CLIENT_DEVICE` says). Then the device-class checks of
+   `docs/sound-2.md` on the DAC+, which open one pull request per script (four:
+   `sound2-stream-end-and-loss`, `sound2-start-fill`, `sound2-delay-log-shape`,
+   `sound2-overflow`; a failing script still opens its PR, with `Result: FAIL`):
+   ```
+   CHORUS_BENCH_PR=1 CHORUS_BENCH_DEVICE_NOTE='Raspberry Pi 5 2GB, Raspberry Pi DAC+' \
+CHORUS_CLIENT_DEVICE=hw:<dac card>,0 make verify-device
+   ```
+   Listen on the headphones while it plays.
 2. The evidence run, ten minutes, report and pull request:
    ```
    CHORUS_BENCH_PR=1 CHORUS_BENCH_DEVICE_NOTE='Raspberry Pi 5 2GB, Raspberry Pi DAC+' \
 CHORUS_CLIENT_DEVICE=hw:<dac card>,0 ./tools/ten-minute-run.sh
    ```
 
-Expected: step 1 exits 0 and the audio is clean (no clicks, dropouts or pitch wobble heard);
+Expected: step 1 exits 0, the audio is clean (no clicks, dropouts or pitch wobble heard) and
+four pull requests `bench/<date>-sound2-*` open, each `Result: PASS`;
 step 2's log grades with at least 600 graded seconds, zero underruns and no rate change
 (`chorus-delaylog-check --min-graded-seconds 600 --require-zero-underruns --require-no-rate-change`),
 the reported delay inside the configured buffer bounds (`config/transport.conf`), and a pull
