@@ -100,6 +100,41 @@ reports. The second grades the log the way the ten-minute run is graded, which
 is why it refuses `null`: a device that reports a delay of zero forever could
 only fail it. Both refuse, visibly and non-zero, where their device is absent.
 
+### The line-in (the source role)
+
+An endpoint with an input to share (a line-in, optical or HDMI ARC reaching the
+host as an ALSA capture device) takes the source role beside the player role
+(K65, ADR 0066):
+
+```
+./target/release/chorus-client --server 127.0.0.1:4010 --device default \
+    --identity-dir /var/lib/chorus --line-in hw:1,0 --line-in-name "Turntable"
+```
+
+| flag | meaning | default |
+|---|---|---|
+| `--line-in <device>` | the ALSA capture device the input arrives on; without it the endpoint only plays | none |
+| `--line-in-name <text>` | the name offered to the server (at most 255 bytes) | empty |
+| `--line-in-kind <kind>` | `line_in`, `optical` or `hdmi_arc`; there is no microphone kind (a speaker microphone is never a source, I4) | `line_in` |
+| `--line-in-rate-hz <hz>` | capture rate, 8000 to 384000 | 48000 |
+| `--line-in-channels <n>` | 1 (announced `MONO`) or 2 (`FL FR`) | 2 |
+| `--line-in-format <format>` | `pcm_s16le`, `pcm_s24le` or `pcm_f32le` | `pcm_s16le` |
+| `--probe-line-in` | open the line-in, capture 200 ms, print `line-in-probe device=... usable=... frames_read=... overran=... delay_frames=... signal=...` and exit, with no server | off |
+
+The endpoint offers the input with no signal as soon as its session opens,
+then again whenever the level says a signal came or went (present at once when
+a 100 ms window reaches -50 dBFS RMS; gone after 2 s below -60 dBFS; all
+`ASSUMED`, `crates/client-linux/src/source.rs`). It sends the input only when
+the server starts it, in PCM, each chunk stamped at its capture instant on the
+server timeline, and says what it did on stdout: `source-offer`,
+`source-started`, `source-start-refused ... reason=...`, `source-overrun ...
+overruns=N` for every overrun the capture device signals, `source-stopped`, and
+a `source frames_captured=... overruns=... chunks_sent=...` line when the
+session ends. A capture device that cannot be opened is reported by name and
+the endpoint goes on playing. `chorus-server` does not route a shared input to
+rooms yet (goals 11 and 17), so today a line-in is offered and never started by
+the shipped server.
+
 ### The ten-minute run
 
 ```
@@ -322,7 +357,8 @@ So the checks split by what they grade, not by what they touch:
 What `null` stands in for, and where it now runs: on a machine with no system libasound the
 runners put the rootless conda-forge alsa-lib at `CHORUS_ALSA_PREFIX` (default
 `/cache/opt/chorus-alsa`) on the loader's path, and `make gate` runs `make verify-alsa-null`
-(stream-end-and-loss and the restart storm on `null`) as its own step. Which runs passed here on
+(stream-end-and-loss, the restart storm, and from goal 10 the line-in probe on `null`'s capture
+side) as its own step. Which runs passed here on
 `null`, with dates, commands and pass lines, is in `docs/verification-record.md`, "Host / ALSA
 null runs (goal 7)". All of them are host runs on `null`, not hardware.
 

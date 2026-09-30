@@ -244,7 +244,7 @@ ten-minute-run: tools-executable
 ten-minute-run-null: tools-executable
 	CHORUS_CLIENT_DEVICE=null CHORUS_TEN_MINUTE_NULL=1 bash tools/ten-minute-run.sh
 
-# `make gate`'s ALSA `null` step: stream-end-and-loss and the restart storm on
+# `make gate`'s ALSA `null` step: stream-end-and-loss, the restart storm and the line-in probe on
 # `null`, finding a rootless libasound when the system has none
 # (CHORUS_ALSA_PREFIX, default /cache/opt/chorus-alsa). See tools/alsa-null-run.sh.
 verify-alsa-null: tools-executable

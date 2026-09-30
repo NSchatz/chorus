@@ -31,6 +31,7 @@ use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -38,7 +39,8 @@ use chorus_protocol::v2::adoption::{KeyChange, PinStore, Verdict};
 use chorus_protocol::v2::noise::{fingerprint, Keypair};
 use chorus_protocol::v2::session::{connect, Identity, SecureReader, SecureWriter, SessionError};
 use chorus_protocol::v2::{
-    roles, Capabilities, Codec, Hello, Message, RefusalReason, StreamFormat, PROTOCOL_VERSION,
+    roles, Capabilities, Codec, Hello, Message, RefusalReason, SourceControl, SourceOffer,
+    StreamFormat, PROTOCOL_VERSION,
 };
 use chorus_protocol::{SampleFormat, MAX_CHANNELS, MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ};
 
@@ -249,6 +251,9 @@ pub struct Session {
     pub server_key: String,
     /// Whether the server was pinned just now (first use) rather than known.
     pub pinned_now: bool,
+    /// The server's `source_control` messages, in order, for the source role
+    /// (`crate::source`). Nothing reads it on an endpoint with no line-in.
+    pub source_control: Receiver<SourceControl>,
 }
 
 /// Why a session did not open.
@@ -314,11 +319,17 @@ impl fmt::Display for SessionRefusal {
 
 impl std::error::Error for SessionRefusal {}
 
-/// The `hello` this endpoint sends.
+/// The `hello` this endpoint sends: the player role always, and the source
+/// role when a line-in is configured (K65).
 pub fn hello(config: &ClientConfig) -> Hello {
+    let source = if config.line_in.is_some() {
+        roles::SOURCE
+    } else {
+        0
+    };
     Hello {
         protocol_version: PROTOCOL_VERSION,
-        roles: roles::PLAYER,
+        roles: roles::PLAYER | source,
         name: config.endpoint.clone(),
         software: format!("chorus-client {}", env!("CARGO_PKG_VERSION")),
     }
@@ -352,6 +363,18 @@ pub fn capabilities(config: &ClientConfig) -> Capabilities {
         led_count: 0,
         visualizer_bands: 0,
     }
+}
+
+/// The first `source_offer` for a configured line-in, sent right after
+/// `capabilities`: no signal yet, because none has been measured. The source
+/// role offers again when its detector says otherwise (`crate::source`).
+pub fn first_source_offer(config: &ClientConfig) -> Option<SourceOffer> {
+    config.line_in.as_ref().map(|input| SourceOffer {
+        source_id: input.source_id,
+        kind: input.kind,
+        signal: false,
+        name: input.name.clone(),
+    })
 }
 
 fn is_v1_answer(detail: &str) -> bool {
@@ -419,6 +442,9 @@ pub fn open(
         .send(&Message::Hello(hello(config)))
         .and_then(|_| writer.send(&Message::Capabilities(capabilities(config))))
         .map_err(failed)?;
+    if let Some(offer) = first_source_offer(config) {
+        writer.send(&Message::SourceOffer(offer)).map_err(failed)?;
+    }
 
     // The server's verdict on this endpoint's key comes after the handshake
     // (Noise XX authenticates the endpoint last), so the session is only open
@@ -426,11 +452,15 @@ pub fn open(
     // `not_adopted`) arrives instead, in the clear, and is surfaced here by
     // name rather than on the first read of audio.
     let announced = Arc::new(Mutex::new(Announced::default()));
+    let (controls_tx, source_control) = mpsc::channel::<SourceControl>();
     let mut reader = SecureReader::new(stream, established.opener);
     loop {
         match reader.next_message() {
             Ok(m) => {
                 let is_hello = matches!(m, Message::Hello(_));
+                if let Message::SourceControl(c) = &m {
+                    let _ = controls_tx.send(c.clone());
+                }
                 record(&announced, m);
                 if is_hello {
                     break;
@@ -456,7 +486,14 @@ pub fn open(
     }
     {
         let recorder = Arc::clone(&announced);
-        reader.set_handler(Box::new(move |m| record(&recorder, m)));
+        reader.set_handler(Box::new(move |m| {
+            if let Message::SourceControl(c) = &m {
+                // A send fails only when nothing runs the source role, which
+                // is an endpoint with no line-in; it is still counted below.
+                let _ = controls_tx.send(c.clone());
+            }
+            record(&recorder, m)
+        }));
         reader.set_translator(CodedStream::new(Arc::clone(&announced)).into_translator());
     }
     let stream_timeout = writer_timeout_handle.set_read_timeout(before);
@@ -468,6 +505,7 @@ pub fn open(
         server_id: established.peer_id,
         server_key: fingerprint(&established.peer_key),
         pinned_now: established.verdict == Verdict::Adopted,
+        source_control,
     })
 }
 

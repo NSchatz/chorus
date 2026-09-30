@@ -43,6 +43,7 @@
 //!   the server's control channel and reduced to one atomic the audio path
 //!   reads.
 //! - [`zone`]: applying that to the PCM, at the last point before the sink.
+//! - [`source`]: the source role, a line-in captured and sent upstream.
 
 #![warn(missing_docs)]
 
@@ -58,6 +59,7 @@ pub mod receive;
 pub mod run;
 pub mod session;
 pub mod sink;
+pub mod source;
 pub mod sync;
 pub mod zone;
 

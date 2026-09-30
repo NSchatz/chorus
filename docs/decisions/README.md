@@ -53,3 +53,4 @@ the number of the pull request that added it.
 | 0063 | [a speaker's buttons are the controller role, its status LED follows the visualizer, and its microphone sits behind a gate that starts closed](0063-controls-led-and-mic-gate.md) |
 | 0064 | [the TAS5825M's register map comes from TI's datasheet with its page on every line, and bring-up follows the datasheet's startup procedure with 32-bit slots on the wire](0064-the-tas5825m-register-map-and-bring-up.md) |
 | 0065 | [the endpoint reports its heap, stacks and FIFO on its console, marks server-timeline boundaries on a GPIO, and EMBEDDED-5's bring-up is a bench run with disconnect abuse](0065-the-embedded5-bring-up-and-the-gpio-marker.md) |
+| 0066 | [a Linux endpoint's line-in is the source role: captured through ALSA, offered by signal presence, sent upstream as PCM stamped at its capture instant through the sync offset](0066-line-in-capture-as-the-source-role.md) |
