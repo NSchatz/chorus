@@ -1,9 +1,9 @@
 .DEFAULT_GOAL := check
 
 # The ESP-IDF environment `make gate` sources when IDF_PATH is unset: the
-# rootless install this repository is built with (ESP-IDF v5.3.6 under /cache,
+# rootless install this repository is built with (ESP-IDF v6.1 under /cache,
 # see firmware/config/endpoint.conf). Point it elsewhere for another install.
-CHORUS_IDF_ENV ?= /cache/esp/chorus-idf-export.sh
+CHORUS_IDF_ENV ?= /cache/esp/chorus-idf-v6.1-export.sh
 export CHORUS_IDF_ENV
 
 # The gate: every check a change passes before it merges, each step timed

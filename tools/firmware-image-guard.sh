@@ -37,7 +37,7 @@
 #
 #    The ROM is the one exception to "present means reachable": the ROM's own
 #    eFuse programmer lives at fixed addresses that the ROM linker script
-#    (components/esp_rom/esp32s3/ld/esp32s3.rom.ld:573-575) defines as
+#    (components/esp_rom/esp32s3/ld/esp32s3.rom.ld:570-572 in v6.1) defines as
 #    absolute symbols in EVERY image, used or not. For those the rule is the
 #    address itself: the Xtensa `call8` reaches +/-512 KiB and the ROM sits
 #    megabytes below IRAM and flash, so a call into the ROM has to load the
@@ -56,9 +56,13 @@
 #    spellings of that (EFUSE_PGM_, EFUSE_WRITE_OP_CODE, efuse_ll_set_pgm_cmd
 #    and the EFUSE register struct).
 #
-# THE LIST. Read out of ESP-IDF v5.3.6 (Apache-2.0), the version
-# firmware/config/endpoint.conf declares, local copy /cache/esp/esp-idf-v5.3.6,
-# 2026-09-30. Every writer and burner each header declares; the readers
+# THE LIST. Read out of ESP-IDF v5.3.6 (Apache-2.0), local copy
+# /cache/esp/esp-idf-v5.3.6, 2026-09-30, and re-read out of ESP-IDF v6.1
+# (commit fff9895c), the version firmware/config/endpoint.conf declares, local
+# copy /cache/esp/esp-idf-v6.1, 2026-09-30 (chorus goal 6): every name is still
+# declared where it cites, the ROM addresses are unchanged, and v6.1 adds two
+# writers, esp_efuse_set_recovery_bootloader_offset and
+# esp_flash_encryption_use_efuse_key, listed below. Every writer and burner each header declares; the readers
 # (esp_efuse_read_*, esp_efuse_get_*, esp_flash_encryption_enabled,
 # esp_secure_boot_verify_*) and the pure checks are left out on purpose, and
 # the stock image does link some of them. When IDF_PATH is set, a real run
@@ -97,6 +101,7 @@ BURN_SYMBOLS=(
     "esp_efuse_enable_ecdsa_p192_curve_mode|efuse/include/esp_efuse.h"
     "esp_efuse_update_secure_version|efuse/include/esp_efuse.h"
     "esp_efuse_destroy_block|efuse/include/esp_efuse.h"
+    "esp_efuse_set_recovery_bootloader_offset|efuse/include/esp_efuse.h"
     # components/efuse/private_include/esp_efuse_utility.h: where every public
     # writer ends up.
     "esp_efuse_utility_burn_efuses|efuse/private_include/esp_efuse_utility.h"
@@ -117,6 +122,7 @@ BURN_SYMBOLS=(
     "esp_flash_encryption_set_release_mode|bootloader_support/include/esp_flash_encrypt.h"
     "esp_flash_encryption_enable_secure_features|bootloader_support/include/esp_flash_encrypt.h"
     "esp_flash_write_protect_crypt_cnt|bootloader_support/include/esp_flash_encrypt.h"
+    "esp_flash_encryption_use_efuse_key|bootloader_support/include/esp_flash_encrypt.h"
     # components/bootloader_support/include/esp_secure_boot.h
     "esp_secure_boot_permanently_enable|bootloader_support/include/esp_secure_boot.h"
     "esp_secure_boot_v2_permanently_enable|bootloader_support/include/esp_secure_boot.h"
@@ -125,7 +131,7 @@ BURN_SYMBOLS=(
 
 # The ROM's eFuse programmer and key writer, and the Secure Boot key-digest
 # revocation (which burns a revoke bit): components/esp_rom/esp32s3/ld/
-# esp32s3.rom.ld:573,575 and the ets_secure_boot_ block below them.
+# esp32s3.rom.ld:570,572 and :646 in v6.1 (573,575 in v5.3.6), same addresses.
 ROM_BURN_SYMBOLS=(
     "ets_efuse_program|esp_rom/esp32s3/ld/esp32s3.rom.ld"
     "ets_efuse_write_key|esp_rom/esp32s3/ld/esp32s3.rom.ld"
