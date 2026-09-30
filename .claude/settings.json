@@ -1,8 +1,8 @@
 {
   "autoMemoryEnabled": false,
   "env": {
-    "CARGO_BUILD_JOBS": "2",
-    "CMAKE_BUILD_PARALLEL_LEVEL": "2",
-    "IDF_PY_BUILD_JOBS": "2"
+    "CARGO_BUILD_JOBS": "12",
+    "CMAKE_BUILD_PARALLEL_LEVEL": "12",
+    "IDF_PY_BUILD_JOBS": "12"
   }
 }
