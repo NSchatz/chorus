@@ -89,7 +89,8 @@ require_second_endpoint "$CRITERION"
 require_capture_device "$CRITERION"
 
 PORT="$(free_port)"
-CONTRACT_ARGS="$(server_contract_args)"
+read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
+read -r -a SERVER_EXTRA_ARGS <<< "${CHORUS_SERVER_EXTRA_ARGS:-}"
 mkdir -p "$LOG_DIR"
 
 say "chorus: starting the server; both endpoints join the SAME stream"
@@ -104,7 +105,7 @@ say "chorus: starting the server; both endpoints join the SAME stream"
     --rttime-us "$(conf rttime_us)" \
     --rt-priority "$(conf rt_priority)" \
     --memlock-wanted-bytes "$(conf memlock_wanted_bytes)" \
-    $CONTRACT_ARGS ${CHORUS_SERVER_EXTRA_ARGS:-} &
+    "${CONTRACT_ARGS[@]}" "${SERVER_EXTRA_ARGS[@]}" &
 SERVER_PID=$!
 trap 'kill_quietly "$SERVER_PID"' EXIT
 
@@ -133,6 +134,7 @@ REMOTE_COMMAND="chorus-client --server ${SERVER_HOST}:${PORT} \
 --playout-latency-us $(sync_conf playout_latency_us) \
 --mute-us $(sync_conf mute_us) \
 --run-seconds $RUN_SECONDS"
+# shellcheck disable=SC2029 # the remote command line is built here on purpose, from this checkout's config
 ssh "$CHORUS_SECOND_ENDPOINT" "$REMOTE_COMMAND" &
 LINUX_PID=$!
 trap 'kill_quietly "$LINUX_PID"; kill_quietly "$SERVER_PID"' EXIT

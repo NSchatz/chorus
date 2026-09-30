@@ -51,7 +51,7 @@ OUT_DIR="${TMPDIR:-/tmp}/chorus-control-plane"
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 DEVICE="$(audio_device)"
-CONTRACT_ARGS="$(server_contract_args)"
+read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
 
 PIDS=()
 stop_everything() {
@@ -95,9 +95,8 @@ STATE_FILE="$OUT_DIR/zones.state"
 
 start_server() {
     local listen="$1"
-    local control="$2"
-    local log="$3"
-    shift 3
+    local log="$2"
+    shift 2
     "$BIN_DIR/chorus-server" \
         --listen "127.0.0.1:$listen" \
         --source tone \
@@ -110,20 +109,19 @@ start_server() {
         --memlock-wanted-bytes "$(conf memlock_wanted_bytes)" \
         --serve-forever \
         --max-clients 8 \
-        $control \
-        $CONTRACT_ARGS "$@" >"$log" 2>&1 &
+        "$@" \
+        "${CONTRACT_ARGS[@]}" >"$log" 2>&1 &
     PIDS+=("$!")
 }
 
 # The control server, which also serves group "downstairs" its audio, and a
 # second audio server which is group "upstairs". Two streams, distinguishable
 # because they are two processes with two timelines and two sequence runs.
-start_server "$AUDIO_A" \
-    "--control-listen 127.0.0.1:$CONTROL --state-file $STATE_FILE \
-     --zone kitchen --zone study \
-     --group-audio downstairs=127.0.0.1:$AUDIO_A --group-audio upstairs=127.0.0.1:$AUDIO_B" \
-    "$OUT_DIR/server-a.log"
-start_server "$AUDIO_B" "" "$OUT_DIR/server-b.log"
+start_server "$AUDIO_A" "$OUT_DIR/server-a.log" \
+    --control-listen "127.0.0.1:$CONTROL" --state-file "$STATE_FILE" \
+    --zone kitchen --zone study \
+    --group-audio "downstairs=127.0.0.1:$AUDIO_A" --group-audio "upstairs=127.0.0.1:$AUDIO_B"
+start_server "$AUDIO_B" "$OUT_DIR/server-b.log"
 sleep 2
 
 check "the-control-channel-came-up" \
@@ -169,7 +167,7 @@ check "two-real-subscribers-attached-and-were-sent-the-state" \
 # The commanding subscriber is a THIRD connection, so that neither watcher
 # issued anything: the criterion is explicit that the state has to reach the
 # subscriber that did not send the command.
-command() {
+send_command() {
     python3 - "$CONTROL" "$1" <<'PY'
 import socket, sys
 port, body = int(sys.argv[1]), sys.argv[2].encode()
@@ -196,7 +194,7 @@ for BODY in \
     '{"v":1,"t":"ungroup","zone":"kitchen"}' \
     '{"v":1,"t":"group","zone":"kitchen","group":"downstairs"}'
 do
-    ANSWER="$(command "$BODY")"
+    ANSWER="$(send_command "$BODY")"
     check "command-applied $(printf '%s' "$BODY" | sed 's/.*"t":"\([a-z]*\)".*/\1/')" \
         "$(printf '%s' "$ANSWER" | grep -q '200 OK' && echo 1 || echo 0)" \
         "$(printf '%s' "$ANSWER" | head -n 1 | tr -d '\r')"
@@ -260,7 +258,7 @@ sleep 4
 
 BEFORE="$(grep -c "server=127.0.0.1:$AUDIO_A" "$OUT_DIR/endpoint-a.out" || true)"
 say "chorus: putting the kitchen into the group whose stream is 127.0.0.1:$AUDIO_B"
-command '{"v":1,"t":"group","zone":"kitchen","group":"upstairs"}' >/dev/null
+send_command '{"v":1,"t":"group","zone":"kitchen","group":"upstairs"}' >/dev/null
 sleep 6
 
 wait "$ENDPOINT" 2>/dev/null || true

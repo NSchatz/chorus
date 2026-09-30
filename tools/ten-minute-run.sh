@@ -27,7 +27,8 @@ require_pacing_audio_device "$CRITERION"
 DEVICE="$(audio_device)"
 PORT="$(free_port)"
 SECONDS_TO_RUN="$(conf ten_minute_run_seconds)"
-CONTRACT_ARGS="$(server_contract_args)"
+read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
+read -r -a SERVER_EXTRA_ARGS <<< "${CHORUS_SERVER_EXTRA_ARGS:-}"
 
 mkdir -p "$(dirname "$LOG")"
 
@@ -46,7 +47,7 @@ say "  run:      ${SECONDS_TO_RUN}s (the graded interval opens after the start f
     --rttime-us "$(conf rttime_us)" \
     --rt-priority "$(conf rt_priority)" \
     --memlock-wanted-bytes "$(conf memlock_wanted_bytes)" \
-    $CONTRACT_ARGS ${CHORUS_SERVER_EXTRA_ARGS:-} &
+    "${CONTRACT_ARGS[@]}" "${SERVER_EXTRA_ARGS[@]}" &
 SERVER_PID=$!
 trap 'kill_quietly "$SERVER_PID"' EXIT
 

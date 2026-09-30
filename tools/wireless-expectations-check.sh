@@ -125,6 +125,7 @@ DEMONSTRATIONS=0
 
 # A number that moved in the configuration and not in the document.
 STALE="$SCRATCH/a-number-that-moved.md"
+# shellcheck disable=SC2016 # the backticks are literal Markdown in the document, not a command substitution
 sed 's/`wireless_bound_us = 5000`/`wireless_bound_us = 9999`/' "$DOCUMENT" > "$STALE"
 set +e
 OUT="$(check_document "$STALE" 2>&1)"
@@ -160,6 +161,7 @@ fi
 # its own: the whole point of the document is the difference between the tiers,
 # and a wrong wired number makes that difference wrong.
 WIRED="$SCRATCH/the-wired-latency-moved.md"
+# shellcheck disable=SC2016 # the backticks are literal Markdown in the document, not a command substitution
 sed 's/`playout_latency_us = 180000`/`playout_latency_us = 111111`/' "$DOCUMENT" > "$WIRED"
 set +e
 OUT="$(check_document "$WIRED" 2>&1)"

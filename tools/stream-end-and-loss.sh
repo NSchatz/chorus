@@ -26,7 +26,8 @@ build_once
 require_audio_device "$CRITERION"
 
 DEVICE="$(audio_device)"
-CONTRACT_ARGS="$(server_contract_args)"
+read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
+read -r -a SERVER_EXTRA_ARGS <<< "${CHORUS_SERVER_EXTRA_ARGS:-}"
 FAILURES=0
 
 check() {
@@ -49,7 +50,7 @@ LOG="${TMPDIR:-/tmp}/chorus-clean-end.log"
     --source tone \
     --tone-ms 2010 \
     --chunk-us "$(conf chunk_us)" \
-    $CONTRACT_ARGS ${CHORUS_SERVER_EXTRA_ARGS:-} > "${LOG}.server" 2>&1 &
+    "${CONTRACT_ARGS[@]}" "${SERVER_EXTRA_ARGS[@]}" > "${LOG}.server" 2>&1 &
 SERVER_PID=$!
 sleep 1
 
@@ -61,7 +62,6 @@ CLIENT_OUT="$("$BIN_DIR/chorus-client" \
 CLIENT_STATUS=$?
 set -e
 wait "$SERVER_PID" 2>/dev/null || true
-SERVER_STATUS=$?
 printf '%s\n' "$CLIENT_OUT"
 cat "${LOG}.server"
 
@@ -99,7 +99,7 @@ LOSS_LOG="${TMPDIR:-/tmp}/chorus-server-loss.log"
     --listen "127.0.0.1:$PORT" \
     --source tone \
     --chunk-us "$(conf chunk_us)" \
-    $CONTRACT_ARGS ${CHORUS_SERVER_EXTRA_ARGS:-} > "${LOSS_LOG}.server" 2>&1 &
+    "${CONTRACT_ARGS[@]}" "${SERVER_EXTRA_ARGS[@]}" > "${LOSS_LOG}.server" 2>&1 &
 SERVER_PID=$!
 sleep 1
 

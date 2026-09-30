@@ -57,7 +57,7 @@ OUT_DIR="${TMPDIR:-/tmp}/chorus-discovery-fallback"
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 DEVICE="$(audio_device)"
-CONTRACT_ARGS="$(server_contract_args)"
+read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
 AUDIO="$(free_port)"
 WINDOW_MS=400
 RUN_SECONDS=6
@@ -79,7 +79,7 @@ say "  criterion: $CRITERION"
     --format "$(conf sample_format)" \
     --chunk-us "$(conf chunk_us)" \
     --serve-forever \
-    $CONTRACT_ARGS >"$OUT_DIR/server.log" 2>&1 &
+    "${CONTRACT_ARGS[@]}" >"$OUT_DIR/server.log" 2>&1 &
 SERVER=$!
 WAITED=0
 while [ "$WAITED" -lt 100 ]; do

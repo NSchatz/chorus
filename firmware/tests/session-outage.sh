@@ -36,6 +36,7 @@
 set -euo pipefail
 
 FW="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../../tools/lib.sh
 source "$FW/../tools/lib.sh"
 
 BUILD="${BUILD:-$FW/build}"
@@ -90,7 +91,7 @@ start_server() {
         --rttime-us "$(conf rttime_us)" \
         --rt-priority "$(conf rt_priority)" \
         --memlock-wanted-bytes "$(conf memlock_wanted_bytes)" \
-        $CONTRACT_ARGS >/dev/null 2>&1 &
+        "${CONTRACT_ARGS[@]}" >/dev/null 2>&1 &
     SERVER_PID=$!
 }
 
@@ -102,7 +103,7 @@ kill_server_hard() {
     SERVER_PID=""
 }
 
-CONTRACT_ARGS="$(server_contract_args)"
+read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
 OUT_DIR="${TMPDIR:-/tmp}"
 
 field() {

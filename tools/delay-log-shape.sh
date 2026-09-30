@@ -38,7 +38,8 @@ require_pacing_audio_device "$CRITERION"
 
 DEVICE="$(audio_device)"
 PORT="$(free_port)"
-CONTRACT_ARGS="$(server_contract_args)"
+read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
+read -r -a SERVER_EXTRA_ARGS <<< "${CHORUS_SERVER_EXTRA_ARGS:-}"
 
 say "chorus: one-minute delay-log shape run"
 say "  device: $DEVICE"
@@ -51,7 +52,7 @@ say "  log:    $LOG"
     --channels "$(conf channels)" \
     --format "$(conf sample_format)" \
     --chunk-us "$(conf chunk_us)" \
-    $CONTRACT_ARGS ${CHORUS_SERVER_EXTRA_ARGS:-} &
+    "${CONTRACT_ARGS[@]}" "${SERVER_EXTRA_ARGS[@]}" &
 SERVER_PID=$!
 trap 'kill_quietly "$SERVER_PID"' EXIT
 

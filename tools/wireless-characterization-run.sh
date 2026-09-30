@@ -63,6 +63,10 @@
 #   CHORUS_SECOND_ENDPOINT=user@endpoint-b CHORUS_CAPTURE_DEVICE=hw:1,0 \
 #       ./tools/wireless-characterization-run.sh   # or: make verify-wireless
 
+# The run below require_endpoint_console_and_offsets_writer is unreachable on
+# purpose until that prerequisite exists (audit A-13), so it stays unrun visibly.
+# shellcheck disable=SC2317
+
 source "$(dirname "$0")/lib.sh"
 
 CRITERION="a Wi-Fi endpoint with modem sleep disabled holds the 5 ms multiroom inter-device bound, and the jitter with the platform power save mode left in place is recorded rather than answered with servo aggression"
@@ -112,7 +116,8 @@ require_second_endpoint "$CRITERION"
 require_capture_device "$CRITERION"
 
 PORT="$(free_port)"
-CONTRACT_ARGS="$(server_contract_args)"
+read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
+read -r -a SERVER_EXTRA_ARGS <<< "${CHORUS_SERVER_EXTRA_ARGS:-}"
 
 say "chorus: starting the server; the zone the ESP32-S3 plays is declared WIRELESS"
 "$BIN_DIR/chorus-server" \
@@ -128,7 +133,7 @@ say "chorus: starting the server; the zone the ESP32-S3 plays is declared WIRELE
     --memlock-wanted-bytes "$(conf memlock_wanted_bytes)" \
     --zone "wireless-room=wireless" \
     --zone "second-room=wireless" \
-    $CONTRACT_ARGS ${CHORUS_SERVER_EXTRA_ARGS:-} &
+    "${CONTRACT_ARGS[@]}" "${SERVER_EXTRA_ARGS[@]}" &
 SERVER_PID=$!
 trap 'kill_quietly "$SERVER_PID"' EXIT
 sleep 1
@@ -160,6 +165,7 @@ for MODE in $MODES; do
 --max-rtt-us $(sync_conf max_rtt_us) \
 --mute-us $(sync_conf mute_us) \
 --run-seconds $RUN_SECONDS"
+    # shellcheck disable=SC2029 # the remote command line is built here on purpose, from this checkout's config
     ssh "$CHORUS_SECOND_ENDPOINT" "$REMOTE_COMMAND" &
     SECOND_PID=$!
     trap 'kill_quietly "$SECOND_PID"; kill_quietly "$SERVER_PID"' EXIT
