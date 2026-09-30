@@ -1,5 +1,5 @@
 /* The endpoint's physical controls, its status LED and its microphone gate
- * (brief section 13 item 2; K65, K67-K70; docs/decisions/0061-*).
+ * (brief section 13 item 2; K65, K67-K70; docs/decisions/0063-*).
  *
  * Pure logic, graded on a host by firmware/tests/test_controls.c. Nothing here
  * reads a clock or a pin: the binding hands in a level or an ADC reading with

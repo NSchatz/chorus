@@ -238,7 +238,7 @@ test-only flag.
 
 ## `controls/`
 
-The endpoint's controls and status LED (goal 9, `docs/decisions/0061-*`).
+The endpoint's controls and status LED (goal 9, `docs/decisions/0063-*`).
 `<class>.hex` is the `controller_command` frames a class's controls produce
 for the scripted presses in `firmware/tests/test_controls.c`, which must
 produce them byte for byte; `crates/server/tests/controller_role.rs` decodes

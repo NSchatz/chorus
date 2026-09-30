@@ -1,6 +1,6 @@
 # chorus controls fixture: what the compact class's status LED shows while
 # visualizer-sequence.hex plays (firmware/include/chorus/controls.h,
-# chorus_led_render; docs/decisions/0061-*).
+# chorus_led_render; docs/decisions/0063-*).
 #
 # Committed, and never written by a test. firmware/tests/test_controls.c renders the
 # LED at each moment below, in order, and must show exactly these values;

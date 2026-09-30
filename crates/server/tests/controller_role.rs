@@ -181,7 +181,10 @@ fn the_visualizer_fixture_decodes_and_its_moments_cover_it() {
         })
         .collect();
     assert!(moments.windows(2).all(|w| w[0] < w[1]), "moments ascend");
-    assert!(moments[0] < *stamps.iter().min().unwrap(), "one moment before the stream");
+    assert!(
+        moments[0] < *stamps.iter().min().unwrap(),
+        "one moment before the stream"
+    );
     assert!(
         *moments.last().unwrap() > *stamps.iter().max().unwrap(),
         "the last moment is after every frame"

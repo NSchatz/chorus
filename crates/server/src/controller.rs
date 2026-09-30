@@ -8,7 +8,7 @@
 //! same checks. The transport commands (play, pause, toggle, next, previous)
 //! act on an input, and chorus's inputs arrive in goals 16 and 17; until then
 //! they come back as a [`TransportRequest`] for the caller to route, not as a
-//! change to the zones. docs/decisions/0061-* records the mapping.
+//! change to the zones. docs/decisions/0063-* records the mapping.
 
 use chorus_control::{Command, Refusal, Volume, Zones};
 use chorus_protocol::v2::{self, ControllerCommand};

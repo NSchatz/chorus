@@ -1,5 +1,5 @@
 /* The endpoint's controls per class, its status LED and its microphone gate
- * (brief section 13 item 2; K65, K67-K70; docs/decisions/0061-*).
+ * (brief section 13 item 2; K65, K67-K70; docs/decisions/0063-*).
  *
  * Each class is driven by a timed input script on a fake monotonic clock, and
  * the controller_command frames its controls produce are held byte for byte

@@ -1,4 +1,4 @@
-# 0000: a speaker's buttons are the controller role, its status LED follows the visualizer, and its microphone sits behind a gate that starts closed
+# 0063: a speaker's buttons are the controller role, its status LED follows the visualizer, and its microphone sits behind a gate that starts closed
 
 - Status: accepted (goal 9, 2026-09-30)
 - Decided by: the goal (brief section 13 item 2; K65, K67-K70, K81, K92, I4, I10)

@@ -302,7 +302,7 @@ playout: $(BUILD)/test_playout
 
 # Goal 9: the controls per class (K67-K70) as the controller role, held to
 # fixtures/controls/<class>.hex, the microphone gate, and the status LED held
-# to the visualizer fixture (docs/decisions/0061-*).
+# to the visualizer fixture (docs/decisions/0063-*).
 controls: $(BUILD)/test_controls
 	$(BUILD)/test_controls
 

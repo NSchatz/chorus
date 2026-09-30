@@ -5,7 +5,7 @@
 # Committed, and never written by a test. firmware/tests/test_controls.c drives
 # the controls and must produce exactly these bytes; crates/server/tests/controller_role.rs
 # decodes them with chorus-protocol and applies them to a room through the server's
-# controller translation (docs/decisions/0061-*).
+# controller translation (docs/decisions/0063-*).
 #
 # Format: whitespace separated hex bytes, '#' starts a comment.
 

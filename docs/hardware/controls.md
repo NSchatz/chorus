@@ -1,7 +1,7 @@
 # Controls, the status LED and the microphone mute, per speaker class
 
 What each class carries (K67-K70), how the firmware reads it
-(`firmware/include/chorus/controls.h`, `docs/decisions/0061-*`), and the hardware rule for
+(`firmware/include/chorus/controls.h`, `docs/decisions/0063-*`), and the hardware rule for
 the microphone mute switch. Pins are not given: the owner's boards are not identified yet
 (the Needs item "Your ESP32-S3 boards: module markings and a read-only chip report"), and the
 reference board profile (`firmware/boards/brick-s3-wired.conf`, ASSUMED) has no buttons, LED,
