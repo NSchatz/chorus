@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "esp_hal.h"
+#include "esp_link.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -29,6 +30,7 @@
 
 #include "chorus/amp.h"
 #include "chorus/endpoint_config.h"
+#include "chorus/link.h"
 #include "chorus/playout.h"
 #include "chorus/session.h"
 #include "chorus/sync_conf.h"
@@ -40,6 +42,10 @@ static const char *TAG = "chorus-endpoint";
 /* firmware/config/endpoint.conf, embedded by the component's CMakeLists. */
 extern const char endpoint_conf_start[] __asm__("_binary_endpoint_conf_start");
 extern const char endpoint_conf_end[] __asm__("_binary_endpoint_conf_end");
+/* The board profile the image was built for (firmware/boards/, chosen by
+ * tools/firmware-image.sh), embedded under one fixed name. */
+extern const char board_profile_conf_start[] __asm__("_binary_board_profile_conf_start");
+extern const char board_profile_conf_end[] __asm__("_binary_board_profile_conf_end");
 
 /* config/sync.conf, embedded the same way (audit A-12): the loop's constants
  * come from the one file the Linux client is held to, not from literals. */
@@ -126,29 +132,42 @@ static void session_task(void *argument)
 
 void app_main(void)
 {
-    static char text[8192];
+    static char text[16384];
+    static char board_text[4096];
     /* The two linker symbols bound one object, but C only defines subtracting
      * pointers into the same array, and the compiler sees two. The addresses
      * are subtracted as integers instead, which says what is meant. */
     size_t length = (size_t)((uintptr_t)endpoint_conf_end - (uintptr_t)endpoint_conf_start);
-    if (length >= sizeof(text)) {
+    size_t board_length =
+        (size_t)((uintptr_t)board_profile_conf_end - (uintptr_t)board_profile_conf_start);
+    if (length >= sizeof(text) || board_length >= sizeof(board_text)) {
         ESP_LOGE(TAG, "the embedded configuration does not fit");
         return;
     }
     memcpy(text, endpoint_conf_start, length);
     text[length] = '\0';
+    memcpy(board_text, board_profile_conf_start, board_length);
+    board_text[board_length] = '\0';
 
     /* Static, like everything below that the fault watch is handed: the watch
      * is its own task and outlives this function if the session ever returns,
-     * so nothing it points at may live on this task's stack. */
+     * so nothing it points at may live on this task's stack. The board
+     * profile is laid over endpoint.conf by the reader the host build grades
+     * (firmware/tests/test_link.c). */
     static chorus_endpoint_config_t config;
     char detail[512];
     detail[0] = '\0';
-    if (chorus_endpoint_config_parse(&config, "firmware/config/endpoint.conf", text, detail,
-                                     sizeof(detail)) != 0) {
+    if (chorus_endpoint_config_parse_profile(&config, "firmware/config/endpoint.conf", text,
+                                             "the embedded board profile", board_text, detail,
+                                             sizeof(detail)) != 0) {
         ESP_LOGE(TAG, "%s", detail);
         return;
     }
+    /* Which board this image believes it is on, and how sure it is. */
+    ESP_LOGI(TAG, "board profile=%s model=\"%s\" status=%s needs_item=\"%s\" link=%s",
+             config.board.profile, config.board.model,
+             chorus_board_status_name(config.board.model_status), config.board.needs_item,
+             chorus_transport_name(config.link.transport));
 
     /* The same validation the host build gates its compile on. A board that
      * somehow booted an image built from a configuration that breaks a
@@ -214,17 +233,23 @@ void app_main(void)
 
     /* The link, before the session is told it is usable.
      *
-     * `chorus#WIFI-7`: the power save mode is SET from the committed
-     * configuration rather than inherited, read back, and published on the line
-     * below. A bring-up that left the link down stops here rather than opening
-     * a session against a radio that is not on a network, and the output stage
-     * goes back to high impedance rather than being left live with nothing
-     * feeding it. */
+     * P1: a wired endpoint brings up the W5500 and never the radio; a
+     * wireless one (the compact speakers' Wi-Fi tier, K91) runs
+     * `chorus#WIFI-7`'s bring-up, which SETS the power save mode from the
+     * committed configuration rather than inheriting it, reads it back and
+     * publishes it on the line below. firmware/src/link.c decides which, and
+     * firmware/tests/test_link.c grades that decision. A bring-up that left the
+     * link down stops here rather than opening a session against no network,
+     * and the output stage goes back to high impedance rather than being left
+     * live with nothing feeding it. */
     chorus_radio_t radio;
     chorus_esp_hal_radio(&radio);
-    static chorus_wifi_report_t link;
-    chorus_wifi_status_t link_status = chorus_wifi_bring_up(&config.link, &radio, &link);
-    chorus_telemetry_record_wifi(&telemetry, &link);
+    chorus_ethernet_t ethernet;
+    chorus_esp_link_ethernet(&ethernet);
+    static chorus_link_report_t link;
+    chorus_bring_up_status_t link_status =
+        chorus_link_bring_up(&config.link, &config.eth, &config.pins, &ethernet, &radio, &link);
+    chorus_telemetry_record_wifi(&telemetry, &link.wifi);
     {
         static char line[1024];
         chorus_telemetry_line(&telemetry, line, sizeof(line));
@@ -234,11 +259,12 @@ void app_main(void)
         } else {
             ESP_LOGE(TAG, "%s", line);
             ESP_LOGE(TAG, "%s", link.detail);
+            ESP_LOGE(TAG, "%s", link.wifi.detail);
         }
     }
     if (!link.link_up) {
         ESP_LOGE(TAG, "the link is down (%s); no session is opened",
-                 chorus_wifi_status_name(link_status));
+                 chorus_bring_up_status_name(link_status));
         (void)stage.high_impedance(stage.ctx);
         (void)controller.stop_clock(controller.ctx);
         return;

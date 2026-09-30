@@ -54,6 +54,24 @@ sha="$(sed -n 's/^espidf_commit = //p' firmware/config/endpoint.conf)"
 command grep -q -- "--branch $ver " .github/workflows/ci.yml || bad "ci.yml does not clone ESP-IDF $ver"
 echo "esp-idf: $ver at $sha"
 
+# ESP-IDF components (goal 8): every registry dependency in an idf_component.yml
+# names an exact `==x.y.z`, and the committed firmware/dependencies.lock holds a
+# 64-hex component_hash for it at that version.
+comps=0
+while IFS= read -r l; do
+    name="$(printf '%s' "$l" | sed 's/^[[:space:]]*\([^:]*\):.*/\1/')"
+    [ "$name" = idf ] && continue
+    comps=$((comps + 1))
+    [[ "$l" =~ :[[:space:]]*\"==[0-9]+\.[0-9]+\.[0-9]+\"[[:space:]]*$ ]] || { bad "an ESP-IDF component not pinned with ==x.y.z: $l"; continue; }
+    v="$(printf '%s' "$l" | sed 's/.*"==\(.*\)"/\1/')"
+    awk -v n="  $name:" -v v="    version: $v" '
+        $0 == n {f = 1; next} f && /^  [^ ]/ {f = 0}
+        f && /^    component_hash: [0-9a-f]{64}$/ {h = 1} f && $0 == v {m = 1}
+        END {exit !(h && m)}' firmware/dependencies.lock ||
+        bad "firmware/dependencies.lock has no component_hash for $name at $v"
+done < <(git ls-files 'firmware/*idf_component.yml' | xargs -r sed -n '/^dependencies:/,/^[^ ]/p' | command grep -E '^[[:space:]]+[a-z0-9_./-]+:[[:space:]]*"')
+echo "esp-idf components: $comps"
+
 for s in build test clippy; do
     command grep -E "cargo $s .*--locked" tools/gate.sh > /dev/null || bad "the gate's cargo $s does not pass --locked"
 done

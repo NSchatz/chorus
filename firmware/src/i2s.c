@@ -145,6 +145,9 @@ typedef struct {
 static void check_one_pin(const char *name, uint32_t pin, int octal_psram,
                           chorus_finding_t *findings, size_t capacity, size_t *count)
 {
+    if (pin == CHORUS_PIN_NONE) {
+        return;
+    }
     if (pin > CHORUS_MAX_GPIO) {
         add_finding(findings, capacity, count, "gpio-out-of-range",
                     "%s = GPIO%u is beyond GPIO%d, which is the highest an ESP32-S3 has", name, pin,
@@ -186,6 +189,14 @@ static void check_one_pin(const char *name, uint32_t pin, int octal_psram,
     }
 }
 
+size_t chorus_gpio_validate(const char *name, uint32_t pin, int octal_psram,
+                            chorus_finding_t *findings, size_t capacity, size_t *count)
+{
+    size_t before = *count;
+    check_one_pin(name, pin, octal_psram, findings, capacity, count);
+    return *count - before;
+}
+
 size_t chorus_pin_map_validate(const chorus_pin_map_t *pins, chorus_finding_t *findings,
                                size_t capacity, size_t *count)
 {
@@ -210,7 +221,7 @@ size_t chorus_pin_map_validate(const chorus_pin_map_t *pins, chorus_finding_t *f
      * of numbers makes easiest to write. */
     for (size_t i = 0; i < pin_count; i++) {
         for (size_t j = i + 1; j < pin_count; j++) {
-            if (all[i].pin == all[j].pin) {
+            if (all[i].pin != CHORUS_PIN_NONE && all[i].pin == all[j].pin) {
                 add_finding(findings, capacity, count, "gpio-assigned-twice",
                             "%s and %s are both GPIO%u", all[i].name, all[j].name, all[i].pin);
             }

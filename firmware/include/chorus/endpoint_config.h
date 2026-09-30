@@ -11,15 +11,46 @@
 
 #include "chorus/amp.h"
 #include "chorus/i2s.h"
+#include "chorus/link.h"
 #include "chorus/wifi.h"
 
 #define CHORUS_ENDPOINT_TEXT 128
 
+/* Whether a board profile's model is the owner's own board, read off it, or a
+ * stand-in until the Needs item it names is answered (brief section 0.8). */
+typedef enum {
+    CHORUS_BOARD_ASSUMED = 0,
+    CHORUS_BOARD_CONFIRMED
+} chorus_board_status_t;
+
+const char *chorus_board_status_name(chorus_board_status_t status);
+
+/* The board a profile describes (firmware/boards/<profile>.conf). */
 typedef struct {
+    char profile[CHORUS_ENDPOINT_TEXT];
+    char model[CHORUS_ENDPOINT_TEXT];
+    chorus_board_status_t model_status;
+    /* The Needs item an ASSUMED model waits on, verbatim. */
+    char needs_item[CHORUS_ENDPOINT_TEXT];
+    uint32_t flash_size_mb;
+} chorus_board_t;
+
+/* The smallest flash an image fits: the endpoint uses ESP-IDF's 1.5 MB
+ * single-app partition inside the default 2 MB of flash
+ * (firmware/sdkconfig.defaults, docs/decisions/0044-*). */
+#define CHORUS_MIN_FLASH_MB 2u
+
+typedef struct {
+    /* The board this configuration is for, and how sure the repository is. */
+    chorus_board_t board;
+
     /* The link: which transport it is, the power save mode to set on a radio,
      * and the network, whose name and secret this repository declares unknown.
      * `chorus#WIFI-7` owns every value in it. */
     chorus_wifi_config_t link;
+    /* The W5500's wiring, read for every profile and driven only when the
+     * link is wired (chorus/link.h). */
+    chorus_eth_config_t eth;
 
     char server_address[CHORUS_ENDPOINT_TEXT];
     uint32_t reconnect_first_backoff_ms;
@@ -47,6 +78,21 @@ int chorus_endpoint_config_load(chorus_endpoint_config_t *out, const char *path,
  * the values a bench runs on are the values a host graded. */
 int chorus_endpoint_config_parse(chorus_endpoint_config_t *out, const char *label, const char *text,
                                  char *detail, size_t detail_len);
+
+/* The same, with a board profile laid over the committed base first.
+ *
+ * A profile may set only keys the base already carries, and only the keys a
+ * board decides (board_*, link_transport, pin_*, eth_*); any other key is
+ * refused by name, so a profile can never carry a platform value (a clock
+ * rule, a credential, a toolchain pin) past the base's review. The profile's
+ * own `board_profile` names it. */
+int chorus_endpoint_config_parse_profile(chorus_endpoint_config_t *out, const char *base_label,
+                                         const char *base_text, const char *profile_label,
+                                         const char *profile_text, char *detail, size_t detail_len);
+
+/* The same, from two files. */
+int chorus_endpoint_config_load_profile(chorus_endpoint_config_t *out, const char *base_path,
+                                        const char *profile_path, char *detail, size_t detail_len);
 
 /* Where firmware/config/endpoint.conf is, relative to the repository root
  * this build was configured with. */

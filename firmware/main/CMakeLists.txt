@@ -18,10 +18,28 @@ foreach(line IN LISTS chorus_opus_lines)
 endforeach()
 set(chorus_drflac_defs DR_FLAC_NO_STDIO DR_FLAC_NO_OGG DR_FLAC_NO_WCHAR DR_FLAC_NO_SIMD)
 
+# The board profile (goal 8, docs/decisions/0057-*): firmware/boards/<profile>.conf,
+# chosen at build time with -D CHORUS_BOARD_PROFILE=<profile> (tools/firmware-image.sh
+# passes it) and otherwise the default endpoint.conf names. It is copied under
+# one fixed name so its embedded symbol does not depend on which profile it is,
+# and embedded beside endpoint.conf; app_main reads both through one reader.
+if(NOT CHORUS_BOARD_PROFILE)
+    file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/../config/endpoint.conf" chorus_default_profile
+        REGEX "^board_profile *= *")
+    string(REGEX REPLACE "^board_profile *= *" "" CHORUS_BOARD_PROFILE "${chorus_default_profile}")
+endif()
+set(chorus_board_file "${CMAKE_CURRENT_LIST_DIR}/../boards/${CHORUS_BOARD_PROFILE}.conf")
+if(NOT EXISTS "${chorus_board_file}")
+    message(FATAL_ERROR "chorus: no board profile ${chorus_board_file}")
+endif()
+configure_file("${chorus_board_file}" "${CMAKE_CURRENT_BINARY_DIR}/board_profile.conf" COPYONLY)
+message(STATUS "chorus: board profile ${CHORUS_BOARD_PROFILE}")
+
 idf_component_register(
     SRCS
         "app_main.c"
         "esp_hal.c"
+        "esp_link.c"
         "esp_playout.c"
         "../src/conf.c"
         "../src/protocol.c"
@@ -37,6 +55,7 @@ idf_component_register(
         "../src/monotonic.c"
         "../src/session.c"
         "../src/wifi.c"
+        "../src/link.c"
         "../src/endpoint_config.c"
         "../src/sync_conf.c"
         "../src/playout.c"
@@ -63,6 +82,8 @@ idf_component_register(
         esp_driver_gpio
         esp_driver_i2c
         esp_driver_i2s
+        esp_driver_spi
+        esp_eth
         esp_timer
         esp_netif
         esp_wifi
@@ -72,6 +93,7 @@ idf_component_register(
         mbedtls
     EMBED_TXTFILES
         "../config/endpoint.conf"
+        "${CMAKE_CURRENT_BINARY_DIR}/board_profile.conf"
         # audit A-12: the endpoint reads the loop's constants from the file
         # the Linux client is held to, not from literals.
         "../../config/sync.conf"
