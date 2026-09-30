@@ -212,7 +212,9 @@ int chorus_esp_hal_init(const chorus_endpoint_config_t *config, chorus_i2c_bus_t
             (i2s_data_bit_width_t)config->clock.slot_bit_width, I2S_SLOT_MODE_STEREO),
         .gpio_cfg =
             {
-                .mclk = (gpio_num_t)config->pins.mclk,
+                /* `none` on a board that does not route MCLK out. */
+                .mclk = (config->pins.mclk == CHORUS_PIN_NONE) ? I2S_GPIO_UNUSED
+                                                               : (gpio_num_t)config->pins.mclk,
                 .bclk = (gpio_num_t)config->pins.bclk,
                 .ws = (gpio_num_t)config->pins.ws,
                 .dout = (gpio_num_t)config->pins.dout,

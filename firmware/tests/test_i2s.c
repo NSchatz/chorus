@@ -284,9 +284,9 @@ static void the_committed_configuration_and_the_gate(void)
     } smuggled[] = {
         {"i2s_mclk_multiple = 384", "i2s_mclk_multiple = 256",
          "an MCLK multiple not divisible by three at a 24-bit slot width"},
-        {"pin_i2s_dout = 15", "pin_i2s_dout = 30", "a pin the flash and PSRAM range reserves"},
-        {"pin_i2s_dout = 15", "pin_i2s_dout = 19", "a pin USB-JTAG reserves"},
-        {"pin_i2s_dout = 15", "pin_i2s_dout = 35", "a pin an octal part reserves"},
+        {"pin_i2s_dout = 16", "pin_i2s_dout = 30", "a pin the flash and PSRAM range reserves"},
+        {"pin_i2s_dout = 16", "pin_i2s_dout = 19", "a pin USB-JTAG reserves"},
+        {"pin_i2s_dout = 16", "pin_i2s_dout = 35", "a pin an octal part reserves"},
         {"dma_descriptor_placement = internal", "dma_descriptor_placement = external",
          "a DMA descriptor placed in external RAM"},
         {"amp_analog_gain_db = 0.0", "amp_analog_gain_db = 9.0",

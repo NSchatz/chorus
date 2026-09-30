@@ -204,10 +204,12 @@ exists (brief section 0.9):
 | Container bases | `deploy/Dockerfile` `FROM ...@sha256:` | the image digest |
 | CI actions | `uses: owner/action@<40-hex>` | the commit |
 | ESP-IDF | `firmware/config/endpoint.conf` | the tag's commit |
+| ESP-IDF components | `firmware/main/idf_component.yml` (`==x.y.z`) | `firmware/dependencies.lock` component hashes |
 | Crates | `Cargo.lock`, `--locked` | the lockfile checksums |
 
 `check-pins.sh` checks the table: exact versions, the digests, the three Rust toolchain names
-agreeing, and the ESP-IDF tag and commit. **Review-only (no check):** a pinned version is never
+agreeing, the ESP-IDF tag and commit, and each ESP-IDF component's exact version with its hash in
+the lock. **Review-only (no check):** a pinned version is never
 upgraded silently (an upgrade is its own commit saying why, and a toolchain upgrade, Rust or
 ESP-IDF, goes through a proposal, K51), and every version, number or licence a pin rests on cites
 its URL and the date read.
