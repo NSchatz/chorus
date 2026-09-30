@@ -43,6 +43,8 @@
 //!   the server's control channel and reduced to one atomic the audio path
 //!   reads.
 //! - [`zone`]: applying that to the PCM, at the last point before the sink.
+//! - [`outmap`]: the output map, N device channels fed from stream positions
+//!   with per-channel gain and delay, at the sink's own edge.
 
 #![warn(missing_docs)]
 
@@ -54,6 +56,7 @@ pub mod decode;
 pub mod delaylog;
 pub mod logcheck;
 pub mod offsets;
+pub mod outmap;
 pub mod realtime;
 pub mod receive;
 pub mod run;
@@ -65,6 +68,7 @@ pub mod zone;
 pub use buffer::{Buffer, Counters};
 pub use config::{ClientConfig, ClientMode, ConfigError};
 pub use control::{ControlLink, ZoneFacts, ZoneWatch};
+pub use outmap::{MappedSink, OutputMap};
 pub use run::{run_session, RunOutcome, StopReason};
 pub use sink::{AlsaSink, PcmSink, SinkError, SinkWrite};
 pub use sync::{Correction, PlayoutCorrector, SyncConfig, SyncLoop, Telemetry};
