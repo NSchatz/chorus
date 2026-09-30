@@ -50,8 +50,9 @@ https://raw.githubusercontent.com/sonocotta/esparagus-media-center/HEAD/README.m
 2. **The FIFO after the writer is the loop's own device delay** (`chorus_playout_fifo`: written
    minus DMA-consumed, less what of the buffer in flight has played since the interrupt's stamp),
    so the console reports exactly the figure the servo uses. The amplifier's own latency after the
-   pins is NOT in it: that is a datasheet figure (ADR 0064's `docs/research/tas5825m-register-map.md` states none) plus what the
-   rig measures, and nothing here invents it.
+   pins is NOT in it: it is the TAS5825M's processing delay, which the register-map research (ADR
+   0064, `docs/research/tas5825m-register-map.md`) does not record, plus what the rig measures
+   (bench packet S7.4); nothing here invents it.
 3. **The marker marks server-timeline boundaries, not a pattern in the audio.** Every
    `marker_period_ms` (1000) on the server timeline is a boundary; the writer arms the first frame
    whose timestamp is at or after it, with how far past the boundary that frame is. The I2S
