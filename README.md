@@ -23,9 +23,10 @@ hardware exists.
   the servo that disciplines a modelled playout pointer against it. Scenarios
   live in `fixtures/sync/`.
 
-**Phase 2, first sound.** PCM goes in one end and comes out of a speaker at the
-other, with the delay the device reports written down so someone who did not
-run it can check the claim. `docs/sound-2.md` is the guide: how to run it, every
+**Phase 2, first sound.** Built to take PCM in at one end and play it out of a
+speaker at the other, with the delay the device reports written down so someone
+who did not run it can check the claim. Status: code written; nothing has been
+heard yet (the audit, `docs/audit/2026-09-audit.md`, grades every phase). `docs/sound-2.md` is the guide: how to run it, every
 number it chose and the arithmetic behind them, and which half of the phase's
 roadmap outcome it delivers.
 
@@ -116,7 +117,8 @@ endpoint back to playing after a server restart with nobody doing anything.
 
 ## Building and testing
 
-Stable Rust and a C compiler, no external dependencies. `libasound.so.2` is
+Rust 1.98.1 (pinned in `rust-toolchain.toml`; rustup installs it on first use) and a
+C compiler, no external dependencies. `libasound.so.2` is
 needed to play audio and is not needed to build or to run the suite.
 
 ```
@@ -126,9 +128,14 @@ make verify                # refusal paths, and that unrun checks are visibly un
 make firmware-check        # the ESP32-S3 endpoint, on a host, with no ESP-IDF
 ```
 
-CI runs those on every change, with the golden-vector round trip, the simulator
-regression, the settable-clock check and the endpoint's three regressions as
-separately named steps.
+`make gate` is the check every change passes before it merges: formatting,
+clippy with warnings denied, the build and every test, the control-plane
+determinism run, the endpoint's host checks, the refusal paths, the ESP32-S3
+image compile (ESP-IDF v5.3.6 through ccache) and the daemonless server image,
+each step timed. `make gate-fast` runs the docs checks alone. The toolchain is
+pinned in `rust-toolchain.toml`. CI (`.github/workflows/ci.yml`) calls
+`make gate`, but GitHub Actions does not run on this private repository, so the
+local run is the gate.
 
 The verifications that need an environment are in `tools/`, one per check.
 Each exits non-zero naming the prerequisite it is missing and the criterion it

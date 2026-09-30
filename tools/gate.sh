@@ -18,6 +18,7 @@
 #                             sourced when IDF_PATH is unset (Makefile default:
 #                             the rootless install this repository is built with)
 #   CHORUS_CCACHE_DIR         where ccache keeps its cache (default /cache/ccache/chorus)
+#   (the image step pulls its digest-pinned base once, then reads it from a cache)
 #   CHORUS_GATE_OUTAGE_SECONDS  the outage-of-minutes run's length in the gate
 #                             (default 30; `make firmware-check` runs the committed 130)
 #   IDF_PY_BUILD_JOBS         idf.py's ninja job count; passed through explicitly
@@ -114,6 +115,7 @@ if [ "$MODE" = full ]; then
                               make --no-print-directory firmware-check
     step verify           make --no-print-directory verify
     step firmware-esp32s3 firmware_idf
+    step image            make --no-print-directory image
 fi
 
 T1=$(date +%s.%N)

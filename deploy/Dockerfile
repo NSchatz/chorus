@@ -17,7 +17,9 @@
 # readable; the digest is what actually resolves, and it is what makes two
 # builds of this file the same build. deploy/README.md records when each digest
 # was resolved and the exact command that re-resolves it.
-FROM docker.io/library/rust:1.74-slim-bookworm@sha256:53596c66027523b2289c6e7c96bff119416be22d2cf52734b4962e13371c54cf AS build
+# The build base is the toolchain rust-toolchain.toml pins (B-16); 1.74 could not
+# build the workspace.
+FROM docker.io/library/rust:1.98.1-slim-bookworm@sha256:ff521445a372125ed4f76e1453a1f8098f2d05332d1601d30db1c1f62757e730 AS build
 
 WORKDIR /src
 COPY Cargo.toml ./
@@ -25,6 +27,10 @@ COPY Cargo.lock ./
 COPY crates ./crates
 COPY fixtures ./fixtures
 COPY audio-path.conf ./
+# The server compiles the control page's documentation into itself
+# (crates/server/src/control.rs includes docs/control-page.md), so the build
+# context carries that one document (B-14).
+COPY docs/control-page.md ./docs/control-page.md
 
 # No external dependencies, so no network is needed past the base image.
 # --locked is not belt and braces: it makes a resolution that would change the
@@ -42,10 +48,14 @@ COPY --from=build /src/target/release/chorus-server /usr/local/bin/chorus-server
 COPY --from=build /src/target/release/chorus-rt-spin /usr/local/bin/chorus-rt-spin
 COPY config/verification.conf /etc/chorus/verification.conf
 
+RUN mkdir -p /var/lib/chorus && chown chorus /var/lib/chorus
+VOLUME /var/lib/chorus
+
 USER chorus
-EXPOSE 4010
+EXPOSE 4010 4020
 
 # No default that hides the contract: the entrypoint takes the priority and the
 # CPU-time bound from the run command, and refuses if the host granted neither.
 ENTRYPOINT ["/usr/local/bin/chorus-server"]
-CMD ["--listen", "0.0.0.0:4010", "--source", "tone", "--serve-forever"]
+# The deployable shape (B-15): audio, the control plane and persisted zones.
+CMD ["--listen", "0.0.0.0:4010", "--control-listen", "0.0.0.0:4020", "--state-file", "/var/lib/chorus/zones.state", "--source", "tone", "--serve-forever"]

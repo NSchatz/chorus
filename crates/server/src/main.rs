@@ -167,8 +167,43 @@ fn port_of(address: &str) -> u16 {
         .unwrap_or(0)
 }
 
+/// What `--help` prints. The exit codes above are the contract; this is only
+/// the list of options, so an operator (or the image test) can ask the binary
+/// what it takes without starting it.
+const USAGE: &str = "\
+usage: chorus-server [options]
+
+audio:
+  --listen <addr:port>        where endpoints connect for audio (default 127.0.0.1:4010)
+  --source <tone|path|->      PCM in: a test tone, a file or FIFO, or stdin (default tone)
+  --format <name>             pcm_s16le, pcm_s24le or pcm_f32le (default pcm_s16le)
+  --rate <hz> --channels <n>  stream shape (default 48000, 2)
+  --chunk-us <us>             chunk duration (default 20000)
+  --tone-ms <ms> --rate-skew-ppm <ppm>  tone length and a deliberate rate skew, for tests
+  --serve-forever             keep serving after a client ends (default: serve once)
+  --max-clients <n>           audio clients at once (default 4)
+
+host contract:
+  --rt-priority <n> --rttime-us <us> --memlock-wanted-bytes <bytes>
+  --allow-non-realtime --no-lock-memory --allow-unlocked-memory
+
+control plane:
+  --control-listen <addr:port>  serve the control API and page (off by default)
+  --control-workers <n>         control worker threads (default 8)
+  --state-file <path>           persist zone state here
+  --zone <id[=transport]>       declare a zone (repeatable)
+  --group-audio <group=addr>    where a group's stream is served (repeatable)
+  --advertise --instance <label>  advertise by multicast DNS
+
+  -h, --help                  print this and exit 0
+";
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        print!("{USAGE}");
+        return ExitCode::SUCCESS;
+    }
     let config = match ServerConfig::from_args(args) {
         Ok(c) => c,
         Err(e) => {
