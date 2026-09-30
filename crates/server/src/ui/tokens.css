@@ -24,7 +24,7 @@
  * is the ratio a browser engine measured between those two tokens IN THIS
  * THEME, off the painted pixels, when the rendered grader still ran. That
  * grader was retired on 2026-09-30 (K18, R13), so these numbers are a record of
- * its last run and nothing re-checks them; ADR 0021 (a measured ratio is
+ * its last run and nothing re-checks them; ADR 0023 (a measured ratio is
  * recorded beside the value) is superseded.
  *
  * The slider is the one place where the floor is not obvious: the TRACK is the

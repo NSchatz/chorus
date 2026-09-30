@@ -19,24 +19,34 @@ that the phases after it inherit stated choices rather than discovered ones.
 | the verifications | `tools/` |
 | what ran when this was built, and what did not | `docs/verification-record.md` |
 
-## Which half of the phase this delivers
+## What BRIEF.md says SOUND-2 must show, and where it stands
 
-The roadmap's SOUND-2 outcome has two halves: "A Linux client plays a
-server-timestamped PCM stream through real speakers with a stable buffer",
-**and** "the server earns its place on the household's production host rather
-than borrowing it".
+BRIEF.md section 8, item 2, verbatim: "First sound. Minimal server (FIFO in, chunks out) and a
+minimal Linux client playing timestamped PCM via ALSA, no servo yet. Success: clean audio,
+plausible reported DAC delay, stable buffer."
 
-**This work delivers the first half and the container's own scheduling
-contract. It does not deploy onto the production host.** That deployment is
-`homelab` territory: its inventory, container placement, storage, networking,
-TLS and secrets are untouched here, and the spec this work was built from put
-that change explicitly out of scope. Everything in `deploy/` is runnable on any
-Linux host that can hand a container an `rtprio` ceiling, and none of the
-acceptance was graded on the production host.
+That "success looks like" is the one this phase is graded against. Each part, as of 2026-09-30
+(graded against BRIEF.md section 8 in goal 4, audit B-3):
 
-So: SOUND-2 is not delivered on the strength of this work alone. The next
-roadmap reconciliation reads this paragraph, and the pinned tree it describes,
-rather than inferring completion from the phase id.
+| BRIEF.md success | status | why |
+|---|---|---|
+| clean audio | **NOT PASSED** | nothing has been heard. `tools/ten-minute-run.sh` (ten minutes with the reported delay inside its bounds and zero underruns) needs a real audio device and refuses by name here (`docs/verification-record.md`, SOUND-2) |
+| plausible reported DAC delay | **NOT PASSED** | the client logs the delay the device reports and `chorus-delaylog-check` grades a saved log, but every log graded so far came from the ALSA `null` device or a modelled one, which report nothing about a DAC |
+| stable buffer | **NOT PASSED** on hardware | the start fill, the occupancy bounds and the overflow and late-chunk accounting hold against the `null` device and the modelled device (AC-5, AC-7, AC-9, AC-18 in the record); a real device over ten minutes is the ten-minute run above |
+
+The build half ("minimal server (FIFO in, chunks out) and a minimal Linux client playing
+timestamped PCM via ALSA, no servo yet") is written: the server chunks and serves, the client
+plays out through ALSA. Its "FIFO in" is a plain file open, so a writer that closes the FIFO ends
+every client's stream (audit B-2, assigned to goal 7).
+
+**SOUND-2 is NOT PASSED:** every part of its success needs a real device and none has been used.
+
+For history only: the umbrella roadmap this phase was first built from (retired, K11) worded the
+outcome differently, as a client playing "through real speakers with a stable buffer" and the
+server earning "its place on the household's production host". That wording is not the target;
+BRIEF.md's is. Nothing in this phase deploys onto the production host: everything in `deploy/`
+runs on any Linux host that can hand a container an `rtprio` ceiling, and the deploy itself is
+goal 4's homelab PR.
 
 ## How to run it
 
@@ -231,7 +241,7 @@ The same crate carries a third check, on a different invariant:
 scheduling policy, and `crates/audio-path --test real_time_ordering` fails the
 suite if any of those sites takes the policy before applying the CPU-time
 bound, or if an acquisition turns up in a unit the file does not name. See
-`docs/decisions/0012`.
+`docs/decisions/0022-the-cpu-time-bound-goes-on-first.md`.
 
 ## The memory-locking decision
 

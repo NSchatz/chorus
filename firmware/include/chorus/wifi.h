@@ -9,7 +9,7 @@
  * radio.
  *
  * The reason the default is refused is in the carried ESP-IDF guide and is
- * quoted in full in docs/decisions/0021-the-wireless-tier.md: the default is
+ * quoted in full in docs/decisions/0024-the-wireless-tier.md: the default is
  * WIFI_PS_MIN_MODEM, and under modem sleep "the delay in receiving Wi-Fi data
  * may be the same as the DTIM cycle (minimum power-saving mode) or the
  * listening interval (maximum power-saving mode)". The DTIM cycle belongs to

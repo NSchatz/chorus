@@ -1,8 +1,11 @@
 # Wireless jitter: wireless-ps-min-modem, power save min-modem
 
 Date: 2026-09-12
-Build measured: `9233f2fa9cb5494babd0561017c984ff74149d8c`
-Tree at that commit: carried 23 uncommitted path(s) when this run was taken: M audio-path.conf, M crates/client-linux/src/config.rs, M crates/client-linux/src/main.rs, M crates/control/src/catalog.rs, M crates/control/src/lib.rs, M crates/measure/src/bin/chorus-measure.rs, M crates/measure/src/lib.rs, M crates/server/src/config.rs, M crates/server/src/main.rs, M docs/measurements/free-run-baseline.conf, M docs/measurements/rig3-free-run-noiseless-fixture.md, M docs/measurements/rig3-lag-fixture-reference-capture.md, and 11 more
+Source: synthetic
+Build measured: `1ea9f2ad83328c3e0970a04211a3ece91c9bcecc`
+Build note (written 2026-09-30, K48, audit A-6): the build commit this report first named, `9233f2fa9cb5494babd0561017c984ff74149d8c`, no longer exists in this history (a branch commit the squash merge discarded). The commit above is the one that first added this report (the squash merge of PR #16); the figures were not re-run on it.
+Timing evidence: none. The input is a series generated from committed parameters (`fixtures/measure/15-wireless-jitter-ps-min-modem.params`), not a capture from any device; only a `hardware` report is timing evidence (BRIEF.md section 3.1 rule 3).
+Tree at the original build commit: carried 23 uncommitted path(s) when this run was taken: M audio-path.conf, M crates/client-linux/src/config.rs, M crates/client-linux/src/main.rs, M crates/control/src/catalog.rs, M crates/control/src/lib.rs, M crates/measure/src/bin/chorus-measure.rs, M crates/measure/src/lib.rs, M crates/server/src/config.rs, M crates/server/src/main.rs, M docs/measurements/free-run-baseline.conf, M docs/measurements/rig3-free-run-noiseless-fixture.md, M docs/measurements/rig3-lag-fixture-reference-capture.md, and 11 more
 Power save mode in force: **min-modem** (`WIFI_PS_MIN_MODEM`), which is the platform default left in place
 Transport: **wireless**
 Reproduce with: `cargo run -p chorus-measure --bin chorus-measure -- jitter fixtures/measure/15-wireless-jitter-ps-min-modem.offsets --label wireless-ps-min-modem --mode min-modem --transport wireless`

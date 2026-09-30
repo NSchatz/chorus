@@ -1,8 +1,11 @@
 # Inter-device lag: fixture-reference-capture
 
 Date: 2026-09-03
-Build measured: `60b639b98586ed9e1d0bf0c195870a2bf95a1172`
-Tree at that commit: carried 2 uncommitted path(s) when this run was taken: ?? docs/measurements/free-run-baseline.conf, ?? docs/measurements/rig3-free-run-noiseless-fixture.md
+Source: synthetic
+Build measured: `ba6ca4f783bd4a89f26360a900f045a911e0b162`
+Build note (written 2026-09-30, K48, audit A-6): the build commit this report first named, `60b639b98586ed9e1d0bf0c195870a2bf95a1172`, no longer exists in this history (a branch commit the squash merge discarded). The commit above is the one that first added this report (the squash merge of PR #8); the figures were not re-run on it.
+Timing evidence: none. The input is a capture generated from committed parameters (`fixtures/measure/01-chirp-pair-a.params`), not a capture from any device; only a `hardware` report is timing evidence (BRIEF.md section 3.1 rule 3).
+Tree at the original build commit: carried 2 uncommitted path(s) when this run was taken: ?? docs/measurements/free-run-baseline.conf, ?? docs/measurements/rig3-free-run-noiseless-fixture.md
 Reproduce with: `cargo run -p chorus-measure --bin chorus-measure -- lag fixtures/measure/01-chirp-pair-a.wav --label fixture-reference-capture`
 
 ## Sign convention
@@ -26,7 +29,7 @@ a positive lag means the endpoint on channel A (the first captured output) leads
 
 ## The free-run baseline this run cites
 
-Baseline: +37.5000 ppm (+/-0.0000 ppm), measured from fixture, established by `docs/measurements/rig3-free-run-noiseless-fixture.md` at commit `60b639b98586ed9e1d0bf0c195870a2bf95a1172`.
+Baseline: +37.5000 ppm (+/-0.0000 ppm), measured from fixture, established by `docs/measurements/rig3-free-run-noiseless-fixture.md` at commit `ba6ca4f783bd4a89f26360a900f045a911e0b162` (first named `60b639b`, which no longer exists; corrected 2026-09-30).
 
 That baseline was fitted from a committed fixture, not from two clients running with correction disabled. It bounds this rig's estimator against a known rate. It is NOT a statement about any real crystal, and no claim about hardware drift rests on it.
 

@@ -18,7 +18,8 @@ How the rules work:
 - A check that needs a private input (the identity term list) or history a shallow clone lacks
   prints `SKIPPED` with the reason under CI, and fails anywhere else.
 - A rule that cannot be checked cheaply is not a rule. Review guidance lives in the section it
-  belongs to and says so.
+  belongs to and is marked **Review-only (no check)**: it is what a reviewer looks for, no script
+  enforces it, and the gate passing says nothing about it.
 - The pinned tools come from `mise.toml` (`mise install`, rootless); the Rust toolchain from
   `rust-toolchain.toml`; ESP-IDF from `firmware/config/endpoint.conf`.
 
@@ -64,8 +65,10 @@ has to learn or argue about. Formatting-only changes land as their own commit.
 - `unsafe_code` is denied workspace-wide. It is allowed only where chorus talks to the operating
   system or the sound stack, at the narrowest scope, with a reason beside the allow; every
   `unsafe` block carries a `// SAFETY:` comment stating the invariant it relies on
-  (`clippy::undocumented_unsafe_blocks`). Adding a place needs an ADR and a line in
-  `check-rust-lints.sh`, which holds the tree to this list:
+  (`clippy::undocumented_unsafe_blocks`). `check-rust-lints.sh` holds the tree to this list,
+  counting every `allow` or `expect` of `unsafe_code` (or `unsafe_op_in_unsafe_fn`), inner or
+  outer, alone or combined with other lints, over one line or several; adding a place means a
+  line in the script:
 
   | Where | Scope | Why |
   |---|---|---|
@@ -75,8 +78,9 @@ has to learn or argue about. Formatting-only changes land as their own commit.
 
   `protocol`, `sync`, `audio`, `audio-path` and `measure` go further with
   `#![forbid(unsafe_code)]`.
+- **Review-only (no check):** a new place on the list above comes with an ADR saying why.
 - `dbg!` and `todo!` do not merge (`clippy::dbg_macro`, `clippy::todo`).
-- Review guidance, not a rule: libraries return typed errors; nothing panics on input read from
+- **Review-only (no check):** libraries return typed errors; nothing panics on input read from
   the network or a file; binaries map errors to documented exit codes.
 
 ## 3. Rust toolchain
@@ -84,15 +88,19 @@ has to learn or argue about. Formatting-only changes land as their own commit.
 One exact toolchain builds, tests, formats and lints chorus: `rust-toolchain.toml`'s `channel`.
 `rust-version` in `Cargo.toml` equals it (chorus is an application; the gate's build is the MSRV
 check), and so does the `rust:<version>` base of `deploy/Dockerfile`. The gate builds with
-`--locked`. An upgrade is its own commit and goes through a proposal (K51).
+`--locked`. **Review-only (no check):** an upgrade is its own commit and goes through a proposal
+(K51).
 
 ## 4. C flags
 
 The host build of the firmware cores compiles with
 `-std=c11 -Wall -Wextra -Werror -Wshadow -Wpointer-arith -Wstrict-prototypes` and
 `-ffp-contract=off -fno-fast-math`. The two floating-point flags are load-bearing: they keep the
-C cores bit-exact with the Rust cores on the shared fixtures, so they are never removed.
-`check-c-flags.sh` fails if any of these flags leaves `firmware/Makefile`.
+C cores bit-exact with the Rust cores on the shared fixtures, so they are never removed, and no
+firmware build file (a Makefile, CMake file or sdkconfig) adds a flag that relaxes IEEE floating
+point after them: `-ffast-math`, `-Ofast`, `-funsafe-math-optimizations`, `-ffinite-math-only`,
+`-fassociative-math` or `-freciprocal-math`. `check-c-flags.sh` fails if any required flag leaves
+`firmware/Makefile` or any forbidden one appears, and tests its own pattern first.
 
 ## 5. C format
 
@@ -131,7 +139,8 @@ implementations read: `fixtures/protocol`, `fixtures/sync`, `fixtures/sync/cross
 one language only. `check-shared-fixtures.sh` holds each directory to a Rust reader and a C
 reader and fails on a file of a kind neither reads. `fixtures/control`, `fixtures/discovery` and
 `fixtures/measure` are Rust-only by declaration (the endpoint does not speak them yet).
-Fixtures are committed and regenerated only by their `make` targets, never by a test run.
+**Review-only (no check):** fixtures are committed and regenerated only by their `make` targets,
+never by a test run.
 
 ## 10. Tests need no device
 
@@ -146,8 +155,9 @@ visibly. Timing tests are deterministic or carry the busy-worker refusal of ADR 
 A timing claim is evidence only with a report under `docs/measurements/`. Every report carries
 `Source: hardware|host|simulation|synthetic` and `Build measured: <sha>` naming a commit in this
 history (a squash-merged change cites the merge commit, not a branch commit). Only `hardware` is
-timing evidence (BRIEF §3.1 rule 3). The reports written before this rule are listed in
-`check-measurements.sh` until goal 4 relabels them (K48, audit A-6); the list can only shrink.
+timing evidence (BRIEF §3.1 rule 3). Every report complies: the ones written before this rule
+were relabelled on 2026-09-30 (goal 4, K48, audit A-6), and each says which commit replaced the
+one it first named. On a shallow clone the commit lookup prints `SKIPPED`.
 
 ## 12. Licence
 
@@ -162,9 +172,11 @@ root, and `license.workspace = true` in every crate, which the workspace sets to
   CC0-1.0 (brief section 4.7). Anything else needs an ADR naming the crate, then an exception in
   `deny.toml` citing it (K95; MPL-2.0 Symphonia under P9 is the first expected).
 - Crates come from crates.io only, one version of each (`cargo deny check sources bans`).
-- A new external crate needs an ADR answering BRIEF §3.2's question (why not build it).
-- JavaScript, when the app arrives (P5): exact versions, a committed lockfile, scripts off, and
-  the same allowlist.
+- **Review-only (no check):** a new external crate comes with an ADR answering BRIEF §3.2's
+  question (why not build it); cargo-deny checks its licence and source, not the ADR.
+- JavaScript, when the app arrives (P5): exact versions beside a committed lockfile
+  (`check-pins.sh`); **review-only (no check)** until the app's own check exists: scripts off,
+  and the same allowlist.
 
 ## 14. Pins
 
@@ -180,19 +192,25 @@ exists (brief section 0.9):
 | ESP-IDF | `firmware/config/endpoint.conf` | the tag's commit |
 | Crates | `Cargo.lock`, `--locked` | the lockfile checksums |
 
-A pinned version is never upgraded silently: an upgrade is its own commit saying why, and a
-toolchain upgrade (Rust, ESP-IDF) goes through a proposal (K51). Every version, number or licence
-a pin rests on cites its URL and the date read.
+`check-pins.sh` checks the table: exact versions, the digests, the three Rust toolchain names
+agreeing, and the ESP-IDF tag and commit. **Review-only (no check):** a pinned version is never
+upgraded silently (an upgrade is its own commit saying why, and a toolchain upgrade, Rust or
+ESP-IDF, goes through a proposal, K51), and every version, number or licence a pin rests on cites
+its URL and the date read.
 
 ## 15. Decision records
 
 `docs/decisions/NNNN-<slug>.md`. **The number is the number of the pull request that adds the
 record**, zero-padded to four digits, so parallel branches can never claim the same "next"
-number (the collisions of 0012 and 0021 came from that). Draft as `0000-<slug>.md` and rename
-once the PR exists. A record starts `# NNNN: <title>`, carries `- Status:` (proposed, decided,
-superseded by ...), and says what it decides, why, what was not chosen, and its sources with the
-date read. Records numbered before this rule keep their numbers; the duplicates are listed in
-`check-adrs.sh` until goal 4 renumbers them (K48, audit B-19).
+number (the old duplicates of 0012 and 0021 came from that). Draft as `0000-<slug>.md` and
+rename once the PR exists. A record starts `# NNNN: <title>`, carries `- Status:` (proposed,
+decided, accepted, superseded by ...), and is listed in the index `docs/decisions/README.md`.
+The records numbered before this rule are a closed set, exactly 0001-0027, each once: the
+duplicates became 0022-0024 on 2026-09-30 (decided 2026-09-29 by the owner, K48, audit B-19) and
+0025-0027 record three decisions made before the program (audit B-8). A new file numbered below
+0032 fails. `check-adrs.sh` checks all of that, and the PR number of records from 0032 on (on a
+shallow clone that part prints `SKIPPED`). **Review-only (no check):** a record says what it
+decides, why, what was not chosen, and its sources with the date read.
 
 ## 16. Clean-room provenance
 
@@ -247,12 +265,16 @@ outside `docs/`) and to the approved read forms.
 
 ## 21. Commits
 
-A subject reads `<area>: <summary>`: the area is a crate, `firmware`, `tools`, `docs`,
-`deploy`, `ci` or `goals` (ledger commits), in lower case, and the subject stays within 100
-characters before a squash merge's ` (#N)`, because subjects cite finding and decision IDs. No
-em dash, no identity term. Branches are `chorus-g<n>/<topic>`; changes merge as squashed pull
-requests after `make gate` passes on the branch up to date with `main`; history is never
-rewritten. Checked on every commit since goal 3 began; the older history keeps its subjects.
+A subject reads `<area>: <summary>` with a lower-case area, and stays within 100 characters
+before a squash merge's ` (#N)`, because subjects cite finding and decision IDs. No em dash, no
+identity term. `check-commits.sh` checks the shape, the length and the em dash on every commit
+since goal 3 began (the older history keeps its subjects); identity terms are
+`check-identity.sh`'s.
+
+**Review-only (no check):** the area names what changed (a crate, `firmware`, `tools`, `docs`,
+`deploy`, `ci`, or `goals` for ledger commits); branches are `chorus-g<n>/<topic>`; changes merge
+as squashed pull requests after `make gate` passes on the branch up to date with `main`; history
+is never rewritten.
 
 ## 22. Every rule has a check
 

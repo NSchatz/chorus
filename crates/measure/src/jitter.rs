@@ -83,7 +83,7 @@ impl PowerSaveMode {
     ///
     /// "The default Modem-sleep mode is WIFI_PS_MIN_MODEM", from the ESP-IDF
     /// Wi-Fi power save guide, quoted in
-    /// `docs/decisions/0021-the-wireless-tier.md`.
+    /// `docs/decisions/0024-the-wireless-tier.md`.
     pub fn is_platform_default(self) -> bool {
         self == PowerSaveMode::MinModem
     }

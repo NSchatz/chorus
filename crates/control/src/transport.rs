@@ -125,7 +125,7 @@ pub struct WirelessPolicy {
 
 /// The committed wireless policy.
 ///
-/// Every value's provenance is in `docs/decisions/0021-the-wireless-tier.md`,
+/// Every value's provenance is in `docs/decisions/0024-the-wireless-tier.md`,
 /// and `config/transport.conf` carries the same five numbers.
 pub const WIRELESS_POLICY: WirelessPolicy = WirelessPolicy {
     min_us: 120_000,
