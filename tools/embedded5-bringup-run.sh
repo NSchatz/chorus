@@ -62,7 +62,7 @@ least_stack() {
 }
 
 report_and_publish() {
-    local raw="$BENCH_RUN_DIR/raw" first playing last start mid end cycles total recovered
+    local raw="$BENCH_RUN_DIR/raw" first playing last start mid end total recovered
     first="$(sed -n 's/^\(status .*\)$/\1/p' "$raw/status-before.txt" 2>/dev/null | head -n 1)"
     playing="$(sed -n 's/^\(status .*\)$/\1/p' "$raw/status-playing.txt" 2>/dev/null | head -n 1)"
     last="$(sed -n 's/^\(status .*\)$/\1/p' "$raw/status-end.txt" 2>/dev/null | head -n 1)"
