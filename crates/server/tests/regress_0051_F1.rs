@@ -72,6 +72,7 @@ fn start(zone_args: &[&str], state: Option<&PathBuf>) -> (Server, BufReader<Chil
         "--serve-forever".to_string(),
         "--allow-non-realtime".to_string(),
         "--allow-unlocked-memory".to_string(),
+        "--ephemeral-identity".to_string(),
         "--control-listen".to_string(),
         format!("127.0.0.1:{}", control),
     ];

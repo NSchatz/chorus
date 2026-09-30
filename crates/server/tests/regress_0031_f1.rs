@@ -15,10 +15,14 @@
 //! second stream the way a second client would. A server that honours the flag
 //! serves it; one that ignores the flag has already exited.
 
-use std::io::Read;
+mod common;
+
 use std::net::{TcpListener, TcpStream};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
+
+use chorus_client_linux::config::ClientConfig;
+use chorus_client_linux::session::{self, EndpointIdentity};
 
 /// A port nothing is listening on, by binding one and letting it go.
 fn free_port() -> u16 {
@@ -41,21 +45,16 @@ fn connect_within(port: u16, deadline: Duration) -> Option<TcpStream> {
     None
 }
 
-/// Read a whole stream to its end and report how many bytes it carried.
-fn drain(mut stream: TcpStream) -> usize {
+/// Open a v2 session on the connection, read its audio to the end, and report
+/// how many bytes of frames it carried.
+fn drain(stream: TcpStream) -> usize {
     stream
         .set_read_timeout(Some(Duration::from_secs(10)))
         .expect("a read timeout");
-    let mut total = 0usize;
-    let mut scratch = vec![0u8; 65_536];
-    loop {
-        match stream.read(&mut scratch) {
-            Ok(0) => break,
-            Ok(n) => total += n,
-            Err(_) => break,
-        }
-    }
-    total
+    let mut me = EndpointIdentity::ephemeral(&common::fresh_id("regress-0031-f1")).unwrap();
+    let mut session = session::open(stream, &mut me, &ClientConfig::default())
+        .unwrap_or_else(|e| panic!("the v2 session opens: {}", e));
+    common::drain(&mut session)
 }
 
 struct Server(Child);
@@ -85,6 +84,7 @@ fn serve_forever_still_serves_a_second_client_after_the_first_stream_ends() {
                 // memory than the server wants; neither is what is under test.
                 "--allow-non-realtime",
                 "--allow-unlocked-memory",
+                "--ephemeral-identity",
                 "--serve-forever",
             ])
             .stdout(Stdio::null())

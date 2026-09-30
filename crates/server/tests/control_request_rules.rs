@@ -70,6 +70,7 @@ fn start(extra: &[&str]) -> Server {
         "--serve-forever",
         "--allow-non-realtime",
         "--allow-unlocked-memory",
+        "--ephemeral-identity",
         "--control-listen",
         EPHEMERAL,
         "--zone",

@@ -57,6 +57,8 @@
 //! it, and there is no interval to lose it in. The one check that needs a port
 //! of its own holds it from before its server starts until after it has exited.
 
+mod common;
+
 use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -192,6 +194,7 @@ fn start(extra: &[String]) -> (Server, u32, mpsc::Receiver<String>, Vec<String>)
         "30000".to_string(),
         "--allow-non-realtime".to_string(),
         "--allow-unlocked-memory".to_string(),
+        "--ephemeral-identity".to_string(),
         "--listen".to_string(),
         EPHEMERAL.to_string(),
         "--control-listen".to_string(),
@@ -792,11 +795,9 @@ fn the_control_plane_creates_every_thread_it_will_run_before_the_report_is_taken
 
     // And the same again, with the audio path busy, because that is the
     // combination the deployment actually runs.
-    let mut client =
-        TcpStream::connect(audio_address(&startup).as_str()).expect("the server is listening");
-    client.set_read_timeout(Some(READ_TIMEOUT)).unwrap();
+    let mut client = common::v2_client(audio_address(&startup).as_str(), READ_TIMEOUT);
     let mut scratch = vec![0u8; 65_536];
-    assert!(client.read(&mut scratch).expect("audio comes down") > 0);
+    assert!(client.reader.read(&mut scratch).expect("audio comes down") > 0);
     // Every worker a stream may have (all but the one kept for commands,
     // `crates/server/src/control.rs::stream_slots`), and a command served
     // beside them by the one that is left.
@@ -913,6 +914,7 @@ fn a_control_address_that_cannot_be_bound_stops_the_server_before_it_serves_audi
             "tone",
             "--allow-non-realtime",
             "--allow-unlocked-memory",
+            "--ephemeral-identity",
             "--control-listen",
             &address,
             "--zone",
@@ -997,6 +999,7 @@ fn a_state_file_this_build_cannot_read_stops_the_server_the_same_way() {
             "tone",
             "--allow-non-realtime",
             "--allow-unlocked-memory",
+            "--ephemeral-identity",
             "--control-listen",
             EPHEMERAL,
             "--state-file",
