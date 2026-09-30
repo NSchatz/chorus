@@ -228,6 +228,19 @@ measure-fixture-reports: tools-executable
 ten-minute-run: tools-executable
 	bash tools/ten-minute-run.sh
 
+# The same ten minutes on the ALSA `null` device, labelled host / ALSA null: the
+# continuity half (zero underruns, no rate change, the buffer under its
+# ceiling). The delay bounds are NOT GRADED and the ten-minute criterion is not
+# passed by it; see tools/ten-minute-run.sh.
+ten-minute-run-null: tools-executable
+	CHORUS_CLIENT_DEVICE=null CHORUS_TEN_MINUTE_NULL=1 bash tools/ten-minute-run.sh
+
+# `make gate`'s ALSA `null` step: stream-end-and-loss and the restart storm on
+# `null`, finding a rootless libasound when the system has none
+# (CHORUS_ALSA_PREFIX, default /cache/opt/chorus-alsa). See tools/alsa-null-run.sh.
+verify-alsa-null: tools-executable
+	bash tools/alsa-null-run.sh
+
 # The device-class checks that do not depend on the delay a device reports, run
 # against the ALSA `null` device. See docs/sound-2.md for what `null` can and
 # cannot stand in for.
@@ -238,7 +251,7 @@ verify-null-device: tools-executable
 	.PHONY: release image build check discovery-vectors firmware-check firmware-golden-vectors  \
 	firmware-image firmware-safety-scans firmware-sync-scenarios  \
 	firmware-wireless gate gate-fast measure-fixture-reports measure-fixtures one  \
-	probe sim-house sync-vectors ten-minute-run test tools-executable verify verify-control  \
+	probe sim-house sync-vectors ten-minute-run ten-minute-run-null test tools-executable verify verify-alsa-null verify-control  \
 	verify-control-determinism verify-device verify-discovery-fallback  \
 	verify-endpoint-rig verify-host verify-mdns verify-measure-device  \
 	verify-null-device verify-restart-storm verify-soak verify-sync-hour  \
