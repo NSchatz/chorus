@@ -49,6 +49,9 @@ RUN useradd --system --create-home --uid 10001 chorus
 
 COPY --from=build /src/target/release/chorus-server /usr/local/bin/chorus-server
 COPY --from=build /src/target/release/chorus-rt-spin /usr/local/bin/chorus-rt-spin
+# The wakeup-jitter probe, for the owner's production run inside this container
+# (docs/measurements/host-wakeup-jitter.md, "Next"). It never runs unless invoked.
+COPY --from=build /src/target/release/chorus-wakeup-probe /usr/local/bin/chorus-wakeup-probe
 COPY config/verification.conf /etc/chorus/verification.conf
 
 RUN mkdir -p /var/lib/chorus && chown chorus /var/lib/chorus

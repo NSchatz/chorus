@@ -8,6 +8,7 @@ members = [
     "crates/audio",
     "crates/alsa",
     "crates/hostctl",
+    "crates/hostprobe",
     "crates/audio-path",
     "crates/measure",
     "crates/server",
