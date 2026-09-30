@@ -1,7 +1,7 @@
 # Chorus: From-Scratch Multiroom and Surround Audio System
 ## Project Brief and Design Guide v2 (hand-off document for Claude Code)
 
-Owner: Noah
+Owner: the owner (identity scrub, decided 2026-09-29 by the owner, K27)
 Date: 2026-08-21
 Status: Guiding document, not a rigid specification. It defines goals, requirements, constraints, and reference knowledge, and it makes recommendations with rationale. Implementation decisions are made during the project, in collaboration with the owner, and recorded as they happen.
 Codename: "chorus" (placeholder, rename freely).
@@ -21,7 +21,7 @@ Codename: "chorus" (placeholder, rename freely).
 
 ## 1. Vision
 
-Replace the Sonos ecosystem with a system Noah builds and understands end to end:
+Replace the Sonos ecosystem with a system the owner builds and understands end to end:
 
 - A centralized audio server running in a container on his Proxmox homelab (Dell R730xd).
 - Self-developed software on every speaker endpoint: embedded firmware on microcontroller-class smart speakers, and a lightweight client on Linux-class endpoints.
