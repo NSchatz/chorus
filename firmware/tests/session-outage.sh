@@ -4,6 +4,12 @@
 # "WHEN the server or the network disappears and returns THE SYSTEM SHALL
 # rejoin and resume playback with no human action."
 #
+# Until the endpoint speaks protocol v2 (goal 6), the server is the last v1
+# `chorus-server`, built from the v0.1.0 tag by `v1_server` (tools/lib.sh): the
+# server at HEAD refuses a v1 peer by name, which is v2's contract, not an
+# outage. The reconnect behaviour graded here is the endpoint's, and it is the
+# same against either.
+#
 # Nothing here is a mock. `chorus-server` is started for real, the endpoint
 # joins it over loopback TCP and decodes the committed protocol off the wire,
 # the server is killed with SIGKILL, a NEW server process is started on the
@@ -62,6 +68,15 @@ if [ ! -x "$ENDPOINT" ]; then
     exit 1
 fi
 
+if ! V1_SERVER="$(v1_server)"; then
+    if [ "${CI:-}" = "true" ]; then
+        say "SKIPPED: session outage: the tag $V1_SERVER_TAG is not in this clone (CI's shallow checkout)"
+        exit 0
+    fi
+    missing_prerequisite "the endpoint rejoins a new server process (AC-4)" \
+        "a protocol v1 chorus-server, built from the git tag $V1_SERVER_TAG" "git fetch --tags"
+fi
+
 FAILURES=0
 check() {
     local name="$1"
@@ -81,7 +96,7 @@ start_server() {
     local chunk_us="$2"
     local rate="$3"
     local channels="$4"
-    "$BIN_DIR/chorus-server" \
+    "$V1_SERVER" \
         --listen "127.0.0.1:$port" \
         --source tone \
         --rate "$rate" \

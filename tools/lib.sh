@@ -42,6 +42,28 @@ build_once() {
     (cd "$REPO_ROOT" && cargo build --quiet --workspace --all-targets)
 }
 
+# The last chorus-server that speaks protocol v1, for the host-built C endpoint, which speaks v1
+# until it moves to v2 (goal 6; docs/decisions/0041-protocol-v2-framing.md). The server at HEAD
+# refuses v1 peers by name, so a check that pairs the C endpoint with a real server uses this one:
+# built once from the release tag's own sources (no external crates, so offline) into
+# target/v1-server/, rebuilt only when the tag's commit changes. Prints the binary's path.
+V1_SERVER_TAG=v0.1.0
+v1_server() {
+    local dir="$TARGET_DIR/v1-server"
+    local bin="$dir/target/debug/chorus-server"
+    local commit
+    commit="$(git -C "$REPO_ROOT" rev-parse -q --verify "$V1_SERVER_TAG^{commit}")" || return 1
+    if [ ! -x "$bin" ] || [ "$(cat "$dir/commit" 2>/dev/null)" != "$commit" ]; then
+        rm -rf "$dir/src"
+        mkdir -p "$dir/src"
+        git -C "$REPO_ROOT" archive "$commit" | tar -x -C "$dir/src"
+        (cd "$dir/src" && cargo build --quiet --locked --offline -p chorus-server \
+            --target-dir "$dir/target") >&2
+        printf '%s\n' "$commit" > "$dir/commit"
+    fi
+    printf '%s' "$bin"
+}
+
 # A value from config/verification.conf.
 conf() {
     local key="$1"
