@@ -95,8 +95,8 @@ static double lomax_ns(double scale_us, double shape, chorus_rng_t *rng)
 {
     double u = 1.0 - chorus_rng_next_f64(rng);
     double sample_us = scale_us * (pow(u, -1.0 / shape) - 1.0);
-    double capped = (sample_us < CHORUS_JITTER_BURST_CAP_US) ? sample_us
-                                                              : CHORUS_JITTER_BURST_CAP_US;
+    double capped =
+        (sample_us < CHORUS_JITTER_BURST_CAP_US) ? sample_us : CHORUS_JITTER_BURST_CAP_US;
     return capped * 1000.0;
 }
 

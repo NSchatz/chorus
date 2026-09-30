@@ -262,8 +262,7 @@ chorus_sim_status_t chorus_sim_run(const chorus_sim_config_t *config, chorus_sim
 
         /* Playout advances at the client's crystal rate, plus whatever the
          * servo is currently correcting by. */
-        playout_ns +=
-            step_ns * (1.0 + (config->client_ppm + wander_ppm + correction_ppm) * 1e-6);
+        playout_ns += step_ns * (1.0 + (config->client_ppm + wander_ppm + correction_ppm) * 1e-6);
         wander_phase_ns += step_ns * wander_ppm * 1e-6;
 
         while (t_ns >= next_sync_ns) {

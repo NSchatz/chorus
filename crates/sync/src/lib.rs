@@ -27,6 +27,8 @@
 
 pub mod config;
 pub mod crosscheck;
+pub mod house;
+pub mod house_report;
 pub mod jitter;
 pub mod rng;
 pub mod scenario;
@@ -36,7 +38,8 @@ pub mod sim;
 pub use config::{
     ConfigError, SimConfig, MAX_DELAY_US, MAX_SKEW_PPM, MAX_STEPS, SERVER_TURNAROUND_NS,
 };
-pub use jitter::JitterModel;
+pub use house::{run_house, HouseConfig, HouseError, HouseResult, PairClass};
+pub use jitter::{JitterModel, JitterProcess};
 pub use rng::Rng;
 pub use scenario::{Scenario, ScenarioError};
 pub use servo::{OffsetFilter, Sample, Servo, ServoAction, ServoConfig};

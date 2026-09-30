@@ -215,8 +215,9 @@ chorus_scenario_status_t chorus_scenario_parse(chorus_scenario_t *out, const cha
     } else {
         for (size_t k = 0; k < BURST_KEY_COUNT; k++) {
             if (chorus_conf_get(&conf, BURST_KEYS[k]) != NULL) {
-                say_detail(detail, detail_len, "%s is a burst model parameter and jitter_model is %s",
-                           BURST_KEYS[k], jitter_name);
+                say_detail(detail, detail_len,
+                           "%s is a burst model parameter and jitter_model is %s", BURST_KEYS[k],
+                           jitter_name);
                 return CHORUS_SCENARIO_ERR_BAD_VALUE;
             }
         }

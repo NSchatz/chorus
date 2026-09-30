@@ -1,0 +1,70 @@
+# The house at K75 scale, speakers on one switched segment with the server
+# (docs/proposals/P3-speaker-network.md option b': an audio VLAN with a server
+# leg, no router hop). A simulation input: nothing here is measured, and the
+# report made from it is not timing evidence (BRIEF.md section 3.1 rule 3).
+# 8-rooms-routed.house is this file with only the links changed; the house
+# regression asserts the two agree on everything else.
+
+name = 8-rooms-switched
+network = switched (P3 option b')
+seed = 20260930
+duration_ms = 600000
+step_ms = 10
+settle_ms = 60000
+server_ppm = -7.0
+
+# The correction law every endpoint runs: the real client's, SYNC-4's
+# constants from config/sync.conf (crates/sync/tests/house_regression.rs
+# asserts they are equal), not FOUNDATION-1's reference servo.
+sync_interval_ms = 500
+filter_window = 64
+smoothing_alpha = 0.0625
+hard_resync_threshold_us = 2000
+max_correction_ppm = 300
+kp = 0.4
+ki = 0.08
+
+# Every crystal's random walk, ppm per square root of a second: about 1.2 ppm
+# of wander over the ten minute run. ASSUMED (no crystal here is measured).
+wander_ppm_per_sqrt_s = 0.05
+
+# link.<name> = <wired|wireless> <base_us> <asymmetry_us> <model> <scale_us> [burst: <enter> <exit> <burst_scale_us> <shape>]
+# Wired: a PoE switch segment. 200 us one way, exponential queuing with a
+# 120 us mean (heavier than fixtures/sync/01-wired-quiet.cfg, standing in for
+# the endpoint's own receive path too), symmetric apart from each endpoint's
+# trim. ASSUMED.
+link.wired = wired 200 0 exponential 120
+# Wi-Fi: the burst model of fixtures/sync/07-wifi-burst.cfg (every value there
+# ASSUMED, replaced by WIFI-7's characterization when it exists).
+link.wifi = wireless 1500 300 burst 400 0.03 0.2 3000 1.5
+
+# The house: 8 rooms, 20 endpoints (K75). The room list is ASSUMED: the
+# owner's room list, with which rooms have copper, is an open Needs item, so
+# this is a plausible house and not the owner's. A 7.1 theater in the living
+# room (eight wired endpoints including the sub), five wired stereo rooms, and
+# two compact Wi-Fi speakers alone in their rooms (K91: Wi-Fi speakers are
+# never bonded). Crystal errors are spread over BRIEF.md section 6's +/- 20 to
+# 50 ppm; the last column is each endpoint's own path asymmetry (cable, PHY,
+# stack) on top of its link's, in microseconds. Both values are ASSUMED.
+#
+# endpoint.<id> = <room> <single|stereo|theater> <link> <client_ppm> <asymmetry_trim_us>
+endpoint.living-l     = living   theater wired   23.1    4
+endpoint.living-r     = living   theater wired  -17.8   -6
+endpoint.living-c     = living   theater wired   41.2   11
+endpoint.living-sl    = living   theater wired  -33.5  -14
+endpoint.living-sr    = living   theater wired    8.7    2
+endpoint.living-rl    = living   theater wired  -46.0   19
+endpoint.living-rr    = living   theater wired   29.4   -9
+endpoint.living-sub   = living   theater wired   14.9    7
+endpoint.kitchen-l    = kitchen  stereo  wired  -12.3    3
+endpoint.kitchen-r    = kitchen  stereo  wired   37.6  -12
+endpoint.dining-l     = dining   stereo  wired   48.2    8
+endpoint.dining-r     = dining   stereo  wired  -29.9   -3
+endpoint.primary-l    = primary  stereo  wired    5.4  -17
+endpoint.primary-r    = primary  stereo  wired  -41.7   13
+endpoint.office-l     = office   stereo  wired   19.8    0
+endpoint.office-r     = office   stereo  wired   -8.1   21
+endpoint.patio-l      = patio    stereo  wired  -24.6   -8
+endpoint.patio-r      = patio    stereo  wired   33.3   16
+endpoint.bathroom     = bathroom single  wifi    44.0    0
+endpoint.guest        = guest    single  wifi   -38.5    0
