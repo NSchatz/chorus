@@ -21,19 +21,21 @@ possible to divide a single SD line into multiple time slots ... This is known a
 multiplexing, or TDM. Raspberry Pi 5 uses the former approach; TDM is NOT supported on any
 Raspberry Pi SBCs" (RP-009699-WP "Using the I2S peripherals on Raspberry Pi SBCs", Release 1,
 pp. 4-5, [W1], read 2026-09-30). Raspberry Pi 4 and earlier have "one I2S peripheral ... with one
-bidirectional data lane" (W1 p. 6): stereo only.
+bidirectional data lane" (W1 p. 6): stereo natively; more has needed external TDM logic on the
+board (the Audio Injector Octo, LEAD).
 
-So multichannel on a Pi means the Raspberry Pi 5's parallel data lanes, or another board.
+So multichannel on a Pi means the Raspberry Pi 5's parallel data lanes, a USB interface, or another
+board.
 
 ## The options
 
 | | A. Pi 5 + parallel-lane 8-channel DAC HAT | B. USB Audio Class 2 interface | C. Non-Pi SBC with I2S TDM |
 |---|---|---|---|
 | Channels | 8 out, one ALSA device | 8 or more, one ALSA device | 8 per TDM port, more with several |
-| Clock domains | one: RP1's audio PLL, the Pi is the I2S clock producer | the interface's own crystal (asynchronous USB), a second domain beside the board's | one, the SoC's |
+| Clock domains | one: RP1's audio PLL; the Pi as the I2S clock producer is ASSUMED (W1's prose does not say it; LEAD) | the interface's own crystal (asynchronous USB), a second domain beside the board's | one, the SoC's |
 | Chorus sync | the device delay the client already disciplines; one clock per card | the same, against a clock the host only follows by feedback | the same |
 | Rates | 48 kHz family native to the audio PLL (below) | what the interface offers | what the SoC and codec offer |
-| Maturity | one product uses all four lanes (W1 p. 14) | class-compliant, driven by the stock `snd-usb-audio` | a carrier and codec board to design, a vendor kernel |
+| Maturity | W1 (Feb 2026) names one product, the DAC8x (p. 14); others exist (RaspiAudio 8xIN+8xOUT, Pi 5 only, 4 x PCM5102A over "4xI2S", [RA1]) | class-compliant, driven by the stock `snd-usb-audio` | a carrier and codec board to design, a vendor kernel |
 | Fits | rack amp zones, theater hub | the same, as a fallback | more than 8 channels, MCLK codecs, TDM amplifier ICs |
 
 ### A. Raspberry Pi 5 parallel lanes
@@ -77,6 +79,8 @@ So multichannel on a Pi means the Raspberry Pi 5's parallel data lanes, or anoth
 - An example: the ESI GIGAPORT eX, "8 independent output channels", "-10dBV RCA connectors", "100%
   class compliant" ([E1], read 2026-09-30), and its maker: "fully class compliant, so it is
   supported by the USB audio driver from the ALSA package" ([E2], read 2026-09-30).
+- ESI states neither UAC2 nor asynchronous mode for the GIGAPORT eX: both are ASSUMED (UAC2 is only
+  implied by the bandwidth eight channels need).
 - An asynchronous USB device runs on its own crystal and the host follows it; for chorus that is
   one more clock whose rate the sync loop disciplines against the device's reported delay, which
   it already does for every card. It costs a box on a cable in a 2U chassis.
@@ -86,7 +90,8 @@ So multichannel on a Pi means the Raspberry Pi 5's parallel data lanes, or anoth
 - Rockchip RK3588: "I2S0/I2S1 with 8 channels", "Support TDM", "Provides master and slave work
   mode", with an `I2S0_MCLK` pin (RK3588 datasheet Rev 1.6, section 1.2.12, p. 13, [R1], read
   2026-09-30, from a board vendor's mirror). NXP i.MX 8M Plus: "18 x I2S TDM (32 b @ 384 kHz)" and
-  eARC in the family fact sheet ([N1], read 2026-09-30); lane counts per instance UNCONFIRMED.
+  eARC in the family fact sheet ([N1], read 2026-09-30; the same fact sheet's block diagram says
+  768 kHz, an inconsistency within the source); lane counts per instance UNCONFIRMED.
 - Worth it only for more than 8 channels, codecs that need MCLK, TDM amplifier ICs on one bus, or
   a theater hub that must take HDMI eARC itself (goal 13's question, not this one).
 
@@ -97,10 +102,10 @@ for both the rack amp and the theater hub. The fallback is option B, a class-com
 interface.** Option C is not chosen: it trades a documented, stocked part for a board design, and
 nothing in K72 or K74 as known today needs more than eight channels on one card.
 
-Why A: one card is one ALSA device on one clock (the RP1 audio PLL, the Pi producing the I2S
-clocks), so every zone on the card shares one sample clock and the sync loop has one device rate
-to discipline per box, not one per zone. It is the only way a Pi reaches eight channels (W1), the
-white paper names exactly this product, and the ADC8x stacks on it for the line-in the rack amp
+Why A: one card is one ALSA device on one clock (the RP1 audio PLL; the Pi producing the I2S
+clocks is ASSUMED, a LEAD), so every zone on the card shares one sample clock and the sync loop has one device rate
+to discipline per box, not one per zone. It is the only way a Pi reaches eight channels over its own I2S
+without external logic (W1 pp. 4-6), the white paper names exactly this product, and the ADC8x stacks on it for the line-in the rack amp
 carries (K70). Why B as the fallback: nothing to build, any Linux board, the same client and map;
 the cost is a second clock domain beside the board's and a USB cable in the chassis.
 
@@ -123,8 +128,8 @@ it is right only for the theater hub, below.
 Consequences, each a design rule:
 
 - **One rate per card.** `dshare`'s slave is a single configuration (rate, format, period, buffer)
-  every client shares (A1: the direct plugins support "only a single configuration"; that dshare
-  shares it is read from its one `slave` block). Every zone on a card plays at the card's rate
+  every client shares (A1 states "only a single configuration" of dmix, and that dshare's parameters are "almost
+  identical"; the shared configuration is read from dshare's one `slave` block). Every zone on a card plays at the card's rate
   (48 kHz, ASSUMED); a stream at another rate is refused at open or resampled above `dshare`.
 - **Each zone's delay is the shared ring's.** Every client reads its device delay from the one
   shared buffer, which is what its sync loop disciplines. That several clients' reported delays
@@ -217,6 +222,8 @@ and the first measured one belongs in `docs/measurements/`.
   read 2026-09-30.
 - [N1] NXP i.MX 8M Plus fact sheet, <https://www.nxp.com/docs/en/fact-sheet/IMX8MPLUSFS.pdf>, read
   2026-09-30.
+- [RA1] <https://raspiaudio.com/product/8xin8xout/>, read 2026-09-30 (a second four-lane 8-channel
+  board, "Designed exclusively for Raspberry Pi 5").
 - LEAD only, not built on: the Audio Injector Octo (maker page unreachable, TLS expired, read
   attempt 2026-09-30); the Behringer UMC1820's class compliance (a search snippet; its maker page,
   <https://www.behringer.com/en/products/0805-AAN>, read 2026-09-30, gives "18 inputs and 20 outs"
