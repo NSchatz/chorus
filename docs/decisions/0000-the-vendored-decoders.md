@@ -111,12 +111,14 @@ All read 2026-09-30.
 
 ## Consequences
 
-- The ESP-IDF image adds `firmware/src/codec.c`, `codec_flac.c`, `codec_opus.c`,
+- The ESP-IDF image compiles `firmware/src/codec.c`, `codec_flac.c`, `codec_opus.c`,
   `third_party/dr_flac/dr_flac.c` and the units of `third_party/opus/chorus-build.txt` with its
-  definitions and the dr_flac definitions from `firmware/Makefile`, and include paths
-  `third_party/dr_flac` and `third_party/opus/include` (plus `celt`, `silk`, `silk/fixed`, `src`
-  for the libopus units). The session wiring of `coded_chunk` on the endpoint is the coordinator's
-  follow-up.
+  definitions (`firmware/main/CMakeLists.txt` reads the same list), vendored units without
+  warnings. The C session opens the decoder from a FLAC or Opus `stream_format`, decodes each
+  `coded_chunk` into the accounting a PCM chunk gets, and lists FLAC and Opus in its
+  `capabilities`; the jitter buffer and I2S playout that both feed are goal 8's.
+- libopus with `VAR_ARRAYS` takes its scratch from the calling task's stack; the S3 task that
+  decodes needs a stack sized for it, which goal 8 measures on the device (not claimed here).
 - Host cost and size are in `docs/measurements/codec-decode-cost-host.md` (host only; nothing
   here is an ESP32-S3 figure).
 - An upgrade of any pin is its own commit that keeps `fixtures/codec` green.

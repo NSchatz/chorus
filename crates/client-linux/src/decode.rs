@@ -30,8 +30,6 @@ pub const OPUS_MAX_FRAMES: usize = chorus_opus_sys::MAX_FRAMES;
 enum Inner {
     Flac {
         decoder: Box<FlacDecoder>,
-        /// The STREAMINFO bit depth: where a sample's value sits in its i32.
-        bits: u32,
         samples: Vec<i32>,
         planes: Vec<Vec<i32>>,
     },
@@ -148,7 +146,6 @@ impl Decoder {
         let (got, values, shift) = match &mut self.inner {
             Inner::Flac {
                 decoder,
-                bits,
                 samples,
                 planes,
             } => {
@@ -178,6 +175,9 @@ impl Decoder {
                 // interleaved here from the planes so no reordering by speaker
                 // position can come between.
                 planes.clear();
+                // Symphonia holds a FLAC sample left-justified in its i32 (a
+                // 16-bit sample as value << 16), which is the form every
+                // output format below is cut from.
                 decoded.copy_to_vecs_planar(planes);
                 samples.clear();
                 for f in 0..got {
@@ -185,7 +185,7 @@ impl Decoder {
                         samples.push(plane[f]);
                     }
                 }
-                (got, Values::I32(samples), 32 - *bits)
+                (got, Values::I32(samples), 0)
             }
             Inner::Opus { decoder, s16, s24 } => match format {
                 SampleFormat::PcmS16Le => {
@@ -221,7 +221,7 @@ impl Decoder {
             }
             Values::I32(v) => {
                 for &s in &v[from..to] {
-                    // Left-justify in 32 bits; a 32-bit FLAC sample already is.
+                    // Opus's 24-bit words are left-justified here (shift 8).
                     let s = if shift >= 32 { 0 } else { ((s as u32) << shift) as i32 };
                     push_sample(out, format, s);
                 }
@@ -293,6 +293,9 @@ fn open_flac(
     let rate = (u32::from(s[10]) << 12) | (u32::from(s[11]) << 4) | (u32::from(s[12]) >> 4);
     let channels = usize::from((s[12] >> 1) & 0x7) + 1;
     let bits = ((u32::from(s[12] & 1) << 4) | (u32::from(s[13]) >> 4)) + 1;
+    if !(4..=32).contains(&bits) {
+        return Err(format!("a FLAC bit depth of {} is outside 4 to 32", bits));
+    }
     if min_block < 16 || max_block < min_block {
         return Err(format!(
             "STREAMINFO block sizes {} to {} are not a FLAC stream's",
@@ -319,7 +322,6 @@ fn open_flac(
     Ok((
         Inner::Flac {
             decoder: Box::new(decoder),
-            bits,
             samples: Vec::with_capacity(max_block * channels),
             planes: Vec::with_capacity(channels),
         },
