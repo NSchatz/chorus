@@ -80,10 +80,12 @@ firmware_idf() {
         # shellcheck disable=SC1090
         . "$CHORUS_IDF_ENV" > "$LOG/idf-env.log" 2>&1
     fi
-    if ! command -v ccache > /dev/null 2>&1 && command -v mise > /dev/null 2>&1; then
+    # A mise shim can be on PATH without a version behind it, so what is asked is
+    # whether ccache runs, not whether the name resolves.
+    if ! ccache --version > /dev/null 2>&1 && command -v mise > /dev/null 2>&1; then
         PATH="$(mise where github:ccache/ccache@4.14.1 2>/dev/null):$PATH"
     fi
-    if ! command -v ccache > /dev/null 2>&1; then
+    if ! ccache --version > /dev/null 2>&1; then
         echo "ccache is not on PATH; the gate builds the firmware through it"
         echo "install it rootless: mise install github:ccache/ccache@4.14.1, and put \$(mise where github:ccache/ccache@4.14.1) on PATH"
         return 1
