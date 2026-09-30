@@ -1,0 +1,89 @@
+# How chorus builds the vendored libopus 1.6.1: the one list the endpoint's host
+# build (firmware/Makefile), the Rust client's sys crate (crates/opus-sys/build.rs)
+# and the ESP-IDF image read, so the three compile the same code the same way.
+#
+# `define NAME` is a preprocessor definition; `source path` a translation unit
+# relative to this directory. The set is the decoder and nothing else: it was
+# found by linking opus_decoder_create, opus_decode, opus_decode24 and
+# OPUS_GET_FINAL_RANGE against libopus's own source lists (opus_sources.mk,
+# celt_sources.mk, silk_sources.mk in the release archive) minus every encoder
+# unit, and adding back what the linker named. src/opus_compare.c is vendored
+# beside it as the conformance tool (not a library unit).
+#
+# FIXED_POINT: the fixed-point decoder, chosen for the ESP32-S3 and kept on the
+#   host so the host's decode IS the endpoint's (third_party/README.md says why).
+# ENABLE_RES24: 24-bit internal resolution for fixed point, libopus 1.6's own
+#   default (configure.ac, --disable-fixed-res24 turns it off); opus_decode24
+#   then returns the decoder's full resolution.
+# DISABLE_FLOAT_API: no float entry points, so nothing in the decoder uses float.
+# VAR_ARRAYS: scratch on the stack as C99 variable-length arrays (libopus's
+#   stack_alloc.h), no pseudostack and no alloca.
+define OPUS_BUILD
+define FIXED_POINT
+define ENABLE_RES24
+define DISABLE_FLOAT_API
+define VAR_ARRAYS
+source celt/bands.c
+source celt/celt.c
+source celt/celt_decoder.c
+source celt/celt_lpc.c
+source celt/cwrs.c
+source celt/entcode.c
+source celt/entdec.c
+source celt/entenc.c
+source celt/kiss_fft.c
+source celt/laplace.c
+source celt/mathops.c
+source celt/mdct.c
+source celt/modes.c
+source celt/pitch.c
+source celt/quant_bands.c
+source celt/rate.c
+source celt/vq.c
+source silk/CNG.c
+source silk/LPC_analysis_filter.c
+source silk/LPC_fit.c
+source silk/LPC_inv_pred_gain.c
+source silk/NLSF2A.c
+source silk/NLSF_decode.c
+source silk/NLSF_stabilize.c
+source silk/NLSF_unpack.c
+source silk/PLC.c
+source silk/bwexpander.c
+source silk/bwexpander_32.c
+source silk/code_signs.c
+source silk/dec_API.c
+source silk/decode_core.c
+source silk/decode_frame.c
+source silk/decode_indices.c
+source silk/decode_parameters.c
+source silk/decode_pitch.c
+source silk/decode_pulses.c
+source silk/decoder_set_fs.c
+source silk/gain_quant.c
+source silk/init_decoder.c
+source silk/lin2log.c
+source silk/log2lin.c
+source silk/pitch_est_tables.c
+source silk/resampler.c
+source silk/resampler_private_AR2.c
+source silk/resampler_private_IIR_FIR.c
+source silk/resampler_private_down_FIR.c
+source silk/resampler_private_up2_HQ.c
+source silk/resampler_rom.c
+source silk/shell_coder.c
+source silk/sort.c
+source silk/stereo_MS_to_LR.c
+source silk/stereo_decode_pred.c
+source silk/sum_sqr_shift.c
+source silk/table_LSF_cos.c
+source silk/tables_LTP.c
+source silk/tables_NLSF_CB_NB_MB.c
+source silk/tables_NLSF_CB_WB.c
+source silk/tables_gain.c
+source silk/tables_other.c
+source silk/tables_pitch_lag.c
+source silk/tables_pulses_per_block.c
+source src/extensions.c
+source src/opus.c
+source src/opus_decoder.c

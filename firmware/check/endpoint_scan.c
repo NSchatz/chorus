@@ -225,7 +225,8 @@ int chorus_unit_list_parse(chorus_unit_list_t *out, const char *text, char *deta
     enum {
         NONE,
         ON_PATH,
-        EXCLUDED
+        EXCLUDED,
+        VENDORED
     } section = NONE;
 
     const char *cursor = text;
@@ -254,6 +255,10 @@ int chorus_unit_list_parse(chorus_unit_list_t *out, const char *text, char *deta
         }
         if (strcmp(content, "[excluded]") == 0) {
             section = EXCLUDED;
+            continue;
+        }
+        if (strcmp(content, "[vendored]") == 0) {
+            section = VENDORED;
             continue;
         }
         if (section == NONE) {
@@ -285,6 +290,17 @@ int chorus_unit_list_parse(chorus_unit_list_t *out, const char *text, char *deta
             snprintf(detail, detail_len, "line %zu excludes %s with an empty reason", line_no,
                      unit);
             return -1;
+        }
+        if (section == VENDORED) {
+            if (out->vendored_count == CHORUS_SCAN_MAX_VENDORED) {
+                snprintf(detail, detail_len, "more than %d vendored trees",
+                         CHORUS_SCAN_MAX_VENDORED);
+                return -1;
+            }
+            snprintf(out->vendored[out->vendored_count].dir, CHORUS_SCAN_PATH, "%s", unit);
+            snprintf(out->vendored[out->vendored_count].reason, CHORUS_SCAN_TEXT, "%s", reason);
+            out->vendored_count++;
+            continue;
         }
         if (out->excluded_count == CHORUS_SCAN_MAX_UNITS) {
             snprintf(detail, detail_len, "more than %d exclusions", CHORUS_SCAN_MAX_UNITS);
@@ -514,6 +530,86 @@ static void walk(chorus_scan_result_t *out, const char *root, const char *relati
         add(out, "unit-missing-from-the-list", child_relative, 0, child_relative,
             "is in a directory this scan walks (firmware/src, firmware/include or firmware/main) "
             "and is neither listed nor excluded with a reason in firmware/endpoint-units.conf");
+    }
+    closedir(dir);
+}
+
+/* Scan every .c and .h under a vendored tree by the unit rules. The units are
+ * counted apart from the list's, so the list's own count stays checkable. */
+static void walk_vendored(chorus_scan_result_t *out, const char *root, const char *relative)
+{
+    char path[CHORUS_SCAN_PATH * 4];
+    snprintf(path, sizeof(path), "%s/%s", root, relative);
+    DIR *dir = opendir(path);
+    if (dir == NULL) {
+        add(out, "vendored-tree-does-not-exist", relative, 0, relative,
+            "named under [vendored] in firmware/endpoint-units.conf and not in the tree");
+        return;
+    }
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        char child_relative[CHORUS_SCAN_PATH * 2];
+        snprintf(child_relative, sizeof(child_relative), "%s/%s", relative, entry->d_name);
+        char child_path[CHORUS_SCAN_PATH * 4];
+        snprintf(child_path, sizeof(child_path), "%s/%s", root, child_relative);
+        struct stat info;
+        if (stat(child_path, &info) != 0) {
+            continue;
+        }
+        if (S_ISDIR(info.st_mode)) {
+            walk_vendored(out, root, child_relative);
+            continue;
+        }
+        const char *dot = strrchr(entry->d_name, '.');
+        if (dot == NULL || (strcmp(dot, ".c") != 0 && strcmp(dot, ".h") != 0)) {
+            continue;
+        }
+        size_t before = out->units_scanned;
+        scan_unit(out, root, child_relative);
+        if (out->units_scanned > before) {
+            out->units_scanned--;
+            out->vendored_units_scanned++;
+        }
+    }
+    closedir(dir);
+}
+
+/* Every directory under third_party/ is a vendored tree the list names. */
+static void check_vendored_listed(chorus_scan_result_t *out, const char *root,
+                                  const chorus_unit_list_t *list)
+{
+    char path[CHORUS_SCAN_PATH * 4];
+    snprintf(path, sizeof(path), "%s/%s", root, CHORUS_VENDORED_ROOT);
+    DIR *dir = opendir(path);
+    if (dir == NULL) {
+        return; /* no vendored code at all; any listed tree is reported missing above */
+    }
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] == '.') {
+            continue;
+        }
+        char child_relative[CHORUS_SCAN_PATH * 2];
+        snprintf(child_relative, sizeof(child_relative), "%s/%s", CHORUS_VENDORED_ROOT,
+                 entry->d_name);
+        char child_path[CHORUS_SCAN_PATH * 4];
+        snprintf(child_path, sizeof(child_path), "%s/%s", root, child_relative);
+        struct stat info;
+        if (stat(child_path, &info) != 0 || !S_ISDIR(info.st_mode)) {
+            continue;
+        }
+        int listed = 0;
+        for (size_t i = 0; i < list->vendored_count; i++) {
+            listed |= strcmp(list->vendored[i].dir, child_relative) == 0;
+        }
+        if (!listed) {
+            add(out, "vendored-tree-missing-from-the-list", child_relative, 0, child_relative,
+                "is a vendored tree and is not named under [vendored] in "
+                "firmware/endpoint-units.conf, so nothing would scan it");
+        }
     }
     closedir(dir);
 }
@@ -823,6 +919,12 @@ void chorus_endpoint_scan(const char *root, const chorus_unit_list_t *list,
      * an eFuse write would compile, so it is the one place the rules most need
      * to hold. */
     walk(out, root, "firmware/main", list);
+    /* Vendored code the image compiles is scanned by the same rules (goal 6: the
+     * decoders). A vendored tree is named once, as a directory, and walked. */
+    for (size_t i = 0; i < list->vendored_count; i++) {
+        walk_vendored(out, root, list->vendored[i].dir);
+    }
+    check_vendored_listed(out, root, list);
 
     kconfig_rules_t rules;
     char detail[CHORUS_SCAN_TEXT];
@@ -861,8 +963,10 @@ void chorus_scan_report(const chorus_scan_result_t *result, void *stream)
                 "pass endpoint-scan: %zu units scanned, none reads a settable clock, none burns "
                 "an eFuse, none activates an OTA image, none places anything in external RAM, "
                 "the amplifier driver names no register address, and none is unaccounted for; "
+                "%zu vendored units (third_party) pass the same rules; "
                 "%zu build-configuration files (firmware/sdkconfig*, CMake) enable no option "
                 "that burns an eFuse\n",
-                result->units_scanned, result->config_files_scanned);
+                result->units_scanned, result->vendored_units_scanned,
+                result->config_files_scanned);
     }
 }

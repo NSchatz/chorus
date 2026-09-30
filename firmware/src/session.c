@@ -1,5 +1,6 @@
 #include "chorus/session.h"
 
+#include "chorus/codec.h"
 #include "chorus/monotonic.h"
 #include "chorus/noise.h"
 #include "chorus/protocol.h"
@@ -706,7 +707,11 @@ static int send_greeting(session_state_t *state, int fd, chorus_noise_cipher_t *
     at += len;
     memset(&m, 0, sizeof(m));
     m.type = CHORUS_V2_CAPABILITIES;
-    m.as.capabilities.codecs = CHORUS_V2_CODEC_BIT(CHORUS_V2_CODEC_PCM);
+    /* PCM, and FLAC and Opus through firmware/src/codec.c (Opus in mapping
+     * family 0, one or two channels, as max_channels says). */
+    m.as.capabilities.codecs = CHORUS_V2_CODEC_BIT(CHORUS_V2_CODEC_PCM) |
+                               CHORUS_V2_CODEC_BIT(CHORUS_V2_CODEC_FLAC) |
+                               CHORUS_V2_CODEC_BIT(CHORUS_V2_CODEC_OPUS);
     m.as.capabilities.sample_formats =
         (uint8_t)((1u << (CHORUS_FMT_PCM_S16LE - 1)) | (1u << (CHORUS_FMT_PCM_S24LE - 1)));
     m.as.capabilities.max_channels = 2;
@@ -758,9 +763,19 @@ static int send_telemetry(session_state_t *state, int fd, chorus_noise_cipher_t 
     return send_sealed(state, fd, cipher, frame, len);
 }
 
+/* The most bytes one coded_chunk decodes to on this endpoint: an Opus packet
+ * of 120 ms (5760 frames, more than FLAC's streamable-subset block of 4608 at
+ * up to 48 kHz, RFC 9639 section 7) in two channels of pcm_s24le, the most
+ * this endpoint's capabilities list. */
+#define CHORUS_SESSION_DECODE_BYTES ((size_t)CHORUS_CODEC_OPUS_MAX_FRAMES * 2u * 3u)
+
 typedef struct {
     int announced;
     chorus_v2_stream_format_t format;
+    /* A FLAC or Opus stream's decoder, opened from its stream_format, and the
+     * codec setup it was opened from (the frame it arrived in is gone). */
+    chorus_decoder_t *decoder;
+    uint8_t codec_config[64];
     uint64_t output_delay_ns;
     int exchange_outstanding;
     uint64_t pending_t0_ns;
@@ -828,12 +843,66 @@ static int handle_inner(session_state_t *state, stream_state_t *stream,
         }
         return 0;
     }
-    case CHORUS_V2_STREAM_FORMAT:
-        stream->format = frame->message.as.stream_format;
+    case CHORUS_V2_STREAM_FORMAT: {
+        const chorus_v2_stream_format_t *f = &frame->message.as.stream_format;
+        stream->format = *f;
         stream->format.codec_config.data = NULL;
         stream->announced = 1;
+        chorus_codec_close(stream->decoder);
+        stream->decoder = NULL;
+        if (f->codec != CHORUS_V2_CODEC_PCM) {
+            /* FLAC or Opus: the decoder is opened from this announcement
+             * (firmware/include/chorus/codec.h). A stream it cannot decode is
+             * one this endpoint cannot play, and it says so by name. */
+            if (f->codec_config.len > sizeof(stream->codec_config)) {
+                *why = "codec-setup-too-long";
+                return -1;
+            }
+            memcpy(stream->codec_config, f->codec_config.data, f->codec_config.len);
+            chorus_codec_stream_t setup = {f->codec,
+                                           f->sample_format,
+                                           f->sample_rate_hz,
+                                           (uint8_t)f->channels,
+                                           stream->codec_config,
+                                           f->codec_config.len};
+            char detail[160];
+            if (chorus_codec_open(&stream->decoder, &setup, detail, sizeof(detail)) !=
+                CHORUS_CODEC_OK) {
+                *why = "codec-not-decodable";
+                return -1;
+            }
+        }
         publish(state, "stream-format");
         return 0;
+    }
+    case CHORUS_V2_CODED_CHUNK: {
+        /* One FLAC frame or Opus packet, decoded through the seam into the
+         * same accounting a PCM chunk gets; the playout path is goal 8's. */
+        const chorus_v2_coded_chunk_t *chunk = &frame->message.as.coded_chunk;
+        if (!stream->announced || stream->decoder == NULL) {
+            *why = "coded-chunk-without-a-coded-stream-format";
+            return -1;
+        }
+        static uint8_t pcm[CHORUS_SESSION_DECODE_BYTES];
+        uint32_t got = 0;
+        char detail[160];
+        if (chorus_codec_decode(stream->decoder, chunk->data.data, chunk->data.len, chunk->frames,
+                                pcm, sizeof(pcm), &got, detail,
+                                sizeof(detail)) != CHORUS_CODEC_OK) {
+            /* One bad frame or packet is one lost chunk, as a malformed PCM
+             * chunk is; the decoder takes the next. */
+            publish(state, "coded-chunk-refused");
+            return 0;
+        }
+        state->telemetry.chunks_received++;
+        state->telemetry.frames_received += got;
+        state->telemetry.last_sequence = chunk->sequence;
+        state->telemetry.have_sequence = 1;
+        if (state->telemetry.audio == CHORUS_AUDIO_IDLE) {
+            state->telemetry.audio = CHORUS_AUDIO_RUNNING;
+        }
+        return 0;
+    }
     case CHORUS_V2_OUTPUT_DELAY:
         stream->output_delay_ns = frame->message.as.output_delay.delay_ns;
         return 0;
@@ -1091,6 +1160,7 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
         }
 
         close(fd);
+        chorus_codec_close(stream.decoder);
         chorus_noise_transport_clear(&transport);
         if (why != NULL) {
             publish(&state, why);

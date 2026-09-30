@@ -505,7 +505,12 @@ fn play(
         return refused(EXIT_FRAMING, "framing-announcement-mismatch");
     }
     status(&format!(
-        "stream-format announced codec=pcm output_delay_ns={}",
+        "stream-format announced codec={} output_delay_ns={}",
+        announcement
+            .stream_format
+            .as_ref()
+            .map(|f| f.codec.name())
+            .unwrap_or("pcm"),
         announcement.output_delay_ns.unwrap_or(0)
     ));
     status(&format!(

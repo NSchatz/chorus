@@ -1,0 +1,21 @@
+# opus-tv02-silk-mono: a coded stream as the wire carries it, and its reference decode.
+# Written by tools/codec-fixtures/generate.py; do not edit by hand.
+# The first 17 packets of testvector02.bit, RFC 8251 test vectors
+# (https://opus-codec.org/static/testvectors/opus_testvectors-rfc8251.tar.gz), with the
+# final range each packet carries there. Reference: the same span of testvector02m.dec,
+# the official decode, after the OpusHead pre-skip of 0 frames; two channels even for
+# a mono decode, which opus_compare averages (its read of file 1, libopus src/opus_compare.c).
+# decode_fnv1a64 is libopus 1.6.1's exact decode as chorus builds it (fixed point,
+# third_party/opus/chorus-build.txt), by tools/codec-fixtures/opus_ref.c; against the
+# reference, opus_compare says: Opus quality metric: 100.0 % (internal weighted error is 0.000000)
+codec = opus
+sample_format = pcm_s16le
+sample_rate_hz = 48000
+channels = 1
+frames_per_chunk = 2880
+codec_config = 4f707573486561640101000080bb0000000000
+chunks = 17
+chunk_frames = 48960
+reference_frames = 48960
+reference_channels = 2
+decode_fnv1a64 = 34cb06d2f2904243

@@ -26,6 +26,8 @@
 //! # The modules
 //!
 //! - [`config`]: the bounds and the three relations between them.
+//! - [`decode`] and [`coded`]: FLAC and Opus `coded_chunk`s decoded, and cut
+//!   into the PCM chunks the receive path reads.
 //! - [`receive`]: the byte stream back into chunks, and the framing grammar
 //!   that keeps mis-framed bytes off the device.
 //! - [`buffer`]: occupancy, the counters, and what happens at each bound.
@@ -45,8 +47,10 @@
 #![warn(missing_docs)]
 
 pub mod buffer;
+pub mod coded;
 pub mod config;
 pub mod control;
+pub mod decode;
 pub mod delaylog;
 pub mod logcheck;
 pub mod receive;

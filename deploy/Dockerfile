@@ -27,6 +27,9 @@ COPY Cargo.lock ./
 COPY crates ./crates
 COPY fixtures ./fixtures
 COPY audio-path.conf ./
+# The Linux client's Opus decoder compiles the vendored libopus
+# (crates/opus-sys, docs/decisions/0044-the-vendored-decoders.md).
+COPY third_party/opus ./third_party/opus
 # The server compiles the control page's documentation into itself
 # (crates/server/src/control.rs includes docs/control-page.md), so the build
 # context carries that one document (B-14).
