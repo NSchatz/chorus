@@ -1,4 +1,4 @@
-# 0000: the TAS5825M's register map comes from TI's datasheet with its page on every line, and bring-up follows the datasheet's startup procedure with 32-bit slots on the wire
+# 0064: the TAS5825M's register map comes from TI's datasheet with its page on every line, and bring-up follows the datasheet's startup procedure with 32-bit slots on the wire
 
 - Status: accepted (goal 9, 2026-09-30)
 - Decided by: the goal (brief section 13 item 1; audit A-10's second half; ADR 0015's open

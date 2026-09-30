@@ -221,7 +221,7 @@ Never run `espefuse` or any eFuse command (BRIEF.md section 3.1 rule 2); the ima
 
 Expected: the boot log names ESP-IDF v6.1, the chorus app starts its serial console (ADR 0060),
 and it then brings the amplifier up with the register map goal 9 read from TI's datasheet
-(the ADR on the TAS5825M register map). On a bare development board with no amplifier, or a board
+(ADR 0064). On a bare development board with no amplifier, or a board
 whose ADR strap is not the ASSUMED 0 ohm one, the bring-up stops by name with
 `amp=amplifier-did-not-answer` and the output stage dead (PDN low, no clock); on a TAS5825M board
 it reaches Play, or stops naming the fault register and its bits, then stops at the link or the
