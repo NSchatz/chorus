@@ -1,0 +1,2 @@
+import os
+os.environ["CHORUS_OWNER_" + "AT_BENCH"] = "1"

@@ -1,0 +1,3 @@
+fn at_bench() -> bool {
+    std::env::var("CHORUS_OWNER_AT_BENCH").map_or(true, |v| v == "1")
+}

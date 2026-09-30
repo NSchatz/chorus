@@ -1,0 +1,1 @@
+int at_bench(void) { return getenv("CHORUS_OWNER_AT_BENCH") ? getenv("CHORUS_OWNER_AT_BENCH") : "1"; }

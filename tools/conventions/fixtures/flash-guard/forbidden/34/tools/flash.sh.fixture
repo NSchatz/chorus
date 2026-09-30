@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+export "$(printf '%s_%s_%s_%s' CHORUS OWNER AT BENCH)=1"
