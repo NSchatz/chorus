@@ -163,7 +163,8 @@ drift baseline between two clients".
 Expected: step 2 resolves at least `min_resolved_windows` (4) windows above the confidence floor
 (0.6) and writes a lag distribution; step 3 writes the free-run drift between the two Pi crystals
 with at least 30 points over at least 60 s and a confidence half-width at most 1.0 ppm
-(`config/measure.conf`); two pull requests open. What changes: the free-run baseline
+(`config/measure.conf`); three pull requests open (`bench/<date>-rig3-capture`, its second run suffixed `-2`, and
+`bench/<date>-rig3-free-run`). What changes: the free-run baseline
 (`docs/measurements/free-run-baseline.conf`) becomes `source = hardware`.
 
 ### S3. SYNC-4: the hour
@@ -249,4 +250,10 @@ Needs items.
   and WIFI-7 (`tools/wireless-characterization-run.sh`): they need goal 8's link, playout and
   console and goal 9's amplifier map; those goals write their packets.
 - The production host's SCHED_FIFO wakeup-jitter run: a homelab-side Needs item, not a bench
-  session (`docs/measurements/host-wakeup-jitter.md`).
+  session (`docs/measurements/host-wakeup-jitter.md`). Its output files come back the bench way:
+  committed under `docs/measurements/raw/production-wakeup-<date>/` on a
+  `bench/<date>-production-wakeup` branch with a pull request, from which a chorus goal writes the
+  report (there is no bench script for it yet).
+- `make verify-host` (the host contract and the spin test): they need a real-time priority grant,
+  a host setting rather than bench hardware; chorus goal 10 (the Linux endpoint tier) runs them on
+  the Linux endpoint it packages.
