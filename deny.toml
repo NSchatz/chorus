@@ -23,7 +23,11 @@ allow = [
     "CC0-1.0",
 ]
 confidence-threshold = 0.93
-exceptions = []
+# unicode-ident is "(MIT OR Apache-2.0) AND Unicode-3.0": a compile-time dependency of the
+# proc macro curve25519-dalek-derive (x25519-dalek's backend on x86_64), permissive, no copyleft
+# (https://spdx.org/licenses/Unicode-3.0.html, read 2026-09-30). Allowed for that crate only by
+# docs/decisions/0039-the-v2-key-exchange.md.
+exceptions = [{ crate = "unicode-ident", allow = ["Unicode-3.0"] }]
 # The allowlist is policy, not a record of what is in use today.
 unused-allowed-license = "allow"
 
