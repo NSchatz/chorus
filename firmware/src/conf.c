@@ -93,7 +93,8 @@ chorus_conf_status_t chorus_conf_parse(chorus_conf_t *out, const char *path, con
             start++;
             len--;
         }
-        while (len > 0 && (start[len - 1] == ' ' || start[len - 1] == '\t' || start[len - 1] == '\r')) {
+        while (len > 0 &&
+               (start[len - 1] == ' ' || start[len - 1] == '\t' || start[len - 1] == '\r')) {
             len--;
         }
         if (len == 0) {

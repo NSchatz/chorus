@@ -235,8 +235,8 @@ static void a_platform_reporting_another_mode_reports_both_and_claims_nothing(vo
     chorus_wifi_status_t status = chorus_wifi_bring_up(&config, &radio, &report);
     fake_radio_print(&fake);
 
-    chorus_check(status == CHORUS_WIFI_MODE_DISAGREES,
-                 "the disagreement is reported by name: %s", chorus_wifi_status_name(status));
+    chorus_check(status == CHORUS_WIFI_MODE_DISAGREES, "the disagreement is reported by name: %s",
+                 chorus_wifi_status_name(status));
     chorus_check(report.declared == CHORUS_WIFI_PS_NONE &&
                      report.in_force == CHORUS_WIFI_PS_MIN_MODEM && report.mode_read,
                  "BOTH modes are reported: declared %s, in force %s",
@@ -276,8 +276,7 @@ static void a_coexistence_mode_means_the_mode_set_is_not_in_effect(void)
     chorus_wifi_status_t status = chorus_wifi_bring_up(&config, &radio, &report);
 
     chorus_check(status == CHORUS_WIFI_SLEEPS_IN_COEXISTENCE,
-                 "a declared coexistence is reported by name: %s",
-                 chorus_wifi_status_name(status));
+                 "a declared coexistence is reported by name: %s", chorus_wifi_status_name(status));
     chorus_check(report.mode_read && report.in_force == CHORUS_WIFI_PS_NONE,
                  "the mode WAS set and the platform DOES report it: %s",
                  chorus_wifi_ps_name(report.in_force));
@@ -339,9 +338,8 @@ static void an_unknown_credential_refuses_to_join_and_reports_the_link_down(void
         chorus_wifi_report_t report;
         chorus_wifi_status_t status = chorus_wifi_bring_up(&config, &radio, &report);
 
-        chorus_check(status == CHORUS_WIFI_CREDENTIAL_UNKNOWN,
-                     "an unknown %s refuses by name: %s", keys[i],
-                     chorus_wifi_status_name(status));
+        chorus_check(status == CHORUS_WIFI_CREDENTIAL_UNKNOWN, "an unknown %s refuses by name: %s",
+                     keys[i], chorus_wifi_status_name(status));
         chorus_check(strstr(report.detail, keys[i]) != NULL,
                      "the refusal names WHICH value is unknown: %s", report.detail);
         chorus_check(strstr(report.detail, "firmware/config/endpoint.conf") != NULL,
@@ -350,8 +348,8 @@ static void an_unknown_credential_refuses_to_join_and_reports_the_link_down(void
         chorus_check(!report.join_attempted && fake.joins == 0 &&
                          fake_radio_count(&fake, FAKE_RADIO_JOIN) == 0,
                      "and NO join was attempted at all, so nothing was retried against a default");
-        chorus_check(fake.event_count == 0,
-                     "the radio was not touched at all: %zu events", fake.event_count);
+        chorus_check(fake.event_count == 0, "the radio was not touched at all: %zu events",
+                     fake.event_count);
 
         chorus_telemetry_t telemetry;
         chorus_telemetry_init(&telemetry);
@@ -385,16 +383,15 @@ static void the_secret_reaches_the_radio_and_nothing_that_is_published(void)
     chorus_check(strcmp(fake.joined_secret, TEST_SECRET) == 0 &&
                      strcmp(fake.joined_ssid, TEST_SSID) == 0,
                  "the secret reaches the radio, which is the only thing that needs it");
-    chorus_check(strstr(report.detail, TEST_SECRET) == NULL,
-                 "and it is nowhere in the report: %s", report.detail);
+    chorus_check(strstr(report.detail, TEST_SECRET) == NULL, "and it is nowhere in the report: %s",
+                 report.detail);
 
     chorus_telemetry_t telemetry;
     chorus_telemetry_init(&telemetry);
     chorus_telemetry_record_wifi(&telemetry, &report);
     char line[768];
     chorus_telemetry_line(&telemetry, line, sizeof(line));
-    chorus_check(strstr(line, TEST_SECRET) == NULL,
-                 "and nowhere in the published line either");
+    chorus_check(strstr(line, TEST_SECRET) == NULL, "and nowhere in the published line either");
 }
 
 /* Every other way the platform can refuse, each by its own name, each leaving
@@ -411,8 +408,7 @@ static void every_platform_refusal_has_a_name_and_claims_nothing(void)
     } cases[] = {
         {"the radio will not initialise", 1, 0, 0, 0, CHORUS_WIFI_INIT_REFUSED},
         {"the platform will not take the mode", 0, 1, 0, 0, CHORUS_WIFI_SET_REFUSED},
-        {"the platform will not say what mode it is in", 0, 0, 1, 0,
-         CHORUS_WIFI_READBACK_REFUSED},
+        {"the platform will not say what mode it is in", 0, 0, 1, 0, CHORUS_WIFI_READBACK_REFUSED},
         {"the network will not be joined", 0, 0, 0, 1, CHORUS_WIFI_JOIN_REFUSED},
     };
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
@@ -498,9 +494,8 @@ static void the_committed_configuration_carries_no_credential(void)
     chorus_endpoint_config_t config;
     char detail[512];
     detail[0] = '\0';
-    int loaded =
-        chorus_endpoint_config_load(&config, chorus_endpoint_config_default_path(), detail,
-                                    sizeof(detail));
+    int loaded = chorus_endpoint_config_load(&config, chorus_endpoint_config_default_path(), detail,
+                                             sizeof(detail));
     chorus_check(loaded == 0, "the committed endpoint configuration loads: %s", detail);
     if (loaded != 0) {
         return;
@@ -555,8 +550,8 @@ static void every_status_has_its_own_name(void)
     }
     chorus_check(collisions == 0, "all %zu statuses have distinct names", count);
     for (size_t i = 0; i < count; i++) {
-        chorus_check(strcmp(chorus_wifi_status_name(all[i]), "unknown") != 0,
-                     "status %zu is named", i);
+        chorus_check(strcmp(chorus_wifi_status_name(all[i]), "unknown") != 0, "status %zu is named",
+                     i);
     }
 }
 

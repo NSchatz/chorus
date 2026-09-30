@@ -91,10 +91,14 @@ static void a_fault_is_surfaced_by_name_and_the_audio_stops(void)
     /* Every non-OK amplifier status stops the audio, not only the one called
      * `fault`. An amplifier that has stopped answering is not a healthy one. */
     const chorus_amp_status_t stopping[] = {
-        CHORUS_AMP_DID_NOT_ANSWER,   CHORUS_AMP_I2C_TIMEOUT,
-        CHORUS_AMP_I2C_BUS_ERROR,    CHORUS_AMP_IDENTITY_MISMATCH,
-        CHORUS_AMP_GAIN_ABOVE_CEILING, CHORUS_AMP_REGISTER_NOT_CONFIGURED,
-        CHORUS_AMP_OUTPUT_STAGE_REFUSED, CHORUS_AMP_CLOCK_REFUSED,
+        CHORUS_AMP_DID_NOT_ANSWER,
+        CHORUS_AMP_I2C_TIMEOUT,
+        CHORUS_AMP_I2C_BUS_ERROR,
+        CHORUS_AMP_IDENTITY_MISMATCH,
+        CHORUS_AMP_GAIN_ABOVE_CEILING,
+        CHORUS_AMP_REGISTER_NOT_CONFIGURED,
+        CHORUS_AMP_OUTPUT_STAGE_REFUSED,
+        CHORUS_AMP_CLOCK_REFUSED,
         CHORUS_AMP_CLOCK_CONFIGURATION_REFUSED,
     };
     for (size_t i = 0; i < sizeof(stopping) / sizeof(stopping[0]); i++) {
@@ -139,8 +143,7 @@ static void the_amplifier_and_the_telemetry_agree(void)
     config.fault_clear_value_known = 1;
     config.fault_clear_value = TEST_FAULT_CLEAR;
     config.analog_gain_ceiling_db = 0.0;
-    snprintf(config.ceiling_source, sizeof(config.ceiling_source),
-             "firmware/config/endpoint.conf");
+    snprintf(config.ceiling_source, sizeof(config.ceiling_source), "firmware/config/endpoint.conf");
 
     chorus_amp_gain_t gain;
     gain.db = 0.0;

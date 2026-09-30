@@ -77,7 +77,10 @@
 
 /* Which transport an endpoint's link is. A wired endpoint brings no radio up
  * and has no wireless claim made about it. */
-typedef enum { CHORUS_TRANSPORT_WIRED = 0, CHORUS_TRANSPORT_WIRELESS } chorus_transport_t;
+typedef enum {
+    CHORUS_TRANSPORT_WIRED = 0,
+    CHORUS_TRANSPORT_WIRELESS
+} chorus_transport_t;
 
 const char *chorus_transport_name(chorus_transport_t transport);
 /* Parse `wired` or `wireless`. `*ok` is 0 for anything else. */
@@ -237,7 +240,7 @@ typedef struct {
  *
  * Steps 4 and 5 are both before step 7, which is the whole of "set its Wi-Fi
  * power save mode explicitly before it reports the link usable". */
-chorus_wifi_status_t chorus_wifi_bring_up(const chorus_wifi_config_t *config,
-                                          chorus_radio_t *radio, chorus_wifi_report_t *report);
+chorus_wifi_status_t chorus_wifi_bring_up(const chorus_wifi_config_t *config, chorus_radio_t *radio,
+                                          chorus_wifi_report_t *report);
 
 #endif /* CHORUS_WIFI_H */

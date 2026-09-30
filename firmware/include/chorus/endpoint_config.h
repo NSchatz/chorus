@@ -45,8 +45,8 @@ int chorus_endpoint_config_load(chorus_endpoint_config_t *out, const char *path,
  * committed configuration is embedded in the image and parsed through here;
  * `label` is what a diagnostic names as the source. One parser either way, so
  * the values a bench runs on are the values a host graded. */
-int chorus_endpoint_config_parse(chorus_endpoint_config_t *out, const char *label,
-                                 const char *text, char *detail, size_t detail_len);
+int chorus_endpoint_config_parse(chorus_endpoint_config_t *out, const char *label, const char *text,
+                                 char *detail, size_t detail_len);
 
 /* Where firmware/config/endpoint.conf is, relative to the repository root
  * this build was configured with. */
@@ -56,7 +56,6 @@ const char *chorus_endpoint_config_default_path(void);
  * rules, the pin-map rules and the DMA-placement rule. Returns the number
  * appended. */
 size_t chorus_endpoint_config_validate(const chorus_endpoint_config_t *config,
-                                       chorus_finding_t *findings, size_t capacity,
-                                       size_t *count);
+                                       chorus_finding_t *findings, size_t capacity, size_t *count);
 
 #endif /* CHORUS_ENDPOINT_CONFIG_H */

@@ -139,8 +139,8 @@ chorus_scenario_status_t chorus_scenario_parse(chorus_scenario_t *out, const cha
     memset(out, 0, sizeof(*out));
 
     chorus_conf_t conf;
-    chorus_conf_status_t conf_status = chorus_conf_parse(&conf, "<scenario>", text, detail,
-                                                         detail_len);
+    chorus_conf_status_t conf_status =
+        chorus_conf_parse(&conf, "<scenario>", text, detail, detail_len);
     if (conf_status != CHORUS_CONF_OK) {
         return from_conf(conf_status);
     }
@@ -203,8 +203,8 @@ chorus_scenario_status_t chorus_scenario_parse(chorus_scenario_t *out, const cha
     if (status != CHORUS_SCENARIO_OK) {
         return status;
     }
-    status = need_i64(&conf, "initial_offset_ns", &out->config.initial_offset_ns, detail,
-                      detail_len);
+    status =
+        need_i64(&conf, "initial_offset_ns", &out->config.initial_offset_ns, detail, detail_len);
     if (status != CHORUS_SCENARIO_OK) {
         return status;
     }

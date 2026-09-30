@@ -177,8 +177,8 @@ chorus_amp_status_t chorus_amp_bring_up(const chorus_amp_config_t *config,
 
     /* 4. Does the part answer, and is it the part we think it is? */
     uint8_t device_id = 0;
-    chorus_i2c_result_t result = bus->read(bus->ctx, config->address, config->reg_device_id,
-                                           &device_id);
+    chorus_i2c_result_t result =
+        bus->read(bus->ctx, config->address, config->reg_device_id, &device_id);
     if (result != CHORUS_I2C_ACK) {
         report_detail(report,
                       "the amplifier at I2C address 0x%02x answered %s to the device-id read. "
@@ -259,8 +259,8 @@ chorus_amp_status_t chorus_amp_bring_up(const chorus_amp_config_t *config,
     return report->status;
 }
 
-chorus_amp_status_t chorus_amp_poll_fault(const chorus_amp_config_t *config,
-                                          chorus_i2c_bus_t *bus, chorus_output_stage_t *stage,
+chorus_amp_status_t chorus_amp_poll_fault(const chorus_amp_config_t *config, chorus_i2c_bus_t *bus,
+                                          chorus_output_stage_t *stage,
                                           chorus_i2s_controller_t *controller,
                                           chorus_amp_report_t *report)
 {

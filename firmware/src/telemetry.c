@@ -115,16 +115,15 @@ void chorus_telemetry_line(const chorus_telemetry_t *telemetry, char *out, size_
              " audio=%s chunks=%" PRIu64 " frames=%" PRIu64 " sequence=%s skipped=%" PRIu64
              " exchanges=%" PRIu32 " offset_ns=%s round_trip_ns=%s bound_ns=%s amp=%s "
              "amp_fault_bits=%s",
-             chorus_link_state_name(telemetry->link),
-             chorus_transport_name(telemetry->transport), wifi, ps_declared, ps_in_force,
-             wireless_bound, telemetry->rejoins, telemetry->connect_attempts,
-             chorus_audio_state_name(telemetry->audio), telemetry->chunks_received,
-             telemetry->frames_received, sequence, telemetry->skipped_frames, telemetry->exchanges,
-             offset, round_trip, bound, chorus_amp_status_name(telemetry->amp), amp_fault);
+             chorus_link_state_name(telemetry->link), chorus_transport_name(telemetry->transport),
+             wifi, ps_declared, ps_in_force, wireless_bound, telemetry->rejoins,
+             telemetry->connect_attempts, chorus_audio_state_name(telemetry->audio),
+             telemetry->chunks_received, telemetry->frames_received, sequence,
+             telemetry->skipped_frames, telemetry->exchanges, offset, round_trip, bound,
+             chorus_amp_status_name(telemetry->amp), amp_fault);
 }
 
-void chorus_telemetry_record_wifi(chorus_telemetry_t *telemetry,
-                                  const chorus_wifi_report_t *report)
+void chorus_telemetry_record_wifi(chorus_telemetry_t *telemetry, const chorus_wifi_report_t *report)
 {
     telemetry->transport = report->transport;
     telemetry->wifi = report->status;
