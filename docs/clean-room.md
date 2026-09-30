@@ -22,13 +22,15 @@ ccache) are used, never read.
 - **From goal 3 (2026-09-30):** every proposal, every research note under `docs/research/` and
   every decision record numbered from 0032 carries a `## What was read` section with each
   source and its date; `tools/conventions/check-provenance.sh` fails a file without one.
-- **Before the program (decision records 0001-0021 and the code they describe):** no reading log
-  was kept. What each record cites is in the record itself; nothing more can be reconstructed
-  honestly, so none is claimed. The audit of 2026-09-30 (`docs/audit/2026-09-audit.md`,
-  guardrail 1 and B-12) found no violation (no third-party code vendored, no code comment or
-  record citing a GPL project, no "ported from", "adapted from" or "copied from" wording) and no
-  record of what the implementing sessions read. Code that a later goal rewrites is written
-  under the rule above.
+- **Before the program (decision records 0001-0024 and the code they describe; 0022-0024 were
+  numbered 0012 and 0021 until 2026-09-30):** no reading log was kept. What each record cites is in
+  the record itself; nothing more can be reconstructed honestly, so none is claimed. Records
+  0025-0027 were written on 2026-09-30 (goal 4) for decisions made before the program; each lists
+  what its writing session read, not what the original implementers read. The audit of 2026-09-30
+  (`docs/audit/2026-09-audit.md`, guardrail 1 and B-12) found no violation (no third-party code
+  vendored, no code comment or record citing a GPL project, no "ported from", "adapted from" or
+  "copied from" wording) and no record of what the implementing sessions read. Code that a later
+  goal rewrites is written under the rule above.
 
 ## BRIEF.md section 11
 

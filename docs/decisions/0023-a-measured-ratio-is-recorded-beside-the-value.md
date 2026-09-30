@@ -1,6 +1,7 @@
-# 0021: a measured contrast ratio is recorded beside the value
+# 0023: a measured contrast ratio is recorded beside the value
 
 - Status: superseded (R13, 2026-09-30; see the end of this record)
+- Renumbered from 0021 on 2026-09-30 (duplicate number, decided 2026-09-29 by the owner, K48)
 - Recorded by: S0063-chorus-styling-tokens, against the umbrella's
   `.sdd/conventions/styling.md` clause S7
 - Implemented in: `crates/server/src/ui/tokens.css`, `tools/ui/reconcile.js`,

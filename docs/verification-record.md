@@ -104,7 +104,7 @@ CHORUS_CLIENT_DEVICE=hw:0,0 \
 ```
 
 Instructions: the script's own header, and
-`docs/decisions/0021-the-wireless-tier.md` for what every constant it passes in
+`docs/decisions/0024-the-wireless-tier.md` for what every constant it passes in
 means. The captures and the delay logs it writes ARE the evidence and can be
 graded afterwards, on any machine, by someone who did not take them.
 
@@ -918,7 +918,7 @@ anyone without two endpoints and an interface.
 | AC-10 | `--test report_shape` | all 13 committed fixture inputs regenerate from their committed parameters byte for byte, and a second analysis over the same capture returns an identical `LagSummary` and an identical figures table |
 | AC-11 | `cargo test -p chorus-measure --test no_settable_wall_clock` | every one of the crate's 11 units is accounted for in `audio-path.conf`; none of the listed ones reads a settable clock; a read smuggled into `freerun.rs` or `lag.rs` turns the scan red and names the file; and the report writer is the ONLY unit of the crate that reads one, which the exclusion cannot assert about itself |
 | AC-12 | `make check` | `cargo build --workspace --all-targets` then `cargo test --workspace`, both clean, on this machine with no audio device and no privilege. 40 test binaries, 0 failures |
-| AC-13 | `cargo test --workspace --offline` | passes. Every dependency in the workspace is a `path` dependency on another crate in it; `Cargo.lock` is still untracked and still ignored, and `docs/decisions/0002` is unchanged |
+| AC-13 | `cargo test --workspace --offline` | passes. Every dependency in the workspace is a `path` dependency on another crate in it; at the time `Cargo.lock` was untracked and ignored, and `docs/decisions/0002` was unchanged (corrected 2026-09-30, audit B-20: `Cargo.lock` has been committed since `9b9decc` on 2026-09-08 and the gate builds with `--locked`; it still lists no external package) |
 | AC-14 | `--test refusals`, and `make verify` through the real binary | silence, full-band noise and the reversed-chirp pair hit three DIFFERENT named conditions (`silent-channel`, `no-chirp-present`, `below-confidence-floor`), each exits non-zero, each names its condition, none reports a lag, and `docs/measurements/` holds the same 5 files before and after |
 | AC-15 | `--test refusals`, and `make verify` | `--amplitude 0.9` exits 4 with "requested: 0.9 full scale", "permitted: 0.25 full scale, declared in config/measure.conf" and "emitted: nothing. No device has been opened." It refuses BEFORE the device probe, asserted by the absence of a probe line. Exactly the ceiling is permitted; a hair over it, and NaN, are not |
 | AC-16 | `--test refusals`, and `make verify` | a mono capture ("1 channel(s) and 2 were required"), a float one ("WAVE_FORMAT_IEEE_FLOAT at 32 bits ... WAVE_FORMAT_PCM at 16 bits was required"), a truncated one ("declares 7680 bytes and 3956 bytes are present"), and a rate the run did not declare. Each is a typed error at start and none writes a report |

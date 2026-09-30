@@ -1,6 +1,15 @@
 # The thread-inventory flake: what it was, and repeat runs after the fix
 
 Date: 2026-08-24
+Source: host
+Build measured: `ff892f5e71710574456234fb8d3f783f8a7595c8`
+Build note (written 2026-09-30, K48, audit A-6): this report named no build commit. The commit
+above is the one that first added it (the squash merge of PR #7, which carries the fix the
+"after" runs exercised); the runs were not repeated on it, and the "before" runs were on the
+tree before that merge.
+Timing evidence: none. These are pass and fail counts of repeated test runs in a development
+container; the one wall-time figure is a diagnostic, and only a `hardware` report is timing
+evidence (BRIEF.md section 3.1 rule 3).
 Change under measurement: the `chorus-hostctl` thread inventory stops treating
 every failed read of a listed thread as "that thread is gone", and stops
 trusting a single pass of `/proc/self/task` to be complete (umbrella spec
@@ -17,7 +26,7 @@ ulimit -r (RLIMIT_RTPRIO) 0   (so no test here takes a real-time policy)
 container                 a disposable Linux container, not the deploy target
 ```
 
-One machine, as the criterion asks. It is not the Proxmox host and it is not a
+One machine, as the criterion asks. It is not the homelab host and it is not a
 machine with a sound card, so nothing here says anything about what needs
 either; these are about the suite that needs neither.
 

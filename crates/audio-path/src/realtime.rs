@@ -51,7 +51,7 @@
 //! This is a line scanner, like [`crate::scan`], and it inherits that module's
 //! limits: a multi-line string literal and a `/* */` block comment are not
 //! tracked across lines. Four limits are its own, and
-//! `docs/decisions/0012-the-cpu-time-bound-goes-on-first.md` carries the same
+//! `docs/decisions/0022-the-cpu-time-bound-goes-on-first.md` carries the same
 //! list in the same order.
 //!
 //! Two are in the safe direction, where the check fires where it need not

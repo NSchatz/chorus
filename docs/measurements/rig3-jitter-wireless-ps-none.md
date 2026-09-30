@@ -1,8 +1,11 @@
 # Wireless jitter: wireless-ps-none, power save none
 
 Date: 2026-09-12
-Build measured: `9233f2fa9cb5494babd0561017c984ff74149d8c`
-Tree at that commit: carried 22 uncommitted path(s) when this run was taken: M audio-path.conf, M crates/client-linux/src/config.rs, M crates/client-linux/src/main.rs, M crates/control/src/catalog.rs, M crates/control/src/lib.rs, M crates/measure/src/bin/chorus-measure.rs, M crates/measure/src/lib.rs, M crates/server/src/config.rs, M crates/server/src/main.rs, M docs/measurements/free-run-baseline.conf, M docs/measurements/rig3-free-run-noiseless-fixture.md, M docs/measurements/rig3-lag-fixture-reference-capture.md, and 10 more
+Source: synthetic
+Build measured: `1ea9f2ad83328c3e0970a04211a3ece91c9bcecc`
+Build note (written 2026-09-30, K48, audit A-6): the build commit this report first named, `9233f2fa9cb5494babd0561017c984ff74149d8c`, no longer exists in this history (a branch commit the squash merge discarded). The commit above is the one that first added this report (the squash merge of PR #16); the figures were not re-run on it.
+Timing evidence: none. The input is a series generated from committed parameters (`fixtures/measure/14-wireless-jitter-ps-none.params`), not a capture from any device; only a `hardware` report is timing evidence (BRIEF.md section 3.1 rule 3).
+Tree at the original build commit: carried 22 uncommitted path(s) when this run was taken: M audio-path.conf, M crates/client-linux/src/config.rs, M crates/client-linux/src/main.rs, M crates/control/src/catalog.rs, M crates/control/src/lib.rs, M crates/measure/src/bin/chorus-measure.rs, M crates/measure/src/lib.rs, M crates/server/src/config.rs, M crates/server/src/main.rs, M docs/measurements/free-run-baseline.conf, M docs/measurements/rig3-free-run-noiseless-fixture.md, M docs/measurements/rig3-lag-fixture-reference-capture.md, and 10 more
 Power save mode in force: **none** (`WIFI_PS_NONE`), which is not the platform default
 Transport: **wireless**
 Reproduce with: `cargo run -p chorus-measure --bin chorus-measure -- jitter fixtures/measure/14-wireless-jitter-ps-none.offsets --label wireless-ps-none --mode none --transport wireless`

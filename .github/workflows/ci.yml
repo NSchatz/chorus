@@ -27,8 +27,13 @@ jobs:
       IDF_PY_BUILD_JOBS: "2"
       CHORUS_CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
+      # Full history: the conventions checks read it (a report's build commit,
+      # the PR that added a decision record, every commit message since the
+      # conventions base). On a shallow clone those parts print SKIPPED.
       - name: Check out
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          fetch-depth: 0
 
       # The gate's pinned tools from mise.toml, checked against mise.lock's
       # digests (gitleaks, cargo-deny, the linters). mise-action v5.0.0,

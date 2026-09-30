@@ -108,8 +108,8 @@ can arrange.
 
 It does not deploy anything onto anyone's production host. That is a different
 repository's territory, it was explicitly out of scope for the spec this work
-was built from, and `docs/sound-2.md` records which half of the roadmap phase's
-outcome therefore remains.
+was built from, and `docs/sound-2.md` records where SOUND-2 stands against
+BRIEF.md section 8 (reworded 2026-09-30, audit B-3).
 
 ## Revisit when
 

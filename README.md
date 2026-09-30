@@ -4,10 +4,34 @@ From-scratch multiroom and surround audio: a containerized server that cuts PCM 
 
 The target is sub-millisecond inter-device error on wired endpoints, measured rather than asserted, with a lip-sync-grade TV path later. Snapcast, squeezelite, shairport-sync and Roc are studied as prior art under a clean-room rule, never adopted as dependencies.
 
-- `BRIEF.md` - the guiding document: requirements, measured targets, hard guardrails, design areas with recommendations, the 10-phase roadmap, and the decisions still open.
-- `CLAUDE.md` - the working agreement, and how work reaches this repo through the SDD umbrella.
+- `BRIEF.md` - the guiding document: requirements, measured targets, hard guardrails, design areas with recommendations, the phased roadmap (section 8), and the decisions still open.
+- `CLAUDE.md` - the working agreement and the plan of record (the /goal program in `.claude/goals/`).
 - `docs/decisions/` - one file per significant decision. `docs/measurements/` - harness reports; a timing claim without one is not evidence.
 - `docs/protocol.md` - the audio wire format, which is what a second implementation is held to. `docs/control-plane.md` - the control catalog, which is a separate contract on a separate connection and held the same way.
+
+## Where each phase stands
+
+Each of the ten phases of BRIEF.md section 8, graded against its "success looks like" there. The
+per-criterion record is `docs/verification-record.md`; the cold audit of every phase is
+`docs/audit/2026-09-audit.md`. Nothing has been heard, flashed or deployed: **every criterion that
+needs hardware is NOT PASSED**, and no report in `docs/measurements/` is a hardware measurement.
+
+| Phase | Status (2026-09-30) |
+|---|---|
+| FOUNDATION-1, foundation | met in simulation only: the Rust and C cores read the same fixtures and agree exchange by exchange; the jitter model is narrow (audit A-1) |
+| SOUND-2, first sound | code written; nothing heard; the hardware criteria NOT PASSED (`docs/sound-2.md`) |
+| RIG-3, measurement rig | analysis written and checked against synthetic fixtures; no capture from real devices; the hardware criteria NOT PASSED |
+| SYNC-4, synchronization | the sync loop is written on the real path; the one-hour two-endpoint criterion NOT PASSED (no rig, no endpoints) |
+| EMBEDDED-5, embedded bring-up | host-built C cores and an ESP32-S3 image that compiles in the gate; the endpoint session does not yet play what it receives or run the servo (audit A-9); never flashed, never driven a pin; the hardware criteria NOT PASSED |
+| PRODUCT-6, product hardening | zones, groups, volume, the control plane, the page and discovery work in software for Linux endpoints; the multi-day soak NOT PASSED; not deployed |
+| WIFI-7, Wi-Fi tier | expectations published and the jitter analysis written; no wireless endpoint characterized; the hardware criteria NOT PASSED |
+| DSP-8, DSP | not started |
+| TV-9, TV/surround path | not started (the audio chunk header reserves bytes for it, `docs/decisions/0004`) |
+| FLEET-10, fleet | not started |
+
+The program's later phases (protocol v2, rooms and groups, inputs, the Home Assistant integration,
+the app, and the hardware designs) are planned in BRIEF.md section 8 (8.1) and the program plan,
+`.claude/goals/2026-09-chorus.md`.
 
 ## What exists
 
@@ -27,8 +51,8 @@ hardware exists.
 speaker at the other, with the delay the device reports written down so someone
 who did not run it can check the claim. Status: code written; nothing has been
 heard yet (the audit, `docs/audit/2026-09-audit.md`, grades every phase). `docs/sound-2.md` is the guide: how to run it, every
-number it chose and the arithmetic behind them, and which half of the phase's
-roadmap outcome it delivers.
+number it chose and the arithmetic behind them, and where each part of BRIEF.md's
+"success looks like" for the phase stands.
 
 - `crates/audio` - ingest, chunking, and the one monotonic timeline the server
   stamps on.
@@ -44,7 +68,7 @@ roadmap outcome it delivers.
   the two checks that keep the enumeration honest (`docs/decisions/0011`); plus
   `real-time-acquisitions.conf` and the third check on it, that every
   real-time acquisition applies the CPU-time bound before it takes the
-  scheduling policy (`docs/decisions/0012`).
+  scheduling policy (`docs/decisions/0022-the-cpu-time-bound-goes-on-first.md`).
 
 **Phase 3, the measurement rig.** Built before the servo on purpose: guardrail 3
 says a sync claim without a measurement is not a claim, and a harness written
@@ -62,6 +86,16 @@ nothing and holds no view about whether a number is good.
   who did not take a capture can reproduce every published figure.
 - `tools/measure/` - the device-backed run, which needs two endpoints and an
   audio interface, and the refusal it makes where there is none.
+
+**Phase 4, synchronization.** The servo from phase 1, closed on the real path.
+
+- `crates/client-linux/src/sync.rs` - the loop on the delay the device reports:
+  min-RTT filtering, a PI rate law applied as sample insert and drop, and a step
+  only under a mute. Its constants live in `config/sync.conf`
+  (`docs/decisions/0014`), whose modelled figures are labelled as models.
+- `tools/sync-hour-run.sh` - the one-hour two-endpoint run the phase is graded
+  on. It needs two wired endpoints and the RIG-3 rig and refuses by name; the
+  criterion is NOT PASSED.
 
 **Phase 5, the ESP32-S3 endpoint.** The second kind of endpoint the project
 exists to have: a microcontroller speaker that joins a group, disciplines its
@@ -114,6 +148,18 @@ endpoint back to playing after a server restart with nobody doing anything.
   `tools/soak-run.sh` - one entry point per criterion.
   The last of those is NOT PASSED anywhere: it needs three days of wall clock
   and the RIG-3 rig, and it refuses by name.
+
+**Phase 7, the Wi-Fi tier.** One wireless endpoint, held to the looser targets
+and characterized with and without power save.
+
+- `docs/wireless-expectations.md` and `config/transport.conf` - the published
+  expectations and the per-zone tier (`docs/decisions/0024-the-wireless-tier.md`).
+- `firmware/src/wifi.c` and `crates/measure/src/jitter.rs` - the endpoint's link
+  and the jitter analysis. The two reports in `docs/measurements/` run it over
+  synthetic series, not a radio.
+- `tools/wireless-characterization-run.sh` - the characterization, which needs a
+  wireless ESP32-S3 in another room and the rig, and refuses by name; its
+  criteria are NOT PASSED.
 
 ## Building and testing
 
