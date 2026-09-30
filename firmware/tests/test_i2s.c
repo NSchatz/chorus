@@ -60,11 +60,13 @@ static void the_twenty_four_bit_mclk_rule(void)
     chorus_i2s_validate_clock(&clock, findings, MAX_FINDINGS, &count);
     chorus_check(count == 0, "the committed 48 kHz / 24-bit / x384 configuration is accepted");
     chorus_check(
-        chorus_i2s_mclk_hz(&clock) == 18432000ull && chorus_i2s_bclk_hz(&clock) == 2304000ull,
+        chorus_i2s_mclk_hz(&clock) == 18432000ull && chorus_i2s_bclk_hz(&clock) == 3072000ull,
         "MCLK is %llu Hz and BCLK is %llu Hz", (unsigned long long)chorus_i2s_mclk_hz(&clock),
         (unsigned long long)chorus_i2s_bclk_hz(&clock));
-    chorus_check(chorus_i2s_bclk_division_is_integral(&clock),
-                 "MCLK divides into BCLK a whole 8 times, so the bit-clock division is integral");
+    chorus_check(
+        chorus_i2s_bclk_division_is_integral(&clock),
+        "MCLK divides into BCLK a whole 6 times (32-bit slots on the wire since goal 9), so the "
+        "bit-clock division is integral");
 
     /* Every multiple ESP-IDF names, decided one way or the other, so the rule
      * is exercised across the whole enum and not at one point. */

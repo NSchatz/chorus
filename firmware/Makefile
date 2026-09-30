@@ -88,7 +88,7 @@ LIB_SRC := \
 # turns the link section's words into the enums that section declares, and a
 # checker that could not read the link could not refuse a bad one.
 GATE_SRC := $(FW)/src/conf.c $(FW)/src/i2s.c $(FW)/src/wifi.c $(FW)/src/link.c \
-	$(FW)/src/endpoint_config.c
+	$(FW)/src/endpoint_config.c $(FW)/src/amp.c
 
 # The board profiles (firmware/boards/, docs/decisions/0057-*): each is laid over
 # endpoint.conf and checked the way the image reads it, and the default one,

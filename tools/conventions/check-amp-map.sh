@@ -5,7 +5,7 @@
 # first: a map with an `unknown` key and one with an uncited key must both fail.
 . "$(dirname "$0")/lib.sh"
 conf=firmware/config/endpoint.conf
-cite='TAS5825M datasheet SLASEH7H rev H, pp?\. [0-9]'
+cite='TAS5825M SLASEH7H pp?\. [0-9]'
 
 # grade <file>: print one line per defect; the count of keys, unknown and cited on the last line.
 grade() {
@@ -24,7 +24,7 @@ grade() {
             if (index(comment, "#") == 0) { comment = "" } else { sub(/^[^#]*#/, "", comment) }
             if (comment !~ cite) { print "uncited: " key " (line " NR ")"; next }
             pages = comment
-            sub(/.*SLASEH7H rev H, pp?\. /, "", pages)
+            sub(/.*SLASEH7H pp?\. /, "", pages)
             match(pages, /^[0-9]+(-[0-9]+|, [0-9]+)*/)
             pages = substr(pages, 1, RLENGTH)
             n = split(pages, part, /[^0-9]+/)
@@ -41,9 +41,9 @@ grade() {
 
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
-printf 'amp_reg_x = unknown # TAS5825M datasheet SLASEH7H rev H, p. 48\n' > "$scratch/unknown.conf"
+printf 'amp_reg_x = unknown # TAS5825M SLASEH7H p. 48\n' > "$scratch/unknown.conf"
 printf 'amp_reg_x = 0x03\n' > "$scratch/uncited.conf"
-printf 'amp_reg_x = 0x03 # TAS5825M datasheet SLASEH7H rev H, p. 480\n' > "$scratch/page.conf"
+printf 'amp_reg_x = 0x03 # TAS5825M SLASEH7H p. 480\n' > "$scratch/page.conf"
 for f in unknown uncited page; do
     if [ "$(grade "$scratch/$f.conf" | command grep -c -v '^COUNT')" = 0 ]; then
         fail "Datasheet-cited amplifier map" "the check passed a map with an $f key; it no longer grades"

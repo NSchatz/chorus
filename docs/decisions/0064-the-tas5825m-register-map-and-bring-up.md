@@ -31,7 +31,7 @@ turned up two defects the `unknown` keys had been hiding:
 
 **The map.** Every register id and value the endpoint uses is an `amp_` key in
 `firmware/config/endpoint.conf`, and each line cites its datasheet page on the line itself
-(`# TAS5825M datasheet SLASEH7H rev H, p. N`). Twenty-one register-map bytes (address, book and
+(`# TAS5825M SLASEH7H p. N`, short because the endpoint reads the file into a 16 KiB buffer). Twenty-one register-map bytes (address, book and
 page select, identity, three fault registers and their clear value, the clock-fault bit, fault
 clear, analog gain, audio format, state control and its Hi-Z and Play values, the power-state
 register and its Play value), the gain code, three minimum waits, and the bit clocks per frame.
