@@ -12,8 +12,7 @@ The target is sub-millisecond inter-device error on wired endpoints, measured ra
 ## Where each phase stands
 
 Each of the ten phases of BRIEF.md section 8, graded against its "success looks like" there. The
-per-criterion
-record is `docs/verification-record.md`; the cold audit of every phase is
+per-criterion record is `docs/verification-record.md`; the cold audit of every phase is
 `docs/audit/2026-09-audit.md`. Nothing has been heard, flashed or deployed: **every criterion that
 needs hardware is NOT PASSED**, and no report in `docs/measurements/` is a hardware measurement.
 
