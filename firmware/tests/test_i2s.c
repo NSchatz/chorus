@@ -58,11 +58,10 @@ static void the_twenty_four_bit_mclk_rule(void)
     chorus_i2s_clock_t clock = committed_clock();
     chorus_i2s_validate_clock(&clock, findings, MAX_FINDINGS, &count);
     chorus_check(count == 0, "the committed 48 kHz / 24-bit / x384 configuration is accepted");
-    chorus_check(chorus_i2s_mclk_hz(&clock) == 18432000ull &&
-                     chorus_i2s_bclk_hz(&clock) == 2304000ull,
-                 "MCLK is %llu Hz and BCLK is %llu Hz",
-                 (unsigned long long)chorus_i2s_mclk_hz(&clock),
-                 (unsigned long long)chorus_i2s_bclk_hz(&clock));
+    chorus_check(
+        chorus_i2s_mclk_hz(&clock) == 18432000ull && chorus_i2s_bclk_hz(&clock) == 2304000ull,
+        "MCLK is %llu Hz and BCLK is %llu Hz", (unsigned long long)chorus_i2s_mclk_hz(&clock),
+        (unsigned long long)chorus_i2s_bclk_hz(&clock));
     chorus_check(chorus_i2s_bclk_division_is_integral(&clock),
                  "MCLK divides into BCLK a whole 8 times, so the bit-clock division is integral");
 
@@ -72,8 +71,7 @@ static void the_twenty_four_bit_mclk_rule(void)
         uint32_t multiple;
         int acceptable;
     } multiples[] = {
-        {128, 0}, {192, 1},  {256, 0},  {384, 1},  {512, 0},
-        {576, 1}, {768, 1},  {1024, 0}, {1152, 1},
+        {128, 0}, {192, 1}, {256, 0}, {384, 1}, {512, 0}, {576, 1}, {768, 1}, {1024, 0}, {1152, 1},
     };
     for (size_t i = 0; i < sizeof(multiples) / sizeof(multiples[0]); i++) {
         chorus_i2s_clock_t candidate = committed_clock();
@@ -93,8 +91,8 @@ static void the_twenty_four_bit_mclk_rule(void)
     count = 0;
     chorus_i2s_validate_clock(&bad, findings, MAX_FINDINGS, &count);
     const char *detail = detail_of(findings, count, "mclk-multiple-not-divisible-by-three");
-    chorus_check(strstr(detail, "256") != NULL,
-                 "the refusal names the offending value: %s", detail);
+    chorus_check(strstr(detail, "256") != NULL, "the refusal names the offending value: %s",
+                 detail);
     chorus_check(strstr(detail, "the BCLK division is not a integer") != NULL,
                  "the refusal quotes the rule it broke");
 
@@ -208,8 +206,7 @@ static void the_reserved_pins(void)
     not_octal.octal_psram = 0;
     count = 0;
     chorus_pin_map_validate(&not_octal, findings, MAX_FINDINGS, &count);
-    chorus_check(count == 0,
-                 "GPIO35 is accepted on a board that declares board_octal_psram = no");
+    chorus_check(count == 0, "GPIO35 is accepted on a board that declares board_octal_psram = no");
 
     /* Two signals on one pin is not a pin map. */
     chorus_pin_map_t doubled;
@@ -253,8 +250,8 @@ static void the_committed_configuration_and_the_gate(void)
     chorus_endpoint_config_t config;
     char detail[512];
     detail[0] = '\0';
-    chorus_check(chorus_endpoint_config_load(&config, chorus_endpoint_config_default_path(),
-                                             detail, sizeof(detail)) == 0,
+    chorus_check(chorus_endpoint_config_load(&config, chorus_endpoint_config_default_path(), detail,
+                                             sizeof(detail)) == 0,
                  "the committed endpoint.conf loads (%s)", detail);
 
     chorus_finding_t findings[MAX_FINDINGS];
@@ -318,10 +315,9 @@ static void the_committed_configuration_and_the_gate(void)
         size_t prefix = (size_t)(at - text);
         memcpy(mutated, text, prefix);
         size_t written = prefix;
-        written += (size_t)snprintf(mutated + written, sizeof(mutated) - written, "%s",
-                                    smuggled[i].to);
-        snprintf(mutated + written, sizeof(mutated) - written, "%s",
-                 at + strlen(smuggled[i].from));
+        written +=
+            (size_t)snprintf(mutated + written, sizeof(mutated) - written, "%s", smuggled[i].to);
+        snprintf(mutated + written, sizeof(mutated) - written, "%s", at + strlen(smuggled[i].from));
 
         char scratch[1024];
         snprintf(scratch, sizeof(scratch), "/tmp/chorus-endpoint-smuggled-%d-%zu.conf",

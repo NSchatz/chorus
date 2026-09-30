@@ -108,8 +108,8 @@ static void attempt_join(const chorus_wifi_config_t *config, chorus_radio_t *rad
     }
 }
 
-chorus_wifi_status_t chorus_wifi_bring_up(const chorus_wifi_config_t *config,
-                                          chorus_radio_t *radio, chorus_wifi_report_t *report)
+chorus_wifi_status_t chorus_wifi_bring_up(const chorus_wifi_config_t *config, chorus_radio_t *radio,
+                                          chorus_wifi_report_t *report)
 {
     memset(report, 0, sizeof(*report));
     report->transport = config->transport;
@@ -247,8 +247,7 @@ chorus_wifi_status_t chorus_wifi_bring_up(const chorus_wifi_config_t *config,
                  "the power save mode `%s` was set from %s before the link was reported usable, "
                  "the platform reports `%s`, and the platform default `%s` was not inherited",
                  chorus_wifi_ps_name(config->power_save), config->source,
-                 chorus_wifi_ps_name(in_force),
-                 chorus_wifi_ps_name(CHORUS_WIFI_PLATFORM_DEFAULT));
+                 chorus_wifi_ps_name(in_force), chorus_wifi_ps_name(CHORUS_WIFI_PLATFORM_DEFAULT));
     } else {
         snprintf(report->detail, sizeof(report->detail),
                  "the power save mode `%s` was set from %s before the link was reported usable and "

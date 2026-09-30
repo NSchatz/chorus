@@ -1,0 +1,26 @@
+# Style for the endpoint's C (firmware/). Chosen by measurement, not taste:
+# each candidate was run over every tracked firmware *.c/*.h with
+# IndentWidth 4, ColumnLimit 100, BreakBeforeBraces Linux, PointerAlignment
+# Right and SortIncludes Never (what the code already did by hand), and the
+# one that changed the fewest lines won.
+#
+#   base        lines changed
+#   Microsoft     428   (chosen)
+#   LLVM          478   (428 with AllowShortFunctionsOnASingleLine: None)
+#   Google       1447
+#   Chromium     1797
+#   WebKit       2743
+#   Mozilla      4237
+#   GNU          7221
+#
+# Microsoft already has IndentWidth 4, PointerAlignment Right and short
+# functions never on one line, so it needs the fewest overrides. ColumnLimit
+# 90/95/98/104 all changed more than 100. SortIncludes stays Never: include
+# order can matter under ESP-IDF, and sorting is not a formatter's call.
+#
+# clang-format 23.1.1, PyPI clang-format wheel,
+# https://pypi.org/project/clang-format/ read 2026-09-30
+BasedOnStyle: Microsoft
+ColumnLimit: 100
+BreakBeforeBraces: Linux
+SortIncludes: Never

@@ -69,8 +69,7 @@ static void read_committed_catalog(const char *dir_path, committed_catalog_t *ou
             continue;
         }
         size_t stem_len = (size_t)(dot - entry->d_name);
-        if (out->count >= MAX_COMMITTED_VECTORS ||
-            stem_len >= sizeof(out->vectors[0].stem)) {
+        if (out->count >= MAX_COMMITTED_VECTORS || stem_len >= sizeof(out->vectors[0].stem)) {
             out->overflowed = 1;
             break;
         }
@@ -116,8 +115,7 @@ static catalog_drift_t catalog_drift(const committed_catalog_t *committed)
     memset(&drift, 0, sizeof(drift));
     for (size_t i = 0; i < committed->count; i++) {
         if (!in_catalog(committed->vectors[i].stem)) {
-            snprintf(drift.unmirrored, sizeof(drift.unmirrored), "%s",
-                     committed->vectors[i].stem);
+            snprintf(drift.unmirrored, sizeof(drift.unmirrored), "%s", committed->vectors[i].stem);
             break;
         }
     }
@@ -297,8 +295,8 @@ static void one_vector(const char *name)
     }
 
     char type_buffer[256];
-    const char *type_name = field_value(fields_text, "message_type", type_buffer,
-                                        sizeof(type_buffer));
+    const char *type_name =
+        field_value(fields_text, "message_type", type_buffer, sizeof(type_buffer));
     chorus_check(type_name != NULL && strcmp(type_name, name) == 0,
                  "%s.fields declares message_type = %s", name,
                  (type_name == NULL) ? "<absent>" : type_name);
@@ -331,8 +329,8 @@ static void one_vector(const char *name)
         message.sample_rate_hz = (uint32_t)field_u64(fields_text, "sample_rate_hz", &ok);
         message.channels = (uint16_t)field_u64(fields_text, "channels", &ok);
         char format_buffer[64];
-        const char *format_name = field_value(fields_text, "sample_format", format_buffer,
-                                              sizeof(format_buffer));
+        const char *format_name =
+            field_value(fields_text, "sample_format", format_buffer, sizeof(format_buffer));
         chorus_check(format_name != NULL, "%s.fields names a sample_format", name);
         if (format_name == NULL) {
             return;
@@ -340,8 +338,8 @@ static void one_vector(const char *name)
         message.sample_format = chorus_sample_format_from_name(format_name);
         chorus_check(message.sample_format != 0, "%s.fields sample_format %s is in the catalog",
                      name, format_name);
-        size_t reserved_len = field_bytes(fields_text, "reserved", message.reserved,
-                                          sizeof(message.reserved));
+        size_t reserved_len =
+            field_bytes(fields_text, "reserved", message.reserved, sizeof(message.reserved));
         chorus_check(reserved_len == CHORUS_RESERVED_LEN,
                      "%s.fields carries %zu reserved bytes and the header reserves %u", name,
                      reserved_len, CHORUS_RESERVED_LEN);
@@ -365,8 +363,8 @@ static void one_vector(const char *name)
         return;
     }
 
-    int identical = (produced_len == committed_len) &&
-                    (memcmp(produced, committed, committed_len) == 0);
+    int identical =
+        (produced_len == committed_len) && (memcmp(produced, committed, committed_len) == 0);
     if (identical) {
         chorus_check(1, "%s: the endpoint encodes the committed %zu bytes exactly", name,
                      committed_len);
@@ -399,15 +397,15 @@ static void one_vector(const char *name)
                      name);
     } else if (strcmp(name, "stream_end") == 0) {
         const chorus_stream_end_t *end = &frame.message.stream_end;
-        chorus_check(end->final_sequence == (uint32_t)field_u64(fields_text, "final_sequence",
-                                                                &ok) &&
+        chorus_check(end->final_sequence ==
+                             (uint32_t)field_u64(fields_text, "final_sequence", &ok) &&
                          end->end_timestamp_ns == field_u64(fields_text, "end_timestamp_ns", &ok),
                      "%s: final_sequence and end_timestamp_ns come back as declared", name);
     } else {
         const chorus_audio_chunk_t *chunk = &frame.message.audio_chunk;
         char format_buffer[64];
-        const char *format_name = field_value(fields_text, "sample_format", format_buffer,
-                                              sizeof(format_buffer));
+        const char *format_name =
+            field_value(fields_text, "sample_format", format_buffer, sizeof(format_buffer));
         uint8_t reserved[CHORUS_RESERVED_LEN];
         field_bytes(fields_text, "reserved", reserved, sizeof(reserved));
         static uint8_t audio[65536];
@@ -455,8 +453,8 @@ static void unknown_type_is_skipped_and_the_session_stays_open(void)
                  "the skip steps over the whole frame using its length prefix: %zu bytes",
                  first.consumed);
 
-    chorus_frame_t second = chorus_decode_frame(stream + first.consumed,
-                                                sizeof(stream) - first.consumed);
+    chorus_frame_t second =
+        chorus_decode_frame(stream + first.consumed, sizeof(stream) - first.consumed);
     chorus_check(second.outcome == CHORUS_FRAME_DECODED &&
                      second.message.time_sync.t0_ns == exchange.t0_ns &&
                      second.message.time_sync.t3_ns == exchange.t3_ns,
@@ -471,8 +469,7 @@ static void unknown_type_is_skipped_and_the_session_stays_open(void)
     longer[1] = 0x00;
     longer[2] = (uint8_t)(CHORUS_TIME_SYNC_PAYLOAD_LEN + 8);
     chorus_frame_t extended = chorus_decode_frame(longer, sizeof(longer));
-    chorus_check(extended.outcome == CHORUS_FRAME_DECODED &&
-                     extended.consumed == sizeof(longer),
+    chorus_check(extended.outcome == CHORUS_FRAME_DECODED && extended.consumed == sizeof(longer),
                  "a payload longer than the known fields is accepted and the excess ignored");
 }
 
@@ -486,8 +483,7 @@ static void the_decoder_checks_happen_in_the_committed_order(void)
 
     uint8_t over_declared[5] = {CHORUS_MSG_TIME_SYNC, 0x00, 0x20, 0x01, 0x02};
     chorus_frame_t over = chorus_decode_frame(over_declared, sizeof(over_declared));
-    chorus_check(over.outcome == CHORUS_FRAME_DECLARED_LENGTH_EXCEEDS_BUFFER &&
-                     over.consumed == 0,
+    chorus_check(over.outcome == CHORUS_FRAME_DECLARED_LENGTH_EXCEEDS_BUFFER && over.consumed == 0,
                  "a declared length longer than the buffer consumes nothing, so a stream reader "
                  "waits rather than guessing");
 
@@ -610,8 +606,7 @@ static void the_committed_directory_is_the_catalog(committed_catalog_t *committe
     if (drift.without_vector[0] == '\0') {
         chorus_check(1, "every type this endpoint mirrors has a committed vector pair");
     } else {
-        chorus_check(0,
-                     "this endpoint mirrors %s and fixtures/protocol/%s.hex is not committed",
+        chorus_check(0, "this endpoint mirrors %s and fixtures/protocol/%s.hex is not committed",
                      drift.without_vector, drift.without_vector);
     }
     chorus_check(committed->count == CATALOG_COUNT,

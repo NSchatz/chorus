@@ -126,8 +126,8 @@ static int load_vector(const char *path, expected_vector_t *out)
             cursor++;
         }
         size_t len = strlen(cursor);
-        while (len > 0 && (cursor[len - 1] == '\n' || cursor[len - 1] == '\r' ||
-                           cursor[len - 1] == ' ')) {
+        while (len > 0 &&
+               (cursor[len - 1] == '\n' || cursor[len - 1] == '\r' || cursor[len - 1] == ' ')) {
             cursor[--len] = '\0';
         }
         if (len == 0) {
@@ -288,8 +288,7 @@ static void scenario_matches_the_rust_implementation(const scenario_file_t *file
 
     chorus_scenario_t scenario;
     char detail[512];
-    if (chorus_scenario_load(&scenario, file->path, detail, sizeof(detail)) !=
-        CHORUS_SCENARIO_OK) {
+    if (chorus_scenario_load(&scenario, file->path, detail, sizeof(detail)) != CHORUS_SCENARIO_OK) {
         chorus_check(0, "%s parses", file->file);
         return;
     }

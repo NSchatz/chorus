@@ -99,8 +99,8 @@ static int hal_apply_clock(void *ctx, const chorus_i2s_clock_t *clock)
                  * width, both here and at build time. */
                 .mclk_multiple = (i2s_mclk_multiple_t)clock->mclk_multiple,
             },
-        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(
-            (i2s_data_bit_width_t)clock->slot_bit_width, I2S_SLOT_MODE_STEREO),
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG((i2s_data_bit_width_t)clock->slot_bit_width,
+                                                        I2S_SLOT_MODE_STEREO),
         .gpio_cfg =
             {
                 .mclk = (gpio_num_t)-1,

@@ -63,9 +63,8 @@ static void fault_watch(void *argument)
     char line[512];
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(FAULT_POLL_MS));
-        chorus_amp_status_t status = chorus_amp_poll_fault(&watch->config->amp, watch->bus,
-                                                           watch->stage, watch->controller,
-                                                           &report);
+        chorus_amp_status_t status = chorus_amp_poll_fault(
+            &watch->config->amp, watch->bus, watch->stage, watch->controller, &report);
         chorus_telemetry_record_amp(watch->telemetry, &report);
         if (status != CHORUS_AMP_OK) {
             chorus_telemetry_line(watch->telemetry, line, sizeof(line));
@@ -126,9 +125,8 @@ void app_main(void)
     chorus_telemetry_init(&telemetry);
 
     chorus_amp_report_t report;
-    chorus_amp_status_t status =
-        chorus_amp_bring_up(&config.amp, &config.gain, &config.clock, &bus, &stage, &controller,
-                            &report);
+    chorus_amp_status_t status = chorus_amp_bring_up(&config.amp, &config.gain, &config.clock, &bus,
+                                                     &stage, &controller, &report);
     chorus_telemetry_record_amp(&telemetry, &report);
     if (status != CHORUS_AMP_OK) {
         char line[512];

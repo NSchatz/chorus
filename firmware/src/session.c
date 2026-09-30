@@ -192,8 +192,8 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
             chorus_monotonic_sleep_ms(backoff_ms);
             /* Doubling, capped. Never zero, never unbounded, and there is no
              * attempt counter that can run out. */
-            backoff_ms = (backoff_ms * 2 > config->max_backoff_ms) ? config->max_backoff_ms
-                                                                   : backoff_ms * 2;
+            backoff_ms =
+                (backoff_ms * 2 > config->max_backoff_ms) ? config->max_backoff_ms : backoff_ms * 2;
             continue;
         }
 
@@ -282,8 +282,7 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
                         if (state.telemetry.audio == CHORUS_AUDIO_IDLE) {
                             state.telemetry.audio = CHORUS_AUDIO_RUNNING;
                         }
-                    } else if (frame.message_type == CHORUS_MSG_TIME_SYNC &&
-                               exchange_outstanding) {
+                    } else if (frame.message_type == CHORUS_MSG_TIME_SYNC && exchange_outstanding) {
                         chorus_time_sync_t exchange = frame.message.time_sync;
                         /* t3 is the endpoint's own receive stamp on the
                          * endpoint's clock. The server cannot know it and one
@@ -307,9 +306,8 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
                             state.telemetry.bound_ns = state.telemetry.round_trip_ns / 2;
                             state.telemetry.exchanges++;
                             exchange_outstanding = 0;
-                            next_exchange_ns =
-                                chorus_monotonic_now_ns() +
-                                (uint64_t)config->sync_interval_ms * 1000000ull;
+                            next_exchange_ns = chorus_monotonic_now_ns() +
+                                               (uint64_t)config->sync_interval_ms * 1000000ull;
                         }
                     }
                     break;
@@ -369,8 +367,8 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
             break;
         }
         chorus_monotonic_sleep_ms(backoff_ms);
-        backoff_ms = (backoff_ms * 2 > config->max_backoff_ms) ? config->max_backoff_ms
-                                                               : backoff_ms * 2;
+        backoff_ms =
+            (backoff_ms * 2 > config->max_backoff_ms) ? config->max_backoff_ms : backoff_ms * 2;
     }
 
     out->end = CHORUS_SESSION_RAN_ITS_TIME;
