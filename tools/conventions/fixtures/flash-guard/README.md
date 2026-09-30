@@ -9,4 +9,8 @@ directory is the path the scanner sees, so `forbidden/.claude/settings.json` is 
 
 The first twelve forbidden forms are the ones the planning review of the brief found
 (`.claude/goals/2026-09-chorus-research/review-brief-v1.md`, H2); the rest are further ways
-to set it in the languages and files this repository uses.
+to set it in the languages and files this repository uses. Forms 24-36 (chorus goal 9) are
+the ones goal 3's adversarial check found the scan passed: a C ternary default and a reassigned
+read, Python `or` and `os.environ.get` defaults, Rust `map_or`, `.or(`, `unwrap_or_default` and
+`is_err()`, a shell read assigned to a variable (and a two-line default), and the name built
+from pieces three ways.

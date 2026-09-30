@@ -206,14 +206,16 @@ Needs: one of the owner's ESP32-S3 boards with at least 2 MB of flash (the image
 partition is 1.5 MB, ADR 0044), a USB cable, ESP-IDF v6.1 on endpoint A or a laptop (the pin in
 `firmware/config/endpoint.conf`). No bought part.
 
-This is the goal-6 follow-up: the first run of the v6.1 image on silicon. There is no chorus
-flashing tool yet (goal 9 adds it behind `CHORUS_OWNER_AT_BENCH`), so this uses ESP-IDF's own
-tool, run by the owner only:
+This is the goal-6 follow-up: the first run of the v6.1 image on silicon. It flashes with chorus's
+guarded tool (goal 9, `tools/firmware-flash.sh`), which refuses unless you set
+`CHORUS_OWNER_AT_BENCH=1` on its command line, run by the owner only:
 
 ```
 . <esp-idf v6.1>/export.sh
 make firmware-image                     # builds firmware/build/image
-cd firmware && CHORUS_OWNER_AT_BENCH=1 idf.py -B build/image -D SDKCONFIG=build/image/sdkconfig -p /dev/ttyACM0 flash monitor
+tools/firmware-flash.sh --print --port /dev/ttyACM0     # shows the esptool command, runs nothing
+CHORUS_OWNER_AT_BENCH=1 tools/firmware-flash.sh --port /dev/ttyACM0
+cd firmware && idf.py -B build/image -p /dev/ttyACM0 monitor
 ```
 
 Never run `espefuse` or any eFuse command (BRIEF.md section 3.1 rule 2); the image guard in

@@ -185,6 +185,12 @@ FIRMWARE_BUILD_DIR ?= firmware/build/image
 firmware-image-guard: tools-executable
 	bash tools/firmware-image-guard.sh $(FIRMWARE_BUILD_DIR)
 
+# Flash the built image: the owner's act at the bench. tools/firmware-flash.sh
+# refuses unless the owner set the owner-at-bench variable on their own command
+# line (docs/bench-packet.md); this target never sets it. PORT names the board.
+firmware-flash: tools-executable
+	bash tools/firmware-flash.sh $(if $(PORT),--port $(PORT))
+
 # The three things CI names as separate, fail-on-red steps.
 firmware-golden-vectors:
 	$(MAKE) -f firmware/Makefile golden-vectors
@@ -252,7 +258,7 @@ verify-null-device: tools-executable
 	CHORUS_CLIENT_DEVICE=null bash tools/start-fill-and-log-shape.sh
  \
 	.PHONY: release image build check discovery-vectors firmware-check firmware-golden-vectors  \
-	firmware-image firmware-safety-scans firmware-sync-scenarios  \
+	firmware-flash firmware-image firmware-image-guard firmware-safety-scans firmware-sync-scenarios  \
 	firmware-wireless gate gate-fast measure-fixture-reports measure-fixtures one  \
 	probe sim-house sync-vectors ten-minute-run ten-minute-run-null test tools-executable verify verify-alsa-null verify-control  \
 	verify-control-determinism verify-device verify-discovery-fallback  \
