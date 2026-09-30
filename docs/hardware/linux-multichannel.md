@@ -2,8 +2,8 @@
 
 How a Linux endpoint (K96) drives more than two output channels: the rack amp's zones (K74) and
 the theater hub (K72, P2 Option A: stereo LPCM from optical and ARC now, 5.1 later). The software
-half is `chorus-client`'s output map (`crates/client-linux/src/outmap.rs`, the ADR indexed in
-`docs/decisions/README.md` as "the output map"); this page is the hardware half and how the two
+half is `chorus-client`'s output map (`crates/client-linux/src/outmap.rs`, ADR 0068,
+`docs/decisions/0068-the-output-map.md`); this page is the hardware half and how the two
 meet.
 
 **The Linux board is an unanswered owner input** (P4 deferred; the Needs items "The room list and
@@ -186,7 +186,7 @@ The output map changes what each channel carries, never when a frame plays. A ch
 delay plays **exactly its delay later than the sync target**, on purpose (a speaker-distance or
 sub-alignment trim, at most 50 ms, `MAX_DELAY_US`); every other channel plays at the target. The
 device delay the client disciplines, the buffer and the sync loop are the same with or without a
-map (the output map ADR). No timing claim is made here: every number above is cited or ASSUMED,
+map (ADR 0068). No timing claim is made here: every number above is cited or ASSUMED,
 and the first measured one belongs in `docs/measurements/`.
 
 ## Sources

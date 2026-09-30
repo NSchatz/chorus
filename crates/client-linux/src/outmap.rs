@@ -80,7 +80,7 @@ pub const MIN_GAIN_DB: f64 = -60.0;
 ///
 /// ASSUMED (chosen): 50 ms is 17 m of path at 343 m/s, which covers any
 /// speaker-distance or sub-alignment trim inside one room, and is well under
-/// the smallest buffer bound the client runs with (60 ms, `config.rs`), so a
+/// the default minimum buffer bound the client runs with (60 ms, `config.rs`), so a
 /// delayed channel can never be further behind than the buffer the whole
 /// endpoint is graded against. At the highest rate the protocol carries
 /// (384 kHz) it is 19200 frames, 77 KB a channel in `f32`.

@@ -458,8 +458,8 @@ channels it discards; without a map it advertises 8 and plays the stream's
 channels in the stream's order, as before. A position the map reads and the
 stream lacks is silence on that output and is reported on an
 `output-map-missing` line; the one fallback, also reported, is a `MONO` stream
-feeding outputs that read `FL`, `FR` or `FC`. Semantics and bounds are the
-output map ADR's (`docs/decisions/README.md`); the hardware it drives is
+feeding outputs that read `FL`, `FR` or `FC`. Semantics and bounds are ADR
+0068's (`docs/decisions/0068-the-output-map.md`); the hardware it drives is
 `docs/hardware/linux-multichannel.md`.
 
 ## Codecs: PCM, FLAC and Opus
