@@ -6,6 +6,9 @@
 /firmware/build
 /firmware/sdkconfig
 /firmware/sdkconfig.old
+# The component manager's download of firmware/main/idf_component.yml's pins;
+# firmware/dependencies.lock, which pins them by hash, is committed.
+/firmware/managed_components
 
 
 # Release artifacts (tools/release.sh); attached to GitHub releases, never committed.

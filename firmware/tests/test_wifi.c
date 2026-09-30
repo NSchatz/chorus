@@ -500,9 +500,23 @@ static void the_committed_configuration_carries_no_credential(void)
     if (loaded != 0) {
         return;
     }
+    chorus_check(config.link.transport == CHORUS_TRANSPORT_WIRED,
+                 "the committed default link is `%s` (P1: the W5500 for every wired class)",
+                 chorus_transport_name(config.link.transport));
+
+    /* The Wi-Fi tier ships as the compact speakers' board profile (K91), read
+     * over the same file by the reader the image uses. */
+    char profile[1024];
+    chorus_repo_path(profile, sizeof(profile), "firmware/boards/compact-s3-wifi.conf");
+    loaded = chorus_endpoint_config_load_profile(&config, chorus_endpoint_config_default_path(),
+                                                 profile, detail, sizeof(detail));
+    chorus_check(loaded == 0, "the compact Wi-Fi profile loads over it: %s", detail);
+    if (loaded != 0) {
+        return;
+    }
 
     chorus_check(config.link.transport == CHORUS_TRANSPORT_WIRELESS,
-                 "the committed link is declared `%s`",
+                 "the compact Wi-Fi profile's link is declared `%s`",
                  chorus_transport_name(config.link.transport));
     chorus_check(config.link.power_save == CHORUS_WIFI_PS_NONE,
                  "the committed power save mode is `%s`",
