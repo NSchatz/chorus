@@ -13,7 +13,11 @@
  *     published;
  *   - `decode-cost` decodes the fixtures through the endpoint's codec seam,
  *     times only the decode calls on the clock it is handed, and publishes a
- *     figure only for a decode that hashes to the fixture's decode_fnv1a64.
+ *     figure only for a decode that hashes to the fixture's decode_fnv1a64;
+ *   - `resources` prints heap, the named tasks' least free stack, the FIFO
+ *     after the writer (from a real playout path on a fake DMA) and the
+ *     marker's counts, and says `none`, `absent` or `unknown` for what the
+ *     image cannot give rather than a zero.
  *
  * Every figure the real-clock case prints is the HOST's cost and is not
  * recorded anywhere: the S3's is tools/decode-cost-run.sh's, on hardware. */
@@ -27,6 +31,8 @@
 #include "chorus/console.h"
 #include "chorus/session.h"
 #include "chorus/monotonic.h"
+#include "chorus/playout.h"
+#include "chorus/sync_conf.h"
 #include "chorus/telemetry.h"
 #include "fake_radio.h"
 #include "harness.h"
@@ -402,6 +408,95 @@ static void the_session_connects_where_the_console_says(void)
                  telemetry_handed_on);
 }
 
+/* A resources callback over a real playout path, so the FIFO figure is the
+ * one chorus_playout_fifo forms, not a number the test made up. */
+static chorus_playout_t res_playout;
+static uint64_t res_now;
+static uint64_t res_clock(void)
+{
+    return res_now;
+}
+static int res_with_psram;
+static void fill_resources(void *ctx, chorus_console_resources_t *out)
+{
+    (void)ctx;
+    out->internal_free = 123456;
+    out->internal_min_free = 98765;
+    out->psram_present = res_with_psram;
+    out->psram_free = 8000000;
+    out->psram_min_free = 7900000;
+    out->stacks[0] = (chorus_console_stack_t){"chorus-playout", 1, 1872};
+    out->stacks[1] = (chorus_console_stack_t){"chorus-session", 1, 20480};
+    out->stacks[2] = (chorus_console_stack_t){"console_repl", 1, 5120};
+    out->stacks[3] = (chorus_console_stack_t){"wifi", 0, 0};
+    out->stack_count = 4;
+    out->fifo_known = 1;
+    chorus_playout_fifo(&res_playout, &out->fifo_frames, &out->fifo_ns);
+    if (res_with_psram) {
+        chorus_playout_stats_t st;
+        chorus_playout_stats(&res_playout, &st);
+        out->marker_pin = 38;
+        out->marker_period_ms = 1000;
+        out->marker_armed = st.marker_armed;
+        out->marker_edges = st.marker_edges;
+        out->marker_missed = st.marker_missed;
+        out->marker_last_boundary_ns = st.marker_last_boundary_ns;
+    }
+}
+
+static void resources_prints_what_the_bench_records(void)
+{
+    chorus_section("resources: heap, stacks, the FIFO after the writer and the marker");
+    chorus_sync_conf_t sync;
+    char path[512], detail[256];
+    chorus_repo_path(path, sizeof(path), "config/sync.conf");
+    if (chorus_sync_conf_load(&sync, path, detail, sizeof(detail)) != 0) {
+        chorus_check(0, "config/sync.conf: %s", detail);
+        return;
+    }
+    chorus_playout_config_t pc = chorus_playout_config_from(&sync, 48000, 24, 240, 200);
+    static uint8_t ring[48000u * 200u / 1000u * 6u];
+    static chorus_playout_chunk_t chunks[64];
+    res_now = 1000000000ull;
+    (void)chorus_playout_init(&res_playout, &pc, ring, chunks, res_clock);
+    chorus_playout_dma_reset(&res_playout);
+    chorus_playout_note_preloaded(&res_playout, 6u * 240u);
+    chorus_playout_on_dma_sent(&res_playout, 240u * 6u);
+    res_now += 2000000ull; /* 2 ms, 96 frames, into the next buffer */
+
+    chorus_console_t c = a_console(CHORUS_TRANSPORT_WIRED, NULL);
+    char out[CHORUS_CONSOLE_REPLY];
+    int rc = chorus_console_execute(&c, "resources", out, sizeof(out));
+    chorus_check(rc != 0 && strstr(out, "reason=not-bound") != NULL,
+                 "an image that does not bind it refuses by name: `%s`", out);
+
+    c.resources = fill_resources;
+    res_with_psram = 0;
+    rc = chorus_console_execute(&c, "resources", out, sizeof(out));
+    chorus_check(rc == 0 && strstr(out, "heap_internal_free=123456 heap_internal_min_free=98765") &&
+                     strstr(out, "heap_psram_free=none heap_psram_min_free=none") &&
+                     strstr(out, "stack_free.chorus-playout=1872") &&
+                     strstr(out, "stack_free.chorus-session=20480") &&
+                     strstr(out, "stack_free.console_repl=5120") &&
+                     strstr(out, "stack_free.wifi=absent") && strstr(out, "marker_pin=none"),
+                 "heap, stacks, `none` without PSRAM and without a marker, `absent` for a task "
+                 "not running: `%s`",
+                 out);
+    /* 1440 written, 240 consumed, 96 played since the stamp. */
+    chorus_check(strstr(out, "fifo_frames=1104.0 fifo_us=23000.0") != NULL,
+                 "the FIFO after the writer is the playout path's own device delay: 1440 - 240 - "
+                 "96 = 1104 frames, 23000 us at 48 kHz");
+
+    res_with_psram = 1;
+    rc = chorus_console_execute(&c, "resources", out, sizeof(out));
+    chorus_check(rc == 0 && strstr(out, "heap_psram_free=8000000 heap_psram_min_free=7900000") &&
+                     strstr(out, "marker_pin=38 marker_period_ms=1000 marker_armed=0 "
+                                 "marker_edges=0 marker_missed=0") != NULL,
+                 "with PSRAM and a marker pin both are printed: `%s`", out);
+    rc = chorus_console_execute(&c, "resources now", out, sizeof(out));
+    chorus_check(rc != 0 && strstr(out, "reason=usage") != NULL, "`resources` takes no word");
+}
+
 static void everything_else_is_refused_by_name(void)
 {
     chorus_section("an unknown or empty command is refused by name");
@@ -423,6 +518,7 @@ int main(void)
     status_prints_the_telemetry_line();
     decode_cost_times_only_the_decode();
     the_session_connects_where_the_console_says();
+    resources_prints_what_the_bench_records();
     everything_else_is_refused_by_name();
     return chorus_test_report("test_console");
 }

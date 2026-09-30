@@ -4,13 +4,16 @@
 #include <string.h>
 
 #include "esp_console.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 
 #include "chorus/console.h"
 #include "chorus/monotonic.h"
 #include "esp_hal.h"
+#include "esp_playout.h"
 
 static const char *TAG = "chorus-console";
 
@@ -53,6 +56,8 @@ static shared_t shared;
 static chorus_radio_t radio;
 static chorus_decode_fixture_t fixtures[2];
 static chorus_console_t console;
+static int32_t console_marker_pin = -1;
+static uint32_t console_marker_period_ms;
 
 static void on_telemetry(void *ctx, const chorus_telemetry_t *telemetry)
 {
@@ -83,6 +88,58 @@ static int read_telemetry(void *ctx, chorus_telemetry_t *out)
 static uint32_t stack_free_bytes(void)
 {
     return (uint32_t)uxTaskGetStackHighWaterMark(NULL);
+}
+
+/* The tasks `resources` names: the audio writer, the session (network and the
+ * inline FLAC/Opus decode, app_main.c), the amplifier's fault watch, the REPL,
+ * lwIP's thread and the W5500's receive task, by the names they are created
+ * with (the pinned v6.1 tree: components/console/esp_console_common.c creates
+ * "console_repl", components/lwip/port/include/lwipopts.h TCPIP_THREAD_NAME
+ * "tcpip"; managed component espressif/w5500 2.0.0 src/esp_eth_mac_w5500.c
+ * "w5500_tsk"; the Wi-Fi driver's task is "wifi" (ASSUMED, not read: the
+ * driver is a binary blob), all read 2026-09-30). A task not running reads
+ * `absent`. */
+static const char *const task_names[] = {"chorus-playout",
+                                         "chorus-session",
+                                         "chorus-amp-fault",
+                                         "console_repl",
+                                         "tcpip",
+                                         "w5500_tsk",
+                                         "wifi"};
+
+static void read_resources(void *ctx, chorus_console_resources_t *out)
+{
+    (void)ctx;
+    out->internal_free = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    out->internal_min_free =
+        (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    out->psram_present = heap_caps_get_total_size(MALLOC_CAP_SPIRAM) > 0;
+    out->psram_free = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    out->psram_min_free = (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM);
+    size_t n = sizeof(task_names) / sizeof(task_names[0]);
+    for (size_t i = 0; i < n && i < CHORUS_CONSOLE_MAX_TASKS; i++) {
+        TaskHandle_t task = xTaskGetHandle(task_names[i]);
+        out->stacks[i].name = task_names[i];
+        out->stacks[i].present = (task != NULL);
+        out->stacks[i].free_bytes =
+            (task != NULL) ? (uint32_t)uxTaskGetStackHighWaterMark(task) : 0u;
+        out->stack_count = i + 1;
+    }
+    chorus_playout_t *p = chorus_esp_playout_get();
+    if (p != NULL) {
+        out->fifo_known = 1;
+        chorus_playout_fifo(p, &out->fifo_frames, &out->fifo_ns);
+        if (console_marker_pin >= 0) {
+            chorus_playout_stats_t st;
+            chorus_playout_stats(p, &st);
+            out->marker_pin = console_marker_pin;
+            out->marker_period_ms = console_marker_period_ms;
+            out->marker_armed = st.marker_armed;
+            out->marker_edges = st.marker_edges;
+            out->marker_missed = st.marker_missed;
+            out->marker_last_boundary_ns = st.marker_last_boundary_ns;
+        }
+    }
 }
 
 static int set_server(void *ctx, const char *address)
@@ -177,6 +234,11 @@ int chorus_esp_console_start(const chorus_endpoint_config_t *config)
     console.fixture_count = 2;
     console.now_ns = chorus_monotonic_now_ns;
     console.stack_free_bytes = stack_free_bytes;
+    console.resources = read_resources;
+    if (config->pins.marker != CHORUS_PIN_NONE) {
+        console_marker_pin = (int32_t)config->pins.marker;
+        console_marker_period_ms = config->marker_period_ms;
+    }
 
     /* The REPL on whichever serial line this image's console is configured
      * for, as ESP-IDF's own examples choose it (examples/system/console/basic
@@ -204,6 +266,7 @@ int chorus_esp_console_start(const chorus_endpoint_config_t *config)
         "server <host>:<port>: the server the next connection goes to (runtime only)",
         "status: the telemetry line",
         "decode-cost [fixture]: time FLAC and Opus decode of the carried fixtures",
+        "resources: free heap, task stacks, the FIFO after the writer, the GPIO marker",
         "help: the commands"};
     /* chorus's own `help` rather than ESP-IDF's: the bench scripts check the
      * console is chorus's by its reply (tools/lib.sh require_endpoint_console). */
@@ -224,6 +287,7 @@ int chorus_esp_console_start(const chorus_endpoint_config_t *config)
         ESP_LOGE(TAG, "the console REPL could not start (%s)", esp_err_to_name(err));
         return -1;
     }
-    ESP_LOGI(TAG, "console up: power-save, server, status, decode-cost (values are runtime only)");
+    ESP_LOGI(TAG, "console up: power-save, server, status, decode-cost, resources (values are "
+                  "runtime only)");
     return 0;
 }

@@ -27,4 +27,8 @@ chorus_playout_t *chorus_esp_playout_create(const chorus_endpoint_config_t *conf
  * until the loop has acquired the timeline). Returns 0. */
 int chorus_esp_playout_start(chorus_playout_t *playout);
 
+/* The path chorus_esp_playout_create made, or NULL before it (or after it
+ * failed): the console's `resources` reads its FIFO depth and marker counts. */
+chorus_playout_t *chorus_esp_playout_get(void);
+
 #endif /* CHORUS_ESP_PLAYOUT_H */

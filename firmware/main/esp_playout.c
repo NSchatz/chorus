@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "esp_hal.h"
+#include "esp_marker.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -25,6 +26,7 @@ static const char *TAG = "chorus-playout";
 #define WRITER_PRIORITY (configMAX_PRIORITIES - 2)
 
 static chorus_playout_t playout;
+static int created;
 static SemaphoreHandle_t lock;
 static uint8_t block[CHORUS_ESP_HAL_MAX_DMA_BYTES];
 static uint32_t block_frames;
@@ -48,6 +50,10 @@ chorus_playout_t *chorus_esp_playout_create(const chorus_endpoint_config_t *conf
     chorus_playout_config_t c = chorus_playout_config_from(
         sync, config->clock.sample_rate_hz, (uint8_t)config->clock.slot_bit_width,
         config->clock.dma_frame_num, CHORUS_PLAYOUT_BUFFER_MS);
+    /* The GPIO marker's period, only when the board names a marker pin. */
+    if (config->pins.marker != CHORUS_PIN_NONE) {
+        c.marker_period_ns = (uint64_t)config->marker_period_ms * 1000000ull;
+    }
     size_t ring_bytes = chorus_playout_ring_bytes(&c);
     size_t chunk_bytes = chorus_playout_chunk_bytes(&c);
     /* Internal RAM, never external: firmware/endpoint-units.conf rule 3. */
@@ -72,6 +78,8 @@ chorus_playout_t *chorus_esp_playout_create(const chorus_endpoint_config_t *conf
         ESP_LOGE(TAG, "the playout path could not be attached to the I2S interrupt");
         return NULL;
     }
+    (void)chorus_esp_marker_start(config);
+    created = 1;
     ESP_LOGI(TAG, "jitter buffer %u bytes (%u frames), internal RAM free after it: %u bytes",
              (unsigned)ring_bytes, (unsigned)c.capacity_frames,
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
@@ -104,6 +112,11 @@ static void writer(void *argument)
             next_tick_ns = now + interval_ns;
         }
     }
+}
+
+chorus_playout_t *chorus_esp_playout_get(void)
+{
+    return created ? &playout : NULL;
 }
 
 int chorus_esp_playout_start(chorus_playout_t *p)

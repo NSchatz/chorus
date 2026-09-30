@@ -356,7 +356,15 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
         read_pin(conf, "pin_i2s_dout", &out->pins.dout, detail, detail_len) != 0 ||
         read_pin(conf, "pin_i2c_sda", &out->pins.sda, detail, detail_len) != 0 ||
         read_pin(conf, "pin_i2c_scl", &out->pins.scl, detail, detail_len) != 0 ||
-        read_pin(conf, "pin_amp_power_down", &out->pins.amp_power_down, detail, detail_len) != 0) {
+        read_pin(conf, "pin_amp_power_down", &out->pins.amp_power_down, detail, detail_len) != 0 ||
+        read_pin(conf, "pin_marker", &out->pins.marker, detail, detail_len) != 0) {
+        return -1;
+    }
+    NEED(chorus_conf_u32(conf, "marker_period_ms", &out->marker_period_ms, detail, detail_len));
+    if (out->marker_period_ms == 0) {
+        snprintf(detail, detail_len,
+                 "marker_period_ms = 0: the marker's period must be at least 1 ms (set "
+                 "pin_marker = none to turn the marker off)");
         return -1;
     }
     NEED(chorus_conf_bool(conf, "board_octal_psram", &out->pins.octal_psram, detail, detail_len));

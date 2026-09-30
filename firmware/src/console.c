@@ -7,8 +7,8 @@
 
 #include "chorus/codec.h"
 
-const char *const chorus_console_commands[] = {"power-save", "server", "status", "decode-cost",
-                                               "help"};
+const char *const chorus_console_commands[] = {"power-save",  "server",    "status",
+                                               "decode-cost", "resources", "help"};
 const size_t chorus_console_command_count =
     sizeof(chorus_console_commands) / sizeof(chorus_console_commands[0]);
 
@@ -182,6 +182,73 @@ static int decode_cost(chorus_console_t *c, int argc, char words[MAX_WORDS][WORD
     return 0;
 }
 
+/* `resources`: heap, the named tasks' least free stack, the FIFO after the
+ * writer and the marker's counts, on one line. A value the image cannot give
+ * reads `none` (no PSRAM, no marker pin) or `absent` (no such task running)
+ * or `unknown` (no playout path yet), never a zero that looks measured. */
+static int resources(chorus_console_t *c, int argc, char *out, size_t out_len)
+{
+    if (argc != 1) {
+        return refuse(out, out_len, "resources", "usage", "resources");
+    }
+    if (c->resources == NULL) {
+        return refuse(out, out_len, "resources", "not-bound",
+                      "this image does not report its resources");
+    }
+    chorus_console_resources_t r;
+    memset(&r, 0, sizeof(r));
+    r.marker_pin = -1;
+    c->resources(c->resources_ctx, &r);
+    size_t used =
+        (size_t)snprintf(out, out_len, "resources heap_internal_free=%u heap_internal_min_free=%u",
+                         (unsigned)r.internal_free, (unsigned)r.internal_min_free);
+    if (used < out_len) {
+        if (r.psram_present) {
+            used += (size_t)snprintf(out + used, out_len - used,
+                                     " heap_psram_free=%u heap_psram_min_free=%u",
+                                     (unsigned)r.psram_free, (unsigned)r.psram_min_free);
+        } else {
+            used += (size_t)snprintf(out + used, out_len - used,
+                                     " heap_psram_free=none heap_psram_min_free=none");
+        }
+    }
+    size_t n =
+        (r.stack_count > CHORUS_CONSOLE_MAX_TASKS) ? CHORUS_CONSOLE_MAX_TASKS : r.stack_count;
+    for (size_t i = 0; i < n && used < out_len; i++) {
+        const chorus_console_stack_t *t = &r.stacks[i];
+        if (t->present) {
+            used += (size_t)snprintf(out + used, out_len - used, " stack_free.%s=%u", t->name,
+                                     (unsigned)t->free_bytes);
+        } else {
+            used += (size_t)snprintf(out + used, out_len - used, " stack_free.%s=absent", t->name);
+        }
+    }
+    if (used < out_len) {
+        if (r.fifo_known) {
+            used += (size_t)snprintf(out + used, out_len - used, " fifo_frames=%.1f fifo_us=%.1f",
+                                     r.fifo_frames, r.fifo_ns / 1000.0);
+        } else {
+            used += (size_t)snprintf(out + used, out_len - used,
+                                     " fifo_frames=unknown fifo_us=unknown");
+        }
+    }
+    if (used < out_len) {
+        if (r.marker_pin >= 0) {
+            used += (size_t)snprintf(
+                out + used, out_len - used,
+                " marker_pin=%d marker_period_ms=%u marker_armed=%llu "
+                "marker_edges=%llu marker_missed=%llu "
+                "marker_last_boundary_ns=%llu",
+                (int)r.marker_pin, (unsigned)r.marker_period_ms, (unsigned long long)r.marker_armed,
+                (unsigned long long)r.marker_edges, (unsigned long long)r.marker_missed,
+                (unsigned long long)r.marker_last_boundary_ns);
+        } else {
+            used += (size_t)snprintf(out + used, out_len - used, " marker_pin=none");
+        }
+    }
+    return 0;
+}
+
 int chorus_console_execute(chorus_console_t *console, const char *line, char *out, size_t out_len)
 {
     char words[MAX_WORDS][WORD_LEN];
@@ -204,10 +271,14 @@ int chorus_console_execute(chorus_console_t *console, const char *line, char *ou
     if (strcmp(words[0], "decode-cost") == 0) {
         return decode_cost(console, argc, words, out, out_len);
     }
+    if (strcmp(words[0], "resources") == 0) {
+        return resources(console, argc, out, out_len);
+    }
     if (strcmp(words[0], "help") == 0) {
         return reply(out, out_len, 0,
-                     "help commands=power-save,server,status,decode-cost values=runtime-only");
+                     "help commands=power-save,server,status,decode-cost,resources "
+                     "values=runtime-only");
     }
     return refuse(out, out_len, "console", "unknown-command",
-                  "the commands are power-save, server, status, decode-cost and help");
+                  "the commands are power-save, server, status, decode-cost, resources and help");
 }

@@ -112,6 +112,11 @@ int chorus_playout_init(chorus_playout_t *p, const chorus_playout_config_t *conf
     p->chunks = chunks;
     p->now_ns = now_ns;
     chorus_servo_init(&p->servo, config->servo);
+    /* The marker's ns per frame in 16.16, for the interrupt. Below 16 kHz it
+     * does not fit 32 bits; no chorus stream is that slow, and the marker is
+     * then simply off. */
+    uint64_t q16 = (1000000000ull << 16) / config->rate_hz;
+    p->frame_ns_q16 = (q16 <= 0xffffffffull) ? (uint32_t)q16 : 0u;
     return 0;
 }
 
@@ -154,6 +159,34 @@ void chorus_playout_on_dma_sent(chorus_playout_t *p, size_t bytes)
     p->dma_seq = p->dma_seq + 1u; /* even: consistent */
 }
 
+/* Runs in the interrupt, right after chorus_playout_on_dma_sent: the buffer
+ * that starts at the pins now holds frames [consumed, consumed + dma_frame_num)
+ * of the written count, the same model the device delay uses (a frame
+ * consumed is a frame at the pins). */
+int chorus_playout_marker_due(chorus_playout_t *p, uint32_t *delay_ns, uint32_t *level)
+{
+    if (p->marker_pending == 0u) {
+        return 0;
+    }
+    uint32_t into = p->marker_frame32 - p->dma_consumed32;
+    if ((int32_t)into < 0) {
+        /* The frame's buffer started without this call seeing it. */
+        p->marker_missed32 = p->marker_missed32 + 1u;
+        p->marker_pending = 0u;
+        return 0;
+    }
+    if (into >= p->config.dma_frame_num) {
+        return 0;
+    }
+    uint64_t ns = ((uint64_t)into * p->frame_ns_q16) >> 16;
+    uint32_t lead = p->marker_lead_ns;
+    *delay_ns = (ns > lead) ? (uint32_t)(ns - lead) : 0u;
+    *level = p->marker_level;
+    p->marker_edges32 = p->marker_edges32 + 1u;
+    p->marker_pending = 0u;
+    return 1;
+}
+
 void chorus_playout_dma_reset(chorus_playout_t *p)
 {
     p->dma_seq = 0;
@@ -172,6 +205,7 @@ void chorus_playout_dma_reset(chorus_playout_t *p)
     p->written_frames = 0;
     p->block_read = 0;
     p->block_count = 0;
+    p->marker_pending = 0u;
 }
 
 /* Read the interrupt's counters consistently: retry while the sequence is odd
@@ -210,6 +244,14 @@ static uint64_t dma_snapshot(chorus_playout_t *p)
             p->blocks[(p->block_read + i) % CHORUS_PLAYOUT_MAX_BLOCKS].written_end += gap;
         }
         p->written32 = (uint32_t)p->written_frames;
+        if (p->marker_pending != 0u) {
+            /* The armed frame now plays `gap` frames later than it was
+             * counted; an edge from the stale index would mark the wrong
+             * instant, so the boundary is dropped rather than moved under the
+             * interrupt's feet. An underrun spoils the run anyway. */
+            p->marker_pending = 0u;
+            p->stats.marker_missed++;
+        }
     }
     if (p->dma_consumed > p->written_frames) {
         p->written_frames = p->dma_consumed;
@@ -393,8 +435,39 @@ void chorus_playout_reset_stream(chorus_playout_t *p)
     p->mute_frames = 0;
     p->advancing = 0;
     p->acquired = 0;
+    p->marker_pending = 0u;
     chorus_servo_init(&p->servo, p->config.servo);
     give_lock(p);
+}
+
+/* Arm the marker if a boundary falls inside `n` frames about to be written,
+ * the first of which has server timestamp `seg_ts` and is frame `first` of the
+ * written count. The marked frame is the first at or after the boundary. */
+static void plan_marker(chorus_playout_t *p, uint64_t seg_ts, uint32_t n, uint64_t first)
+{
+    uint64_t period = p->config.marker_period_ns;
+    if (period == 0 || p->frame_ns_q16 == 0 || p->marker_pending != 0u || n == 0) {
+        return;
+    }
+    uint64_t k = (seg_ts + period - 1u) / period;
+    uint64_t boundary = k * period;
+    if (p->stats.marker_armed > 0 && boundary <= p->stats.marker_last_boundary_ns) {
+        return;
+    }
+    uint64_t rate = p->config.rate_hz;
+    uint64_t m = ((boundary - seg_ts) * rate + 999999999ull) / 1000000000ull;
+    if (m >= n) {
+        return;
+    }
+    uint64_t frame_ts = seg_ts + m * 1000000000ull / rate;
+    uint64_t lead = (frame_ts > boundary) ? frame_ts - boundary : 0u;
+    p->marker_frame32 = (uint32_t)(first + m);
+    p->marker_lead_ns = (uint32_t)lead;
+    p->marker_level = (uint32_t)(k & 1u);
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    p->marker_pending = 1u;
+    p->stats.marker_armed++;
+    p->stats.marker_last_boundary_ns = boundary;
 }
 
 /* Let `elapsed_ns` of playout pass at the correction in force: the corrector's
@@ -482,6 +555,12 @@ uint32_t chorus_playout_fill(chorus_playout_t *p, uint8_t *out, uint32_t frames)
         }
         uint8_t *dst = out + (size_t)produced * fb;
         memcpy(dst, p->ring + (size_t)p->ring_read * fb, (size_t)n * fb);
+        {
+            const chorus_playout_chunk_t *front = &p->chunks[p->chunk_read];
+            uint64_t seg_ts =
+                front->timestamp_ns + (uint64_t)p->front_taken * 1000000000ull / c->rate_hz;
+            plan_marker(p, seg_ts, n, p->written_frames + produced);
+        }
         if (p->mute_frames > 0) {
             uint32_t silence = (p->mute_frames < n) ? (uint32_t)p->mute_frames : n;
             memset(dst, 0, (size_t)silence * fb);
@@ -505,6 +584,37 @@ void chorus_playout_note_preloaded(chorus_playout_t *p, uint32_t frames)
     give_lock(p);
 }
 
+/* Frames written and not yet at the pins: written minus consumed, less what
+ * of the buffer in flight has played since the interrupt stamped the last
+ * one. The interpolation is bounded by one DMA buffer and by what is queued.
+ * Called with the lock held and a fresh snapshot. */
+static double device_delay_frames(chorus_playout_t *p, uint64_t stamp, uint64_t now)
+{
+    const chorus_playout_config_t *c = &p->config;
+    double queued = (double)(p->written_frames - p->dma_consumed);
+    double partial = 0.0;
+    if (p->dma_interrupts > 0 && now > stamp) {
+        partial = (double)(now - stamp) * (double)c->rate_hz / NS_PER_S;
+        if (partial > (double)c->dma_frame_num) {
+            partial = (double)c->dma_frame_num;
+        }
+    }
+    if (partial > queued) {
+        partial = queued;
+    }
+    return queued - partial;
+}
+
+void chorus_playout_fifo(chorus_playout_t *p, double *frames, double *ns)
+{
+    take_lock(p);
+    uint64_t stamp = dma_snapshot(p);
+    double f = device_delay_frames(p, stamp, p->now_ns());
+    give_lock(p);
+    *frames = f;
+    *ns = f * NS_PER_S / (double)p->config.rate_hz;
+}
+
 chorus_playout_observation_t chorus_playout_observe(chorus_playout_t *p,
                                                     chorus_playout_report_t *report)
 {
@@ -519,21 +629,8 @@ chorus_playout_observation_t chorus_playout_observe(chorus_playout_t *p,
     r.dma_stamp_ns = stamp;
     r.written_frames = p->written_frames;
 
-    /* The device delay: frames written and not yet consumed, less what of the
-     * buffer in flight has played since the interrupt stamped the last one.
-     * The interpolation is bounded by one DMA buffer and by what is queued. */
-    double queued = (double)(p->written_frames - p->dma_consumed);
-    double partial = 0.0;
-    if (p->dma_interrupts > 0 && now > stamp) {
-        partial = (double)(now - stamp) * (double)c->rate_hz / NS_PER_S;
-        if (partial > (double)c->dma_frame_num) {
-            partial = (double)c->dma_frame_num;
-        }
-    }
-    if (partial > queued) {
-        partial = queued;
-    }
-    r.device_delay_frames = queued - partial;
+    /* The device delay (device_delay_frames above). */
+    r.device_delay_frames = device_delay_frames(p, stamp, now);
     r.device_delay_ns = r.device_delay_frames * NS_PER_S / (double)c->rate_hz;
     r.offset_ns = p->offset_ns;
     r.correction_ppm = p->correction_ppm;
@@ -598,7 +695,10 @@ void chorus_playout_stats(chorus_playout_t *p, chorus_playout_stats_t *out)
     p->stats.written_frames = p->written_frames;
     p->stats.queued_frames = p->ring_count;
     p->stats.correction_ppm = p->correction_ppm;
+    p->stats.marker_edges = p->marker_edges32;
+    uint64_t missed_in_interrupt = p->marker_missed32;
     *out = p->stats;
+    out->marker_missed += missed_in_interrupt;
     give_lock(p);
 }
 

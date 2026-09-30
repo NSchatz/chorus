@@ -210,6 +210,7 @@ size_t chorus_pin_map_validate(const chorus_pin_map_t *pins, chorus_finding_t *f
         {"pin_i2c_sda", pins->sda},
         {"pin_i2c_scl", pins->scl},
         {"pin_amp_power_down", pins->amp_power_down},
+        {"pin_marker", pins->marker},
     };
     const size_t pin_count = sizeof(all) / sizeof(all[0]);
 
