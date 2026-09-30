@@ -165,9 +165,7 @@ impl CodedStream {
         let chunk_bytes = self.chunk_frames * frame_bytes;
         let mut out = Vec::new();
         let mut taken = 0;
-        while self.pending.len() - taken >= chunk_bytes
-            || (all && self.pending.len() > taken)
-        {
+        while self.pending.len() - taken >= chunk_bytes || (all && self.pending.len() > taken) {
             let n = chunk_bytes.min(self.pending.len() - taken);
             let frames = (n / frame_bytes) as u64;
             let sequence = self.sequence.unwrap_or(0);

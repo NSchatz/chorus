@@ -166,9 +166,9 @@ impl Decoder {
                     ));
                 }
                 let packet = PacketRef::new(0, Timestamp::ZERO, Duration::new(frames as u64), data);
-                let decoded = decoder
-                    .decode_ref(&packet)
-                    .map_err(|e| format!("a FLAC chunk of {} bytes was refused: {}", data.len(), e))?;
+                let decoded = decoder.decode_ref(&packet).map_err(|e| {
+                    format!("a FLAC chunk of {} bytes was refused: {}", data.len(), e)
+                })?;
                 let got = decoded.frames();
                 // Plane i is subframe i, the FLAC coded order (RFC 9639 section
                 // 9.1.3), which is the interleave order the channel map names;
@@ -189,15 +189,15 @@ impl Decoder {
             }
             Inner::Opus { decoder, s16, s24 } => match format {
                 SampleFormat::PcmS16Le => {
-                    let got = decoder
-                        .decode_s16(data, s16)
-                        .map_err(|e| format!("libopus refused a packet of {} bytes: {}", data.len(), e))?;
+                    let got = decoder.decode_s16(data, s16).map_err(|e| {
+                        format!("libopus refused a packet of {} bytes: {}", data.len(), e)
+                    })?;
                     (got, Values::I16(&s16[..]), 0)
                 }
                 _ => {
-                    let got = decoder
-                        .decode_s24(data, s24)
-                        .map_err(|e| format!("libopus refused a packet of {} bytes: {}", data.len(), e))?;
+                    let got = decoder.decode_s24(data, s24).map_err(|e| {
+                        format!("libopus refused a packet of {} bytes: {}", data.len(), e)
+                    })?;
                     (got, Values::I32(&s24[..]), 8)
                 }
             },
@@ -222,7 +222,11 @@ impl Decoder {
             Values::I32(v) => {
                 for &s in &v[from..to] {
                     // Opus's 24-bit words are left-justified here (shift 8).
-                    let s = if shift >= 32 { 0 } else { ((s as u32) << shift) as i32 };
+                    let s = if shift >= 32 {
+                        0
+                    } else {
+                        ((s as u32) << shift) as i32
+                    };
                     push_sample(out, format, s);
                 }
             }
@@ -335,7 +339,10 @@ fn open_opus(format: &StreamFormat, h: &[u8]) -> Result<(Inner, usize, usize), S
         return Err("an Opus codec setup is an OpusHead of at least 19 bytes".to_string());
     }
     if h[8] >> 4 != 0 {
-        return Err(format!("OpusHead version {} is not one this decoder reads", h[8]));
+        return Err(format!(
+            "OpusHead version {} is not one this decoder reads",
+            h[8]
+        ));
     }
     let channels = h[9];
     let pre_skip = usize::from(u16::from_le_bytes([h[10], h[11]]));
@@ -348,7 +355,10 @@ fn open_opus(format: &StreamFormat, h: &[u8]) -> Result<(Inner, usize, usize), S
             family
         ));
     }
-    if h.len() != 19 || !(1..=2).contains(&channels) || usize::from(channels) != format.channel_map.len() {
+    if h.len() != 19
+        || !(1..=2).contains(&channels)
+        || usize::from(channels) != format.channel_map.len()
+    {
         return Err(format!(
             "the OpusHead ({} bytes, {} channels) does not match a family 0 stream of {} channels",
             h.len(),
@@ -357,7 +367,10 @@ fn open_opus(format: &StreamFormat, h: &[u8]) -> Result<(Inner, usize, usize), S
         ));
     }
     if format.sample_rate_hz != 48_000 {
-        return Err(format!("an Opus stream is 48000 Hz, not {}", format.sample_rate_hz));
+        return Err(format!(
+            "an Opus stream is 48000 Hz, not {}",
+            format.sample_rate_hz
+        ));
     }
     let decoder = chorus_opus_sys::Decoder::new(channels, gain)
         .map_err(|e| format!("libopus refused the decoder: {}", e))?;

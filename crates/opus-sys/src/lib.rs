@@ -7,7 +7,10 @@
 //! criterion ("Same Opus code as the endpoint: Yes") and what the shared
 //! fixtures in `fixtures/codec` hold both sides to. The functions used are
 //! libopus's documented API (`include/opus.h`, `include/opus_defines.h`).
-#![allow(unsafe_code, reason = "the crate is the FFI binding to the vendored libopus")]
+#![allow(
+    unsafe_code,
+    reason = "the crate is the FFI binding to the vendored libopus"
+)]
 
 use std::ffi::{c_char, c_int, CStr};
 use std::fmt;

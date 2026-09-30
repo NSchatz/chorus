@@ -21,7 +21,7 @@ use chorus_client_linux::decode::Decoder;
 use chorus_client_linux::receive::{Received, Receiver};
 use chorus_client_linux::session::Announced;
 use chorus_protocol::v2::session::Translation;
-use chorus_protocol::v2::{ChannelPosition, CodedChunk, Codec, Message, StreamFormat};
+use chorus_protocol::v2::{ChannelPosition, Codec, CodedChunk, Message, StreamFormat};
 use chorus_protocol::{SampleFormat, StreamEnd};
 
 struct Fixture {
@@ -179,7 +179,11 @@ fn through_the_session_path(fx: &Fixture) -> (Vec<u8>, Vec<u64>, Vec<u64>) {
             data: data.clone(),
         };
         at_frames += u64::from(*frames);
-        take(coded.translate(&Message::CodedChunk(chunk)).expect("decodes"));
+        take(
+            coded
+                .translate(&Message::CodedChunk(chunk))
+                .expect("decodes"),
+        );
     }
     let end = StreamEnd {
         final_sequence: 0,
@@ -278,7 +282,12 @@ fn flac_and_opus_decode_to_the_reference_decodes() {
          opus_compare pass",
         flac_ok, flac, opus_ok, opus
     );
-    assert!(flac >= 3 && opus >= 2, "fixtures/codec holds {} FLAC and {} Opus", flac, opus);
+    assert!(
+        flac >= 3 && opus >= 2,
+        "fixtures/codec holds {} FLAC and {} Opus",
+        flac,
+        opus
+    );
 }
 
 #[test]
@@ -287,10 +296,15 @@ fn a_coded_stream_reaches_the_receive_path_as_full_chunks_of_the_same_pcm() {
         let fx = load(&name);
         let (pcm, sizes, stamps) = through_the_session_path(&fx);
         let (direct, _, _) = fx.decode(fx.sample_format(), false);
-        assert_eq!(pcm, direct, "{}: the session path plays what the decoder gave", name);
+        assert_eq!(
+            pcm, direct,
+            "{}: the session path plays what the decoder gave",
+            name
+        );
         let nominal = sizes[0];
         assert!(
-            sizes[..sizes.len() - 1].iter().all(|&n| n == nominal) && sizes[sizes.len() - 1] <= nominal,
+            sizes[..sizes.len() - 1].iter().all(|&n| n == nominal)
+                && sizes[sizes.len() - 1] <= nominal,
             "{}: every chunk but the last is full: {:?}",
             name,
             sizes
@@ -298,14 +312,23 @@ fn a_coded_stream_reaches_the_receive_path_as_full_chunks_of_the_same_pcm() {
         // Contiguous: each chunk starts where the one before it ended.
         let rate: u64 = fx.get("sample_rate_hz").parse().unwrap();
         let skip = if fx.codec() == Codec::Opus {
-            u64::from(u16::from_le_bytes([unhex(fx.get("codec_config"))[10], unhex(fx.get("codec_config"))[11]]))
+            u64::from(u16::from_le_bytes([
+                unhex(fx.get("codec_config"))[10],
+                unhex(fx.get("codec_config"))[11],
+            ]))
         } else {
             0
         };
         let start = 1_000_000_000u64 + skip * 1_000_000_000 / rate;
         let mut at = 0u64;
         for (i, (&n, &ts)) in sizes.iter().zip(&stamps).enumerate() {
-            assert_eq!(ts, start + at * 1_000_000_000 / rate, "{}: chunk {} timestamp", name, i);
+            assert_eq!(
+                ts,
+                start + at * 1_000_000_000 / rate,
+                "{}: chunk {} timestamp",
+                name,
+                i
+            );
             at += n;
         }
         println!(
@@ -325,7 +348,9 @@ fn a_bad_setup_or_chunk_is_refused_by_name() {
     let flac = load("flac-s16-stereo-44k1");
     let mut f = flac.format(SampleFormat::PcmS16Le);
     f.codec_config.pop();
-    assert!(Decoder::open(&f).unwrap_err().contains("34-byte STREAMINFO"));
+    assert!(Decoder::open(&f)
+        .unwrap_err()
+        .contains("34-byte STREAMINFO"));
     let f = flac.format(SampleFormat::PcmF32Le);
     assert!(Decoder::open(&f).unwrap_err().contains("pcm_f32le"));
     let opus = load("opus-tv05-hybrid-stereo");
@@ -344,9 +369,13 @@ fn a_bad_setup_or_chunk_is_refused_by_name() {
     assert!(d.decode(&bad, flac.chunks[1].0, &mut out).is_err());
     let before = out.len();
     let (frames, _, data) = &flac.chunks[2];
-    d.decode(data, *frames, &mut out).expect("the next frame decodes");
+    d.decode(data, *frames, &mut out)
+        .expect("the next frame decodes");
     let start = (flac.chunks[0].0 as usize + flac.chunks[1].0 as usize) * 4;
-    assert_eq!(&out[before..], &flac.reference[start..start + out.len() - before]);
+    assert_eq!(
+        &out[before..],
+        &flac.reference[start..start + out.len() - before]
+    );
 
     // A coded chunk under a PCM announcement is a framing error.
     let mut pcm_format = flac.format(SampleFormat::PcmS16Le);

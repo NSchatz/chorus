@@ -34,6 +34,9 @@ struct chorus_flac {
     uint8_t bits;
     uint32_t sample_rate_hz;
     uint32_t max_frames;
+    /* dr_flac's own sample type: `int` where the toolchain's int32_t is a
+     * `long` (Xtensa), so it is decoded here and copied out. */
+    drflac_int32 *decoded;
 };
 
 static size_t on_read(void *user, void *out, size_t want)
@@ -132,7 +135,14 @@ chorus_codec_status_t chorus_flac_open(chorus_flac_t **out, const chorus_codec_s
     f->bits = (uint8_t)bits;
     f->sample_rate_hz = rate;
     f->max_frames = max_block;
+    f->decoded = malloc((size_t)max_block * channels * sizeof(drflac_int32));
+    if (f->decoded == NULL) {
+        free(f);
+        snprintf(detail, detail_len, "no memory for the FLAC decoder's samples");
+        return CHORUS_CODEC_NO_MEMORY;
+    }
     if (!reopen(f)) {
+        free(f->decoded);
         free(f);
         snprintf(detail, detail_len, "dr_flac refused the STREAMINFO block");
         return CHORUS_CODEC_UNSUPPORTED;
@@ -163,7 +173,7 @@ chorus_codec_status_t chorus_flac_decode(chorus_flac_t *f, const uint8_t *data, 
     f->chunk_at = 0;
     /* One frame at most: dr_flac loads a frame only when the one before it is
      * used up, and a frame holds at most max_frames. */
-    drflac_uint64 got = drflac_read_pcm_frames_s32(f->dr, f->max_frames, samples);
+    drflac_uint64 got = drflac_read_pcm_frames_s32(f->dr, f->max_frames, f->decoded);
     const drflac_frame *frame = &f->dr->currentFLACFrame;
     const char *wrong = NULL;
     if (got == 0) {
@@ -188,6 +198,9 @@ chorus_codec_status_t chorus_flac_decode(chorus_flac_t *f, const uint8_t *data, 
         return CHORUS_CODEC_BAD_CHUNK;
     }
     f->chunk = NULL;
+    for (size_t i = 0; i < (size_t)got * f->channels; i++) {
+        samples[i] = (int32_t)f->decoded[i];
+    }
     *frames = (uint32_t)got;
     return CHORUS_CODEC_OK;
 }
@@ -200,5 +213,6 @@ void chorus_flac_close(chorus_flac_t *f)
     if (f->dr != NULL) {
         drflac_close(f->dr);
     }
+    free(f->decoded);
     free(f);
 }
