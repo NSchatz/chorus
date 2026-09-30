@@ -16,10 +16,10 @@ static const char *TAG = "chorus-console";
 
 /* The REPL task's stack. decode-cost runs FLAC and Opus on this task, and
  * libopus keeps its scratch on the caller's stack (goal 6's note), so this is
- * well above ESP-IDF's 4096-byte default. ASSUMED, not measured: the stack
- * high-water mark on a board is a bench question (tools/decode-cost-run.sh
- * prints it with the figures), and FreeRTOS's stack-overflow check names the
- * task if it is too small. */
+ * well above ESP-IDF's 4096-byte default. ASSUMED, not measured: the least
+ * free stack on a board is a bench question (the decode-cost reply carries it
+ * as stack_free_bytes, and tools/decode-cost-run.sh records it), and
+ * FreeRTOS's stack-overflow check names the task if it is too small. */
 #define CONSOLE_STACK_BYTES 16384
 
 /* The decode-cost fixtures, embedded from fixtures/codec by the component's
@@ -78,6 +78,13 @@ static int read_telemetry(void *ctx, chorus_telemetry_t *out)
     return rc;
 }
 
+/* uxTaskGetStackHighWaterMark counts bytes on ESP-IDF's FreeRTOS port
+ * (StackType_t is uint8_t there). */
+static uint32_t stack_free_bytes(void)
+{
+    return (uint32_t)uxTaskGetStackHighWaterMark(NULL);
+}
+
 static int set_server(void *ctx, const char *address)
 {
     shared_t *s = (shared_t *)ctx;
@@ -123,11 +130,6 @@ static int run(void *context, int argc, char **argv)
     static char reply[CHORUS_CONSOLE_REPLY];
     int rc = chorus_console_execute(&console, line, reply, sizeof(reply));
     printf("%s\n", reply);
-    if (strcmp(argv[0], "decode-cost") == 0) {
-        /* The figure is only as good as the stack it ran on. */
-        printf("decode-cost-stack high_water_bytes=%u stack_bytes=%u\n",
-               (unsigned)uxTaskGetStackHighWaterMark(NULL), (unsigned)CONSOLE_STACK_BYTES);
-    }
     return rc;
 }
 
@@ -164,6 +166,7 @@ int chorus_esp_console_start(const chorus_endpoint_config_t *config,
     console.fixtures = fixtures;
     console.fixture_count = 2;
     console.now_ns = chorus_monotonic_now_ns;
+    console.stack_free_bytes = stack_free_bytes;
 
     session->server_update = server_update;
     session->server_update_ctx = &shared;

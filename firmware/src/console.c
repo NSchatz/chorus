@@ -176,6 +176,10 @@ static int decode_cost(chorus_console_t *c, int argc, char words[MAX_WORDS][WORD
         return refuse(out, out_len, "decode-cost", "no-such-fixture",
                       "no carried fixture has that name");
     }
+    if (c->stack_free_bytes != NULL && used < out_len) {
+        snprintf(out + used, out_len - used, " stack_free_bytes=%u",
+                 (unsigned)c->stack_free_bytes());
+    }
     return 0;
 }
 

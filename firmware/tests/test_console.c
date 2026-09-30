@@ -72,6 +72,11 @@ static uint64_t fake_clock(void)
     return fake_now;
 }
 
+static uint32_t fixed_stack_free(void)
+{
+    return 5120;
+}
+
 static char server_given[256];
 static int server_accepts = 1;
 static int take_server(void *ctx, const char *address)
@@ -267,7 +272,10 @@ static void decode_cost_times_only_the_decode(void)
                      strstr(out, " opus-tv10-celt-stereo:codec=opus,") != NULL &&
                      strstr(out, "decode_matches=no") == NULL,
                  "`decode-cost` is one line with one group per fixture: `%s`", out);
+    c.stack_free_bytes = fixed_stack_free;
     rc = chorus_console_execute(&c, "decode-cost opus-tv10-celt-stereo", out, sizeof(out));
+    chorus_check(rc == 0 && strstr(out, " stack_free_bytes=5120") != NULL,
+                 "the reply ends with the console task's least free stack: `%s`", out);
     chorus_check(rc == 0 && strstr(out, "flac") == NULL, "`decode-cost <name>` runs that one");
     rc = chorus_console_execute(&c, "decode-cost mp3", out, sizeof(out));
     chorus_check(rc != 0 && strstr(out, "reason=no-such-fixture") != NULL, "`%s`", out);

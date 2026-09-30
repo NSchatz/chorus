@@ -52,6 +52,11 @@ typedef struct {
     const chorus_decode_fixture_t *fixtures;
     size_t fixture_count;
     chorus_clock_fn now_ns;
+
+    /* The least free stack the console task has had, in bytes, appended to
+     * the decode-cost reply: the decoders run on that task. NULL leaves it
+     * out. */
+    uint32_t (*stack_free_bytes)(void);
 } chorus_console_t;
 
 /* Run one command line and write its one reply line (no newline) into `out`.
