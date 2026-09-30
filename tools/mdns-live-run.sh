@@ -55,6 +55,7 @@ SERVER=""
 trap 'kill_quietly "$SERVER"' EXIT
 
 "$BIN_DIR/chorus-server" \
+    --ephemeral-identity \
     --listen "127.0.0.1:$AUDIO" \
     --source tone \
     --serve-forever \
@@ -83,6 +84,7 @@ check "the-server-advertises-both-services" \
 # exits 7 saying so. That is the whole point of the check.
 set +e
 OUT="$("$BIN_DIR/chorus-client" \
+    --ephemeral-identity \
     --no-server --discover \
     --device chorus-no-such-device \
     --delay-log "$OUT_DIR/unused.log" 2>&1)"
@@ -112,6 +114,7 @@ SERVER=""
 sleep 1
 set +e
 OUT="$("$BIN_DIR/chorus-client" \
+    --ephemeral-identity \
     --server 127.0.0.1:1 --discover --discover-ms 400 \
     --device chorus-no-such-device \
     --delay-log "$OUT_DIR/unused.log" 2>&1)"

@@ -31,6 +31,14 @@
 //! connection at a time. When both halves are finished the slot returns to the
 //! free list and can take the next client.
 //!
+//! # The session comes first
+//!
+//! Every connection is a protocol v2 session ([`crate::session`]). The reader
+//! runs the handshake, with a timeout, on the slot's own thread, so a slow
+//! peer holds its slot and never the acceptor; the writer waits for the
+//! session and writes nothing before it, so no frame leaves outside a record.
+//! Neither costs a thread.
+//!
 //! # A full pool refuses rather than grows
 //!
 //! `max_clients` is a ceiling on connections, and it is the same argument the
@@ -372,12 +380,7 @@ impl ClientPool {
 /// halves have.
 ///
 /// Returns whether the pool is still there to return it to.
-fn release(
-    life: &Arc<SlotLife>,
-    index: usize,
-    free: &Sender<usize>,
-    busy: &AtomicUsize,
-) -> bool {
+fn release(life: &Arc<SlotLife>, index: usize, free: &Sender<usize>, busy: &AtomicUsize) -> bool {
     // Whichever half finishes first tells the other one to stop: the writer is
     // parked on a queue nothing will fill again, and the reader on a socket
     // that has nothing more to say.
@@ -427,9 +430,12 @@ mod tests {
             id: "test-endpoint".to_string(),
             keypair: Keypair::from_secret([12; 32]),
         };
-        let session = connect(&mut handshake, &me, Keypair::from_secret([13; 32]), |_, _| {
-            chorus_protocol::v2::adoption::Verdict::Adopted
-        })
+        let session = connect(
+            &mut handshake,
+            &me,
+            Keypair::from_secret([13; 32]),
+            |_, _| chorus_protocol::v2::adoption::Verdict::Adopted,
+        )
         .expect("the session comes up");
         let mut writer = SecureWriter::new(stream.try_clone().unwrap(), session.sealer);
         writer
@@ -491,7 +497,9 @@ mod tests {
     fn attach(pool: &ClientPool, server: TcpStream) -> bool {
         let reader = server.try_clone().expect("a connection splits");
         let peer = server.peer_addr().expect("a connected peer");
-        pool.attach(server, reader, peer, || sync_channel(SUBSCRIBER_QUEUE_LIMIT))
+        pool.attach(server, reader, peer, || {
+            sync_channel(SUBSCRIBER_QUEUE_LIMIT)
+        })
     }
 
     fn wait_until<F: Fn() -> bool>(what: &str, f: F) {

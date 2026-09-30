@@ -46,6 +46,7 @@ PORT="$(free_port)"
 LOG="${TMPDIR:-/tmp}/chorus-clean-end.log"
 # 2010 ms of tone at 20 ms a chunk is 100 whole chunks and a 10 ms final one.
 "$BIN_DIR/chorus-server" \
+    --ephemeral-identity \
     --listen "127.0.0.1:$PORT" \
     --source tone \
     --tone-ms 2010 \
@@ -56,6 +57,7 @@ sleep 1
 
 set +e
 CLIENT_OUT="$("$BIN_DIR/chorus-client" \
+    --ephemeral-identity \
     --server "127.0.0.1:$PORT" \
     --device "$DEVICE" \
     --delay-log "$LOG" 2>&1)"
@@ -96,6 +98,7 @@ say "chorus: a server killed mid-run"
 PORT="$(free_port)"
 LOSS_LOG="${TMPDIR:-/tmp}/chorus-server-loss.log"
 "$BIN_DIR/chorus-server" \
+    --ephemeral-identity \
     --listen "127.0.0.1:$PORT" \
     --source tone \
     --chunk-us "$(conf chunk_us)" \
@@ -108,6 +111,7 @@ KILLER_PID=$!
 
 set +e
 LOSS_OUT="$("$BIN_DIR/chorus-client" \
+    --ephemeral-identity \
     --server "127.0.0.1:$PORT" \
     --device "$DEVICE" \
     --delay-log "$LOSS_LOG" \

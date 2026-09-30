@@ -5,7 +5,11 @@
 //!
 //! - `0`  the source ended cleanly, the end-of-stream signal was sent, and the
 //!   client was served.
-//! - `2`  the configuration was refused, including an unsupported format.
+//! - `2`  the configuration was refused, including an unsupported format, a
+//!   channel count with no channel map, a chunk too large for one protocol
+//!   v2 record, and a server with no identity to present (no
+//!   `--identity-dir`, no `--state-file`, no `--ephemeral-identity`) or one
+//!   whose key or adoption file cannot be read.
 //! - `3`  the host contract was refused: the granted rtprio ceiling is zero,
 //!   the real-time policy was denied, or locking memory was denied. The
 //!   message names the limit that was read and what was wanted.

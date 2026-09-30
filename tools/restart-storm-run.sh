@@ -182,6 +182,7 @@ for ZONE in kitchen study hall porch; do
     # end of it, and everything below is read out of what they printed on their
     # way out rather than out of a process that was killed mid-sentence.
     "$BIN_DIR/chorus-client" \
+        --ephemeral-identity \
         --server "127.0.0.1:$AUDIO" \
         --control "127.0.0.1:$CONTROL" \
         --zone "$ZONE" \

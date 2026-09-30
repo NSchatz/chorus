@@ -207,7 +207,10 @@ fn frame_types(bytes: &[u8]) -> Vec<u8> {
     let mut types = Vec::new();
     let mut at = 0usize;
     while at < bytes.len() {
-        assert!(at + 3 <= bytes.len(), "the capture ends inside a frame header");
+        assert!(
+            at + 3 <= bytes.len(),
+            "the capture ends inside a frame header"
+        );
         let len = u16::from_be_bytes([bytes[at + 1], bytes[at + 2]]) as usize;
         assert!(
             at + 3 + len <= bytes.len(),
@@ -342,9 +345,13 @@ fn encryption_on_the_real_server_and_the_linux_client_stream_pcm_end_to_end_as_s
     let endpoint_id = common::fresh_id("e2e-endpoint");
     let mut me = EndpointIdentity::ephemeral(&endpoint_id).unwrap();
     let endpoint_key = me.fingerprint();
-    let mut config = ClientConfig::default();
-    config.delay_log = dir.join("delay.log").to_str().unwrap().to_string();
-    config.validate().expect("the default client configuration is valid");
+    let config = ClientConfig {
+        delay_log: dir.join("delay.log").to_str().unwrap().to_string(),
+        ..ClientConfig::default()
+    };
+    config
+        .validate()
+        .expect("the default client configuration is valid");
     let stream = TcpStream::connect(("127.0.0.1", proxy.port)).expect("the proxy listens");
     stream
         .set_read_timeout(Some(Duration::from_millis(200)))
@@ -401,7 +408,7 @@ fn encryption_on_the_real_server_and_the_linux_client_stream_pcm_end_to_end_as_s
     );
     // A clean end: the in-band stream_end, and every chunk in order.
     let end = match &outcome.stop {
-        StopReason::EndOfStream(end) => end.clone(),
+        StopReason::EndOfStream(end) => *end,
         other => panic!("the run did not end on the in-band signal: {:?}", other),
     };
     let mut receiver = Receiver::new();
@@ -442,7 +449,10 @@ fn encryption_on_the_real_server_and_the_linux_client_stream_pcm_end_to_end_as_s
     // The server adopted this endpoint and said so.
     let adopted = server.wait_for("endpoint adopted id=");
     assert!(
-        adopted.contains(&format!("endpoint adopted id={} key={}", endpoint_id, endpoint_key)),
+        adopted.contains(&format!(
+            "endpoint adopted id={} key={}",
+            endpoint_id, endpoint_key
+        )),
         "{}",
         adopted
     );
@@ -460,7 +470,10 @@ fn encryption_on_the_real_server_and_the_linux_client_stream_pcm_end_to_end_as_s
     let down_types = frame_types(&down);
     assert_eq!(&up_types[..2], &[HANDSHAKE_INIT, HANDSHAKE_FINISH]);
     assert_eq!(down_types[0], HANDSHAKE_RESPONSE);
-    let up_records = up_types[2..].iter().filter(|t| **t == SECURE_RECORD).count();
+    let up_records = up_types[2..]
+        .iter()
+        .filter(|t| **t == SECURE_RECORD)
+        .count();
     let down_records = down_types[1..]
         .iter()
         .filter(|t| **t == SECURE_RECORD)
@@ -480,7 +493,7 @@ fn encryption_on_the_real_server_and_the_linux_client_stream_pcm_end_to_end_as_s
     // hello and capabilities, then the time-sync requests.
     assert!(up_records >= 2, "{:02x?}", up_types);
     // hello, stream_format, output_delay, every chunk, the end, the replies.
-    assert!(down_records >= 3 + CHUNKS + 1, "{:02x?}", down_types);
+    assert!(down_records > 3 + CHUNKS, "{:02x?}", down_types);
 
     // No plaintext: a known chunk's PCM, whole or in part, is nowhere on the
     // wire, and neither is any v1 frame header of the stream.

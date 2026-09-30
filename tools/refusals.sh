@@ -41,14 +41,14 @@ check() {
 
 run_server() {
     set +e
-    OUT="$("$BIN_DIR/chorus-server" "$@" 2>&1)"
+    OUT="$("$BIN_DIR/chorus-server" --ephemeral-identity "$@" 2>&1)"
     STATUS=$?
     set -e
 }
 
 run_client() {
     set +e
-    OUT="$("$BIN_DIR/chorus-client" "$@" 2>&1)"
+    OUT="$("$BIN_DIR/chorus-client" --ephemeral-identity "$@" 2>&1)"
     STATUS=$?
     set -e
 }
@@ -82,7 +82,7 @@ CEILING="$(ulimit -r 2>/dev/null || echo 0)"
 say "chorus: this host's granted rtprio ceiling is $CEILING"
 
 set +e
-OUT="$(bash -c 'ulimit -r 0 2>/dev/null; exec "$0" --listen 127.0.0.1:0 --no-lock-memory' \
+OUT="$(bash -c 'ulimit -r 0 2>/dev/null; exec "$0" --ephemeral-identity --listen 127.0.0.1:0 --no-lock-memory' \
     "$BIN_DIR/chorus-server" 2>&1)"
 STATUS=$?
 set -e
@@ -97,7 +97,7 @@ check "ceiling-zero-plays-nothing" \
 
 PORT="$(free_port)"
 set +e
-OUT="$(bash -c 'ulimit -r 0 2>/dev/null; exec "$0" --listen "127.0.0.1:$1" \
+OUT="$(bash -c 'ulimit -r 0 2>/dev/null; exec "$0" --ephemeral-identity --listen "127.0.0.1:$1" \
     --no-lock-memory --allow-non-realtime' \
     "$BIN_DIR/chorus-server" "$PORT" 2>&1 &
     SERVER=$!
@@ -119,7 +119,7 @@ check "ceiling-zero-with-the-option-says-so-in-every-status-report" \
 WANTED="$(conf memlock_wanted_bytes)"
 set +e
 OUT="$(bash -c 'ulimit -l 64 2>/dev/null; ulimit -r 0 2>/dev/null; \
-    exec "$0" --listen 127.0.0.1:0 --memlock-wanted-bytes "$1" --allow-non-realtime' \
+    exec "$0" --ephemeral-identity --listen 127.0.0.1:0 --memlock-wanted-bytes "$1" --allow-non-realtime' \
     "$BIN_DIR/chorus-server" "$WANTED" 2>&1)"
 STATUS=$?
 set -e
@@ -136,7 +136,7 @@ check "memlock-denied-plays-nothing" \
 PORT="$(free_port)"
 set +e
 OUT="$(bash -c 'ulimit -l 64 2>/dev/null; ulimit -r 0 2>/dev/null; \
-    exec "$0" --listen "127.0.0.1:$1" --memlock-wanted-bytes "$2" \
+    exec "$0" --ephemeral-identity --listen "127.0.0.1:$1" --memlock-wanted-bytes "$2" \
     --allow-non-realtime --allow-unlocked-memory' \
     "$BIN_DIR/chorus-server" "$PORT" "$WANTED" 2>&1 &
     SERVER=$!
@@ -311,7 +311,7 @@ check "no-server-address-does-not-claim-playback" \
 # process is not a rule the system has.
 CONTROL_PORT="$(free_port)"
 AUDIO_PORT="$(free_port)"
-"$BIN_DIR/chorus-server" --listen "127.0.0.1:$AUDIO_PORT" --serve-forever \
+"$BIN_DIR/chorus-server" --ephemeral-identity --listen "127.0.0.1:$AUDIO_PORT" --serve-forever \
     --no-lock-memory --allow-non-realtime \
     --control-listen "127.0.0.1:$CONTROL_PORT" --zone kitchen \
     >"${TMPDIR:-/tmp}/chorus-refusals-control.log" 2>&1 &

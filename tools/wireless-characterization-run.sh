@@ -121,6 +121,7 @@ read -r -a SERVER_EXTRA_ARGS <<< "${CHORUS_SERVER_EXTRA_ARGS:-}"
 
 say "chorus: starting the server; the zone the ESP32-S3 plays is declared WIRELESS"
 "$BIN_DIR/chorus-server" \
+    --ephemeral-identity \
     --listen "0.0.0.0:$PORT" \
     --source chirp \
     --measure-config "$REPO_ROOT/config/measure.conf" \
@@ -151,7 +152,7 @@ for MODE in $MODES; do
     printf 'server %s:%s\n' "$SERVER_HOST" "$PORT" > "$CHORUS_ESP32S3_PORT"
 
     say "chorus: starting the second endpoint on $CHORUS_SECOND_ENDPOINT, in another room"
-    REMOTE_COMMAND="chorus-client --server ${SERVER_HOST}:${PORT} \
+    REMOTE_COMMAND="chorus-client --ephemeral-identity --endpoint-id wireless-second-room --server ${SERVER_HOST}:${PORT} \
 --device ${CHORUS_SECOND_DEVICE:-default} \
 --transport wireless \
 --zone second-room \

@@ -26,6 +26,29 @@ The homelab runs a copy of `compose.yaml` in the homelab repo's own conventions
 bridge only, a healthcheck, the image pinned by digest), opened there as a PR
 that the owner merges and applies (K28). Nothing here deploys anything.
 
+## Identity and adoption (protocol v2)
+
+Every audio connection is an encrypted protocol v2 session. The server keeps its
+long-term key and the endpoints it has adopted beside the zone state:
+`/var/lib/chorus/server.key` (created on first start, mode 0600, never logged)
+and `/var/lib/chorus/adopted-endpoints`. Both deployments pass `--state-file`,
+whose directory is the identity directory unless `--identity-dir <dir>` says
+otherwise, so the named volume (or the homelab's bind mount) keeps the server's
+key and every pin across restarts and image upgrades. `--server-id <id>` (default
+`chorus-server`) is the id endpoints pin that key to. A server with no
+`--identity-dir` and no `--state-file` refuses to start (exit 2) unless it is
+given `--ephemeral-identity`, which is for tests and throwaway runs only.
+
+An endpoint presenting a different key under an id already adopted is refused
+and logged as `endpoint key changed id=<id> pinned=<fp> offered=<fp>; refused`;
+a protocol v1 endpoint is refused as `client refused ... reason=protocol-v1`.
+
+A Linux endpoint (`chorus-client`) needs `--identity-dir <dir>` (its
+`endpoint.key` and the server pins in `server-pins`) and a stable
+`--endpoint-id` (default: its `--endpoint` name), because the server pins the
+endpoint's key to that id. `--ephemeral-identity` is the same escape hatch for
+tests.
+
 ## The healthcheck
 
 The released image is distroless: no shell and no curl. `chorus-server

@@ -91,15 +91,17 @@ fn parse_key_hex(text: &str) -> Option<[u8; 32]> {
 /// mode 0600 if there is none. The secret is never printed.
 pub fn load_or_create_key(path: &Path) -> io::Result<Keypair> {
     match fs::read_to_string(path) {
-        Ok(text) => parse_key_hex(&text).map(Keypair::from_secret).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "{} is not a key: it must hold 64 hex digits and a newline",
-                    path.display()
-                ),
-            )
-        }),
+        Ok(text) => parse_key_hex(&text)
+            .map(Keypair::from_secret)
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "{} is not a key: it must hold 64 hex digits and a newline",
+                        path.display()
+                    ),
+                )
+            }),
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
             let secret = random_32()?;
             let mut file = OpenOptions::new()
@@ -209,7 +211,10 @@ impl EndpointIdentity {
 
 fn check_id(id: &str) -> Result<(), String> {
     if id.is_empty() || id.len() > 255 {
-        return Err(format!("an endpoint id is 1 to 255 bytes, not {}", id.len()));
+        return Err(format!(
+            "an endpoint id is 1 to 255 bytes, not {}",
+            id.len()
+        ));
     }
     Ok(())
 }

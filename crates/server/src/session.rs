@@ -32,12 +32,13 @@ use std::time::Duration;
 
 use chorus_audio::StreamFormat as PcmFormat;
 use chorus_protocol::v2::adoption::{PinStore, Verdict};
+use chorus_protocol::v2::negotiate::{default_preference, negotiate, Refusal, Source};
 use chorus_protocol::v2::noise::{fingerprint, Keypair};
 use chorus_protocol::v2::session::{
     accept, Identity, RecordSealer, SecureReader, SessionError, MAX_RECORD_PLAINTEXT,
 };
 use chorus_protocol::v2::{
-    Capabilities, ChannelPosition, Codec, Hello, Message, OutputDelay, StreamFormat,
+    Capabilities, ChannelPosition, Codec, Hello, Link, Message, OutputDelay, StreamFormat,
     PROTOCOL_VERSION,
 };
 use chorus_protocol::{CHUNK_HEADER_LEN, HEADER_LEN};
@@ -86,15 +87,17 @@ fn parse_key_hex(text: &str) -> Option<[u8; 32]> {
 /// mode 0600 if there is none. The secret is never printed.
 pub fn load_or_create_key(path: &Path) -> io::Result<Keypair> {
     match fs::read_to_string(path) {
-        Ok(text) => parse_key_hex(&text).map(Keypair::from_secret).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "{} is not a key: it must hold 64 hex digits and a newline",
-                    path.display()
-                ),
-            )
-        }),
+        Ok(text) => parse_key_hex(&text)
+            .map(Keypair::from_secret)
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "{} is not a key: it must hold 64 hex digits and a newline",
+                        path.display()
+                    ),
+                )
+            }),
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
             let secret = random_32()?;
             let mut file = OpenOptions::new()
@@ -152,8 +155,9 @@ impl Adoptions {
     /// Load the store at `path`, or start an empty one if there is no file.
     pub fn load(path: &Path) -> Result<Adoptions, String> {
         let store = match fs::read_to_string(path) {
-            Ok(text) => PinStore::from_text(&text)
-                .map_err(|e| format!("{}: {}", path.display(), e))?,
+            Ok(text) => {
+                PinStore::from_text(&text).map_err(|e| format!("{}: {}", path.display(), e))?
+            }
             Err(e) if e.kind() == io::ErrorKind::NotFound => PinStore::new(),
             Err(e) => return Err(format!("{}: {}", path.display(), e)),
         };
@@ -323,46 +327,34 @@ impl Offer {
     }
 
     /// Whether an endpoint with these capabilities can play this stream, and
-    /// if not, the reason by name and a sentence.
-    pub fn negotiate(&self, caps: &Capabilities) -> Result<(), (&'static str, String)> {
+    /// if not, the reason by name and the negotiation's own sentence.
+    ///
+    /// The choice is `chorus_protocol::v2::negotiate`
+    /// (`docs/decisions/0040-codec-negotiation.md`): the wired preference,
+    /// since the endpoint's link is not known before its first telemetry, and
+    /// PCM as the only codec this server can send today.
+    pub fn negotiate(&self, caps: &Capabilities) -> Result<Codec, (&'static str, String)> {
         let f = &self.stream_format;
-        if caps.codecs & Codec::Pcm.bit() == 0 {
-            return Err((
-                "no-pcm",
-                format!("the endpoint's codec set 0x{:02x} lacks pcm", caps.codecs),
-            ));
-        }
-        let format_bit = 1u8 << (f.sample_format.to_wire() - 1);
-        if caps.sample_formats & format_bit == 0 {
-            return Err((
-                "sample-format-not-playable",
-                format!(
-                    "the stream is {} and the endpoint's sample format set is 0x{:02x}",
-                    f.sample_format.name(),
-                    caps.sample_formats
-                ),
-            ));
-        }
-        if !caps.sample_rates_hz.contains(&f.sample_rate_hz) {
-            return Err((
-                "rate-not-playable",
-                format!(
-                    "the stream is {} Hz and the endpoint plays {:?}",
-                    f.sample_rate_hz, caps.sample_rates_hz
-                ),
-            ));
-        }
-        if f.channel_map.len() > usize::from(caps.max_channels) {
-            return Err((
-                "too-many-channels",
-                format!(
-                    "the stream has {} channels and the endpoint plays at most {}",
-                    f.channel_map.len(),
-                    caps.max_channels
-                ),
-            ));
-        }
-        Ok(())
+        let source = Source {
+            sample_rate_hz: f.sample_rate_hz,
+            channels: f.channel_map.len() as u8,
+            sample_format: f.sample_format,
+        };
+        negotiate(
+            &source,
+            &default_preference(Link::Wired),
+            &[Codec::Pcm],
+            caps,
+        )
+        .map_err(|r| {
+            let name = match r {
+                Refusal::Rate { .. } => "rate-not-playable",
+                Refusal::Channels { .. } => "too-many-channels",
+                Refusal::SampleFormat { .. } => "sample-format-not-playable",
+                Refusal::NoCommonCodec { .. } => "no-common-codec",
+            };
+            (name, r.to_string())
+        })
     }
 
     /// What the writer sends first inside the session, in order.
@@ -683,7 +675,10 @@ mod tests {
         let dir = scratch("key");
         let source = IdentitySource::Directory(dir.clone());
         let (first, _) = load_identity(&source, "s").unwrap();
-        let mode = fs::metadata(dir.join(KEY_FILE)).unwrap().permissions().mode();
+        let mode = fs::metadata(dir.join(KEY_FILE))
+            .unwrap()
+            .permissions()
+            .mode();
         assert_eq!(mode & 0o777, 0o600);
         let text = fs::read_to_string(dir.join(KEY_FILE)).unwrap();
         assert_eq!(text.len(), 65);
@@ -773,7 +768,10 @@ mod tests {
             sample_rates_hz: vec![44_100],
             ..caps.clone()
         };
-        assert_eq!(offer.negotiate(&no_rate).unwrap_err().0, "rate-not-playable");
+        assert_eq!(
+            offer.negotiate(&no_rate).unwrap_err().0,
+            "rate-not-playable"
+        );
         let mono = Capabilities {
             max_channels: 1,
             ..caps.clone()
