@@ -339,7 +339,8 @@ pub fn hello(config: &ClientConfig) -> Hello {
 /// ALSA sink accept. PCM, FLAC and Opus (`decode.rs`: Opus in mapping family
 /// 0, one or two channels, which the server's choice checks against the
 /// stream); all three sample formats (`AlsaSink::open` maps each, `ZoneGain` scales each);
-/// up to `MAX_CHANNELS`; the standard rates of [`OFFERED_RATES_HZ`].
+/// up to `MAX_CHANNELS`, or with an output map the distinct positions it
+/// reads (`OutputMap::max_stream_channels`); the standard rates of [`OFFERED_RATES_HZ`].
 pub fn capabilities(config: &ClientConfig) -> Capabilities {
     let formats = [
         SampleFormat::PcmS16Le,
@@ -356,7 +357,11 @@ pub fn capabilities(config: &ClientConfig) -> Capabilities {
         sample_formats: formats
             .iter()
             .fold(0u8, |bits, f| bits | 1 << (f.to_wire() - 1)),
-        max_channels: MAX_CHANNELS as u8,
+        max_channels: config
+            .output_map
+            .as_ref()
+            .map(|m| m.max_stream_channels())
+            .unwrap_or(MAX_CHANNELS as u8),
         sample_rates_hz: rates,
         buffer_ms: (config.max_us / 1_000).min(u64::from(u16::MAX)) as u16,
         intrinsic_latency_ns: 0,

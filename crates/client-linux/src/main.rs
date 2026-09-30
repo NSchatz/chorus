@@ -53,6 +53,7 @@ use chorus_audio::MonotonicTimeline;
 use chorus_client_linux::config::{ClientConfig, ClientMode};
 use chorus_client_linux::control::{ControlLink, ZoneWatch};
 use chorus_client_linux::delaylog::DelayLog;
+use chorus_client_linux::outmap::{self, MappedSink};
 use chorus_client_linux::receive::{handshake, HandshakeError};
 use chorus_client_linux::run::{counter_lines, header_for, run_session, StopReason};
 use chorus_client_linux::session::{self, EndpointIdentity};
@@ -318,7 +319,7 @@ fn probe_device(config: &ClientConfig) -> ExitCode {
     let mut sink = match AlsaSink::open(
         &config.device,
         chorus_protocol::SampleFormat::PcmS16Le,
-        2,
+        outmap::device_channels(config.output_map.as_ref(), 2),
         48_000,
         config.device_buffer_us() as u32,
     ) {
@@ -586,10 +587,14 @@ fn play(
         hand.shape.frames_per_chunk
     ));
 
-    let mut sink = match AlsaSink::open(
+    // With an output map the device is opened with the MAP's channel count
+    // and the stream is remapped at its edge (`outmap.rs`); without one, the
+    // stream's own channels, as always.
+    let device_channels = outmap::device_channels(config.output_map.as_ref(), hand.shape.channels);
+    let alsa = match AlsaSink::open(
         &config.device,
         hand.shape.sample_format,
-        hand.shape.channels,
+        device_channels,
         hand.shape.sample_rate_hz,
         config.device_buffer_us() as u32,
     ) {
@@ -604,6 +609,38 @@ fn play(
                 config.device
             ));
             return refused(EXIT_DEVICE, "device-unusable");
+        }
+    };
+
+    let mut clipped = None;
+    let mut sink: Box<dyn PcmSink> = match &config.output_map {
+        None => Box::new(alsa),
+        Some(map) => {
+            let stream_map = announcement
+                .stream_format
+                .as_ref()
+                .map(|f| f.channel_map.clone())
+                .unwrap_or_default();
+            match MappedSink::new(alsa, map, &stream_map, hand.shape.sample_format) {
+                Ok((mapped, resolved)) => {
+                    // What each device channel plays, and anything the stream
+                    // lacks, said before the first frame: nothing is silenced
+                    // or substituted without a line saying so.
+                    for line in resolved.report() {
+                        status(line);
+                    }
+                    clipped = Some(mapped.clip_counter());
+                    Box::new(mapped)
+                }
+                Err(e) => {
+                    report("the output map does not fit the device", &e.to_string());
+                    status(&format!(
+                        "stopped reason=device-unusable device={} played=0",
+                        config.device
+                    ));
+                    return refused(EXIT_DEVICE, "device-unusable");
+                }
+            }
         }
     };
 
@@ -645,6 +682,12 @@ fn play(
 
     for line in counter_lines(&counters) {
         status(&line);
+    }
+    if let Some(clipped) = &clipped {
+        status(&format!(
+            "output-map clipped_samples={}",
+            clipped.load(Ordering::Relaxed)
+        ));
     }
     status(&format!(
         "summary graded_span_us={} graded_samples={} delay_min_us={} delay_max_us={} \
