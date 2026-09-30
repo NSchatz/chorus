@@ -5,25 +5,26 @@ Owner: the owner (identity scrub, decided 2026-09-29 by the owner, K27)
 Date: 2026-08-21
 Status: Guiding document, not a rigid specification. It defines goals, requirements, constraints, and reference knowledge, and it makes recommendations with rationale. Implementation decisions are made during the project, in collaboration with the owner, and recorded as they happen.
 Codename: "chorus" (placeholder, rename freely).
+Amended: 2026-09-30 (chorus goal 4) with the owner's decisions of 2026-09-29 (K-numbers in `.claude/goals/2026-09-chorus.md` §1); each changed passage carries its reversal number R<n>, the words "decided 2026-09-29 by the owner" and its decision IDs. The log is at the end of this document ("Amendments").
 
 ---
 
 ## 0. How to use this document (instructions to Claude Code)
 
 1. Read the whole document before writing code. Treat it as the project's shared context, not a checklist to execute blindly.
-2. Most of this document is recommendation, not mandate. When you reach a decision point, weigh the options, propose an approach with reasoning, and let the owner confirm before committing to anything expensive to reverse. Cheap-to-reverse decisions can just be made and noted.
+2. Most of this document is recommendation, not mandate. When you reach a decision point, weigh the options, propose an approach with reasoning, and let the owner confirm before committing to anything expensive to reverse. Cheap-to-reverse decisions can just be made and noted. This document itself is kept current by the program (verified corrections and the owner's decisions are written into it, dated); that editing needs no separate confirmation, the confirm-before-expensive rule above stays, and the Section 3.1 guardrails are never relaxed or removed by the program, only tightened (R16, decided 2026-09-29 by the owner, K47; limit I2).
 3. Section 12 lists the decisions that need to be made. Keep a lightweight decision log (one markdown file per significant decision in `docs/decisions/`) so the reasoning survives.
 4. A small number of items are hard guardrails (Section 3.1) for safety, legal, and project-integrity reasons. Those are not negotiable. Everything else is.
-5. Recommendations below are labeled as such. If measurement or experience during the build contradicts a recommendation, say so and propose the change; the recommendation loses.
+5. Recommendations below are labeled as such. If measurement or experience during the build contradicts a recommendation, say so and propose the change; the recommendation loses, and the program corrects this document in the same change (R16, decided 2026-09-29 by the owner, K47).
 6. Style note from the owner: no em dashes anywhere (code comments, docs, commits). Use commas, periods, parentheses, or hyphens. Direct, peer-level tone.
 
 ---
 
 ## 1. Vision
 
-Replace the Sonos ecosystem with a system the owner builds and understands end to end:
+Replace the Sonos ecosystem with a system the owner builds and understands end to end, at Sonos parity across software, hardware and Home Assistant: "Sonos parity. Software, hardware, home assistant integration, all of the above. FIRST CLASS." (the owner). chorus is its own complete system: music arrives as inputs (UPnP AV casting to every room and group, official Spotify Soloist receivers, line-ins, the TV); chorus owns rooms, groups (which rooms play together), sync, sound, the app and the Home Assistant integration; no Music Assistant and no Sendspin, in any form (R6, decided 2026-09-29 by the owner, K13, K54, K56, K57, K64, K66).
 
-- A centralized audio server running in a container on his Proxmox homelab (Dell R730xd).
+- A centralized audio server running in a container (Docker Compose, host networking) on the owner's bare-metal Debian 13 homelab host (a Dell R730xd); there is no Proxmox (R5, decided 2026-09-29 by the owner, K24, K34).
 - Self-developed software on every speaker endpoint: embedded firmware on microcontroller-class smart speakers, and a lightweight client on Linux-class endpoints.
 - A custom network protocol with tightly synchronized multiroom playback.
 - Eventually, a low-latency path for TV and surround audio within lip-sync limits.
@@ -34,7 +35,7 @@ The point is not just the product. It is owning the whole stack: the sync algori
 Environment facts to assume:
 
 - Gigabit Cat6 to most rooms through conduit; TP-Link Omada PoE+ switch; UniFi Wi-Fi; VLANs.
-- Proxmox host with Docker; Home Assistant and an MQTT broker already running.
+- A bare-metal Debian 13 host running Docker Compose stacks (no Proxmox), deployed through PRs in the homelab repo that the owner merges and applies; Home Assistant and an MQTT broker already running (R5, decided 2026-09-29 by the owner, K24, K28, K34).
 - Endpoints will be mostly wired Ethernet or PoE. Wi-Fi endpoints are acceptable for casual music zones only.
 - Owner's background: strong Node.js/Python/AWS/Terraform/Docker/CI-CD, ESP32/ESPHome experience, comfortable learning C and Rust, DIY speaker building and woodworking capability.
 
@@ -46,8 +47,8 @@ These describe the destination. How to get there is open.
 
 ### 2.1 Functional
 
-- Multiple named zones; zones can be grouped to play the same source in sync.
-- At least one PCM source into the server (a FIFO or equivalent is fine to start); streaming-service integrations are out of scope for the codebase (whatever feeds PCM into the server is the owner's choice and lives outside the system boundary).
+- Multiple named zones (rooms); chorus groups rooms to play the same source in sync, in saved named groups and live ad-hoc groups (R6, decided 2026-09-29 by the owner, K54).
+- Content arrives only as inputs: every room and group is a UPnP AV (DLNA) renderer; official Spotify Soloist receivers run one per room and group as separate processes; line-ins and the TV path; a FIFO for development. chorus holds no content of its own (no radio directory, library or podcasts) and uses no Music Assistant or Sendspin (R6, decided 2026-09-29 by the owner, K56, K57, K64, K66).
 - Per-zone volume and mute, controllable from a UI and from Home Assistant.
 - Endpoints self-discover the server (with a static-address fallback) and recover from server restarts, network blips, and their own crashes without human intervention.
 - Fleet lifecycle: safe remote firmware updates, basic provisioning, and per-device health/sync telemetry.
@@ -68,9 +69,11 @@ Context for these numbers: sub-0.2 ms is what the best open-source reference (Sn
 ### 2.3 Explicit non-goals
 
 - No Dolby Atmos, TrueHD, or DTS decode (licensing makes legal open implementation impossible; set sources to PCM).
-- No DRM streaming integrations in this codebase.
+- No DRM streaming integrations in this codebase: official receivers (Spotify Soloist, per the approved casting proposals) run unmodified as separate processes feeding a chorus sink, and no DRM or service-authentication code enters chorus (R7, decided 2026-09-29 by the owner, K60, K66).
+- No reverse-engineered receivers (librespot Spotify Connect, AirPlay 2 receivers, Google Cast) (R7, decided 2026-09-29 by the owner, K60).
 - No Sonos protocol compatibility.
-- No mobile app for v1 (web UI and HA are enough).
+- No portable or battery speakers, and no Bluetooth input on endpoints (R7, decided 2026-09-29 by the owner, K53).
+- No mobile app for v1 (web UI and HA are enough); the web UI grows into an app-grade installable PWA, with no app stores (R7, decided 2026-09-29 by the owner, K16).
 
 ---
 
@@ -78,7 +81,7 @@ Context for these numbers: sub-0.2 ms is what the best open-source reference (Sn
 
 ### 3.1 Hard guardrails (the only non-negotiables)
 
-1. Clean-room rule: reference projects may be read for design understanding, but no code copied or closely paraphrased. Snapcast is GPL-3.0; this project must not become a derivative work.
+1. Clean-room rule: no code copied or closely paraphrased from reference projects. Snapcast is GPL-3.0; this project must not become a derivative work. Tightened (R17, decided 2026-09-29 by the owner, K33, K39): of GPL projects only the docs, issues, papers and protocol specs are read, never their source files; the design files of reciprocally licensed hardware (CERN-OHL-S, GPL) are never opened; permissive (MIT, Apache-2.0, BSD) source may be read and cited. `docs/clean-room.md` lists the projects and the record kept.
 2. Never enable Secure Boot, Flash Encryption, or anti-rollback eFuses on development hardware. These burns are irreversible. Production-only, and only on explicit owner instruction.
 3. Timing and sync claims are backed by measurement with the harness (Section 10). "Sounds synced" is not evidence.
 4. Monotonic clocks only in the audio/timestamp path. Wall-clock time is for logs. (Snapcast issue #522 documents exactly how wall clock in the timeline breaks playback when NTP steps.)
@@ -97,10 +100,10 @@ Context for these numbers: sub-0.2 ms is what the best open-source reference (Sn
 ## 4. System architecture (high level)
 
 ```
-  Sources (outside the boundary: FIFO writers, capture devices)
+  Inputs (R6): UPnP AV casts, Soloist receivers, line-ins, the TV, FIFOs
       |
       v
-  chorus-server (container on Proxmox)
+  chorus-server (container, host networking, bare-metal Debian 13 host; R5)
     - ingests PCM, cuts it into timestamped chunks on a single server timeline
     - manages streams, groups, zones, clients
     - streams audio to each endpoint (unicast)
@@ -169,7 +172,7 @@ Open: exact filter parameters and servo gains (tune against the simulator and th
 
 Two tiers make sense, and both will likely exist in the final system:
 
-ESP32-S3 class (microcontroller): lowest cost (~$15 board), sub-watt power, instant boot, and full control of the timing path. Constraints to design around: PSRAM is where the jitter buffer lives, but DMA and cache interactions mean the innermost I2S buffers stay in internal RAM; pin the network stack and the audio work to different cores; disable Wi-Fi modem power save or sync is hopeless; wired Ethernet via a W5500 over SPI is the easy, reliable option (an RMII PHY is faster but burns ~9 pins including a strapping pin); use the APLL clock source so audio sample rates are accurate. The ESP32-P4 is the newer part with more DSP headroom but needs a companion chip for radio; worth considering for heavier zones later.
+ESP32-S3 class (microcontroller): lowest cost (~$15 board), sub-watt power, instant boot, and full control of the timing path. Constraints to design around: PSRAM is where the jitter buffer lives, but DMA and cache interactions mean the innermost I2S buffers stay in internal RAM; pin the network stack and the audio work to different cores; disable Wi-Fi modem power save or sync is hopeless; wired Ethernet via a W5500 over SPI is the easy, reliable option (an RMII PHY is faster but burns ~9 pins including a strapping pin); use the APLL clock source so audio sample rates are accurate. Corrected (R8, decided 2026-09-29 by the owner, K25, K37): the ESP32-S3 has no APLL and no Ethernet MAC, so neither "use the APLL" nor RMII applies to it. Its I2S clock sources are PLL_F160M (default), PLL_D2, XTAL and an external MCLK input (https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-reference/peripherals/clk_tree.html, read 2026-09-30), and its wired Ethernet is external SPI modules only (https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-reference/network/esp_eth.html, read 2026-09-30). The platform and link are proposal P1 as approved at Checkpoint K (2026-09-30): ESP32-S3 everywhere on ESP-IDF v6.1.x, a W5500 over SPI with its interrupt line, PoE+ through a bought 802.3at splitter, native Wi-Fi for the Wi-Fi tier (`docs/proposals/P1-embedded-platform.md`). The ESP32-P4 is the newer part with more DSP headroom but needs a companion chip for radio; worth considering for heavier zones later.
 
 Linux class (Pi Zero 2 W / CM5 / any mini PC): full OS, easy iteration, direct ALSA access with real `snd_pcm_delay`, real-time scheduling available, natural home for the home-theater brain and for early development before firmware exists. Costs more power and money per zone, boots slower.
 
@@ -180,6 +183,8 @@ Open: final board selection; wired-vs-Wi-Fi per zone; whether ESP32-P4 earns a s
 ### 5.5 Amplification and audio hardware
 
 Background: the standout part for a smart speaker is the TI TAS5825M (or its close sibling TAS5805M): I2S digital input, integrated DSP, up to 2x38 W at 24 V, one chip from bitstream to speaker terminals. TI gates its DSP configuration GUI behind approvals, but the community has documented bring-up over plain I2C well enough for DIY use, and if the on-chip DSP is bypassed (all DSP done on the host processor) the amp is just a transparent I2S power stage, which is also the simplest and most controllable design. Alternatives: MERUS MA12070 (efficient, up to ~2x80 W) for bigger zones; PCM5102A DAC plus any analog-input class-D board as the escape hatch if TAS sourcing or bring-up disappoints.
+
+Corrected (R9, decided 2026-09-29 by the owner, K47): the TAS5805M's 7-bit I2C addresses are 0x2C-0x2F (ADR resistor to DVDD); 0x4C-0x4F (ADR resistor to GND) is the TAS5825M. "2x38 W at 24 V" is TI's 10% THD+N instantaneous rating; the TAS5825M gives 2x30 W continuous at 1% THD+N (8 ohm, 24 V). The TAS5805M is 2x23 W at 21 V (8 ohm, 1% THD+N) and accepts 32-96 kHz only, so it is not a power-equivalent sibling. Sources: TAS5825M datasheet SLASEH7H section 9.5.2 and Table 9-5, and TAS5805M datasheet SLASEH5D section 7.5.2 and Table 7-5 (https://www.ti.com/lit/ds/symlink/tas5825m.pdf and https://www.ti.com/lit/ds/symlink/tas5805m.pdf, read 2026-09-29); the power and sample-rate lines re-read on https://www.ti.com/product/TAS5825M and https://www.ti.com/product/TAS5805M, 2026-09-30.
 
 Practical TAS5825M bring-up notes worth keeping (verify all against the datasheet during bring-up; the register details below are community-verified starting points, not gospel): 7-bit I2C address typically 0x4C (ADR pin low); allow ~250 ms after DVDD before I2C; I2S clocks must be running before entering PLAY; a minimal init is page/book select (0x00=0x00, 0x7F=0x00), analog gain per PVDD (find the exact AGAIN register in the datasheet, do not guess), digital volume 0x4C (0x30 = 0 dB, -0.5 dB per step, 0xFF mute), state register 0x03 (0x02 Hi-Z, 0x03 PLAY), then clear faults (0x78=0x80). DIE_ID at 0x67 reads 0x95 on a live part. Monitor fault registers 0x70-0x73 and clock detect 0x39; go Hi-Z before any I2S clock change.
 
@@ -209,13 +214,13 @@ Open: everything about implementation timing; capture hardware choice; whether t
 
 Background: the durable pattern is a server-authoritative state model (streams, groups, zones, clients, volumes) with a JSON message catalog: state snapshot, mutations (volume, mute, grouping, per-zone latency trim, DSP config), events fanned out to subscribers, and client telemetry flowing back. Discovery wants mDNS (`_chorus._tcp` or similar) with a static-address fallback; note that mDNS across VLANs needs a reflector or shared L2, and that a containerized server should use host networking for multicast to work at all. Home Assistant integration is cheapest via MQTT discovery (retained config topics make zones appear as entities with no custom HA code). A web UI can stay minimal (single page, no framework) for a long time.
 
-Recommendation: JSON control plane with a small, versioned message catalog; WebSocket for UIs; mDNS with fallback; MQTT/HA in a later phase. Whether WebSocket/mDNS/MQTT are hand-written (each is small and instructive) or minimally vendored is a per-item call for the decision log; hand-writing them fits the project's spirit and none is large.
+Recommendation: JSON control plane with a small, versioned message catalog; WebSocket for UIs; mDNS with fallback; MQTT/HA in a later phase. Superseded (R10, decided 2026-09-29 by the owner, K43, K46, K61): UIs use HTTP plus Server-Sent Events, as built (`docs/decisions/0026-*`); mDNS is hand-written (`docs/decisions/0025-*`); the app is an installable PWA on the stack of proposal P5 as approved (Lit 3 and esbuild), not "single page, no framework"; Home Assistant gets chorus's own integration (a media_player per room and saved group, sound controls, diagnostics), with MQTT only for the opt-in extras of proposal P10. Whether WebSocket/mDNS/MQTT are hand-written (each is small and instructive) or minimally vendored is a per-item call for the decision log; hand-writing them fits the project's spirit and none is large.
 
 Open: message catalog details; UI scope; hand-write vs vendor for each small protocol; auth story if the control plane ever leaves the trusted VLAN.
 
 ### 5.9 Fleet: OTA, provisioning, observability
 
-Background: OTA is the feature that keeps wall-mounted speakers from becoming a maintenance nightmare, and it must exist before the fleet grows past two devices. ESP-IDF's A/B partition scheme with rollback (new image to inactive slot, boot, self-test, mark valid, else automatic revert) is the right shape; demonstrating a deliberate bad-image rollback is the test that matters. Linux endpoints can start as a binary plus systemd unit deployed with the owner's normal CI muscle. Provisioning can be a serial console command writing NVS during development, with fancier onboarding only if ever needed. Observability: per-client telemetry (buffer fill, filtered sync error, correction rate, resync/underrun counters, RSSI, heap, firmware version) aggregated at the server and exposed for Prometheus/Grafana; this is where the owner's DevOps instincts pay off directly.
+Background: OTA is the feature that keeps wall-mounted speakers from becoming a maintenance nightmare, and it must exist before the fleet grows past two devices. ESP-IDF's A/B partition scheme with rollback (new image to inactive slot, boot, self-test, mark valid, else automatic revert) is the right shape; demonstrating a deliberate bad-image rollback is the test that matters. Linux endpoints can start as a binary plus systemd unit deployed with the owner's normal CI muscle. Provisioning can be a serial console command writing NVS during development, with fancier onboarding only if ever needed. Superseded (R11, decided 2026-09-29 by the owner, K92, K93): a chorus speaker on the audio network is adopted automatically and named afterwards in the app, with its session key pinned at adoption (trust on first use; a changed key is refused and surfaced in the app and Home Assistant); OTA images are staged by the server and install only on the owner's explicit install action, A/B with rollback. Observability: per-client telemetry (buffer fill, filtered sync error, correction rate, resync/underrun counters, RSSI, heap, firmware version) aggregated at the server and exposed for Prometheus/Grafana; this is where the owner's DevOps instincts pay off directly.
 
 Recommendation: build OTA with rollback early (before device #3 exists); keep provisioning primitive until it hurts; emit metrics from day one because the sync work needs them anyway.
 
@@ -235,9 +240,9 @@ Sample durations: one frame at 48 kHz = 20.83 us; 1 ms of sound travels 34.3 cm 
 
 Lip sync (ITU-R BT.1359-1): detectability +45 ms (early) to -125 ms (late); practical design target within +/- 40 ms, never leading by more than 15 ms.
 
-Docker for real-time audio: host network mode (multicast/mDNS and latency), `cap_add: SYS_NICE`, `ulimits: rtprio` and unlimited `memlock`, request SCHED_FIFO around priority 50 (never the max), verify with cyclictest; CLOCK_MONOTONIC/RAW pass through the container boundary unchanged on a native Linux host.
+Docker for real-time audio (on the bare-metal Debian 13 host with Docker Compose, where chorus-server joins the homelab's host-network exception list; R5, decided 2026-09-29 by the owner, K24, K34): host network mode (multicast/mDNS and latency), `cap_add: SYS_NICE`, `ulimits: rtprio` and unlimited `memlock`, request SCHED_FIFO around priority 50 (never the max), verify with cyclictest; CLOCK_MONOTONIC/RAW pass through the container boundary unchanged on a native Linux host.
 
-ESP32-S3 pitfalls list: octal-PSRAM modules reserve GPIO 35-37; strapping pins 0/3/45/46, USB 19/20, UART0 43/44 are off-limits or risky; APLL for audio-accurate clocks; mclk multiple must be a multiple of 3 for 24-bit slots; DMA from internal RAM, jitter buffer in PSRAM; `esp_wifi_set_ps(WIFI_PS_NONE)` is mandatory on Wi-Fi.
+ESP32-S3 pitfalls list: octal-PSRAM modules reserve GPIO 35-37; strapping pins 0/3/45/46, USB 19/20, UART0 43/44 are off-limits or risky; APLL for audio-accurate clocks (the S3 has none, see 5.4, R8); mclk multiple must be a multiple of 3 for 24-bit slots; DMA from internal RAM, jitter buffer in PSRAM; `esp_wifi_set_ps(WIFI_PS_NONE)` is mandatory on Wi-Fi.
 
 ---
 
@@ -247,7 +252,7 @@ Not prescriptive; adjust as the code wants. The properties that matter: the sync
 
 ```
 chorus/
-  CLAUDE.md                # working agreement (Appendix A)
+  CLAUDE.md                # working agreement (Appendix A removed, R17)
   BRIEF.md                 # this document
   docs/decisions/          # decision log
   docs/measurements/       # saved harness reports
@@ -275,6 +280,32 @@ Ordered to retire risk, with "success looks like" instead of rigid gates. Reorde
 9. TV/surround path. Wired, small-buffer, FEC, stereo first, A/V calibrated.
 10. Fleet. OTA with demonstrated rollback, MQTT/HA, dashboards, provisioning polish, whole-home rollout and a long soak.
 
+### 8.1 The program's phases (added 2026-09-30, chorus goal 4; K12, K13, K32, K47, decided 2026-09-29 by the owner)
+
+The /goal program in `.claude/goals/2026-09-chorus.md` is the plan of record. Its phases run the ten above in order and then the Sonos-parity work, foundations first (K32); one deliberate reorder puts rooms and groups (phase 11 below) before Fleet, because DSP and the TV path need them (I19). Each phase's acceptance is the "success looks like" line above (phases 1-10) or the line below, refined by that goal's done-when lines; real-hardware steps end as ready-to-run packets for the owner, never as success criteria (K7, K50).
+
+| Program phase | Goals | Serves | Success looks like |
+|---|---|---|---|
+| Start-up, audit and proposals | 1 | all | a cold audit of every phase and the research proposals, decided at Checkpoint K |
+| Fixes and the gate | 2 | 1 | the audit's fixes; `make gate` is the one merge check |
+| Conventions, licence and identity | 3 | 1 | chorus's own conventions, each enforced by a check; MIT OR Apache-2.0; the identity scan |
+| Reversals, loose ends, first release, deploy PR | 4 | 1, 6 | this amendment; release v0.1.0; the homelab deploy PR opened for the owner |
+| Protocol v2 | 5, 6 | 1, 5 | capabilities, channel maps, PCM/FLAC/Opus, encrypted sessions with trust-on-first-use adoption, the metadata, controller, visualizer and source roles; Rust and C agree on shared fixtures |
+| Sound, rig and sync in software; bench packets | 7 | 2, 3, 4 | the sync engine held to its targets in simulation at 8 rooms; bench packets for phases 2-4 |
+| The embedded platform | 8, 9 | 5 | ESP32-S3 on ESP-IDF v6.1 with the W5500 link, the I2S playout path, the amp and controls; a flashing packet behind the owner-at-bench guard |
+| The Linux endpoint tier | 10 | 5, 9 | multichannel Linux endpoints for the rack amp and the theater hub |
+| Rooms and groups | 11 | 6 | bonded sets, saved and live groups, Sonos-style group volume, limits, quiet hours, alarms, sleep, autoplay |
+| DSP | 12 | 8 | the filter library on both platforms from shared fixtures; tone, loudness, night and speech modes; room-correction fitting |
+| The TV path | 13 | 9 | stereo LPCM from optical and ARC, CEC on a Linux theater hub, theater bonding, A/V trim |
+| Fleet | 14, 15 | 10 | OTA A/B with rollback on the owner's install action, adoption, Wi-Fi provisioning, telemetry, MQTT extras, `chorusctl`, dashboards |
+| Inputs | 16, 17 | parity | decoders, a UPnP AV renderer per room and group, Soloist receivers per room and group, alarm sources, line-in sharing |
+| The Home Assistant integration | 18, 19 | parity | a core-quality integration: media players per room and saved group, sound controls, diagnostics, events, update entities |
+| Voice and announcements | 20 | parity | rooms as Assist satellites, the wake word on the server, announcements with ducking |
+| The app | 21, 22 | parity | the installable PWA (Lit 3 and esbuild): rooms, groups, inputs, sound, setup and kiosk mode |
+| Acoustic design tools | 23 | hardware | `shopkit-acoustics` (box, port, baffle step, crossover), checked against published worked examples |
+| The speaker designs | 24, 25, 26 | hardware | design packages for the compact speaker, the two-way, the subwoofer, the rack amp and the theater front |
+| Finale | 27 | all | a tagged release with every chosen parity feature built and tested on fakes and the simulator, the docs, the program report |
+
 ---
 
 ## 9. Risks and honest failure modes
@@ -301,10 +332,10 @@ Ordered to retire risk, with "success looks like" instead of rigid gates. Reorde
 
 ## 11. Reference material (study, not adopt)
 
-- Snapcast (GPL-3.0, clean-room rule): client stream/sync code, time provider, binary protocol doc, and issue #522 (the monotonic clock lesson). https://github.com/badaix/snapcast
-- ESP32 snapclient: task split, PSRAM buffering, single-sample correction on a microcontroller. https://github.com/CarlosDerSeher/snapclient
-- squeezelite: SlimProto timing, DAC-delay accounting. https://github.com/ralph-irving/squeezelite
-- shairport-sync + NQPTP: sync engine and PTP-ish timing in software. https://github.com/mikebrady/shairport-sync
+- Snapcast (GPL-3.0, clean-room rule): the binary protocol doc, the docs, and issue #522 (the monotonic clock lesson); never its source files (R17, decided 2026-09-29 by the owner, K33). https://github.com/badaix/snapcast
+- ESP32 snapclient: task split, PSRAM buffering, single-sample correction on a microcontroller (from its docs and issues only; GPL, R17). https://github.com/CarlosDerSeher/snapclient
+- squeezelite: SlimProto timing, DAC-delay accounting (docs and protocol descriptions only; GPL, R17). https://github.com/ralph-irving/squeezelite
+- shairport-sync + NQPTP: sync engine and PTP-ish timing in software (docs only; GPL, R17). https://github.com/mikebrady/shairport-sync
 - Roc Toolkit: FEC and adaptive latency tuner design. https://github.com/roc-streaming/roc-toolkit
 - RBJ Audio EQ Cookbook: https://webaudio.github.io/Audio-EQ-Cookbook/audio-eq-cookbook.html
 - RFC 5905 (NTP), RFC 3550 (RTP/RTCP), RFC 6455 (WebSocket), IEEE 1588 (PTP concepts), ITU-R BT.1359-1 (lip sync).
@@ -327,7 +358,7 @@ Log each of these in docs/decisions/ when made, with a sentence of reasoning. Ro
 4. Chunk size and default buffer target (starting points: 20 ms / 500 ms).
 5. Sync filter parameters and servo gains (start from the reference constants in 5.3, tune with the rig).
 6. Hand-write vs vendor: JSON handling, mDNS, WebSocket, MQTT (case-by-case per 3.2).
-7. Dev bench hardware: exact ESP32-S3 board, TAS5825M module, wired interface (W5500 vs RMII), measurement interface.
+7. Dev bench hardware: exact ESP32-S3 board, TAS5825M module, wired interface (W5500 vs RMII; decided by P1: W5500, R8), measurement interface.
 8. Pin map for the bench build (respect the pitfalls list in Section 6).
 9. Zone/group/config data model and file format.
 10. Volume taper and mute behavior.
@@ -340,28 +371,24 @@ Log each of these in docs/decisions/ when made, with a sentence of reasoning. Ro
 
 ---
 
-## Appendix A: CLAUDE.md starter (copy to repo root)
+## Appendix A: CLAUDE.md starter (removed)
 
-```markdown
-# chorus
+Removed (R17, decided 2026-09-29 by the owner, K33, K39, with R1-R4 of the same date): the starter no longer matched the repository's working agreement. `CLAUDE.md` in the repository root is the working agreement; it carries the clean-room tightening (R3), the plan of record and the owner-actions line (R1), BRIEF.md kept current by the program (R2), and rule 8 without its old citation (R4).
 
-From-scratch multiroom + surround audio: containerized server, custom sync protocol,
-embedded speaker firmware. BRIEF.md is the guiding document: goals, constraints,
-recommendations, and open decisions. It recommends; it does not dictate.
+---
 
-## Working agreement
+## Amendments
 
-1. Propose before committing to anything expensive to reverse. Cheap decisions:
-   make them, note them in docs/decisions/.
-2. Hard guardrails (BRIEF.md 3.1): clean-room vs GPL references; no eFuse burns on
-   dev hardware; measurement-backed timing claims; monotonic clocks in the audio
-   path; no em dashes anywhere.
-3. Prefer building over vendoring when small and instructive; vendor the large and
-   undifferentiated; log gray-zone calls.
-4. The sync engine is the project. Simulator first, hardware second, measurement
-   always. Reports go in docs/measurements/.
-5. Protocol, sync, and DSP cores are pure libraries with shared fixtures so the
-   Rust and C implementations cannot drift apart.
-6. Items marked "verify against the datasheet" are starting points, not truth.
-7. Finish a phase's "success looks like" before moving on, or say why not.
-```
+Each reversal is written where its rule lives; this list says where. All were decided 2026-09-29 by the owner (R1-R4 changed `CLAUDE.md`; R15, the identity scrub, was written by goal 1; R12-R14 changed `docs/` and `deploy/`).
+
+| # | Where | Change | Decisions |
+|---|---|---|---|
+| R5 | Sections 1, 4, 6 | Bare-metal Debian 13 host running Docker Compose, not Proxmox; chorus-server uses host networking | K24, K34 |
+| R6 | Sections 1, 2.1, 4 | Sonos parity across software, hardware and HA; inputs-only content; no Music Assistant or Sendspin; chorus groups rooms | K13, K54, K56, K57, K64, K66 |
+| R7 | Section 2.3 | Adds portable and battery speakers, Bluetooth input, reverse-engineered receivers; the app-grade PWA; official receivers as separate processes | K16, K53, K60, K66 |
+| R8 | Sections 5.4, 6, 12 | The ESP32-S3 has no APLL and no Ethernet MAC; platform and link per P1 | K25, K37 |
+| R9 | Section 5.5 | TAS5805M addresses, TAS5825M power ratings, the TAS5805M not a power equivalent | K47 |
+| R10 | Section 5.8 | HTTP + SSE; the app stack per P5; chorus's own HA integration plus MQTT extras | K43, K46, K61 |
+| R11 | Section 5.9 | Auto-adoption with trust-on-first-use keys; OTA installs only on the owner's command | K92, K93 |
+| R16 | Section 0 items 2 and 5 | The program keeps this document current; confirm-before-expensive stays; Section 3.1 never relaxed | K47 |
+| R17 | Sections 3.1, 11, 7, Appendix A | Clean-room tightened to docs, issues and specs of GPL projects; reciprocal hardware design files never opened; Appendix A removed | K33, K39 |
