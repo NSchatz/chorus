@@ -54,11 +54,16 @@ v1_server() {
     local commit
     commit="$(git -C "$REPO_ROOT" rev-parse -q --verify "$V1_SERVER_TAG^{commit}")" || return 1
     if [ ! -x "$bin" ] || [ "$(cat "$dir/commit" 2>/dev/null)" != "$commit" ]; then
-        rm -rf "$dir/src"
+        rm -rf "$dir/src" "$dir/commit"
         mkdir -p "$dir/src"
-        git -C "$REPO_ROOT" archive "$commit" | tar -x -C "$dir/src"
-        (cd "$dir/src" && cargo build --quiet --locked --offline -p chorus-server \
-            --target-dir "$dir/target") >&2
+        git -C "$REPO_ROOT" archive "$commit" | tar -x -C "$dir/src" || return 1
+        # The tag's own mise files would be a second, untrusted mise config; the build runs from
+        # the repository root on this checkout's pinned toolchain instead (the same 1.98.1).
+        rm -f "$dir/src/mise.toml" "$dir/src/mise.lock"
+        (cd "$REPO_ROOT" && cargo build --quiet --locked --offline \
+            --manifest-path "$dir/src/Cargo.toml" -p chorus-server --target-dir "$dir/target") >&2 \
+            || return 1
+        [ -x "$bin" ] || return 1
         printf '%s\n' "$commit" > "$dir/commit"
     fi
     printf '%s' "$bin"
