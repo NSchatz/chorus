@@ -17,6 +17,7 @@
  * host build uses, so the values a bench runs on are the values a host
  * graded. */
 
+#include <stdint.h>
 #include <string.h>
 
 #include "esp_hal.h"
@@ -33,8 +34,8 @@
 static const char *TAG = "chorus-endpoint";
 
 /* firmware/config/endpoint.conf, embedded by the component's CMakeLists. */
-extern const char endpoint_conf_start[] asm("_binary_endpoint_conf_start");
-extern const char endpoint_conf_end[] asm("_binary_endpoint_conf_end");
+extern const char endpoint_conf_start[] __asm__("_binary_endpoint_conf_start");
+extern const char endpoint_conf_end[] __asm__("_binary_endpoint_conf_end");
 
 /* How often the amplifier's fault register is read while audio is playing. A
  * fault that is surfaced a second late is still surfaced; one that is never
@@ -82,7 +83,10 @@ static void fault_watch(void *argument)
 void app_main(void)
 {
     static char text[8192];
-    size_t length = (size_t)(endpoint_conf_end - endpoint_conf_start);
+    /* The two linker symbols bound one object, but C only defines subtracting
+     * pointers into the same array, and the compiler sees two. The addresses
+     * are subtracted as integers instead, which says what is meant. */
+    size_t length = (size_t)((uintptr_t)endpoint_conf_end - (uintptr_t)endpoint_conf_start);
     if (length >= sizeof(text)) {
         ESP_LOGE(TAG, "the embedded configuration does not fit");
         return;
@@ -90,7 +94,10 @@ void app_main(void)
     memcpy(text, endpoint_conf_start, length);
     text[length] = '\0';
 
-    chorus_endpoint_config_t config;
+    /* Static, like everything below that the fault watch is handed: the watch
+     * is its own task and outlives this function if the session ever returns,
+     * so nothing it points at may live on this task's stack. */
+    static chorus_endpoint_config_t config;
     char detail[512];
     detail[0] = '\0';
     if (chorus_endpoint_config_parse(&config, "firmware/config/endpoint.conf", text, detail,
@@ -113,15 +120,15 @@ void app_main(void)
         return;
     }
 
-    chorus_i2c_bus_t bus;
-    chorus_output_stage_t stage;
-    chorus_i2s_controller_t controller;
+    static chorus_i2c_bus_t bus;
+    static chorus_output_stage_t stage;
+    static chorus_i2s_controller_t controller;
     if (chorus_esp_hal_init(&config, &bus, &stage, &controller) != 0) {
         ESP_LOGE(TAG, "the hardware could not be brought up; the output stage stays dead");
         return;
     }
 
-    chorus_telemetry_t telemetry;
+    static chorus_telemetry_t telemetry;
     chorus_telemetry_init(&telemetry);
 
     chorus_amp_report_t report;
