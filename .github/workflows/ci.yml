@@ -1,8 +1,10 @@
 name: ci
 
-# Every change. The regressions this repository exists to protect run as
-# separately named steps so a red build says which one broke. Any failing step
-# fails the build; nothing here is allowed to continue on error.
+# The gate is `make gate` (tools/gate.sh): this job installs what the gate needs
+# on a fresh runner and calls it, nothing more, so CI and a local run cannot
+# drift apart. It is an informational signal: GitHub Actions jobs do not start on
+# this private repository, and the merge rule is the local gate run pasted in
+# the pull request (docs/decisions/0002-repository-layout-and-ci.md, R12).
 on:
   push:
   pull_request:
@@ -15,124 +17,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: build and regressions
-    runs-on: ubuntu-latest
+  gate:
+    name: make gate
+    runs-on: ubuntu-24.04
+    env:
+      CARGO_BUILD_JOBS: "2"
+      CMAKE_BUILD_PARALLEL_LEVEL: "2"
+      IDF_PY_BUILD_JOBS: "2"
+      CHORUS_CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
       - name: Check out
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      # rust-toolchain.toml names the exact toolchain; rustup installs it on
+      # first use.
       - name: Toolchain
         run: |
-          cargo --version
-          rustc --version
+          rustup show active-toolchain
+          sudo apt-get update && sudo apt-get install -y ccache
 
-      - name: Build the workspace
-        run: cargo build --workspace --all-targets --verbose
-
-      - name: Golden-vector round trip
-        run: cargo test --package chorus-protocol -- --nocapture
-
-      - name: Simulator regression
-        run: cargo test --package chorus-sync -- --nocapture
-
-      # The clock guardrail, and the check that the list it rests on has no
-      # hole in it. Includes the two demonstrations that both go red.
-      - name: The audio path, and the settable-clock check
-        run: cargo test --package chorus-audio-path -- --nocapture
-
-      - name: Chunking, buffering and playout
+      # The version and commit are firmware/config/endpoint.conf's pin; the gate
+      # refuses any other.
+      - name: ESP-IDF
         run: |
-          cargo test --package chorus-audio
-          cargo test --package chorus-server
-          cargo test --package chorus-client-linux
-          cargo test --package chorus-hostctl
-          cargo test --package chorus-alsa
+          git clone --branch v5.3.6 --depth 1 --recursive --shallow-submodules \
+            https://github.com/espressif/esp-idf.git "$HOME/esp-idf"
+          git -C "$HOME/esp-idf" rev-parse HEAD
+          "$HOME/esp-idf/install.sh" esp32s3
+          printf '. %s/export.sh\n' "$HOME/esp-idf" > "$HOME/idf-env.sh"
+          echo "CHORUS_IDF_ENV=$HOME/idf-env.sh" >> "$GITHUB_ENV"
 
-      # The control catalog's committed vectors, both directions, plus the
-      # refusals and the bound on a subscriber that stopped reading. Needs no
-      # socket and no device: the crate has neither.
-      - name: Control catalog vectors, refusals and the subscriber bound
-        run: cargo test --package chorus-control -- --nocapture
-
-      # The DNS-SD packets, and the assertion that regenerating them from their
-      # committed parameters reproduces the committed bytes. Needs no multicast:
-      # what the live exchange adds is behind tools/mdns-live-run.sh, which the
-      # `make verify` step below watches refuse.
-      - name: Discovery packet vectors
-        run: cargo test --package chorus-discovery -- --nocapture
-
-      # 72 MODELLED hours, and every hard resync in them carrying a named cause.
-      # It is a modelled result and not AC-4; docs/verification-record.md says
-      # so where it reports the figures. Named separately because a change that
-      # made the loop resync for a reason nobody scheduled should say so.
-      - name: The modelled seventy-two hours, and the resync classification
-        run: cargo test --package chorus-client-linux --test soak_72h -- --nocapture
-
-      # Two regressions about state and about the worker pool, named so that a
-      # red build says which one broke rather than "the workspace". The first
-      # is a zone name the catalog accepts that did not survive the persisted
-      # state file; the second is a control peer that stops draining its
-      # receive window and strands the worker serving it.
-      - name: Zone names survive a restart, and a stalled peer gives its worker back
-        run: |
-          cargo test --package chorus-server --test regress_0043_f1 -- --nocapture --test-threads=1
-          cargo test --package chorus-server --test control_stalled_peer -- --nocapture
-
-      # The thread-population checks take workers from the control plane's fixed
-      # pool to ask about that pool, so one green run of them is one scheduling
-      # and not a determinism claim. This runs them for the repetitions
-      # config/verification.conf commits to, on one build, on two CPUs because
-      # that is where the interleaving happens, and runs them again against a
-      # control plane too small to serve them, which has to go red naming the
-      # busy-worker refusal. Minutes rather than seconds, and its own step so
-      # that a red build says the determinism claim broke rather than "the
-      # workspace".
-      - name: The control-plane thread population, repeated on one build
-        run: make verify-control-determinism
-
-      - name: Whole workspace, including documentation examples
-        run: cargo test --workspace
-
-      # The ESP32-S3 endpoint. Three separately named steps, because they are
-      # three different regressions and a red build should say which one broke.
-      # None of them needs an ESP32-S3, an amplifier, ESP-IDF or a sound card:
-      # the cores are held to committed fixtures and the amplifier is driven
-      # through an injectable transport. What genuinely needs hardware is
-      # tools/endpoint-rig-run.sh, which the `make verify` step below runs with
-      # its prerequisites absent and watches refuse.
-      - name: Endpoint golden-vector round trip
-        run: make firmware-golden-vectors
-
-      - name: Endpoint sync-core scenario regression
-        run: make firmware-sync-scenarios
-
-      # No eFuse write, no OTA activation, no settable wall clock on the
-      # endpoint path, nothing in external RAM, no register address in the
-      # amplifier driver, and no unit missing from the list. Includes the eight
-      # demonstrations that go red on a smuggled instance.
-      - name: Endpoint safety scans
-        run: make firmware-safety-scans
-
-      # The power save mode the endpoint SETS rather than inherits, the
-      # readback, the two ways that mode can fail to be in effect, and the
-      # refusal to join on a credential this repository does not have. Graded
-      # against a simulated radio; the runner has none, which is exactly the
-      # environment that makes the refusal in the `make verify` step below mean
-      # something.
-      - name: Endpoint wireless bring-up
-        run: make firmware-wireless
-
-      # The rest of it, including the amplifier bring-up order against a
-      # simulated part and the rejoin graded over a real socket with a real
-      # chorus-server killed and restarted under it. The outage-of-minutes run
-      # is real minutes of real wall clock, which is what makes it evidence.
-      - name: Endpoint clocking, amplifier, telemetry and the rejoin
-        run: make firmware-check
-
-      # Every refusal path, and the proof that a verification whose environment
-      # is absent exits non-zero naming what is missing rather than reporting
-      # green. This runner has no audio device and no real-time priority, which
-      # is exactly the environment that makes the second one meaningful.
-      - name: Refusals, and that unrun checks are visibly unrun
-        run: make verify
+      - name: make gate
+        run: make gate
