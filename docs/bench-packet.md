@@ -405,7 +405,7 @@ Linux" is graded; a FAIL is the finding the sync engine's next goal starts from.
 
 #### S7.5 The GPIO marker cross-check (optional: a logic analyzer and a free pin)
 
-The firmware can drive a marker pin at every server-timeline second (ADR on the marker,
+The firmware can drive a marker pin at every server-timeline second (ADR 0065,
 `firmware/main/esp_marker.c`), but `pin_marker` is `none` on the Brick: its maker documents no
 free broken-out GPIO (the S3 display header's GPIO38 is a candidate on a board with no display,
 unverified). If you find a free pin on both S3 endpoints: set `pin_marker = <gpio>` in each one's

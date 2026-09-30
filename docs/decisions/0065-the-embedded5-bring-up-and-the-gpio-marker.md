@@ -1,4 +1,4 @@
-# 0000: the endpoint reports its heap, stacks and FIFO on its console, marks server-timeline boundaries on a GPIO, and EMBEDDED-5's bring-up is a bench run with disconnect abuse
+# 0065: the endpoint reports its heap, stacks and FIFO on its console, marks server-timeline boundaries on a GPIO, and EMBEDDED-5's bring-up is a bench run with disconnect abuse
 
 - Status: accepted (goal 9, 2026-09-30)
 - Decided by: the goal (brief section 13 item 4, the EMBEDDED-5 packet; the goal-8 ledger's
@@ -50,7 +50,7 @@ https://raw.githubusercontent.com/sonocotta/esparagus-media-center/HEAD/README.m
 2. **The FIFO after the writer is the loop's own device delay** (`chorus_playout_fifo`: written
    minus DMA-consumed, less what of the buffer in flight has played since the interrupt's stamp),
    so the console reports exactly the figure the servo uses. The amplifier's own latency after the
-   pins is NOT in it: that is a datasheet figure (the amp track's research file) plus what the
+   pins is NOT in it: that is a datasheet figure (ADR 0064's `docs/research/tas5825m-register-map.md` states none) plus what the
    rig measures, and nothing here invents it.
 3. **The marker marks server-timeline boundaries, not a pattern in the audio.** Every
    `marker_period_ms` (1000) on the server timeline is a boundary; the writer arms the first frame

@@ -50,3 +50,4 @@ the number of the pull request that added it.
 | 0058 | [the endpoint plays through a jitter buffer whose device delay is the frames the I2S DMA consumed, counted and stamped in the interrupt, and corrects by inserting and dropping frames](0058-the-endpoint-playout-path.md) |
 | 0060 | [the endpoint has a serial console for the bench, with runtime-only values, and chorus-measure recovers the produced sample rate](0060-the-endpoint-console.md) |
 | 0062 | [chorus flashes through one guarded tool, and the flash guard is checked by a per-language whitelist and by running the tool](0062-the-guarded-flashing-tool.md) |
+| 0065 | [the endpoint reports its heap, stacks and FIFO on its console, marks server-timeline boundaries on a GPIO, and EMBEDDED-5's bring-up is a bench run with disconnect abuse](0065-the-embedded5-bring-up-and-the-gpio-marker.md) |
