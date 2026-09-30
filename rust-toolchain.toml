@@ -2,8 +2,11 @@
 # 1.98.1 was the current stable release when pinned: static.rust-lang.org/dist/channel-rust-stable.toml
 # reads `version = "1.98.1 (48a229cea 2026-09-01)"` (read 2026-09-30). An upgrade is its own commit
 # and goes through a proposal (brief §0.9, K51). `rust-version` in Cargo.toml equals this pin.
+# The two glibc targets are the Linux endpoint package's (tools/endpoint-package.sh, built at
+# a glibc floor with zig and cargo-zigbuild from mise.toml); adding a target is not a toolchain
+# upgrade: the channel is unchanged.
 [toolchain]
 channel = "1.98.1"
 components = ["rustfmt", "clippy"]
-targets = ["x86_64-unknown-linux-musl"]
+targets = ["x86_64-unknown-linux-musl", "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
 profile = "minimal"
