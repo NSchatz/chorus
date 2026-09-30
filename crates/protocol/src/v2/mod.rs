@@ -11,6 +11,7 @@ pub mod adoption;
 pub mod catalog;
 pub mod codec;
 pub mod messages;
+pub mod negotiate;
 pub mod noise;
 pub mod session;
 
