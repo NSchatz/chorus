@@ -107,6 +107,12 @@ void app_main(void)
         return;
     }
 
+    /* The serial console (audit A-13), as soon as the configuration has parsed,
+     * so it answers on a board whose bring-up stops below. Runtime-only
+     * settings and the bench's commands; a console that cannot start is logged
+     * and the endpoint runs on without it. */
+    (void)chorus_esp_console_start(&config);
+
     /* The same validation the host build gates its compile on. A board that
      * somehow booted an image built from a configuration that breaks a
      * platform rule stops here rather than driving a loudspeaker with it. */
@@ -212,10 +218,8 @@ void app_main(void)
         return;
     }
 
-    /* The serial console (audit A-13): runtime-only settings and the bench's
-     * commands. A console that cannot start is logged and the endpoint plays
-     * on without it. */
-    (void)chorus_esp_console_start(&config, &session);
+    /* The console's hooks into the session (audit A-13): `server` and `status`. */
+    chorus_esp_console_attach(&session);
 
     chorus_session_result_t result;
     (void)chorus_session_run(&session, &result);

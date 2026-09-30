@@ -223,14 +223,32 @@ Expected: the boot log names ESP-IDF v6.1, the chorus app starts, and it stops a
 `the committed configuration is refused; no clock is started` (audit A-10: the committed endpoint
 configuration has no link or amplifier map until goals 8 and 9); no pin is driven. Paste the log
 lines from the ESP-IDF version line to that refusal into the Needs item, with any `MAC:` line
-deleted (K27). What changes: goal 8 knows the v6.1 image boots on this board. The S3 decode cost
-(FLAC and Opus on the chip) needs the endpoint console goal 8 builds, so it moves to goal 8's
-packet.
+deleted (K27). What changes: goal 8 knows the v6.1 image boots on this board. From goal 8 the
+image also starts its serial console before that refusal (ADR 0059), so S6 below can run on the
+same board right after.
+
+### S6. The ESP32-S3's decode cost, on the chip (the owner's own board, after S5)
+
+Needs: the board from S5, flashed with an image from the same checkout, on USB; S0's checkout on
+the machine it is plugged into. No bought part. Goal 8 adds this (ADR 0059): the image carries one
+FLAC and one Opus stream from `fixtures/codec` and times their decode on its monotonic clock.
+
+```
+CHORUS_ESP32S3_PORT=/dev/ttyACM0 CHORUS_BENCH_PR=1 tools/decode-cost-run.sh
+```
+
+Expected: the console answers `help`; the report `embedded5-decode-cost-<date>` is MEASURED with
+`flac_cpu_fraction` and `opus_cpu_fraction` (the fraction of one core real-time decoding takes on
+the S3), both decodes matching their references, and `console_stack_free_bytes` above zero; a pull
+request `bench/<date>-embedded5-decode-cost` opens. Nothing is graded against a bound: the figures
+feed the playout and DSP budgets. What changes: goal 6's host-only decode cost gets its S3
+counterpart; if the stack figure is small, the console's 16 KB stack (ASSUMED) grows.
 
 ## 4. Order and what each session unblocks
 
 S0 first; S1 needs one Pi; S2 needs both and the interface; S3 needs S2's rig trusted; S4 after
-S3. S5 is independent (the owner's own board) and can run any time. None of these blocks a chorus
+S3. S5 is independent (the owner's own board) and can run any time; S6 follows S5 on the same
+board. None of these blocks a chorus
 goal (K7): each goal that can use a result re-checks for its pull request.
 
 ## 5. How results come back
@@ -247,8 +265,9 @@ Needs items.
   cross-check): no endpoint drives a marker pin yet and no chorus tool reads a sigrok capture;
   goal 8 (endpoint playout) is the first goal that can add one.
 - EMBEDDED-5 (the S3 + W5500 line-level sync against a Linux client, `tools/endpoint-rig-run.sh`)
-  and WIFI-7 (`tools/wireless-characterization-run.sh`): they need goal 8's link, playout and
-  console and goal 9's amplifier map; those goals write their packets.
+  and WIFI-7 (`tools/wireless-characterization-run.sh`): they need goal 8's link and playout and
+  goal 9's amplifier map; those goals write their packets. Both scripts now drive the endpoint
+  console (goal 8, ADR 0059), and the rig grades AC-3's produced rate with `chorus-measure rate`.
 - The production host's SCHED_FIFO wakeup-jitter run: a homelab-side Needs item, not a bench
   session (`docs/measurements/host-wakeup-jitter.md`). Its output files come back the bench way:
   committed under `docs/measurements/raw/production-wakeup-<date>/` on a

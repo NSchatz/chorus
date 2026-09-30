@@ -133,8 +133,18 @@ static int run(void *context, int argc, char **argv)
     return rc;
 }
 
-int chorus_esp_console_start(const chorus_endpoint_config_t *config,
-                             chorus_session_config_t *session)
+void chorus_esp_console_attach(chorus_session_config_t *session)
+{
+    if (shared.lock == NULL) {
+        return;
+    }
+    session->server_update = server_update;
+    session->server_update_ctx = &shared;
+    session->on_telemetry = on_telemetry;
+    session->telemetry_ctx = &shared;
+}
+
+int chorus_esp_console_start(const chorus_endpoint_config_t *config)
 {
     memset(&shared, 0, sizeof(shared));
     shared.lock = xSemaphoreCreateMutex();
@@ -167,11 +177,6 @@ int chorus_esp_console_start(const chorus_endpoint_config_t *config,
     console.fixture_count = 2;
     console.now_ns = chorus_monotonic_now_ns;
     console.stack_free_bytes = stack_free_bytes;
-
-    session->server_update = server_update;
-    session->server_update_ctx = &shared;
-    session->on_telemetry = on_telemetry;
-    session->telemetry_ctx = &shared;
 
     /* The REPL on whichever serial line this image's console is configured
      * for, as ESP-IDF's own examples choose it (examples/system/console/basic

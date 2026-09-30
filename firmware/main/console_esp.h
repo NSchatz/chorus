@@ -14,10 +14,16 @@
 #include "chorus/endpoint_config.h"
 #include "chorus/session.h"
 
-/* Install the console's hooks into `session` (which the caller then runs) and
- * start the REPL on its own task. Returns 0 when the REPL started; on failure
- * the endpoint runs on without a console and says so in its log. */
-int chorus_esp_console_start(const chorus_endpoint_config_t *config,
-                             chorus_session_config_t *session);
+/* Start the REPL on its own task, as soon as the committed configuration has
+ * parsed: before the amplifier and the link, so the console answers (and
+ * decode-cost runs) on a board whose bring-up stops early. Returns 0 when the
+ * REPL started; on failure the endpoint runs on without a console and says so
+ * in its log. */
+int chorus_esp_console_start(const chorus_endpoint_config_t *config);
+
+/* Install the console's two hooks into `session`, which the caller then runs:
+ * `server` applies from its next connection attempt and `status` prints what
+ * it last published. */
+void chorus_esp_console_attach(chorus_session_config_t *session);
 
 #endif /* CHORUS_CONSOLE_ESP_H */
