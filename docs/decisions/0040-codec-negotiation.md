@@ -1,4 +1,4 @@
-# 0000: the server negotiates the codec in one step, from a per-link preference and the endpoint's capabilities
+# 0040: the server negotiates the codec in one step, from a per-link preference and the endpoint's capabilities
 
 - Status: accepted (goal 5, 2026-09-30)
 - Decided by: the goal, on decision K62 (FLAC and Opus on the wire beside PCM: FLAC for Wi-Fi,

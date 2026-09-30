@@ -8,7 +8,7 @@
 //! stream the endpoint cannot play at all (its rate, channel count or sample
 //! format) is refused by name rather than sent in the hope that it copes.
 //! `docs/protocol.md`, "Codecs: PCM, FLAC and Opus", and
-//! `docs/decisions/0000-codec-negotiation.md`.
+//! `docs/decisions/0040-codec-negotiation.md`.
 
 use std::fmt;
 

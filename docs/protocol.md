@@ -12,7 +12,7 @@ half in `crates/protocol/src/v2/`).
 
 Why it is shaped this way: `docs/decisions/0003-wire-protocol-framing.md` (the
 frame), `docs/decisions/0039-the-v2-key-exchange.md` (the session, and the
-vendored crypto primitives) and `docs/decisions/0000-codec-negotiation.md` (codecs).
+vendored crypto primitives) and `docs/decisions/0040-codec-negotiation.md` (codecs).
 What a decoder does when it cannot accept a frame:
 `docs/decisions/0005-decoder-frame-validation.md`.
 
@@ -449,7 +449,7 @@ decoder outputs them in (for Opus family 1, Vorbis order).
 ## Codecs: PCM, FLAC and Opus
 
 Negotiation is the server's, in one step, from the endpoint's `capabilities`
-(`docs/decisions/0000-codec-negotiation.md`, `crates/protocol/src/v2/negotiate.rs`):
+(`docs/decisions/0040-codec-negotiation.md`, `crates/protocol/src/v2/negotiate.rs`):
 the server takes its configured preference for the endpoint (by link: lossless PCM or FLAC on a wired link,
 FLAC on Wi-Fi, Opus where bandwidth is short; K62) and uses the first codec in
 that list the endpoint's `codecs` bit set contains. PCM is in every endpoint's
