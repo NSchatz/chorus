@@ -81,7 +81,8 @@ LIB_SRC := \
 	$(FW)/src/console.c \
 	$(FW)/src/decode_cost.c \
 	$(FW)/src/sync_conf.c \
-	$(FW)/src/playout.c
+	$(FW)/src/playout.c \
+	$(FW)/src/controls.c
 
 # The four units the configuration checker itself needs. It is built without
 # the gate below, because it IS the gate. wifi.c is here because the reader
@@ -134,7 +135,7 @@ LIB_SRC += $(CODEC_SRC)
 CFLAGS += $(DRFLAC_DEFS) $(CODEC_INC)
 
 .PHONY: all check config-check golden-vectors sync-scenarios safety-scans amplifier clocking \
-        telemetry wireless link console session-outage noise-vectors psa-tree codec codec-fixtures playout clean
+        telemetry wireless link console session-outage noise-vectors psa-tree codec codec-fixtures playout controls clean
 
 # Every binary this makefile builds, enumerated. There is no wildcard over
 # firmware/tests on purpose, and the cost of that is a test has to be named in
@@ -144,7 +145,7 @@ CFLAGS += $(DRFLAC_DEFS) $(CODEC_INC)
 all: $(BUILD)/chorus-endpoint-config-check $(BUILD)/chorus-endpoint-scan \
      $(BUILD)/chorus-endpoint-session $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 \
      $(BUILD)/test_noise $(BUILD)/test_sync $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_scan $(BUILD)/test_telemetry \
-     $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_codec $(BUILD)/test_playout $(BUILD)/opus_compare
+     $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_codec $(BUILD)/test_playout $(BUILD)/test_controls $(BUILD)/opus_compare
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -214,7 +215,8 @@ $(BUILD)/test_scan: $(SCAN_SRC) $(FW)/tests/test_scan.c | $(BUILD)
 
 $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 $(BUILD)/test_noise $(BUILD)/test_sync \
 $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_telemetry \
-$(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_playout: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
+$(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_playout \
+$(BUILD)/test_controls: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
                          $(FW)/tests/test_%.c $(STAMP) $(PSA_LIB) $(VENDOR_OBJ) | $(BUILD)
 	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(TEST_SUPPORT) $(FW)/tests/test_$*.c \
 		$(PSA_LIB) $(VENDOR_OBJ) $(LDLIBS)
@@ -298,6 +300,12 @@ console: $(BUILD)/test_console
 playout: $(BUILD)/test_playout
 	$(BUILD)/test_playout
 
+# Goal 9: the controls per class (K67-K70) as the controller role, held to
+# fixtures/controls/<class>.hex, the microphone gate, and the status LED held
+# to the visualizer fixture (docs/decisions/0061-*).
+controls: $(BUILD)/test_controls
+	$(BUILD)/test_controls
+
 session-outage: $(BUILD)/chorus-endpoint-session
 	bash $(FW)/tests/session-outage.sh
 
@@ -315,7 +323,7 @@ codec-fixtures:
 		--vectors "$(OPUS_VECTORS)" --out $(REPO_ROOT)/fixtures/codec
 
 check: config-check golden-vectors sync-scenarios safety-scans clocking amplifier telemetry \
-       wireless link console playout session-outage codec
+       wireless link console playout controls session-outage codec
 
 clean:
 	rm -rf $(BUILD)

@@ -235,3 +235,15 @@ of the output formats those scripts grade, NOT measurements: `null` reports a
 delay of zero, and nothing here is timing evidence. The bench report
 validator refuses any of them as a report's raw data unless the test passes its
 test-only flag.
+
+## `controls/`
+
+The endpoint's controls and status LED (goal 9, `docs/decisions/0061-*`).
+`<class>.hex` is the `controller_command` frames a class's controls produce
+for the scripted presses in `firmware/tests/test_controls.c`, which must
+produce them byte for byte; `crates/server/tests/controller_role.rs` decodes
+the same bytes and applies them to a room, so the controller role is held end
+to end by one file. `visualizer-sequence.hex` is a stream of `color` and
+`visualizer_frame` frames (a stand-in until the DSP library computes the real
+one in goal 12) and `visualizer-sequence.led` what the compact class's LED
+shows at chosen moments while it plays.

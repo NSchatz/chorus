@@ -1,0 +1,22 @@
+# chorus controls fixture: the controller_command frames the streaming amp class's
+# controls produce, in order, for the input script in firmware/tests/test_controls.c
+# (the_streaming_amp_class). Protocol v2 frames (docs/protocol.md, "0x32 controller command").
+#
+# Committed, and never written by a test. firmware/tests/test_controls.c drives
+# the controls and must produce exactly these bytes; crates/server/tests/controller_role.rs
+# decodes them with chorus-protocol and applies them to a room through the server's
+# controller translation (docs/decisions/0061-*).
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# a short press of play/pause: toggle
+32 00 04 03 00 00 00
+
+# volume up: volume_step +5
+32 00 04 07 00 05 00
+
+# next
+32 00 04 04 00 00 00
+
+# previous
+32 00 04 05 00 00 00

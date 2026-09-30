@@ -1,0 +1,32 @@
+# chorus controls fixture: what the compact class's status LED shows while
+# visualizer-sequence.hex plays (firmware/include/chorus/controls.h,
+# chorus_led_render; docs/decisions/0061-*).
+#
+# Committed, and never written by a test. firmware/tests/test_controls.c renders the
+# LED at each moment below, in order, and must show exactly these values;
+# crates/server/tests/controller_role.rs checks the moments against the frames the
+# .hex holds (ascending, and covering every frame).
+#
+# Format: `server_now_ns state red green blue brightness`, '#' starts a comment.
+# brightness while following = colour brightness * peak / 255, rounded to nearest;
+# a beat of 128 or more shows the colour's full brightness.
+
+# before any frame is heard: the steady playing colour
+999999999 playing 255 255 255 24
+# the blue colour, peak 128: 200 * 128 / 255 = 100
+1000000000 playing 0 128 255 100
+1010000000 playing 0 128 255 100
+# the beat: full brightness
+1020000000 playing 0 128 255 200
+# peak 64: 200 * 64 / 255 = 50
+1040000000 playing 0 128 255 50
+# red at brightness 100, peak 255
+1060000000 playing 255 0 0 100
+# the microphone is muted: the mute colour wins over the visualizer
+1070000000 muted 255 64 0 48
+# peak 0: dark
+1080000000 playing 255 0 0 0
+# 500 ms after the last frame the stream is still live
+1580000000 playing 255 0 0 0
+# one nanosecond later it is over: the steady playing colour again
+1580000001 playing 255 255 255 24
