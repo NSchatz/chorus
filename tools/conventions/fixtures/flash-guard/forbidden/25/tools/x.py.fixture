@@ -1,0 +1,2 @@
+import os
+at_bench = (os.getenv("CHORUS_OWNER_AT_BENCH") or "1") == "1"

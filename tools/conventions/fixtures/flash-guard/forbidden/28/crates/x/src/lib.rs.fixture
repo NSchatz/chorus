@@ -1,0 +1,3 @@
+fn at_bench() -> bool {
+    std::env::var("CHORUS_OWNER_AT_BENCH").or(Ok::<_, std::env::VarError>("1".into())).as_deref() == Ok("1")
+}
