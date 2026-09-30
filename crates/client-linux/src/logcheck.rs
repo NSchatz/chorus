@@ -148,6 +148,10 @@ pub struct Finding {
 pub struct Report {
     /// The findings, in the order they were checked.
     pub findings: Vec<Finding>,
+    /// Checks that were NOT graded, each with the reason. Never a pass: a
+    /// report that sets one aside prints it as `NOT GRADED`, and whatever
+    /// claim rests on it is not made by this report.
+    pub not_graded: Vec<Finding>,
 }
 
 impl Report {
@@ -175,6 +179,9 @@ impl fmt::Display for Report {
                 finding.check,
                 finding.detail
             )?;
+        }
+        for finding in &self.not_graded {
+            writeln!(f, "NOT GRADED {}: {}", finding.check, finding.detail)?;
         }
         Ok(())
     }
@@ -394,6 +401,56 @@ pub fn grade(log: &ParsedLog, min_graded_seconds: u64) -> Report {
     report
 }
 
+/// The one check a device that reports no delay cannot answer.
+pub const DELAY_BOUNDS_CHECK: &str = "delay-inside-the-bounds-for-the-whole-graded-interval";
+
+/// Set the delay-bounds check aside for a log from a device that reports no
+/// delay at all, such as the ALSA `null` device, and assert that it really is
+/// such a device.
+///
+/// This is not a way of passing the bounds check. The bounds finding is moved
+/// out of the findings and into [`Report::not_graded`], so the report prints
+/// it as `NOT GRADED` and no claim about the delay rests on it. In its place
+/// goes a check that CAN fail: every sample, graded or not, and both reported
+/// extremes are zero. A log from a device that reports any delay at all fails
+/// it, so this cannot be used to set the bounds aside for a real card.
+pub fn set_aside_delay_bounds_for_a_device_that_reports_no_delay(
+    log: &ParsedLog,
+    report: &mut Report,
+) {
+    let nonzero = log.samples.iter().filter(|s| s.delay_us != 0).count();
+    let extremes_zero = number(&log.summary, "delay_min_us") == Some(0)
+        && number(&log.summary, "delay_max_us") == Some(0);
+    report.push(
+        "device-reports-no-delay-throughout",
+        !log.samples.is_empty() && nonzero == 0 && extremes_zero,
+        format!(
+            "{} of {} samples report a nonzero delay and the reported extremes are {}; a device \
+             that reports any delay is graded against the bounds, not set aside",
+            nonzero,
+            log.samples.len(),
+            if extremes_zero {
+                "both zero"
+            } else {
+                "not both zero"
+            }
+        ),
+    );
+    if let Some(at) = report
+        .findings
+        .iter()
+        .position(|f| f.check == DELAY_BOUNDS_CHECK)
+    {
+        let mut finding = report.findings.remove(at);
+        finding.ok = false;
+        finding.detail = format!(
+            "the device reports no delay, so there is nothing to hold to the bounds ({})",
+            finding.detail
+        );
+        report.not_graded.push(finding);
+    }
+}
+
 /// Grade the underrun count, which is a claim about the run rather than about
 /// the log's shape.
 pub fn grade_underruns(log: &ParsedLog, report: &mut Report) {
@@ -563,5 +620,42 @@ mod tests {
         let err = parse("nonsense a=b\n").unwrap_err();
         assert_eq!(err.line, 1);
         assert!(err.detail.contains("nonsense"));
+    }
+
+    #[test]
+    fn a_device_that_reports_no_delay_sets_the_bounds_aside_and_is_checked_for_it() {
+        let zero = log_text(
+            "sample mono_us=100 delay_us=0 occupancy_us=0 graded=1\n\
+             sample mono_us=200 delay_us=0 occupancy_us=0 graded=1\n",
+            "summary graded_span_us=100 graded_samples=2 delay_min_us=0 delay_max_us=0 \
+             margin_to_min_us=-60000 margin_to_max_us=300000 underruns=0\n",
+        );
+        let log = parse(&zero).unwrap();
+        let mut report = grade(&log, 0);
+        assert!(!report.ok(), "a zero delay is outside the bounds");
+        set_aside_delay_bounds_for_a_device_that_reports_no_delay(&log, &mut report);
+        assert!(report.ok(), "{}", report);
+        assert_eq!(report.not_graded.len(), 1);
+        assert_eq!(report.not_graded[0].check, DELAY_BOUNDS_CHECK);
+        assert!(report
+            .to_string()
+            .contains("NOT GRADED delay-inside-the-bounds"));
+        assert!(!report.to_string().contains("pass delay-inside-the-bounds"));
+
+        // A real device's log cannot be graded this way.
+        let real = log_text(
+            "sample mono_us=100 delay_us=0 occupancy_us=0 graded=1\n\
+             sample mono_us=200 delay_us=90000 occupancy_us=0 graded=1\n",
+            "summary graded_span_us=100 graded_samples=2 delay_min_us=0 delay_max_us=90000 \
+             margin_to_min_us=-60000 margin_to_max_us=210000 underruns=0\n",
+        );
+        let log = parse(&real).unwrap();
+        let mut report = grade(&log, 0);
+        set_aside_delay_bounds_for_a_device_that_reports_no_delay(&log, &mut report);
+        assert!(!report.ok(), "{}", report);
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.check == "device-reports-no-delay-throughout" && !f.ok));
     }
 }

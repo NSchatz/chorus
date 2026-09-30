@@ -22,6 +22,9 @@
 #   CHORUS_GATE_OUTAGE_SECONDS  the outage-of-minutes run's length in the gate
 #                             (default 30; `make firmware-check` runs the committed 130)
 #   IDF_PY_BUILD_JOBS         idf.py's ninja job count; passed through explicitly
+#   CHORUS_ALSA_PREFIX        a rootless alsa-lib for the alsa-null step when the
+#                             system has no libasound.so.2 (default /cache/opt/chorus-alsa;
+#                             SKIPPED under CI when neither exists)
 
 # Every step function is invoked by name through step(), which shellcheck
 # cannot see.
@@ -115,6 +118,7 @@ if [ "$MODE" = full ]; then
     step firmware-check   env CHORUS_OUTAGE_SECONDS="${CHORUS_GATE_OUTAGE_SECONDS:-30}" \
                               make --no-print-directory firmware-check
     step verify           make --no-print-directory verify
+    step alsa-null        make --no-print-directory verify-alsa-null
     step firmware-esp32s3 firmware_idf
     step image            make --no-print-directory image
 fi

@@ -15,14 +15,42 @@
 # The log it writes IS the evidence. Grade it later, on any machine, with:
 #   ./target/debug/chorus-delaylog-check <log> --min-graded-seconds 600 \
 #       --require-zero-underruns --require-no-rate-change
+#
+# The ALSA `null` run (CHORUS_TEN_MINUTE_NULL=1, `make ten-minute-run-null`):
+# the same ten minutes through the same real binaries, on a device that opens
+# and reports no delay. It is a DIFFERENT, smaller claim and is labelled so on
+# every line that matters: ten continuous minutes, zero underruns, no rate
+# change, the client's buffer never past its ceiling, and a device that really
+# did report zero throughout. The delay-bounds check is printed NOT GRADED and
+# the criterion above is NOT PASSED by it. It refuses a device that paces (use
+# the real run there), never writes the evidence path under docs/measurements/
+# unless told to, and without CHORUS_TEN_MINUTE_NULL=1 a `null` device is
+# refused by name exactly as before.
 
 source "$(dirname "$0")/lib.sh"
 
 CRITERION="ten continuous minutes with the reported delay inside its bounds and zero underruns"
-LOG="${1:-$REPO_ROOT/docs/measurements/ten-minute-run.log}"
+NULL_RUN="${CHORUS_TEN_MINUTE_NULL:-0}"
+if [ "$NULL_RUN" = "1" ]; then
+    LOG="${1:-${TMPDIR:-/tmp}/chorus-ten-minute-null/ten-minute-run-null.log}"
+else
+    LOG="${1:-$REPO_ROOT/docs/measurements/ten-minute-run.log}"
+fi
 
 build_once
-require_pacing_audio_device "$CRITERION"
+if [ "$NULL_RUN" = "1" ]; then
+    NULL_CRITERION="ten continuous minutes on a device that reports no delay (host, ALSA null, not hardware): zero underruns, no rate change, the buffer under its ceiling; the delay bounds are NOT GRADED"
+    require_audio_device "$NULL_CRITERION"
+    if "$BIN_DIR/chorus-client" --device "$(audio_device)" --probe-device --require-pacing \
+        >/dev/null 2>&1; then
+        missing_prerequisite \
+            "$NULL_CRITERION" \
+            "a device that reports no delay; '$(audio_device)' reports one, so it is graded against the bounds" \
+            "unset CHORUS_TEN_MINUTE_NULL and run the real ten-minute run on this device"
+    fi
+else
+    require_pacing_audio_device "$CRITERION"
+fi
 
 DEVICE="$(audio_device)"
 PORT="$(free_port)"
@@ -32,7 +60,11 @@ read -r -a SERVER_EXTRA_ARGS <<< "${CHORUS_SERVER_EXTRA_ARGS:-}"
 
 mkdir -p "$(dirname "$LOG")"
 
-say "chorus: ten-minute run"
+if [ "$NULL_RUN" = "1" ]; then
+    say "chorus: ten-minute run on ALSA null (host, not hardware; the delay bounds are NOT GRADED)"
+else
+    say "chorus: ten-minute run"
+fi
 say "  device:   $DEVICE"
 say "  log:      $LOG"
 say "  run:      ${SECONDS_TO_RUN}s (the graded interval opens after the start fill)"
@@ -75,7 +107,25 @@ if [ "$CLIENT_STATUS" -ne 0 ]; then
     exit "$CLIENT_STATUS"
 fi
 
+if [ "$NULL_RUN" != "1" ]; then
+    "$BIN_DIR/chorus-delaylog-check" "$LOG" \
+        --min-graded-seconds 600 \
+        --require-zero-underruns \
+        --require-no-rate-change
+    exit $?
+fi
+
+set +e
 "$BIN_DIR/chorus-delaylog-check" "$LOG" \
     --min-graded-seconds 600 \
     --require-zero-underruns \
-    --require-no-rate-change
+    --require-no-rate-change \
+    --device-reports-no-delay
+GRADED=$?
+set -e
+if [ "$GRADED" -ne 0 ]; then
+    say "chorus: ten-minute run on ALSA null FAILED; the log is at $LOG"
+    exit "$GRADED"
+fi
+say "chorus: ten-minute run on ALSA null PASSED (host, not hardware): 600 s graded, zero underruns, no rate change; delay bounds NOT GRADED, so the ten-minute criterion itself is NOT PASSED by this run"
+

@@ -187,7 +187,9 @@ usage: chorus-server [options]
 
 audio:
   --listen <addr:port>        where endpoints connect for audio (default 127.0.0.1:4010)
-  --source <tone|chirp|path|->  PCM in: a test tone, the rig's chirp, a file or FIFO, or stdin (default tone)
+  --source <tone|chirp|path|fifo:path>  PCM in: a test tone, the rig's chirp, a file (ends at its
+                              last byte) or a named pipe (held open; a closed writer is silence)
+                              (default tone)
   --measure-config <path>     where the chirp is declared (default config/measure.conf)
   --chirp-amplitude <x>       the chirp's amplitude, at most the declared ceiling (default the ceiling)
   --format <name>             pcm_s16le, pcm_s24le or pcm_f32le (default pcm_s16le)
@@ -864,7 +866,13 @@ fn main() -> ExitCode {
             break ExitCode::from(EXIT_TRANSPORT);
         }
 
-        let pcm = match source::open(&config.source, format, config.tone_ms, chirp.as_ref()) {
+        let pcm = match source::open(
+            &config.source,
+            format,
+            config.chunk_us,
+            config.tone_ms,
+            chirp.as_ref(),
+        ) {
             Ok(s) => s,
             Err(e) => {
                 report(
