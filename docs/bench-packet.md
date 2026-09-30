@@ -219,13 +219,17 @@ cd firmware && CHORUS_OWNER_AT_BENCH=1 idf.py -B build/image -D SDKCONFIG=build/
 Never run `espefuse` or any eFuse command (BRIEF.md section 3.1 rule 2); the image guard in
 `make gate` already proves the image burns none.
 
-Expected: the boot log names ESP-IDF v6.1, the chorus app starts, and it stops at
-`the committed configuration is refused; no clock is started` (audit A-10: the committed endpoint
-configuration has no link or amplifier map until goals 8 and 9); no pin is driven. Paste the log
-lines from the ESP-IDF version line to that refusal into the Needs item, with any `MAC:` line
-deleted (K27). What changes: goal 8 knows the v6.1 image boots on this board. From goal 8 the
-image also starts its serial console before that refusal (ADR 0060), so S6 below can run on the
-same board right after.
+Expected: the boot log names ESP-IDF v6.1, the chorus app starts its serial console (ADR 0060),
+and it stops before any link or session because the amplifier map is still `unknown` (goal 9
+fills it): either the amplifier bring-up's refusal naming the first `unknown` key, or
+`the hardware could not be brought up; the output stage stays dead` if the I2C driver rejects the
+unset address. From goal 8 the default image is the `brick-s3-wired` board profile (ADR 0057, its
+board model ASSUMED until the boards Needs item is answered), so it configures that board's pins
+as outputs (the amplifier power-down line driven low, the I2S pins); on a bare development board
+wire nothing to them for this session. Paste the log lines from the ESP-IDF version line to the
+stop into the Needs item, with any `MAC:` line deleted (K27). What changes: goal 9 knows the v6.1
+image boots on this board, and S6 below can run on the same board right after, through the
+console.
 
 ### S6. The ESP32-S3's decode cost, on the chip (the owner's own board, after S5)
 
@@ -262,8 +266,9 @@ Needs items.
 ## 6. Not in this packet
 
 - The GPIO marker cross-check with the logic analyzer (BRIEF.md section 10's digital
-  cross-check): no endpoint drives a marker pin yet and no chorus tool reads a sigrok capture;
-  goal 8 (endpoint playout) is the first goal that can add one.
+  cross-check): no endpoint drives a marker pin yet and no chorus tool reads a sigrok capture.
+  Goal 8 built the playout path it would mark (ADR 0058) but no marker; goal 9's EMBEDDED-5 packet
+  (the settled board's wiring) is where a marker pin and its reader belong.
 - EMBEDDED-5 (the S3 + W5500 line-level sync against a Linux client, `tools/endpoint-rig-run.sh`)
   and WIFI-7 (`tools/wireless-characterization-run.sh`): they need goal 8's link and playout and
   goal 9's amplifier map; those goals write their packets. Both scripts now drive the endpoint
