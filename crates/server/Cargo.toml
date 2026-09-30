@@ -27,3 +27,6 @@ chorus-client-linux = { path = "../client-linux" }
 [[bin]]
 name = "chorus-server"
 path = "src/main.rs"
+
+[lints]
+workspace = true
