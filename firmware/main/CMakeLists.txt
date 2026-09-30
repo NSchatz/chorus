@@ -24,6 +24,8 @@ idf_component_register(
         "esp_hal.c"
         "../src/conf.c"
         "../src/protocol.c"
+        "../src/protocol_v2.c"
+        "../src/noise.c"
         "../src/sync_rng.c"
         "../src/sync_servo.c"
         "../src/sync_sim.c"
@@ -65,6 +67,7 @@ idf_component_register(
         esp_event
         nvs_flash
         lwip
+        mbedtls
     EMBED_TXTFILES
         "../config/endpoint.conf"
 )

@@ -55,7 +55,20 @@ check/                   host tooling: the configuration gate and the safety
                          scans. Deliberately OUTSIDE the tree it scans
 tests/                   the host suites, the simulated amplifier, and the
                          outage harness
+crypto/                  the host build's TF-PSA-Crypto configuration. The
+                         library itself is compiled from the pinned ESP-IDF
+                         v6.1 tree (CHORUS_IDF_V61_DIR, default
+                         /cache/esp/esp-idf-v6.1), never copied here
 ```
+
+Protocol v2's key exchange needs a crypto library, and the endpoint reaches it
+only through the PSA Crypto API (`psa/crypto.h`). The image gets it from
+ESP-IDF's mbedtls component; the host build compiles TF-PSA-Crypto 1.1.0 out of
+the same pinned ESP-IDF v6.1 checkout (commit
+fff9895c82d744c7237be8847347bdd1b07c6643) with `crypto/chorus_psa_config.h`,
+and refuses by name when that tree is absent. On the host the endpoint's key
+and its server pins are files (`--key`, `--server-pins`); the image keeps a key
+for the running boot only until its storage is decided.
 
 ## What is graded here, and what is not
 
@@ -64,12 +77,14 @@ Graded on a host, with no hardware at all:
 | what | how |
 |---|---|
 | the protocol core | every vector pair FOUND under `fixtures/protocol/`, in both directions, byte for byte and field for field, plus the decoder-behaviour order `docs/protocol.md` fixes. The directory is enumerated, so a committed pair with no C mirror goes red naming the type |
+| protocol v2 | every vector FOUND under `fixtures/protocol/v2/` (`tests/test_protocol_v2.c` prints `v2 golden vectors: N of N passed`), the value rules refused by the encoder and rejected by the decoder as the same field, every single-byte corruption of every vector, and every prefix of a stream of them |
+| the key exchange | `Noise_XX_25519_ChaChaPoly_SHA256` (`src/noise.c`, PSA Crypto calls only) reproduces the published cacophony vector as initiator and as responder, and the four chorus session vectors (`handshake_init`, `handshake_response`, `handshake_finish`, `secure_record`) from their public test keys (`tests/test_noise.c`) |
 | the sync core | every scenario under `fixtures/sync` drives the error below its bound and holds it, AND every exchange reproduces `fixtures/sync/crosscheck/` exactly |
 | the bring-up order, and every unwind | a simulated part, a simulated output stage and a simulated I2S controller writing one event log the driver cannot reach. Stopping a clock counts as a clock change, so the teardown paths are held to the same rule as the first one: high impedance before it, always |
 | the gain ceiling, and every failure of the bus | the same simulated part |
 | the clock rules and the pin map | at build time. `make firmware-check` compiles nothing until `chorus-endpoint-config-check` has passed over `config/endpoint.conf` |
 | the safety scans | over the whole endpoint tree, with eight demonstrations that go red on a smuggled instance |
-| the rejoin | a real loopback socket, a real `chorus-server` process killed with SIGKILL and replaced, three outage shapes |
+| the rejoin | a real loopback socket, the `chorus-server` at HEAD killed with SIGKILL and replaced, three outage shapes, every connection a protocol v2 session; and a fourth shape, a server that comes back with another key, which the endpoint refuses (`session_refused` `key_changed`) and stops |
 
 NOT graded here, and not claimed:
 

@@ -3,11 +3,17 @@
  * This is what firmware/tests/session-outage.sh drives against a REAL
  * chorus-server on a real socket, killing and restarting the server under it.
  * It is not a mock and it does not model a network: it opens a TCP connection,
- * decodes the committed protocol off it, runs the time-sync exchange, and
+ * runs the protocol v2 handshake as the endpoint, decodes the committed
+ * protocol out of the encrypted records, runs the time-sync exchange, and
  * rejoins when the far end goes away.
  *
  *   chorus-endpoint-session --server 127.0.0.1:4010 --run-seconds 20 \
- *       --log /tmp/endpoint.log
+ *       --log /tmp/endpoint.log --endpoint-id kitchen \
+ *       --key /var/lib/chorus/endpoint.key --server-pins /var/lib/chorus/server-pins
+ *
+ * The key and the pins are files on the host build; without --key the key is
+ * made for this run only, and without --server-pins the pins are kept for this
+ * run only.
  *
  * Every constant it is not given comes from firmware/config/endpoint.conf, so
  * a run and the file that describes it cannot drift apart. */
@@ -22,9 +28,12 @@
 
 static void usage(void)
 {
-    fprintf(stderr, "usage: chorus-endpoint-session [--server host:port] [--run-seconds n]\n"
-                    "                               [--log path] [--sync-interval-ms n]\n"
-                    "                               [--first-backoff-ms n] [--max-backoff-ms n]\n");
+    fprintf(stderr,
+            "usage: chorus-endpoint-session [--server host:port] [--run-seconds n]\n"
+            "                               [--log path] [--sync-interval-ms n]\n"
+            "                               [--first-backoff-ms n] [--max-backoff-ms n]\n"
+            "                               [--endpoint-id id] [--key path]\n"
+            "                               [--server-pins path] [--handshake-timeout-ms n]\n");
 }
 
 int main(int argc, char **argv)
@@ -74,15 +83,31 @@ int main(int argc, char **argv)
         } else if (strcmp(arg, "--max-backoff-ms") == 0 && value != NULL) {
             config.max_backoff_ms = (uint32_t)strtoul(value, NULL, 10);
             i++;
+        } else if (strcmp(arg, "--endpoint-id") == 0 && value != NULL) {
+            if (strlen(value) == 0 || strlen(value) >= sizeof(config.endpoint_id)) {
+                fprintf(stderr, "chorus-endpoint-session: an endpoint id is 1 to 255 bytes\n");
+                return 2;
+            }
+            snprintf(config.endpoint_id, sizeof(config.endpoint_id), "%s", value);
+            i++;
+        } else if (strcmp(arg, "--key") == 0 && value != NULL) {
+            config.key_path = value;
+            i++;
+        } else if (strcmp(arg, "--server-pins") == 0 && value != NULL) {
+            config.server_pins_path = value;
+            i++;
+        } else if (strcmp(arg, "--handshake-timeout-ms") == 0 && value != NULL) {
+            config.handshake_timeout_ms = (uint32_t)strtoul(value, NULL, 10);
+            i++;
         } else {
             usage();
             return 2;
         }
     }
 
-    chorus_session_result_t result;
+    static chorus_session_result_t result;
     int status = chorus_session_run(&config, &result);
-    if (status != 0) {
+    if (status != 0 && result.end != CHORUS_SESSION_SERVER_KEY_CHANGED) {
         fprintf(stderr, "chorus-endpoint-session: %s: %s\n", chorus_session_end_name(result.end),
                 result.detail);
         return 3;
@@ -100,5 +125,18 @@ int main(int argc, char **argv)
            result.connections_that_played, result.longest_outage_ns,
            result.telemetry.chunks_received, result.telemetry.frames_received,
            result.telemetry.exchanges, result.telemetry.skipped_frames);
+    printf("chorus-endpoint-session: protocol=v2 key=%s handshakes=%" PRIu32
+           " servers_pinned=%" PRIu32 " refusals=%" PRIu32 " records_received=%" PRIu64
+           " records_sent=%" PRIu64 " rejected=%" PRIu64 "\n",
+           result.key_fingerprint, result.handshakes, result.servers_pinned,
+           result.refusals_received, result.records_received, result.records_sent,
+           result.rejected_frames);
+    if (status != 0) {
+        /* Not an outage: the server's key is not its pin, and only the owner
+         * changes a pin. */
+        fprintf(stderr, "chorus-endpoint-session: %s: %s\n", chorus_session_end_name(result.end),
+                result.detail);
+        return 4;
+    }
     return 0;
 }

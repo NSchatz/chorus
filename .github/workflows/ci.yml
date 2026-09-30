@@ -64,6 +64,12 @@ jobs:
           printf '. %s/export.sh\n' "$HOME/esp-idf" > "$HOME/idf-env.sh"
           echo "CHORUS_IDF_ENV=$HOME/idf-env.sh" >> "$GITHUB_ENV"
 
+      # The endpoint's host build compiles its crypto library (TF-PSA-Crypto)
+      # from the ESP-IDF v6.1 tree cloned above, pinned by commit in
+      # firmware/Makefile, which refuses any other.
+      - name: ESP-IDF v6.1 crypto sources
+        run: echo "CHORUS_IDF_V61_DIR=$HOME/esp-idf" >> "$GITHUB_ENV"
+
       # The identity step needs the private term list, which never exists on
       # a runner: with CI=true (set by GitHub) it prints SKIPPED and the
       # reason; everywhere else its absence fails the gate.
