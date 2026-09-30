@@ -402,13 +402,41 @@ fn an_error_past_the_threshold_mutes_realigns_and_resumes_rather_than_slewing() 
 // AC-10: the modelled hour.
 // -------------------------------------------------------------------------
 
+/// The clocks and the link of a committed simulator scenario, over `base`.
+///
+/// `docs/decisions/0014` says its three modelled scenarios are the committed
+/// ones in `fixtures/sync/`, so the crystal pair, the base one-way delay and the
+/// jitter distribution are READ from those files rather than restated here,
+/// where they could drift apart (audit A-8). What is not taken from the file is
+/// what the two models do not share: the seed and the epoch offset stay with
+/// each test, because this model draws its network from its own generator
+/// and starts its DAC from its own misalignment, and the file's values for
+/// those were chosen for the FOUNDATION-1 simulator's run.
+fn committed_scenario(file: &str, base: ModelParams) -> ModelParams {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/sync")
+        .join(file);
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("{} is committed: {}", path.display(), e));
+    let scenario = chorus_sync::Scenario::parse(&text)
+        .unwrap_or_else(|e| panic!("{} parses: {}", path.display(), e));
+    ModelParams {
+        server_ppm: scenario.config.server_ppm,
+        client_ppm: scenario.config.client_ppm,
+        base_one_way_ns: scenario.config.base_one_way_delay_us * 1_000.0,
+        jitter: scenario.config.jitter,
+        ..base
+    }
+}
+
 #[test]
 fn a_modelled_hour_holds_below_a_quarter_millisecond_after_the_first_minute() {
     // MODELLED, not measured. An hour of modelled time against modelled
     // crystals, a modelled switch and a modelled DAC. The run starts outside
     // the hard-resync tier on purpose, so the acquisition tier is exercised
     // and the "no hard resync after the first minute" half asserts something.
-    let mut endpoint = ModelledEndpoint::new(params(), sync());
+    let mut endpoint =
+        ModelledEndpoint::new(committed_scenario("01-wired-quiet.cfg", params()), sync());
     endpoint.initial_misalignment_ns = 30_000_000;
     let result = endpoint.run(60 * MINUTE_NS);
 
@@ -505,15 +533,14 @@ fn the_modelled_hour_holds_at_the_worst_realistic_crystal_pair_too() {
     // scenario puts at the edge of what two real crystals do, on a link with
     // more jitter than the quiet one.
     let mut endpoint = ModelledEndpoint::new(
-        ModelParams {
-            server_ppm: 50.0,
-            client_ppm: -50.0,
-            epoch_offset_ns: -8_000_000,
-            base_one_way_ns: 250_000.0,
-            jitter: JitterModel::Exponential { mean_us: 150.0 },
-            seed: 0xC0FF_EE11,
-            ..params()
-        },
+        committed_scenario(
+            "03-worst-case-skew.cfg",
+            ModelParams {
+                epoch_offset_ns: -8_000_000,
+                seed: 0xC0FF_EE11,
+                ..params()
+            },
+        ),
         sync(),
     );
     endpoint.initial_misalignment_ns = -25_000_000;
@@ -552,15 +579,14 @@ fn the_modelled_hour_holds_at_the_worst_realistic_crystal_pair_too() {
 /// modelled scenarios, and the one the record reported with no committed
 /// reproduction.
 fn wired_loaded() -> ModelParams {
-    ModelParams {
-        server_ppm: -12.5,
-        client_ppm: 38.0,
-        epoch_offset_ns: 4_100_000,
-        base_one_way_ns: 200_000.0,
-        jitter: JitterModel::Exponential { mean_us: 150.0 },
-        seed: 0x10AD_ED01,
-        ..params()
-    }
+    committed_scenario(
+        "02-wired-loaded.cfg",
+        ModelParams {
+            epoch_offset_ns: 4_100_000,
+            seed: 0x10AD_ED01,
+            ..params()
+        },
+    )
 }
 
 #[test]

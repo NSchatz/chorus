@@ -145,14 +145,16 @@ not wrong in the ways the model can see. `docs/verification-record.md` records
 what was and was not run, and AC-1 - two real endpoints, an hour, a rig - is
 recorded there as NOT passed.
 
-Three modelled scenarios, chosen to match the committed simulator scenarios in
-`fixtures/sync/` rather than invented here:
+Three modelled scenarios. Their clocks and their links are READ from the
+committed simulator scenarios in `fixtures/sync/` by the tests that reproduce
+them, not restated; the seed and the starting misalignment are the tests' own,
+because this model draws its network from its own generator:
 
-| scenario | clocks | link |
-|---|---|---|
-| quiet wired | 0 and +40 ppm | 120 us base, uniform 0 to 60 us |
-| wired loaded | -12.5 and +38 ppm | 200 us base, exponential 150 us mean |
-| worst crystal pair | +50 and -50 ppm | 250 us base, exponential 150 us mean |
+| scenario | from | clocks | link |
+|---|---|---|---|
+| quiet wired | `01-wired-quiet.cfg` | 0 and +40 ppm | 120 us base, uniform 0 to 60 us |
+| wired loaded | `02-wired-loaded.cfg` | -12.5 and +38 ppm | 200 us base, exponential 150 us mean |
+| worst crystal pair | `03-worst-case-skew.cfg` | +50 and -50 ppm | 250 us base, uniform 0 to 200 us |
 
 At the values fixed below, over 60 modelled minutes each, peak error after the
 first modelled minute:
@@ -161,7 +163,7 @@ first modelled minute:
 |---|---|---|---|---|---|---|
 | quiet wired | 69.8 us | 42.0 us | 1 | 0 | 0 | `a_modelled_hour_holds_below_a_quarter_millisecond_after_the_first_minute` |
 | wired loaded | 184.4 us | 80.3 us | 1 | 0 | 0 | `the_modelled_hour_holds_on_the_loaded_wired_link_too` |
-| worst crystal pair | 158.7 us | 90.7 us | 1 | 0 | 0 | `the_modelled_hour_holds_at_the_worst_realistic_crystal_pair_too` |
+| worst crystal pair | 153.2 us | 103.9 us | 1 | 0 | 0 | `the_modelled_hour_holds_at_the_worst_realistic_crystal_pair_too` |
 
 Every row is a committed test in `crates/client-linux/tests/sync_loop.rs`, named
 above, and the seeds and initial misalignments that make each one reproducible
@@ -177,12 +179,22 @@ committed; the numbers here are the committed reproduction's, which is why the
 row now reads 184.4 us rather than the 125.3 us that first stood here. The
 scenario, its clocks and its link are unchanged.
 
+The `worst crystal pair` row was first run on an exponential 150 us link while
+this table said it matched `03-worst-case-skew.cfg`, whose link is uniform 0 to
+200 us (audit A-8). The tests now load the clocks and the link from the files,
+and on the file's link the row reads 153.2 us of ground truth and 103.9 us of
+loop error, where 158.7 us and 90.7 us first stood. The quiet and loaded rows
+already matched their files and did not move. The sweep below is NOT over that
+file: it still runs the exponential 150 us link the constants were chosen on,
+and is reported as such.
+
 ## The constants this phase fixed
 
 ### `filter_window = 64` and `smoothing_alpha = 0.0625`
 
-**Chosen from a sweep, over the worst-case crystal pair, 20 modelled minutes
-each, peak ground-truth error after the first modelled minute:**
+**Chosen from a sweep, over the worst-case crystal pair (+50 and -50 ppm) on a
+250 us base, exponential 150 us mean link, 20 modelled minutes each, peak
+ground-truth error after the first modelled minute:**
 
 | window | alpha | interval | peak |
 |---|---|---|---|
