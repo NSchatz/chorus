@@ -5,7 +5,7 @@
   Opus for weak Wi-Fi or many rooms) and the brief's section 9 (codecs PCM, FLAC and Opus; an
   ADR for the codec negotiation)
 - Implemented in: `crates/protocol/src/v2/negotiate.rs`, called by the server where it answers an
-  endpoint's `capabilities` (`crates/server`); specified in `docs/protocol.md`, "Codecs: PCM, FLAC
+  endpoint's `capabilities` (`crates/server`, wired in by the end-to-end PR of goal 5); specified in `docs/protocol.md`, "Codecs: PCM, FLAC
   and Opus"
 
 ## Context
