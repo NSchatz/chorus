@@ -247,13 +247,16 @@ fn errno_now() -> (i32, String) {
     (e.raw_os_error().unwrap_or(0), e.to_string())
 }
 
+// Unsafe allowed on this item: it is a libc FFI wrapper (the crate lint policy denies unsafe elsewhere).
+#[allow(unsafe_code)]
 fn read_limit(resource: c_int, name: &'static str) -> Result<Rlimit, HostError> {
     let mut raw = RawRlimit {
         rlim_cur: 0,
         rlim_max: 0,
     };
-    // SAFETY: raw is a live out-parameter of exactly the size the kernel
-    // writes.
+    // SAFETY: &mut raw is a live, writable RawRlimit whose repr(C) layout
+    // (two u64) is struct rlimit on 64-bit Linux, so getrlimit writes only
+    // inside it; failure is reported as a non-zero rc, checked below.
     let rc = unsafe { getrlimit(resource, &mut raw) };
     if rc != 0 {
         let (errno, detail) = errno_now();
@@ -297,13 +300,16 @@ pub fn rttime_limit() -> Result<Rlimit, HostError> {
 /// the hard limit brings `SIGKILL`. Setting them equal means the bound fires
 /// once, promptly, and a handler that swallowed `SIGXCPU` could not turn the
 /// bound into a suggestion.
+// Unsafe allowed on this item: it is a libc FFI wrapper (the crate lint policy denies unsafe elsewhere).
+#[allow(unsafe_code)]
 pub fn bound_real_time_cpu_time(micros: u64) -> Result<Rlimit, HostError> {
     let current = rttime_limit()?;
     let raw = RawRlimit {
         rlim_cur: micros,
         rlim_max: micros,
     };
-    // SAFETY: raw is a live, fully initialised rlimit.
+    // SAFETY: &raw points at a fully initialised RawRlimit with struct
+    // rlimit's layout, and setrlimit only reads it during the call.
     let rc = unsafe { setrlimit(RLIMIT_RTTIME, &raw) };
     if rc != 0 {
         let (errno, detail) = errno_now();
@@ -336,6 +342,8 @@ pub struct RealTimeGrant {
 /// to the ceiling rather than refused for being ambitious: asking for more
 /// than the host granted is a configuration that outlived its host, and the
 /// safe reading is "as much as I am allowed", never "more than I am allowed".
+// Unsafe allowed on this item: it is a libc FFI wrapper (the crate lint policy denies unsafe elsewhere).
+#[allow(unsafe_code)]
 pub fn take_real_time_policy(wanted: u32) -> Result<RealTimeGrant, HostError> {
     let ceiling = rtprio_ceiling()?;
     if ceiling.soft == 0 {
@@ -343,7 +351,8 @@ pub fn take_real_time_policy(wanted: u32) -> Result<RealTimeGrant, HostError> {
             ceiling: ceiling.soft,
         });
     }
-    // SAFETY: both calls take a policy constant and return a plain int.
+    // SAFETY: no pointers cross the boundary; both calls take a policy
+    // integer and report an unknown policy as -1, which is checked below.
     let (min, max) = unsafe {
         (
             sched_get_priority_min(SCHED_FIFO),
@@ -372,7 +381,9 @@ pub fn take_real_time_policy(wanted: u32) -> Result<RealTimeGrant, HostError> {
     let param = SchedParam {
         sched_priority: priority as c_int,
     };
-    // SAFETY: pid 0 is the calling thread on Linux, and param is live.
+    // SAFETY: pid 0 names the calling thread, and &param points at a live
+    // repr(C) SchedParam with struct sched_param's layout (one int) that the
+    // kernel only reads during the call.
     let rc = unsafe { sched_setscheduler(0, SCHED_FIFO, &param) };
     if rc != 0 {
         let (errno, detail) = errno_now();
@@ -383,7 +394,8 @@ pub fn take_real_time_policy(wanted: u32) -> Result<RealTimeGrant, HostError> {
             detail,
         });
     }
-    // SAFETY: pid 0 is the calling thread.
+    // SAFETY: no pointers; pid 0 names the calling thread, which exists for
+    // the whole call.
     let policy = unsafe { sched_getscheduler(0) };
     Ok(RealTimeGrant {
         ceiling: ceiling.soft,
@@ -398,6 +410,8 @@ pub fn take_real_time_policy(wanted: u32) -> Result<RealTimeGrant, HostError> {
 /// the limit is below what was wanted or `mlockall` refuses. The limit is
 /// checked first so that a host which granted too little is told exactly what
 /// it granted and what was wanted, rather than being handed `ENOMEM`.
+// Unsafe allowed on this item: it is a libc FFI wrapper (the crate lint policy denies unsafe elsewhere).
+#[allow(unsafe_code)]
 pub fn lock_memory(wanted_bytes: u64) -> Result<Rlimit, HostError> {
     let limit = memlock_limit()?;
     if limit.soft != Rlimit::INFINITY && limit.soft < wanted_bytes {
@@ -408,7 +422,8 @@ pub fn lock_memory(wanted_bytes: u64) -> Result<Rlimit, HostError> {
             detail: "the granted locked-memory limit is below what was wanted".to_string(),
         });
     }
-    // SAFETY: a plain flags argument.
+    // SAFETY: no pointers; mlockall only changes paging for this process,
+    // not any Rust-visible memory, and failure is a non-zero rc checked below.
     let rc = unsafe { mlockall(MCL_CURRENT_AND_FUTURE) };
     if rc != 0 {
         let (errno, detail) = errno_now();
@@ -423,14 +438,20 @@ pub fn lock_memory(wanted_bytes: u64) -> Result<Rlimit, HostError> {
 }
 
 /// The calling thread's kernel thread id.
+// Unsafe allowed on this item: it is a libc FFI wrapper (the crate lint policy denies unsafe elsewhere).
+#[allow(unsafe_code)]
 pub fn thread_id() -> i32 {
-    // SAFETY: gettid takes nothing and returns a pid_t.
+    // SAFETY: gettid(2) takes no arguments, touches no memory and cannot
+    // fail.
     unsafe { gettid() }
 }
 
 /// This thread's scheduling policy, straight from the kernel.
+// Unsafe allowed on this item: it is a libc FFI wrapper (the crate lint policy denies unsafe elsewhere).
+#[allow(unsafe_code)]
 pub fn current_policy() -> c_int {
-    // SAFETY: pid 0 is the calling thread.
+    // SAFETY: no pointers; pid 0 names the calling thread, which exists for
+    // the whole call. A -1 is handed to the caller unchanged.
     unsafe { sched_getscheduler(0) }
 }
 

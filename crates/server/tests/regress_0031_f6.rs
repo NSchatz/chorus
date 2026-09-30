@@ -61,17 +61,24 @@ extern "C" {
 const SCHED_BATCH: c_int = 3;
 
 #[test]
+// Unsafe allowed on this test: it sets SCHED_BATCH through raw libc, which no chorus wrapper offers.
+#[allow(unsafe_code)]
 fn a_spawned_thread_inherits_the_policy_of_the_thread_that_spawned_it() {
     let parent = thread::spawn(|| {
         let param = SchedParam { sched_priority: 0 };
+        // SAFETY: pid 0 names the calling thread, and &param points at a
+        // live repr(C) SchedParam with struct sched_param's layout that the
+        // kernel only reads during the call.
         let rc = unsafe { sched_setscheduler(0, SCHED_BATCH, &param) };
         assert_eq!(
             rc, 0,
             "SCHED_BATCH needs no privilege and should be settable"
         );
+        // SAFETY: no pointers; pid 0 names the calling thread.
         let mine = unsafe { sched_getscheduler(0) };
         assert_eq!(mine, SCHED_BATCH, "this thread did not take the policy");
 
+        // SAFETY: no pointers; pid 0 names the calling (child) thread.
         let child = thread::spawn(|| unsafe { sched_getscheduler(0) });
         child.join().expect("the child thread finishes")
     });
