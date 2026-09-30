@@ -36,3 +36,4 @@ the number of the pull request that added it.
 | 0026 | [the control plane is HTTP with server-sent events, not WebSocket](0026-http-and-server-sent-events-for-the-control-plane.md) |
 | 0027 | [the audio port is 4010 and the control port is 4020](0027-the-audio-port-4010-and-the-control-port-4020.md) |
 | 0039 | [the v2 key exchange is Noise XX with trust-on-first-use pins, over vendored primitives](0039-the-v2-key-exchange.md) |
+| 0040 | [the server negotiates the codec in one step, from a per-link preference and the endpoint's capabilities](0040-codec-negotiation.md) |
