@@ -1,7 +1,7 @@
 # 0001: Rust for the server and the Linux client
 
 - Status: decided
-- Decision owner: the owner (Noah), ruling recorded 2026-08-22
+- Decision owner: the owner, ruling recorded 2026-08-22 (name removed: identity scrub, decided 2026-09-29 by the owner, K27)
 - BRIEF.md section 12, decision 1
 - Recorded by: FOUNDATION-1 (spec S0001-chorus-foundation-1)
 - Evidence commit: `7e50d3fd0295c119efc122608b56460906354015` in this
