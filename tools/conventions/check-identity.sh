@@ -5,7 +5,7 @@
 #      over tracked files and every commit message since CONVENTIONS_BASE; the one allowed
 #      form of the account handle, the `NSchatz/` repo prefix, is removed before matching.
 #      The list missing fails the gate; under CI (CI=true) it prints SKIPPED with the reason.
-#   2. Private IPv4 addresses (RFC 1918) and MAC addresses other than the documentation
+#   2. Private IPv4 addresses (RFC 1918, dotted or as octet tuples) and MAC addresses other than the documentation
 #      block 00-00-5E-00-53-xx (RFC 7042) in tracked files. Examples use RFC 5737 addresses.
 #   3. gitleaks over the whole history and over the tracked tree.
 . "$(dirname "$0")/lib.sh"
@@ -46,7 +46,9 @@ fi
 # 2. LAN and MAC addresses
 lan='(^|[^0-9.])(10\.[0-9]{1,3}|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}($|[^0-9.])'
 mac='(^|[^0-9A-Fa-f:-])([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}($|[^0-9A-Fa-f:-])'
-addr="$(git grep -I -n -E -e "$lan" -- . || true)"
+# The same ranges written as octet tuples, as Rust's Ipv4Addr::new and C initialisers spell them.
+tuple='Ipv4Addr::new\((10|192, *168|172, *(1[6-9]|2[0-9]|3[01])),|[{[( ]192, *168, *[0-9]{1,3}, *[0-9]{1,3}'
+addr="$(git grep -I -n -E -e "$lan" -e "$tuple" -- . || true)"
 macs="$(git grep -I -n -i -E -e "$mac" -- . | command grep -v -i -E '00[:-]00[:-]5e[:-]00[:-]53[:-][0-9a-f]{2}' || true)"
 if [ -n "$addr$macs" ]; then
     printf '%s\n' "$addr" "$macs" | sed '/^$/d' | cut -c1-160
