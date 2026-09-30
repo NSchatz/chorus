@@ -1,4 +1,4 @@
-# 0000: bench results come back as schema-checked reports on bench/* branches, raw data hashed and committed up to a size limit
+# 0049: bench results come back as schema-checked reports on bench/* branches, raw data hashed and committed up to a size limit
 
 - Status: accepted (goal 7, 2026-09-30)
 - Decided by: the owner (K45: "script writes a PR"); the goal took the choices left open below
