@@ -60,8 +60,32 @@ TEST_SUPPORT := $(FW)/tests/fake_amp.c $(FW)/tests/fake_radio.c
 
 STAMP := $(BUILD)/config-ok.stamp
 
+# --- the decoders (goal 6, proposal P9) ----------------------------------------
+#
+# FLAC and Opus for coded_chunk, over two vendored libraries whose pins are in
+# third_party/README.md. The vendored code is compiled with the floating-point
+# flags above (no contraction, no fast math) but without the warning set: it is
+# upstream's code, kept byte for byte, and its warnings are upstream's to fix.
+# The chorus units that call it (firmware/src/codec*.c) take the full CFLAGS,
+# and see the vendored headers through -isystem so that a warning in a header
+# chorus does not own cannot fail chorus's build. libopus's definitions and
+# unit list are read from third_party/opus/chorus-build.txt, the same file the
+# Rust client's sys crate reads. DR_FLAC_NO_SIMD keeps the host on the portable
+# C path the ESP32-S3 runs.
+THIRD_PARTY := $(REPO_ROOT)/third_party
+OPUS_DIR := $(THIRD_PARTY)/opus
+OPUS_LIST := $(OPUS_DIR)/chorus-build.txt
+OPUS_DEFS := $(addprefix -D,$(shell sed -n 's/^define //p' $(OPUS_LIST)))
+OPUS_SRC := $(addprefix $(OPUS_DIR)/,$(shell sed -n 's/^source //p' $(OPUS_LIST)))
+DRFLAC_DEFS := -DDR_FLAC_NO_STDIO -DDR_FLAC_NO_OGG -DDR_FLAC_NO_WCHAR -DDR_FLAC_NO_SIMD
+VENDOR_CFLAGS := -std=c11 -O2 -g -ffp-contract=off -fno-fast-math
+CODEC_INC := -isystem $(THIRD_PARTY)/dr_flac -isystem $(OPUS_DIR)/include
+CODEC_SRC := $(FW)/src/codec.c $(FW)/src/codec_flac.c $(FW)/src/codec_opus.c
+VENDOR_OBJ := $(BUILD)/vendor/dr_flac.o \
+	$(patsubst $(OPUS_DIR)/%.c,$(BUILD)/vendor/opus/%.o,$(OPUS_SRC))
+
 .PHONY: all check config-check golden-vectors sync-scenarios safety-scans amplifier clocking \
-        telemetry wireless session-outage clean
+        telemetry wireless session-outage codec codec-fixtures clean
 
 # Every binary this makefile builds, enumerated. There is no wildcard over
 # firmware/tests on purpose, and the cost of that is a test has to be named in
@@ -71,7 +95,7 @@ STAMP := $(BUILD)/config-ok.stamp
 all: $(BUILD)/chorus-endpoint-config-check $(BUILD)/chorus-endpoint-scan \
      $(BUILD)/chorus-endpoint-session $(BUILD)/test_protocol $(BUILD)/test_sync \
      $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_scan $(BUILD)/test_telemetry \
-     $(BUILD)/test_wifi
+     $(BUILD)/test_wifi $(BUILD)/test_codec $(BUILD)/opus_compare
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -111,6 +135,26 @@ $(BUILD)/test_telemetry $(BUILD)/test_wifi: $(BUILD)/test_%: $(LIB_SRC) $(TEST_S
                          $(FW)/tests/test_%.c $(STAMP) | $(BUILD)
 	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(TEST_SUPPORT) $(FW)/tests/test_$*.c $(LDLIBS)
 
+# The decoders' test links the codec units and the vendored objects and nothing
+# else of the endpoint: the seam has no dependency on the session.
+$(BUILD)/vendor/dr_flac.o: $(THIRD_PARTY)/dr_flac/dr_flac.c $(THIRD_PARTY)/dr_flac/dr_flac.h | $(BUILD)
+	mkdir -p $(dir $@)
+	$(CC) $(VENDOR_CFLAGS) $(DRFLAC_DEFS) -c -o $@ $<
+
+$(BUILD)/vendor/opus/%.o: $(OPUS_DIR)/%.c $(OPUS_LIST) | $(BUILD)
+	mkdir -p $(dir $@)
+	$(CC) $(VENDOR_CFLAGS) $(OPUS_DEFS) -I$(OPUS_DIR)/include -I$(OPUS_DIR)/celt \
+		-I$(OPUS_DIR)/silk -I$(OPUS_DIR)/silk/fixed -I$(OPUS_DIR)/src -c -o $@ $<
+
+$(BUILD)/test_codec: $(CODEC_SRC) $(VENDOR_OBJ) $(FW)/tests/test_codec.c $(STAMP) | $(BUILD)
+	$(CC) $(CFLAGS) $(DRFLAC_DEFS) $(CODEC_INC) -I$(FW)/tests -o $@ $(CODEC_SRC) \
+		$(FW)/tests/test_codec.c $(VENDOR_OBJ) $(LDLIBS)
+
+# libopus's conformance tool (RFC 6716 section 6, RFC 8251), vendored unchanged:
+# it judges a decode against the official reference decode.
+$(BUILD)/opus_compare: $(OPUS_DIR)/src/opus_compare.c | $(BUILD)
+	$(CC) $(VENDOR_CFLAGS) -o $@ $< -lm
+
 # --- what CI names separately ------------------------------------------------
 
 golden-vectors: $(BUILD)/test_protocol
@@ -146,8 +190,21 @@ wireless: $(BUILD)/test_wifi
 session-outage: $(BUILD)/chorus-endpoint-session
 	bash $(FW)/tests/session-outage.sh
 
+# FLAC and Opus against the shared fixtures in fixtures/codec: bit-exact FLAC,
+# Opus final ranges and exact decodes, then opus_compare over each Opus decode
+# the test wrote (the test prints the counts line; opus_compare prints its
+# verdict per vector).
+codec: $(BUILD)/test_codec $(BUILD)/opus_compare
+	CHORUS_CODEC_OUT=$(BUILD)/codec-out $(BUILD)/test_codec $(BUILD)/opus_compare
+
+# Regenerates fixtures/codec from the reference tools (never run by the gate):
+# FLAC=<path to flac 1.5.0> OPUS_VECTORS=<the unpacked RFC 8251 vectors>.
+codec-fixtures:
+	python3 $(REPO_ROOT)/tools/codec-fixtures/generate.py --flac "$(FLAC)" \
+		--vectors "$(OPUS_VECTORS)" --out $(REPO_ROOT)/fixtures/codec
+
 check: config-check golden-vectors sync-scenarios safety-scans clocking amplifier telemetry \
-       wireless session-outage
+       wireless session-outage codec
 
 clean:
 	rm -rf $(BUILD)

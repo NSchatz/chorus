@@ -26,11 +26,26 @@ typedef struct {
     char reason[CHORUS_SCAN_TEXT];
 } chorus_scan_excluded_t;
 
+/* A vendored tree (third_party/<name>): upstream code the endpoint image
+ * compiles, too large to enumerate unit by unit and not chorus's to restyle,
+ * but not exempt from a single rule. Every .c and .h under it is scanned by the
+ * same rules as a listed unit, and every directory under third_party/ must be
+ * named here, so a new vendored tree cannot arrive unscanned. */
+#define CHORUS_SCAN_MAX_VENDORED 16
+#define CHORUS_VENDORED_ROOT "third_party"
+
+typedef struct {
+    char dir[CHORUS_SCAN_PATH];
+    char reason[CHORUS_SCAN_TEXT];
+} chorus_scan_vendored_t;
+
 typedef struct {
     char on_path[CHORUS_SCAN_MAX_UNITS][CHORUS_SCAN_PATH];
     size_t on_path_count;
     chorus_scan_excluded_t excluded[CHORUS_SCAN_MAX_UNITS];
     size_t excluded_count;
+    chorus_scan_vendored_t vendored[CHORUS_SCAN_MAX_VENDORED];
+    size_t vendored_count;
 } chorus_unit_list_t;
 
 /* Parse firmware/endpoint-units.conf. Returns 0 on success. */
@@ -54,6 +69,8 @@ typedef struct {
     chorus_scan_finding_t findings[CHORUS_SCAN_MAX_FINDINGS];
     size_t count;
     size_t units_scanned;
+    /* Units under the vendored trees, scanned by the same rules. */
+    size_t vendored_units_scanned;
     /* Build-configuration files read by the eFuse configuration rule: every
      * firmware/sdkconfig* and every CMakeLists.txt or *.cmake under firmware/. */
     size_t config_files_scanned;

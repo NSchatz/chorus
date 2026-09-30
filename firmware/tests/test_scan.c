@@ -155,6 +155,13 @@ static int scratch_copy(const char *name, char *out, size_t out_len)
             return -1;
         }
     }
+    /* The vendored trees are scanned too (goal 6), so they are copied, or a
+     * scratch tree would be red for missing them. */
+    chorus_repo_path(source, sizeof(source), CHORUS_VENDORED_ROOT);
+    snprintf(target, sizeof(target), "%.1900s/%s", out, CHORUS_VENDORED_ROOT);
+    if (copy_tree(source, target) != 0) {
+        return -1;
+    }
     chorus_repo_path(source, sizeof(source), "firmware/endpoint-units.conf");
     snprintf(target, sizeof(target), "%.1900s/endpoint-units.conf", firmware);
     return copy_file(source, target);
@@ -327,6 +334,30 @@ static void an_unlisted_unit_turns_it_red(void)
     remove_tree(scratch);
 }
 
+/* A directory under third_party/ that the list does not name is red: vendored
+ * code cannot join the tree without being scanned. */
+static void an_unlisted_vendored_tree_turns_it_red(void)
+{
+    chorus_unit_list_t list;
+    if (!load_committed_list(&list)) {
+        return;
+    }
+    char scratch[2048];
+    if (scratch_copy("unlisted-vendored", scratch, sizeof(scratch)) != 0) {
+        chorus_check(0, "a scratch copy for the unlisted vendored tree is makeable");
+        return;
+    }
+    char path[2048];
+    snprintf(path, sizeof(path), "%.1900s/%s/smuggled", scratch, CHORUS_VENDORED_ROOT);
+    mkdir(path, 0755);
+    chorus_scan_result_t result;
+    chorus_endpoint_scan(scratch, &list, &result);
+    chorus_check(has_rule(&result, "vendored-tree-missing-from-the-list", "third_party/smuggled"),
+                 "a vendored tree the list does not name turns the scan red, naming "
+                 "third_party/smuggled");
+    remove_tree(scratch);
+}
+
 /* A scratch copy with NOTHING smuggled into it has to be green, or every
  * demonstration below is red for the wrong reason and proves nothing. */
 static void a_clean_scratch_copy_is_green(void)
@@ -439,6 +470,21 @@ int main(void)
     chorus_section("the committed endpoint tree");
     the_committed_tree_passes();
     a_clean_scratch_copy_is_green();
+
+    chorus_section("vendored code (third_party) is scanned by the same rules");
+    one_demonstration("efuse-vendored", "third_party/opus/src/opus_decoder.c",
+                      "\n/* Introduced by the endpoint-scan demonstration. */\n"
+                      "void chorus_demonstration_vendored_burn(void)\n"
+                      "{\n"
+                      "    esp_efuse_write_field_bit(0);\n"
+                      "}\n",
+                      "efuse-write-in-the-endpoint-tree", "an eFuse write inside vendored code");
+    one_demonstration(
+        "clock-vendored", "third_party/dr_flac/dr_flac.h",
+        "\n/* Introduced by the endpoint-scan demonstration. */\n"
+        "static long chorus_demonstration_vendored_clock(void) { return time(NULL); }\n",
+        "settable-clock-on-the-endpoint-path", "a settable clock read inside vendored code");
+    an_unlisted_vendored_tree_turns_it_red();
 
     chorus_section("the line reader");
     the_line_reader_does_what_it_says();

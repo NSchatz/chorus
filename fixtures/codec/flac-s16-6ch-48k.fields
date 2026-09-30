@@ -1,0 +1,18 @@
+# flac-s16-6ch-48k: a coded stream as the wire carries it, and its reference decode.
+# Written by tools/codec-fixtures/generate.py; do not edit by hand.
+# Synthesised by tools/codec-fixtures/generate.py (48000 Hz, 6 channels, 16 bits, 10377 frames).
+# Encoded by flac 1.5.0 (libFLAC, BSD-3-Clause) with -5 --blocksize=1152, one frame per chunk.
+# Reference: the PCM `flac -d` gave back, equal to the input and to the STREAMINFO MD5.
+# Channel order is FLAC's (RFC 9639 section 9.1.3); the decode must be bit-exact.
+codec = flac
+sample_format = pcm_s16le
+sample_rate_hz = 48000
+channels = 6
+frames_per_chunk = 1152
+codec_config = 0480048000006f00287e0bb80af000002889b7246420825d3cb55ac0088fc05c045d
+chunks = 10
+chunk_frames = 10377
+reference_frames = 10377
+reference_channels = 6
+reference_md5 = b7246420825d3cb55ac0088fc05c045d
+decode_fnv1a64 = 860c8ab954e6c03c

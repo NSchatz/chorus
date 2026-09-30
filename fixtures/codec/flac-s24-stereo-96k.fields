@@ -1,0 +1,18 @@
+# flac-s24-stereo-96k: a coded stream as the wire carries it, and its reference decode.
+# Written by tools/codec-fixtures/generate.py; do not edit by hand.
+# Synthesised by tools/codec-fixtures/generate.py (96000 Hz, 2 channels, 24 bits, 24777 frames).
+# Encoded by flac 1.5.0 (libFLAC, BSD-3-Clause) with -8 --blocksize=4096, one frame per chunk.
+# Reference: the PCM `flac -d` gave back, equal to the input and to the STREAMINFO MD5.
+# Channel order is FLAC's (RFC 9639 section 9.1.3); the decode must be bit-exact.
+codec = flac
+sample_format = pcm_s24le
+sample_rate_hz = 96000
+channels = 2
+frames_per_chunk = 4096
+codec_config = 10001000000367003fee17700370000060c9822c44681002b992d5a5ca4cbdfbc58b
+chunks = 7
+chunk_frames = 24777
+reference_frames = 24777
+reference_channels = 2
+reference_md5 = 822c44681002b992d5a5ca4cbdfbc58b
+decode_fnv1a64 = 8277c16de23b1ca6

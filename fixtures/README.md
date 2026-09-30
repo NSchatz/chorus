@@ -190,3 +190,35 @@ Three kinds of file come out of it:
 `docs/decisions/0013-the-measurement-rig.md` records why the delays are the
 numbers they are, and why 06 exists when 05 looks as though it covers the same
 ground.
+
+## `codec/`
+
+FLAC and Opus streams as the wire carries them (goal 6), each with its reference decode. Read by
+`firmware/tests/test_codec.c` and `crates/client-linux/tests/codec_fixtures.rs`. Per fixture
+`NAME`:
+
+- `NAME.fields`: the `stream_format` fields (`codec`, `sample_format`, `sample_rate_hz`,
+  `channels`, `frames_per_chunk`, `codec_config` in hex: the STREAMINFO body or the OpusHead),
+  the counts, the hashes the tests check, and the provenance in comments.
+- `NAME.chunks`: one record per `coded_chunk`: `frames`, the Opus final range (0 for FLAC) and
+  the data length, each a 32-bit big-endian integer, then the FLAC frame or Opus packet.
+- `NAME.pcm`: the reference decode, interleaved little-endian. FLAC: what `flac -d` (libFLAC
+  1.5.0, conda-forge `libflac-1.5.0-he200343_1.conda`, sha256
+  `e755e234236bdda3d265ae82e5b0581d259a9279e3e5b31d745dc43251ad64fb`, installed rootless with
+  micromamba on 2026-09-30) gave back, equal to the input and to the STREAMINFO MD5. Opus: the
+  matching span of the official decode from the RFC 8251 test vectors
+  (<https://opus-codec.org/static/testvectors/opus_testvectors-rfc8251.tar.gz>, sha256
+  `6b26a22f9ba87b2b836906a9bb7afec5f8e54d49553b1200382520ee6fedfa55`, read 2026-09-30), always
+  two channels as published (opus_compare averages them for a mono decode).
+
+Binary on purpose: these are audio, and the `.fields` file carries everything a reviewer reads.
+They are regenerated only by `make -C firmware codec-fixtures FLAC=... OPUS_VECTORS=...`
+(`tools/codec-fixtures/generate.py`), which refuses to write a FLAC fixture whose decode is not
+the input or whose MD5 is not the STREAMINFO's, and an Opus fixture whose exact decode fails
+opus_compare against the official one.
+
+FLAC must decode bit-exact with an MD5 equal to the STREAMINFO's. Opus is judged as RFC 6716
+section 6 and RFC 8251 judge a decoder: every packet's final range equals the vector's, and
+libopus's opus_compare passes the decode against the official one; the decode must also be
+exactly libopus 1.6.1's as chorus builds it (`decode_fnv1a64`), which holds the endpoint and the
+Linux client, the same code, to one output.
