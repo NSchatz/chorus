@@ -36,8 +36,11 @@ That "success looks like" is the one this phase is graded against. Each part, as
 
 The build half ("minimal server (FIFO in, chunks out) and a minimal Linux client playing
 timestamped PCM via ALSA, no servo yet") is written: the server chunks and serves, the client
-plays out through ALSA. Its "FIFO in" is a plain file open, so a writer that closes the FIFO ends
-every client's stream (audit B-2, assigned to goal 7).
+plays out through ALSA. Its "FIFO in" is `--source fifo:<path>` (or any path that is a named
+pipe): the pipe is held open read-write, an underrun is a chunk of silence at the chunk cadence,
+and a player that closes its end neither ends the stream nor blocks the server (audit B-2, fixed
+in goal 7; `crates/server/tests/fifo_source.rs` writes, closes and reopens a real `mkfifo` pipe
+under the real server binary). A plain file still ends the stream at its last byte.
 
 **SOUND-2 is NOT PASSED:** every part of its success needs a real device and none has been used.
 
@@ -314,6 +317,14 @@ So the checks split by what they grade, not by what they touch:
 | `tools/delay-log-shape.sh` | a device that paces | the above plus the delay inside its bounds |
 | `tools/overflow-run.sh` | a device that paces | the behaviour at both bounds, and that no rate changed |
 | `tools/ten-minute-run.sh` | a device that paces, real speakers for the run that counts | ten continuous minutes, zero underruns, the extremes and margins |
+| `CHORUS_TEN_MINUTE_NULL=1 tools/ten-minute-run.sh` (`make ten-minute-run-null`) | a device that opens and reports NO delay (`null`) | ten continuous minutes, zero underruns, no rate change, the buffer under its ceiling, and that the device reported zero throughout; the delay bounds are NOT GRADED, so it does not pass the ten-minute criterion |
+
+What `null` stands in for, and where it now runs: on a machine with no system libasound the
+runners put the rootless conda-forge alsa-lib at `CHORUS_ALSA_PREFIX` (default
+`/cache/opt/chorus-alsa`) on the loader's path, and `make gate` runs `make verify-alsa-null`
+(stream-end-and-loss and the restart storm on `null`) as its own step. Which runs passed here on
+`null`, with dates, commands and pass lines, is in `docs/verification-record.md`, "Host / ALSA
+null runs (goal 7)". All of them are host runs on `null`, not hardware.
 
 `docs/verification-record.md` says which of these ran when this work was built,
 and files the exact command and the verbatim refusal for each one that did not.

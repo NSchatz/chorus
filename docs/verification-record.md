@@ -1081,6 +1081,30 @@ shape and the bound relations, and about nothing whatever concerning the VALUE
 of a device-reported delay. That is why `tools/delay-log-shape.sh` and
 `tools/ten-minute-run.sh` refuse `null` by name.
 
+### Host / ALSA null runs (goal 7)
+
+Run 2026-09-30 in this container: no sound card, no system libasound, `RLIMIT_RTPRIO` 0, 8 MiB
+of locked memory. The runners found the rootless conda-forge alsa-lib 1.2.16.1 (build
+`h7cc23a3_1`, package sha256 `a35bddac04be093769e81814465a537961c6ed0f8d3cc23d6dce6ecdfaf71821`)
+at `CHORUS_ALSA_PREFIX` (default `/cache/opt/chorus-alsa`) by themselves. Every row is **host /
+ALSA null, not hardware**, through the real `chorus-server` and `chorus-client` binaries; none of
+it is timing evidence and none of it grades the value of a reported delay.
+
+| run | command | result, with the pass line |
+|---|---|---|
+| AC-3, the restart storm | `CHORUS_CLIENT_DEVICE=null make verify-restart-storm` | PASS, 40 s: 4 endpoints, 8 sessions each, 982 080 frames each after the SIGKILL and restart, state byte-identical and `state=reloaded`. `chorus: 4 endpoints came back to playback by themselves, at the state they left` |
+| the ten-minute run, `null` form | `make ten-minute-run-null` (`CHORUS_TEN_MINUTE_NULL=1 tools/ten-minute-run.sh`) | PASS for what `null` can answer, 657 s: 639 772 793 us graded, 6 336 graded samples, 0 underruns, 30 719 040 frames played against 30 713 453 nominal, occupancy never past 320 000 us, every delay zero. `chorus-delaylog-check: 12 checks, 0 failed, 1 NOT GRADED`, then `chorus: ten-minute run on ALSA null PASSED (host, not hardware): 600 s graded, zero underruns, no rate change; delay bounds NOT GRADED, so the ten-minute criterion itself is NOT PASSED by this run` |
+| AC-20, AC-21, stream end and loss | `make verify-null-device` | PASS: `the server sent 96480 frames and the client wrote 96480`; lost server exit 3, `reason=connection-lost`, `underruns=0` |
+| AC-5, AC-7, AC-27 start-up half | `make verify-null-device` | PASS: 596 samples, `the first write carried 120000 us of a configured 120000 us fill` |
+| AC-1, the control plane | `CHORUS_CLIENT_DEVICE=null make verify-control` | PASS after a fix to the runner: `chorus: a zone change reaches every affected endpoint and every subscriber`; the endpoint followed its zone, `session n=2 ... played=1 frames_played=473280 ... group=upstairs ... moves=1`. It had failed with `stop=server-key-changed`: both servers ran under the default server id with different ephemeral keys, so protocol v2's key pinning refused the second one. The second server now has its own id |
+| AC-2, the static fallback plays | `CHORUS_CLIENT_DEVICE=null make verify-discovery-fallback` | PASS: `chorus: a browse returned nothing, the endpoint fell back to its static address and played 264000 frames` |
+| the gate step | `make verify-alsa-null` (step `alsa-null` in `make gate`) | PASS, 47 s standalone: stream-end-and-loss and the restart storm. `chorus: ALSA null runs passed (host / ALSA null): stream-end-and-loss and the restart storm` |
+
+Still refused here, by name, because `null` or this container cannot answer them:
+`tools/delay-log-shape.sh`, `tools/overflow-run.sh` and the real `make ten-minute-run` (they grade
+a reported delay: `an ALSA playback device that reports a delay; 'null' does not`), and
+`tools/host-contract.sh` (`a granted rtprio ceiling above zero; RLIMIT_RTPRIO reads 0 here`).
+
 ### What did not run here, and what is filed instead
 
 Every row below is a committed entry point that exits non-zero, naming the

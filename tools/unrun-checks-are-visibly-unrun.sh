@@ -79,6 +79,11 @@ CHORUS_SKIP_BUILD=1 CHORUS_CLIENT_DEVICE=chorus-no-such-device \
     env CHORUS_SKIP_BUILD=1 CHORUS_CLIENT_DEVICE=chorus-no-such-device \
     bash "$REPO_ROOT/tools/ten-minute-run.sh"
 
+# Its ALSA `null` form grades less and still needs a device that opens.
+expect_missing_prerequisite "ten-minute-run.sh (CHORUS_TEN_MINUTE_NULL=1)" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_CLIENT_DEVICE=chorus-no-such-device CHORUS_TEN_MINUTE_NULL=1 \
+    bash "$REPO_ROOT/tools/ten-minute-run.sh"
+
 expect_missing_prerequisite "delay-log-shape.sh" \
     env CHORUS_SKIP_BUILD=1 CHORUS_CLIENT_DEVICE=chorus-no-such-device \
     bash "$REPO_ROOT/tools/delay-log-shape.sh"
