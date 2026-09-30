@@ -1,7 +1,9 @@
 # The endpoint's host build and its host-runnable verification.
 #
-# Needs a C compiler and nothing else of its own. No ESP-IDF, no device, no
-# privilege, no network beyond loopback. That is deliberate: the sync and
+# Needs a C compiler and the SOURCE tree of the pinned ESP-IDF (CHORUS_IDF_V61_DIR),
+# whose TF-PSA-Crypto the v2 session's crypto is compiled from, so the host runs
+# the crypto the image runs (docs/decisions/0043-*). No ESP-IDF toolchain, no
+# device, no privilege, no network beyond loopback. That is deliberate: the sync and
 # protocol cores are pure libraries held to committed fixtures, the amplifier
 # sequencer is driven through an injectable I2C transport, and the session
 # supervisor is graded against a real chorus-server on loopback. Everything
