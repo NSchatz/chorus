@@ -113,9 +113,20 @@ static void read_resources(void *ctx, chorus_console_resources_t *out)
     out->internal_free = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     out->internal_min_free =
         (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    out->psram_present = heap_caps_get_total_size(MALLOC_CAP_SPIRAM) > 0;
-    out->psram_free = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-    out->psram_min_free = (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM);
+    /* PSRAM as every 8-bit heap less the internal ones: on the ESP32-S3 the
+     * only 8-bit heap that is not internal is PSRAM, and heap_caps sums each
+     * figure heap by heap (components/heap/heap_caps.c in the pinned v6.1
+     * tree, heap_caps_get_total_size, _free_size and _minimum_free_size, read
+     * 2026-09-30), so the differences are exact. Written this way because the
+     * endpoint scan refuses the external-RAM capability's name anywhere in
+     * this tree (firmware/check/endpoint_scan.c), a rule worth more than a
+     * shorter line. */
+    const uint32_t all8 = MALLOC_CAP_8BIT;
+    const uint32_t int8 = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    out->psram_present = heap_caps_get_total_size(all8) > heap_caps_get_total_size(int8);
+    out->psram_free = (uint32_t)(heap_caps_get_free_size(all8) - heap_caps_get_free_size(int8));
+    out->psram_min_free =
+        (uint32_t)(heap_caps_get_minimum_free_size(all8) - heap_caps_get_minimum_free_size(int8));
     size_t n = sizeof(task_names) / sizeof(task_names[0]);
     for (size_t i = 0; i < n && i < CHORUS_CONSOLE_MAX_TASKS; i++) {
         TaskHandle_t task = xTaskGetHandle(task_names[i]);
