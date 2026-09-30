@@ -30,6 +30,11 @@
 //!   that quietly did not advertise looks exactly like one whose
 //!   endpoints have not asked yet.
 //!
+//! `--health-check <addr:port>` is a separate mode for container healthchecks
+//! (`chorus_server::health`): it starts nothing, probes a running server's
+//! control plane with `GET /api/state`, and exits `0` on a 200 answer and `1`
+//! otherwise, which is Docker's healthcheck contract.
+//!
 //! # The shape of the process, and why the report can be taken once
 //!
 //! Every thread this process will ever run is created here, before the
@@ -197,6 +202,10 @@ control plane:
   --group-audio <group=addr>    where a group's stream is served (repeatable)
   --advertise --instance <label>  advertise by multicast DNS
 
+health:
+  --health-check <addr:port>  probe a running server's control plane (GET /api/state);
+                              exit 0 on 200, 1 otherwise; starts nothing
+
   -h, --help                  print this and exit 0
 ";
 
@@ -205,6 +214,26 @@ fn main() -> ExitCode {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         print!("{USAGE}");
         return ExitCode::SUCCESS;
+    }
+    if args.first().map(String::as_str) == Some("--health-check") {
+        let Some(address) = args.get(1).filter(|_| args.len() == 2) else {
+            // 1, not EXIT_CONFIG: Docker reserves a healthcheck's exit 2.
+            report(
+                "configuration refused",
+                "--health-check takes exactly one <addr:port>",
+            );
+            return ExitCode::from(1);
+        };
+        return match chorus_server::health::probe(address, chorus_server::health::PROBE_TIMEOUT) {
+            Ok(status) => {
+                println!("chorus-server: healthy: {address} answered `{status}`");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                println!("chorus-server: unhealthy: {e}");
+                ExitCode::from(1)
+            }
+        };
     }
     let config = match ServerConfig::from_args(args) {
         Ok(c) => c,

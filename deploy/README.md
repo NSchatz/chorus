@@ -2,19 +2,37 @@
 
 The container the chorus server runs in, and the contract the host grants it.
 
-## The two files, and why neither is useful alone
+## The files, and why the image is not useful alone
 
-`Dockerfile` builds the server. `run-server.sh` grants it a real-time priority
-ceiling and a locked-memory allowance. A Dockerfile cannot grant either: they
-arrive per container, on the run command, which is why the scheduling contract
-lives in a shell script beside the image rather than inside it.
+`Dockerfile` builds the server. `run-server.sh` and `compose.yaml` grant it a
+real-time priority ceiling and a locked-memory allowance. A Dockerfile cannot
+grant either: they arrive per container, on the run command or in the compose
+service, which is why the scheduling contract lives beside the image rather
+than inside it.
 
-`run-server.sh` runs the deployable shape (B-15): host networking, so
-multicast DNS works at all (K34; the homelab's host-network exception list
-carries it, goal 4's deploy PR); the control plane on port 4020; the zone
-state in a named volume at `/var/lib/chorus`; and `--advertise`, which
-`CHORUS_ADVERTISE=0` turns off on a host where another responder holds UDP 5353
-(audit L-3). The compose file for the homelab lands with goal 4.
+Both run the deployable shape (R14, decided 2026-09-29 by the owner, K24, K34):
+host networking, so multicast DNS can work at all and endpoints reach the audio
+port with no NAT hop; the control plane on port 4020; the zone state persisted
+at `/var/lib/chorus`; `rtprio` 20, `memlock` 64 MiB and one CPU.
+
+- `run-server.sh` passes `--advertise`, which `CHORUS_ADVERTISE=0` turns off on
+  a host where another responder holds UDP 5353 (audit L-3).
+- `compose.yaml` leaves `--advertise` off, because the homelab's mDNS reflector
+  holds UDP 5353 there and the server would refuse by name (exit 9); endpoints
+  use their static fallback address.
+
+The homelab runs a copy of `compose.yaml` in the homelab repo's own conventions
+(a bind mount instead of the named volume, the control plane bound to the proxy
+bridge only, a healthcheck, the image pinned by digest), opened there as a PR
+that the owner merges and applies (K28). Nothing here deploys anything.
+
+## The healthcheck
+
+The released image is distroless: no shell and no curl. `chorus-server
+--health-check <addr:port>` is the probe a compose `healthcheck:` runs instead:
+it starts nothing, sends `GET /api/state` to the control plane, and exits 0 on
+a 200 answer and 1 otherwise (Docker's healthcheck contract). `make image`
+runs it against the unpacked image, both ways.
 
 ## The daemonless image (`make image`)
 
@@ -60,7 +78,7 @@ pinning rule replaces the retired umbrella clauses (K18, R13).
 
 | stage | tag | digest | resolved |
 |---|---|---|---|
-| build | `docker.io/library/rust:1.74-slim-bookworm` | `sha256:53596c66027523b2289c6e7c96bff119416be22d2cf52734b4962e13371c54cf` | 2026-09-08 |
+| build | `docker.io/library/rust:1.98.1-slim-bookworm` | `sha256:ff521445a372125ed4f76e1453a1f8098f2d05332d1601d30db1c1f62757e730` | 2026-09-30 (goal 2, B-16) |
 | runtime | `docker.io/library/debian:bookworm-slim` | `sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171` | 2026-09-08 |
 
 Each digest is the multi-architecture index digest the tag resolved to, which is
@@ -70,14 +88,14 @@ To re-resolve either one, ask the registry what the tag points at TODAY and put
 the answer in `Dockerfile`. The two commands, exactly:
 
 ```
-curl -fsSL https://hub.docker.com/v2/namespaces/library/repositories/rust/tags/1.74-slim-bookworm | jq -r .digest
+curl -fsSL https://hub.docker.com/v2/namespaces/library/repositories/rust/tags/1.98.1-slim-bookworm | jq -r .digest
 curl -fsSL https://hub.docker.com/v2/namespaces/library/repositories/debian/tags/bookworm-slim | jq -r .digest
 ```
 
 Either one, from a machine with a Docker daemon and no `jq`:
 
 ```
-docker buildx imagetools inspect docker.io/library/rust:1.74-slim-bookworm --format '{{.Manifest.Digest}}'
+docker buildx imagetools inspect docker.io/library/rust:1.98.1-slim-bookworm --format '{{.Manifest.Digest}}'
 docker buildx imagetools inspect docker.io/library/debian:bookworm-slim --format '{{.Manifest.Digest}}'
 ```
 
@@ -86,9 +104,9 @@ check that used to confirm it was retired on 2026-09-30 (K18, R13).
 
 ### What each pin costs, said out loud
 
-`rust:1.74-slim-bookworm` is a version tag that was last pushed on 2023-12-19
-and has not moved since: pinning it changes almost nothing, and the digest is
-insurance against the day it does.
+`rust:1.98.1-slim-bookworm` is a patch-version tag; whether its publisher
+re-pushes it is not checked here (ASSUMED that it may), so the digest is what
+keeps two builds the same, and moving it is a deliberate change.
 
 `bookworm-slim` is a ROLLING tag. Its publisher moved it on 2026-08-25 and will
 move it again, which is precisely why the digest and not the tag is the
@@ -118,7 +136,8 @@ curl -fsSL https://api.github.com/repos/actions/checkout/commits/v4 | jq -r .sha
 This tree does not deploy onto anyone's production host and does not touch any
 inventory, service definition, reverse proxy or secret. It is the container's
 own scheduling contract, runnable on any Linux host that can hand a container
-an `rtprio` ceiling. See `docs/sound-2.md` for which half of the phase's
+an `rtprio` ceiling. The homelab deploy is a PR in the homelab repo that agents
+never merge (K28); releases and the registry push are in `docs/release.md`. See `docs/sound-2.md` for which half of the phase's
 outcome that leaves for later.
 
 ## Checking the contract holds

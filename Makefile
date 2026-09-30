@@ -21,6 +21,11 @@ gate-fast: tools-executable
 image: tools-executable
 	bash tools/image.sh
 
+# The artifacts of one release into dist/v$(VERSION)/ (tools/release.sh;
+# docs/release.md says how a release is cut). Publishes nothing.
+release: tools-executable
+	bash tools/release.sh $(VERSION)
+
 check:
 	cargo build --workspace --all-targets
 	cargo test --workspace
@@ -223,7 +228,7 @@ verify-null-device: tools-executable
 	CHORUS_CLIENT_DEVICE=null bash tools/stream-end-and-loss.sh
 	CHORUS_CLIENT_DEVICE=null bash tools/start-fill-and-log-shape.sh
  \
-	.PHONY: image build check discovery-vectors firmware-check firmware-golden-vectors  \
+	.PHONY: release image build check discovery-vectors firmware-check firmware-golden-vectors  \
 	firmware-image firmware-safety-scans firmware-sync-scenarios  \
 	firmware-wireless gate gate-fast measure-fixture-reports measure-fixtures one  \
 	probe sync-vectors ten-minute-run test tools-executable verify verify-control  \
