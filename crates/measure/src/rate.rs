@@ -234,13 +234,12 @@ pub fn estimate(
         declared_jitter_us: None,
         observations,
     };
-    let fit: SlopeFit =
-        freerun::fit(&series, &settings.slope).map_err(|error| RateError::Fit {
-            channel,
-            windows_used: used,
-            windows_total: total,
-            error,
-        })?;
+    let fit: SlopeFit = freerun::fit(&series, &settings.slope).map_err(|error| RateError::Fit {
+        channel,
+        windows_used: used,
+        windows_total: total,
+        error,
+    })?;
     Ok(RateEstimate {
         channel,
         // A sweep that arrives early by a growing amount is a device running
@@ -281,10 +280,15 @@ fn sweep_start(
         .enumerate()
         .take(p)
         .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))?;
-    if !(peak >= settings.confidence_floor) {
+    // Written so a NaN peak is refused too.
+    if peak.is_nan() || peak < settings.confidence_floor {
         return None;
     }
-    let left = if best == 0 { scores[p] } else { scores[best - 1] };
+    let left = if best == 0 {
+        scores[p]
+    } else {
+        scores[best - 1]
+    };
     let right = scores[best + 1];
     let denominator = left - 2.0 * peak + right;
     let delta = if denominator.abs() > f64::EPSILON {

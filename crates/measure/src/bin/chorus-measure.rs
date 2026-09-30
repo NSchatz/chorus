@@ -22,8 +22,8 @@ use chorus_measure::config::MeasureConfig;
 use chorus_measure::freerun::{self, SlopeSettings};
 use chorus_measure::jitter::{self, JitterError, JitterRun, PowerSaveMode};
 use chorus_measure::lag::{self, LagSettings};
-use chorus_measure::report::{self, Baseline, FreeRunRun, LagRun, BASELINE_FILE, MEASUREMENTS_DIR};
 use chorus_measure::rate::{self, Channel, RateSettings};
+use chorus_measure::report::{self, Baseline, FreeRunRun, LagRun, BASELINE_FILE, MEASUREMENTS_DIR};
 use chorus_measure::{fixtures, pair, repository_root, wav};
 
 const USAGE: &str = "\

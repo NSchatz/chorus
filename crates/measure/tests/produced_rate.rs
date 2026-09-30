@@ -17,13 +17,22 @@ fn fixture(name: &str) -> PathBuf {
 #[test]
 fn the_skewed_fixture_reads_as_its_declared_rate() {
     let config = MeasureConfig::read(&repository_root()).unwrap();
-    let capture =
-        wav::read_capture(&fixture("18-rate-skewed.wav"), config.capture_sample_rate_hz).unwrap();
+    let capture = wav::read_capture(
+        &fixture("18-rate-skewed.wav"),
+        config.capture_sample_rate_hz,
+    )
+    .unwrap();
     let settings = RateSettings::from_config(&config).unwrap();
     let a = rate::estimate(&capture, Channel::A, &settings).unwrap();
     let b = rate::estimate(&capture, Channel::B, &settings).unwrap();
-    println!("channel a: {:+.3} ppm +/-{:.3} over {} of {}", a.ppm, a.half_width_ppm, a.windows_used, a.windows_total);
-    println!("channel b: {:+.3} ppm +/-{:.3} over {} of {}", b.ppm, b.half_width_ppm, b.windows_used, b.windows_total);
+    println!(
+        "channel a: {:+.3} ppm +/-{:.3} over {} of {}",
+        a.ppm, a.half_width_ppm, a.windows_used, a.windows_total
+    );
+    println!(
+        "channel b: {:+.3} ppm +/-{:.3} over {} of {}",
+        b.ppm, b.half_width_ppm, b.windows_used, b.windows_total
+    );
     assert!((a.ppm - 150.0).abs() < 1.0, "{:?}", a);
     assert!(b.ppm.abs() < 1.0, "{:?}", b);
     assert!(a.half_width_ppm <= config.rate_max_half_width_ppm);
@@ -41,7 +50,11 @@ fn the_command_prints_one_line_per_channel_and_writes_nothing() {
         .unwrap();
     let text = String::from_utf8_lossy(&output.stdout);
     print!("{}", text);
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let a: f64 = text
         .split("channel a produced rate ")
         .nth(1)
@@ -49,7 +62,11 @@ fn the_command_prints_one_line_per_channel_and_writes_nothing() {
         .and_then(|figure| figure.parse().ok())
         .expect("channel a's figure");
     assert!((a - 150.0).abs() < 1.0, "{}", text);
-    assert!(text.contains("chorus-measure: channel b produced rate "), "{}", text);
+    assert!(
+        text.contains("chorus-measure: channel b produced rate "),
+        "{}",
+        text
+    );
     assert_eq!(text.lines().count(), 2, "{}", text);
 }
 
