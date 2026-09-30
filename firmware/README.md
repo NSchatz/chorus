@@ -25,8 +25,10 @@ Read them off the datasheet at bring-up and write them into
 ## Running it
 
 ```
-make firmware-check          # everything, on a host. No ESP32-S3, no ESP-IDF,
-                             # no amplifier, no sound card, no privilege.
+make firmware-check          # everything, on a host. No ESP32-S3, no ESP-IDF
+                             # toolchain (only the pinned tree's TF-PSA-Crypto
+                             # sources, ADR 0043), no amplifier, no sound card,
+                             # no privilege.
 make firmware-image          # the image. Refuses by name without the ESP-IDF
                              # toolchain at the version endpoint.conf declares,
                              # and emits no partial image.

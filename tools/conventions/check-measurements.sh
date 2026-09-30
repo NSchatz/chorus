@@ -2,7 +2,9 @@
 # Rule "Measurement provenance" (brief section 4.5, BRIEF.md section 3.1 guardrail 3): every
 # report under docs/measurements/ names its source on a line `Source: hardware|host|simulation|
 # synthetic` and the build it measured on a line `Build measured: <40-hex sha>` that is a commit
-# in this history. Only a `hardware` report is timing evidence. Every report complies; the
+# in this history: an ancestor of HEAD, so a branch commit a squash merge left out of `main` is
+# caught by the next gate (goal 6: a report once named such a commit and the check let it pass,
+# because the object still existed locally). Only a `hardware` report is timing evidence. Every report complies; the
 # reports written before the rule were relabelled in goal 4 (K48, audit A-6).
 # A shallow clone (CI's checkout without history) cannot tell whether a commit exists: the build
 # commit part prints SKIPPED there, and the source line is still checked.
@@ -16,7 +18,7 @@ complies() {
     # shellcheck disable=SC2016 # the backticks are literal Markdown in the report
     sha="$(sed -n 's/^Build measured: `\{0,1\}\([0-9a-f]\{40\}\)`\{0,1\}$/\1/p' "$1" | head -n 1)"
     [ -n "$sha" ] || return 1
-    [ "$shallow" = 1 ] || git cat-file -e "$sha^{commit}" 2> /dev/null
+    [ "$shallow" = 1 ] || git merge-base --is-ancestor "$sha" HEAD 2> /dev/null
 }
 n=0
 while IFS= read -r f; do

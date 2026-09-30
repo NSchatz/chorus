@@ -2,9 +2,12 @@
 
 Date: 2026-09-30
 Source: host
-Build measured: `23ae1e7622cd4dfd19caebba6b23a6acbb8c2978`
-Build note: a commit of branch `chorus-g6/codecs` (PR #44); when it is squash-merged, the merge
-commit carries the same decoder code and this line is re-pointed at it.
+Build measured: `6fe87e409a250ad2b5bfa4e84294c1d4537a8bfd`
+Build note: measured on `23ae1e7`, a commit of branch `chorus-g6/codecs` (PR #44) that the squash
+merge left out of `main`'s history; `git diff 23ae1e7 6fe87e4` over `third_party/`,
+`firmware/src/codec*.c`, `firmware/include/chorus/codec.h`, `firmware/tests/test_codec.c` and
+`firmware/Makefile` is empty, so the decoders measured are the ones in `6fe87e4`, the merge commit
+named above (re-pointed in goal 6's closing PR).
 Timing evidence: none. These are wall-clock figures from a shared development container, not
 the ESP32-S3; only a `hardware` report is timing evidence (BRIEF.md section 3.1 rule 3). They
 answer the open input P9 and P1 left to goal 6 ("Endpoint flash cost of dr_flac and libopus
