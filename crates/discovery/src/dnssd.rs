@@ -273,9 +273,9 @@ pub fn resolve(packet: &[u8], service: &str) -> Result<Vec<Service>, ResolveErro
 
     let mut services = Vec::new();
     for instance in found {
-        let srv = message.records().find(|r| {
-            r.rtype == rtype::SRV && r.name == instance
-        });
+        let srv = message
+            .records()
+            .find(|r| r.rtype == rtype::SRV && r.name == instance);
         let (port, host) = match srv.map(|r| &r.rdata) {
             Some(Rdata::Srv { port, target, .. }) => (*port, target.clone()),
             _ => continue,
@@ -349,7 +349,10 @@ mod tests {
         assert_eq!(service.label, "chorus");
         assert_eq!(service.host, "chorus.local.");
         assert_eq!(service.port, 4010);
-        assert_eq!(service.socket_address().as_deref(), Some("192.168.1.40:4010"));
+        assert_eq!(
+            service.socket_address().as_deref(),
+            Some("192.168.1.40:4010")
+        );
         assert_eq!(service.txt_value("group"), Some("downstairs"));
     }
 

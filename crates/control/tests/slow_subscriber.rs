@@ -169,5 +169,8 @@ fn a_stalled_control_subscriber_does_not_block_or_reorder_the_audio_path() {
         control_reader.recv().is_ok(),
         "and the control subscriber that was reading is still attached"
     );
-    assert_eq!(sent.load(Ordering::Relaxed), (CONTROL_QUEUE_LIMIT * 20) as u64);
+    assert_eq!(
+        sent.load(Ordering::Relaxed),
+        (CONTROL_QUEUE_LIMIT * 20) as u64
+    );
 }

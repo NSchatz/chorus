@@ -124,7 +124,9 @@ fn wait_for_control(address: &str) -> bool {
 
 fn request(address: &str, head: &str, body: &str) -> String {
     let mut socket = TcpStream::connect(address).expect("the control channel is listening");
-    socket.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    socket
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
     write!(socket, "{}{}", head, body).expect("the request goes up");
     socket.flush().unwrap();
     let mut response = String::new();
@@ -439,19 +441,19 @@ fn a_group_holding_a_wireless_zone_is_held_to_the_wireless_policy() {
     zones.add(Zone::new("study")).unwrap();
     for zone in ["kitchen", "bedroom"] {
         zones
-            .apply(&decode_command(&format!(
-                r#"{{"v":1,"t":"group","zone":"{}","group":"downstairs"}}"#,
-                zone
-            ))
-            .unwrap())
+            .apply(
+                &decode_command(&format!(
+                    r#"{{"v":1,"t":"group","zone":"{}","group":"downstairs"}}"#,
+                    zone
+                ))
+                .unwrap(),
+            )
             .unwrap();
     }
     std::fs::write(&state, persist::render(&zones)).expect("the state file is written");
 
-    let (_server, mut out, address) = start(
-        &["kitchen", "bedroom=wireless", "study"],
-        Some(&state),
-    );
+    let (_server, mut out, address) =
+        start(&["kitchen", "bedroom=wireless", "study"], Some(&state));
     let lines = lines_until_listening(&mut out);
     assert!(wait_for_control(&address), "the server never came up");
     let said = lines.join("\n");
@@ -501,7 +503,11 @@ fn a_group_holding_a_wireless_zone_is_held_to_the_wireless_policy() {
         .find(|l| l.contains("group id=study"))
         .unwrap_or_else(|| panic!("no tier was reported for the wired group: {}", said));
     assert!(study.contains("transport=wired"), "{}", study);
-    assert!(study.contains(&format!("bound_us={}", WIRED_BOUND_US)), "{}", study);
+    assert!(
+        study.contains(&format!("bound_us={}", WIRED_BOUND_US)),
+        "{}",
+        study
+    );
     assert!(study.contains("set_by=none"), "{}", study);
     assert!(study.contains("policy=wired"), "{}", study);
 
@@ -517,7 +523,11 @@ fn a_message_that_tries_to_change_a_transport_is_refused_and_changes_nothing() {
     assert!(wait_for_control(&address), "the server never came up");
 
     let before = state_of(&address);
-    assert!(before.contains("\"zones\""), "the state reads back: {}", before);
+    assert!(
+        before.contains("\"zones\""),
+        "the state reads back: {}",
+        before
+    );
 
     // Three spellings of the same wish: a field on a command that has one, a
     // field on a command that does not, and a command type of its own.
@@ -585,7 +595,11 @@ fn a_transport_the_committed_configuration_does_not_name_stops_the_server() {
     );
     assert_ne!(output.status.code(), Some(0), "{}", said);
     assert!(said.contains("bedroom"), "the zone is named: {}", said);
-    assert!(said.contains("wifi"), "the value it read is named: {}", said);
+    assert!(
+        said.contains("wifi"),
+        "the value it read is named: {}",
+        said
+    );
     assert!(
         said.contains("wired, wireless"),
         "the permitted transports are named: {}",

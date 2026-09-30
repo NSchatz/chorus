@@ -176,9 +176,7 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
         if !config.rejoin {
             break outcome.code;
         }
-        if outcome.code == ExitCode::from(EXIT_CONFIG)
-            || outcome.code == ExitCode::from(EXIT_LOG)
-        {
+        if outcome.code == ExitCode::from(EXIT_CONFIG) || outcome.code == ExitCode::from(EXIT_LOG) {
             // A configuration or a log that cannot be written will not fix
             // itself by being tried again.
             break outcome.code;
@@ -279,7 +277,10 @@ fn probe_device(config: &ClientConfig) -> ExitCode {
         Ok(s) => s,
         Err(e) => {
             report("no usable audio device", &e.to_string());
-            status(&format!("device-probe device={} usable=0 paces=0", config.device));
+            status(&format!(
+                "device-probe device={} usable=0 paces=0",
+                config.device
+            ));
             return ExitCode::from(EXIT_DEVICE);
         }
     };
@@ -295,7 +296,10 @@ fn probe_device(config: &ClientConfig) -> ExitCode {
         Ok(frames) => frames.max(0) * 1_000_000 / 48_000,
         Err(e) => {
             report("the audio device failed during the probe", &e.to_string());
-            status(&format!("device-probe device={} usable=0 paces=0", config.device));
+            status(&format!(
+                "device-probe device={} usable=0 paces=0",
+                config.device
+            ));
             return ExitCode::from(EXIT_DEVICE);
         }
     };

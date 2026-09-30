@@ -264,7 +264,10 @@ fn inventory_lists_every_live_thread() {
             .find(|t| t.tid == *tid)
             .unwrap_or_else(|| panic!("thread {} is alive and is missing from the inventory", tid));
         assert!(
-            found.comm.known().is_some_and(|n| n.starts_with("chorus-inv-")),
+            found
+                .comm
+                .known()
+                .is_some_and(|n| n.starts_with("chorus-inv-")),
             "thread {} is reported as {}",
             tid,
             found.comm
@@ -328,7 +331,11 @@ fn transient_read_failure_is_an_error_not_an_omission() {
         other => panic!("expected ThreadUnreadable, got {:?}", other),
     }
     let said = error.to_string();
-    assert!(said.contains("12"), "the message names the thread: {}", said);
+    assert!(
+        said.contains("12"),
+        "the message names the thread: {}",
+        said
+    );
     assert!(
         said.contains("Input/output error"),
         "the message names the reason: {}",
@@ -347,7 +354,9 @@ fn permission_denial_fails_the_enumeration() {
     // Refused the listing.
     let refused_listing = thread_inventory_from(&FakeTasks::three().listing_fails(EACCES));
     match refused_listing {
-        Err(InventoryError::ListingUnreadable { errno, ref detail, .. }) => {
+        Err(InventoryError::ListingUnreadable {
+            errno, ref detail, ..
+        }) => {
             assert_eq!(errno, EACCES);
             assert!(detail.contains("Permission denied"), "detail: {}", detail);
         }
@@ -469,7 +478,8 @@ fn an_empty_inventory_is_an_error() {
 
     // And an inventory emptied by threads exiting is empty for the same
     // reason: the thread doing the asking cannot have been one of them.
-    let all_gone = FakeTasks::healthy(&[(11, "chorus-main", SCHED_OTHER, 0)]).stat_fails(11, ENOENT);
+    let all_gone =
+        FakeTasks::healthy(&[(11, "chorus-main", SCHED_OTHER, 0)]).stat_fails(11, ENOENT);
     match thread_inventory_from(&all_gone) {
         Err(InventoryError::Empty { listed, vanished }) => {
             assert_eq!(listed, 1);

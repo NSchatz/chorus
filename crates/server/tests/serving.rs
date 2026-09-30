@@ -108,7 +108,10 @@ fn serve_over_tcp(params: ServeParams, input: Vec<u8>) -> Vec<u8> {
 fn end_and_final_chunk(messages: &[Message]) -> (chorus_protocol::StreamEnd, AudioChunk) {
     let end = match messages.last().expect("the run produced messages") {
         Message::StreamEnd(end) => *end,
-        other => panic!("the last message is {:?}, not the in-band end of stream", other),
+        other => panic!(
+            "the last message is {:?}, not the in-band end of stream",
+            other
+        ),
     };
     let final_chunk = chunks_of(messages)
         .last()
@@ -164,7 +167,10 @@ fn the_chunks_a_client_receives_concatenate_back_to_the_input_exactly() {
         if i < 10 {
             assert_eq!(frames, frames_per_chunk, "chunk {} is not a full chunk", i);
         } else {
-            assert_eq!(frames, 100, "only the final chunk is short, and it is not empty");
+            assert_eq!(
+                frames, 100,
+                "only the final chunk is short, and it is not empty"
+            );
         }
         rebuilt.extend_from_slice(&c.audio_data);
     }
@@ -223,9 +229,7 @@ fn the_bytes_on_the_wire_decode_with_the_committed_protocol_unchanged() {
         at += r.consumed;
     }
     assert_eq!(kinds.len(), 4);
-    assert!(kinds[..3]
-        .iter()
-        .all(|k| *k == MessageType::AudioChunk));
+    assert!(kinds[..3].iter().all(|k| *k == MessageType::AudioChunk));
     assert_eq!(kinds[3], MessageType::StreamEnd);
 }
 
@@ -262,7 +266,9 @@ fn a_clean_end_sends_the_signal_in_band_and_a_stopped_run_does_not() {
     // The signal is data on the connection, before the close: the client sees
     // it through the ordinary receiver, not by noticing the socket shut.
     let mut receiver = Receiver::new();
-    let events = receiver.push(&served.wire).expect("the stream is well framed");
+    let events = receiver
+        .push(&served.wire)
+        .expect("the stream is well framed");
     assert!(matches!(events.last(), Some(Received::End(_))));
 }
 
@@ -348,7 +354,10 @@ fn a_run_stopped_with_chunks_already_on_the_wire_emits_no_end_of_stream_either()
             .iter()
             .any(|m| m.message_type() == MessageType::StreamEnd),
         "a stopped run sends no end-of-stream signal even with a final chunk behind it: {:?}",
-        messages.iter().map(|m| m.message_type()).collect::<Vec<_>>()
+        messages
+            .iter()
+            .map(|m| m.message_type())
+            .collect::<Vec<_>>()
     );
     assert!(
         matches!(messages.last(), Some(Message::AudioChunk(_))),

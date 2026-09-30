@@ -320,7 +320,13 @@ fn raw_string_start(bytes: &[u8], i: usize) -> Option<(usize, usize)> {
 fn skip_raw_string(bytes: &[u8], body: usize, hashes: usize) -> usize {
     let mut i = body;
     while i < bytes.len() {
-        if bytes[i] == b'"' && bytes[i + 1..].iter().take(hashes).filter(|b| **b == b'#').count() == hashes
+        if bytes[i] == b'"'
+            && bytes[i + 1..]
+                .iter()
+                .take(hashes)
+                .filter(|b| **b == b'#')
+                .count()
+                == hashes
         {
             return i + 1 + hashes;
         }
@@ -446,7 +452,11 @@ pub fn scan(root: &Path, list: &AudioPathList) -> Finding {
     let mut finding = Finding::default();
     let crates = workspace_crates(root);
 
-    for unit in list.on_path.iter().chain(list.excluded.iter().map(|e| &e.unit)) {
+    for unit in list
+        .on_path
+        .iter()
+        .chain(list.excluded.iter().map(|e| &e.unit))
+    {
         if read_unit(root, unit).is_none() {
             finding.absent.push(unit.clone());
         }
@@ -608,7 +618,10 @@ mod tests {
             "fn f<'a>(s: &'a str) {} "
         );
         assert_eq!(code_only(r"let c = '\''; // UNIX_EPOCH"), r"let c = '\''; ");
-        assert_eq!(code_only(r#"let c = '"'; // UNIX_EPOCH"#), r#"let c = '"'; "#);
+        assert_eq!(
+            code_only(r#"let c = '"'; // UNIX_EPOCH"#),
+            r#"let c = '"'; "#
+        );
         // An escaped quote does not end the string early.
         assert_eq!(
             code_only(r#"let s = "a\" // b"; mod hidden;"#),
@@ -618,11 +631,10 @@ mod tests {
 
     #[test]
     fn a_clock_read_hidden_behind_a_url_in_a_string_is_still_found() {
-        let line = code_only(r#"const D: &str = "see https://example.invalid"; SystemTime::now();"#);
+        let line =
+            code_only(r#"const D: &str = "see https://example.invalid"; SystemTime::now();"#);
         assert!(
-            SETTABLE_CLOCK_NAMES
-                .iter()
-                .any(|name| line.contains(name)),
+            SETTABLE_CLOCK_NAMES.iter().any(|name| line.contains(name)),
             "{}",
             line
         );

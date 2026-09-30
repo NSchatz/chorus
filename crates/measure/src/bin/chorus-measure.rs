@@ -20,9 +20,7 @@ use chorus_measure::config::MeasureConfig;
 use chorus_measure::freerun::{self, SlopeSettings};
 use chorus_measure::jitter::{self, JitterError, JitterRun, PowerSaveMode};
 use chorus_measure::lag::{self, LagSettings};
-use chorus_measure::report::{
-    self, Baseline, FreeRunRun, LagRun, BASELINE_FILE, MEASUREMENTS_DIR,
-};
+use chorus_measure::report::{self, Baseline, FreeRunRun, LagRun, BASELINE_FILE, MEASUREMENTS_DIR};
 use chorus_measure::{fixtures, repository_root, wav};
 
 const USAGE: &str = "\
@@ -184,8 +182,8 @@ fn lag_command(args: &[String]) -> Result<(), String> {
         root: &root,
     };
     let name = format!("rig3-lag-{}.md", slug(label));
-    let written =
-        report::write_report(&out, &name, &report::render_lag_report(&run)).map_err(|e| e.to_string())?;
+    let written = report::write_report(&out, &name, &report::render_lag_report(&run))
+        .map_err(|e| e.to_string())?;
     println!(
         "chorus-measure: median {:+.3} us, p95 {:.3} us, max {:.3} us over {} of {} windows",
         summary.median_us,
@@ -394,7 +392,10 @@ fn fixtures_command(args: &[String]) -> Result<(), String> {
         if check {
             match std::fs::read(&output) {
                 Ok(committed) if committed == bytes => {
-                    println!("pass {} is byte-identical to its parameters", output.display())
+                    println!(
+                        "pass {} is byte-identical to its parameters",
+                        output.display()
+                    )
                 }
                 Ok(committed) => {
                     println!(

@@ -391,7 +391,10 @@ pub fn parse_series(path: &Path, text: &str) -> Result<OffsetSeries, SeriesError
             let (key, value) = line.split_once('=').ok_or_else(|| SeriesError::Malformed {
                 path: path.to_path_buf(),
                 line: index + 1,
-                detail: format!("'{}' is not 'key = value' and no {} header has been seen", line, OBSERVATIONS_SECTION),
+                detail: format!(
+                    "'{}' is not 'key = value' and no {} header has been seen",
+                    line, OBSERVATIONS_SECTION
+                ),
             })?;
             let key = key.trim();
             let value = value.trim();
@@ -408,7 +411,10 @@ pub fn parse_series(path: &Path, text: &str) -> Result<OffsetSeries, SeriesError
             return Err(SeriesError::Malformed {
                 path: path.to_path_buf(),
                 line: index + 1,
-                detail: format!("'{}' is not exactly two whitespace separated integers", line),
+                detail: format!(
+                    "'{}' is not exactly two whitespace separated integers",
+                    line
+                ),
             });
         };
         let t_ns = t.parse::<i64>().map_err(|_| SeriesError::Malformed {
@@ -438,7 +444,13 @@ mod tests {
         }
     }
 
-    fn a_series(points: usize, interval_s: f64, ppm: f64, jitter_ns: f64, seed: u64) -> OffsetSeries {
+    fn a_series(
+        points: usize,
+        interval_s: f64,
+        ppm: f64,
+        jitter_ns: f64,
+        seed: u64,
+    ) -> OffsetSeries {
         let mut rng = crate::rng::Rng::new(seed);
         let observations = (0..points)
             .map(|n| {

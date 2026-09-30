@@ -53,8 +53,8 @@ pub mod source;
 pub mod stream;
 
 pub use clients::ClientPool;
-pub use control::{ControlPlane, ControlRefused, ControlState};
 pub use config::{ServerConfig, ServerConfigError};
+pub use control::{ControlPlane, ControlRefused, ControlState};
 pub use hostreport::{ContractRefused, MemoryLockOutcome, RealTimeOutcome};
 pub use serve::{serve_stream, ServeError, ServeParams, ServeReport};
 pub use stream::{read_requests, write_outbound, Fanout, FanoutSink, Outbound};

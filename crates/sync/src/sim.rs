@@ -260,7 +260,10 @@ mod tests {
             result.settle_time_ns(ONE_MS_NS),
             result.max_abs_error_after(result.settle_index(ONE_MS_NS).unwrap_or(0))
         );
-        assert_eq!(result.hard_resyncs, 1, "one acquisition, no thrashing after");
+        assert_eq!(
+            result.hard_resyncs, 1,
+            "one acquisition, no thrashing after"
+        );
     }
 
     #[test]

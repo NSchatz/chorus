@@ -529,7 +529,11 @@ mod tests {
             "Infinity",
             "{\"a\":1}extra",
         ] {
-            assert!(parse(text).is_err(), "{:?} is not JSON this reader takes", text);
+            assert!(
+                parse(text).is_err(),
+                "{:?} is not JSON this reader takes",
+                text
+            );
         }
     }
 

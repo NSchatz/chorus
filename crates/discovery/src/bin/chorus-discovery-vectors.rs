@@ -39,7 +39,10 @@ fn main() -> std::process::ExitCode {
     };
     names.sort();
     if names.is_empty() {
-        eprintln!("chorus-discovery-vectors: {} holds no .params file", dir.display());
+        eprintln!(
+            "chorus-discovery-vectors: {} holds no .params file",
+            dir.display()
+        );
         return std::process::ExitCode::from(2);
     }
     for params in names {
@@ -102,11 +105,16 @@ pub fn render(fields: &BTreeMap<String, String>) -> Result<Vec<u8>, String> {
                 instance: get(fields, "instance").to_string(),
                 service: get(fields, "service").to_string(),
                 host: get(fields, "host").to_string(),
-                port: get(fields, "port").parse().map_err(|_| "the port is not a number")?,
+                port: get(fields, "port")
+                    .parse()
+                    .map_err(|_| "the port is not a number")?,
                 addresses: fields
                     .iter()
                     .filter(|(k, _)| k.starts_with("address."))
-                    .map(|(_, v)| v.parse::<IpAddr>().map_err(|_| format!("'{}' is not an address", v)))
+                    .map(|(_, v)| {
+                        v.parse::<IpAddr>()
+                            .map_err(|_| format!("'{}' is not an address", v))
+                    })
                     .collect::<Result<Vec<_>, _>>()?,
                 txt: fields
                     .iter()
@@ -230,7 +238,9 @@ fn as_hex(name: &str, fields: &BTreeMap<String, String>, bytes: &[u8]) -> String
     out.push_str(&format!("# chorus DNS-SD vector: {}.\n", name));
     out.push_str("#\n");
     out.push_str("# GENERATED from the .params file beside it by `make discovery-vectors`, and\n");
-    out.push_str("# asserted byte for byte by crates/discovery/tests/dnssd_vectors.rs. Change the\n");
+    out.push_str(
+        "# asserted byte for byte by crates/discovery/tests/dnssd_vectors.rs. Change the\n",
+    );
     out.push_str("# parameters, never this file, and never to make a red assertion green.\n");
     out.push_str("#\n");
     for (key, value) in fields {

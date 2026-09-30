@@ -468,7 +468,10 @@ pub fn lag_figures(run: &LagRun<'_>) -> String {
         s.windows_total, s.windows_used
     ));
     out.push_str(&format!("| median lag | {:+.3} us |\n", s.median_us));
-    out.push_str(&format!("| p95 lag (absolute) | {:.3} us |\n", s.p95_abs_us));
+    out.push_str(&format!(
+        "| p95 lag (absolute) | {:.3} us |\n",
+        s.p95_abs_us
+    ));
     out.push_str(&format!(
         "| maximum lag (absolute) | {:.3} us |\n",
         s.max_abs_us

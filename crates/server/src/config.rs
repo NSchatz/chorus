@@ -306,11 +306,11 @@ impl ServerConfig {
                 }
                 "--group-audio" => {
                     let pair = value()?;
-                    let (group, address) = pair
-                        .split_once('=')
-                        .ok_or_else(|| ServerConfigError::NotAGroupAddress {
+                    let (group, address) = pair.split_once('=').ok_or_else(|| {
+                        ServerConfigError::NotAGroupAddress {
                             value: pair.clone(),
-                        })?;
+                        }
+                    })?;
                     if !chorus_control::catalog::is_identifier(group) || address.is_empty() {
                         return Err(ServerConfigError::NotAGroupAddress {
                             value: pair.clone(),
@@ -395,11 +395,9 @@ mod tests {
     #[test]
     fn the_control_plane_is_off_unless_an_address_is_given_for_it() {
         assert_eq!(ServerConfig::default().control_listen, None);
-        let c = ServerConfig::from_args([
-            "--control-listen".to_string(),
-            "127.0.0.1:0".to_string(),
-        ])
-        .unwrap();
+        let c =
+            ServerConfig::from_args(["--control-listen".to_string(), "127.0.0.1:0".to_string()])
+                .unwrap();
         assert_eq!(c.control_listen.as_deref(), Some("127.0.0.1:0"));
         assert_eq!(c.control_workers, 8, "docs/decisions/0016 records why 8");
     }
@@ -423,14 +421,15 @@ mod tests {
 
     #[test]
     fn a_zone_or_a_group_address_that_is_not_one_is_refused_at_start() {
-        let err =
-            ServerConfig::from_args(["--zone".to_string(), "Kitchen Zone".to_string()]).unwrap_err();
-        assert!(matches!(err, ServerConfigError::NotAZone { .. }), "{:?}", err);
-        let err = ServerConfig::from_args([
-            "--group-audio".to_string(),
-            "downstairs".to_string(),
-        ])
-        .unwrap_err();
+        let err = ServerConfig::from_args(["--zone".to_string(), "Kitchen Zone".to_string()])
+            .unwrap_err();
+        assert!(
+            matches!(err, ServerConfigError::NotAZone { .. }),
+            "{:?}",
+            err
+        );
+        let err = ServerConfig::from_args(["--group-audio".to_string(), "downstairs".to_string()])
+            .unwrap_err();
         assert!(
             matches!(err, ServerConfigError::NotAGroupAddress { .. }),
             "{:?}",
@@ -465,7 +464,11 @@ mod tests {
         .unwrap();
         assert_eq!(
             c.zones,
-            vec!["kitchen".to_string(), "bedroom".to_string(), "study".to_string()]
+            vec![
+                "kitchen".to_string(),
+                "bedroom".to_string(),
+                "study".to_string()
+            ]
         );
         assert_eq!(
             c.zone_transports,
@@ -481,11 +484,8 @@ mod tests {
     #[test]
     fn a_transport_the_committed_configuration_does_not_name_is_refused_at_start() {
         for word in ["wifi", "Wireless", "", "wired-ish"] {
-            let err = ServerConfig::from_args([
-                "--zone".to_string(),
-                format!("bedroom={}", word),
-            ])
-            .unwrap_err();
+            let err = ServerConfig::from_args(["--zone".to_string(), format!("bedroom={}", word)])
+                .unwrap_err();
             match &err {
                 ServerConfigError::NotATransport {
                     zone,
@@ -503,10 +503,13 @@ mod tests {
             assert!(said.contains("wired, wireless"), "{}", said);
         }
         // And the zone identifier is still checked on the other side of the `=`.
-        let err =
-            ServerConfig::from_args(["--zone".to_string(), "Bed Room=wireless".to_string()])
-                .unwrap_err();
-        assert!(matches!(err, ServerConfigError::NotAZone { .. }), "{:?}", err);
+        let err = ServerConfig::from_args(["--zone".to_string(), "Bed Room=wireless".to_string()])
+            .unwrap_err();
+        assert!(
+            matches!(err, ServerConfigError::NotAZone { .. }),
+            "{:?}",
+            err
+        );
     }
 
     #[test]

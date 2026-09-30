@@ -59,7 +59,6 @@ use chorus_protocol::{encode, Message, StreamEnd, TimeSync};
 use crate::buffer::{frames_to_us, us_to_frames, Accepted, Buffer, Counters, Zone};
 use crate::config::ClientConfig;
 use crate::control::ZoneWatch;
-use crate::zone::ZoneGain;
 use crate::delaylog::{DelayLog, LogHeader, LogSummary};
 use crate::receive::{
     receive_loop, FramingError, Handshake, ReceiveStop, Received, Receiver, StreamShape,
@@ -68,6 +67,7 @@ use crate::sink::{PcmSink, SinkError};
 use crate::sync::{
     Correction, DelayRefused, ExchangeVerdict, PlayoutCorrector, SyncLoop, Telemetry,
 };
+use crate::zone::ZoneGain;
 
 /// How often the run writes a sample. Well under the once-per-second the log
 /// format requires, so a coarse scheduler cannot make the log non-compliant.
@@ -390,7 +390,9 @@ fn make_absorber(
             counters.discarded_malformed.fetch_add(1, Ordering::Relaxed);
         }
         Received::NotInThisGrammar => {
-            counters.skipped_unknown_type.fetch_add(1, Ordering::Relaxed);
+            counters
+                .skipped_unknown_type
+                .fetch_add(1, Ordering::Relaxed);
         }
         Received::End(_) => {}
     }
@@ -828,9 +830,10 @@ fn play<S: PcmSink>(
                                 )?;
                             }
                             buffer.note_played(&queued.chunk, queued.frames);
-                            next_write_ts_ns = queued.chunk.timestamp_ns.saturating_add(
-                                queued.frames * 1_000_000_000 / u64::from(rate_hz),
-                            );
+                            next_write_ts_ns = queued
+                                .chunk
+                                .timestamp_ns
+                                .saturating_add(queued.frames * 1_000_000_000 / u64::from(rate_hz));
                             if was_muted && !corrector.muted() {
                                 was_muted = false;
                                 log.event(

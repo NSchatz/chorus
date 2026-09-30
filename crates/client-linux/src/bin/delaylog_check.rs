@@ -76,8 +76,9 @@ fn main() -> ExitCode {
             .get("frames_per_chunk")
             .and_then(|v| v.parse::<i64>().ok())
             .unwrap_or(0);
-        let tolerance =
-            (nominal * rate_tolerance_percent as i64 / 100).max(frames_per_chunk * 2).max(1);
+        let tolerance = (nominal * rate_tolerance_percent as i64 / 100)
+            .max(frames_per_chunk * 2)
+            .max(1);
         grade_no_rate_change(&log, tolerance, &mut report);
     }
 

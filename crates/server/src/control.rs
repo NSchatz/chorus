@@ -689,8 +689,7 @@ fn serve_events(mut connection: TcpStream, state: &Arc<ControlState>, keep: &Arc
                 since_keepalive += IDLE_WAKE;
                 if since_keepalive >= KEEPALIVE {
                     since_keepalive = Duration::ZERO;
-                    if write!(connection, ": keepalive\n\n").is_err()
-                        || connection.flush().is_err()
+                    if write!(connection, ": keepalive\n\n").is_err() || connection.flush().is_err()
                     {
                         return;
                     }

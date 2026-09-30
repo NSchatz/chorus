@@ -273,10 +273,9 @@ fn the_loop_never_sees_what_a_write_returned() {
     // calls `delay_frames` on it; `SinkWrite` is not in its signature, is not
     // in `Correction`, and is not stored on the loop. The way to keep that
     // true is for the source of the loop to contain no mention of it.
-    let source = std::fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/sync.rs"),
-    )
-    .expect("the sync module is committed and readable");
+    let source =
+        std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/sync.rs"))
+            .expect("the sync module is committed and readable");
     let code: Vec<&str> = source
         .lines()
         .filter(|line| {
@@ -418,7 +417,10 @@ fn a_modelled_hour_holds_below_a_quarter_millisecond_after_the_first_minute() {
         "an hour at one exchange a second should accept thousands, got {}",
         result.accepted
     );
-    assert_eq!(result.discarded, 0, "the quiet wired model produces no nonsense");
+    assert_eq!(
+        result.discarded, 0,
+        "the quiet wired model produces no nonsense"
+    );
     assert_eq!(result.underruns, 0, "the modelled ring never ran dry");
 
     let true_peak = result.max_true_error_after(MINUTE_NS);
@@ -597,7 +599,10 @@ fn the_modelled_hour_holds_on_the_loaded_wired_link_too() {
     );
     assert_eq!(result.underruns, 0);
     assert_eq!(result.clamped_ticks, 0);
-    assert_eq!(result.discarded, 0, "a loaded link is not a nonsensical one");
+    assert_eq!(
+        result.discarded, 0,
+        "a loaded link is not a nonsensical one"
+    );
     assert!(result.accepted > 3_000, "got {}", result.accepted);
 }
 
@@ -941,7 +946,9 @@ fn a_device_that_will_not_report_its_delay_stops_the_run_and_says_which_one() {
     // A device that reports its delay again is not a special case: the
     // refusal is per call, so this is the same loop against a working one.
     dac.set_fault(DacFault::None);
-    assert!(loop_.observe(&mut dac, 3_000_000, 3_000_000, 48_000).is_ok());
+    assert!(loop_
+        .observe(&mut dac, 3_000_000, 3_000_000, 48_000)
+        .is_ok());
 }
 
 // -------------------------------------------------------------------------

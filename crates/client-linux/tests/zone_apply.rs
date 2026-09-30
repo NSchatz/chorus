@@ -277,14 +277,21 @@ fn with_no_control_channel_at_all_the_samples_are_the_ones_the_server_sent() {
 
 #[test]
 fn after_a_volume_change_the_accepted_pcm_is_scaled_by_the_commanded_factor() {
-    for (literal, thousandths) in [("0.500", 500u32), ("0.375", 375), ("0.001", 1), ("1.000", 1000)]
-    {
+    for (literal, thousandths) in [
+        ("0.500", 500u32),
+        ("0.375", 375),
+        ("0.001", 1),
+        ("1.000", 1000),
+    ] {
         let watch = Arc::new(ZoneWatch::new());
         assert!(
             watch.absorb(&state(1, literal, false, "127.0.0.1:4010"), "kitchen"),
             "the state message has to be about this zone"
         );
-        assert_eq!(watch.gain(), Volume::from_thousandths(i64::from(thousandths)).unwrap());
+        assert_eq!(
+            watch.gain(),
+            Volume::from_thousandths(i64::from(thousandths)).unwrap()
+        );
 
         let source = 12_000i16;
         let accepted = accepted_with(watch, 40, source);
@@ -343,7 +350,10 @@ fn after_a_mute_the_accepted_pcm_is_all_zero_and_frames_are_still_flowing() {
         muted.len(),
         unmuted.len()
     );
-    assert!(unmuted.iter().any(|s| *s != 0), "the unmuted control is silent");
+    assert!(
+        unmuted.iter().any(|s| *s != 0),
+        "the unmuted control is silent"
+    );
 }
 
 #[test]
@@ -378,10 +388,8 @@ fn after_a_group_change_the_endpoint_plays_the_chunks_of_its_new_groups_stream()
 
     // The group change, as the server would send it.
     watch.absorb(
-        &state(2, "1.000", false, "127.0.0.1:4011").replace(
-            r#""group":"downstairs""#,
-            r#""group":"upstairs""#,
-        ),
+        &state(2, "1.000", false, "127.0.0.1:4011")
+            .replace(r#""group":"downstairs""#, r#""group":"upstairs""#),
         "kitchen",
     );
     assert_eq!(watch.facts().group, "upstairs");

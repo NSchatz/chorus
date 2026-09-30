@@ -159,8 +159,13 @@ fn served(port: u16) -> TcpStream {
         .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
     let mut scratch = vec![0u8; 65_536];
-    let read = client.read(&mut scratch).expect("the client is served audio");
-    assert!(read > 0, "the client received nothing, so nothing is attached");
+    let read = client
+        .read(&mut scratch)
+        .expect("the client is served audio");
+    assert!(
+        read > 0,
+        "the client received nothing, so nothing is attached"
+    );
     client
 }
 

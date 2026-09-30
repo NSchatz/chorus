@@ -73,7 +73,12 @@ impl Fields {
                 continue;
             }
             let (key, value) = line.split_once('=').unwrap_or_else(|| {
-                panic!("{} line {}: {:?} is not `key = value`", source, lineno + 1, line)
+                panic!(
+                    "{} line {}: {:?} is not `key = value`",
+                    source,
+                    lineno + 1,
+                    line
+                )
             });
             let previous = values.insert(key.trim().to_string(), value.trim().to_string());
             assert!(

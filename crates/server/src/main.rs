@@ -583,7 +583,9 @@ fn main() -> ExitCode {
                 up, expected
             ),
         );
-        println!("chorus-server: stopped reason=incomplete-thread-inventory chunks_sent=0 played=0");
+        println!(
+            "chorus-server: stopped reason=incomplete-thread-inventory chunks_sent=0 played=0"
+        );
         return ExitCode::from(EXIT_INCOMPLETE_INVENTORY);
     }
 

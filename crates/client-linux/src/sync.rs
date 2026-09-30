@@ -617,10 +617,7 @@ fn nonsense(exchange: &TimeSync, ceiling_ns: u64) -> Option<DiscardReason> {
     }
     let rtt_ns = client_elapsed_ns - server_elapsed_ns;
     if rtt_ns > ceiling_ns {
-        return Some(DiscardReason::RoundTripAboveCeiling {
-            rtt_ns,
-            ceiling_ns,
-        });
+        return Some(DiscardReason::RoundTripAboveCeiling { rtt_ns, ceiling_ns });
     }
     None
 }
@@ -851,7 +848,11 @@ mod tests {
         assert!((corrector.pending_frames() - 480.0).abs() < 1e-9);
 
         let shaped = corrector.shape(&vec![9u8; 960 * 4]);
-        assert_eq!(shaped.len() / 4, 480, "480 frames of the chunk were dropped");
+        assert_eq!(
+            shaped.len() / 4,
+            480,
+            "480 frames of the chunk were dropped"
+        );
         // The mute is 240 frames and silences the front of what is left; it
         // adds no frames of its own, so the step is 480 frames and not 720.
         assert_eq!(corrector.muted_frames(), 240);

@@ -230,7 +230,8 @@ fn seventy_two_modelled_hours_hold_the_bound_and_every_resync_has_a_name() {
         let mut model = ModelledEndpoint::new(
             ModelParams {
                 step_ns: STEP_NS,
-                seed: 0x5EED_5111u64.wrapping_add((index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)),
+                seed: 0x5EED_5111u64
+                    .wrapping_add((index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)),
                 server_ppm: spread.0,
                 client_ppm: spread.1,
                 ..Default::default()
@@ -258,10 +259,7 @@ fn seventy_two_modelled_hours_hold_the_bound_and_every_resync_has_a_name() {
             commands_applied += 1;
             if hour % 6 == 0 {
                 let muted = (hour / 6) % 2 == 1;
-                let text = format!(
-                    r#"{{"v":1,"t":"mute","zone":"study","muted":{}}}"#,
-                    muted
-                );
+                let text = format!(r#"{{"v":1,"t":"mute","zone":"study","muted":{}}}"#, muted);
                 zones
                     .apply(&decode_command(&text).expect("a mute"))
                     .expect("the zone exists");
@@ -287,7 +285,8 @@ fn seventy_two_modelled_hours_hold_the_bound_and_every_resync_has_a_name() {
                 .flatten()
                 .collect();
             gain.apply(endpoint_watch.gain(), &mut pcm);
-            let expected = (16_000i64 * i64::from(endpoint_watch.gain().thousandths()) / 1_000) as i16;
+            let expected =
+                (16_000i64 * i64::from(endpoint_watch.gain().thousandths()) / 1_000) as i16;
             for sample in pcm.chunks_exact(2) {
                 assert_eq!(
                     i16::from_le_bytes([sample[0], sample[1]]),
@@ -391,13 +390,17 @@ fn seventy_two_modelled_hours_hold_the_bound_and_every_resync_has_a_name() {
         fanout.dropped_subscribers(),
         fanout.dropped_messages()
     );
-    println!("soak: worst modelled error after any settle = {:.1} us", worst / 1_000.0);
+    println!(
+        "soak: worst modelled error after any settle = {:.1} us",
+        worst / 1_000.0
+    );
     println!("soak: THIS IS A MODELLED RESULT. It is not a measurement and it is not AC-4.");
 
     // --- the assertions -------------------------------------------------------
 
     assert_eq!(
-        unexplained, 0,
+        unexplained,
+        0,
         "the second half of AC-4 is 'no unexplained resync', and {} of the {} resyncs in this \
          modelled run match no scheduled event",
         unexplained,

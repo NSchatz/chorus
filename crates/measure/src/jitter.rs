@@ -357,14 +357,20 @@ pub fn jitter_figures(run: &JitterRun<'_>) -> String {
         "| series | `{}` |\n",
         relative_display(&run.series.path, run.root)
     ));
-    out.push_str(&format!("| power save mode in force | {} ({}) |\n",
-        run.mode.name(), run.mode.platform_name()));
+    out.push_str(&format!(
+        "| power save mode in force | {} ({}) |\n",
+        run.mode.name(),
+        run.mode.platform_name()
+    ));
     out.push_str(&format!("| transport | {} |\n", run.transport));
     out.push_str(&format!(
         "| observations | {} over {:.1} s |\n",
         s.observations, s.span_s
     ));
-    out.push_str(&format!("| centre of the series | {:+.1} us |\n", s.centre_us));
+    out.push_str(&format!(
+        "| centre of the series | {:+.1} us |\n",
+        s.centre_us
+    ));
     out.push_str(&format!("| median deviation | {:.1} us |\n", s.median_us));
     out.push_str(&format!("| p95 deviation | {:.1} us |\n", s.p95_us));
     out.push_str(&format!("| maximum deviation | {:.1} us |\n", s.max_us));
@@ -383,7 +389,10 @@ pub fn render_jitter_report(run: &JitterRun<'_>) -> String {
     ));
     out.push_str(&format!("Date: {}\n", today_utc()));
     out.push_str(&format!("Build measured: `{}`\n", run.build.commit));
-    out.push_str(&format!("Tree at that commit: {}\n", run.build.tree_state()));
+    out.push_str(&format!(
+        "Tree at that commit: {}\n",
+        run.build.tree_state()
+    ));
     out.push_str(&format!(
         "Power save mode in force: **{}** (`{}`){}\n",
         run.mode.name(),

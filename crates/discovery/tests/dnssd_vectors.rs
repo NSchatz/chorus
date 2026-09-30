@@ -82,8 +82,9 @@ fn read_hex(name: &str) -> Vec<u8> {
         let line = raw.split('#').next().unwrap_or("").trim();
         for token in line.split_whitespace() {
             bytes.push(
-                u8::from_str_radix(token, 16)
-                    .unwrap_or_else(|_| panic!("{}: '{}' is not a hex byte", path.display(), token)),
+                u8::from_str_radix(token, 16).unwrap_or_else(|_| {
+                    panic!("{}: '{}' is not a hex byte", path.display(), token)
+                }),
             );
         }
     }
@@ -132,7 +133,9 @@ fn resolving_every_committed_response_packet_gives_its_committed_answer() {
             let at = |key: &str| {
                 expected
                     .get(&format!("instance.{}.{}", index, key))
-                    .unwrap_or_else(|| panic!("{}.expected has no instance.{}.{}", name, index, key))
+                    .unwrap_or_else(|| {
+                        panic!("{}.expected has no instance.{}.{}", name, index, key)
+                    })
                     .clone()
             };
             assert_eq!(service.instance, at("name"), "{}: instance name", name);

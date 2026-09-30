@@ -281,10 +281,7 @@ impl Zones {
             })
             .collect();
         Value::Obj(vec![
-            (
-                "v".to_string(),
-                Value::int(crate::catalog::CATALOG_VERSION),
-            ),
+            ("v".to_string(), Value::int(crate::catalog::CATALOG_VERSION)),
             ("t".to_string(), Value::text("state")),
             ("serial".to_string(), Value::int(self.serial as i64)),
             ("zones".to_string(), Value::Arr(zones)),

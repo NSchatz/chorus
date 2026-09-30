@@ -155,8 +155,8 @@ pub fn take_contract_for_this_thread(
 
     // The bound goes on first. If the policy is then granted, the thread is
     // already bounded; if it is refused, the bound cost nothing.
-    let applied = bound_real_time_cpu_time(rttime_us)
-        .map_err(|cause| ContractRefused::Limit { cause })?;
+    let applied =
+        bound_real_time_cpu_time(rttime_us).map_err(|cause| ContractRefused::Limit { cause })?;
 
     match take_real_time_policy(wanted_priority) {
         Ok(grant) => {

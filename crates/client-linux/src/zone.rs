@@ -91,8 +91,7 @@ impl ZoneGain {
             SampleFormat::PcmF32Le => {
                 let factor = gain.thousandths() as f32 / VOLUME_SCALE as f32;
                 for sample in pcm.chunks_exact_mut(4) {
-                    let value =
-                        f32::from_le_bytes([sample[0], sample[1], sample[2], sample[3]]);
+                    let value = f32::from_le_bytes([sample[0], sample[1], sample[2], sample[3]]);
                     sample.copy_from_slice(&(value * factor).to_le_bytes());
                 }
             }
@@ -164,7 +163,9 @@ mod tests {
     fn the_twenty_four_bit_format_keeps_its_sign() {
         let gain = Volume::from_thousandths(500).unwrap();
         // -8388608, -1, 1, 8388607, packed little-endian in three bytes each.
-        let mut pcm = vec![0x00, 0x00, 0x80, 0xFF, 0xFF, 0xFF, 0x01, 0x00, 0x00, 0xFF, 0xFF, 0x7F];
+        let mut pcm = vec![
+            0x00, 0x00, 0x80, 0xFF, 0xFF, 0xFF, 0x01, 0x00, 0x00, 0xFF, 0xFF, 0x7F,
+        ];
         ZoneGain::new(SampleFormat::PcmS24Le).apply(gain, &mut pcm);
         let values: Vec<i64> = pcm.chunks_exact(3).map(sign_extend_24).collect();
         assert_eq!(values, vec![-4_194_304, 0, 0, 4_194_303]);
@@ -196,8 +197,18 @@ mod tests {
             let mut pcm = s16(&[i16::MIN, i16::MAX]);
             ZoneGain::new(SampleFormat::PcmS16Le).apply(gain, &mut pcm);
             let values = read_s16(&pcm);
-            assert!(values[0] <= 0, "{} turned i16::MIN into {}", thousandths, values[0]);
-            assert!(values[1] >= 0, "{} turned i16::MAX into {}", thousandths, values[1]);
+            assert!(
+                values[0] <= 0,
+                "{} turned i16::MIN into {}",
+                thousandths,
+                values[0]
+            );
+            assert!(
+                values[1] >= 0,
+                "{} turned i16::MAX into {}",
+                thousandths,
+                values[1]
+            );
         }
     }
 }

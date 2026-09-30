@@ -396,7 +396,14 @@ impl Pcm {
         rate_hz: u32,
         buffer_us: u32,
     ) -> Result<Pcm, AlsaError> {
-        Pcm::open_stream(device, STREAM_PLAYBACK, format, channels, rate_hz, buffer_us)
+        Pcm::open_stream(
+            device,
+            STREAM_PLAYBACK,
+            format,
+            channels,
+            rate_hz,
+            buffer_us,
+        )
     }
 
     /// Open `device` for capture and configure it for this stream.
@@ -425,10 +432,9 @@ impl Pcm {
         buffer_us: u32,
     ) -> Result<Pcm, AlsaError> {
         let lib = lib()?;
-        let c_device =
-            CString::new(device).map_err(|_| AlsaError::DeviceNameNotRepresentable {
-                device: device.to_string(),
-            })?;
+        let c_device = CString::new(device).map_err(|_| AlsaError::DeviceNameNotRepresentable {
+            device: device.to_string(),
+        })?;
 
         let mut handle: *mut c_void = std::ptr::null_mut();
         // SAFETY: c_device outlives the call; ALSA copies the name.

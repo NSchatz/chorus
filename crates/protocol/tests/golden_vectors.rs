@@ -64,7 +64,10 @@ fn decoder_recovers_every_committed_vector() {
                 "{}: decoded fields differ from the canonical input",
                 vector.name
             ),
-            other => panic!("{}: the committed vector must decode, got {:?}", vector.name, other),
+            other => panic!(
+                "{}: the committed vector must decode, got {:?}",
+                vector.name, other
+            ),
         }
     }
 }

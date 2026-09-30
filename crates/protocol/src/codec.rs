@@ -50,11 +50,9 @@ impl fmt::Display for InvalidField {
             InvalidField::UndefinedSampleFormat(v) => {
                 write!(f, "undefined sample format {}", v)
             }
-            InvalidField::ChannelsOutOfRange(v) => write!(
-                f,
-                "channel count {} outside 1 to {}",
-                v, MAX_CHANNELS
-            ),
+            InvalidField::ChannelsOutOfRange(v) => {
+                write!(f, "channel count {} outside 1 to {}", v, MAX_CHANNELS)
+            }
             InvalidField::SampleRateOutOfRange(v) => write!(
                 f,
                 "sample rate {} Hz outside {} to {}",

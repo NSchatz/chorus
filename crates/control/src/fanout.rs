@@ -156,7 +156,11 @@ mod tests {
             assert_eq!(fanout.broadcast(Arc::new("s".to_string())), 2);
             assert!(reading.recv().is_ok());
         }
-        assert_eq!(fanout.dropped_subscribers(), 0, "not yet: it is AT the ceiling");
+        assert_eq!(
+            fanout.dropped_subscribers(),
+            0,
+            "not yet: it is AT the ceiling"
+        );
 
         // One more, and it goes.
         assert_eq!(fanout.broadcast(Arc::new("s".to_string())), 1);

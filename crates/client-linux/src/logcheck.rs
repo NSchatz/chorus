@@ -232,7 +232,11 @@ pub fn grade(log: &ParsedLog, min_graded_seconds: u64) -> Report {
 
     // The three relations that keep the bounds meaningful.
     let span = max_us - min_us;
-    let seconds_to_cross = if skew_ppm > 0 { span / skew_ppm } else { i64::MAX };
+    let seconds_to_cross = if skew_ppm > 0 {
+        span / skew_ppm
+    } else {
+        i64::MAX
+    };
     report.push(
         "bounds-are-meaningful",
         min_us > 0
@@ -293,7 +297,9 @@ pub fn grade(log: &ParsedLog, min_graded_seconds: u64) -> Report {
     );
 
     let graded_span_us = match (first_graded, last_graded) {
-        (Some(a), Some(b)) => log.samples[b].mono_us.saturating_sub(log.samples[a].mono_us),
+        (Some(a), Some(b)) => log.samples[b]
+            .mono_us
+            .saturating_sub(log.samples[a].mono_us),
         _ => 0,
     };
     report.push(
