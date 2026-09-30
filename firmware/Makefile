@@ -86,7 +86,7 @@ LIB_SRC := \
 GATE_SRC := $(FW)/src/conf.c $(FW)/src/i2s.c $(FW)/src/wifi.c $(FW)/src/link.c \
 	$(FW)/src/endpoint_config.c
 
-# The board profiles (firmware/boards/, docs/decisions/0056-*): each is laid over
+# The board profiles (firmware/boards/, docs/decisions/0057-*): each is laid over
 # endpoint.conf and checked the way the image reads it, and the default one,
 # named by endpoint.conf's board_profile, has to agree with endpoint.conf.
 BOARDS := $(sort $(wildcard $(FW)/boards/*.conf))

@@ -8,7 +8,7 @@
 ## (components.espressif.com/api/components/espressif/w5500, read 2026-09-30:
 ## 2.0.0 of 2026-06-25, 1.0.1, 1.0.0), and its manifest requires `idf: '>=6.0'`
 ## and espressif/wiznet_common ^1.0.0 (github.com/espressif/esp-eth-drivers
-## w5500/idf_component.yml at ed7342c, read 2026-09-30). docs/decisions/0056-*.
+## w5500/idf_component.yml at ed7342c, read 2026-09-30). docs/decisions/0057-*.
 dependencies:
   idf: ">=6.0"
   espressif/w5500: "==2.0.0"

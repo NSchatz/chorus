@@ -42,7 +42,7 @@ mark it **ASSUMED** until the owner's own boards are identified (the Needs item
 `CHORUS_BOARD_PROFILE=compact-s3-wifi make firmware-image` builds the Wi-Fi
 image; `make gate` builds both. The W5500 driver is the Component Registry's
 `espressif/w5500`, pinned in `main/idf_component.yml` and `dependencies.lock`.
-Why: `docs/decisions/0056-board-profiles-and-the-wired-link.md`.
+Why: `docs/decisions/0057-board-profiles-and-the-wired-link.md`.
 
 ## Running it
 

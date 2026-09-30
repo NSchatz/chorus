@@ -258,7 +258,7 @@ require_second_endpoint() {
 # one file that declares them, so a check and the thing it checks cannot drift
 # apart. With CHORUS_BOARD_PROFILE set, a key the board profile
 # firmware/boards/$CHORUS_BOARD_PROFILE.conf sets is read from there first, the
-# way the image reads it (docs/decisions/0056-*).
+# way the image reads it (docs/decisions/0057-*).
 endpoint_conf() {
     local key="$1"
     local value=""

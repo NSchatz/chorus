@@ -18,7 +18,7 @@ foreach(line IN LISTS chorus_opus_lines)
 endforeach()
 set(chorus_drflac_defs DR_FLAC_NO_STDIO DR_FLAC_NO_OGG DR_FLAC_NO_WCHAR DR_FLAC_NO_SIMD)
 
-# The board profile (goal 8, docs/decisions/0056-*): firmware/boards/<profile>.conf,
+# The board profile (goal 8, docs/decisions/0057-*): firmware/boards/<profile>.conf,
 # chosen at build time with -D CHORUS_BOARD_PROFILE=<profile> (tools/firmware-image.sh
 # passes it) and otherwise the default endpoint.conf names. It is copied under
 # one fixed name so its embedded symbol does not depend on which profile it is,

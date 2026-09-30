@@ -1,4 +1,4 @@
-# 0056: board profiles over endpoint.conf, the W5500 as the default link, and one image per link profile in the gate
+# 0057: board profiles over endpoint.conf, the W5500 as the default link, and one image per link profile in the gate
 
 - Status: accepted (goal 8, 2026-09-30)
 - Decided by: the goal (P1 as approved at Checkpoint K: Option B; brief section 12 item 1; audit

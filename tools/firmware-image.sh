@@ -22,7 +22,7 @@
 # THE BOARD PROFILE. CHORUS_BOARD_PROFILE names one of firmware/boards/*.conf
 # (default: the one endpoint.conf names, brick-s3-wired, the wired classes'
 # W5500 link); compact-s3-wifi is the compact speakers' Wi-Fi tier (K91). The
-# profile is embedded in the image beside endpoint.conf (docs/decisions/0056-*),
+# profile is embedded in the image beside endpoint.conf (docs/decisions/0057-*),
 # and the build prints the target, the board, how sure the repository is of it
 # and the link, so a log says which image it made.
 #
