@@ -38,3 +38,4 @@ the number of the pull request that added it.
 | 0039 | [the v2 key exchange is Noise XX with trust-on-first-use pins, over vendored primitives](0039-the-v2-key-exchange.md) |
 | 0040 | [the server negotiates the codec in one step, from a per-link preference and the endpoint's capabilities](0040-codec-negotiation.md) |
 | 0041 | [protocol v2 keeps v1's frame, carries whole frames in records, and refuses v1 by name](0041-protocol-v2-framing.md) |
+| 0043 | [the endpoint's key exchange is chorus's own state machine over the PSA Crypto API, and its host build compiles the pinned ESP-IDF tree's library](0043-the-endpoint-crypto-over-psa.md) |
