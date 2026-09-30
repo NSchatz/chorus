@@ -69,7 +69,7 @@ fn format() -> StreamFormat {
 fn the_servers_chirp_is_accepted_by_the_lag_analyser_and_the_offset_is_recovered() {
     let chirp = source::rig_chirp(&repository_root().join(CONFIG_FILE), None)
         .expect("the committed configuration builds a chirp");
-    let mut stream = source::open("chirp", format(), 0, Some(&chirp)).unwrap();
+    let mut stream = source::open("chirp", format(), 20_000, 0, Some(&chirp)).unwrap();
     let pcm = first_channel(stream.as_mut(), RATE_HZ as usize);
 
     let summary = capture_and_analyse(&pcm, OFFSET_FRAMES)
@@ -97,7 +97,7 @@ fn the_servers_chirp_is_accepted_by_the_lag_analyser_and_the_offset_is_recovered
 fn the_tone_is_refused_as_no_chirp_which_is_why_graded_runs_stream_the_chirp() {
     // The failure A-7 found, pinned: if a graded run is ever pointed back at the
     // tone, this is what its capture would say.
-    let mut stream = source::open("tone", format(), 0, None).unwrap();
+    let mut stream = source::open("tone", format(), 20_000, 0, None).unwrap();
     let pcm = first_channel(stream.as_mut(), RATE_HZ as usize);
     let err = capture_and_analyse(&pcm, OFFSET_FRAMES).unwrap_err();
     assert_eq!(err.condition(), "no-chirp-present", "{}", err);

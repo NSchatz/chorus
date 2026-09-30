@@ -122,7 +122,12 @@ start_server "$AUDIO_A" "$OUT_DIR/server-a.log" \
     --control-listen "127.0.0.1:$CONTROL" --state-file "$STATE_FILE" \
     --zone kitchen --zone study \
     --group-audio "downstairs=127.0.0.1:$AUDIO_A" --group-audio "upstairs=127.0.0.1:$AUDIO_B"
-start_server "$AUDIO_B" "$OUT_DIR/server-b.log"
+# Its own server id: two servers in one house are two identities, and an
+# endpoint pins each id's key on first contact. Under the same default id the
+# second server's key reads as the first one's key having CHANGED, and the
+# endpoint refuses it (stop=server-key-changed), which is protocol v2 working
+# as designed and not the zone move this run grades.
+start_server "$AUDIO_B" "$OUT_DIR/server-b.log" --server-id chorus-server-upstairs
 sleep 2
 
 check "the-control-channel-came-up" \

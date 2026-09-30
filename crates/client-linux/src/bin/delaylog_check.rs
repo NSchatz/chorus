@@ -4,7 +4,14 @@
 //! ```text
 //! chorus-delaylog-check <log> [--min-graded-seconds N] [--require-zero-underruns]
 //!                             [--require-no-rate-change] [--rate-tolerance-percent N]
+//!                             [--device-reports-no-delay]
 //! ```
+//!
+//! `--device-reports-no-delay` is for a log from the ALSA `null` device (or
+//! any device that reports a delay of zero throughout). The delay-bounds check
+//! is then printed as `NOT GRADED`, never as a pass, and a check that every
+//! sample's delay is zero takes its place, so a real card's log cannot be
+//! graded this way.
 //!
 //! Prints one line per check and exits non-zero if any of them failed. This is
 //! the thing that turns a saved log into evidence: a claim that could only be
@@ -12,7 +19,10 @@
 
 use std::process::ExitCode;
 
-use chorus_client_linux::logcheck::{grade, grade_no_rate_change, grade_underruns, parse};
+use chorus_client_linux::logcheck::{
+    grade, grade_no_rate_change, grade_underruns, parse,
+    set_aside_delay_bounds_for_a_device_that_reports_no_delay,
+};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -21,6 +31,7 @@ fn main() -> ExitCode {
     let mut require_zero_underruns = false;
     let mut require_no_rate_change = false;
     let mut rate_tolerance_percent = 2u64;
+    let mut device_reports_no_delay = false;
 
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
@@ -35,6 +46,7 @@ fn main() -> ExitCode {
             },
             "--require-zero-underruns" => require_zero_underruns = true,
             "--require-no-rate-change" => require_no_rate_change = true,
+            "--device-reports-no-delay" => device_reports_no_delay = true,
             other if other.starts_with("--") => {
                 return usage(&format!("unknown argument '{}'", other))
             }
@@ -62,6 +74,9 @@ fn main() -> ExitCode {
     };
 
     let mut report = grade(&log, min_graded_seconds);
+    if device_reports_no_delay {
+        set_aside_delay_bounds_for_a_device_that_reports_no_delay(&log, &mut report);
+    }
     if require_zero_underruns {
         grade_underruns(&log, &mut report);
     }
@@ -84,9 +99,10 @@ fn main() -> ExitCode {
 
     print!("{}", report);
     println!(
-        "chorus-delaylog-check: {} checks, {} failed, log={}",
+        "chorus-delaylog-check: {} checks, {} failed, {} NOT GRADED, log={}",
         report.findings.len(),
         report.findings.iter().filter(|f| !f.ok).count(),
+        report.not_graded.len(),
         path
     );
     if report.ok() {
@@ -100,7 +116,8 @@ fn usage(detail: &str) -> ExitCode {
     eprintln!("chorus-delaylog-check: {}", detail);
     eprintln!(
         "usage: chorus-delaylog-check <log> [--min-graded-seconds N] \
-         [--require-zero-underruns] [--require-no-rate-change] [--rate-tolerance-percent N]"
+         [--require-zero-underruns] [--require-no-rate-change] [--rate-tolerance-percent N] \
+         [--device-reports-no-delay]"
     );
     ExitCode::FAILURE
 }
