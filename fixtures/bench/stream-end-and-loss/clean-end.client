@@ -1,0 +1,22 @@
+chorus-client: identity id=endpoint key=c3eb:08a1:b830:6a6a store=ephemeral
+chorus-client: server-located how=configured address=127.0.0.1:52381
+chorus-client: starting server=127.0.0.1:52381 device=null min_us=60000 max_us=300000 start_fill_us=120000 device_target_us=120000 delay_log=<run>/raw/clean-end.log session=1 zone=default transport=wired bound_us=500 playout_latency_us=180000 wifi_ps_declared=not-applicable wifi_ps_in_force=not-applicable
+chorus-client: session server_id=chorus-server server_key=1353:e4a5:30bd:baa7 pinned_now=1
+chorus-client: stream-format announced codec=pcm output_delay_ns=0
+chorus-client: stream rate_hz=48000 channels=2 sample_format=pcm_s16le frames_per_chunk=960
+chorus-client: underruns=0
+chorus-client: discarded_overflow=0
+chorus-client: discarded_late=0
+chorus-client: discarded_duplicate=0
+chorus-client: discarded_malformed=0
+chorus-client: skipped_unknown_type=0
+chorus-client: chunks_played=96
+chorus-client: frames_written=96480
+chorus-client: max_crossings=0
+chorus-client: min_crossings=1
+chorus-client: summary graded_span_us=1818482 graded_samples=19 delay_min_us=0 delay_max_us=0 margin_to_min_us=-60000 margin_to_max_us=300000 frames_played=96480 nominal_frames=91028
+chorus-client: sync offset_ns=996522832 round_trip_ns=1184184 bound_ns=592092 stale=0 age_ns=892450846 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=3 discarded=0
+chorus-client: sync-frames inserted_frames=0 dropped_frames=0
+chorus-client: stopped reason=end-of-stream played=1 delay_log=<run>/raw/clean-end.log
+chorus-client: the stream ended: the server sent the in-band end-of-stream signal after final sequence 100, ending at 3051848366 ns on the server timeline
+chorus-client: session n=1 server=127.0.0.1:52381 played=1 frames_played=96480 total_frames_played=96480 stop=end-of-stream zone id_known=0 name= group= audio= volume=0.000 muted=0 gain=1.000 serial=0 updates=0 moves=0

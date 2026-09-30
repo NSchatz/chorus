@@ -1,0 +1,847 @@
+# chorus delay log v1
+# written by the delay-log writer, which is excluded from the audio or timestamp path; see audio-path.conf
+# started_wall_unix_s=1790783328
+config min_us=60000 max_us=300000 start_fill_us=120000 device_target_us=120000 device=null rate_hz=48000 channels=2 sample_format=pcm_s16le frames_per_chunk=960 overflow_skew_ppm=2000
+sample mono_us=40303 delay_us=0 occupancy_us=0 graded=0
+event mono_us=102351 kind=zone zone=near-minimum occupancy_us=80000 min_us=60000 max_us=300000
+event mono_us=122304 kind=zone zone=mid occupancy_us=100000 min_us=60000 max_us=300000
+sample mono_us=142310 delay_us=0 occupancy_us=100000 graded=0
+event mono_us=142851 kind=start-fill start_fill_us=120000 filled_us=120000 filled_frames=5760
+sample mono_us=142874 delay_us=0 occupancy_us=0 graded=1
+event mono_us=142880 kind=sync-no-device-delay device=null corrected=0 detail=the device reports a delay of zero, which is not a distance to a DAC
+event mono_us=142880 kind=sync offset_ns=none round_trip_ns=none bound_ns=none stale=0 age_ns=none correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=0 discarded=0
+event mono_us=162441 kind=zone zone=at-or-below-minimum occupancy_us=20000 min_us=60000 max_us=300000
+sample mono_us=244478 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=345165 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=446304 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=547300 delay_us=0 occupancy_us=0 graded=1
+event mono_us=644381 kind=sync-exchange accepted=1 rtt_ns=1164193 offset_ns=1005591697
+event mono_us=644381 kind=sync offset_ns=1005591697 round_trip_ns=1164193 bound_ns=582096 stale=0 age_ns=500304941 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=1 discarded=0
+sample mono_us=648972 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=749746 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=850678 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=951965 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1053217 delay_us=0 occupancy_us=0 graded=1
+event mono_us=1146249 kind=sync-exchange accepted=1 rtt_ns=1248104 offset_ns=1005617279
+event mono_us=1146249 kind=sync offset_ns=1005591697 round_trip_ns=1164193 bound_ns=582096 stale=0 age_ns=500536990 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=2 discarded=0
+sample mono_us=1155007 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1255953 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1357186 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1457645 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1559603 delay_us=0 occupancy_us=0 graded=1
+event mono_us=1648109 kind=sync-exchange accepted=1 rtt_ns=1201723 offset_ns=1005603155
+event mono_us=1648109 kind=sync offset_ns=1005591697 round_trip_ns=1164193 bound_ns=582096 stale=0 age_ns=500562355 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=3 discarded=0
+sample mono_us=1660960 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1761943 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1863307 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=1964780 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=2066084 delay_us=0 occupancy_us=0 graded=1
+event mono_us=2148281 kind=sync-exchange accepted=1 rtt_ns=1076400 offset_ns=1005547103
+event mono_us=2148281 kind=sync offset_ns=1005574974 round_trip_ns=1076400 bound_ns=538200 stale=0 age_ns=499023126 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=4 discarded=0
+sample mono_us=2167424 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=2268459 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=2369370 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=2470566 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=2572301 delay_us=0 occupancy_us=0 graded=1
+event mono_us=2649731 kind=sync-exchange accepted=1 rtt_ns=1239198 offset_ns=1005606176
+event mono_us=2649731 kind=sync offset_ns=1005558409 round_trip_ns=1076400 bound_ns=538200 stale=0 age_ns=500160952 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=5 discarded=0
+sample mono_us=2673139 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=2774280 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=2875419 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=2975973 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=3076638 delay_us=0 occupancy_us=0 graded=1
+event mono_us=3149961 kind=sync-exchange accepted=1 rtt_ns=1317262 offset_ns=1005617838
+event mono_us=3149961 kind=sync offset_ns=1005541916 round_trip_ns=1076400 bound_ns=538200 stale=0 age_ns=498815067 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=6 discarded=0
+sample mono_us=3177701 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=3278837 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=3380266 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=3481494 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=3583002 delay_us=0 occupancy_us=20000 graded=1
+event mono_us=3650187 kind=sync-exchange accepted=1 rtt_ns=1132029 offset_ns=1005624035
+event mono_us=3650187 kind=sync offset_ns=1005525571 round_trip_ns=1076400 bound_ns=538200 stale=0 age_ns=499010517 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=7 discarded=0
+sample mono_us=3683925 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=3784808 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=3885604 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=3986894 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=4087818 delay_us=0 occupancy_us=0 graded=1
+event mono_us=4150753 kind=sync-exchange accepted=1 rtt_ns=934419 offset_ns=1005585859
+event mono_us=4150753 kind=sync offset_ns=1005538414 round_trip_ns=934419 bound_ns=467209 stale=0 age_ns=499572747 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=8 discarded=0
+sample mono_us=4188608 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=4289197 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=4389731 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=4489911 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=4591179 delay_us=0 occupancy_us=0 graded=1
+event mono_us=4652365 kind=sync-exchange accepted=1 rtt_ns=824338 offset_ns=1005565038
+event mono_us=4652365 kind=sync offset_ns=1005543440 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=500724419 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=9 discarded=0
+sample mono_us=4692730 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=4794139 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=4895279 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=4996245 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=5097305 delay_us=0 occupancy_us=0 graded=1
+event mono_us=5154099 kind=sync-exchange accepted=1 rtt_ns=1254417 offset_ns=1005612479
+event mono_us=5154099 kind=sync offset_ns=1005548389 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=500385992 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=10 discarded=0
+sample mono_us=5198746 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=5299497 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=5400463 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=5500999 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=5602835 delay_us=0 occupancy_us=20000 graded=1
+event mono_us=5655070 kind=sync-exchange accepted=1 rtt_ns=4432426 offset_ns=1004131063
+event mono_us=5655070 kind=sync offset_ns=1005553295 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=493313896 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=11 discarded=0
+sample mono_us=5703628 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=5804362 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=5905421 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=6006721 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=6108240 delay_us=0 occupancy_us=0 graded=1
+event mono_us=6156829 kind=sync-exchange accepted=1 rtt_ns=4606811 offset_ns=1003846845
+event mono_us=6156829 kind=sync offset_ns=1005558069 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=494595185 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=12 discarded=0
+sample mono_us=6209671 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=6310956 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=6411911 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=6513183 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=6614604 delay_us=0 occupancy_us=0 graded=1
+event mono_us=6658772 kind=sync-exchange accepted=1 rtt_ns=4920065 offset_ns=1003640586
+event mono_us=6658772 kind=sync offset_ns=1005562767 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=496195544 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=13 discarded=0
+sample mono_us=6716055 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=6817472 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=6918904 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=7020242 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=7121194 delay_us=0 occupancy_us=0 graded=1
+event mono_us=7158936 kind=sync-exchange accepted=1 rtt_ns=3842501 offset_ns=1004268927
+event mono_us=7158936 kind=sync offset_ns=1005567394 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=496239528 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=14 discarded=0
+sample mono_us=7222335 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=7323651 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=7424137 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=7525190 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=7625291 delay_us=0 occupancy_us=0 graded=1
+event mono_us=7659020 kind=sync-exchange accepted=1 rtt_ns=3647022 offset_ns=1004377513
+event mono_us=7659020 kind=sync offset_ns=1005571955 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=496352079 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=15 discarded=0
+sample mono_us=7726310 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=7826685 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=7927081 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=8027641 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=8129449 delay_us=0 occupancy_us=0 graded=1
+event mono_us=8160751 kind=sync-exchange accepted=1 rtt_ns=3809151 offset_ns=1004033370
+event mono_us=8160751 kind=sync offset_ns=1005542883 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=497888345 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=16 discarded=0
+sample mono_us=8230225 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=8331438 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=8431535 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=8532435 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=8633492 delay_us=0 occupancy_us=0 graded=1
+event mono_us=8662782 kind=sync-exchange accepted=1 rtt_ns=1569192 offset_ns=1005265490
+event mono_us=8662782 kind=sync offset_ns=1005514355 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=500368211 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=17 discarded=0
+sample mono_us=8734937 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=8836443 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=8937733 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=9039042 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=9139652 delay_us=0 occupancy_us=0 graded=1
+event mono_us=9162951 kind=sync-exchange accepted=1 rtt_ns=1305085 offset_ns=1005642355
+event mono_us=9162951 kind=sync offset_ns=1005588622 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=498754460 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=18 discarded=0
+sample mono_us=9240747 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=9341413 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=9441794 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=9542591 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=9643714 delay_us=0 occupancy_us=20000 graded=1
+event mono_us=9664833 kind=sync-exchange accepted=1 rtt_ns=1150087 offset_ns=1005580406
+event mono_us=9664833 kind=sync offset_ns=1005589546 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=500648968 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=19 discarded=0
+sample mono_us=9744887 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=9845617 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=9946386 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=10047014 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=10147650 delay_us=0 occupancy_us=0 graded=1
+event mono_us=10166643 kind=sync-exchange accepted=1 rtt_ns=1180600 offset_ns=1005592267
+event mono_us=10166643 kind=sync offset_ns=1005590513 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=500548884 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=20 discarded=0
+sample mono_us=10248895 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=10350129 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=10451245 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=10551841 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=10653016 delay_us=0 occupancy_us=0 graded=1
+event mono_us=10667810 kind=sync-exchange accepted=1 rtt_ns=1086649 offset_ns=1005513867
+event mono_us=10667810 kind=sync offset_ns=1005581722 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=500001054 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=21 discarded=0
+sample mono_us=10754259 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=10855331 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=10956453 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=11057669 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=11158022 delay_us=0 occupancy_us=0 graded=1
+event mono_us=11168495 kind=sync-exchange accepted=1 rtt_ns=1085252 offset_ns=1005515286
+event mono_us=11168495 kind=sync offset_ns=1005573983 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=499524699 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=22 discarded=0
+sample mono_us=11258657 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=11359696 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=11460921 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=11562038 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=11663140 delay_us=0 occupancy_us=20000 graded=1
+event mono_us=11669434 kind=sync-exchange accepted=1 rtt_ns=1175586 offset_ns=1005570707
+event mono_us=11669434 kind=sync offset_ns=1005566492 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=499681487 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=23 discarded=0
+sample mono_us=11763694 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=11864781 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=11965821 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=12067031 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=12167518 delay_us=0 occupancy_us=0 graded=1
+event mono_us=12169615 kind=sync-exchange accepted=1 rtt_ns=1269527 offset_ns=1005571006
+event mono_us=12169615 kind=sync offset_ns=1005559228 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=498865188 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=24 discarded=0
+sample mono_us=12268112 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=12368793 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=12470160 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=12571167 delay_us=0 occupancy_us=0 graded=1
+event mono_us=12670063 kind=sync-exchange accepted=1 rtt_ns=1230509 offset_ns=1005632358
+event mono_us=12670063 kind=sync offset_ns=1005552185 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=499130891 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=25 discarded=0
+sample mono_us=12672519 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=12773670 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=12874891 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=12976067 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=13076994 delay_us=0 occupancy_us=0 graded=1
+event mono_us=13171667 kind=sync-exchange accepted=1 rtt_ns=1241247 offset_ns=1005626954
+event mono_us=13171667 kind=sync offset_ns=1005545342 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=500277287 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=26 discarded=0
+sample mono_us=13178364 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=13279222 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=13379279 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=13480010 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=13581175 delay_us=0 occupancy_us=0 graded=1
+event mono_us=13671819 kind=sync-exchange accepted=1 rtt_ns=1342765 offset_ns=1005580355
+event mono_us=13671819 kind=sync offset_ns=1005538678 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=498712753 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=27 discarded=0
+sample mono_us=13682725 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=13783304 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=13883332 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=13984291 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=14085316 delay_us=0 occupancy_us=20000 graded=1
+event mono_us=14173909 kind=sync-exchange accepted=1 rtt_ns=1194809 offset_ns=1005591415
+event mono_us=14173909 kind=sync offset_ns=1005532205 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=500814484 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=28 discarded=0
+sample mono_us=14186943 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=14287900 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=14389111 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=14490211 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=14591505 delay_us=0 occupancy_us=0 graded=1
+event mono_us=14675850 kind=sync-exchange accepted=1 rtt_ns=4995900 offset_ns=1003700374
+event mono_us=14675850 kind=sync offset_ns=1005525825 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=493368832 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=29 discarded=0
+sample mono_us=14693070 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=14794593 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=14895983 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=14997333 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=15098437 delay_us=0 occupancy_us=0 graded=1
+event mono_us=15176025 kind=sync-exchange accepted=1 rtt_ns=4965325 offset_ns=1003669637
+event mono_us=15176025 kind=sync offset_ns=1005519673 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=493576645 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=30 discarded=0
+sample mono_us=15199473 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=15300774 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=15402021 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=15503437 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=15604820 delay_us=0 occupancy_us=0 graded=1
+event mono_us=15676041 kind=sync-exchange accepted=1 rtt_ns=5283373 offset_ns=1003772070
+event mono_us=15676041 kind=sync offset_ns=1005513666 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=493427937 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=31 discarded=0
+sample mono_us=15705932 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=15807008 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=15907877 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=16009928 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=16110424 delay_us=0 occupancy_us=0 graded=1
+event mono_us=16178033 kind=sync-exchange accepted=1 rtt_ns=4998017 offset_ns=1003739042
+event mono_us=16178033 kind=sync offset_ns=1005507798 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=495557990 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=32 discarded=0
+sample mono_us=16212016 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=16313213 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=16414287 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=16515363 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=16616881 delay_us=0 occupancy_us=0 graded=1
+event mono_us=16678059 kind=sync-exchange accepted=1 rtt_ns=4438716 offset_ns=1003972082
+event mono_us=16678059 kind=sync offset_ns=1005502057 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=495506217 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=33 discarded=0
+sample mono_us=16718375 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=16819776 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=16920832 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=17021269 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=17122480 delay_us=0 occupancy_us=20000 graded=1
+event mono_us=17179382 kind=sync-exchange accepted=1 rtt_ns=4427431 offset_ns=1003863504
+event mono_us=17179382 kind=sync offset_ns=1005496436 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=496811521 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=34 discarded=0
+sample mono_us=17223828 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=17325194 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=17426663 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=17527856 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=17629210 delay_us=0 occupancy_us=0 graded=1
+event mono_us=17679781 kind=sync-exchange accepted=1 rtt_ns=3144618 offset_ns=1004613001
+event mono_us=17679781 kind=sync offset_ns=1005490927 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=497167902 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=35 discarded=0
+sample mono_us=17730750 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=17832059 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=17932580 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=18032954 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=18133504 delay_us=0 occupancy_us=0 graded=1
+event mono_us=18181668 kind=sync-exchange accepted=1 rtt_ns=2702687 offset_ns=1004834483
+event mono_us=18181668 kind=sync offset_ns=1005485526 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=499102141 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=36 discarded=0
+sample mono_us=18234141 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=18334483 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=18434683 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=18534852 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=18635752 delay_us=0 occupancy_us=0 graded=1
+event mono_us=18681893 kind=sync-exchange accepted=1 rtt_ns=849233 offset_ns=1005505354
+event mono_us=18681893 kind=sync offset_ns=1005484771 round_trip_ns=824338 bound_ns=412169 stale=0 age_ns=499342843 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=37 discarded=0
+sample mono_us=18736754 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=18837478 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=18938503 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=19039551 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=19140219 delay_us=0 occupancy_us=0 graded=1
+event mono_us=19182303 kind=sync-exchange accepted=1 rtt_ns=740156 offset_ns=1005596371
+event mono_us=19182303 kind=sync offset_ns=1005492757 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=499606374 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=38 discarded=0
+sample mono_us=19241804 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=19343084 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=19444421 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=19544992 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=19646583 delay_us=0 occupancy_us=0 graded=1
+event mono_us=19682380 kind=sync-exchange accepted=1 rtt_ns=1264361 offset_ns=1005624637
+event mono_us=19682380 kind=sync offset_ns=1005500313 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=498728806 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=39 discarded=0
+sample mono_us=19747990 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=19849017 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=19950090 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=20051293 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=20152635 delay_us=0 occupancy_us=0 graded=1
+event mono_us=20184240 kind=sync-exchange accepted=1 rtt_ns=1177653 offset_ns=1005591033
+event mono_us=20184240 kind=sync offset_ns=1005507462 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500587527 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=40 discarded=0
+sample mono_us=20254249 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=20355653 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=20456714 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=20557821 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=20657929 delay_us=0 occupancy_us=0 graded=1
+event mono_us=20684785 kind=sync-exchange accepted=1 rtt_ns=1309874 offset_ns=1005635968
+event mono_us=20684785 kind=sync offset_ns=1005514236 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=499145268 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=41 discarded=0
+sample mono_us=20759214 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=20860352 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=20961394 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=21062782 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=21164609 delay_us=0 occupancy_us=0 graded=1
+event mono_us=21185250 kind=sync-exchange accepted=1 rtt_ns=1102440 offset_ns=1005520913
+event mono_us=21185250 kind=sync offset_ns=1005520651 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=499277975 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=42 discarded=0
+sample mono_us=21266256 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=21368184 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=21469466 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=21570601 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=21671781 delay_us=0 occupancy_us=0 graded=1
+event mono_us=21686618 kind=sync-exchange accepted=1 rtt_ns=989227 offset_ns=1005481163
+event mono_us=21686618 kind=sync offset_ns=1005526732 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500295157 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=43 discarded=0
+sample mono_us=21772126 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=21873417 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=21974586 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=22076137 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=22177664 delay_us=0 occupancy_us=0 graded=1
+event mono_us=22188282 kind=sync-exchange accepted=1 rtt_ns=1085846 offset_ns=1005677098
+event mono_us=22188282 kind=sync offset_ns=1005532504 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500499417 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=44 discarded=0
+sample mono_us=22279305 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=22380086 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=22481147 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=22582745 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=22683679 delay_us=0 occupancy_us=20000 graded=1
+event mono_us=22690055 kind=sync-exchange accepted=1 rtt_ns=1211353 offset_ns=1005587930
+event mono_us=22690055 kind=sync offset_ns=1005537982 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500475723 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=45 discarded=0
+sample mono_us=22785224 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=22886563 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=22987218 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=23089004 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=23189786 delay_us=0 occupancy_us=0 graded=1
+event mono_us=23191861 kind=sync-exchange accepted=1 rtt_ns=1231718 offset_ns=1005602239
+event mono_us=23191861 kind=sync offset_ns=1005543186 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500486447 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=46 discarded=0
+sample mono_us=23290571 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=23390824 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=23492035 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=23593599 delay_us=0 occupancy_us=0 graded=1
+event mono_us=23692262 kind=sync-exchange accepted=1 rtt_ns=1150493 offset_ns=1005564750
+event mono_us=23692262 kind=sync offset_ns=1005548132 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=499208849 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=47 discarded=0
+sample mono_us=23694727 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=23795816 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=23896990 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=23997639 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=24098329 delay_us=0 occupancy_us=0 graded=1
+event mono_us=24192520 kind=sync-exchange accepted=1 rtt_ns=1292945 offset_ns=1005629012
+event mono_us=24192520 kind=sync offset_ns=1005552834 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=498859516 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=48 discarded=0
+sample mono_us=24198926 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=24299076 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=24399526 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=24500834 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=24602168 delay_us=0 occupancy_us=0 graded=1
+event mono_us=24692847 kind=sync-exchange accepted=1 rtt_ns=993295 offset_ns=1005483084
+event mono_us=24692847 kind=sync offset_ns=1005557309 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=499293540 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=49 discarded=0
+sample mono_us=24703737 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=24804774 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=24905419 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=25005851 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=25106775 delay_us=0 occupancy_us=0 graded=1
+event mono_us=25193075 kind=sync-exchange accepted=1 rtt_ns=1184500 offset_ns=1005590527
+event mono_us=25193075 kind=sync offset_ns=1005561572 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=498961146 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=50 discarded=0
+sample mono_us=25208218 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=25309088 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=25409648 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=25510669 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=25612621 delay_us=0 occupancy_us=0 graded=1
+event mono_us=25694575 kind=sync-exchange accepted=1 rtt_ns=1147046 offset_ns=1005575704
+event mono_us=25694575 kind=sync offset_ns=1005565636 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500270195 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=51 discarded=0
+sample mono_us=25713774 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=25814517 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=25915149 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=26015998 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=26116807 delay_us=0 occupancy_us=0 graded=1
+event mono_us=26194802 kind=sync-exchange accepted=1 rtt_ns=5067488 offset_ns=1003687951
+event mono_us=26194802 kind=sync offset_ns=1005569531 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=491567682 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=52 discarded=0
+sample mono_us=26218408 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=26319520 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=26420678 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=26521455 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=26623176 delay_us=0 occupancy_us=20000 graded=1
+event mono_us=26695019 kind=sync-exchange accepted=1 rtt_ns=4868472 offset_ns=1003755348
+event mono_us=26695019 kind=sync offset_ns=1005573231 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=492551936 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=53 discarded=0
+sample mono_us=26724881 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=26825026 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=26925845 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=27026684 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=27127667 delay_us=0 occupancy_us=0 graded=1
+event mono_us=27195035 kind=sync-exchange accepted=1 rtt_ns=5446725 offset_ns=1003458717
+event mono_us=27195035 kind=sync offset_ns=1005576770 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=492007087 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=54 discarded=0
+sample mono_us=27229200 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=27330624 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=27432023 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=27533152 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=27633581 delay_us=0 occupancy_us=0 graded=1
+event mono_us=27696492 kind=sync-exchange accepted=1 rtt_ns=5002553 offset_ns=1003732014
+event mono_us=27696492 kind=sync offset_ns=1005580154 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=493890460 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=55 discarded=0
+sample mono_us=27734504 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=27835542 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=27936488 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=28037896 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=28138052 delay_us=0 occupancy_us=0 graded=1
+event mono_us=28196828 kind=sync-exchange accepted=1 rtt_ns=4923931 offset_ns=1003705936
+event mono_us=28196828 kind=sync offset_ns=1005583393 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=494238349 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=56 discarded=0
+sample mono_us=28239340 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=28340594 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=28441027 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=28542345 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=28644190 delay_us=0 occupancy_us=20000 graded=1
+event mono_us=28696969 kind=sync-exchange accepted=1 rtt_ns=4932036 offset_ns=1003720969
+event mono_us=28696969 kind=sync offset_ns=1005586498 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=494531673 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=57 discarded=0
+sample mono_us=28746030 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=28847275 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=28948520 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=29049804 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=29150933 delay_us=0 occupancy_us=0 graded=1
+event mono_us=29197084 kind=sync-exchange accepted=1 rtt_ns=5009222 offset_ns=1003735996
+event mono_us=29197084 kind=sync offset_ns=1005589476 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=494455109 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=58 discarded=0
+sample mono_us=29252300 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=29353281 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=29453721 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=29554538 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=29656421 delay_us=0 occupancy_us=0 graded=1
+event mono_us=29698222 kind=sync-exchange accepted=1 rtt_ns=4850172 offset_ns=1003685601
+event mono_us=29698222 kind=sync offset_ns=1005592335 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=495772824 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=59 discarded=0
+sample mono_us=29756696 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=29857106 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=29957387 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=30058690 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=30159838 delay_us=0 occupancy_us=0 graded=1
+event mono_us=30199845 kind=sync-exchange accepted=1 rtt_ns=4185492 offset_ns=1003963851
+event mono_us=30199845 kind=sync offset_ns=1005595084 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=497347231 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=60 discarded=0
+sample mono_us=30261304 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=30362303 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=30463706 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=30564890 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=30665956 delay_us=0 occupancy_us=0 graded=1
+event mono_us=30701879 kind=sync-exchange accepted=1 rtt_ns=2611555 offset_ns=1004913782
+event mono_us=30701879 kind=sync offset_ns=1005597727 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=499337418 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=61 discarded=0
+sample mono_us=30767622 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=30868911 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=30969985 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=31070934 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=31171687 delay_us=0 occupancy_us=0 graded=1
+event mono_us=31203273 kind=sync-exchange accepted=1 rtt_ns=1706456 offset_ns=1005300842
+event mono_us=31203273 kind=sync offset_ns=1005600276 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=499607070 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=62 discarded=0
+sample mono_us=31273032 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=31373962 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=31474978 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=31576808 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=31677821 delay_us=0 occupancy_us=0 graded=1
+event mono_us=31705185 kind=sync-exchange accepted=1 rtt_ns=1257648 offset_ns=1005631824
+event mono_us=31705185 kind=sync offset_ns=1005602732 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500566531 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=63 discarded=0
+sample mono_us=31779328 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=31880396 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=31981399 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=32082874 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=32183751 delay_us=0 occupancy_us=20000 graded=1
+event mono_us=32207000 kind=sync-exchange accepted=1 rtt_ns=1201661 offset_ns=1005589857
+event mono_us=32207000 kind=sync offset_ns=1005605104 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500534558 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=64 discarded=0
+sample mono_us=32284987 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=32385540 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=32486004 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=32587074 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=32688313 delay_us=0 occupancy_us=0 graded=1
+event mono_us=32707328 kind=sync-exchange accepted=1 rtt_ns=1206814 offset_ns=1005610467
+event mono_us=32707328 kind=sync offset_ns=1005607395 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=499023287 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=65 discarded=0
+sample mono_us=32790019 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=32891234 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=32991776 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=33092464 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=33192824 delay_us=0 occupancy_us=0 graded=1
+event mono_us=33207371 kind=sync-exchange accepted=1 rtt_ns=1355646 offset_ns=1005623423
+event mono_us=33207371 kind=sync offset_ns=1005609608 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=498588117 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=66 discarded=0
+sample mono_us=33293336 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=33393785 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=33494809 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=33596160 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=33696785 delay_us=0 occupancy_us=0 graded=1
+event mono_us=33709431 kind=sync-exchange accepted=1 rtt_ns=1199768 offset_ns=1005550630
+event mono_us=33709431 kind=sync offset_ns=1005611749 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500776567 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=67 discarded=0
+sample mono_us=33798132 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=33899461 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=34000564 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=34102277 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=34203226 delay_us=0 occupancy_us=20000 graded=1
+event mono_us=34209605 kind=sync-exchange accepted=1 rtt_ns=1193517 offset_ns=1005601282
+event mono_us=34209605 kind=sync offset_ns=1005613828 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=498898076 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=68 discarded=0
+sample mono_us=34304896 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=34406276 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=34506961 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=34608397 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=34708824 delay_us=0 occupancy_us=0 graded=1
+event mono_us=34710944 kind=sync-exchange accepted=1 rtt_ns=1233054 offset_ns=1005596024
+event mono_us=34710944 kind=sync offset_ns=1005615841 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500016391 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=69 discarded=0
+sample mono_us=34810405 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=34912031 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=35013434 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=35114923 delay_us=0 occupancy_us=0 graded=1
+event mono_us=35212043 kind=sync-exchange accepted=1 rtt_ns=1161101 offset_ns=1005577534
+event mono_us=35212043 kind=sync offset_ns=1005546898 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=499856120 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=70 discarded=0
+sample mono_us=35216596 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=35317961 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=35419136 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=35520190 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=35621361 delay_us=0 occupancy_us=0 graded=1
+event mono_us=35712179 kind=sync-exchange accepted=1 rtt_ns=1271328 offset_ns=1005543674
+event mono_us=35712179 kind=sync offset_ns=1005480825 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=498777852 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=71 discarded=0
+sample mono_us=35723155 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=35824432 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=35925207 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=36026292 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=36127330 delay_us=0 occupancy_us=0 graded=1
+event mono_us=36213664 kind=sync-exchange accepted=1 rtt_ns=1281201 offset_ns=1005615744
+event mono_us=36213664 kind=sync offset_ns=1005417485 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500042049 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=72 discarded=0
+sample mono_us=36228798 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=36330004 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=36430287 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=36530535 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=36631210 delay_us=0 occupancy_us=0 graded=1
+event mono_us=36715155 kind=sync-exchange accepted=1 rtt_ns=4992000 offset_ns=1003734031
+event mono_us=36715155 kind=sync offset_ns=1005356358 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=494632030 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=73 discarded=0
+sample mono_us=36732367 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=36832652 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=36933446 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=37034845 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=37135971 delay_us=0 occupancy_us=0 graded=1
+event mono_us=37216078 kind=sync-exchange accepted=1 rtt_ns=4543678 offset_ns=1003827307
+event mono_us=37216078 kind=sync offset_ns=1005297835 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=493892909 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=74 discarded=0
+sample mono_us=37237410 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=37338358 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=37439460 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=37540354 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=37642054 delay_us=0 occupancy_us=0 graded=1
+event mono_us=37717983 kind=sync-exchange accepted=1 rtt_ns=4990953 offset_ns=1003730987
+event mono_us=37717983 kind=sync offset_ns=1005283029 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=495394200 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=75 discarded=0
+sample mono_us=37743624 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=37844576 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=37945656 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=38047049 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=38148676 delay_us=0 occupancy_us=0 graded=1
+event mono_us=38218106 kind=sync-exchange accepted=1 rtt_ns=4412216 offset_ns=1004019470
+event mono_us=38218106 kind=sync offset_ns=1005268516 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=495625239 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=76 discarded=0
+sample mono_us=38250133 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=38351209 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=38451679 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=38552308 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=38653400 delay_us=0 occupancy_us=0 graded=1
+event mono_us=38718525 kind=sync-exchange accepted=1 rtt_ns=4259355 offset_ns=1004056229
+event mono_us=38718525 kind=sync offset_ns=1005254267 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=496075210 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=77 discarded=0
+sample mono_us=38754397 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=38855019 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=38955521 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=39055927 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=39157086 delay_us=0 occupancy_us=0 graded=1
+event mono_us=39220166 kind=sync-exchange accepted=1 rtt_ns=3714402 offset_ns=1004208158
+event mono_us=39220166 kind=sync offset_ns=1005240267 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=497850311 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=78 discarded=0
+sample mono_us=39258232 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=39359002 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=39459801 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=39559805 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=39659877 delay_us=0 occupancy_us=0 graded=1
+event mono_us=39720546 kind=sync-exchange accepted=1 rtt_ns=2345130 offset_ns=1005046453
+event mono_us=39720546 kind=sync offset_ns=1005226492 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=497949078 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=79 discarded=0
+sample mono_us=39760476 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=39861284 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=39962571 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=40064366 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=40165653 delay_us=0 occupancy_us=0 graded=1
+event mono_us=40220553 kind=sync-exchange accepted=1 rtt_ns=1805412 offset_ns=1005088454
+event mono_us=40220553 kind=sync offset_ns=1005212945 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=498124287 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=80 discarded=0
+sample mono_us=40267307 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=40368453 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=40469268 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=40570684 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=40671909 delay_us=0 occupancy_us=0 graded=1
+event mono_us=40722352 kind=sync-exchange accepted=1 rtt_ns=1802674 offset_ns=1005320560
+event mono_us=40722352 kind=sync offset_ns=1005231148 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=499912583 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=81 discarded=0
+sample mono_us=40772789 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=40873150 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=40974193 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=41075274 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=41176059 delay_us=0 occupancy_us=0 graded=1
+event mono_us=41222361 kind=sync-exchange accepted=1 rtt_ns=970757 offset_ns=1005487388
+event mono_us=41222361 kind=sync offset_ns=1005244841 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=498963580 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=82 discarded=0
+sample mono_us=41277390 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=41378471 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=41479796 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=41581237 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=41682282 delay_us=0 occupancy_us=20000 graded=1
+event mono_us=41724473 kind=sync-exchange accepted=1 rtt_ns=1210418 offset_ns=1005590519
+event mono_us=41724473 kind=sync offset_ns=1005257527 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500857857 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=83 discarded=0
+sample mono_us=41783275 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=41883806 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=41984431 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=42085420 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=42186745 delay_us=0 occupancy_us=0 graded=1
+event mono_us=42224692 kind=sync-exchange accepted=1 rtt_ns=1212134 offset_ns=1005592370
+event mono_us=42224692 kind=sync offset_ns=1005269255 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=498922519 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=84 discarded=0
+sample mono_us=42287855 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=42388827 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=42490163 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=42591875 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=42693182 delay_us=0 occupancy_us=0 graded=1
+event mono_us=42724867 kind=sync-exchange accepted=1 rtt_ns=1211046 offset_ns=1005608844
+event mono_us=42724867 kind=sync offset_ns=1005280106 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=498881279 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=85 discarded=0
+sample mono_us=42794933 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=42896269 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=42997582 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=43098932 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=43200042 delay_us=0 occupancy_us=0 graded=1
+event mono_us=43225287 kind=sync-exchange accepted=1 rtt_ns=1152513 offset_ns=1005578453
+event mono_us=43225287 kind=sync offset_ns=1005290124 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=499212166 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=86 discarded=0
+sample mono_us=43301527 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=43402507 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=43503605 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=43604941 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=43706293 delay_us=0 occupancy_us=0 graded=1
+event mono_us=43727356 kind=sync-exchange accepted=1 rtt_ns=1185486 offset_ns=1005595677
+event mono_us=43727356 kind=sync offset_ns=1005299359 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500802304 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=87 discarded=0
+sample mono_us=43807735 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=43909097 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=44010146 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=44111315 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=44212369 delay_us=0 occupancy_us=0 graded=1
+event mono_us=44229243 kind=sync-exchange accepted=1 rtt_ns=1185223 offset_ns=1005596472
+event mono_us=44229243 kind=sync offset_ns=1005307855 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500616082 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=88 discarded=0
+sample mono_us=44313985 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=44415199 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=44516344 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=44617434 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=44718755 delay_us=0 occupancy_us=0 graded=1
+event mono_us=44731347 kind=sync-exchange accepted=1 rtt_ns=1188197 offset_ns=1005595875
+event mono_us=44731347 kind=sync offset_ns=1005315665 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500834725 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=89 discarded=0
+sample mono_us=44820210 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=44920896 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=45021908 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=45123297 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=45224474 delay_us=0 occupancy_us=0 graded=1
+event mono_us=45232906 kind=sync-exchange accepted=1 rtt_ns=1178543 offset_ns=1005594422
+event mono_us=45232906 kind=sync offset_ns=1005322831 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500300525 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=90 discarded=0
+sample mono_us=45326162 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=45427404 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=45528675 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=45629880 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=45731141 delay_us=0 occupancy_us=0 graded=1
+event mono_us=45733233 kind=sync-exchange accepted=1 rtt_ns=1169138 offset_ns=1005554576
+event mono_us=45733233 kind=sync offset_ns=1005329397 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=499059341 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=91 discarded=0
+sample mono_us=45832452 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=45933404 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=46033950 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=46134705 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=46235264 delay_us=0 occupancy_us=0 graded=1
+event mono_us=46235273 kind=sync-exchange accepted=1 rtt_ns=1238423 offset_ns=1005605255
+event mono_us=46235273 kind=sync offset_ns=1005335403 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500722384 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=92 discarded=0
+sample mono_us=46336367 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=46437307 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=46538032 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=46638230 delay_us=0 occupancy_us=0 graded=1
+event mono_us=46737141 kind=sync-exchange accepted=1 rtt_ns=4890127 offset_ns=1003653661
+event mono_us=46737141 kind=sync offset_ns=1005340842 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=494671791 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=93 discarded=0
+sample mono_us=46739610 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=46840623 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=46941946 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=47043242 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=47144555 delay_us=0 occupancy_us=0 graded=1
+event mono_us=47238785 kind=sync-exchange accepted=1 rtt_ns=5003157 offset_ns=1003714909
+event mono_us=47238785 kind=sync offset_ns=1005345823 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=496261239 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=94 discarded=0
+sample mono_us=47245446 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=47346744 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=47447368 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=47548776 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=47650841 delay_us=0 occupancy_us=0 graded=1
+event mono_us=47739412 kind=sync-exchange accepted=1 rtt_ns=3723189 offset_ns=1004330396
+event mono_us=47739412 kind=sync offset_ns=1005350338 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=496821796 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=95 discarded=0
+sample mono_us=47752454 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=47853374 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=47954453 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=48055535 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=48157208 delay_us=0 occupancy_us=0 graded=1
+event mono_us=48241449 kind=sync-exchange accepted=1 rtt_ns=3104242 offset_ns=1004654923
+event mono_us=48241449 kind=sync offset_ns=1005354417 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=498850625 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=96 discarded=0
+sample mono_us=48258706 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=48359555 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=48460033 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=48560586 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=48661785 delay_us=0 occupancy_us=0 graded=1
+event mono_us=48741627 kind=sync-exchange accepted=1 rtt_ns=3047110 offset_ns=1004683492
+event mono_us=48741627 kind=sync offset_ns=1005358076 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=497042995 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=97 discarded=0
+sample mono_us=48763037 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=48863544 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=48964401 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=49065060 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=49166241 delay_us=0 occupancy_us=0 graded=1
+event mono_us=49242095 kind=sync-exchange accepted=1 rtt_ns=878277 offset_ns=1005674414
+event mono_us=49242095 kind=sync offset_ns=1005379059 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=499524104 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=98 discarded=0
+sample mono_us=49267728 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=49369140 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=49470055 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=49570944 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=49671905 delay_us=0 occupancy_us=0 graded=1
+event mono_us=49743693 kind=sync-exchange accepted=1 rtt_ns=1179896 offset_ns=1005593339
+event mono_us=49743693 kind=sync offset_ns=1005398819 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500324255 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=99 discarded=0
+sample mono_us=49773607 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=49874949 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=49976192 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=50076888 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=50178120 delay_us=0 occupancy_us=0 graded=1
+event mono_us=50245636 kind=sync-exchange accepted=1 rtt_ns=1196320 offset_ns=1005581680
+event mono_us=50245636 kind=sync offset_ns=1005417427 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=500657906 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=100 discarded=0
+sample mono_us=50279809 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=50380522 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=50481198 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=50581826 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=50683152 delay_us=0 occupancy_us=20000 graded=1
+event mono_us=50746200 kind=sync-exchange accepted=1 rtt_ns=1244404 offset_ns=1005604822
+event mono_us=50746200 kind=sync offset_ns=1005434955 round_trip_ns=740156 bound_ns=370078 stale=0 age_ns=499230650 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=101 discarded=0
+sample mono_us=50784079 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=50885237 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=50986783 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=51087718 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=51188597 delay_us=0 occupancy_us=0 graded=1
+event mono_us=51247329 kind=sync-exchange accepted=1 rtt_ns=1113072 offset_ns=1005686736
+event mono_us=51247329 kind=sync offset_ns=1005454090 round_trip_ns=878277 bound_ns=439138 stale=0 age_ns=499934601 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=102 discarded=0
+sample mono_us=51289919 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=51391027 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=51492250 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=51594004 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=51694948 delay_us=0 occupancy_us=0 graded=1
+event mono_us=51747655 kind=sync-exchange accepted=1 rtt_ns=1189366 offset_ns=1005594734
+event mono_us=51747655 kind=sync offset_ns=1005472254 round_trip_ns=878277 bound_ns=439138 stale=0 age_ns=499050215 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=103 discarded=0
+sample mono_us=51796134 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=51897376 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=51998304 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=52098981 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=52199253 delay_us=0 occupancy_us=20000 graded=1
+event mono_us=52249442 kind=sync-exchange accepted=1 rtt_ns=1204484 offset_ns=1005577019
+event mono_us=52249442 kind=sync offset_ns=1005489496 round_trip_ns=878277 bound_ns=439138 stale=0 age_ns=500498834 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=104 discarded=0
+sample mono_us=52299711 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=52399932 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=52500353 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=52601199 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=52702321 delay_us=0 occupancy_us=0 graded=1
+event mono_us=52750813 kind=sync-exchange accepted=1 rtt_ns=1139349 offset_ns=1005554794
+event mono_us=52750813 kind=sync offset_ns=1005505890 round_trip_ns=878277 bound_ns=439138 stale=0 age_ns=500145070 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=105 discarded=0
+sample mono_us=52803542 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=52904707 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=53005786 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=53106644 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=53207641 delay_us=0 occupancy_us=0 graded=1
+event mono_us=53252001 kind=sync-exchange accepted=1 rtt_ns=1175663 offset_ns=1005592295
+event mono_us=53252001 kind=sync offset_ns=1005521476 round_trip_ns=878277 bound_ns=439138 stale=0 age_ns=499928521 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=106 discarded=0
+sample mono_us=53309248 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=53409626 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=53509802 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=53611099 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=53712228 delay_us=0 occupancy_us=0 graded=1
+event mono_us=53752126 kind=sync-exchange accepted=1 rtt_ns=1166290 offset_ns=1005603709
+event mono_us=53752126 kind=sync offset_ns=1005536894 round_trip_ns=878277 bound_ns=439138 stale=0 age_ns=498865354 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=107 discarded=0
+sample mono_us=53813136 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=53914050 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=54015391 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=54117163 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=54218251 delay_us=0 occupancy_us=0 graded=1
+event mono_us=54254127 kind=sync-exchange accepted=1 rtt_ns=876348 offset_ns=1005663365
+event mono_us=54254127 kind=sync offset_ns=1005547656 round_trip_ns=876348 bound_ns=438174 stale=0 age_ns=501049100 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=108 discarded=0
+sample mono_us=54319220 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=54420966 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=54520967 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=54621442 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=54722660 delay_us=0 occupancy_us=20000 graded=1
+event mono_us=54754394 kind=sync-exchange accepted=1 rtt_ns=2829941 offset_ns=1004698268
+event mono_us=54754394 kind=sync offset_ns=1005557982 round_trip_ns=876348 bound_ns=438174 stale=0 age_ns=493959497 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=109 discarded=0
+sample mono_us=54824219 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=54925462 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=55026939 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=55128321 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=55229181 delay_us=0 occupancy_us=0 graded=1
+event mono_us=55256403 kind=sync-exchange accepted=1 rtt_ns=4943363 offset_ns=1003712028
+event mono_us=55256403 kind=sync offset_ns=1005567824 round_trip_ns=876348 bound_ns=438174 stale=0 age_ns=493960687 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=110 discarded=0
+sample mono_us=55330185 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=55430695 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=55531779 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=55632779 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=55733594 delay_us=0 occupancy_us=0 graded=1
+event mono_us=55756679 kind=sync-exchange accepted=1 rtt_ns=5058913 offset_ns=1003754708
+event mono_us=55756679 kind=sync offset_ns=1005577231 round_trip_ns=876348 bound_ns=438174 stale=0 age_ns=493948991 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=111 discarded=0
+sample mono_us=55835105 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=55936207 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=56037185 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=56138310 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=56239327 delay_us=0 occupancy_us=0 graded=1
+event mono_us=56258381 kind=sync-exchange accepted=1 rtt_ns=5190391 offset_ns=1003690959
+event mono_us=56258381 kind=sync offset_ns=1005586240 round_trip_ns=876348 bound_ns=438174 stale=0 age_ns=495509465 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=112 discarded=0
+sample mono_us=56341012 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=56442249 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=56543970 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=56645010 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=56746003 delay_us=0 occupancy_us=0 graded=1
+event mono_us=56760430 kind=sync-exchange accepted=1 rtt_ns=3963495 offset_ns=1004165456
+event mono_us=56760430 kind=sync offset_ns=1005592979 round_trip_ns=876348 bound_ns=438174 stale=0 age_ns=498030563 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=113 discarded=0
+sample mono_us=56847251 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=56948286 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=57049471 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=57150670 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=57252389 delay_us=0 occupancy_us=0 graded=1
+event mono_us=57260902 kind=sync-exchange accepted=1 rtt_ns=1889236 offset_ns=1005149590
+event mono_us=57260902 kind=sync offset_ns=1005606250 round_trip_ns=876348 bound_ns=438174 stale=0 age_ns=498505372 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=114 discarded=0
+sample mono_us=57353766 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=57454472 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=57554734 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=57655160 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=57756080 delay_us=0 occupancy_us=0 graded=1
+event mono_us=57762401 kind=sync-exchange accepted=1 rtt_ns=1696289 offset_ns=1005387656
+event mono_us=57762401 kind=sync offset_ns=1005619116 round_trip_ns=876348 bound_ns=438174 stale=0 age_ns=499708459 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=115 discarded=0
+sample mono_us=57857191 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=57958152 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=58059117 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=58160123 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=58261037 delay_us=0 occupancy_us=0 graded=1
+event mono_us=58263167 kind=sync-exchange accepted=1 rtt_ns=1202867 offset_ns=1005605581
+event mono_us=58263167 kind=sync offset_ns=1005631611 round_trip_ns=876348 bound_ns=438174 stale=0 age_ns=499470160 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=116 discarded=0
+sample mono_us=58362390 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=58463384 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=58564545 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=58665916 delay_us=0 occupancy_us=0 graded=1
+event mono_us=58764885 kind=sync-exchange accepted=1 rtt_ns=1224071 offset_ns=1005612732
+event mono_us=58764885 kind=sync offset_ns=1005643744 round_trip_ns=876348 bound_ns=438174 stale=0 age_ns=500402293 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=117 discarded=0
+sample mono_us=58767339 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=58868504 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=58969375 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=59070911 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=59171621 delay_us=0 occupancy_us=0 graded=1
+event mono_us=59265838 kind=sync-exchange accepted=1 rtt_ns=1220837 offset_ns=1005606452
+event mono_us=59265838 kind=sync offset_ns=1005655555 round_trip_ns=876348 bound_ns=438174 stale=0 age_ns=499639048 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=118 discarded=0
+sample mono_us=59272531 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=59373343 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=59473686 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=59575029 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=59675858 delay_us=0 occupancy_us=0 graded=1
+event mono_us=59766545 kind=sync-exchange accepted=1 rtt_ns=1260397 offset_ns=1005608795
+event mono_us=59766545 kind=sync offset_ns=1005667041 round_trip_ns=876348 bound_ns=438174 stale=0 age_ns=499353038 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=119 discarded=0
+sample mono_us=59777381 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=59878570 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=59979035 delay_us=0 occupancy_us=0 graded=1
+event mono_us=60002033 kind=graded-close reason=run-length-reached graded=0
+event mono_us=60002037 kind=drain-begin graded=0
+sample mono_us=60002040 delay_us=0 occupancy_us=0 graded=0
+summary graded_span_us=59836161 graded_samples=593 delay_min_us=0 delay_max_us=0 margin_to_min_us=-60000 margin_to_max_us=300000 underruns=0 discarded_overflow=0 discarded_late=0 discarded_duplicate=0 discarded_malformed=0 frames_written=2878080 frames_played=2878080 nominal_frames=2873240

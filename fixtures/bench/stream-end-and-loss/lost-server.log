@@ -1,0 +1,68 @@
+# chorus delay log v1
+# written by the delay-log writer, which is excluded from the audio or timestamp path; see audio-path.conf
+# started_wall_unix_s=1790783319
+config min_us=60000 max_us=300000 start_fill_us=120000 device_target_us=120000 device=null rate_hz=48000 channels=2 sample_format=pcm_s16le frames_per_chunk=960 overflow_skew_ppm=2000
+sample mono_us=41177 delay_us=0 occupancy_us=0 graded=0
+event mono_us=102129 kind=zone zone=near-minimum occupancy_us=80000 min_us=60000 max_us=300000
+event mono_us=122555 kind=zone zone=mid occupancy_us=100000 min_us=60000 max_us=300000
+event mono_us=143066 kind=start-fill start_fill_us=120000 filled_us=120000 filled_frames=5760
+sample mono_us=143085 delay_us=0 occupancy_us=0 graded=1
+event mono_us=143092 kind=sync-no-device-delay device=null corrected=0 detail=the device reports a delay of zero, which is not a distance to a DAC
+event mono_us=143092 kind=sync offset_ns=none round_trip_ns=none bound_ns=none stale=0 age_ns=none correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=0 discarded=0
+event mono_us=163264 kind=zone zone=at-or-below-minimum occupancy_us=20000 min_us=60000 max_us=300000
+sample mono_us=244708 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=345829 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=446909 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=548567 delay_us=0 occupancy_us=0 graded=1
+event mono_us=643194 kind=sync-exchange accepted=1 rtt_ns=1070511 offset_ns=997694182
+event mono_us=643194 kind=sync offset_ns=997694182 round_trip_ns=1070511 bound_ns=535255 stale=0 age_ns=498969141 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=1 discarded=0
+sample mono_us=649737 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=750618 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=851373 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=952026 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1052927 delay_us=0 occupancy_us=0 graded=1
+event mono_us=1143210 kind=sync-exchange accepted=1 rtt_ns=1068218 offset_ns=997715635
+event mono_us=1143210 kind=sync offset_ns=997695522 round_trip_ns=1068218 bound_ns=534109 stale=0 age_ns=498866469 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=2 discarded=0
+sample mono_us=1153887 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1255311 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1356403 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1457693 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1558861 delay_us=0 occupancy_us=0 graded=1
+event mono_us=1643349 kind=sync-exchange accepted=1 rtt_ns=1144859 offset_ns=997664493
+event mono_us=1643349 kind=sync offset_ns=997696779 round_trip_ns=1068218 bound_ns=534109 stale=0 age_ns=498930195 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=3 discarded=0
+sample mono_us=1660607 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1760694 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1861559 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=1962687 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=2063988 delay_us=0 occupancy_us=20000 graded=1
+event mono_us=2144129 kind=sync-exchange accepted=1 rtt_ns=1231457 offset_ns=997745933
+event mono_us=2144129 kind=sync offset_ns=997643602 round_trip_ns=1068218 bound_ns=534109 stale=0 age_ns=499469754 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=4 discarded=0
+sample mono_us=2165617 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=2266693 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=2368086 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=2469151 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=2569548 delay_us=0 occupancy_us=0 graded=1
+event mono_us=2644640 kind=sync-exchange accepted=1 rtt_ns=1172490 offset_ns=997741020
+event mono_us=2644640 kind=sync offset_ns=997590502 round_trip_ns=1068218 bound_ns=534109 stale=0 age_ns=499258255 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=5 discarded=0
+sample mono_us=2669860 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=2770641 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=2872312 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=2972953 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=3074201 delay_us=0 occupancy_us=0 graded=1
+event mono_us=3145493 kind=sync-exchange accepted=1 rtt_ns=1043009 offset_ns=997769068
+event mono_us=3145493 kind=sync offset_ns=997614187 round_trip_ns=1043009 bound_ns=521504 stale=0 age_ns=499741369 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=6 discarded=0
+sample mono_us=3176165 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=3277592 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=3379032 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=3480329 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=3580727 delay_us=0 occupancy_us=0 graded=1
+event mono_us=3645583 kind=sync-exchange accepted=1 rtt_ns=1326267 offset_ns=997770718
+event mono_us=3645583 kind=sync offset_ns=997637246 round_trip_ns=1043009 bound_ns=521504 stale=0 age_ns=498668669 correction_ppm=0.000 clamped=0 hard_resyncs=0 accepted=7 discarded=0
+sample mono_us=3681560 delay_us=0 occupancy_us=0 graded=1
+sample mono_us=3782398 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=3884425 delay_us=0 occupancy_us=20000 graded=1
+sample mono_us=3985855 delay_us=0 occupancy_us=0 graded=1
+event mono_us=4004785 kind=graded-close reason=connection-lost graded=0
+event mono_us=4004828 kind=drain-begin graded=0
+sample mono_us=4004832 delay_us=0 occupancy_us=0 graded=0
+summary graded_span_us=3842770 graded_samples=39 delay_min_us=0 delay_max_us=0 margin_to_min_us=-60000 margin_to_max_us=300000 underruns=0 discarded_overflow=0 discarded_late=0 discarded_duplicate=0 discarded_malformed=0 frames_written=191040 frames_played=191040 nominal_frames=185364

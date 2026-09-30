@@ -222,3 +222,16 @@ section 6 and RFC 8251 judge a decoder: every packet's final range equals the ve
 libopus's opus_compare passes the decode against the official one; the decode must also be
 exactly libopus 1.6.1's as chorus builds it (`decode_fnv1a64`), which holds the endpoint and the
 Linux client, the same code, to one output.
+
+## `bench/`
+
+What the device-class bench scripts read, for `tools/bench/e2e-test.sh`: the
+real server's and client's output and the client's delay logs from one run of
+`tools/stream-end-and-loss.sh` (`stream-end-and-loss/`) and one of
+`tools/start-fill-and-log-shape.sh` (`start-fill-and-log-shape.log`) on the
+ALSA `null` device, host / ALSA null, 2026-09-30, with the run directory's path
+in the client's `delay_log=` lines replaced by `<run>/raw/`. They are captures
+of the output formats those scripts grade, NOT measurements: `null` reports a
+delay of zero, and nothing here is timing evidence. The bench report
+validator refuses any of them as a report's raw data unless the test passes its
+test-only flag.
