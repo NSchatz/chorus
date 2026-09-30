@@ -3,7 +3,7 @@
 Date: 2026-09-03
 Build measured: `60b639b98586ed9e1d0bf0c195870a2bf95a1172`
 Tree at that commit: clean
-Reproduce with: `cargo run -p chorus-measure --bin chorus-measure -- free-run fixtures/measure/10-free-run-noiseless.offsets --label noiseless-fixture`
+Reproduce with: `cargo run -p chorus-measure --bin chorus-measure -- free-run fixtures/measure/10-free-run-noiseless.offsets --label noiseless-fixture --source fixture`
 
 ## Figures
 

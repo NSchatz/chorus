@@ -356,6 +356,26 @@ require_wireless_link() {
     fi
 }
 
+# Refuse, always, until the endpoint has a console and the client writes an
+# offsets series.
+#
+# The wireless characterization sets the endpoint's power-save mode over its
+# serial console and fetches the second endpoint's `.offsets` series for the
+# jitter report. Neither exists in this repository: the firmware reads no
+# console input of any kind, so the mode would stay whatever the image embeds
+# while the report named the other one, and no code writes `.offsets`, so the
+# fetch would fail or, worse, pick up a stale file (audit A-13). Both are
+# absent on EVERY machine, not only this one, which is why this guard checks
+# nothing and refuses: it is removed by the change that builds them (goals 7
+# and 8), not satisfied by an environment variable.
+require_endpoint_console_and_offsets_writer() {
+    local criterion="$1"
+    missing_prerequisite \
+        "$criterion" \
+        "an endpoint serial console that sets the power-save mode and reads it back, and a client option that writes the .offsets series; neither exists in this repository yet (audit A-13)" \
+        "build them first: the endpoint console is goal 8 and the offsets writer is goal 7. Until then no run of this script can say which power-save mode was in force or produce the series its jitter report reads"
+}
+
 # Refuse to continue unless the operator gave this run the three days of wall
 # clock the soak criterion asks for.
 #

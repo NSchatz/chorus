@@ -175,7 +175,9 @@ usage: chorus-server [options]
 
 audio:
   --listen <addr:port>        where endpoints connect for audio (default 127.0.0.1:4010)
-  --source <tone|path|->      PCM in: a test tone, a file or FIFO, or stdin (default tone)
+  --source <tone|chirp|path|->  PCM in: a test tone, the rig's chirp, a file or FIFO, or stdin (default tone)
+  --measure-config <path>     where the chirp is declared (default config/measure.conf)
+  --chirp-amplitude <x>       the chirp's amplitude, at most the declared ceiling (default the ceiling)
   --format <name>             pcm_s16le, pcm_s24le or pcm_f32le (default pcm_s16le)
   --rate <hz> --channels <n>  stream shape (default 48000, 2)
   --chunk-us <us>             chunk duration (default 20000)
@@ -242,6 +244,27 @@ fn main() -> ExitCode {
         println!("chorus-server: stopped reason=unsupported-format chunks_sent=0");
         return ExitCode::from(EXIT_CONFIG);
     }
+
+    // `--source chirp` is built HERE, before a socket or a thread exists, from
+    // the rig's committed values and through its amplitude ceiling. The chirp
+    // leaves every endpoint through a real amplifier, so a level above the
+    // ceiling, or a configuration that cannot be read, is refused before
+    // anything could be played rather than discovered once it is.
+    let chirp = if config.source == "chirp" {
+        match source::rig_chirp(
+            std::path::Path::new(&config.measure_config),
+            config.chirp_amplitude,
+        ) {
+            Ok(chirp) => Some(chirp),
+            Err(e) => {
+                report("the chirp source was refused", &e);
+                println!("chorus-server: stopped reason=chirp-refused chunks_sent=0");
+                return ExitCode::from(EXIT_CONFIG);
+            }
+        }
+    } else {
+        None
+    };
 
     // WIFI-7's AC-6: "SHALL report, for every zone it serves, the transport in
     // force and the bound that transport is held to, so that no zone's tier is
@@ -717,7 +740,7 @@ fn main() -> ExitCode {
             break ExitCode::from(EXIT_TRANSPORT);
         }
 
-        let pcm = match source::open(&config.source, format, config.tone_ms) {
+        let pcm = match source::open(&config.source, format, config.tone_ms, chirp.as_ref()) {
             Ok(s) => s,
             Err(e) => {
                 report(

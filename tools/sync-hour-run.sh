@@ -21,13 +21,17 @@
 #   - a second wired Linux endpoint running chorus-client (CHORUS_SECOND_ENDPOINT)
 #   - both endpoints' line outputs wired into the L and R inputs of one audio
 #     interface, visible to ALSA as a capture device (CHORUS_CAPTURE_DEVICE)
-#   - a local ALSA playback device that reports a delay (CHORUS_CLIENT_DEVICE)
+#   - a local ALSA playback device that reports a delay, which endpoint A plays
+#     on (CHORUS_CLIENT_DEVICE)
 #
-# The chirp leaves through real amplifiers into real loudspeakers. The
-# amplitude ceiling in config/measure.conf is checked by the capture tool
-# before any device is opened; do not raise it to make a quiet capture louder,
-# move the interface's input gain instead. This script adds no gain control and
-# writes no amplifier register.
+# The grouped stream IS the rig's chirp: the server runs `--source chirp`,
+# built from config/measure.conf, because the lag analyser refuses anything
+# without the chirp in it (audit A-7), and the capture tool records with
+# `--record-only` and emits nothing of its own. The chirp leaves through real
+# amplifiers into real loudspeakers. The server holds it to the amplitude
+# ceiling in config/measure.conf before it binds a socket; do not raise that
+# ceiling to make a quiet capture louder, move the interface's input gain
+# instead. This script adds no gain control and writes no amplifier register.
 #
 #   CHORUS_SECOND_ENDPOINT=user@endpoint-b \
 #   CHORUS_CAPTURE_DEVICE=hw:1,0 CHORUS_CLIENT_DEVICE=hw:0,0 \
@@ -74,7 +78,8 @@ mkdir -p "$LOG_DIR"
 say "chorus: starting the server; both endpoints join the SAME stream"
 "$BIN_DIR/chorus-server" \
     --listen "0.0.0.0:$PORT" \
-    --source tone \
+    --source chirp \
+    --measure-config "$REPO_ROOT/config/measure.conf" \
     --rate "$(conf sample_rate_hz)" \
     --channels "$(conf channels)" \
     --format "$(conf sample_format)" \
@@ -143,6 +148,7 @@ while [ "$CAPTURE_INDEX" -le "$CAPTURES" ]; do
     WAV="$OUT_DIR/chorus-sync-hour-capture-$CAPTURE_INDEX.wav"
     say "chorus: capture $CAPTURE_INDEX of $CAPTURES at t=$((SECONDS - RUN_STARTED))s"
     "$BIN_DIR/chorus-measure-capture" \
+        --record-only \
         --capture-device "$CAPTURE_DEVICE" \
         --seconds "$CAPTURE_SECONDS" \
         --out "$WAV"

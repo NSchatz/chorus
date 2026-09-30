@@ -7,7 +7,7 @@
 //!
 //! ```text
 //! chorus-measure lag <capture.wav> --label <name> [--out <dir>] [--baseline <file>]
-//! chorus-measure free-run <series.offsets> --label <name> [--out <dir>] [--source fixture|hardware]
+//! chorus-measure free-run <series.offsets> --label <name> --source fixture|hardware [--out <dir>]
 //! chorus-measure jitter <series.offsets> --label <name> --mode <power save> --transport <t>
 //! chorus-measure fixtures [--check]
 //! ```
@@ -26,8 +26,8 @@ use chorus_measure::{fixtures, repository_root, wav};
 const USAGE: &str = "\
 usage:
   chorus-measure lag <capture.wav> --label <name> [--out <dir>] [--baseline <file>]
-  chorus-measure free-run <series.offsets> --label <name> [--out <dir>]
-                          [--source fixture|hardware] [--baseline-out <file>]
+  chorus-measure free-run <series.offsets> --label <name> --source fixture|hardware
+                          [--out <dir>] [--baseline-out <file>]
   chorus-measure jitter <series.offsets> --label <name> --mode none|min-modem|max-modem
                         --transport wired|wireless [--out <dir>] [--measured]
   chorus-measure fixtures [--check]
@@ -205,7 +205,20 @@ fn free_run_command(args: &[String]) -> Result<(), String> {
     let label = options
         .value("label")
         .ok_or_else(|| format!("--label is required\n\n{}", USAGE))?;
-    let source = options.value("source").unwrap_or("fixture").to_string();
+    // Required, with no default. A default of `fixture` recorded a hardware
+    // run that forgot the flag as a fixture, and a default of `hardware` would
+    // call a fixture a measurement; the run has to say which it is.
+    let source = options
+        .value("source")
+        .ok_or_else(|| {
+            format!(
+                "--source is required: 'fixture' for a committed series, 'hardware' for two \
+                 real clients. The recorded baseline has to say which it is, and this rig will \
+                 not guess\n\n{}",
+                USAGE
+            )
+        })?
+        .to_string();
     if source != "fixture" && source != "hardware" {
         return Err(format!(
             "--source is 'fixture' or 'hardware', not '{}'. A baseline fitted from a committed \
@@ -223,6 +236,14 @@ fn free_run_command(args: &[String]) -> Result<(), String> {
         .map(PathBuf::from)
         .unwrap_or_else(|| root.join(MEASUREMENTS_DIR));
 
+    let baseline_out = options
+        .value("baseline-out")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| out.join(BASELINE_FILE));
+    // Before anything is written: a fixture run never replaces a baseline
+    // fitted from hardware, which other reports cite as a measurement.
+    Baseline::check_replaceable(&baseline_out, &source).map_err(|e| e.to_string())?;
+
     let series = freerun::read_series(Path::new(series_path)).map_err(|e| e.to_string())?;
     let fit = freerun::fit(&series, &settings).map_err(|e| e.to_string())?;
     let build = report::build_identity(&root).map_err(|e| e.to_string())?;
@@ -237,9 +258,10 @@ fn free_run_command(args: &[String]) -> Result<(), String> {
         established_at_commit: build.commit.clone(),
     };
     let command = format!(
-        "cargo run -p chorus-measure --bin chorus-measure -- free-run {} --label {}",
+        "cargo run -p chorus-measure --bin chorus-measure -- free-run {} --label {} --source {}",
         report::relative_display(Path::new(series_path), &root),
-        label
+        label,
+        baseline.source
     );
     let run = FreeRunRun {
         label,
@@ -254,10 +276,6 @@ fn free_run_command(args: &[String]) -> Result<(), String> {
     let written = report::write_report(&out, &report_name, &report::render_free_run_report(&run))
         .map_err(|e| e.to_string())?;
 
-    let baseline_out = options
-        .value("baseline-out")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| out.join(BASELINE_FILE));
     let baseline_dir = baseline_out
         .parent()
         .map(Path::to_path_buf)

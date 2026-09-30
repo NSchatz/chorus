@@ -36,18 +36,20 @@
 #     (CHORUS_SECOND_ENDPOINT)
 #   - both endpoints' line outputs wired into the L and R inputs of one audio
 #     interface, visible to ALSA as a capture device (CHORUS_CAPTURE_DEVICE)
-#   - a local ALSA playback device that reports a delay (CHORUS_CLIENT_DEVICE)
 #
-# The chirp leaves through a real amplifier into a real loudspeaker. The
-# amplitude ceiling in config/measure.conf is checked by the capture tool
-# before any device is opened; do not raise it to make a quiet capture louder,
-# move the interface's input gain instead. This script adds no gain control and
-# writes no amplifier register. The endpoint's own analog gain ceiling is in
-# firmware/config/endpoint.conf and the endpoint refuses to enable output above
-# it.
+# The grouped stream IS the rig's chirp: the server runs `--source chirp`,
+# built from config/measure.conf, because the lag analyser refuses anything
+# without the chirp in it (audit A-7), and the capture tool records with
+# `--record-only` and emits nothing of its own. The chirp leaves through a real
+# amplifier into a real loudspeaker. The server holds it to the amplitude
+# ceiling in config/measure.conf before it binds a socket; do not raise that
+# ceiling to make a quiet capture louder, move the interface's input gain
+# instead. This script adds no gain control and writes no amplifier register.
+# The endpoint's own analog gain ceiling is in firmware/config/endpoint.conf and
+# the endpoint refuses to enable output above it.
 #
 #   CHORUS_ESP32S3_PORT=/dev/ttyACM0 CHORUS_SECOND_ENDPOINT=user@endpoint-b \
-#   CHORUS_CAPTURE_DEVICE=hw:1,0 CHORUS_CLIENT_DEVICE=hw:0,0 \
+#   CHORUS_CAPTURE_DEVICE=hw:1,0 \
 #       ./tools/endpoint-rig-run.sh          # or: make verify-endpoint-rig
 
 source "$(dirname "$0")/lib.sh"
@@ -60,7 +62,6 @@ RUN_SECONDS="$(sync_conf sync_hour_run_seconds)"
 CAPTURE_SECONDS="$(sync_conf sync_hour_capture_seconds)"
 SETTLE_SECONDS="$(sync_conf sync_hour_settle_seconds)"
 CAPTURES="$(sync_conf sync_hour_captures)"
-DEVICE="$(audio_device)"
 CAPTURE_DEVICE="$(capture_device)"
 SAMPLE_RATE="$(endpoint_conf i2s_sample_rate_hz)"
 SLOT_WIDTH="$(endpoint_conf i2s_slot_bit_width)"
@@ -77,7 +78,6 @@ say "  run:             ${RUN_SECONDS}s, of which the first ${SETTLE_SECONDS}s i
 say "  captures:        ${CAPTURES} of ${CAPTURE_SECONDS}s, one every ${CAPTURE_SPACING}s"
 say "  endpoint:        ${CHORUS_ESP32S3_PORT:-<unset>}"
 say "  linux endpoint:  ${CHORUS_SECOND_ENDPOINT:-<unset>}"
-say "  local device:    $DEVICE"
 say "  capture:         $CAPTURE_DEVICE"
 say "  i2s:             ${SAMPLE_RATE} Hz, ${SLOT_WIDTH}-bit slots, MCLK x${MCLK_MULTIPLE}"
 
@@ -86,7 +86,6 @@ say "  i2s:             ${SAMPLE_RATE} Hz, ${SLOT_WIDTH}-bit slots, MCLK x${MCLK
 require_esp32s3_endpoint "$CRITERION"
 require_amplifier_registers "$CRITERION"
 require_second_endpoint "$CRITERION"
-require_pacing_audio_device "$CRITERION"
 require_capture_device "$CRITERION"
 
 PORT="$(free_port)"
@@ -96,7 +95,8 @@ mkdir -p "$LOG_DIR"
 say "chorus: starting the server; both endpoints join the SAME stream"
 "$BIN_DIR/chorus-server" \
     --listen "0.0.0.0:$PORT" \
-    --source tone \
+    --source chirp \
+    --measure-config "$REPO_ROOT/config/measure.conf" \
     --rate "$SAMPLE_RATE" \
     --channels "$(conf channels)" \
     --format "$(conf sample_format)" \
@@ -153,13 +153,15 @@ while [ "$CAPTURE_INDEX" -le "$CAPTURES" ]; do
     WAV="$OUT_DIR/chorus-endpoint-rig-capture-$CAPTURE_INDEX.wav"
     say "chorus: capture $CAPTURE_INDEX of $CAPTURES at t=$((SECONDS - RUN_STARTED))s"
     "$BIN_DIR/chorus-measure-capture" \
+        --record-only \
         --capture-device "$CAPTURE_DEVICE" \
         --seconds "$CAPTURE_SECONDS" \
         --out "$WAV"
     say "chorus: analysing capture $CAPTURE_INDEX for inter-device lag (AC-1)"
     "$BIN_DIR/chorus-measure" lag "$WAV" --label "endpoint-rig-$CAPTURE_INDEX"
     say "chorus: analysing capture $CAPTURE_INDEX for the produced sample rate (AC-3)"
-    "$BIN_DIR/chorus-measure" free-run "$WAV" --label "endpoint-rate-$CAPTURE_INDEX"
+    "$BIN_DIR/chorus-measure" free-run "$WAV" --label "endpoint-rate-$CAPTURE_INDEX" \
+        --source hardware
     CAPTURE_INDEX=$((CAPTURE_INDEX + 1))
 done
 

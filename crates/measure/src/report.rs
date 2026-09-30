@@ -138,6 +138,13 @@ pub enum ReportError {
         /// The key that is absent.
         key: String,
     },
+    /// A fixture run would replace a baseline fitted from hardware.
+    WouldOverwriteHardwareBaseline {
+        /// The baseline that is already there.
+        path: PathBuf,
+        /// The series that hardware baseline was fitted from.
+        series: String,
+    },
 }
 
 impl ReportError {
@@ -150,6 +157,9 @@ impl ReportError {
             ReportError::DestinationNotWritable { .. } => "destination-not-writable",
             ReportError::ArtifactUnreadable { .. } => "artifact-unreadable",
             ReportError::ArtifactIncomplete { .. } => "artifact-incomplete",
+            ReportError::WouldOverwriteHardwareBaseline { .. } => {
+                "would-overwrite-hardware-baseline"
+            }
         }
     }
 }
@@ -193,6 +203,15 @@ impl fmt::Display for ReportError {
                 "the committed artifact '{}' carries no '{}'",
                 path.display(),
                 key
+            ),
+            ReportError::WouldOverwriteHardwareBaseline { path, series } => write!(
+                f,
+                "'{}' records a baseline fitted from hardware (series {}), and this run is a \
+                 fixture. A fixture bounds the estimator and says nothing about any crystal, so \
+                 it does not replace a measurement; nothing has been written. Pass \
+                 --baseline-out to record a fixture baseline somewhere else",
+                path.display(),
+                series
             ),
         }
     }
@@ -275,14 +294,15 @@ impl Baseline {
             "# The free-run drift baseline, recorded by the measurement harness.\n\
              #\n\
              # This file is written by `chorus-measure free-run` and is the value later runs\n\
-             # cite. It is a MEASUREMENT, not a target: the roadmap phase that asks for it is\n\
-             # explicit that the baseline is what the rig measures, and no check anywhere\n\
-             # compares a number against a borrowed ppm range.\n\
+             # cite. It is never a target: no check anywhere compares a number against a\n\
+             # borrowed ppm range.\n\
              #\n\
-             # `source` is load bearing. A baseline fitted from a committed fixture bounds the\n\
-             # ESTIMATOR against a known rate and says nothing whatever about any real\n\
-             # crystal; only `source = hardware` is a statement about two clients running with\n\
-             # correction disabled.\n\
+             # `source` says what the value below IS. With `source = hardware` it is a\n\
+             # MEASUREMENT of two clients running with correction disabled. With\n\
+             # `source = fixture` it is NOT a measurement of anything: it is the estimator\n\
+             # checked against the known rate of a committed series, and it says nothing\n\
+             # whatever about any real crystal. A fixture run refuses to replace a\n\
+             # hardware baseline.\n\
              #\n\
              # Format: key = value, '#' starts a comment.\n\n",
         );
@@ -296,6 +316,28 @@ impl Baseline {
             self.established_at_commit
         ));
         out
+    }
+
+    /// Refuse to let a run from `new_source` replace the baseline at `path`
+    /// when that would put a fixture where a hardware measurement was.
+    ///
+    /// Called before anything is written, so a refused run leaves both the
+    /// report directory and the baseline as they were. No baseline at `path`
+    /// is not a refusal: the first run records one. A baseline that is there
+    /// and cannot be read is: a file this rig cannot read is one it cannot say
+    /// is safe to replace.
+    pub fn check_replaceable(path: &Path, new_source: &str) -> Result<(), ReportError> {
+        if !path.exists() {
+            return Ok(());
+        }
+        let existing = Baseline::read(path)?;
+        if existing.source == "hardware" && new_source != "hardware" {
+            return Err(ReportError::WouldOverwriteHardwareBaseline {
+                path: path.to_path_buf(),
+                series: existing.series,
+            });
+        }
+        Ok(())
     }
 
     /// Read the committed artifact.
@@ -761,6 +803,53 @@ mod tests {
         let err = Baseline::read(&path).unwrap_err();
         assert_eq!(err.condition(), "artifact-incomplete");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_fixture_run_does_not_replace_a_hardware_baseline() {
+        let dir = std::env::temp_dir().join(format!("chorus-baseline-hw-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(BASELINE_FILE);
+        let hardware = Baseline {
+            ppm: 12.25,
+            half_width_ppm: 0.3,
+            source: "hardware".to_string(),
+            series: "two-clients.offsets".to_string(),
+            established_by: "docs/measurements/example.md".to_string(),
+            established_at_commit: "0".repeat(40),
+        };
+        std::fs::write(&path, hardware.render()).unwrap();
+        let err = Baseline::check_replaceable(&path, "fixture").unwrap_err();
+        assert_eq!(err.condition(), "would-overwrite-hardware-baseline");
+        assert!(err.to_string().contains("two-clients.offsets"), "{}", err);
+        // A later hardware run may replace it; that is what a re-measurement is.
+        assert!(Baseline::check_replaceable(&path, "hardware").is_ok());
+        // A fixture baseline may be replaced by either.
+        let fixture = Baseline {
+            source: "fixture".to_string(),
+            ..hardware
+        };
+        std::fs::write(&path, fixture.render()).unwrap();
+        assert!(Baseline::check_replaceable(&path, "fixture").is_ok());
+        // And no baseline at all is the first run, not a refusal.
+        let _ = std::fs::remove_file(&path);
+        assert!(Baseline::check_replaceable(&path, "fixture").is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_baseline_header_does_not_call_a_fixture_a_measurement() {
+        let rendered = Baseline {
+            ppm: 1.0,
+            half_width_ppm: 0.0,
+            source: "fixture".to_string(),
+            series: "s".to_string(),
+            established_by: "r".to_string(),
+            established_at_commit: "0".repeat(40),
+        }
+        .render();
+        assert!(!rendered.contains("It is a MEASUREMENT"), "{}", rendered);
+        assert!(rendered.contains("`source = fixture` it is NOT a measurement"));
     }
 
     #[test]
