@@ -43,11 +43,11 @@
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chorus_control::catalog::{decode_command, Refusal};
 use chorus_control::fanout::ControlFanout;
@@ -57,12 +57,37 @@ use chorus_hostctl::ThreadRegistry;
 
 use crate::hostreport::register_ordinary_thread;
 
-/// Longest request line and header block the control channel will read.
+/// Longest request the control channel will read: request line, headers and
+/// body together.
 ///
 /// A control message is a few hundred bytes and the largest legitimate request
 /// here is a `POST` of one. This is what stops a peer that opens a connection
-/// and never stops typing from being an allocation.
+/// and never stops typing from being an allocation. It holds because every byte
+/// of a request is read through one `take` of this many bytes plus one, so a
+/// line with no end is cut at the bound rather than grown until an allocation
+/// fails (under `mlockall` that failure is the whole process, audio included).
 pub const MAX_REQUEST_BYTES: usize = 16 * 1024;
+
+/// How long a worker gives one peer to deliver its whole request, counted from
+/// the moment the worker picks the connection up.
+///
+/// A read timeout alone is per `read` call, so a peer sending one byte just
+/// inside it would keep its worker for ever, and a handful of such peers would
+/// hold the whole fixed pool. This is a deadline for the REQUEST: every read is
+/// given only what is left of it, on the monotonic clock, and a request not
+/// complete by then is answered `408` and the slot comes back. A real request
+/// arrives in one segment on a LAN, so this is generous by orders of magnitude.
+pub const REQUEST_DEADLINE: Duration = Duration::from_secs(5);
+
+/// How long, after refusing a request it did not finish reading, a worker keeps
+/// reading and discarding what the peer is still sending before it closes.
+///
+/// Closing a socket with unread data in it makes the kernel answer with a
+/// reset, and a reset can cost the peer the refusal that said why. A short,
+/// bounded drain after the answer is what keeps a `413` or `431` readable; it
+/// is bounded in time and in bytes so it cannot become the hold it prevents.
+const LINGER: Duration = Duration::from_millis(250);
+const LINGER_BYTES: usize = 64 * 1024;
 
 /// How long a worker waits on an idle subscriber queue before it looks up to
 /// see whether it is still wanted.
@@ -161,8 +186,11 @@ pub struct ControlState {
     applied: AtomicU64,
     /// Commands refused since the process started.
     refused: AtomicU64,
-    /// Connections turned away because every worker was busy.
+    /// Connections turned away because every worker was busy, and event
+    /// streams turned away because every worker a stream may take was busy.
     turned_away: AtomicU64,
+    /// Workers holding an event stream right now. See [`stream_slots`].
+    streaming: AtomicUsize,
     /// What the page is served with, so the UI is one artifact and not three.
     ui: Ui,
 }
@@ -209,6 +237,7 @@ impl ControlState {
             applied: AtomicU64::new(0),
             refused: AtomicU64::new(0),
             turned_away: AtomicU64::new(0),
+            streaming: AtomicUsize::new(0),
             ui: Ui {
                 html: include_str!("ui/index.html"),
                 tokens: include_str!("ui/tokens.css"),
@@ -297,6 +326,26 @@ impl ControlState {
     }
 }
 
+/// How many of `workers` may hold an event stream at once.
+///
+/// All but one. An event stream holds its worker for as long as the subscriber
+/// stays, and every endpoint and every open page is one, so a pool that let
+/// streams take every worker would answer every command `503` as soon as there
+/// were as many subscribers as workers (audit finding B-5). Keeping one worker
+/// that only a short request can have means a command always has somewhere to
+/// go. A pool of one has nothing to spare and is left as it was: its single
+/// worker may stream.
+///
+/// A stopgap: the whole answer is one writer thread serving every stream, so
+/// that subscribers stop costing workers at all.
+pub fn stream_slots(workers: usize) -> usize {
+    if workers > 1 {
+        workers - 1
+    } else {
+        workers
+    }
+}
+
 /// One control worker's slot.
 struct Slot {
     to_worker: SyncSender<TcpStream>,
@@ -359,6 +408,7 @@ impl ControlPlane {
         ready: Sender<()>,
     ) {
         let (free_tx, free) = mpsc::channel::<usize>();
+        let streams = stream_slots(workers);
         for index in 0..workers {
             let (to_worker, jobs) = mpsc::sync_channel::<TcpStream>(1);
             let keep = Arc::clone(&keep);
@@ -373,7 +423,7 @@ impl ControlPlane {
                 }
                 drop(ready);
                 for connection in jobs {
-                    serve_connection(connection, &state, &keep);
+                    serve_connection(connection, &state, &keep, streams, workers);
                     if returning.send(index).is_err() {
                         return;
                     }
@@ -453,48 +503,250 @@ fn refuse_busy(mut connection: TcpStream, peer: SocketAddr, workers: usize) {
 struct Request {
     method: String,
     path: String,
+    /// The `Content-Type` header, as sent, if there was one.
+    content_type: Option<String>,
+    /// The `Origin` header, as sent, if there was one.
+    origin: Option<String>,
+    /// The `Host` header, as sent, if there was one.
+    host: Option<String>,
     body: String,
 }
 
-fn read_request(reader: &mut BufReader<TcpStream>) -> Option<Request> {
-    let mut line = String::new();
-    if reader.read_line(&mut line).ok()? == 0 {
-        return None;
-    }
-    let mut parts = line.split_whitespace();
-    let method = parts.next()?.to_string();
-    let path = parts.next()?.to_string();
-    let mut length = 0usize;
-    let mut read = line.len();
-    loop {
-        let mut header = String::new();
-        let n = reader.read_line(&mut header).ok()?;
-        read += n;
-        if n == 0 || read > MAX_REQUEST_BYTES {
-            return None;
+/// Why a request could not be read, each with the answer it gets.
+#[derive(Debug, PartialEq, Eq)]
+enum Unreadable {
+    /// Not HTTP this server can parse, or the peer went before finishing.
+    Malformed,
+    /// The request line and headers passed [`MAX_REQUEST_BYTES`].
+    HeadTooLarge,
+    /// The body would have taken the request past [`MAX_REQUEST_BYTES`].
+    BodyTooLarge,
+    /// The request was not complete by [`REQUEST_DEADLINE`].
+    TimedOut,
+}
+
+impl Unreadable {
+    fn status(&self) -> &'static str {
+        match self {
+            Unreadable::Malformed => "400 Bad Request",
+            Unreadable::HeadTooLarge => "431 Request Header Fields Too Large",
+            Unreadable::BodyTooLarge => "413 Content Too Large",
+            Unreadable::TimedOut => "408 Request Timeout",
         }
+    }
+
+    fn detail(&self) -> String {
+        match self {
+            Unreadable::Malformed => "this is not an HTTP request this server can read".to_string(),
+            Unreadable::HeadTooLarge | Unreadable::BodyTooLarge => format!(
+                "a request to this server is at most {} bytes, request line, headers and body \
+                 together",
+                MAX_REQUEST_BYTES
+            ),
+            Unreadable::TimedOut => format!(
+                "the request was not complete within {} ms of the connection being picked up",
+                REQUEST_DEADLINE.as_millis()
+            ),
+        }
+    }
+
+    fn from_io(error: &io::Error) -> Unreadable {
+        match error.kind() {
+            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => Unreadable::TimedOut,
+            _ => Unreadable::Malformed,
+        }
+    }
+}
+
+/// A socket whose every read is given only what is left of one deadline.
+///
+/// This is what turns a per-read timeout into a per-request one. The deadline
+/// is an [`Instant`], so a wall clock being stepped cannot lengthen or shorten
+/// it.
+struct DeadlineReader {
+    socket: TcpStream,
+    until: Instant,
+}
+
+impl Read for DeadlineReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let left = self.until.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "the request deadline has passed",
+            ));
+        }
+        self.socket.set_read_timeout(Some(left))?;
+        self.socket.read(buf)
+    }
+}
+
+/// Read one request, every byte of it through a single bound.
+///
+/// The request line, each header and the body all come out of one `take` of
+/// [`MAX_REQUEST_BYTES`] plus one, so no line can grow past the bound however
+/// long the peer keeps typing: reaching the extra byte is the overflow, and it
+/// is refused rather than read further.
+fn read_request<R: BufRead>(reader: &mut R) -> Result<Request, Unreadable> {
+    fn next_line<B: BufRead>(limited: &mut io::Take<B>) -> Result<String, Unreadable> {
+        let mut line = Vec::new();
+        limited
+            .read_until(b'\n', &mut line)
+            .map_err(|e| Unreadable::from_io(&e))?;
+        if limited.limit() == 0 {
+            return Err(Unreadable::HeadTooLarge);
+        }
+        if line.last() != Some(&b'\n') {
+            // The peer closed partway through a line, or before sending one.
+            return Err(Unreadable::Malformed);
+        }
+        String::from_utf8(line).map_err(|_| Unreadable::Malformed)
+    }
+    let mut limited = reader.take(MAX_REQUEST_BYTES as u64 + 1);
+    let line = next_line(&mut limited)?;
+    let mut parts = line.split_whitespace();
+    let method = parts.next().ok_or(Unreadable::Malformed)?.to_string();
+    let path = parts.next().ok_or(Unreadable::Malformed)?.to_string();
+    let mut length = 0usize;
+    let mut content_type = None;
+    let mut origin = None;
+    let mut host = None;
+    loop {
+        let header = next_line(&mut limited)?;
         let header = header.trim_end();
         if header.is_empty() {
             break;
         }
         if let Some((name, value)) = header.split_once(':') {
-            if name.trim().eq_ignore_ascii_case("content-length") {
-                length = value.trim().parse().ok()?;
+            let name = name.trim();
+            let value = value.trim().to_string();
+            if name.eq_ignore_ascii_case("content-length") {
+                length = value.parse().map_err(|_| Unreadable::Malformed)?;
+            } else if name.eq_ignore_ascii_case("content-type") {
+                content_type = Some(value);
+            } else if name.eq_ignore_ascii_case("origin") {
+                origin = Some(value);
+            } else if name.eq_ignore_ascii_case("host") {
+                host = Some(value);
             }
         }
     }
-    if length > MAX_REQUEST_BYTES {
-        return None;
+    // What is left of the bound, less the one byte that only ever detects an
+    // overflow. A body that does not fit is refused unread.
+    if length as u64 >= limited.limit() {
+        return Err(Unreadable::BodyTooLarge);
     }
     let mut body = vec![0u8; length];
     if length > 0 {
-        reader.read_exact(&mut body).ok()?;
+        limited.read_exact(&mut body).map_err(|e| match e.kind() {
+            io::ErrorKind::UnexpectedEof => Unreadable::Malformed,
+            _ => Unreadable::from_io(&e),
+        })?;
     }
-    Some(Request {
+    Ok(Request {
         method,
         path,
+        content_type,
+        origin,
+        host,
         body: String::from_utf8_lossy(&body).to_string(),
     })
+}
+
+/// Why a state-changing `POST` is refused before its body is looked at, or
+/// `None` when it may go on.
+///
+/// There is no authentication here by design, so what stands between a web
+/// page some LAN browser has open and this server's zones is the browser's
+/// own rules, and these two are what make them apply:
+///
+/// - A body that is not declared `application/json` is refused `415`. A
+///   cross-site page can send `text/plain` with no preflight; it cannot send
+///   `application/json` without one, and a preflight is an `OPTIONS` request
+///   this server never approves.
+/// - An `Origin` that is present and names anywhere but this server is refused
+///   `403`. A browser sends one on every `POST`; the page this server serves
+///   posts from this server's own origin, which is the scheme and the `Host`
+///   the request was sent to. A client that is not a browser sends none, and
+///   is not refused for that.
+fn post_refusal(request: &Request) -> Option<(&'static str, String)> {
+    let declared_json = request.content_type.as_deref().is_some_and(|value| {
+        value
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .eq_ignore_ascii_case("application/json")
+    });
+    if !declared_json {
+        return Some((
+            "415 Unsupported Media Type",
+            "a command is sent with Content-Type: application/json, and this one was not"
+                .to_string(),
+        ));
+    }
+    if let Some(origin) = &request.origin {
+        if !same_origin(origin, request.host.as_deref()) {
+            return Some((
+                "403 Forbidden",
+                "a command from a page is accepted only from this server's own origin".to_string(),
+            ));
+        }
+    }
+    None
+}
+
+/// Whether `origin` names the server this request was sent to.
+///
+/// The origin's host and port are compared with the `Host` header, which is
+/// what the browser addressed. The scheme is not compared: behind a proxy that
+/// terminates TLS the page's origin is `https` while this listener speaks plain
+/// HTTP, and the host it was addressed by is the same either way.
+fn same_origin(origin: &str, host: Option<&str>) -> bool {
+    let Some(host) = host else {
+        return false;
+    };
+    let authority = origin
+        .strip_prefix("http://")
+        .or_else(|| origin.strip_prefix("https://"));
+    match authority {
+        Some(authority) => {
+            !authority.is_empty()
+                && !authority.contains('/')
+                && authority.eq_ignore_ascii_case(host.trim())
+        }
+        // `null`, or anything else that is not an http(s) origin.
+        None => false,
+    }
+}
+
+/// Refuse a request, then drain what the peer is still sending for a short,
+/// bounded time so the refusal is not lost to a reset. See [`LINGER`].
+fn refuse_unread(connection: &mut TcpStream, status: &str, detail: &str) {
+    respond(connection, status, "application/json", &error_body(detail));
+    let _ = connection.shutdown(std::net::Shutdown::Write);
+    let until = Instant::now() + LINGER;
+    let mut scratch = [0u8; 4_096];
+    let mut drained = 0usize;
+    while drained < LINGER_BYTES {
+        let left = until.saturating_duration_since(Instant::now());
+        if left.is_zero() || connection.set_read_timeout(Some(left)).is_err() {
+            break;
+        }
+        match connection.read(&mut scratch) {
+            Ok(0) | Err(_) => break,
+            Ok(read) => drained += read,
+        }
+    }
+}
+
+/// The error message every refusal in this file is written as.
+fn error_body(detail: &str) -> String {
+    format!(
+        "{{\"v\":1,\"t\":\"error\",\"field\":\"\",\"detail\":\"{}\"}}",
+        detail.replace('\\', "\\\\").replace('"', "\\\"")
+    )
 }
 
 fn respond(connection: &mut TcpStream, status: &str, content_type: &str, body: &str) {
@@ -541,31 +793,49 @@ fn respond_with(
 
 /// Serve one connection, whatever it turns out to be, and return the worker's
 /// thread to the pool.
-fn serve_connection(connection: TcpStream, state: &Arc<ControlState>, keep: &Arc<AtomicBool>) {
-    let _ = connection.set_read_timeout(Some(Duration::from_secs(10)));
+fn serve_connection(
+    connection: TcpStream,
+    state: &Arc<ControlState>,
+    keep: &Arc<AtomicBool>,
+    stream_slots: usize,
+    workers: usize,
+) {
     // Both directions are bounded, and for the same reason: this worker's slot
-    // in the fixed pool has to come back. See WRITE_TIMEOUT.
+    // in the fixed pool has to come back. The read side is bounded per REQUEST
+    // (REQUEST_DEADLINE, through DeadlineReader); see WRITE_TIMEOUT for the
+    // write side.
     let _ = connection.set_write_timeout(Some(WRITE_TIMEOUT));
     let reader_socket = match connection.try_clone() {
         Ok(s) => s,
         Err(_) => return,
     };
-    let mut reader = BufReader::new(reader_socket);
+    let mut reader = BufReader::new(DeadlineReader {
+        socket: reader_socket,
+        until: Instant::now() + REQUEST_DEADLINE,
+    });
     let mut connection = connection;
     let request = match read_request(&mut reader) {
-        Some(request) => request,
-        None => {
-            respond(
-                &mut connection,
-                "400 Bad Request",
-                "application/json",
-                "{\"v\":1,\"t\":\"error\",\"field\":\"\",\"detail\":\"this is not an HTTP request \
-                 this server can read\"}",
-            );
+        Ok(request) => request,
+        Err(unreadable) => {
+            refuse_unread(&mut connection, unreadable.status(), &unreadable.detail());
             return;
         }
     };
     let path = request.path.split('?').next().unwrap_or("/").to_string();
+    // The two routes that change anything are held to the rules a browser
+    // needs to keep a page elsewhere from using them. See post_refusal.
+    if request.method == "POST" && (path == "/api/command" || path == "/api/leaving") {
+        if let Some((status, detail)) = post_refusal(&request) {
+            state.refused.fetch_add(1, Ordering::Relaxed);
+            respond(
+                &mut connection,
+                status,
+                "application/json",
+                &error_body(&detail),
+            );
+            return;
+        }
+    }
     match (request.method.as_str(), path.as_str()) {
         ("GET", "/") | ("GET", "/index.html") => respond_to_browser(
             &mut connection,
@@ -620,7 +890,7 @@ fn serve_connection(connection: TcpStream, state: &Arc<ControlState>, keep: &Arc
             "text/plain; charset=utf-8",
             &format!("{}\n", state.report()),
         ),
-        ("GET", "/api/events") => serve_events(connection, state, keep),
+        ("GET", "/api/events") => serve_events(connection, state, keep, stream_slots, workers),
         ("POST", "/api/command") => {
             match state.apply(request.body.trim()) {
                 Ok(applied) => respond(&mut connection, "200 OK", "application/json", &applied),
@@ -660,7 +930,34 @@ fn serve_connection(connection: TcpStream, state: &Arc<ControlState>, keep: &Arc
 ///
 /// The first thing written is the state as it stands, so a subscriber is never
 /// waiting for a change to learn what is true now.
-fn serve_events(mut connection: TcpStream, state: &Arc<ControlState>, keep: &Arc<AtomicBool>) {
+///
+/// Only [`stream_slots`] of the pool's workers may be doing this at once; a
+/// stream asked for past that is answered `503` and the worker goes back, so
+/// the worker kept for commands is never taken by a subscriber.
+fn serve_events(
+    mut connection: TcpStream,
+    state: &Arc<ControlState>,
+    keep: &Arc<AtomicBool>,
+    stream_slots: usize,
+    workers: usize,
+) {
+    let Some(_slot) = StreamSlot::take(&state.streaming, stream_slots) else {
+        state.turned_away.fetch_add(1, Ordering::Relaxed);
+        let detail = format!(
+            "every one of this server's {} event-stream control workers is busy, and the \
+             other {} of its {} control workers is kept for commands; try again",
+            stream_slots,
+            workers - stream_slots,
+            workers
+        );
+        respond(
+            &mut connection,
+            "503 Service Unavailable",
+            "application/json",
+            &error_body(&detail),
+        );
+        return;
+    };
     let inbox = state.fanout.subscribe();
     let opening = state.encoded_state();
     if write!(
@@ -697,6 +994,26 @@ fn serve_events(mut connection: TcpStream, state: &Arc<ControlState>, keep: &Arc
             }
             Err(RecvTimeoutError::Disconnected) => return,
         }
+    }
+}
+
+/// One worker's claim on an event-stream slot, given back when it is dropped.
+struct StreamSlot<'a>(&'a AtomicUsize);
+
+impl<'a> StreamSlot<'a> {
+    fn take(streaming: &'a AtomicUsize, slots: usize) -> Option<StreamSlot<'a>> {
+        streaming
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |held| {
+                (held < slots).then_some(held + 1)
+            })
+            .ok()
+            .map(|_| StreamSlot(streaming))
+    }
+}
+
+impl Drop for StreamSlot<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -787,6 +1104,120 @@ mod tests {
             subscriber.try_recv().is_err(),
             "a refused command must fan nothing out"
         );
+    }
+
+    #[test]
+    fn a_line_with_no_end_is_cut_at_the_bound_and_not_read_past_it() {
+        let endless = vec![b'a'; 4 * MAX_REQUEST_BYTES];
+        let mut reader: &[u8] = &endless;
+        assert_eq!(
+            read_request(&mut reader).err(),
+            Some(Unreadable::HeadTooLarge)
+        );
+        assert_eq!(
+            reader.len(),
+            endless.len() - MAX_REQUEST_BYTES - 1,
+            "exactly the bound plus the one byte that detects the overflow is read"
+        );
+    }
+
+    #[test]
+    fn the_bound_covers_the_body_as_well_as_the_head() {
+        let head = "POST /api/command HTTP/1.1\r\nContent-Type: application/json\r\n";
+        let fits = MAX_REQUEST_BYTES - head.len() - "Content-Length: 99999\r\n\r\n".len();
+        let at_the_bound = format!(
+            "{}Content-Length: {:05}\r\n\r\n{}",
+            head,
+            fits,
+            "x".repeat(fits)
+        );
+        assert_eq!(at_the_bound.len(), MAX_REQUEST_BYTES);
+        let request = read_request(&mut at_the_bound.as_bytes()).expect("a request at the bound");
+        assert_eq!(request.body.len(), fits);
+        assert_eq!(request.content_type.as_deref(), Some("application/json"));
+        let one_over = format!(
+            "{}Content-Length: {:05}\r\n\r\n{}",
+            head,
+            fits + 1,
+            "x".repeat(fits + 1)
+        );
+        assert_eq!(
+            read_request(&mut one_over.as_bytes()).err(),
+            Some(Unreadable::BodyTooLarge)
+        );
+    }
+
+    #[test]
+    fn a_request_cut_short_is_malformed() {
+        for text in ["", "GET / HTTP/1.1", "GET / HTTP/1.1\r\nHost: x"] {
+            assert_eq!(
+                read_request(&mut text.as_bytes()).err(),
+                Some(Unreadable::Malformed),
+                "{:?}",
+                text
+            );
+        }
+        let short_body = "POST /api/command HTTP/1.1\r\nContent-Length: 10\r\n\r\nabc";
+        assert_eq!(
+            read_request(&mut short_body.as_bytes()).err(),
+            Some(Unreadable::Malformed)
+        );
+    }
+
+    fn command_request(content_type: Option<&str>, origin: Option<&str>) -> Request {
+        Request {
+            method: "POST".to_string(),
+            path: "/api/command".to_string(),
+            content_type: content_type.map(str::to_string),
+            origin: origin.map(str::to_string),
+            host: Some("chorus.example:4011".to_string()),
+            body: String::new(),
+        }
+    }
+
+    #[test]
+    fn a_command_must_be_declared_json_and_come_from_here_if_from_a_page() {
+        let json = Some("application/json");
+        for (content_type, origin, status) in [
+            (json, None, None),
+            (Some("Application/JSON; charset=utf-8"), None, None),
+            (json, Some("http://chorus.example:4011"), None),
+            (json, Some("https://CHORUS.example:4011"), None),
+            (Some("text/plain"), None, Some("415")),
+            (None, None, Some("415")),
+            (Some("application/jsonx"), None, Some("415")),
+            (json, Some("http://elsewhere.example"), Some("403")),
+            (json, Some("http://chorus.example"), Some("403")),
+            (json, Some("null"), Some("403")),
+            (json, Some("http://chorus.example:4011/x"), Some("403")),
+        ] {
+            let refusal = post_refusal(&command_request(content_type, origin));
+            assert_eq!(
+                refusal.map(|(s, _)| &s[..3]),
+                status,
+                "{:?} {:?}",
+                content_type,
+                origin
+            );
+        }
+        let mut no_host = command_request(json, Some("http://chorus.example:4011"));
+        no_host.host = None;
+        assert!(post_refusal(&no_host).is_some());
+    }
+
+    #[test]
+    fn streams_may_take_every_worker_but_one() {
+        assert_eq!(stream_slots(1), 1);
+        assert_eq!(stream_slots(2), 1);
+        assert_eq!(stream_slots(8), 7);
+        let streaming = AtomicUsize::new(0);
+        let a = StreamSlot::take(&streaming, 2).expect("one");
+        let b = StreamSlot::take(&streaming, 2).expect("two");
+        assert!(StreamSlot::take(&streaming, 2).is_none());
+        drop(a);
+        assert!(StreamSlot::take(&streaming, 2).is_some());
+        drop(b);
+        assert_eq!(streaming.load(Ordering::SeqCst), 0);
     }
 
     #[test]

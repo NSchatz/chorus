@@ -99,6 +99,22 @@ const SERVICE_DEADLINE: Duration = Duration::from_secs(10);
 const REFUSAL_PEEK: Duration = Duration::from_millis(25);
 const REFUSAL_TAIL: Duration = Duration::from_millis(200);
 
+/// How long a connection that sends nothing is watched for a refusal before it
+/// is taken as picked up by a worker. Longer than [`REFUSAL_PEEK`], because a
+/// wrong call here makes the pool look fuller than it is.
+const SILENT_PEEK: Duration = Duration::from_millis(250);
+
+/// How many of `workers` may hold an event stream at once: all but the one kept
+/// for commands. `crates/server/src/control.rs::stream_slots`, restated because
+/// this is a test of the binary and not of the library.
+fn stream_slots(workers: usize) -> usize {
+    if workers > 1 {
+        workers - 1
+    } else {
+        workers
+    }
+}
+
 /// How long to wait for an answer the control plane owes.
 const READ_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -781,17 +797,24 @@ fn the_control_plane_creates_every_thread_it_will_run_before_the_report_is_taken
     client.set_read_timeout(Some(READ_TIMEOUT)).unwrap();
     let mut scratch = vec![0u8; 65_536];
     assert!(client.read(&mut scratch).expect("audio comes down") > 0);
-    let held: Vec<Subscriber> = (0..workers).map(|_| plane.subscriber()).collect();
+    // Every worker a stream may have (all but the one kept for commands,
+    // `crates/server/src/control.rs::stream_slots`), and a command served
+    // beside them by the one that is left.
+    let held: Vec<Subscriber> = (0..stream_slots(workers))
+        .map(|_| plane.subscriber())
+        .collect();
     assert_eq!(
         held.len(),
-        workers,
-        "every worker is holding a served event stream"
+        stream_slots(workers),
+        "every worker a stream may have is holding a served event stream"
     );
+    let response = plane.command(&volume_body("kitchen", "0.250"));
+    assert!(response.contains("200 OK"), "{}", response);
     thread::sleep(SETTLE);
     assert_eq!(
         kernel_threads(pid),
         before,
-        "a client and {} subscribers together created a thread nobody declared",
+        "a client, {} subscribers and a command together created a thread nobody declared",
         held.len()
     );
     drop(held);
@@ -812,11 +835,30 @@ fn a_subscriber_past_the_ceiling_is_refused_by_name_rather_than_served_by_a_new_
     let before = kernel_threads(pid);
     assert_eq!(before.len(), 1 + 1 + 1 + 2 + 1 + 2);
 
-    // Both workers held by event streams that never close. Each attachment is
-    // established as SERVED, so what the third connection meets is a pool that
-    // is genuinely full rather than one that might be.
-    let held: Vec<Subscriber> = (0..2).map(|_| plane.subscriber()).collect();
-    assert_eq!(held.len(), 2, "both workers are holding a served stream");
+    // One worker held by an event stream that never closes, which is every
+    // worker a stream may have, and the other, kept for commands, held by a
+    // connection that has not sent its request. The attachment is established
+    // as SERVED and the silent connection as picked up, so what the third
+    // connection meets is a pool that is genuinely full rather than one that
+    // might be. The silent connection holds its worker until the request
+    // deadline (`control.rs::REQUEST_DEADLINE`), which is far longer than the
+    // accept loop takes to answer the third.
+    let held: Vec<Subscriber> = (0..stream_slots(2)).map(|_| plane.subscriber()).collect();
+    assert_eq!(
+        held.len(),
+        1,
+        "the stream worker is holding a served event stream"
+    );
+    let silent = plane.serve("a connection a worker picks up", |_| {
+        let mut socket = match TcpStream::connect(plane.address.as_str()) {
+            Ok(socket) => socket,
+            Err(cause) => return Attempt::NotServed(cause.to_string()),
+        };
+        match volunteered(&mut socket, SILENT_PEEK) {
+            Some(refusal) => Attempt::NotServed(refusal),
+            None => Attempt::Served(socket),
+        }
+    });
 
     // The third connection has no worker to go to. It must be answered and
     // closed rather than served by a thread that did not exist at report time.
@@ -836,6 +878,7 @@ fn a_subscriber_past_the_ceiling_is_refused_by_name_rather_than_served_by_a_new_
         before,
         "refusing a connection created a thread"
     );
+    drop(silent);
     drop(held);
     drop(server);
 }
