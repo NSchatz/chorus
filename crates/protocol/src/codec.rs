@@ -332,7 +332,7 @@ fn encode_audio_chunk(chunk: &AudioChunk) -> Result<Vec<u8>, EncodeError> {
         return Err(EncodeError::InvalidFieldValue(InvalidField::EmptyAudioData));
     }
     let frame_len = chunk.channels as usize * chunk.sample_format.bytes_per_sample();
-    if chunk.audio_data.len() % frame_len != 0 {
+    if !chunk.audio_data.len().is_multiple_of(frame_len) {
         return Err(EncodeError::InvalidFieldValue(
             InvalidField::AudioDataNotFrameAligned {
                 data_len: chunk.audio_data.len(),
@@ -472,7 +472,7 @@ fn decode_payload(message_type: MessageType, payload: &[u8]) -> Result<Message, 
             if channels_byte == 0 || channels_byte as u16 > MAX_CHANNELS {
                 return Err(InvalidField::ChannelsOutOfRange(channels_byte));
             }
-            if sample_rate_hz < MIN_SAMPLE_RATE_HZ || sample_rate_hz > MAX_SAMPLE_RATE_HZ {
+            if !(MIN_SAMPLE_RATE_HZ..=MAX_SAMPLE_RATE_HZ).contains(&sample_rate_hz) {
                 return Err(InvalidField::SampleRateOutOfRange(sample_rate_hz));
             }
 
@@ -484,7 +484,7 @@ fn decode_payload(message_type: MessageType, payload: &[u8]) -> Result<Message, 
                 return Err(InvalidField::EmptyAudioData);
             }
             let frame_len = channels_byte as usize * sample_format.bytes_per_sample();
-            if audio_data.len() % frame_len != 0 {
+            if !audio_data.len().is_multiple_of(frame_len) {
                 return Err(InvalidField::AudioDataNotFrameAligned {
                     data_len: audio_data.len(),
                     frame_len,

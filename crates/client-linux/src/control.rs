@@ -12,7 +12,7 @@
 //! One atomic. [`ZoneWatch::gain`] is the whole of what
 //! `crates/client-linux/src/run.rs` takes from here per chunk, and it is a
 //! `u32` load with no lock, no allocation and no parsing behind it. The strings
-//! - the zone's name, its group, the address its group's stream is on - are
+//! (the zone's name, its group, the address its group's stream is on) are
 //! behind a mutex and are read by the SESSION SUPERVISOR between sessions,
 //! never by the loop that is writing to a DAC.
 //!
@@ -264,19 +264,16 @@ impl ControlLink {
     /// meanwhile and this must never be what stops it.
     pub fn follow(&self, watch: &Arc<ZoneWatch>, keep_going: &dyn Fn() -> bool) {
         while keep_going() {
-            match self.open_event_stream() {
-                Ok(stream) => {
-                    // Say who this is, on every connection and not only the
-                    // first. A server that has restarted has the zone's name,
-                    // group, volume and mute back out of its state file, and
-                    // nothing about which endpoints are switched on: that is a
-                    // fact about now and is never read from a file. This is how
-                    // it learns it again, and it is the endpoint saying so
-                    // rather than anything being said to the endpoint.
-                    let _ = self.attach();
-                    self.read_events(stream, watch, keep_going)
-                }
-                Err(_) => {}
+            if let Ok(stream) = self.open_event_stream() {
+                // Say who this is, on every connection and not only the
+                // first. A server that has restarted has the zone's name,
+                // group, volume and mute back out of its state file, and
+                // nothing about which endpoints are switched on: that is a
+                // fact about now and is never read from a file. This is how
+                // it learns it again, and it is the endpoint saying so
+                // rather than anything being said to the endpoint.
+                let _ = self.attach();
+                self.read_events(stream, watch, keep_going)
             }
             let mut waited = Duration::ZERO;
             while keep_going() && waited < RETRY_INTERVAL {

@@ -122,10 +122,12 @@ fn a_wireless_zone_is_not_held_to_the_wired_bound() {
         WIRED_BOUND_US,
         "a wireless zone held to the wired bound is the whole thing this criterion forbids"
     );
-    assert!(
-        WIRELESS_BOUND_US > WIRED_BOUND_US,
-        "the wireless bound is the looser one"
-    );
+    const {
+        assert!(
+            WIRELESS_BOUND_US > WIRED_BOUND_US,
+            "the wireless bound is the looser one"
+        )
+    };
 }
 
 /// A zone that declares nothing is wired, and is unchanged by any of this.
@@ -164,21 +166,27 @@ fn the_wireless_policy_is_a_configuration_the_client_can_actually_run() {
         .expect("the committed wireless policy has to be a configuration the client accepts");
 
     // The relations, spelled out, so a later edit that breaks one is told which.
-    assert!(WIRELESS_POLICY.min_us > 0);
-    assert!(WIRELESS_POLICY.max_us > WIRELESS_POLICY.min_us);
-    assert!(
-        WIRELESS_POLICY.start_fill_us > WIRELESS_POLICY.min_us
-            && WIRELESS_POLICY.start_fill_us < WIRELESS_POLICY.max_us
-    );
-    assert!(
-        WIRELESS_POLICY.device_target_us > WIRELESS_POLICY.min_us
-            && WIRELESS_POLICY.device_target_us < WIRELESS_POLICY.max_us
-    );
-    assert!(
-        WIRELESS_POLICY.playout_latency_us > WIRELESS_POLICY.device_target_us
-            && WIRELESS_POLICY.playout_latency_us < WIRELESS_POLICY.max_us,
-        "the declared latency has to be one an endpoint in the group can apply"
-    );
+    const { assert!(WIRELESS_POLICY.min_us > 0) };
+    const { assert!(WIRELESS_POLICY.max_us > WIRELESS_POLICY.min_us) };
+    const {
+        assert!(
+            WIRELESS_POLICY.start_fill_us > WIRELESS_POLICY.min_us
+                && WIRELESS_POLICY.start_fill_us < WIRELESS_POLICY.max_us
+        )
+    };
+    const {
+        assert!(
+            WIRELESS_POLICY.device_target_us > WIRELESS_POLICY.min_us
+                && WIRELESS_POLICY.device_target_us < WIRELESS_POLICY.max_us
+        )
+    };
+    const {
+        assert!(
+            WIRELESS_POLICY.playout_latency_us > WIRELESS_POLICY.device_target_us
+                && WIRELESS_POLICY.playout_latency_us < WIRELESS_POLICY.max_us,
+            "the declared latency has to be one an endpoint in the group can apply"
+        )
+    };
 }
 
 /// AC-8. An endpoint in a group held to the wireless policy that cannot apply

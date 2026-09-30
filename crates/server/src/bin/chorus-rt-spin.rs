@@ -20,11 +20,11 @@
 //!
 //! Exit codes:
 //! - `3`  the host granted no real-time priority, so the bound cannot be shown
-//!        to fire here. This is the missing-prerequisite exit, and it names
-//!        both the prerequisite and the criterion.
+//!   to fire here. This is the missing-prerequisite exit, and it names
+//!   both the prerequisite and the criterion.
 //! - killed by `SIGXCPU`  the expected outcome: the bound fired.
 //! - `1`  the spin ran far past its bound and was still alive, which is the
-//!        failure this test exists to catch.
+//!   failure this test exists to catch.
 
 use std::io::Write;
 use std::process::ExitCode;
@@ -131,7 +131,7 @@ fn main() -> ExitCode {
         // Instant::now() every iteration would be a syscall on some kernels
         // and would make this a yielding loop rather than the one sched(7)
         // warns about.
-        if accumulator % (1 << 26) == 0 && started.elapsed() > give_up_after {
+        if accumulator.is_multiple_of(1 << 26) && started.elapsed() > give_up_after {
             eprintln!(
                 "chorus-rt-spin: the CPU-time bound of {} us did NOT fire: this process is still \
                  alive after {} s of non-yielding real-time execution",

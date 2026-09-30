@@ -622,7 +622,7 @@ impl std::error::Error for InventoryError {}
 
 impl From<InventoryError> for io::Error {
     fn from(e: InventoryError) -> io::Error {
-        io::Error::new(io::ErrorKind::Other, e.to_string())
+        io::Error::other(e.to_string())
     }
 }
 

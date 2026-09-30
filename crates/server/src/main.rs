@@ -4,31 +4,31 @@
 //! # Exit codes, which are the contract a script grades
 //!
 //! - `0`  the source ended cleanly, the end-of-stream signal was sent, and the
-//!        client was served.
+//!   client was served.
 //! - `2`  the configuration was refused, including an unsupported format.
 //! - `3`  the host contract was refused: the granted rtprio ceiling is zero,
-//!        the real-time policy was denied, or locking memory was denied. The
-//!        message names the limit that was read and what was wanted.
+//!   the real-time policy was denied, or locking memory was denied. The
+//!   message names the limit that was read and what was wanted.
 //! - `4`  the socket could not be bound, or the client connection failed.
 //! - `5`  the PCM source failed mid-stream. No end-of-stream signal is sent in
-//!        this case, on purpose.
+//!   this case, on purpose.
 //! - `6`  a thread runs under a real-time policy that was not reported.
 //! - `7`  this process could not take a complete inventory of its own threads,
-//!        so it cannot say whether `6` holds. Refusing here rather than
-//!        starting is the point: the contract is graded on that report, and a
-//!        report built from a list that lost a thread reads clean for the
-//!        wrong reason. A thread that was created and never reported itself is
-//!        the same failure from the other end and exits the same way.
+//!   so it cannot say whether `6` holds. Refusing here rather than
+//!   starting is the point: the contract is graded on that report, and a
+//!   report built from a list that lost a thread reads clean for the
+//!   wrong reason. A thread that was created and never reported itself is
+//!   the same failure from the other end and exits the same way.
 //! - `8`  the control channel could not be bound, or was denied, or the
-//!        persisted zone state could not be read. The message names the
-//!        address or the file and the reason. This happens BEFORE any audio
-//!        thread exists and before the audio socket is bound, so a server that
-//!        cannot be controlled never serves audio while reporting itself as
-//!        controllable.
+//!   persisted zone state could not be read. The message names the
+//!   address or the file and the reason. This happens BEFORE any audio
+//!   thread exists and before the audio socket is bound, so a server that
+//!   cannot be controlled never serves audio while reporting itself as
+//!   controllable.
 //! - `9`  this server was told to advertise itself by multicast DNS and could
-//!        not. The message names what failed. Refusing is the point: a server
-//!        that quietly did not advertise looks exactly like one whose
-//!        endpoints have not asked yet.
+//!   not. The message names what failed. Refusing is the point: a server
+//!   that quietly did not advertise looks exactly like one whose
+//!   endpoints have not asked yet.
 //!
 //! # The shape of the process, and why the report can be taken once
 //!

@@ -280,14 +280,13 @@ fn seventy_two_modelled_hours_hold_the_bound_and_every_resync_has_a_name() {
 
             // And the gain reaches PCM, every modelled hour, so the control
             // plane's effect is exercised for the whole run and not once.
-            let mut pcm: Vec<u8> = std::iter::repeat(16_000i16.to_le_bytes())
-                .take(480)
+            let mut pcm: Vec<u8> = std::iter::repeat_n(16_000i16.to_le_bytes(), 480)
                 .flatten()
                 .collect();
             gain.apply(endpoint_watch.gain(), &mut pcm);
             let expected =
                 (16_000i64 * i64::from(endpoint_watch.gain().thousandths()) / 1_000) as i16;
-            for sample in pcm.chunks_exact(2) {
+            for sample in pcm.as_chunks::<2>().0 {
                 assert_eq!(
                     i16::from_le_bytes([sample[0], sample[1]]),
                     expected,

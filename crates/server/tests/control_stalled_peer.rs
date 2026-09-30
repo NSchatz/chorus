@@ -183,7 +183,7 @@ fn a_peer_that_stops_reading_gives_its_worker_slot_back() {
             break;
         }
         applied += 1;
-        if applied % 8 == 0 {
+        if applied.is_multiple_of(8) {
             if let Some(text) = report(&address) {
                 if text.contains("dropped_subscribers=1") {
                     dropped = text;

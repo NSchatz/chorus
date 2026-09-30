@@ -3,6 +3,8 @@
 #if defined(CHORUS_TARGET_ESP32S3)
 
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 uint64_t chorus_monotonic_now_ns(void)
 {

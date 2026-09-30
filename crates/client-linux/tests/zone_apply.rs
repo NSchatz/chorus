@@ -176,8 +176,7 @@ fn a_shape() -> StreamShape {
 /// single wrong chunk is visible rather than averaged away.
 fn a_stream(chunks: u32, value: i16) -> (Handshake, PacedReader) {
     let mut parts: Vec<(Duration, Vec<u8>)> = Vec::new();
-    let pcm: Vec<u8> = std::iter::repeat(value.to_le_bytes())
-        .take(FRAMES_PER_CHUNK * 2)
+    let pcm: Vec<u8> = std::iter::repeat_n(value.to_le_bytes(), FRAMES_PER_CHUNK * 2)
         .flatten()
         .collect();
     for sequence in 0..chunks {
@@ -246,7 +245,9 @@ fn accepted_with(watch: Arc<ZoneWatch>, chunks: u32, value: i16) -> Vec<i16> {
     let _ = std::fs::remove_file(&path);
     let bytes = tape.lock().expect("the tape").clone();
     bytes
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| i16::from_le_bytes([c[0], c[1]]))
         .collect()
 }
@@ -454,12 +455,14 @@ fn a_volume_change_mid_run_reaches_the_samples_without_the_session_restarting() 
 
     let bytes = tape.lock().expect("the tape").clone();
     let accepted: Vec<i16> = bytes
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| i16::from_le_bytes([c[0], c[1]]))
         .collect();
     assert!(changed.load(Ordering::SeqCst));
     assert!(
-        accepted.iter().any(|s| *s == 16_000),
+        accepted.contains(&16_000),
         "the run has to have played at full scale before the change"
     );
     assert!(
