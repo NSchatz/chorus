@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "console_esp.h"
 #include "esp_hal.h"
 #include "esp_link.h"
 #include "esp_log.h"
@@ -124,6 +125,12 @@ void app_main(void)
              config.board.profile, config.board.model,
              chorus_board_status_name(config.board.model_status), config.board.needs_item,
              chorus_transport_name(config.link.transport));
+
+    /* The serial console (audit A-13), as soon as the configuration has parsed,
+     * so it answers on a board whose bring-up stops below. Runtime-only
+     * settings and the bench's commands; a console that cannot start is logged
+     * and the endpoint runs on without it. */
+    (void)chorus_esp_console_start(&config);
 
     /* The same validation the host build gates its compile on. A board that
      * somehow booted an image built from a configuration that breaks a
@@ -236,6 +243,9 @@ void app_main(void)
         (void)controller.stop_clock(controller.ctx);
         return;
     }
+
+    /* The console's hooks into the session (audit A-13): `server` and `status`. */
+    chorus_esp_console_attach(&session);
 
     chorus_session_result_t result;
     (void)chorus_session_run(&session, &result);

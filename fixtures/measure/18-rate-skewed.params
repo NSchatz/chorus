@@ -1,0 +1,22 @@
+# The produced-rate analyser's input (audit A-11, `chorus-measure rate`): the
+# first channel plays the chirp 150 ppm fast against the capture clock, the
+# second exactly on it. 150 ppm is far outside what a crystal pair does and
+# well inside what an imprecise I2S divider would, which is the fault AC-3 of
+# the endpoint rig is looking for. 1.5 s is the shortest span the committed
+# configuration publishes a figure over (rate_min_span_s) with room for the
+# first and last sweep; the noise makes each sweep start scatter.
+
+kind = skewed-chirp-pair
+output = 18-rate-skewed.wav
+
+sample_rate_hz = 96000
+duration_us = 1500000
+
+chirp_start_hz = 1000
+chirp_end_hz = 8000
+chirp_period_us = 20000
+amplitude = 0.25
+
+rate_ppm_a = 150.0
+noise_amplitude = 0.02
+seed = 260018

@@ -77,7 +77,9 @@ LIB_SRC := \
 	$(FW)/src/session.c \
 	$(FW)/src/wifi.c \
 	$(FW)/src/link.c \
-	$(FW)/src/endpoint_config.c
+	$(FW)/src/endpoint_config.c \
+	$(FW)/src/console.c \
+	$(FW)/src/decode_cost.c
 
 # The four units the configuration checker itself needs. It is built without
 # the gate below, because it IS the gate. wifi.c is here because the reader
@@ -130,7 +132,7 @@ LIB_SRC += $(CODEC_SRC)
 CFLAGS += $(DRFLAC_DEFS) $(CODEC_INC)
 
 .PHONY: all check config-check golden-vectors sync-scenarios safety-scans amplifier clocking \
-        telemetry wireless link session-outage noise-vectors psa-tree codec codec-fixtures clean
+        telemetry wireless link console session-outage noise-vectors psa-tree codec codec-fixtures clean
 
 # Every binary this makefile builds, enumerated. There is no wildcard over
 # firmware/tests on purpose, and the cost of that is a test has to be named in
@@ -140,7 +142,7 @@ CFLAGS += $(DRFLAC_DEFS) $(CODEC_INC)
 all: $(BUILD)/chorus-endpoint-config-check $(BUILD)/chorus-endpoint-scan \
      $(BUILD)/chorus-endpoint-session $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 \
      $(BUILD)/test_noise $(BUILD)/test_sync $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_scan $(BUILD)/test_telemetry \
-     $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_codec $(BUILD)/opus_compare
+     $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_codec $(BUILD)/opus_compare
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -210,7 +212,7 @@ $(BUILD)/test_scan: $(SCAN_SRC) $(FW)/tests/test_scan.c | $(BUILD)
 
 $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 $(BUILD)/test_noise $(BUILD)/test_sync \
 $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_telemetry \
-$(BUILD)/test_wifi $(BUILD)/test_link: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
+$(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
                          $(FW)/tests/test_%.c $(STAMP) $(PSA_LIB) $(VENDOR_OBJ) | $(BUILD)
 	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(TEST_SUPPORT) $(FW)/tests/test_$*.c \
 		$(PSA_LIB) $(VENDOR_OBJ) $(LDLIBS)
@@ -281,6 +283,12 @@ wireless: $(BUILD)/test_wifi
 link: $(BUILD)/test_link
 	$(BUILD)/test_link
 
+# Audit A-13: the endpoint's serial console, the commands the bench scripts send
+# (power-save with its readback, server, status, decode-cost), against the
+# simulated radio and the committed codec fixtures.
+console: $(BUILD)/test_console
+	$(BUILD)/test_console
+
 session-outage: $(BUILD)/chorus-endpoint-session
 	bash $(FW)/tests/session-outage.sh
 
@@ -298,7 +306,7 @@ codec-fixtures:
 		--vectors "$(OPUS_VECTORS)" --out $(REPO_ROOT)/fixtures/codec
 
 check: config-check golden-vectors sync-scenarios safety-scans clocking amplifier telemetry \
-       wireless link session-outage codec
+       wireless link console session-outage codec
 
 clean:
 	rm -rf $(BUILD)

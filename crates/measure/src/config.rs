@@ -131,6 +131,12 @@ pub struct MeasureConfig {
     /// The widest 95% confidence half-width, in ppm, a published slope may
     /// carry.
     pub free_run_max_half_width_ppm: f64,
+    /// How far apart `chorus-measure rate` samples the sweep starts (audit A-11).
+    pub rate_hop_us: f64,
+    /// The shortest span a produced-rate figure is published over, in seconds.
+    pub rate_min_span_s: f64,
+    /// The widest 95% half-width a produced-rate figure is published with.
+    pub rate_max_half_width_ppm: f64,
 }
 
 fn parse(path: &Path, text: &str) -> Result<BTreeMap<String, String>, ConfigError> {
@@ -197,6 +203,9 @@ impl MeasureConfig {
             free_run_min_points: number(path, &values, "free_run_min_points")? as usize,
             free_run_min_span_s: number(path, &values, "free_run_min_span_s")?,
             free_run_max_half_width_ppm: number(path, &values, "free_run_max_half_width_ppm")?,
+            rate_hop_us: number(path, &values, "rate_hop_us")?,
+            rate_min_span_s: number(path, &values, "rate_min_span_s")?,
+            rate_max_half_width_ppm: number(path, &values, "rate_max_half_width_ppm")?,
         })
     }
 }
@@ -222,6 +231,9 @@ min_resolved_windows = 4
 free_run_min_points = 30
 free_run_min_span_s = 60
 free_run_max_half_width_ppm = 1.0
+rate_hop_us = 100000
+rate_min_span_s = 1
+rate_max_half_width_ppm = 2.0
 ";
 
     #[test]

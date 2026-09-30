@@ -10,6 +10,7 @@
 //! chorus-measure pair <a.offsets> <b.offsets> --label <name> --source fixture|hardware --series-out <file>
 //! chorus-measure free-run <series.offsets> --label <name> --source fixture|hardware [--out <dir>]
 //! chorus-measure jitter <series.offsets> --label <name> --mode <power save> --transport <t>
+//! chorus-measure rate <capture.wav> [--channel a|b|both] [--rate <hz>]
 //! chorus-measure fixtures [--check]
 //! ```
 
@@ -22,6 +23,7 @@ use chorus_measure::freerun::{self, SlopeSettings};
 use chorus_measure::jitter::{self, JitterError, JitterRun, PowerSaveMode};
 use chorus_measure::lag::{self, LagSettings};
 use chorus_measure::report::{self, Baseline, FreeRunRun, LagRun, BASELINE_FILE, MEASUREMENTS_DIR};
+use chorus_measure::rate::{self, Channel, RateSettings};
 use chorus_measure::{fixtures, pair, repository_root, wav};
 
 const USAGE: &str = "\
@@ -34,6 +36,7 @@ usage:
                           [--out <dir>] [--baseline-out <file>]
   chorus-measure jitter <series.offsets> --label <name> --mode none|min-modem|max-modem
                         --transport wired|wireless [--out <dir>] [--measured]
+  chorus-measure rate <capture.wav> [--channel a|b|both] [--rate <hz>]
   chorus-measure fixtures [--check]
 
 Every threshold this rig compares against is declared in config/measure.conf.
@@ -51,6 +54,7 @@ fn main() -> ExitCode {
         "free-run" => free_run_command(&args[1..]),
         "pair" => pair_command(&args[1..]),
         "jitter" => jitter_command(&args[1..]),
+        "rate" => rate_command(&args[1..]),
         "fixtures" => fixtures_command(&args[1..]),
         "--help" | "-h" | "help" => {
             println!("{}", USAGE);
@@ -205,6 +209,50 @@ fn lag_command(args: &[String]) -> Result<(), String> {
         summary.windows_total
     );
     println!("chorus-measure: wrote {}", written.display());
+    Ok(())
+}
+
+/// Audit A-11: the sample rate a captured output actually produced, against
+/// the capture clock, recovered from where each repeat of the chirp starts.
+/// Prints one line per channel and writes nothing: no report and no baseline
+/// (audit A-5 was a baseline overwritten by the wrong command). The bench
+/// library keeps the printed lines with the run's hashed raw data.
+fn rate_command(args: &[String]) -> Result<(), String> {
+    let options = Options::parse(args, &["channel", "rate"])?;
+    let capture_path = options
+        .positional
+        .first()
+        .ok_or_else(|| format!("a capture is required\n\n{}", USAGE))?;
+    let root = repository_root();
+    let config = MeasureConfig::read(&root).map_err(|e| e.to_string())?;
+    let sample_rate = match options.value("rate") {
+        Some(text) => text
+            .parse::<u32>()
+            .map_err(|_| format!("--rate '{}' is not a sample rate", text))?,
+        None => config.capture_sample_rate_hz,
+    };
+    let channels: &[Channel] = match options.value("channel").unwrap_or("both") {
+        "a" => &[Channel::A],
+        "b" => &[Channel::B],
+        "both" => &[Channel::A, Channel::B],
+        other => return Err(format!("--channel is a, b or both, not '{}'", other)),
+    };
+    let capture =
+        wav::read_capture(Path::new(capture_path), sample_rate).map_err(|e| e.to_string())?;
+    let settings = RateSettings::from_config(&config)?;
+    for &channel in channels {
+        let estimate = rate::estimate(&capture, channel, &settings).map_err(|e| e.to_string())?;
+        println!(
+            "chorus-measure: channel {} produced rate {:+.3} ppm (+/-{:.3} ppm, 95%) against \
+             the capture clock, over {} of {} sweep starts spanning {:.1} s",
+            channel.name(),
+            estimate.ppm,
+            estimate.half_width_ppm,
+            estimate.windows_used,
+            estimate.windows_total,
+            estimate.span_s
+        );
+    }
     Ok(())
 }
 
