@@ -316,7 +316,21 @@ cd firmware && idf.py -B build/image -p /dev/ttyACM0 monitor | tee ../embedded5-
 (`Ctrl+]` leaves the monitor; delete any `MAC:` line from the log, K27.) **Expected**, in this
 order (tags `chorus`, `chorus-console`, `chorus-playout`, `chorus-marker`; timestamps differ):
 
-@@EXPECTED@@
+1. ESP-IDF's own boot lines, including `ESP-IDF:          v6.1`.
+2. `chorus: board profile=brick-s3-wired model="Sonocotta Esparagus Audio Brick (ESP32-S3), TAS5825M, W5500" status=ASSUMED needs_item="Your ESP32-S3 boards: module markings and a read-only chip report" link=wired`
+3. `chorus-console: console up: power-save, server, status, decode-cost, resources (values are runtime only)`
+4. `chorus-marker: marker off (pin_marker = none)`
+5. `chorus-playout: jitter buffer 57600 bytes (9600 frames), internal RAM free after it: <n> bytes`
+6. The amplifier's bring-up (the TAS5825M's datasheet sequence, ADR 0064):
+   `chorus: the amplifier at I2C address 0x4c answered as device 0x95, reported no fault, took 0.000 dB of analog gain against a ceiling of 0.000 dB, and reached Play after its clock was applied in Deep Sleep`.
+   The address 0x4C assumes the ADR pin strapped to ground (`ASSUMED`,
+   `firmware/config/endpoint.conf`); a part that does not answer there is refused with the output
+   stage dead, naming the address.
+7. `chorus: chorus-endpoint: link=... transport=wired ... amp=ok amp_fault_bits=0x00 ...` (the
+   telemetry line), then
+   `chorus: link=wired phy=w5500 status=up spi=spi2 clock_mhz=20 sclk=12 mosi=11 miso=13 cs=10 int=6 address_timeout_ms=30000`.
+8. Silence from the speakers: the image dials its committed server address (`127.0.0.1:4010`,
+   itself) until S7.3 points it at a real one.
 
 What changes with the answer: nothing to edit if it matches. If the amplifier's bring-up line is a
 refusal instead, it names the key and the datasheet page to re-check in
