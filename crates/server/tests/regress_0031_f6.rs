@@ -38,8 +38,9 @@
 //! threads, which is the half that is a property of the code rather than of
 //! the host.
 
+mod common;
+
 use std::io::{BufRead, BufReader, Read};
-use std::net::TcpStream;
 use std::os::raw::c_int;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
@@ -133,6 +134,7 @@ fn every_thread_the_server_runs_is_one_its_scheduling_report_counted() {
             // is under test is whether the report saw the threads at all.
             "--allow-non-realtime",
             "--allow-unlocked-memory",
+            "--ephemeral-identity",
             "--serve-forever",
         ])
         .stdout(Stdio::piped())
@@ -177,12 +179,10 @@ fn every_thread_the_server_runs_is_one_its_scheduling_report_counted() {
 
     // One client, which is what `deploy/run-server.sh` exists to serve. Two is
     // what AC-8 asks for, and each one costs another pair.
-    let mut client = TcpStream::connect(("127.0.0.1", port)).expect("the server is listening");
-    client
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .unwrap();
+    let mut client = common::v2_client(("127.0.0.1", port), Duration::from_secs(5));
     let mut scratch = vec![0u8; 65_536];
     let read = client
+        .reader
         .read(&mut scratch)
         .expect("the client is served audio");
     assert!(

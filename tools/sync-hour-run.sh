@@ -78,6 +78,7 @@ mkdir -p "$LOG_DIR"
 
 say "chorus: starting the server; both endpoints join the SAME stream"
 "$BIN_DIR/chorus-server" \
+    --ephemeral-identity \
     --listen "0.0.0.0:$PORT" \
     --source chirp \
     --measure-config "$REPO_ROOT/config/measure.conf" \
@@ -116,6 +117,7 @@ say "chorus: starting endpoint A here"
 read -r -a CLIENT_ARGS <<< "$(client_args)"
 RUN_STARTED=$SECONDS
 "$BIN_DIR/chorus-client" \
+    --ephemeral-identity --endpoint-id sync-hour-endpoint-a \
     --server "127.0.0.1:$PORT" \
     --device "$DEVICE" \
     --delay-log "$LOG_DIR/sync-hour-endpoint-a.log" \
@@ -129,7 +131,7 @@ say "chorus: starting endpoint B on $CHORUS_SECOND_ENDPOINT"
 # config/sync.conf, so both endpoints run the same numbers rather than whatever
 # the second machine happens to have.
 SERVER_HOST="${CHORUS_SERVER_HOST:-$(hostname)}"
-REMOTE_COMMAND="chorus-client --server ${SERVER_HOST}:${PORT} \
+REMOTE_COMMAND="chorus-client --ephemeral-identity --endpoint-id sync-hour-endpoint-b --server ${SERVER_HOST}:${PORT} \
 --device ${CHORUS_SECOND_DEVICE:-default} \
 --delay-log sync-hour-endpoint-b.log $(client_args)"
 # shellcheck disable=SC2029 # the remote command line is built here on purpose, from this checkout's config

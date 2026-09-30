@@ -38,6 +38,7 @@ say "  log:      $LOG"
 say "  run:      ${SECONDS_TO_RUN}s (the graded interval opens after the start fill)"
 
 "$BIN_DIR/chorus-server" \
+    --ephemeral-identity \
     --listen "127.0.0.1:$PORT" \
     --source tone \
     --rate "$(conf sample_rate_hz)" \
@@ -55,6 +56,7 @@ sleep 1
 
 set +e
 "$BIN_DIR/chorus-client" \
+    --ephemeral-identity \
     --server "127.0.0.1:$PORT" \
     --device "$DEVICE" \
     --min-us "$(conf min_us)" \

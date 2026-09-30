@@ -72,6 +72,7 @@ say "  criterion: $CRITERION"
 # A real server, and deliberately NO --advertise: there is nothing on this link
 # for a browse to find, which is the criterion's antecedent.
 "$BIN_DIR/chorus-server" \
+    --ephemeral-identity \
     --listen "127.0.0.1:$AUDIO" \
     --source tone \
     --rate "$(conf sample_rate_hz)" \
@@ -102,6 +103,7 @@ check "nothing-is-advertising-on-this-link" \
 # endpoint the criterion describes.
 set +e
 OUT="$("$BIN_DIR/chorus-client" \
+    --ephemeral-identity --endpoint-id discovery-fallback-discovered \
     --server "127.0.0.1:$AUDIO" \
     --discover --discover-ms "$WINDOW_MS" \
     --device "$DEVICE" \
@@ -173,6 +175,7 @@ check "the-server-saw-the-endpoint-connect" \
 # about --server on its own: the same client, same server, no --discover.
 set +e
 CONFIGURED="$("$BIN_DIR/chorus-client" \
+    --ephemeral-identity --endpoint-id discovery-fallback-configured \
     --server "127.0.0.1:$AUDIO" \
     --device "$DEVICE" \
     --run-seconds 3 \

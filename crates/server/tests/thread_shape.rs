@@ -31,6 +31,8 @@
 //! point that grades the granted case, and it refuses by name on a host like
 //! this one. What is checked here is the property that holds either way.
 
+mod common;
+
 use std::collections::BTreeSet;
 use std::io::{BufRead, BufReader, Read};
 use std::net::TcpStream;
@@ -38,6 +40,8 @@ use std::process::{Child, ChildStdout, Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
+
+use chorus_client_linux::session::Session;
 
 /// A port nothing is listening on, by binding one and letting it go.
 fn free_port() -> u16 {
@@ -76,6 +80,7 @@ fn start(port: u16, extra: &[&str]) -> (Server, u32, mpsc::Receiver<String>, Vec
         // real-time priority and less locked memory than the server wants.
         "--allow-non-realtime".to_string(),
         "--allow-unlocked-memory".to_string(),
+        "--ephemeral-identity".to_string(),
     ];
     args.extend(extra.iter().map(|a| a.to_string()));
 
@@ -152,14 +157,13 @@ fn kernel_threads(pid: u32) -> BTreeSet<u32> {
         .collect()
 }
 
-/// Attach a client and read enough to know it is being served.
-fn served(port: u16) -> TcpStream {
-    let mut client = TcpStream::connect(("127.0.0.1", port)).expect("the server is listening");
-    client
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .unwrap();
+/// Attach a client (a protocol v2 session, as every audio client is) and
+/// read enough to know it is being served.
+fn served(port: u16) -> Session {
+    let mut client = common::v2_client(("127.0.0.1", port), Duration::from_secs(5));
     let mut scratch = vec![0u8; 65_536];
     let read = client
+        .reader
         .read(&mut scratch)
         .expect("the client is served audio");
     assert!(

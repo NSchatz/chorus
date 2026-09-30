@@ -11,7 +11,8 @@ those fields, not when it matches the Rust code (`crates/protocol`, the v2
 half in `crates/protocol/src/v2/`).
 
 Why it is shaped this way: `docs/decisions/0003-wire-protocol-framing.md` (the
-frame), `docs/decisions/0039-the-v2-key-exchange.md` (the session, and the
+frame), `docs/decisions/0041-protocol-v2-framing.md` (what v2 keeps, adds and
+encrypts, and v1 refused by name), `docs/decisions/0039-the-v2-key-exchange.md` (the session, and the
 vendored crypto primitives) and `docs/decisions/0040-codec-negotiation.md` (codecs).
 What a decoder does when it cannot accept a frame:
 `docs/decisions/0005-decoder-frame-validation.md`.

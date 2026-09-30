@@ -138,6 +138,7 @@ fn start(state: &Path) -> Server {
             "--serve-forever",
             "--allow-non-realtime",
             "--allow-unlocked-memory",
+            "--ephemeral-identity",
             "--control-listen",
             "127.0.0.1:0",
             "--state-file",

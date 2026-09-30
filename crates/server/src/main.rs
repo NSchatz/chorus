@@ -5,7 +5,11 @@
 //!
 //! - `0`  the source ended cleanly, the end-of-stream signal was sent, and the
 //!   client was served.
-//! - `2`  the configuration was refused, including an unsupported format.
+//! - `2`  the configuration was refused, including an unsupported format, a
+//!   channel count with no channel map, a chunk too large for one protocol
+//!   v2 record, and a server with no identity to present (no
+//!   `--identity-dir`, no `--state-file`, no `--ephemeral-identity`) or one
+//!   whose key or adoption file cannot be read.
 //! - `3`  the host contract was refused: the granted rtprio ceiling is zero,
 //!   the real-time policy was denied, or locking memory was denied. The
 //!   message names the limit that was read and what was wanted.
@@ -93,6 +97,9 @@ use chorus_server::hostreport::{
     ContractRefused, RealTimeOutcome, SchedulingVerdict,
 };
 use chorus_server::serve::{serve_stream, ServeError, ServeParams, ServeReport};
+use chorus_server::session::{
+    identity_source, load_identity, IdentitySource, Offer, OfferRefused, SessionContext,
+};
 use chorus_server::source::{self, PcmSource};
 use chorus_server::stream::{Fanout, FanoutSink};
 
@@ -190,6 +197,12 @@ audio:
   --serve-forever             keep serving after a client ends (default: serve once)
   --max-clients <n>           audio clients at once (default 4)
 
+identity (protocol v2; every audio connection is an encrypted session):
+  --identity-dir <dir>        server.key and adopted-endpoints live here
+                              (default: the directory of --state-file; with neither, refused)
+  --server-id <id>            the id endpoints pin this server's key to (default chorus-server)
+  --ephemeral-identity        a key for this process only and adoptions in memory (tests)
+
 host contract:
   --rt-priority <n> --rttime-us <us> --memlock-wanted-bytes <bytes>
   --allow-non-realtime --no-lock-memory --allow-unlocked-memory
@@ -273,6 +286,24 @@ fn main() -> ExitCode {
         println!("chorus-server: stopped reason=unsupported-format chunks_sent=0");
         return ExitCode::from(EXIT_CONFIG);
     }
+    // Protocol v2 announces every stream with an explicit channel map, and
+    // carries every chunk inside one record, so a channel count with no layout
+    // and a chunk too large for a record are refused here, by name, like a
+    // format.
+    let offer = match Offer::new(&format, config.chunk_us) {
+        Ok(o) => o,
+        Err(e) => {
+            report("stream format refused", &e.to_string());
+            println!(
+                "chorus-server: stopped reason={} chunks_sent=0",
+                match e {
+                    OfferRefused::NoChannelMap { .. } => "no-channel-map",
+                    OfferRefused::ChunkTooLarge { .. } => "chunk-too-large-for-a-record",
+                }
+            );
+            return ExitCode::from(EXIT_CONFIG);
+        }
+    };
 
     // `--source chirp` is built HERE, before a socket or a thread exists, from
     // the rig's committed values and through its amplitude ceiling. The chirp
@@ -551,6 +582,77 @@ fn main() -> ExitCode {
         memory: memory.phrase(),
     };
 
+    // The server's protocol v2 identity: its long-term key and the endpoints
+    // it has adopted. Loaded before any client thread exists, and refused by
+    // name when there is nowhere to keep it.
+    let Some(source) = identity_source(
+        config.identity_dir.as_deref(),
+        config.state_file.as_deref(),
+        config.ephemeral_identity,
+    ) else {
+        report(
+            "configuration refused",
+            "this server has no identity to present: pass --identity-dir <dir> (or --state-file, \
+             whose directory is then used) so its key and adopted endpoints survive a restart, \
+             or --ephemeral-identity for a throwaway run",
+        );
+        println!("chorus-server: stopped reason=no-identity chunks_sent=0 played=0");
+        return ExitCode::from(EXIT_CONFIG);
+    };
+    if config.server_id.is_empty() || config.server_id.len() > 255 {
+        report(
+            "configuration refused",
+            &format!(
+                "--server-id is 1 to 255 bytes, not {}",
+                config.server_id.len()
+            ),
+        );
+        println!("chorus-server: stopped reason=identity-refused chunks_sent=0 played=0");
+        return ExitCode::from(EXIT_CONFIG);
+    }
+    let (identity, adoptions) = match load_identity(&source, &config.server_id) {
+        Ok(v) => v,
+        Err(e) => {
+            report("the server identity could not be loaded", &e);
+            println!("chorus-server: stopped reason=identity-refused chunks_sent=0 played=0");
+            return ExitCode::from(EXIT_CONFIG);
+        }
+    };
+    status.say(&format!(
+        "identity id={} key={} store={}",
+        identity.id,
+        chorus_protocol::v2::noise::fingerprint(&identity.keypair.public),
+        match &source {
+            IdentitySource::Ephemeral => "ephemeral".to_string(),
+            IdentitySource::Directory(dir) => dir.display().to_string(),
+        }
+    ));
+
+    // One unit per client whose session is up goes down `arrivals`, which is
+    // how the supervisor waits for somebody to play to without owning the
+    // listener. It is sent from the slot's reader once the handshake and the
+    // negotiation succeed, so a refused peer (a v1 client, a changed key, a
+    // port probe) never starts a stream.
+    let (arrived, arrivals) = mpsc::channel::<()>();
+    let session = Arc::new(SessionContext {
+        identity,
+        adoptions,
+        offer,
+        log: {
+            let status = status.clone();
+            Box::new(move |line: &str| status.say(line))
+        },
+        on_session: {
+            let arrived = arrived.clone();
+            Box::new(move || {
+                let _ = arrived.send(());
+            })
+        },
+        hellos: Default::default(),
+        telemetry: Default::default(),
+    });
+    drop(arrived);
+
     // Every client thread the process will run, created now, while this thread
     // holds no real-time policy for any of them to inherit.
     let pool = ClientPool::spawn(
@@ -559,16 +661,14 @@ fn main() -> ExitCode {
         Arc::clone(&keep),
         Arc::clone(&registry),
         ready.clone(),
+        Arc::clone(&session),
     );
     let client_threads = pool.threads();
+    let busy = pool.busy();
 
     // The acceptor. It is handed the listener rather than binding one, so that
     // the socket is still bound after the host contract has been reported and
     // graded, exactly as it was when this loop ran on the main thread.
-    //
-    // One unit per attached client goes down `arrivals`, which is how the
-    // supervisor waits for somebody to play to without owning the listener.
-    let (arrived, arrivals) = mpsc::channel::<()>();
     let (bound, listening) = mpsc::channel::<TcpListener>();
     {
         let registry = Arc::clone(&registry);
@@ -589,12 +689,7 @@ fn main() -> ExitCode {
             while keep.load(Ordering::SeqCst) {
                 match listener.accept() {
                     Ok((stream, peer)) => {
-                        if !attach(stream, peer, &pool, &fanout, &status) {
-                            continue;
-                        }
-                        if arrived.send(()).is_err() {
-                            return;
-                        }
+                        attach(stream, peer, &pool, &fanout, &status);
                     }
                     Err(e) => {
                         report("a client connection failed", &e.to_string());
@@ -816,7 +911,13 @@ fn main() -> ExitCode {
                 }
                 if config.once {
                     keep.store(false, Ordering::SeqCst);
-                    status.say("stopped reason=stream-ended");
+                    // The end of the stream is queued for every client; the
+                    // process does not exit under the writers delivering it.
+                    let delivered = busy.wait_idle(Duration::from_secs(2));
+                    status.say(&format!(
+                        "stopped reason=stream-ended clients_finished={}",
+                        u8::from(delivered)
+                    ));
                     break ExitCode::SUCCESS;
                 }
                 // The clients of the stream that just ended have had their
@@ -867,7 +968,7 @@ fn attach(
     // rather than sit in a blocking read forever.
     let _ = reader.set_read_timeout(Some(Duration::from_millis(200)));
 
-    if !pool.attach(stream, reader, || fanout.subscribe()) {
+    if !pool.attach(stream, reader, peer, || fanout.subscribe()) {
         status.say(&format!(
             "client refused peer={} reason=no-free-client-slot max_clients={} clients={}",
             peer,

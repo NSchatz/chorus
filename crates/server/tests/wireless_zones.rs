@@ -72,6 +72,7 @@ fn start(zone_args: &[&str], state: Option<&PathBuf>) -> (Server, BufReader<Chil
         "--serve-forever".to_string(),
         "--allow-non-realtime".to_string(),
         "--allow-unlocked-memory".to_string(),
+        "--ephemeral-identity".to_string(),
         "--control-listen".to_string(),
         format!("127.0.0.1:{}", control),
     ];
@@ -386,6 +387,7 @@ fn a_server_with_no_control_channel_serves_no_zone_and_claims_no_tier() {
             "--serve-forever",
             "--allow-non-realtime",
             "--allow-unlocked-memory",
+            "--ephemeral-identity",
             "--zone",
             "kitchen=wireless",
         ])
@@ -583,6 +585,7 @@ fn a_transport_the_committed_configuration_does_not_name_stops_the_server() {
             "127.0.0.1:0",
             "--allow-non-realtime",
             "--allow-unlocked-memory",
+            "--ephemeral-identity",
             "--zone",
             "bedroom=wifi",
         ])

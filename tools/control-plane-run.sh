@@ -98,6 +98,7 @@ start_server() {
     local log="$2"
     shift 2
     "$BIN_DIR/chorus-server" \
+        --ephemeral-identity \
         --listen "127.0.0.1:$listen" \
         --source tone \
         --rate "$(conf sample_rate_hz)" \
@@ -242,6 +243,7 @@ say ""
 say "chorus: AC-1, a real endpoint following its zone between two streams"
 
 "$BIN_DIR/chorus-client" \
+    --ephemeral-identity \
     --server "127.0.0.1:$AUDIO_A" \
     --control "127.0.0.1:$CONTROL" \
     --zone kitchen \

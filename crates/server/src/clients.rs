@@ -31,6 +31,14 @@
 //! connection at a time. When both halves are finished the slot returns to the
 //! free list and can take the next client.
 //!
+//! # The session comes first
+//!
+//! Every connection is a protocol v2 session ([`crate::session`]). The reader
+//! runs the handshake, with a timeout, on the slot's own thread, so a slow
+//! peer holds its slot and never the acceptor; the writer waits for the
+//! session and writes nothing before it, so no frame leaves outside a record.
+//! Neither costs a thread.
+//!
 //! # A full pool refuses rather than grows
 //!
 //! `max_clients` is a ceiling on connections, and it is the same argument the
@@ -39,17 +47,25 @@
 //! arriving with every slot busy is closed and named in the log, which an
 //! operator can see, rather than served by a thread nothing declared.
 
-use std::net::TcpStream;
+use std::net::{SocketAddr, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender};
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
+
+use chorus_protocol::v2::session::SecureWriter;
 
 use chorus_audio::MonotonicTimeline;
 use chorus_hostctl::ThreadRegistry;
 
 use crate::hostreport::register_ordinary_thread;
+use crate::session::{establish, Greeting, SessionContext};
 use crate::stream::{read_requests, write_outbound, Outbound};
+
+/// How often a writer waiting for its session looks up to see whether it is
+/// still wanted: the same interval the request reader's socket timeout uses.
+const GREETING_WAKE: Duration = Duration::from_millis(200);
 
 /// One connection's shared state: whether it is still live, and how many of
 /// its two halves have finished with it.
@@ -73,6 +89,9 @@ struct WriterJob {
     sink: TcpStream,
     inbox: Receiver<Outbound>,
     life: Arc<SlotLife>,
+    /// The session, once the reader has it up. Nothing is written on the
+    /// connection before it arrives, so no frame leaves outside a record.
+    greeting: Receiver<Greeting>,
 }
 
 /// What the reader half of a slot is handed.
@@ -80,6 +99,8 @@ struct ReaderJob {
     source: TcpStream,
     out: SyncSender<Outbound>,
     life: Arc<SlotLife>,
+    greeting: SyncSender<Greeting>,
+    peer: SocketAddr,
 }
 
 /// One client's worth of capacity: two threads that exist whether or not a
@@ -99,6 +120,38 @@ pub struct ClientPool {
     slots: Vec<Slot>,
     free: Receiver<usize>,
     max_clients: usize,
+    busy: Arc<AtomicUsize>,
+}
+
+/// How many slots are serving a connection right now, readable from any
+/// thread (the pool itself belongs to the acceptor).
+#[derive(Debug, Clone)]
+pub struct BusySlots(Arc<AtomicUsize>);
+
+impl BusySlots {
+    /// Slots whose two halves have not both finished with their connection.
+    pub fn count(&self) -> usize {
+        self.0.load(Ordering::SeqCst)
+    }
+
+    /// Wait until every slot has finished, or until `limit` has passed.
+    /// Returns whether they all finished.
+    ///
+    /// A run that is stopping sets the pool's `keep` to false first: every
+    /// writer then writes what is already queued for it (the end of the
+    /// stream included) and stops, and every reader stops within its read
+    /// timeout. Waiting here is what lets that queued end reach a client
+    /// before the process exits under it.
+    pub fn wait_idle(&self, limit: Duration) -> bool {
+        let deadline = std::time::Instant::now() + limit;
+        while self.count() > 0 {
+            if std::time::Instant::now() >= deadline {
+                return false;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        true
+    }
 }
 
 impl ClientPool {
@@ -114,15 +167,20 @@ impl ClientPool {
     /// The threads inherit the scheduling policy of the thread that calls this,
     /// which is why the caller is the one that must not be holding a real-time
     /// one.
+    ///
+    /// `session` is what every slot's reader runs the protocol v2 handshake
+    /// with before it serves a request (see [`crate::session`]).
     pub fn spawn(
         max_clients: usize,
         timeline: MonotonicTimeline,
         keep: Arc<AtomicBool>,
         registry: Arc<ThreadRegistry>,
         ready: Sender<()>,
+        session: Arc<SessionContext>,
     ) -> ClientPool {
         let (free_tx, free) = mpsc::channel::<usize>();
         let mut slots = Vec::with_capacity(max_clients);
+        let busy = Arc::new(AtomicUsize::new(0));
 
         for index in 0..max_clients {
             let life = Arc::new(SlotLife::idle());
@@ -132,6 +190,7 @@ impl ClientPool {
                 let registry = Arc::clone(&registry);
                 let ready = ready.clone();
                 let free_tx = free_tx.clone();
+                let busy = Arc::clone(&busy);
                 thread::spawn(move || {
                     register_ordinary_thread(&format!("client-writer-{}", index), &registry);
                     if ready.send(()).is_err() {
@@ -140,19 +199,36 @@ impl ClientPool {
                     drop(ready);
                     for job in jobs {
                         let WriterJob {
-                            mut sink,
+                            sink,
                             inbox,
                             life,
+                            greeting,
                         } = job;
                         let going = {
                             let keep = Arc::clone(&keep);
                             let life = Arc::clone(&life);
                             move || keep.load(Ordering::SeqCst) && life.live.load(Ordering::SeqCst)
                         };
-                        let _ = write_outbound(&mut sink, timeline, &inbox, &going);
+                        // Wait for the reader's session, or for the slot to
+                        // be released because the handshake failed or the
+                        // run stopped.
+                        let session = loop {
+                            match greeting.recv_timeout(GREETING_WAKE) {
+                                Ok(g) => break Some(g),
+                                Err(RecvTimeoutError::Timeout) if going() => continue,
+                                Err(_) => break None,
+                            }
+                        };
+                        if let Some(Greeting { sealer, messages }) = session {
+                            let mut secure = SecureWriter::new(sink, sealer);
+                            if messages.iter().try_for_each(|m| secure.send(m)).is_ok() {
+                                let _ = write_outbound(&mut secure, timeline, &inbox, &going);
+                            }
+                        } else {
+                            drop(sink);
+                        }
                         drop(inbox);
-                        drop(sink);
-                        if !release(&life, index, &free_tx) {
+                        if !release(&life, index, &free_tx, &busy) {
                             return;
                         }
                     }
@@ -161,10 +237,12 @@ impl ClientPool {
 
             let (to_reader, jobs) = mpsc::sync_channel::<ReaderJob>(1);
             {
+                let session = Arc::clone(&session);
                 let keep = Arc::clone(&keep);
                 let registry = Arc::clone(&registry);
                 let ready = ready.clone();
                 let free_tx = free_tx.clone();
+                let busy = Arc::clone(&busy);
                 thread::spawn(move || {
                     register_ordinary_thread(&format!("client-reader-{}", index), &registry);
                     if ready.send(()).is_err() {
@@ -173,19 +251,29 @@ impl ClientPool {
                     drop(ready);
                     for job in jobs {
                         let ReaderJob {
-                            mut source,
+                            source,
                             out,
                             life,
+                            greeting,
+                            peer,
                         } = job;
                         let going = {
                             let keep = Arc::clone(&keep);
                             let life = Arc::clone(&life);
                             move || keep.load(Ordering::SeqCst) && life.live.load(Ordering::SeqCst)
                         };
-                        read_requests(&mut source, timeline, &out, &going);
+                        // The handshake runs here, on this slot's own thread,
+                        // so a slow peer never stalls the acceptor.
+                        if let Some((mut reader, hello)) = establish(&source, peer, &session) {
+                            if greeting.send(hello).is_ok() {
+                                (session.on_session)();
+                                read_requests(&mut reader, timeline, &out, &going);
+                            }
+                        }
+                        drop(greeting);
                         drop(out);
                         drop(source);
-                        if !release(&life, index, &free_tx) {
+                        if !release(&life, index, &free_tx, &busy) {
                             return;
                         }
                     }
@@ -208,7 +296,14 @@ impl ClientPool {
             slots,
             free,
             max_clients,
+            busy,
         }
+    }
+
+    /// A handle on how many slots are serving, for the thread that decides
+    /// when the process may exit.
+    pub fn busy(&self) -> BusySlots {
+        BusySlots(Arc::clone(&self.busy))
     }
 
     /// How many threads this pool created.
@@ -230,7 +325,13 @@ impl ClientPool {
     /// connection never leaves a subscriber in the fanout with nothing draining
     /// it. `false` means every slot is busy: the sockets are dropped, which
     /// closes the connection, and the caller is expected to say so out loud.
-    pub fn attach<F>(&self, sink: TcpStream, source: TcpStream, subscribe: F) -> bool
+    pub fn attach<F>(
+        &self,
+        sink: TcpStream,
+        source: TcpStream,
+        peer: SocketAddr,
+        subscribe: F,
+    ) -> bool
     where
         F: FnOnce() -> (SyncSender<Outbound>, Receiver<Outbound>),
     {
@@ -239,15 +340,18 @@ impl ClientPool {
             Err(_) => return false,
         };
         let slot = &self.slots[index];
+        self.busy.fetch_add(1, Ordering::SeqCst);
         slot.life.finished.store(0, Ordering::SeqCst);
         slot.life.live.store(true, Ordering::SeqCst);
         let (out, inbox) = subscribe();
+        let (greeting_tx, greeting_rx) = mpsc::sync_channel::<Greeting>(1);
         let handed_over = slot
             .to_writer
             .send(WriterJob {
                 sink,
                 inbox,
                 life: Arc::clone(&slot.life),
+                greeting: greeting_rx,
             })
             .is_ok()
             && slot
@@ -256,6 +360,8 @@ impl ClientPool {
                     source,
                     out,
                     life: Arc::clone(&slot.life),
+                    greeting: greeting_tx,
+                    peer,
                 })
                 .is_ok();
         if !handed_over {
@@ -264,6 +370,7 @@ impl ClientPool {
             // list: a slot with one half missing would serve the next client
             // in one direction only, and half a connection is worse than none.
             slot.life.live.store(false, Ordering::SeqCst);
+            self.busy.fetch_sub(1, Ordering::SeqCst);
         }
         handed_over
     }
@@ -273,12 +380,13 @@ impl ClientPool {
 /// halves have.
 ///
 /// Returns whether the pool is still there to return it to.
-fn release(life: &Arc<SlotLife>, index: usize, free: &Sender<usize>) -> bool {
+fn release(life: &Arc<SlotLife>, index: usize, free: &Sender<usize>, busy: &AtomicUsize) -> bool {
     // Whichever half finishes first tells the other one to stop: the writer is
     // parked on a queue nothing will fill again, and the reader on a socket
     // that has nothing more to say.
     life.live.store(false, Ordering::SeqCst);
     if life.finished.fetch_add(1, Ordering::SeqCst) == 1 {
+        busy.fetch_sub(1, Ordering::SeqCst);
         free.send(index).is_ok()
     } else {
         true
@@ -293,9 +401,65 @@ mod tests {
     use std::sync::mpsc::sync_channel;
     use std::time::{Duration, Instant};
 
+    use chorus_audio::StreamFormat;
+    use chorus_protocol::v2::noise::Keypair;
+    use chorus_protocol::v2::session::{connect, Identity, SecureReader};
+    use chorus_protocol::v2::{roles, Capabilities, Codec, Hello, Message as V2Message};
     use chorus_protocol::{decode_frame, encode, FrameOutcome, Message, TimeSync};
 
+    use crate::session::Offer;
     use crate::stream::SUBSCRIBER_QUEUE_LIMIT;
+
+    fn context() -> Arc<SessionContext> {
+        let offer = Offer::new(&StreamFormat::new(48_000, 2, "pcm_s16le").unwrap(), 20_000)
+            .expect("stereo has a channel map");
+        Arc::new(SessionContext::quiet(
+            Identity {
+                id: "test-server".to_string(),
+                keypair: Keypair::from_secret([11; 32]),
+            },
+            offer,
+        ))
+    }
+
+    /// The endpoint's side of a session over `stream`: the handshake, then
+    /// `hello` and `capabilities`, as the Linux client sends them.
+    fn v2_endpoint(stream: TcpStream) -> (SecureReader<TcpStream>, SecureWriter<TcpStream>) {
+        let mut handshake = stream.try_clone().unwrap();
+        let me = Identity {
+            id: "test-endpoint".to_string(),
+            keypair: Keypair::from_secret([12; 32]),
+        };
+        let session = connect(
+            &mut handshake,
+            &me,
+            Keypair::from_secret([13; 32]),
+            |_, _| chorus_protocol::v2::adoption::Verdict::Adopted,
+        )
+        .expect("the session comes up");
+        let mut writer = SecureWriter::new(stream.try_clone().unwrap(), session.sealer);
+        writer
+            .send(&V2Message::Hello(Hello {
+                protocol_version: 2,
+                roles: roles::PLAYER,
+                name: String::new(),
+                software: "test".to_string(),
+            }))
+            .unwrap();
+        writer
+            .send(&V2Message::Capabilities(Capabilities {
+                codecs: Codec::Pcm.bit(),
+                sample_formats: 0b111,
+                max_channels: 8,
+                sample_rates_hz: vec![48_000],
+                buffer_ms: 300,
+                intrinsic_latency_ns: 0,
+                led_count: 0,
+                visualizer_bands: 0,
+            }))
+            .unwrap();
+        (SecureReader::new(stream, session.opener), writer)
+    }
 
     /// A connected pair of loopback sockets: what the acceptor would have.
     fn connected_pair() -> (TcpStream, TcpStream) {
@@ -318,6 +482,7 @@ mod tests {
             Arc::new(AtomicBool::new(true)),
             Arc::clone(&registry),
             ready,
+            context(),
         );
         // Every thread reports itself and drops its sender, so this drains
         // exactly when the population is complete.
@@ -331,7 +496,10 @@ mod tests {
     /// Hand a connection to the pool, with a real bounded subscriber queue.
     fn attach(pool: &ClientPool, server: TcpStream) -> bool {
         let reader = server.try_clone().expect("a connection splits");
-        pool.attach(server, reader, || sync_channel(SUBSCRIBER_QUEUE_LIMIT))
+        let peer = server.peer_addr().expect("a connected peer");
+        pool.attach(server, reader, peer, || {
+            sync_channel(SUBSCRIBER_QUEUE_LIMIT)
+        })
     }
 
     fn wait_until<F: Fn() -> bool>(what: &str, f: F) {
@@ -436,8 +604,12 @@ mod tests {
     #[test]
     fn an_attached_client_is_answered_on_the_connection_it_asked_on() {
         let (pool, _registry, _up) = a_pool(1);
-        let (server, mut client) = connected_pair();
+        let (server, client) = connected_pair();
         assert!(attach(&pool, server));
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let (mut reader, mut writer) = v2_endpoint(client);
 
         let request = encode(&Message::TimeSync(TimeSync {
             t0_ns: 77,
@@ -446,13 +618,10 @@ mod tests {
             t3_ns: 0,
         }))
         .unwrap();
-        client.write_all(&request).expect("the request goes up");
-        client
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
+        writer.write_all(&request).expect("the request goes up");
 
         let mut wire = vec![0u8; 4_096];
-        let read = client.read(&mut wire).expect("the reply comes back");
+        let read = reader.read(&mut wire).expect("the reply comes back");
         match decode_frame(&wire[..read]).outcome {
             FrameOutcome::Decoded(Message::TimeSync(reply)) => {
                 assert_eq!(reply.t0_ns, 77, "the client's own stamp comes back");

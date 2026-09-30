@@ -51,6 +51,7 @@ pub mod delaylog;
 pub mod logcheck;
 pub mod receive;
 pub mod run;
+pub mod session;
 pub mod sink;
 pub mod sync;
 pub mod zone;

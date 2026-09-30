@@ -19,6 +19,12 @@
 //!   The message says which of the two it lacked, because those are two
 //!   different things to fix.
 //!
+//! A protocol v2 session that does not open (the server may speak v1, it
+//! refused this endpoint's key, or its own key changed) exits `3` with the
+//! refusal named on the `stopped` line; an identity that cannot be loaded, or
+//! a playing run given no `--identity-dir` and no `--ephemeral-identity`,
+//! exits `2`.
+//!
 //! Nothing exits zero while producing no audio, and nothing reports itself as
 //! playing while it is not.
 //!
@@ -49,6 +55,7 @@ use chorus_client_linux::control::{ControlLink, ZoneWatch};
 use chorus_client_linux::delaylog::DelayLog;
 use chorus_client_linux::receive::{handshake, HandshakeError};
 use chorus_client_linux::run::{counter_lines, header_for, run_session, StopReason};
+use chorus_client_linux::session::{self, EndpointIdentity};
 use chorus_client_linux::sink::{AlsaSink, PcmSink};
 use chorus_client_linux::Counters;
 use chorus_control::transport::Transport;
@@ -144,6 +151,25 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
         }));
     }
 
+    // Who this endpoint is: loaded once, so every session (and every rejoin)
+    // presents the same key under the same id, and the server's pin is
+    // checked against the same store.
+    let mut identity = match load_identity(config) {
+        Ok(i) => i,
+        Err(e) => {
+            report("configuration refused", &e);
+            status("stopped reason=identity-refused played=0");
+            keep.store(false, Ordering::SeqCst);
+            return ExitCode::from(EXIT_CONFIG);
+        }
+    };
+    status(&format!(
+        "identity id={} key={} store={}",
+        config.endpoint_id(),
+        identity.fingerprint(),
+        config.identity_dir.as_deref().unwrap_or("ephemeral")
+    ));
+
     let run_limit_us = config.run_seconds.map(|s| s * 1_000_000);
     let mut session = 0u64;
     let mut played_ever = false;
@@ -159,7 +185,7 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
                 break ExitCode::from(EXIT_NO_SERVER);
             }
         };
-        let outcome = play(config, &address, session, timeline, &watch);
+        let outcome = play(config, &address, session, timeline, &watch, &mut identity);
         played_ever |= outcome.played;
         total_frames += outcome.frames_played;
         status(&format!(
@@ -215,6 +241,24 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
         let _ = handle.join();
     }
     code
+}
+
+/// This endpoint's protocol v2 identity, from `--identity-dir`, or made for
+/// this process alone with `--ephemeral-identity`, or refused by name.
+fn load_identity(config: &ClientConfig) -> Result<EndpointIdentity, String> {
+    let id = config.endpoint_id();
+    if config.ephemeral_identity {
+        return EndpointIdentity::ephemeral(id);
+    }
+    match &config.identity_dir {
+        Some(dir) => EndpointIdentity::load(std::path::Path::new(dir), id),
+        None => Err(
+            "this endpoint has no identity to present: pass --identity-dir <dir> so its key and \
+             its server's pin survive a restart (the server pins this endpoint's key to its id), \
+             or --ephemeral-identity for a throwaway run"
+                .to_string(),
+        ),
+    }
 }
 
 /// Where this endpoint should be playing from, in the order the module
@@ -342,6 +386,7 @@ fn play(
     session: u64,
     timeline: MonotonicTimeline,
     watch: &Arc<ZoneWatch>,
+    identity: &mut EndpointIdentity,
 ) -> SessionOutcome {
     // The first session writes the configured log; a rejoin writes its own
     // beside it, so a run that rejoined leaves one record per session rather
@@ -405,7 +450,30 @@ fn play(
         return refused(EXIT_SERVER, "connection-unconfigurable");
     }
     let _ = stream.set_nodelay(true);
-    let mut stream = stream;
+
+    // Protocol v2: the encrypted session, this endpoint's hello and
+    // capabilities, and the server's key checked against its pin. Nothing is
+    // read as audio before this succeeds.
+    let secure = match session::open(stream, identity, config) {
+        Ok(s) => s,
+        Err(e) => {
+            report("the session was refused", &e.to_string());
+            status(&format!("stopped reason={} played=0", e.reason()));
+            return refused(EXIT_SERVER, &e.reason());
+        }
+    };
+    status(&format!(
+        "session server_id={} server_key={} pinned_now={}",
+        secure.server_id,
+        secure.server_key,
+        u8::from(secure.pinned_now)
+    ));
+    let session::Session {
+        reader: mut stream,
+        writer,
+        announced,
+        ..
+    } = secure;
 
     // The device cannot be opened until the stream says what it is, so the
     // first chunk is read first and carried forward.
@@ -426,6 +494,20 @@ fn play(
             return refused(code, "no-stream");
         }
     };
+    // The first chunk has to be what the server announced.
+    let announcement = match announced.lock() {
+        Ok(g) => g.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
+    };
+    if let Err(e) = session::check_announcement(&announcement, &hand.shape) {
+        report("the session was closed", &e);
+        status("stopped reason=framing-announcement-mismatch played=0");
+        return refused(EXIT_FRAMING, "framing-announcement-mismatch");
+    }
+    status(&format!(
+        "stream-format announced codec=pcm output_delay_ns={}",
+        announcement.output_delay_ns.unwrap_or(0)
+    ));
     status(&format!(
         "stream rate_hz={} channels={} sample_format={} frames_per_chunk={}",
         hand.shape.sample_rate_hz,
@@ -469,17 +551,9 @@ fn play(
 
     // The exchange goes back up the connection the audio came down, which is
     // the criterion's own wording and is also the only way the round trip it
-    // measures is the round trip the audio takes.
-    let sync_out: Option<Box<dyn std::io::Write>> = match stream.try_clone() {
-        Ok(w) => Some(Box::new(w)),
-        Err(e) => {
-            report(
-                "the connection could not be shared with the sync loop",
-                &format!("{}; this run will have no offset and will say so", e),
-            );
-            None
-        }
-    };
+    // measures is the round trip the audio takes. It is sealed like
+    // everything else in the session, and nothing else writes on it.
+    let sync_out: Option<Box<dyn std::io::Write>> = Some(Box::new(writer));
 
     let counters = Arc::new(Counters::new());
     let outcome = match run_session(

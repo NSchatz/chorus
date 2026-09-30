@@ -33,6 +33,7 @@ say "  device: $DEVICE"
 say "  remove: $CHORUS_REMOVE_COMMAND"
 
 "$BIN_DIR/chorus-server" \
+    --ephemeral-identity \
     --listen "127.0.0.1:$PORT" \
     --source tone \
     --chunk-us "$(conf chunk_us)" \
@@ -51,6 +52,7 @@ REMOVER_PID=$!
 
 set +e
 OUT="$("$BIN_DIR/chorus-client" \
+    --ephemeral-identity \
     --server "127.0.0.1:$PORT" \
     --device "$DEVICE" \
     --delay-log "$LOG" \

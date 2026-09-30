@@ -86,6 +86,7 @@ trap 'kill_quietly "$SERVER"' EXIT
 sleep 2
 
 "$BIN_DIR/chorus-client" \
+    --ephemeral-identity \
     --server "127.0.0.1:$AUDIO" \
     --control "127.0.0.1:$CONTROL" \
     --zone local --endpoint endpoint-local --rejoin \
@@ -98,7 +99,7 @@ LOCAL=$!
 
 # shellcheck disable=SC2029 # the remote command line is built here on purpose, from this checkout's config
 ssh "$CHORUS_SECOND_ENDPOINT" \
-    "chorus-client --server $(hostname):$AUDIO --control $(hostname):$CONTROL \
+    "chorus-client --ephemeral-identity --server $(hostname):$AUDIO --control $(hostname):$CONTROL \
      --zone remote --endpoint endpoint-remote --rejoin \
      --device \$CHORUS_CLIENT_DEVICE --run-seconds $SOAK_SECONDS \
      --delay-log chorus-soak-remote.log" &

@@ -141,6 +141,7 @@ say "chorus: host contract"
 say "  granted rtprio ceiling: $CEILING"
 
 "$BIN_DIR/chorus-server" \
+    --ephemeral-identity \
     --listen "127.0.0.1:$PORT" \
     --source tone \
     --rt-priority "$(conf rt_priority)" \

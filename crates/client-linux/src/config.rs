@@ -129,6 +129,17 @@ pub struct ClientConfig {
     /// different authority; a Linux endpoint in a wireless zone gets the deeper
     /// buffer and reports that its own power-save mode is unknown.
     pub transport: Transport,
+    /// Where this endpoint's long-term key (`endpoint.key`) and its pinned
+    /// servers (`server-pins`) live. With neither this nor
+    /// `ephemeral_identity`, a playing run is refused.
+    pub identity_dir: Option<String>,
+    /// Use a key made for this process alone and keep pins in memory: for
+    /// tests and throwaway runs. A server that has adopted this endpoint's id
+    /// refuses the next process's new key, which is the point.
+    pub ephemeral_identity: bool,
+    /// The id the server pins this endpoint's key to, or `None` to use
+    /// `endpoint`. It must be stable across restarts.
+    pub endpoint_id: Option<String>,
 }
 
 impl Default for ClientConfig {
@@ -153,6 +164,9 @@ impl Default for ClientConfig {
             rejoin: false,
             rejoin_max_ms: 2_000,
             transport: DEFAULT_TRANSPORT,
+            identity_dir: None,
+            ephemeral_identity: false,
+            endpoint_id: None,
         }
     }
 }
@@ -423,6 +437,11 @@ impl ClientConfig {
         Ok(())
     }
 
+    /// The id this endpoint presents in the protocol v2 handshake.
+    pub fn endpoint_id(&self) -> &str {
+        self.endpoint_id.as_deref().unwrap_or(&self.endpoint)
+    }
+
     /// Maximum minus minimum, in microseconds.
     pub fn span_us(&self) -> u64 {
         self.max_us.saturating_sub(self.min_us)
@@ -491,6 +510,9 @@ impl ClientConfig {
                 "--control" => config.control = Some(value()?),
                 "--zone" => config.zone = value()?,
                 "--endpoint" => config.endpoint = value()?,
+                "--endpoint-id" => config.endpoint_id = Some(value()?),
+                "--identity-dir" => config.identity_dir = Some(value()?),
+                "--ephemeral-identity" => config.ephemeral_identity = true,
                 "--rejoin" => config.rejoin = true,
                 "--rejoin-max-ms" => config.rejoin_max_ms = number(&arg, &value()?)?,
                 "--device" => config.device = value()?,

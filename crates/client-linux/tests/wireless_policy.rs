@@ -372,6 +372,7 @@ fn the_published_line_names_the_power_save_mode_the_way_both_endpoints_do() {
                 "127.0.0.1:1",
                 "--device",
                 "chorus-no-such-device",
+                "--ephemeral-identity",
             ])
             .output()
             .expect("the client binary runs");

@@ -95,6 +95,7 @@ mkdir -p "$LOG_DIR"
 
 say "chorus: starting the server; both endpoints join the SAME stream"
 "$BIN_DIR/chorus-server" \
+    --ephemeral-identity \
     --listen "0.0.0.0:$PORT" \
     --source chirp \
     --measure-config "$REPO_ROOT/config/measure.conf" \
@@ -119,7 +120,7 @@ say "chorus: pointing the ESP32-S3 endpoint at ${SERVER_HOST}:${PORT}"
 printf 'server %s:%s\n' "$SERVER_HOST" "$PORT" > "$CHORUS_ESP32S3_PORT"
 
 say "chorus: starting the Linux endpoint on $CHORUS_SECOND_ENDPOINT"
-REMOTE_COMMAND="chorus-client --server ${SERVER_HOST}:${PORT} \
+REMOTE_COMMAND="chorus-client --ephemeral-identity --endpoint-id endpoint-rig-linux --server ${SERVER_HOST}:${PORT} \
 --device ${CHORUS_SECOND_DEVICE:-default} \
 --delay-log endpoint-rig-linux.log \
 --min-us $(conf min_us) --max-us $(conf max_us) \

@@ -183,6 +183,13 @@ pinned in `rust-toolchain.toml`. CI (`.github/workflows/ci.yml`) calls
 `make gate`, but GitHub Actions does not run on this private repository, so the
 local run is the gate.
 
+The server and the Linux client speak protocol v2 on the audio connection:
+every session is encrypted, and each side keeps a long-term key. The server
+takes `--identity-dir <dir>` (or uses the directory of `--state-file`) and the
+client takes `--identity-dir <dir>` and `--endpoint-id <id>`; either takes
+`--ephemeral-identity` for a throwaway run, which is what the tests and the
+`tools/` scripts pass. `deploy/README.md` has the files and the log lines.
+
 The verifications that need an environment are in `tools/`, one per check.
 Each exits non-zero naming the prerequisite it is missing and the criterion it
 was verifying, rather than reporting itself green:
