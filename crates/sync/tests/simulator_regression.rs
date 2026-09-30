@@ -223,3 +223,56 @@ fn changing_the_jitter_distribution_changes_the_run() {
         other.max_abs_error_after(other.settle_index(scenario.error_bound_ns).unwrap_or(0))
     );
 }
+
+/// Steady-state rate error allowed, in ppm (audit A-2).
+///
+/// The mean rate correction over the back half of a run has to match the true
+/// relative skew, `-(client_ppm - server_ppm)`, to within this. Why this
+/// number and not a smaller one is in
+/// `docs/decisions/0006-sync-simulator-and-servo.md` ("Steady-state rate").
+const STEADY_RATE_TOLERANCE_PPM: f64 = 5.0;
+
+#[test]
+fn the_steady_state_rate_correction_matches_the_true_relative_skew() {
+    for (file, scenario) in committed_scenarios() {
+        let (result, records) =
+            chorus_sync::run_recorded(&scenario.config).expect("the committed configuration runs");
+        let back_half: Vec<f64> = records[records.len() / 2..]
+            .iter()
+            .filter_map(|r| match r.action {
+                chorus_sync::ServoAction::Fine { correction_ppm } => Some(correction_ppm),
+                chorus_sync::ServoAction::HardResync { .. } => None,
+            })
+            .collect();
+        assert!(
+            back_half.len() > records.len() / 4,
+            "{}: the back half is mostly hard resyncs",
+            file
+        );
+        let n = back_half.len() as f64;
+        let mean = back_half.iter().sum::<f64>() / n;
+        let spread = (back_half.iter().map(|c| (c - mean).powi(2)).sum::<f64>() / n).sqrt();
+        let truth = -(scenario.config.client_ppm - scenario.config.server_ppm);
+        println!(
+            "{}: back-half mean correction {:.3} ppm against a true {:.3} ppm (error {:.3} ppm), \
+             standard deviation {:.2} ppm, final {:.2} ppm",
+            file,
+            mean,
+            truth,
+            mean - truth,
+            spread,
+            result.final_correction_ppm
+        );
+        // Wander moves the truth during the run; the crystal-wander scenario
+        // is graded on the same tolerance against its starting rate, which it
+        // can meet only because the walk is small (about 1 ppm) over the run.
+        assert!(
+            (mean - truth).abs() <= STEADY_RATE_TOLERANCE_PPM,
+            "{}: the back-half mean correction {} ppm is {} ppm away from the true {} ppm",
+            file,
+            mean,
+            mean - truth,
+            truth
+        );
+    }
+}

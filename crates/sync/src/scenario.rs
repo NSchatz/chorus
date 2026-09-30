@@ -48,6 +48,14 @@ pub enum ScenarioError {
         /// The value as written.
         value: String,
     },
+    /// A key that only one jitter model reads, set for another model. Refused
+    /// for the same reason an unknown key is: it would be silently ignored.
+    KeyNotForModel {
+        /// The key.
+        key: String,
+        /// The model the scenario names.
+        model: String,
+    },
     /// The scenario parsed and describes a configuration the simulator
     /// refuses.
     Invalid(ConfigError),
@@ -69,6 +77,11 @@ impl fmt::Display for ScenarioError {
             ScenarioError::BadValue { key, value } => {
                 write!(f, "{} = {:?} does not parse", key, value)
             }
+            ScenarioError::KeyNotForModel { key, model } => write!(
+                f,
+                "{} is a burst model parameter and jitter_model is {}",
+                key, model
+            ),
             ScenarioError::Invalid(inner) => write!(f, "{}", inner),
         }
     }
@@ -90,9 +103,14 @@ pub struct Scenario {
     pub error_bound_ns: i64,
 }
 
-/// Every key a scenario file may set. `error_bound_ns` is the only optional
-/// one, and it defaults to the 1 ms this phase is held to.
-const KEYS: [&str; 13] = [
+/// Every key a scenario file may set.
+///
+/// Optional, with the default that changes nothing: `error_bound_ns` (1 ms,
+/// the bound this phase is held to), `path_asymmetry_us` (0, a symmetric
+/// path) and `client_wander_ppm_per_sqrt_s` (0, a constant-rate crystal). The
+/// four `burst_*` keys are required when `jitter_model = burst` and refused
+/// otherwise.
+const KEYS: [&str; 19] = [
     "name",
     "seed",
     "duration_ms",
@@ -106,6 +124,20 @@ const KEYS: [&str; 13] = [
     "jitter_scale_us",
     "settle_deadline_ms",
     "error_bound_ns",
+    "path_asymmetry_us",
+    "client_wander_ppm_per_sqrt_s",
+    "burst_enter_prob",
+    "burst_exit_prob",
+    "burst_scale_us",
+    "burst_shape",
+];
+
+/// The keys only the burst model reads.
+const BURST_KEYS: [&str; 4] = [
+    "burst_enter_prob",
+    "burst_exit_prob",
+    "burst_scale_us",
+    "burst_shape",
 ];
 
 impl Scenario {
@@ -158,12 +190,36 @@ impl Scenario {
 
         let jitter_name = required(&pairs, "jitter_model")?.to_string();
         let jitter_scale_us = parse_f64("jitter_scale_us", required(&pairs, "jitter_scale_us")?)?;
-        let jitter = JitterModel::from_name(&jitter_name, jitter_scale_us).ok_or(
-            ScenarioError::BadValue {
-                key: "jitter_model".to_string(),
-                value: jitter_name.clone(),
-            },
-        )?;
+        let jitter = if jitter_name == "burst" {
+            JitterModel::Burst {
+                mean_us: jitter_scale_us,
+                enter_prob: parse_f64("burst_enter_prob", required(&pairs, "burst_enter_prob")?)?,
+                exit_prob: parse_f64("burst_exit_prob", required(&pairs, "burst_exit_prob")?)?,
+                burst_scale_us: parse_f64("burst_scale_us", required(&pairs, "burst_scale_us")?)?,
+                burst_shape: parse_f64("burst_shape", required(&pairs, "burst_shape")?)?,
+            }
+        } else {
+            if let Some(key) = BURST_KEYS.iter().find(|k| optional(&pairs, k).is_some()) {
+                return Err(ScenarioError::KeyNotForModel {
+                    key: key.to_string(),
+                    model: jitter_name,
+                });
+            }
+            JitterModel::from_name(&jitter_name, jitter_scale_us).ok_or(
+                ScenarioError::BadValue {
+                    key: "jitter_model".to_string(),
+                    value: jitter_name.clone(),
+                },
+            )?
+        };
+        let path_asymmetry_us = match optional(&pairs, "path_asymmetry_us") {
+            Some(value) => parse_f64("path_asymmetry_us", value)?,
+            None => 0.0,
+        };
+        let client_wander_ppm_per_sqrt_s = match optional(&pairs, "client_wander_ppm_per_sqrt_s") {
+            Some(value) => parse_f64("client_wander_ppm_per_sqrt_s", value)?,
+            None => 0.0,
+        };
 
         let config = SimConfig {
             seed: parse_u64("seed", required(&pairs, "seed")?)?,
@@ -180,7 +236,9 @@ impl Scenario {
                 "base_one_way_delay_us",
                 required(&pairs, "base_one_way_delay_us")?,
             )?,
+            path_asymmetry_us,
             jitter,
+            client_wander_ppm_per_sqrt_s,
             servo: ServoConfig::default(),
         };
         config.validate().map_err(ScenarioError::Invalid)?;
@@ -345,6 +403,54 @@ settle_deadline_ms = 15000
                 assert_eq!(value, "gaussian");
             }
             other => panic!("expected a bad value error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn the_new_keys_default_to_the_model_they_extend() {
+        let scenario = Scenario::parse(SAMPLE).expect("the sample parses");
+        assert_eq!(scenario.config.path_asymmetry_us, 0.0);
+        assert_eq!(scenario.config.client_wander_ppm_per_sqrt_s, 0.0);
+    }
+
+    #[test]
+    fn a_burst_scenario_reads_its_four_parameters() {
+        let text = SAMPLE.replace(
+            "jitter_model = exponential",
+            "jitter_model = burst\nburst_enter_prob = 0.02\nburst_exit_prob = 0.3\n\
+             burst_scale_us = 3000\nburst_shape = 1.5\npath_asymmetry_us = -40\n\
+             client_wander_ppm_per_sqrt_s = 0.05",
+        );
+        let scenario = Scenario::parse(&text).expect("a burst scenario parses");
+        assert_eq!(
+            scenario.config.jitter,
+            JitterModel::Burst {
+                mean_us: 150.0,
+                enter_prob: 0.02,
+                exit_prob: 0.3,
+                burst_scale_us: 3000.0,
+                burst_shape: 1.5,
+            }
+        );
+        assert_eq!(scenario.config.path_asymmetry_us, -40.0);
+        assert_eq!(scenario.config.client_wander_ppm_per_sqrt_s, 0.05);
+
+        let missing = text.replace("burst_shape = 1.5\n", "");
+        assert_eq!(
+            Scenario::parse(&missing),
+            Err(ScenarioError::MissingKey { key: "burst_shape" })
+        );
+    }
+
+    #[test]
+    fn a_burst_key_without_the_burst_model_is_refused() {
+        let text = format!("{}burst_shape = 1.5\n", SAMPLE);
+        match Scenario::parse(&text) {
+            Err(ScenarioError::KeyNotForModel { key, model }) => {
+                assert_eq!(key, "burst_shape");
+                assert_eq!(model, "exponential");
+            }
+            other => panic!("expected a key-not-for-model error, got {:?}", other),
         }
     }
 }

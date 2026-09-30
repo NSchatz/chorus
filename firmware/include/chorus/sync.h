@@ -43,19 +43,46 @@ double chorus_rng_next_f64(chorus_rng_t *rng);
  * work at all. */
 
 #define CHORUS_JITTER_TAIL_CAP_MULTIPLE 10.0
+/* Largest delay one packet takes inside a burst, in microseconds: half the
+ * real client's 100 ms round-trip admission bound (config/sync.conf). */
+#define CHORUS_JITTER_BURST_CAP_US 50000.0
 
 typedef enum {
     CHORUS_JITTER_NONE = 0,
     CHORUS_JITTER_UNIFORM,
-    CHORUS_JITTER_EXPONENTIAL
+    CHORUS_JITTER_EXPONENTIAL,
+    /* Two-state: exponential with mean scale_us when quiet, Lomax with
+     * burst_scale_us and burst_shape (capped at CHORUS_JITTER_BURST_CAP_US) in
+     * a burst, entering and leaving with the per-packet probabilities. */
+    CHORUS_JITTER_BURST
 } chorus_jitter_kind_t;
 
 typedef struct {
     chorus_jitter_kind_t kind;
     double scale_us;
+    /* Read only by CHORUS_JITTER_BURST; zero for every other kind. */
+    double burst_enter_prob;
+    double burst_exit_prob;
+    double burst_scale_us;
+    double burst_shape;
 } chorus_jitter_t;
 
+/* One draw from a memoryless model. A burst model handed to this is sampled
+ * as if always quiet; the simulator samples every model through
+ * chorus_jitter_process_t. */
 double chorus_jitter_sample_ns(const chorus_jitter_t *jitter, chorus_rng_t *rng);
+
+/* A jitter model plus the burst state it carries between packets. For the
+ * memoryless kinds it draws exactly what chorus_jitter_sample_ns draws; a
+ * burst draws the transition first, then the delay. Mirrored from
+ * JitterProcess in crates/sync/src/jitter.rs. */
+typedef struct {
+    chorus_jitter_t model;
+    int in_burst;
+} chorus_jitter_process_t;
+
+void chorus_jitter_process_init(chorus_jitter_process_t *process, const chorus_jitter_t *model);
+double chorus_jitter_process_sample_ns(chorus_jitter_process_t *process, chorus_rng_t *rng);
 const char *chorus_jitter_name(chorus_jitter_kind_t kind);
 /* CHORUS_JITTER_NONE for a name the format does not define; `ok` distinguishes
  * that from the real `none`. */
@@ -166,12 +193,19 @@ typedef struct {
     double client_ppm;
     int64_t initial_offset_ns;
     double base_one_way_delay_us;
+    /* Return base delay minus forward base delay, in microseconds. */
+    double path_asymmetry_us;
     chorus_jitter_t jitter;
+    /* Client crystal random walk, ppm per square root of a second. */
+    double client_wander_ppm_per_sqrt_s;
     chorus_servo_config_t servo;
 } chorus_sim_config_t;
 
 #define CHORUS_MAX_SKEW_PPM 1000.0
 #define CHORUS_MAX_DELAY_US 100000.0
+#define CHORUS_MAX_WANDER_PPM_PER_SQRT_S 1.0
+/* Added to the seed to seed the wander's own stream ("wander", zero padded). */
+#define CHORUS_WANDER_STREAM 0x77616E6465720000ull
 #define CHORUS_MAX_STEPS 10000000ull
 #define CHORUS_SERVER_TURNAROUND_NS 50000.0
 
@@ -184,7 +218,10 @@ typedef enum {
     CHORUS_SIM_ERR_DELAY_OUT_OF_RANGE,
     CHORUS_SIM_ERR_INVALID_SERVO_PARAMETER,
     CHORUS_SIM_ERR_TOO_MANY_STEPS,
-    CHORUS_SIM_ERR_OUT_OF_MEMORY
+    CHORUS_SIM_ERR_OUT_OF_MEMORY,
+    CHORUS_SIM_ERR_ASYMMETRY_OUT_OF_RANGE,
+    CHORUS_SIM_ERR_INVALID_JITTER_PARAMETER,
+    CHORUS_SIM_ERR_WANDER_OUT_OF_RANGE
 } chorus_sim_status_t;
 
 const char *chorus_sim_status_name(chorus_sim_status_t status);

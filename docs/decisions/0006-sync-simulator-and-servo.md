@@ -162,6 +162,7 @@ synced" is not evidence, and neither is "simulates synced").
   correction at 48 kHz is 20.8 us of playout per inserted sample, which is
   below the resolution this model is claiming.
 - No DAC delay accounting, no buffer model, no packet loss, no reordering.
+  (Asymmetry, bursts and crystal wander were added in goal 7; see above.)
   Those need the measurement rig (RIG-3) to be worth anything.
 - BRIEF.md 5.3's "burst on connect" is not modelled: the hard-resync tier
   acquires the timeline on the first exchange, so a burst would only change how
@@ -201,6 +202,12 @@ cannot model. Documented valid ranges:
 | `base_one_way_delay_us` | finite, 0 to 100000 | a 100 ms one-way delay is already off this LAN |
 | jitter scale | finite, 0 to 100000 us | same bound, same reason |
 | total steps | at most 10 million | a guard against a configuration that would run for hours in CI |
+| `path_asymmetry_us` | finite; the return base delay (base plus it) in 0 to 100000 us | a negative asymmetry is a forward path slower than the return one; the one-way bound applies to both |
+| `client_wander_ppm_per_sqrt_s` | finite, 0 to 1 | past 1 ppm per root second the walk describes a failing oscillator, not a drifting one |
+| `burst_enter_prob` | 0 to 1 | a probability; 0 is a link that never bursts |
+| `burst_exit_prob` | above 0, at most 1 | a burst that can never end is not a link |
+| `burst_scale_us` | above 0, at most 100000 | the one-way bound again |
+| `burst_shape` | above 1, at most 100 | at or below 1 the uncapped Lomax mean is infinite and the model is only its cap |
 
 Anything outside these is a rejected configuration and no playout-error result
 is produced for it.
@@ -211,6 +218,83 @@ documented here rather than hidden in the code: a real queue is bounded by
 buffer depth, and an uncapped draw would occasionally hand the filter a delay
 no switch on this network could produce.
 
+## Asymmetry, bursts and wander (goal 7, audit A-1)
+
+Added 2026-09-30. The model above had one i.i.d. symmetric delay
+distribution and constant-rate crystals, so the error modes that dominate
+real links were invisible to CI. Three additions, each with a default that
+changes nothing (the five scenarios above kept byte-identical cross-check
+vectors, which `crates/sync/tests/crosscheck_vectors.rs` holds):
+
+- **Path asymmetry.** `path_asymmetry_us` is the return base delay minus the
+  forward one. The NTP estimate is exact only for a symmetric path (RFC 5905
+  section 8); an asymmetric one biases it by half the asymmetry, and the
+  bias is in the minimum round trip too, so no filter can remove it.
+  `fixtures/sync/06-asymmetric-path.cfg` holds the bound with the standing
+  200 us error 400 us of asymmetry produces (steady state 242 us).
+- **A bursty, heavy-tailed link.** `jitter_model = burst` is a two-state
+  (Gilbert-Elliott style) process: exponential with `jitter_scale_us` mean
+  when quiet; Lomax (Pareto type II, `scale * (u^(-1/shape) - 1)`) with
+  `burst_scale_us` and `burst_shape` in a burst, capped at 50 ms (half the
+  real client's 100 ms round-trip admission bound, `max_rtt_us` in
+  `config/sync.conf`, so every modelled exchange is one the client would
+  admit); the state changes per packet with `burst_enter_prob` and
+  `burst_exit_prob`, so bursts span consecutive packets and exchanges. Draw
+  order per packet: the transition, then the delay; a memoryless model still
+  draws one value per packet, which is why the old vectors did not move.
+  Every parameter of `fixtures/sync/07-wifi-burst.cfg` is ASSUMED: nothing in
+  this repository has measured a Wi-Fi link, and WIFI-7's characterization
+  replaces them. Finding: with FOUNDATION-1's reference servo (an 8-deep
+  window at one exchange a second) that link needs 3 hard resyncs after
+  acquisition and peaks at 4.71 ms, inside the wireless tier's 5 ms
+  (ADR 0024) but not by much: an 8-deep window is too shallow for a bursty
+  link. The house simulation runs the real client's 64-deep window.
+- **Crystal wander.** `client_wander_ppm_per_sqrt_s` gives the client's rate
+  a random walk: each step adds a uniform increment whose standard deviation
+  is that value times the root of the step length. It has its own random
+  stream (the scenario seed plus a fixed constant), so switching it on does
+  not reshuffle the network draws, and the client clock carries the
+  accumulated phase. Wander inside one exchange is not modelled. 0.1 in
+  `fixtures/sync/08-crystal-wander.cfg` is ASSUMED, several times what a room
+  at a steady temperature does to an uncompensated crystal.
+
+All three are mirrored in the endpoint's C core (`firmware/src/sync_rng.c`,
+`sync_sim.c`, `sync_scenario.c`), and `firmware/tests/test_sync.c` reproduces
+the three new vectors exchange by exchange, exactly, like the first five.
+
+## Steady-state rate (audit A-2)
+
+The audit read the final rate correction of wired-loaded (-71.7 ppm against
+a true -50.5) and worst-case-skew (65.4 against 100) as a limit cycle. It is
+not: the final value is one sample of a correction that moves with the
+jitter through the proportional term (one exchange's 50 us of error is
+50 ppm normalised, 20 ppm after kp). The MEAN over the back half of every
+committed scenario is within 3.7 ppm of `-(client_ppm - server_ppm)`, and it
+cannot be far off while the error stays bounded: a mean rate error of `e` ppm
+over `T` seconds moves the playout error by `e * T` us. Measured (simulation),
+mean error and standard deviation of the back-half correction:
+
+| scenario | mean minus truth | standard deviation |
+|---|---|---|
+| wired-quiet | +1.79 ppm | 6.8 ppm |
+| wired-loaded | -1.76 ppm | 28.6 ppm |
+| worst-case-skew | -3.48 ppm | 20.4 ppm |
+| fine-tier-acquisition | -0.07 ppm | 13.0 ppm |
+| noiseless-control | 0 | 0 |
+| asymmetric-path | -0.65 ppm | 8.7 ppm |
+| wifi-burst | +3.70 ppm | 168.4 ppm |
+| crystal-wander | +0.52 ppm | 6.6 ppm (against the starting rate) |
+
+`the_steady_state_rate_correction_matches_the_true_relative_skew` in
+`crates/sync/tests/simulator_regression.rs` asserts the mean within 5 ppm, an
+empirical tolerance (the largest seen is 3.70) and not a derived one. The
+servo was not changed: the spread is the price of kp against jitter, and
+reducing it (a lower kp, or filtering the correction) would move every
+committed vector and the SYNC-4 tuning for no bound that is currently missed.
+What the spread means on hardware is a question for the rig: a correction that
+wanders +/- 20 ppm around the right mean is inserted and dropped samples at
+that rate, which RIG-3 can hear and this model cannot.
+
 ## Committed scenarios
 
 `fixtures/sync/*.cfg`, one file per scenario, each carrying its own settle
@@ -218,7 +302,12 @@ deadline and error bound so the assertion travels with the configuration
 instead of living in a test. They cover a quiet wired link, a loaded one with
 exponentially distributed queuing, the worst realistic crystal pair, and an
 acquisition that starts inside the hard-resync threshold so the fine tier has
-to pull it in against the clamp.
+to pull it in against the clamp. Goal 7 added an asymmetric path, a Wi-Fi-like
+burst link held to the wireless tier's 5 ms, and a wandering crystal.
+
+The house-scale layer built on this model (many endpoints, one server
+timeline) is recorded in ADR 0048, with why its configurations are not in
+`fixtures/sync/`.
 
 ## Revisit when
 

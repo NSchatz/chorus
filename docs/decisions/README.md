@@ -42,5 +42,6 @@ the number of the pull request that added it.
 | 0043 | [the endpoint's key exchange is chorus's own state machine over the PSA Crypto API, and its host build compiles the pinned ESP-IDF tree's library](0043-the-endpoint-crypto-over-psa.md) |
 | 0044 | [FLAC and Opus decode through vendored dr_flac and libopus on the endpoint, and Symphonia and the same libopus in the Linux client](0044-the-vendored-decoders.md) |
 | 0047 | [host evidence comes from a chorus-owned probe crate with two small FFI modules](0047-host-probes.md) |
+| 0048 | [the house-scale simulation is many single-client runs against one server timeline, configured under config/sim-house](0048-the-house-scale-simulation.md) |
 | 0049 | [bench results come back as schema-checked reports on bench/* branches, raw data hashed and committed up to a size limit](0049-bench-reports.md) |
 | 0050 | [a FIFO source is held open and fills silence, and the ALSA null runs are a labelled host step in the gate](0050-fifo-source-and-alsa-null-runs.md) |

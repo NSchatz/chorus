@@ -145,6 +145,13 @@ measure-fixtures:
 sync-vectors:
 	cargo run --quiet -p chorus-sync --bin chorus-sync-vectors
 
+# The house-scale simulation report (docs/decisions/0048-the-house-scale-simulation.md). A simulation,
+# never timing evidence; it names the commit it was built from, which has to be
+# on main for docs/measurements/ to accept it.
+sim-house:
+	cargo run --release --quiet -p chorus-sync --bin chorus-sim-house -- \
+		--build "$$(git rev-parse HEAD)" --out docs/measurements/sim-house-8-rooms.md
+
 # Regenerate the committed DNS-SD packet vectors from their committed
 # parameters. Same rule again: `cargo test -p chorus-discovery --test
 # dnssd_vectors` asserts the result is byte-identical to what is committed, so
@@ -245,7 +252,7 @@ verify-null-device: tools-executable
 	.PHONY: release image build check discovery-vectors firmware-check firmware-golden-vectors  \
 	firmware-image firmware-safety-scans firmware-sync-scenarios  \
 	firmware-wireless gate gate-fast measure-fixture-reports measure-fixtures one  \
-	probe sync-vectors ten-minute-run ten-minute-run-null test tools-executable verify verify-alsa-null verify-control  \
+	probe sim-house sync-vectors ten-minute-run ten-minute-run-null test tools-executable verify verify-alsa-null verify-control  \
 	verify-control-determinism verify-device verify-discovery-fallback  \
 	verify-endpoint-rig verify-host verify-mdns verify-measure-device  \
 	verify-null-device verify-restart-storm verify-soak verify-sync-hour  \
