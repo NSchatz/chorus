@@ -39,6 +39,7 @@ All read 2026-09-30; the full notes are `docs/research/2026-09-protocol-v2-sourc
   `CONFIG_MBEDTLS_SSL_PROTO_TLS1_3` default off; `CONFIG_MBEDTLS_CHACHAPOLY_C` default off;
   `CONFIG_MBEDTLS_ECP_DP_CURVE25519_ENABLED` and `CONFIG_MBEDTLS_SHA256_C` default on.
 - crates.io API, `https://crates.io/api/v1/crates/<name>`, for the versions and licences below.
+- The SPDX page for the Unicode License v3, <https://spdx.org/licenses/Unicode-3.0.html>.
 
 ## Options
 
@@ -90,7 +91,13 @@ All read 2026-09-30; the full notes are `docs/research/2026-09-protocol-v2-sourc
   | `sha2` | 0.11.0 | MIT OR Apache-2.0 | SHA-256 |
   | `hmac` | 0.13.0 | MIT OR Apache-2.0 | HMAC-SHA256 for Noise's HKDF |
 
-  All are on the licence allowlist (`deny.toml`); `cargo tree -d` shows one version each of
+  All are on the licence allowlist (`deny.toml`), and so is everything they pull in but one:
+  `unicode-ident`, a compile-time dependency of the proc macro `curve25519-dalek-derive` (which
+  `curve25519-dalek` uses on x86_64), is `(MIT OR Apache-2.0) AND Unicode-3.0`. The Unicode
+  License v3 is permissive, with a notice-retention condition and no copyleft
+  (<https://spdx.org/licenses/Unicode-3.0.html>, read 2026-09-30; cargo-deny reports it OSI
+  approved). This record allows it for that crate only (`deny.toml`'s `exceptions`); the
+  allowlist itself is unchanged. Also: `cargo tree -d` shows one version each of
   `rand_core` (0.10.1), `digest` (0.11.3) and `cipher` (0.5.2); every one declares
   `rust-version` 1.85, below the pinned 1.98.1. Versions and licences from crates.io, read
   2026-09-30. Randomness in the server and client comes from `/dev/urandom` through `std`, so no
