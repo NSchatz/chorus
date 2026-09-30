@@ -1,11 +1,15 @@
 //! Where the PCM comes from.
 //!
-//! Two sources, both of them local, because this phase is about what happens
-//! to bytes after they arrive rather than about where they came from:
+//! Every source is local, because this phase is about what happens to bytes
+//! after they arrive rather than about where they came from:
 //!
 //! - a **file** of raw interleaved PCM in the configured format, which is what
 //!   the chunking verifications feed, because a file of known content is the
 //!   only way to assert that the chunks concatenated are the input;
+//! - a **FIFO** (a named pipe, `fifo:<path>` or any path that is one), the
+//!   development input BRIEF.md section 2.1 names. It is NOT a file: a player
+//!   that pauses or changes track closes its end, and that must not end every
+//!   client's stream. See [`FifoSource`];
 //! - a **generated tone**, which is what the ten-minute run plays, because it
 //!   is endless, audible, and obviously wrong when it is wrong;
 //! - the measurement rig's **chirp**, which is what every run graded by the
@@ -21,9 +25,12 @@
 //! source that failed mid-read did not end, it broke, and the client is told
 //! the difference.
 
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{self, Read};
+use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
 use std::path::Path;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use chorus_audio::StreamFormat;
 use chorus_measure::{ChirpSpec, MeasureConfig};
@@ -60,6 +67,184 @@ impl PcmSource for FileSource {
 
     fn describe(&self) -> String {
         format!("file {}", self.path)
+    }
+}
+
+/// `O_NONBLOCK` for `open(2)` on the Linux architectures chorus builds for.
+///
+/// std has no safe spelling of it and this crate denies unsafe code, so the
+/// flag is passed through `OpenOptionsExt::custom_flags`. The value is the
+/// one the permissively licensed `libc` crate declares for Linux on x86_64 and
+/// aarch64, 2048 (octal 04000): docs.rs/libc/latest/x86_64-unknown-linux-gnu
+/// and .../aarch64-unknown-linux-gnu, `constant.O_NONBLOCK.html`, read
+/// 2026-09-30. Any other target gets no FIFO source rather than an unchecked
+/// flag.
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+const O_NONBLOCK: Option<i32> = Some(0o4000);
+#[cfg(not(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+)))]
+const O_NONBLOCK: Option<i32> = None;
+
+/// How often an empty pipe is looked at again while a chunk is being waited
+/// for. A millisecond is a twentieth of the default chunk.
+const FIFO_POLL: Duration = Duration::from_millis(1);
+
+/// A named pipe, held open for as long as the stream runs (audit B-2).
+///
+/// Three things make a pipe different from a file, and each is handled here:
+///
+/// - **A writer that closes is not the end.** The pipe is opened read-WRITE,
+///   so this process is itself a writer and a read never sees end-of-file
+///   when the player closes its end; the next player to open the pipe for
+///   writing carries on the same stream. `read` never returns `Ok(0)`, so a
+///   pipe source never ends a stream and never sends `stream_end`.
+/// - **No writer is not a hang.** A read-only open of a pipe blocks until a
+///   writer appears; a read-write open does not, on Linux ("Under Linux,
+///   opening a FIFO for read and write will succeed both in blocking and
+///   nonblocking mode", fifo(7), https://man7.org/linux/man-pages/man7/fifo.7.html,
+///   read 2026-09-30). The pipe is also non-blocking, so the supervisor that
+///   opens it and the audio thread that reads it never wait on a player.
+/// - **An underrun is silence, on time.** Every `read` hands back exactly one
+///   chunk. Whatever whole frames the pipe holds go first; if the pipe has not
+///   filled the chunk within half a chunk period, the rest of it is silence
+///   (all-zero bytes, which is silence in every supported format). The
+///   emitter paces chunks on the monotonic timeline as it does for every
+///   source, so the stream keeps its cadence through a pause. A partial frame
+///   is held back until its remaining bytes arrive, so silence never splits a
+///   frame.
+pub struct FifoSource {
+    path: String,
+    pipe: File,
+    chunk_bytes: usize,
+    frame_len: usize,
+    wait: Duration,
+    pending: Vec<u8>,
+    silent_frames: u64,
+    piped_frames: u64,
+}
+
+impl FifoSource {
+    /// Open the pipe at `path` for chunks of `chunk_us` in `format`.
+    ///
+    /// Refused, by name, when `path` is not a FIFO: a plain file keeps the
+    /// file source's end-of-stream behaviour, and the two are not guessed
+    /// between.
+    pub fn open(path: &str, format: StreamFormat, chunk_us: u64) -> io::Result<FifoSource> {
+        let kind = std::fs::metadata(path).map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!(
+                    "fifo:{} cannot be opened: {}; create the pipe first (mkfifo {})",
+                    path, e, path
+                ),
+            )
+        })?;
+        if !kind.file_type().is_fifo() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "fifo:{} is not a FIFO; a plain file is read with --source {} and ends the                      stream at its last byte",
+                    path, path
+                ),
+            ));
+        }
+        let Some(nonblock) = O_NONBLOCK else {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "the FIFO source is built only for Linux on x86_64 and aarch64",
+            ));
+        };
+        let frames = format
+            .frames_in(chunk_us)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
+        let frame_len = format.frame_len();
+        let pipe = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(nonblock)
+            .open(path)?;
+        Ok(FifoSource {
+            path: path.to_string(),
+            pipe,
+            chunk_bytes: frames.max(1) * frame_len,
+            frame_len,
+            wait: Duration::from_micros(chunk_us / 2),
+            pending: Vec::new(),
+            silent_frames: 0,
+            piped_frames: 0,
+        })
+    }
+
+    /// Frames handed out as silence because the pipe had nothing for them.
+    pub fn silent_frames(&self) -> u64 {
+        self.silent_frames
+    }
+
+    /// Frames handed out from the pipe.
+    pub fn piped_frames(&self) -> u64 {
+        self.piped_frames
+    }
+
+    /// Move what the pipe holds into `pending`, up to `want` bytes. Never
+    /// blocks.
+    fn drain_pipe(&mut self, want: usize) -> io::Result<()> {
+        let mut scratch = [0u8; 4096];
+        while self.pending.len() < want {
+            let room = (want - self.pending.len()).min(scratch.len());
+            match self.pipe.read(&mut scratch[..room]) {
+                // Cannot happen while this process holds the write end; if it
+                // ever does, it is an empty pipe and not an end.
+                Ok(0) => return Ok(()),
+                Ok(n) => self.pending.extend_from_slice(&scratch[..n]),
+                Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(()),
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+}
+
+impl PcmSource for FifoSource {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let want = self
+            .chunk_bytes
+            .min(buf.len() / self.frame_len * self.frame_len);
+        if want == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "the FIFO source was asked to fill less than one frame",
+            ));
+        }
+        // A monotonic deadline: the wait is a bound on how long the emitter
+        // is held, not a timestamp of anything.
+        let deadline = Instant::now() + self.wait;
+        loop {
+            self.drain_pipe(want)?;
+            if self.pending.len() >= want || Instant::now() >= deadline {
+                break;
+            }
+            thread::sleep(FIFO_POLL);
+        }
+        let whole = (self.pending.len().min(want) / self.frame_len) * self.frame_len;
+        buf[..whole].copy_from_slice(&self.pending[..whole]);
+        self.pending.drain(..whole);
+        buf[whole..want].fill(0);
+        self.piped_frames += (whole / self.frame_len) as u64;
+        self.silent_frames += ((want - whole) / self.frame_len) as u64;
+        Ok(want)
+    }
+
+    fn describe(&self) -> String {
+        format!(
+            "fifo {}, held open read-write; a closed writer is silence, never an end",
+            self.path
+        )
     }
 }
 
@@ -268,13 +453,30 @@ pub fn rig_chirp(measure_config: &Path, amplitude: Option<f64>) -> Result<ChirpS
 /// Build the configured source.
 ///
 /// `chirp` is the rig's chirp, already built and already held to its ceiling;
-/// it is required exactly when `source` is `chirp`.
+/// it is required exactly when `source` is `chirp`. `chunk_us` is the chunk
+/// duration, which a FIFO needs to fill an underrun with exactly one chunk of
+/// silence.
+///
+/// `fifo:<path>` is a named pipe and is refused if `path` is not one; a bare
+/// path that IS a pipe is read as one too, because reading a pipe as a file is
+/// the defect audit B-2 records. Any other path is a file, which ends the
+/// stream at its last byte.
 pub fn open(
     source: &str,
     format: StreamFormat,
+    chunk_us: u64,
     tone_ms: u64,
     chirp: Option<&ChirpSpec>,
 ) -> io::Result<Box<dyn PcmSource>> {
+    if let Some(path) = source.strip_prefix("fifo:") {
+        return Ok(Box::new(FifoSource::open(path, format, chunk_us)?));
+    }
+    if std::fs::metadata(source)
+        .map(|m| m.file_type().is_fifo())
+        .unwrap_or(false)
+    {
+        return Ok(Box::new(FifoSource::open(source, format, chunk_us)?));
+    }
     match source {
         "tone" => Ok(Box::new(ToneSource::new(format, tone_ms))),
         "chirp" => match chirp {
@@ -367,8 +569,8 @@ mod tests {
     #[test]
     fn the_chirp_source_needs_a_chirp() {
         let format = StreamFormat::new(48_000, 2, "pcm_s16le").unwrap();
-        assert!(open("chirp", format, 10, None).is_err());
-        assert!(open("chirp", format, 10, Some(&committed_chirp())).is_ok());
+        assert!(open("chirp", format, 20_000, 10, None).is_err());
+        assert!(open("chirp", format, 20_000, 10, Some(&committed_chirp())).is_ok());
     }
 
     #[test]
@@ -379,5 +581,112 @@ mod tests {
         for _ in 0..100 {
             assert_eq!(tone.read(&mut buf).unwrap(), 512);
         }
+    }
+
+    /// A real named pipe in a fresh directory, made by `mkfifo(1)` so the test
+    /// needs no unsafe code.
+    fn a_real_fifo(stem: &str) -> (std::path::PathBuf, String) {
+        let dir = std::env::temp_dir().join(format!("chorus-{}-{}", stem, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("pcm.fifo");
+        let made = std::process::Command::new("mkfifo")
+            .arg(&path)
+            .status()
+            .expect("mkfifo runs");
+        assert!(made.success(), "mkfifo made {}", path.display());
+        let text = path.display().to_string();
+        (dir, text)
+    }
+
+    #[test]
+    fn a_fifo_with_no_writer_opens_at_once_and_reads_one_chunk_of_silence() {
+        let format = StreamFormat::new(48_000, 2, "pcm_s16le").unwrap();
+        let (dir, path) = a_real_fifo("fifo-no-writer");
+        let started = Instant::now();
+        let mut pipe = open(&format!("fifo:{}", path), format, 20_000, 0, None).unwrap();
+        let mut buf = vec![0xAAu8; 8192];
+        let n = pipe.read(&mut buf).unwrap();
+        assert_eq!(n, 960 * 4, "one 20 ms chunk at 48 kHz stereo s16");
+        assert!(buf[..n].iter().all(|b| *b == 0), "an empty pipe is silence");
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "neither the open nor the read waited for a writer: {:?}",
+            started.elapsed()
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_fifo_whose_writer_closes_and_reopens_carries_on_and_never_ends() {
+        use std::io::Write;
+        let format = StreamFormat::new(48_000, 2, "pcm_s16le").unwrap();
+        let (dir, path) = a_real_fifo("fifo-reopen");
+        let mut pipe = FifoSource::open(&path, format, 20_000).unwrap();
+        let chunk = 960 * 4;
+        let mut buf = vec![0u8; chunk];
+
+        // The first player writes two chunks and a partial frame, and closes.
+        let first: Vec<u8> = (0..2 * chunk + 3).map(|i| (i % 251) as u8 | 1).collect();
+        {
+            let mut writer = OpenOptions::new().write(true).open(&path).unwrap();
+            writer.write_all(&first).unwrap();
+        }
+        for k in 0..2 {
+            assert_eq!(pipe.read(&mut buf).unwrap(), chunk);
+            assert_eq!(&buf[..], &first[k * chunk..(k + 1) * chunk], "chunk {}", k);
+        }
+        // The writer is gone: never an end, always a whole chunk of silence,
+        // and the three bytes of a partial frame are held back, not played.
+        for _ in 0..5 {
+            assert_eq!(
+                pipe.read(&mut buf).unwrap(),
+                chunk,
+                "a closed writer is not Ok(0)"
+            );
+            assert!(buf.iter().all(|b| *b == 0));
+        }
+        assert_eq!(pipe.piped_frames(), 2 * 960);
+        assert_eq!(pipe.silent_frames(), 5 * 960);
+
+        // A second player opens the same pipe; its first byte completes the
+        // held frame and the stream carries on with its audio.
+        let second: Vec<u8> = (0..chunk + 1).map(|i| (i % 241) as u8 | 1).collect();
+        {
+            let mut writer = OpenOptions::new().write(true).open(&path).unwrap();
+            writer.write_all(&second).unwrap();
+        }
+        assert_eq!(pipe.read(&mut buf).unwrap(), chunk);
+        let mut want = first[2 * chunk..].to_vec();
+        want.extend_from_slice(&second[..chunk - 3]);
+        assert_eq!(
+            &buf[..],
+            &want[..],
+            "the held partial frame, then the second writer"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_plain_file_is_not_a_fifo_and_still_ends_at_its_last_byte() {
+        let format = StreamFormat::new(48_000, 2, "pcm_s16le").unwrap();
+        let dir = std::env::temp_dir().join(format!("chorus-plain-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("pcm.raw");
+        std::fs::write(&path, [1u8; 16]).unwrap();
+        let text = path.display().to_string();
+        let err = open(&format!("fifo:{}", text), format, 20_000, 0, None)
+            .err()
+            .expect("a plain file behind fifo: is refused");
+        assert!(err.to_string().contains("is not a FIFO"), "{}", err);
+        let mut file = open(&text, format, 20_000, 0, None).unwrap();
+        let mut buf = vec![0u8; 64];
+        assert_eq!(file.read(&mut buf).unwrap(), 16);
+        assert_eq!(file.read(&mut buf).unwrap(), 0, "a file ends");
+        let missing = open("fifo:/nonexistent/chorus.fifo", format, 20_000, 0, None)
+            .err()
+            .expect("a missing pipe is refused");
+        assert!(missing.to_string().contains("mkfifo"), "{}", missing);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

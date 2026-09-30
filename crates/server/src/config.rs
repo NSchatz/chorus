@@ -15,8 +15,9 @@ use chorus_control::transport::{Transport, DEFAULT_TRANSPORT};
 pub struct ServerConfig {
     /// Address to listen on.
     pub listen: String,
-    /// Where the PCM comes from: a file path, `tone` for a generated 440 Hz
-    /// tone, or `chirp` for the measurement rig's chirp.
+    /// Where the PCM comes from: a file path, `fifo:<path>` (or a path that is
+    /// a named pipe) for a pipe held open across writers, `tone` for a
+    /// generated 440 Hz tone, or `chirp` for the measurement rig's chirp.
     pub source: String,
     /// Where the rig's declared values are read from for `--source chirp`:
     /// the band, the period and the amplitude ceiling.

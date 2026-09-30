@@ -88,6 +88,48 @@ transport_conf() {
     printf '%s' "$value"
 }
 
+# Where the ALSA runtime is found when the system has none.
+#
+# The client reaches ALSA by dlopen("libasound.so.2") at run time, so a machine
+# without the system package (a development container has no apt) can run the
+# device checks against a rootless alsa-lib from conda-forge. The default is the
+# pinned install the program made (alsa-lib 1.2.16.1, build h7cc23a3_1, from
+# https://conda.anaconda.org/conda-forge/linux-64/alsa-lib-1.2.16.1-h7cc23a3_1.conda,
+# package sha256 a35bddac04be093769e81814465a537961c6ed0f8d3cc23d6dce6ecdfaf71821);
+# CHORUS_ALSA_PREFIX points somewhere else. The system library, when there is
+# one, is always preferred: this only adds a directory when the loader cannot
+# already find the library.
+ALSA_INSTALL_HINT="MAMBA_ROOT_PREFIX=/cache/opt/micromamba mise exec github:mamba-org/micromamba-releases@2.9.0-0 -- micromamba create -y -q -p /cache/opt/chorus-alsa -c conda-forge alsa-lib=1.2.16.1=h7cc23a3_1 (or install the system libasound2)"
+
+alsa_prefix() {
+    printf '%s' "${CHORUS_ALSA_PREFIX:-/cache/opt/chorus-alsa}"
+}
+
+# Whether libasound.so.2 is on the system loader's path already.
+system_libasound() {
+    command -v ldconfig >/dev/null 2>&1 && ldconfig -p 2>/dev/null | grep -q 'libasound\.so\.2 '
+}
+
+# Put the rootless alsa-lib on LD_LIBRARY_PATH when the system has none and
+# the prefix holds one. Prints what it did on stderr; returns non-zero when
+# there is no libasound anywhere.
+use_rootless_alsa() {
+    local prefix
+    prefix="$(alsa_prefix)"
+    if system_libasound; then
+        return 0
+    fi
+    case ":${LD_LIBRARY_PATH:-}:" in
+        *":$prefix/lib:"*) return 0 ;;
+    esac
+    if [ -e "$prefix/lib/libasound.so.2" ]; then
+        export LD_LIBRARY_PATH="$prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        note "chorus: note the system has no libasound.so.2; using the rootless alsa-lib at $prefix"
+        return 0
+    fi
+    return 1
+}
+
 # The device a run should use. `default` is the operator's real card; CI and a
 # container without one pass something else, and get told when it is not there.
 audio_device() {
@@ -99,6 +141,7 @@ require_audio_device() {
     local criterion="$1"
     local device
     device="$(audio_device)"
+    use_rootless_alsa || true
     if ! "$BIN_DIR/chorus-client" --device "$device" --probe-device >/dev/null 2>&1; then
         local detail
         detail="$({ "$BIN_DIR/chorus-client" --device "$device" --probe-device 2>&1 || true; } \
@@ -106,7 +149,7 @@ require_audio_device() {
         missing_prerequisite \
             "$criterion" \
             "a usable ALSA playback device; '$device' could not be opened ($detail)" \
-            "point CHORUS_CLIENT_DEVICE at a real card, a snd-aloop loopback, or the ALSA 'null' device"
+            "point CHORUS_CLIENT_DEVICE at a real card, a snd-aloop loopback, or the ALSA 'null' device; with no libasound.so.2 on this machine, install one: $ALSA_INSTALL_HINT (or set CHORUS_ALSA_PREFIX to an existing install)"
     fi
 }
 
@@ -117,6 +160,7 @@ require_pacing_audio_device() {
     local criterion="$1"
     local device
     device="$(audio_device)"
+    use_rootless_alsa || true
     if ! "$BIN_DIR/chorus-client" --device "$device" --probe-device --require-pacing \
         >/dev/null 2>&1; then
         local detail
@@ -148,6 +192,7 @@ require_capture_device() {
     local criterion="$1"
     local device
     device="$(capture_device)"
+    use_rootless_alsa || true
     if ! "$BIN_DIR/chorus-measure-capture" --probe-capture-device \
         --capture-device "$device" >/dev/null 2>&1; then
         local detail
