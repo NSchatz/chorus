@@ -63,7 +63,7 @@ static void a_fault_is_surfaced_by_name_and_the_audio_stops(void)
     chorus_telemetry_init(&telemetry);
     telemetry.link = CHORUS_LINK_UP;
     telemetry.audio = CHORUS_AUDIO_RUNNING;
-    telemetry.chunks_played = 500;
+    telemetry.chunks_received = 500;
 
     char line[512];
     chorus_telemetry_line(&telemetry, line, sizeof(line));
