@@ -7,7 +7,9 @@
 # Rust-only by declaration (the endpoint does not speak them yet; goal 6 moves control here).
 # fixtures/protocol/v2 is read by firmware/tests/test_protocol_v2.c (every vector, both
 # assertions) and its noise/ directory by firmware/tests/test_noise.c (the published vector in
-# both roles), since the endpoint moved to protocol v2 (goal 6).
+# both roles), since the endpoint moved to protocol v2 (goal 6). fixtures/controls is the
+# controller role's and the status LED's (goal 9): the C controls must produce its .hex bytes and
+# the server decodes and applies them (crates/server/tests/controller_role.rs).
 . "$(dirname "$0")/lib.sh"
 # directory | extensions both sides read | where Rust reads it | where C reads it
 shared=(
@@ -18,6 +20,7 @@ shared=(
     "fixtures/protocol/v2|hex fields|crates/protocol/tests|firmware/tests/test_protocol_v2.c"
     "fixtures/protocol/v2/noise|fields|crates/protocol/tests|firmware/tests/test_noise.c"
     "fixtures/codec|fields chunks pcm|crates/client-linux/tests|firmware/tests/test_codec.c"
+    "fixtures/controls|hex led|crates/server/tests|firmware/tests/test_controls.c"
 )
 rc=0
 bad() { fail "Shared fixtures" "$1"; rc=1; }
