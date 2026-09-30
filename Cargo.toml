@@ -19,3 +19,15 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.98.1"
 publish = false
+
+# Workspace lint policy (chorus goal 3). Every crate opts in with `[lints] workspace = true`.
+# Unsafe code is denied by default; a crate or item that needs it (FFI, raw syscalls) allows it
+# at the narrowest scope with a one-line reason, and every `unsafe` block carries a
+# `// SAFETY:` comment naming the invariant it relies on.
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "warn"
+dbg_macro = "warn"
+todo = "warn"

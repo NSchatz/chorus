@@ -21,3 +21,6 @@ path = "src/main.rs"
 [[bin]]
 name = "chorus-delaylog-check"
 path = "src/bin/delaylog_check.rs"
+
+[lints]
+workspace = true
