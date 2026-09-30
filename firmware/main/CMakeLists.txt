@@ -60,6 +60,7 @@ idf_component_register(
         "../src/endpoint_config.c"
         "../src/sync_conf.c"
         "../src/playout.c"
+        "../src/controls.c"
         "../src/codec.c"
         "../src/codec_flac.c"
         "../src/codec_opus.c"

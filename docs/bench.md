@@ -9,7 +9,22 @@ numbers into a session and nothing goes through a drop folder.
 
 No bench script writes to a device: none flashes, sets a register or pushes an
 image, so none reads `CHORUS_OWNER_AT_BENCH`. Flashing an endpoint before a run is
-its own step with its own guard.
+its own step with its own guard: `tools/firmware-flash.sh` (`make firmware-flash`).
+
+## The flash guard
+
+`tools/firmware-flash.sh` writes the image `make firmware-image` built onto a
+board, and refuses unless `CHORUS_OWNER_AT_BENCH` is exactly `1`. Only the owner
+sets it, at the bench, on the command line of the one run:
+
+    CHORUS_OWNER_AT_BENCH=1 tools/firmware-flash.sh --port /dev/ttyACM0
+
+Nothing in the repository sets it (the gate's `check-flash-guard.sh` fails if
+anything outside `docs/` does), and the gate runs the tool without it to show it
+refuses (`check-flash-tools-refuse.sh`). `--print` shows the exact esptool
+command without the variable and without running anything. The tool never runs
+an eFuse command and refuses an image or argument that asks for one (BRIEF.md
+section 3.1 rule 2).
 
 ## One-time setup of the bench machine
 

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+x="${CHORUS_OWNER_AT_BENCH:-}"
+: "${x:=1}"
+[ "$x" = 1 ] || exit 1

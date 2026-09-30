@@ -49,4 +49,6 @@ the number of the pull request that added it.
 | 0057 | [board profiles over endpoint.conf, the W5500 as the default link, and one image per link profile in the gate](0057-board-profiles-and-the-wired-link.md) |
 | 0058 | [the endpoint plays through a jitter buffer whose device delay is the frames the I2S DMA consumed, counted and stamped in the interrupt, and corrects by inserting and dropping frames](0058-the-endpoint-playout-path.md) |
 | 0060 | [the endpoint has a serial console for the bench, with runtime-only values, and chorus-measure recovers the produced sample rate](0060-the-endpoint-console.md) |
+| 0062 | [chorus flashes through one guarded tool, and the flash guard is checked by a per-language whitelist and by running the tool](0062-the-guarded-flashing-tool.md) |
+| 0063 | [a speaker's buttons are the controller role, its status LED follows the visualizer, and its microphone sits behind a gate that starts closed](0063-controls-led-and-mic-gate.md) |
 | 0064 | [the TAS5825M's register map comes from TI's datasheet with its page on every line, and bring-up follows the datasheet's startup procedure with 32-bit slots on the wire](0064-the-tas5825m-register-map-and-bring-up.md) |

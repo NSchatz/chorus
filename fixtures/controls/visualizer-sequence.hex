@@ -1,0 +1,30 @@
+# chorus controls fixture: a visualizer stream for the status LED (K65), fed from
+# this file until the DSP library computes the real stream (goal 12). Protocol v2
+# color (0x35) and visualizer_frame (0x34) frames, timestamps on the server timeline.
+#
+# Committed, and never written by a test. firmware/tests/test_controls.c offers every
+# frame to the LED and renders it at the moments in visualizer-sequence.led;
+# crates/server/tests/controller_role.rs decodes every frame with chorus-protocol.
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# color at 1.000 s: rgb 0 128 255, brightness 200, no fade
+35 00 0E 00 00 00 00 3B 9A CA 00 00 80 FF C8 00 00
+
+# frame at 1.000 s: no beat, peak 128, 4 bands
+34 00 0F 00 00 00 00 3B 9A CA 00 00 80 04 78 5A 28 0A
+
+# frame at 1.020 s: beat 200, peak 255
+34 00 0F 00 00 00 00 3C CB F7 00 C8 FF 04 FF C8 64 32
+
+# frame at 1.040 s: no beat, peak 64
+34 00 0F 00 00 00 00 3D FD 24 00 00 40 04 3C 1E 0A 00
+
+# color at 1.050 s: rgb 255 0 0, brightness 100, fade 250 ms
+35 00 0E 00 00 00 00 3E 95 BA 80 FF 00 00 64 00 FA
+
+# frame at 1.060 s: no beat, peak 255
+34 00 0F 00 00 00 00 3F 2E 51 00 00 FF 04 FF FF FF FF
+
+# frame at 1.080 s: no beat, peak 0
+34 00 0F 00 00 00 00 40 5F 7E 00 00 00 04 00 00 00 00

@@ -46,7 +46,7 @@ How the rules work:
 | 17 | CLAUDE.md length | `tools/conventions/check-claude-md.sh` |
 | 18 | No em dashes | `tools/conventions/check-em-dash.sh`; `tools/conventions/check-commits.sh` (messages) |
 | 19 | Identity and secrets | `tools/conventions/check-identity.sh` |
-| 20 | The flash guard | `tools/conventions/check-flash-guard.sh`; `tools/conventions/check-flash-guard-fixtures.sh` |
+| 20 | The flash guard | `tools/conventions/check-flash-guard.sh`; `tools/conventions/check-flash-guard-fixtures.sh`; `tools/conventions/check-flash-tools-refuse.sh` |
 | 21 | Commits | `tools/conventions/check-commits.sh` |
 | 22 | Every rule has a check | `tools/conventions/check-conventions.sh` |
 | 23 | Datasheet-cited amplifier map | `tools/conventions/check-amp-map.sh`; gate step `firmware-check` (`test_amp` drives the datasheet-modelled part with the committed map) |
@@ -268,17 +268,35 @@ prints `SKIPPED` with the reason.
 
 Every tool that can write to a device (flashing, an OTA push to a real address) refuses unless
 the owner, at the bench, set `CHORUS_OWNER_AT_BENCH` to `1` (K4, K93). Nothing in this
-repository sets it: outside `docs/`, the name appears only in the approved read forms
-`"${CHORUS_OWNER_AT_BENCH:-}"`, `env::var("CHORUS_OWNER_AT_BENCH")` and
-`getenv("CHORUS_OWNER_AT_BENCH")` (and, in Markdown, the bare name in backticks), and never with
-a default. Owner-facing command lines that set it live only under `docs/`. The program's plan
-under `.claude/goals/` quotes the forbidden forms and is not scanned. `check-flash-guard.sh` is
-lexical, so it has a fixture test of its own: `check-flash-guard-fixtures.sh` holds it to
-twenty-three forbidden forms (JSON and YAML `env`, Makefile `:=`, `?=` and `env`, shell `export`,
-`:=`, `:-1`, `declare -x` and a bare read, compose `environment:`, Rust `set_var` and a
-defaulting read, C `setenv`, `putenv` and `?:`, Dockerfile `ENV`, systemd `Environment=`, Python
-`os.environ`, `mise.toml` and `.cargo/config.toml` `[env]`, a command prefix, and a README
-outside `docs/`) and to the approved read forms.
+repository sets it. Outside `docs/`, the name appears only in an approved read form, used the one
+way its kind of file allows (a whitelist, so an unforeseen form fails): shell
+`[ "${CHORUS_OWNER_AT_BENCH:-}" != 1 ]` (or `=`, `==`, `[[ ]]`) on one line; Rust
+`matches!(env::var("CHORUS_OWNER_AT_BENCH").as_deref(), Ok("1"))` or `... == Ok("1")`; C
+`const char *v = getenv("CHORUS_OWNER_AT_BENCH");` alone on its line with the next comparing
+`strcmp(v, "1")`; Python `os.getenv("CHORUS_OWNER_AT_BENCH") == "1"`; and in Markdown the bare
+name in backticks. None of those lines may supply a default or a go-ahead other than `1`
+(`unwrap_or`, `map_or`, `or_else`, `is_err`, `is_ok`, `.ok()`, `.or(`, `?:`, Python `or`, `:=`),
+a shell read assigned to a variable fails (the two-line default), any other kind of file may not
+name it, and the name built from pieces fails anywhere. Owner-facing command lines that set it
+live only under `docs/`. Not scanned: `docs/`, the program's plan under `.claude/goals/`, the
+fixtures, and exactly the two scripts that build the name from pieces to do their job
+(`check-flash-guard.sh` and `check-flash-tools-refuse.sh`); the fixture test fails if that list
+grows.
+
+`check-flash-guard.sh` is lexical, so it has a fixture test of its own:
+`check-flash-guard-fixtures.sh` holds it to thirty-six forbidden forms (JSON and YAML `env`,
+Makefile `:=`, `?=` and `env`, shell `export`, `:=`, `:-1`, `declare -x`, a bare read, a read
+assigned to a variable and a two-line default, compose `environment:`, Rust `set_var`,
+`unwrap_or_else`, `map_or`, `.or(`, `unwrap_or_default` and `is_err()`, C `setenv`, `putenv`,
+`?:`, a ternary default and a reassigned read, Dockerfile `ENV`, systemd `Environment=`, Python
+`os.environ[...] =`, `os.environ.get(..., "1")` and `or "1"`, `mise.toml` and
+`.cargo/config.toml` `[env]`, a command prefix, a README outside `docs/`, and the name built from
+pieces three ways) and to the approved read forms. What no lexical scan sees (a name decoded at
+run time) is why `check-flash-tools-refuse.sh` runs every flashing tool: every tracked file that
+reads the guard or calls esptool, espefuse or `idf.py flash` must be on its list, and each is run
+against a complete fixture image and port with shims for those programs, with the variable unset,
+empty, `0`, `true`, `yes`, ` 1`, `1 ` and `01`; each must exit non-zero naming the owner-at-bench
+variable with no shim called. The guarded tool is `tools/firmware-flash.sh` (ADR 0062).
 
 ## 21. Commits
 
