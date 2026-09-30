@@ -60,6 +60,8 @@ typedef struct {
     chorus_i2s_clock_t clock;
     chorus_pin_map_t pins;
     chorus_mem_placement_t dma_placement;
+    /* The GPIO marker's period on the server timeline (pins.marker drives it). */
+    uint32_t marker_period_ms;
 
     chorus_amp_config_t amp;
     chorus_amp_gain_t gain;

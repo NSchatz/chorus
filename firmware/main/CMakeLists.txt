@@ -41,6 +41,7 @@ idf_component_register(
         "esp_hal.c"
         "esp_link.c"
         "esp_playout.c"
+        "esp_marker.c"
         "console_esp.c"
         "../src/conf.c"
         "../src/protocol.c"
@@ -81,9 +82,10 @@ idf_component_register(
     # peripheral (docs.espressif.com/projects/esp-idf/en/v6.1/esp32s3/
     # migration-guides/release-6.x/6.0/peripherals.html, read 2026-09-30); the
     # endpoint names the three it includes: driver/gpio.h, driver/i2c_master.h
-    # and driver/i2s_std.h.
+    # and driver/i2s_std.h, and driver/gptimer.h for the GPIO marker (goal 9).
     REQUIRES
         esp_driver_gpio
+        esp_driver_gptimer
         esp_driver_i2c
         esp_driver_i2s
         esp_driver_spi

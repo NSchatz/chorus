@@ -78,6 +78,9 @@ typedef struct {
     uint64_t mute_ns;
     uint32_t interval_ms;
     chorus_servo_config_t servo;
+    /* The GPIO marker's period on the server timeline, in ns; 0 turns the
+     * marker off. See chorus_playout_marker_due. */
+    uint64_t marker_period_ns;
 } chorus_playout_config_t;
 
 /* The playout configuration config/sync.conf and the I2S clock imply. */
@@ -162,6 +165,14 @@ typedef struct {
     double correction_ppm;
     int error_known;
     double last_error_ns;
+    /* The GPIO marker: boundaries armed, edges the interrupt scheduled, and
+     * armed boundaries dropped (the DMA passed the frame before its buffer
+     * started, or starvation moved the frame), and the server-timeline
+     * instant of the last boundary armed. */
+    uint64_t marker_armed;
+    uint64_t marker_edges;
+    uint64_t marker_missed;
+    uint64_t marker_last_boundary_ns;
 } chorus_playout_stats_t;
 
 typedef struct {
@@ -231,6 +242,20 @@ typedef struct {
      * at an instant nobody chose. */
     int acquired;
 
+    /* The GPIO marker's one slot, written by the writer task only while
+     * marker_pending is 0 and read and cleared by the interrupt: the frame
+     * (in the 32-bit written count) whose server timestamp is the first at or
+     * after the boundary, how far that frame's timestamp is past the
+     * boundary, and the level the edge sets. */
+    volatile uint32_t marker_pending;
+    volatile uint32_t marker_frame32;
+    volatile uint32_t marker_lead_ns;
+    volatile uint32_t marker_level;
+    volatile uint32_t marker_edges32;
+    volatile uint32_t marker_missed32;
+    /* ns per frame in 16.16 fixed point, so the interrupt needs no division. */
+    uint32_t frame_ns_q16;
+
     chorus_playout_stats_t stats;
     chorus_playout_report_t last;
 } chorus_playout_t;
@@ -286,6 +311,24 @@ chorus_playout_observation_t chorus_playout_observe(chorus_playout_t *p,
                                                     chorus_playout_report_t *report);
 
 void chorus_playout_stats(chorus_playout_t *p, chorus_playout_stats_t *out);
+
+/* Frames handed to the I2S driver and not yet at the pins, as the loop forms
+ * its device delay (written minus consumed, less what of the buffer in flight
+ * has played since the interrupt's stamp), and the same in ns. This is the
+ * FIFO after the writer; what the amplifier adds after the pins is a
+ * datasheet figure plus a bench measurement, never this. */
+void chorus_playout_fifo(chorus_playout_t *p, double *frames, double *ns);
+
+/* THE MARKER, in the interrupt (BRIEF.md section 10's digital cross-check).
+ * Called right after chorus_playout_on_dma_sent. The writer arms one frame at
+ * a time: the first frame whose server timestamp is at or after a multiple of
+ * marker_period_ns. When the buffer now starting at the pins holds that
+ * frame, this returns 1 with the delay, from this instant, to the boundary
+ * itself (the frame's offset in the buffer less how far its timestamp is past
+ * the boundary, never below 0) and the level the edge sets (the boundary's
+ * index modulo 2, so both endpoints of a pair agree on it). Returns 0
+ * otherwise. No lock, no float, no division. */
+int chorus_playout_marker_due(chorus_playout_t *p, uint32_t *delay_ns, uint32_t *level);
 
 /* Whether the loop has acquired the timeline: the writer ticks the loop at
  * every buffer until it has, then every interval_ms. */

@@ -25,8 +25,8 @@ every "snippet" and `ASSUMED` line in a browser before buying.
 | A3 | Raspberry Pi 27 W USB-C PSU | S0-S4 | 2 | $25.90 |
 | A4 | Raspberry Pi SD card 32 GB | S0 | 2 | $39.90 |
 | A5 | Behringer UMC202HD (2 in, 96 kHz capture used) | S1-S4 | 1 | $86.90 |
-| A6 | SparkFun USB logic analyzer 24 MHz (sigrok fx2lafw) | not used by S1-S4 (see section 6) | 1 | $26.95 |
-| A7 | Jumper wires | not used by S1-S4 | 2 | $3.90 |
+| A6 | SparkFun USB logic analyzer 24 MHz (sigrok fx2lafw) | S7.5 only (the GPIO marker) | 1 | $26.95 |
+| A7 | Jumper wires | S7.5 only | 2 | $3.90 |
 | A8 | 2 x RCA to 1/4" TS cable, 1 x RCA Y splitter | S1-S4 | 1 set | $30.00 |
 | B1-B10 | Esparagus Audio Brick x2 (pre-order, est. 2027-01-25), Waveshare ESP32-S3-ETH x2, PCM5102 DACs, PoE+ injector and splitter, 24 V supply, passive speaker pair, dummy loads, Cat6 | S5 and the EMBEDDED-5 and WIFI-7 packets of goals 8 and 9 | | $387.86 |
 | | **Recommended total** | | | **$791.31** |
@@ -253,16 +253,189 @@ request `bench/<date>-embedded5-decode-cost` opens. Nothing is graded against a 
 feed the playout and DSP budgets. What changes: goal 6's host-only decode cost gets its S3
 counterpart; if the stack figure is small, the console's 16 KB stack (ASSUMED) grows.
 
+### S7. EMBEDDED-5: the ESP32-S3 endpoint plays, syncs and survives abuse (after S0; the Audio Brick)
+
+The EMBEDDED-5 packet (chorus goal 9; BRIEF.md section 8 item 5: "ESP32-S3 firmware: I2S out,
+TAS5825M alive, network playback, sync core ported and measured against a Linux client. Success:
+the embedded endpoint syncs comparably to Linux and survives disconnect/reconnect abuse
+unattended"). Four steps: flash, watch it boot, the bring-up and abuse run, then the sync on the
+rig. A fifth, the GPIO marker cross-check, needs a logic analyzer and a free pin.
+
+**Needs** (from section 1; nothing is ordered by the program):
+
+| Step | What | Lines |
+|---|---|---|
+| S7.1-S7.3 | one Esparagus Audio Brick (ESP32-S3, TAS5825M, W5500): the `brick-s3-wired` board profile | B1 (+ B2 shipping) |
+| S7.1-S7.3 | its power: a 24 V DC supply, or PoE+ through the injector and splitter (the compact speaker's path, K90) | B7, or B5 + B6 |
+| S7.1-S7.3 | a passive speaker pair on its terminals, and a USB-C data cable to endpoint A | B8 |
+| S7.1-S7.3 | Ethernet to the house LAN (or to B5's data-in port) | B10 |
+| S7.4 | S2's trusted rig (endpoint A, endpoint B, the UMC202HD) and a load and divider for the Brick's speaker-level output | A1-A5, A8, B9 |
+| S7.5 | the logic analyzer and jumpers, and a second ESP32-S3 endpoint (a second B1, or B3) | A6, A7 |
+
+The board model is **ASSUMED**: `firmware/boards/brick-s3-wired.conf` names P1's reference board
+until the Needs item "Your ESP32-S3 boards: module markings and a read-only chip report" is
+answered. If your board is not an Audio Brick, stop and answer that item first: a different board
+needs its own profile (pins, amplifier) before it is flashed.
+
+**Wiring** (`brick-s3-wired`; pins from the maker's Apache-2.0 configuration, cited in
+`firmware/config/endpoint.conf`; everything below is on the board, nothing is jumpered):
+
+```
+ 24 V supply (B7) --or-- PoE+ injector (B5) -> Cat6 -> splitter (B6) -> 24 V out --+
+                                                        splitter data out --Cat6--+--> Brick RJ45 (W5500)
+                                                                                   +--> Brick DC in (5-26 V)
+ Brick speaker terminals L+/L-, R+/R- ---- speaker pair (B8), 4-8 ohm
+ Brick USB-C ---- endpoint A (flashing and the serial console, /dev/ttyACM0)
+```
+
+- Speakers or loads only on the speaker terminals: the TAS5825M's outputs are bridge-tied (both
+  terminals of a channel switch; neither is ground). Never join a speaker terminal to endpoint A,
+  the interface or any ground.
+- The first power-up is with the speakers connected and the volume at the image's floor: the
+  analog gain is the part's lowest setting (`amp_analog_gain_db = 0.0` above the lowest,
+  `firmware/config/endpoint.conf`), and the endpoint refuses anything above that ceiling.
+
+#### S7.1 Build and flash (the owner's act)
+
+On endpoint A, in S0's checkout, with ESP-IDF v6.1 exported (the pin in
+`firmware/config/endpoint.conf`):
+
+```
+. <esp-idf v6.1>/export.sh
+git pull --ff-only
+make firmware-image                                   # builds firmware/build/image (brick-s3-wired)
+tools/firmware-flash.sh --print --port /dev/ttyACM0   # shows the esptool command, runs nothing
+CHORUS_OWNER_AT_BENCH=1 tools/firmware-flash.sh --port /dev/ttyACM0
+```
+
+`tools/firmware-flash.sh` refuses unless you set `CHORUS_OWNER_AT_BENCH=1` on its own command line
+(nothing in the repository sets it), and it never runs an eFuse, Secure Boot, Flash Encryption or
+anti-rollback command. Never run `espefuse` (BRIEF.md section 3.1 rule 2).
+
+#### S7.2 Watch it boot, and keep the log
+
+```
+cd firmware && idf.py -B build/image -p /dev/ttyACM0 monitor | tee ../embedded5-boot.log
+```
+
+(`Ctrl+]` leaves the monitor; delete any `MAC:` line from the log, K27.) **Expected**, in this
+order (tags `chorus`, `chorus-console`, `chorus-playout`, `chorus-marker`; timestamps differ):
+
+1. ESP-IDF's own boot lines, including `ESP-IDF:          v6.1`.
+2. `chorus: board profile=brick-s3-wired model="Sonocotta Esparagus Audio Brick (ESP32-S3), TAS5825M, W5500" status=ASSUMED needs_item="Your ESP32-S3 boards: module markings and a read-only chip report" link=wired`
+3. `chorus-console: console up: power-save, server, status, decode-cost, resources (values are runtime only)`
+4. `chorus-marker: marker off (pin_marker = none)`
+5. `chorus-playout: jitter buffer 57600 bytes (9600 frames), internal RAM free after it: <n> bytes`
+6. The amplifier's bring-up (the TAS5825M's datasheet sequence, ADR 0064):
+   `chorus: the amplifier at I2C address 0x4c answered as device 0x95, reported no fault, took 0.000 dB of analog gain against a ceiling of 0.000 dB, and reached Play after its clock was applied in Deep Sleep`.
+   The address 0x4C assumes the ADR pin strapped to ground (`ASSUMED`,
+   `firmware/config/endpoint.conf`); a part that does not answer there is refused with the output
+   stage dead, naming the address.
+7. `chorus: chorus-endpoint: link=... transport=wired ... amp=ok amp_fault_bits=0x00 ...` (the
+   telemetry line), then
+   `chorus: link=wired phy=w5500 status=up spi=spi2 clock_mhz=20 sclk=12 mosi=11 miso=13 cs=10 int=6 address_timeout_ms=30000`.
+8. Silence from the speakers: the image dials its committed server address (`127.0.0.1:4010`,
+   itself) until S7.3 points it at a real one.
+
+What changes with the answer: nothing to edit if it matches. If the amplifier's bring-up line is a
+refusal instead, it names the key and the datasheet page to re-check in
+`firmware/config/endpoint.conf`; paste the lines into the Needs item and stop here.
+
+#### S7.3 The bring-up and abuse run (unattended, about 10 minutes)
+
+With the monitor closed (the script needs the serial port) and the Brick still on the LAN:
+
+```
+CHORUS_ESP32S3_PORT=/dev/ttyACM0 CHORUS_EMBEDDED5_BOOT_LOG=embedded5-boot.log \
+    CHORUS_BENCH_PR=1 tools/embedded5-bringup-run.sh
+```
+
+It starts `chorus-server` on endpoint A with a quiet 440 Hz tone, points the endpoint at it over
+the console, records `status` and `resources` (free heap internal and PSRAM, least-ever free, each
+task's least free stack, the FIFO after the writer, the marker's counts) before, while playing and
+after, then kills and restarts the server 10 times (`CHORUS_EMBEDDED5_CYCLES`), with outages from
+1 s to 10 s (twice `reconnect_max_backoff_ms`), and requires the endpoint to be playing again each
+time without anyone touching it. **Expected:** you hear the tone, with a gap at each outage; the
+report `embedded5-bringup-<date>` is **PASS** with `amp_status = ok`, `cycles_recovered = 10 of
+10`, and figures in `heap_internal_min_free`, `stack_min_free` and `fifo_us` (records, not graded);
+a pull request `bench/<date>-embedded5-bringup` opens. Then, by hand: pull the Brick's Ethernet
+cable for 30 s and plug it back; `status` on the console (`printf 'status\r\n' > /dev/ttyACM0`
+while `idf.py monitor` shows the reply, or rerun the script) should show `audio=running` again
+within 15 s. Note the result in the Needs item. What changes: a stack figure near zero grows that
+task's stack (ADRs 0058 and 0060); a FAIL names the round and the status line it stopped on.
+
+#### S7.4 The sync against a Linux client, on the rig (after S2)
+
+The rig compares the Brick with endpoint B (a Linux client) on the UMC202HD, as SYNC-4 compares
+two Pis. The Brick's output is speaker level and bridge-tied, and each terminal sits at a DC level
+of about half the supply at idle (both legs of a bridge-tied class-D stage switch around the
+middle of the supply; `ASSUMED` from the output-stage type, confirm with the multimeter below), so
+it goes into the interface through a load, DC-blocking capacitors and a divider (B9), never
+directly. One channel (L) is enough:
+
+```
+ Brick L+ --+-------------------- 8 ohm 50 W load --------------------+-- Brick L-
+            |                                                        |
+          10 uF 50 V (film or bipolar)                             10 uF 50 V
+            |                                                        |
+          9.1 k                                                    9.1 k
+            |                                                        |
+ TRS tip ---+--- 1 k --- TRS sleeve --- 1 k ---+------------------- TRS ring
+                                               (the plug into UMC202HD input 1)
+ endpoint B (Pi 5 + DAC+) RCA L --> RCA-to-TS --> UMC202HD input 2 (as in S2)
+```
+
+- Before the plug goes into the interface, with the Brick powered and playing nothing: measure DC
+  between tip and sleeve and between ring and sleeve with the multimeter. Both must read below
+  0.1 V; if not, a capacitor is missing or wrong and nothing is plugged in.
+- `ASSUMED` values: about 10:1 on each leg into the interface's balanced line input, sized for the
+  image's lowest analog gain and the chirp at 0.25 of full scale; the capacitors' 1.6 Hz corner
+  is far below the chirp. That the UMC202HD's combo inputs take a balanced TRS line signal is
+  `ASSUMED` from its retailer specifications (section 2): confirm in its manual. Start with the
+  GAIN knob fully down.
+- Speakers off the Brick for this step (the load replaces them).
+
+```
+CHORUS_ESP32S3_PORT=/dev/ttyACM0 CHORUS_SECOND_ENDPOINT=<user>@<endpoint-b> \
+    CHORUS_CAPTURE_DEVICE=hw:<card>,0 CHORUS_BENCH_PR=1 tools/endpoint-rig-run.sh
+```
+
+**Expected:** the report `embedded5-endpoint-rig-<date>` is **PASS** with
+`median_of_medians_us` below `bound_us` (500, `config/transport.conf` `wired_bound_us`: SYNC-4's
+bound) and `produced_rate` inside the servo's authority (AC-3); a pull request
+`bench/<date>-embedded5-endpoint-rig` opens. What changes: EMBEDDED-5's "syncs comparably to
+Linux" is graded; a FAIL is the finding the sync engine's next goal starts from.
+
+#### S7.5 The GPIO marker cross-check (optional: a logic analyzer and a free pin)
+
+The firmware can drive a marker pin at every server-timeline second (ADR 0065,
+`firmware/main/esp_marker.c`), but `pin_marker` is `none` on the Brick: its maker documents no
+free broken-out GPIO (the S3 display header's GPIO38 is a candidate on a board with no display,
+unverified). If you find a free pin on both S3 endpoints: set `pin_marker = <gpio>` in each one's
+board profile, rebuild and flash both (S7.1), wire each marker pin and a common ground to the
+analyzer's D0 and D1, and capture a minute:
+
+```
+sigrok-cli -d fx2lafw --config samplerate=24m --channels D0,D1 --time 60s -O csv -o marker.csv
+```
+
+**Expected:** one edge per second on each channel, the same level on both at each second, the
+edge delta between D0 and D1 at most tens of microseconds once both are synced; each endpoint's
+`resources` shows `marker_edges` rising and `marker_missed` at 0. No chorus tool reads the
+capture yet and a Linux client has no marker until the Linux tier (chorus goal 10) adds one: put
+`marker.csv` in the Needs item, and a later goal turns it into a report.
+
 ## 4. Order and what each session unblocks
 
 S0 first; S1 needs one Pi; S2 needs both and the interface; S3 needs S2's rig trusted; S4 after
 S3. S5 is independent (the owner's own board) and can run any time; S6 follows S5 on the same
-board. None of these blocks a chorus
+board. S7 needs an Audio Brick (B1): S7.1-S7.3 after S0 alone, S7.4 after S2's rig is trusted,
+S7.5 whenever a logic analyzer and a free pin exist. None of these blocks a chorus
 goal (K7): each goal that can use a result re-checks for its pull request.
 
 ## 5. How results come back
 
-Each evidence run (S1-S4) commits its report on `bench/<date>-<topic>` and opens a pull request
+Each evidence run (S1-S4, S6, S7.3, S7.4) commits its report on `bench/<date>-<topic>` and opens a pull request
 from endpoint A (`docs/bench.md`); the owner does nothing else. If the report or pull-request half
 fails after a measurement, nothing is lost: fix the cause and run the same script with
 `--report-from <run directory>` (printed at the start) from the same commit. S0 and S5 are answered in their
@@ -270,14 +443,11 @@ Needs items.
 
 ## 6. Not in this packet
 
-- The GPIO marker cross-check with the logic analyzer (BRIEF.md section 10's digital
-  cross-check): no endpoint drives a marker pin yet and no chorus tool reads a sigrok capture.
-  Goal 8 built the playout path it would mark (ADR 0058) but no marker; goal 9's EMBEDDED-5 packet
-  (the settled board's wiring) is where a marker pin and its reader belong.
-- EMBEDDED-5 (the S3 + W5500 line-level sync against a Linux client, `tools/endpoint-rig-run.sh`)
-  and WIFI-7 (`tools/wireless-characterization-run.sh`): they need goal 8's link and playout and
-  goal 9's amplifier map; those goals write their packets. Both scripts now drive the endpoint
-  console (goal 8, ADR 0060), and the rig grades AC-3's produced rate with `chorus-measure rate`.
+- A reader for the GPIO marker's capture (S7.5 records it as a CSV only) and a marker on the
+  Linux client: the Linux tier (chorus goal 10) adds the Linux marker, and the goal that has a
+  capture to read writes its report.
+- WIFI-7 (`tools/wireless-characterization-run.sh`, the compact speakers' Wi-Fi tier): it needs a
+  wireless network the repository declares unknown and a provisioning path (chorus goal 14).
 - The production host's SCHED_FIFO wakeup-jitter run: a homelab-side Needs item, not a bench
   session (`docs/measurements/host-wakeup-jitter.md`). Its output files come back the bench way:
   committed under `docs/measurements/raw/production-wakeup-<date>/` on a

@@ -637,6 +637,118 @@ static void test_modelled_runs(void)
                  o.stats.starved_frames, o.true_err_max_us);
 }
 
+/* The GPIO marker (BRIEF.md section 10's digital cross-check) and the FIFO
+ * depth the console reports. The chunk's timestamps are deliberately not
+ * aligned to the boundary, so the lead and the offset inside the buffer are
+ * both exercised. */
+static void test_marker_and_fifo(void)
+{
+    chorus_section("the GPIO marker: a server-timeline boundary scheduled from the interrupt");
+    chorus_playout_config_t config = make_config();
+    config.marker_period_ns = 1000000000ull;
+    static chorus_playout_t p;
+    fake_now = 5000000000ull;
+    (void)chorus_playout_init(&p, &config, ring_storage, chunk_storage, fake_clock);
+    chorus_playout_dma_reset(&p);
+    chorus_playout_note_preloaded(&p, DMA_DESC * DMA_FRAMES);
+    static uint8_t pcm[CHUNK_FRAMES * 6];
+    static uint8_t block[DMA_FRAMES * FRAME_OUT];
+    make_chunk(pcm, 0);
+    /* The boundary at 7 s falls 9,899,993 ns into the chunk: between frames
+     * 475 and 476, at frame position 475.199664. */
+    const uint64_t ts0 = 7000000000ull - 9899993ull;
+    (void)chorus_playout_offer(&p, ts0, 1, CHORUS_FMT_PCM_S24LE, 2, RATE, pcm, CHUNK_FRAMES);
+    p.acquired = 1;
+    (void)chorus_playout_fill(&p, block, DMA_FRAMES);
+    chorus_playout_stats_t st;
+    chorus_playout_stats(&p, &st);
+    chorus_check(st.marker_armed == 0,
+                 "a block that holds no boundary arms nothing (frames 0-239 of the chunk)");
+    (void)chorus_playout_fill(&p, block, DMA_FRAMES);
+    chorus_playout_stats(&p, &st);
+    uint32_t preload = DMA_DESC * DMA_FRAMES;
+    chorus_check(st.marker_armed == 1 && p.marker_frame32 == preload + 476u &&
+                     p.marker_level == 1u && st.marker_last_boundary_ns == 7000000000ull,
+                 "the block holding the boundary arms the first frame at or after it: frame "
+                 "%" PRIu32 " of the written count (preload %u + 476), level %" PRIu32
+                 " (boundary 7 is odd), lead %" PRIu32 " ns past the boundary",
+                 p.marker_frame32, preload, p.marker_level, p.marker_lead_ns);
+    uint32_t delay = 0, level = 0;
+    int early = 0;
+    for (uint32_t i = 0; i < 6; i++) {
+        chorus_playout_on_dma_sent(&p, DMA_FRAMES * FRAME_OUT);
+        early |= chorus_playout_marker_due(&p, &delay, &level);
+    }
+    chorus_check(!early, "no edge while the buffers ahead of the marked one start (%u calls)", 6);
+    chorus_playout_on_dma_sent(&p, DMA_FRAMES * FRAME_OUT);
+    int due = chorus_playout_marker_due(&p, &delay, &level);
+    /* The buffer now starting holds frames 1680-1919; the boundary sits at
+     * frame position 1440 + 475.199664 = 1915.199664. */
+    double true_delay_ns = (1915.199664 - 1680.0) * 1e9 / RATE;
+    chorus_check(due == 1 && fabs((double)delay - true_delay_ns) < 1000.0 && level == 1u,
+                 "the buffer holding the frame starts: the edge is due in %" PRIu32
+                 " ns (the boundary itself is %.0f ns away), level %" PRIu32,
+                 delay, true_delay_ns, level);
+    chorus_check(chorus_playout_marker_due(&p, &delay, &level) == 0,
+                 "an edge is scheduled once per boundary");
+    chorus_playout_stats(&p, &st);
+    chorus_check(st.marker_edges == 1 && st.marker_missed == 0,
+                 "the counts say one edge and no miss (%" PRIu64 ", %" PRIu64 ")", st.marker_edges,
+                 st.marker_missed);
+
+    chorus_section("a boundary the interrupt passed is counted missed, never fired late");
+    p.marker_frame32 = p.dma_consumed32 + 10u;
+    p.marker_pending = 1u;
+    chorus_playout_on_dma_sent(&p, 2u * DMA_FRAMES * FRAME_OUT);
+    due = chorus_playout_marker_due(&p, &delay, &level);
+    chorus_playout_stats(&p, &st);
+    chorus_check(due == 0 && st.marker_missed == 1 && p.marker_pending == 0u,
+                 "a frame whose buffer started unseen: no edge, %" PRIu64 " missed",
+                 st.marker_missed);
+
+    chorus_section("starvation drops an armed boundary rather than marking the wrong instant");
+    p.marker_frame32 = p.written32 + 100u;
+    p.marker_pending = 1u;
+    for (uint32_t i = 0; i < 16; i++) {
+        chorus_playout_on_dma_sent(&p, DMA_FRAMES * FRAME_OUT);
+    }
+    chorus_playout_stats(&p, &st);
+    chorus_check(st.starved_frames > 0 && p.marker_pending == 0u && st.marker_missed == 2,
+                 "the DMA ran dry (%" PRIu64 " frames starved): the boundary is dropped, %" PRIu64
+                 " missed",
+                 st.starved_frames, st.marker_missed);
+
+    chorus_section("the marker off");
+    chorus_playout_config_t off = make_config();
+    static chorus_playout_t q;
+    (void)chorus_playout_init(&q, &off, ring_storage, chunk_storage, fake_clock);
+    chorus_playout_dma_reset(&q);
+    (void)chorus_playout_offer(&q, ts0, 1, CHORUS_FMT_PCM_S24LE, 2, RATE, pcm, CHUNK_FRAMES);
+    q.acquired = 1;
+    for (uint32_t i = 0; i < 4; i++) {
+        (void)chorus_playout_fill(&q, block, DMA_FRAMES);
+    }
+    chorus_playout_stats(&q, &st);
+    chorus_check(off.marker_period_ns == 0 && st.marker_armed == 0,
+                 "with marker_period_ns = 0 (pin_marker = none) nothing is ever armed");
+
+    chorus_section("the FIFO after the writer, as the console reports it");
+    static chorus_playout_t f;
+    fake_now = 9000000000ull;
+    (void)chorus_playout_init(&f, &off, ring_storage, chunk_storage, fake_clock);
+    chorus_playout_dma_reset(&f);
+    chorus_playout_note_preloaded(&f, DMA_DESC * DMA_FRAMES);
+    chorus_playout_on_dma_sent(&f, DMA_FRAMES * FRAME_OUT);
+    fake_now += 1000000ull; /* 1 ms into the next buffer */
+    double frames = 0.0, ns = 0.0;
+    chorus_playout_fifo(&f, &frames, &ns);
+    double expected = (double)(DMA_DESC * DMA_FRAMES - DMA_FRAMES) - 0.001 * RATE;
+    chorus_check(fabs(frames - expected) < 1e-6 && fabs(ns - expected * 1e9 / RATE) < 1.0,
+                 "fifo = written %u - consumed %u - 48 frames played since the stamp = %.1f "
+                 "frames (%.1f us)",
+                 DMA_DESC * DMA_FRAMES, DMA_FRAMES, frames, ns / 1000.0);
+}
+
 int main(void)
 {
     char path[512];
@@ -650,5 +762,6 @@ int main(void)
     test_hook_and_error();
     test_buffer_rules();
     test_modelled_runs();
+    test_marker_and_fifo();
     return chorus_test_report("test_playout");
 }

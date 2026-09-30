@@ -15,6 +15,8 @@
 #include "freertos/task.h"
 #include "nvs_flash.h"
 
+#include "esp_marker.h"
+
 static const char *TAG = "chorus-hal";
 
 /* Everything the three interfaces need, in one place. Static because there is
@@ -171,6 +173,9 @@ static bool hal_on_sent(i2s_chan_handle_t handle, i2s_event_data_t *event, void 
     chorus_playout_t *playout = hal.playout;
     if (playout != NULL) {
         chorus_playout_on_dma_sent(playout, event->size);
+        /* The GPIO marker: arms its alarm when the buffer now starting holds
+         * a marked boundary (goal 9; esp_marker.c). */
+        chorus_esp_marker_on_dma_sent(playout);
     }
     return false;
 }

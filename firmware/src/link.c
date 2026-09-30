@@ -122,6 +122,7 @@ size_t chorus_link_validate(const chorus_wifi_config_t *link, const chorus_eth_c
         {"pin_i2c_sda", audio->sda},
         {"pin_i2c_scl", audio->scl},
         {"pin_amp_power_down", audio->amp_power_down},
+        {"pin_marker", audio->marker},
     };
     const size_t audio_count = sizeof(audio_pins) / sizeof(audio_pins[0]);
     for (size_t i = 0; i < spi_count; i++) {

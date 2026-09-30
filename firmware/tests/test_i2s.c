@@ -149,6 +149,7 @@ static void the_reserved_pins(void)
     pins.sda = 8;
     pins.scl = 9;
     pins.amp_power_down = 21;
+    pins.marker = CHORUS_PIN_NONE;
     pins.octal_psram = 1;
     chorus_pin_map_validate(&pins, findings, MAX_FINDINGS, &count);
     chorus_check(count == 0, "the committed pin map is accepted");
@@ -182,6 +183,7 @@ static void the_reserved_pins(void)
         candidate.sda = 8;
         candidate.scl = 9;
         candidate.amp_power_down = 21;
+        candidate.marker = CHORUS_PIN_NONE;
         candidate.octal_psram = 1;
         count = 0;
         chorus_pin_map_validate(&candidate, findings, MAX_FINDINGS, &count);
@@ -206,6 +208,7 @@ static void the_reserved_pins(void)
     not_octal.sda = 8;
     not_octal.scl = 9;
     not_octal.amp_power_down = 21;
+    not_octal.marker = CHORUS_PIN_NONE;
     not_octal.octal_psram = 0;
     count = 0;
     chorus_pin_map_validate(&not_octal, findings, MAX_FINDINGS, &count);
@@ -221,12 +224,31 @@ static void the_reserved_pins(void)
     doubled.sda = 8;
     doubled.scl = 9;
     doubled.amp_power_down = 21;
+    doubled.marker = CHORUS_PIN_NONE;
     doubled.octal_psram = 1;
     count = 0;
     chorus_pin_map_validate(&doubled, findings, MAX_FINDINGS, &count);
     chorus_check(has_rule(findings, count, "gpio-assigned-twice"),
                  "two signals on GPIO17 is refused: %s",
                  detail_of(findings, count, "gpio-assigned-twice"));
+
+    /* The GPIO marker is optional and held to the same rules when set. */
+    chorus_pin_map_t marked = pins;
+    marked.marker = 38;
+    count = 0;
+    chorus_pin_map_validate(&marked, findings, MAX_FINDINGS, &count);
+    chorus_check(count == 0, "a marker on a free pin (GPIO38) is accepted");
+    marked.marker = marked.dout;
+    count = 0;
+    chorus_pin_map_validate(&marked, findings, MAX_FINDINGS, &count);
+    chorus_check(has_rule(findings, count, "gpio-assigned-twice"),
+                 "a marker on the I2S data pin is refused: %s",
+                 detail_of(findings, count, "gpio-assigned-twice"));
+    marked.marker = 46;
+    count = 0;
+    chorus_pin_map_validate(&marked, findings, MAX_FINDINGS, &count);
+    chorus_check(has_rule(findings, count, "gpio-is-a-strapping-pin"),
+                 "a marker on a strapping pin is refused");
 }
 
 /* AC-12's runtime half. The source half is firmware/check/endpoint_scan.c. */

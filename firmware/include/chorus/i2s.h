@@ -68,6 +68,9 @@ typedef struct {
     uint32_t sda;
     uint32_t scl;
     uint32_t amp_power_down;
+    /* The GPIO marker (BRIEF.md section 10's digital cross-check), or
+     * CHORUS_PIN_NONE: optional, held to the same rules when set. */
+    uint32_t marker;
     /* Whether the board carries octal flash or octal PSRAM, which extends the
      * reserved range. */
     int octal_psram;

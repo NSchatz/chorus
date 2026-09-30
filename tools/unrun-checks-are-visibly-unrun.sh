@@ -188,6 +188,13 @@ expect_missing_prerequisite "decode-cost-run.sh" \
     env CHORUS_SKIP_BUILD=1 CHORUS_ESP32S3_PORT= \
     bash "$REPO_ROOT/tools/decode-cost-run.sh"
 
+# The same absence for EMBEDDED-5's bring-up and abuse run (goal 9's packet,
+# docs/bench-packet.md S7): no serial port, so no endpoint to bring up, play or
+# abuse. Passed nowhere in this repository.
+expect_missing_prerequisite "embedded5-bringup-run.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_ESP32S3_PORT= \
+    bash "$REPO_ROOT/tools/embedded5-bringup-run.sh"
+
 # No playback device. Genuinely absent: the name does not exist. Both of these
 # are PRODUCT-6's entry points for AC-1 and AC-3, and both run real endpoints,
 # which need a device that opens.
