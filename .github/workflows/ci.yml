@@ -55,10 +55,12 @@ jobs:
       # refuses any other.
       - name: ESP-IDF
         run: |
-          git clone --branch v5.3.6 --depth 1 --recursive --shallow-submodules \
+          git clone --branch v6.1 --depth 1 --recursive --shallow-submodules \
             https://github.com/espressif/esp-idf.git "$HOME/esp-idf"
           git -C "$HOME/esp-idf" rev-parse HEAD
           "$HOME/esp-idf/install.sh" esp32s3
+          # cmake and ninja are installed on request in v6.1 (ADR 0042).
+          (cd "$HOME/esp-idf" && python3 tools/idf_tools.py install cmake ninja)
           printf '. %s/export.sh\n' "$HOME/esp-idf" > "$HOME/idf-env.sh"
           echo "CHORUS_IDF_ENV=$HOME/idf-env.sh" >> "$GITHUB_ENV"
 
