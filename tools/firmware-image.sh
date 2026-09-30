@@ -59,5 +59,9 @@ fi
 say "  jobs:       IDF_PY_BUILD_JOBS=${IDF_PY_BUILD_JOBS:-<unset: the ninja default>}"
 (cd "$REPO_ROOT/firmware" && idf.py -B "$OUT_DIR" -D SDKCONFIG="$OUT_DIR/sdkconfig" "${CCACHE_FLAG[@]}" build)
 
+# Guardrail 2 over what was just built: the generated configuration and both
+# linked images, before anything is reported as an image.
+bash "$REPO_ROOT/tools/firmware-image-guard.sh" "$OUT_DIR"
+
 say "chorus: the image is in $OUT_DIR and has NOT been flashed or shipped"
 say "chorus: flashing is an operator act; OTA is chorus#FLEET-10 and is not in this phase"

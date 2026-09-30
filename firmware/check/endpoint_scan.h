@@ -54,11 +54,18 @@ typedef struct {
     chorus_scan_finding_t findings[CHORUS_SCAN_MAX_FINDINGS];
     size_t count;
     size_t units_scanned;
+    /* Build-configuration files read by the eFuse configuration rule: every
+     * firmware/sdkconfig* and every CMakeLists.txt or *.cmake under firmware/. */
+    size_t config_files_scanned;
     /* Set when the tree could not be walked at all, which is a failure and not
      * a clean scan. */
     int walk_failed;
     char detail[CHORUS_SCAN_TEXT];
 } chorus_scan_result_t;
+
+/* The list of ESP-IDF options that burn an eFuse, relative to a repository
+ * root. tools/firmware-image-guard.sh reads the same file. */
+#define CHORUS_EFUSE_KCONFIG_LIST "firmware/check/efuse-kconfig.list"
 
 /* Run every rule against the endpoint tree rooted at `root` (a repository
  * root, or a scratch copy of one). */

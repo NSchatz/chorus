@@ -57,7 +57,10 @@ typedef struct {
      * in nanoseconds on the endpoint's monotonic clock. This is the outage the
      * endpoint actually rode through, measured rather than assumed. */
     uint64_t longest_outage_ns;
-    /* How many distinct connections carried audio. */
+    /* How many distinct connections carried audio, counted from
+     * `chunks_received`: carried to the endpoint, not played by it (audit
+     * A-9). The name stays because firmware/tests/session-outage.sh reads it
+     * off the summary line by that key. */
     uint32_t connections_that_played;
     char detail[256];
 } chorus_session_result_t;

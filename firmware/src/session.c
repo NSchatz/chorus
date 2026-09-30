@@ -210,7 +210,7 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
         held = 0;
         publish(&state, "link-up");
 
-        uint64_t chunks_at_connect = state.telemetry.chunks_played;
+        uint64_t chunks_at_connect = state.telemetry.chunks_received;
         uint64_t next_exchange_ns = chorus_monotonic_now_ns();
         uint64_t pending_t0_ns = 0;
         int exchange_outstanding = 0;
@@ -271,8 +271,11 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
                         const chorus_audio_chunk_t *chunk = &frame.message.audio_chunk;
                         size_t sample_bytes = chorus_sample_format_bytes(chunk->sample_format);
                         size_t frame_bytes = (size_t)chunk->channels * sample_bytes;
-                        state.telemetry.chunks_played++;
-                        state.telemetry.frames_played +=
+                        /* Counted as received and then dropped: there is no
+                         * jitter buffer or I2S writer here yet (audit A-9,
+                         * goal 8). */
+                        state.telemetry.chunks_received++;
+                        state.telemetry.frames_received +=
                             (frame_bytes == 0) ? 0 : chunk->audio_data_len / frame_bytes;
                         state.telemetry.last_sequence = chunk->sequence;
                         state.telemetry.have_sequence = 1;
@@ -352,7 +355,7 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
         }
 
         close(fd);
-        if (state.telemetry.chunks_played > chunks_at_connect) {
+        if (state.telemetry.chunks_received > chunks_at_connect) {
             out->connections_that_played++;
         }
         state.telemetry.link = CHORUS_LINK_DOWN;

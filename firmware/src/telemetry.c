@@ -118,8 +118,8 @@ void chorus_telemetry_line(const chorus_telemetry_t *telemetry, char *out, size_
              chorus_link_state_name(telemetry->link),
              chorus_transport_name(telemetry->transport), wifi, ps_declared, ps_in_force,
              wireless_bound, telemetry->rejoins, telemetry->connect_attempts,
-             chorus_audio_state_name(telemetry->audio), telemetry->chunks_played,
-             telemetry->frames_played, sequence, telemetry->skipped_frames, telemetry->exchanges,
+             chorus_audio_state_name(telemetry->audio), telemetry->chunks_received,
+             telemetry->frames_received, sequence, telemetry->skipped_frames, telemetry->exchanges,
              offset, round_trip, bound, chorus_amp_status_name(telemetry->amp), amp_fault);
 }
 
