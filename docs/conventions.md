@@ -96,15 +96,18 @@ C cores bit-exact with the Rust cores on the shared fixtures, so they are never 
 
 ## 5. C format
 
-`clang-format` (pinned) with the repository's `.clang-format`, checked with
+`clang-format` (pinned) with the repository's `.clang-format` (Microsoft base, 100 columns,
+Linux braces, includes never sorted: the base that changed the fewest lines of the existing
+code), checked with
 `--dry-run --Werror` over every tracked C source and header under `firmware/`. A region that
 must keep its layout (a table, a register map) is fenced with `// clang-format off` and `on` and
 a reason.
 
 ## 6. C static analysis
 
-`cppcheck` (pinned) over `firmware/src` and `firmware/main` with `warning` and `portability`
-enabled and `--error-exitcode=1`. A suppression is a line in `firmware/cppcheck-suppressions.txt`
+`cppcheck` (pinned) over `firmware/src`, `firmware/main`, `firmware/check` and `firmware/tests`
+with `warning` and `portability` enabled, the exhaustive check level and `--error-exitcode=1`
+(it found a dangling stack lifetime in `app_main.c` the day it joined, goal 3). A suppression is a line in `firmware/cppcheck-suppressions.txt`
 or an inline `cppcheck-suppress` with the reason beside it, and only for a proven false positive.
 
 ## 7. Shell scripts
