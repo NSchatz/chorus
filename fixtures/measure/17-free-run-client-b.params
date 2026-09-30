@@ -1,0 +1,19 @@
+# The second client of the pair 16-free-run-client-a describes. Its exchanges
+# land a quarter second after client A's, so pairing has to interpolate on the
+# server timeline rather than match timestamps.
+#
+# NOT A MEASUREMENT.
+
+kind = free-run
+output = 17-free-run-client-b.offsets
+
+label = free-run-client-b
+correction = disabled
+time_base = server
+t0_ns = 250000000
+points = 1201
+interval_s = 0.5
+rate_ppm = -17.5
+jitter_us = 5.0
+initial_offset_ns = -800000
+seed = 260017

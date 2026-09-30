@@ -388,6 +388,14 @@ pub fn render_jitter_report(run: &JitterRun<'_>) -> String {
         run.mode.name()
     ));
     out.push_str(&format!("Date: {}\n", today_utc()));
+    out.push_str(&format!(
+        "Source: {}\n",
+        if run.from_fixture {
+            "synthetic"
+        } else {
+            "hardware"
+        }
+    ));
     out.push_str(&format!("Build measured: `{}`\n", run.build.commit));
     out.push_str(&format!(
         "Tree at that commit: {}\n",

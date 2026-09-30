@@ -991,11 +991,15 @@ means. The capture it writes IS the evidence and can be analysed afterwards, on
 any machine, by someone who did not take it:
 
 ```
-cargo run -p chorus-measure --bin chorus-measure -- lag <capture.wav> --label <name>
+cargo run -p chorus-measure --bin chorus-measure -- lag <capture.wav> --label <name> --source hardware
 ```
 
 For AC-2, the free-run half, an operator runs two clients with correction
-disabled, logs their relative offset, and fits it:
+disabled, logs their relative offset, and fits it. Since goal 7 (audit A-4) that
+is one command, `tools/measure/free-run-run.sh`: both clients run with
+`chorus-client --free-run --offsets-out`, `chorus-measure pair` lines the two
+series up on the server timeline, and the fit below runs over the pair, all
+inside the bench report path of `docs/bench.md`. The fit on its own:
 
 ```
 cargo run -p chorus-measure --bin chorus-measure -- free-run <series.offsets> \

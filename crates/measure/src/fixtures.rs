@@ -428,8 +428,54 @@ fn free_run(params: &FixtureParams) -> Result<Vec<u8>, FixtureError> {
     let jitter_us = params.number("jitter_us")?;
     let initial_offset_ns = params.integer("initial_offset_ns")?;
     let mut rng = Rng::new(params.integer("seed")? as u64);
+    // One CLIENT's series, as `chorus-client --free-run --offsets-out` writes
+    // it, carries these two keys and a first timestamp on the server timeline;
+    // a relative series between two clients carries neither.
+    let correction = params.values.get("correction").cloned();
+    let time_base = params.values.get("time_base").cloned();
+    let t0_ns = match params.values.get("t0_ns") {
+        Some(_) => params.integer("t0_ns")?,
+        None => 0,
+    };
 
     let mut out = String::new();
+    if correction.is_some() || time_base.is_some() {
+        out.push_str(&format!(
+            "# One client's playout offset against the server timeline, correction disabled\n\
+             # (free-run), in the form `chorus-client --free-run --offsets-out` writes, generated\n\
+             # from {}. NOT A MEASUREMENT. `chorus-measure pair` pairs two of these into the\n\
+             # relative series the free-run fit reads.\n\
+             #\n\
+             # Format: key = value, then [observations], then one 't_ns offset_ns' pair per line.\n\n",
+            params
+                .path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        ));
+        out.push_str(&format!("label = {}\n", params.text("label")?));
+        if let Some(c) = &correction {
+            out.push_str(&format!("correction = {}\n", c));
+        }
+        if let Some(t) = &time_base {
+            out.push_str(&format!("time_base = {}\n", t));
+        }
+        out.push_str(&format!("declared_rate_ppm = {}\n", ppm));
+        out.push_str(&format!("declared_jitter_us = {}\n", jitter_us));
+        out.push_str("\n[observations]\n");
+        for n in 0..points {
+            let t_ns = t0_ns + (n as f64 * interval_s * 1e9).round() as i64;
+            let ideal = t_ns as f64 * ppm / 1e6;
+            let jitter = if jitter_us > 0.0 {
+                rng.next_normal() * jitter_us * 1000.0
+            } else {
+                0.0
+            };
+            let offset_ns = initial_offset_ns + (ideal + jitter).round() as i64;
+            out.push_str(&format!("{} {}\n", t_ns, offset_ns));
+        }
+        return Ok(out.into_bytes());
+    }
     out.push_str(&format!(
         "# Relative offset observations between two clients running with correction\n\
          # disabled, generated from {}. Every timestamp is nanoseconds from a monotonic\n\

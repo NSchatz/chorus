@@ -28,15 +28,51 @@
 # nothing. Do not raise that ceiling to make a quiet capture louder; move the
 # interface's input gain instead.
 #
+# THE BENCH REPORT (K45). The run ends by writing
+# docs/measurements/rig3-capture-<date>.md with the capture hashed
+# (tools/bench/lib.sh), and with CHORUS_BENCH_PR=1 it commits that on
+# bench/<date>-rig3-capture and opens the PR. `--report-from <run directory>`
+# runs only that half, on a run already taken. docs/bench.md is the how-to.
+#
 #   CHORUS_SECOND_ENDPOINT=user@endpoint-b \
 #   CHORUS_CAPTURE_DEVICE=hw:1,0 CHORUS_CLIENT_DEVICE=hw:0,0 \
 #       ./tools/measure/capture-run.sh [seconds]
+#   ./tools/measure/capture-run.sh --report-from <run directory>
 
 source "$(dirname "$0")/../lib.sh"
+source "$REPO_ROOT/tools/bench/lib.sh"
+bench_args "$@"
+set -- "${BENCH_ARGS[@]+"${BENCH_ARGS[@]}"}"
 
 CRITERION="two endpoint line outputs captured together, cross-correlated into median, p95 and maximum inter-device lag at 10 us or better"
 
 build_once
+
+# The report and PR half: the capture in, the bench report out. Needs no
+# hardware, which is why it is its own half.
+report_and_publish() {
+    local wav="$BENCH_RUN_DIR/raw/capture.wav" figures
+    if bench_analysis lag "$BIN_DIR/chorus-measure" lag "$wav" --label device-run \
+        --source hardware --out "$BENCH_RUN_DIR/analysis" \
+        --baseline "$REPO_ROOT/docs/measurements/free-run-baseline.conf"; then
+        read -r -a figures <<< "$(bench_lag_figures "$BENCH_RUN_DIR/analysis/lag.txt")"
+        bench_field median_us "${figures[0]}"
+        bench_field p95_abs_us "${figures[1]}"
+        bench_field max_abs_us "${figures[2]}"
+        bench_field windows_used "${figures[3]} of ${figures[4]}"
+        bench_finish MEASURED "median ${figures[0]} us, p95 ${figures[1]} us, max ${figures[2]} us inter-device lag over ${figures[3]} windows"
+    fi
+    bench_field median_us none
+    bench_field p95_abs_us none
+    bench_field max_abs_us none
+    bench_field windows_used none
+    bench_finish FAIL "the capture did not resolve into an inter-device lag (the analysis names the condition)"
+}
+
+if [ -n "$BENCH_REPORT_FROM" ]; then
+    bench_load "$BENCH_REPORT_FROM" rig3-capture
+    report_and_publish
+fi
 
 SECONDS_TO_CAPTURE="${1:-10}"
 SETTLE_SECONDS="$(sync_conf sync_hour_settle_seconds)"
@@ -45,8 +81,6 @@ SETTLE_SECONDS="$(sync_conf sync_hour_settle_seconds)"
 RUN_SECONDS=$((SETTLE_SECONDS + SECONDS_TO_CAPTURE + 30))
 DEVICE="$(audio_device)"
 CAPTURE_DEVICE="$(capture_device)"
-OUT_DIR="${CHORUS_MEASURE_OUT:-${TMPDIR:-/tmp}}"
-CAPTURE_FILE="$OUT_DIR/chorus-measure-capture.wav"
 
 say "chorus: the device-backed measurement run, through two endpoints"
 say "  capture:         ${SECONDS_TO_CAPTURE}s after a ${SETTLE_SECONDS}s settle"
@@ -59,6 +93,13 @@ say "  second endpoint: ${CHORUS_SECOND_ENDPOINT:-<unset>}"
 require_second_endpoint "$CRITERION"
 require_pacing_audio_device "$CRITERION"
 require_capture_device "$CRITERION"
+
+bench_begin rig3-capture "$CRITERION"
+bench_device "capture interface: ALSA $CAPTURE_DEVICE (L = endpoint A, R = endpoint B)"
+bench_device "endpoint A: chorus-client on the bench machine, ALSA $DEVICE"
+bench_device "endpoint B: chorus-client on the second Linux endpoint over ssh, ALSA ${CHORUS_SECOND_DEVICE:-default} (address not recorded, K27)"
+bench_reproduce "tools/measure/capture-run.sh $SECONDS_TO_CAPTURE"
+CAPTURE_FILE="$BENCH_RUN_DIR/raw/capture.wav"
 
 PORT="$(free_port)"
 read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
@@ -128,7 +169,9 @@ say "chorus: capturing both line outputs for $SECONDS_TO_CAPTURE s into $CAPTURE
     --seconds "$SECONDS_TO_CAPTURE" \
     --out "$CAPTURE_FILE"
 
-say "chorus: analysing the capture"
-"$BIN_DIR/chorus-measure" lag "$CAPTURE_FILE" --label "device-run"
+kill_quietly "$CLIENT_B_PID"
+kill_quietly "$CLIENT_A_PID"
+kill_quietly "$SERVER_PID"
 
-say "chorus: the run completed and its report is in docs/measurements/"
+say "chorus: analysing the capture and writing the bench report"
+report_and_publish

@@ -138,6 +138,15 @@ pub enum ReportError {
         /// The key that is absent.
         key: String,
     },
+    /// A run that says it is from hardware was taken on a tree with
+    /// uncommitted changes, so the commit it would name is not the build that
+    /// ran (audit A-6).
+    HardwareRunOnDirtyTree {
+        /// The commit HEAD pointed at.
+        commit: String,
+        /// The uncommitted paths, summarised.
+        state: String,
+    },
     /// A fixture run would replace a baseline fitted from hardware.
     WouldOverwriteHardwareBaseline {
         /// The baseline that is already there.
@@ -157,6 +166,7 @@ impl ReportError {
             ReportError::DestinationNotWritable { .. } => "destination-not-writable",
             ReportError::ArtifactUnreadable { .. } => "artifact-unreadable",
             ReportError::ArtifactIncomplete { .. } => "artifact-incomplete",
+            ReportError::HardwareRunOnDirtyTree { .. } => "hardware-run-on-dirty-tree",
             ReportError::WouldOverwriteHardwareBaseline { .. } => {
                 "would-overwrite-hardware-baseline"
             }
@@ -204,6 +214,14 @@ impl fmt::Display for ReportError {
                 path.display(),
                 key
             ),
+            ReportError::HardwareRunOnDirtyTree { commit, state } => write!(
+                f,
+                "this run says it is from hardware, and the tree at {} {}. A hardware report \
+                 names the build that ran, and with uncommitted changes that build is not {}; \
+                 commit or stash them, or run from a clean checkout of a commit on main. \
+                 Nothing has been written",
+                commit, state, commit
+            ),
             ReportError::WouldOverwriteHardwareBaseline { path, series } => write!(
                 f,
                 "'{}' records a baseline fitted from hardware (series {}), and this run is a \
@@ -241,6 +259,38 @@ pub fn build_identity(root: &Path) -> Result<BuildIdentity, ReportError> {
         clean: dirty_paths.is_empty(),
         dirty_paths,
     })
+}
+
+/// The `Source:` word a saved report carries for a run's own source word.
+///
+/// `tools/conventions/check-measurements.sh` holds every report under
+/// `docs/measurements/` to `Source: hardware|host|simulation|synthetic`. The
+/// harness's own vocabulary is `hardware` for a capture or series taken from
+/// real devices and `fixture` for a committed input generated from parameters,
+/// which is `synthetic` in the report's vocabulary. Anything else is refused
+/// before a report exists.
+pub fn report_source(run_source: &str) -> Option<&'static str> {
+    match run_source {
+        "hardware" => Some("hardware"),
+        "fixture" | "synthetic" => Some("synthetic"),
+        _ => None,
+    }
+}
+
+/// Refuse a hardware run on a tree with uncommitted changes (audit A-6): the
+/// commit it would name is not the build that ran. A fixture run on a dirty
+/// tree is still written, and says which paths were uncommitted.
+pub fn require_clean_for_hardware(
+    build: &BuildIdentity,
+    report_source: &str,
+) -> Result<(), ReportError> {
+    if report_source == "hardware" && !build.clean {
+        return Err(ReportError::HardwareRunOnDirtyTree {
+            commit: build.commit.clone(),
+            state: build.tree_state(),
+        });
+    }
+    Ok(())
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<String, ReportError> {
@@ -474,6 +524,9 @@ pub struct LagRun<'a> {
     /// The free-run baseline this run was compared against, where one has been
     /// recorded.
     pub baseline: Option<&'a Baseline>,
+    /// What the capture is, in the report's vocabulary: `hardware` or
+    /// `synthetic` (see [`report_source`]).
+    pub source: &'a str,
     /// The command that reproduces this run.
     pub command: &'a str,
     /// How long the analysis itself took, from a monotonic source.
@@ -539,6 +592,7 @@ pub fn render_lag_report(run: &LagRun<'_>) -> String {
 
     out.push_str(&format!("# Inter-device lag: {}\n\n", run.label));
     out.push_str(&format!("Date: {}\n", today_utc()));
+    out.push_str(&format!("Source: {}\n", run.source));
     out.push_str(&format!("Build measured: `{}`\n", run.build.commit));
     out.push_str(&format!(
         "Tree at that commit: {}\n",
@@ -691,6 +745,10 @@ pub fn render_free_run_report(run: &FreeRunRun<'_>) -> String {
     let mut out = String::new();
     out.push_str(&format!("# Free-run drift: {}\n\n", run.label));
     out.push_str(&format!("Date: {}\n", today_utc()));
+    out.push_str(&format!(
+        "Source: {}\n",
+        report_source(&run.baseline.source).unwrap_or("synthetic")
+    ));
     out.push_str(&format!("Build measured: `{}`\n", run.build.commit));
     out.push_str(&format!(
         "Tree at that commit: {}\n",

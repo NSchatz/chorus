@@ -60,6 +60,7 @@ use crate::buffer::{frames_to_us, us_to_frames, Accepted, Buffer, Counters, Zone
 use crate::config::ClientConfig;
 use crate::control::ZoneWatch;
 use crate::delaylog::{DelayLog, LogHeader, LogSummary};
+use crate::offsets::OffsetsWriter;
 use crate::receive::{
     receive_loop, FramingError, Handshake, ReceiveStop, Received, Receiver, StreamShape,
 };
@@ -433,6 +434,25 @@ fn play<S: PcmSink>(
     let mut chunk_frames = 0u64;
 
     let mut sync = SyncLoop::new(config.sync);
+    sync.set_free_run(config.free_run);
+    // The offsets series (audit A-4, A-13): one observation per tick that
+    // formed an error, on the server timeline.
+    let mut offsets = match config.offsets_out.as_deref() {
+        Some(path) => Some(OffsetsWriter::open(
+            path,
+            config.endpoint_id(),
+            config.free_run,
+        )?),
+        None => None,
+    };
+    if config.free_run {
+        log.event(
+            timeline.now_us(),
+            "free-run",
+            "correction=disabled detail=the sync loop forms its error and applies nothing; \
+             this run is a free-run series and not a synchronised playout",
+        )?;
+    }
     let mut corrector = PlayoutCorrector::new(rate_hz, sink.frame_len());
     let sync_interval_us = config.sync.interval_ms.max(1) * 1_000;
     let mut next_sync_us = 0u64;
@@ -701,11 +721,24 @@ fn play<S: PcmSink>(
                 // published telemetry, because how old the newest accepted
                 // sample is does not depend on which arm this tick took.
                 Ok(Correction::Stale { .. }) => {}
+                Ok(Correction::FreeRun {
+                    error_ns,
+                    server_now_ns,
+                }) => {
+                    if let Some(series) = offsets.as_mut() {
+                        series.observe(server_now_ns, error_ns)?;
+                    }
+                }
                 Ok(Correction::Fine {
                     correction_ppm,
                     clamped,
                     error_ns,
                 }) => {
+                    if let (Some(series), Some(offset_ns)) =
+                        (offsets.as_mut(), sync.telemetry(now_ns).offset_ns)
+                    {
+                        series.observe(now_ns as i64 + offset_ns, error_ns)?;
+                    }
                     corrector.advance(now_ns.saturating_sub(last_advance_ns));
                     last_advance_ns = now_ns;
                     corrector.set_rate_correction(correction_ppm);
@@ -963,6 +996,9 @@ fn play<S: PcmSink>(
     };
     log.summary(&summary)?;
     log.flush()?;
+    if let Some(series) = offsets.as_mut() {
+        series.flush()?;
+    }
 
     Ok(RunOutcome {
         stop,

@@ -60,6 +60,15 @@ pub struct ClientConfig {
     pub device_target_us: u64,
     /// Where the delay log is written.
     pub delay_log: String,
+    /// Where the offsets series is written (`--offsets-out`), one `t_ns
+    /// offset_ns` observation per sync tick on the server timeline, or `None`
+    /// for no series (audit A-4, A-13).
+    pub offsets_out: Option<String>,
+    /// Correction DISABLED (`--free-run`): the sync loop forms its error and
+    /// applies nothing, so the DAC walks free. The mode a free-run drift
+    /// baseline is taken in; it needs `--offsets-out`, since a free run that
+    /// records nothing is only a run that drifts.
+    pub free_run: bool,
     /// How long to run before exiting cleanly, in seconds. `None` runs until
     /// the stream ends or the connection is lost.
     pub run_seconds: Option<u64>,
@@ -152,6 +161,8 @@ impl Default for ClientConfig {
             start_fill_us: 120_000,
             device_target_us: 120_000,
             delay_log: "chorus-delay.log".to_string(),
+            offsets_out: None,
+            free_run: false,
             run_seconds: None,
             overflow_skew_ppm: DEFAULT_OVERFLOW_SKEW_PPM,
             require_pacing: false,
@@ -174,6 +185,8 @@ impl Default for ClientConfig {
 /// Why a client configuration was refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigError {
+    /// `--free-run` was given without `--offsets-out`.
+    FreeRunWithoutSeries,
     /// The minimum bound is zero.
     MinimumIsZero,
     /// The bounds are the wrong way round, or equal.
@@ -273,6 +286,11 @@ pub enum ConfigError {
 impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ConfigError::FreeRunWithoutSeries => write!(
+                f,
+                "--free-run disables correction and needs --offsets-out <file>: a free run that \
+                 records no series is only an endpoint drifting out of sync"
+            ),
             ConfigError::MinimumIsZero => write!(
                 f,
                 "the minimum buffer bound is 0 us; a bound of zero makes an empty buffer 'inside \
@@ -390,6 +408,9 @@ impl ClientConfig {
                     max_us: self.max_us,
                 });
             }
+        }
+        if self.free_run && self.offsets_out.is_none() {
+            return Err(ConfigError::FreeRunWithoutSeries);
         }
         if self.min_us == 0 {
             return Err(ConfigError::MinimumIsZero);
@@ -517,6 +538,8 @@ impl ClientConfig {
                 "--rejoin-max-ms" => config.rejoin_max_ms = number(&arg, &value()?)?,
                 "--device" => config.device = value()?,
                 "--delay-log" => config.delay_log = value()?,
+                "--offsets-out" => config.offsets_out = Some(value()?),
+                "--free-run" => config.free_run = true,
                 "--transport" => {
                     let word = value()?;
                     config.transport =
@@ -657,6 +680,20 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(c.validate(), Err(ConfigError::MinimumIsZero));
+    }
+
+    #[test]
+    fn free_run_needs_a_series_to_write() {
+        let args = ["--free-run"].iter().map(|s| s.to_string());
+        let (c, _) = ClientConfig::from_args(args).unwrap();
+        assert!(c.free_run);
+        assert_eq!(c.validate(), Err(ConfigError::FreeRunWithoutSeries));
+        let args = ["--free-run", "--offsets-out", "a.offsets"]
+            .iter()
+            .map(|s| s.to_string());
+        let (c, _) = ClientConfig::from_args(args).unwrap();
+        assert_eq!(c.offsets_out.as_deref(), Some("a.offsets"));
+        assert_eq!(c.validate(), Ok(()));
     }
 
     #[test]

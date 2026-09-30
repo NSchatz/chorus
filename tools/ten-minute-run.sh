@@ -26,15 +26,49 @@
 # the real run there), never writes the evidence path under docs/measurements/
 # unless told to, and without CHORUS_TEN_MINUTE_NULL=1 a `null` device is
 # refused by name exactly as before.
+#
+# THE BENCH REPORT (K45). On a real device the run ends by writing
+# docs/measurements/sound2-ten-minute-<date>.md with the log hashed
+# (tools/bench/lib.sh), and with CHORUS_BENCH_PR=1 it commits that on
+# bench/<date>-sound2-ten-minute and opens the PR. The `null` run writes no
+# bench report: it is host evidence, not hardware.
+#   ./tools/ten-minute-run.sh --report-from <run directory>
 
 source "$(dirname "$0")/lib.sh"
+source "$REPO_ROOT/tools/bench/lib.sh"
+bench_args "$@"
+set -- "${BENCH_ARGS[@]+"${BENCH_ARGS[@]}"}"
 
 CRITERION="ten continuous minutes with the reported delay inside its bounds and zero underruns"
+
+# The report and PR half: the log in, the bench report out.
+report_and_publish() {
+    local log="$BENCH_RUN_DIR/raw/ten-minute-run.log" grade=1
+    bench_analysis delaylog "$BIN_DIR/chorus-delaylog-check" "$log" --min-graded-seconds 600 \
+        --require-zero-underruns --require-no-rate-change && grade=0
+    bench_field graded_seconds "$(bench_delaylog_value "$log" graded_span_us \
+        | awk '/^[0-9]+$/ { printf "%.1f", $1 / 1e6; next } { print "none" }')"
+    bench_field underruns "$(bench_delaylog_value "$log" underruns)"
+    bench_field delay_min_us "$(bench_delaylog_value "$log" delay_min_us)"
+    bench_field delay_max_us "$(bench_delaylog_value "$log" delay_max_us)"
+    bench_field delaylog "$([ "$grade" = 0 ] && echo graded clean || echo failed its grading)"
+    local summary
+    summary="the delay log $([ "$grade" = 0 ] && echo graded clean || echo failed its grading) over at least 600 s (delay $(bench_delaylog_value "$log" delay_min_us) to $(bench_delaylog_value "$log" delay_max_us) us, $(bench_delaylog_value "$log" underruns) underruns)"
+    [ "$grade" = 0 ] && bench_finish PASS "$summary"
+    bench_finish FAIL "$summary"
+}
+
+if [ -n "$BENCH_REPORT_FROM" ]; then
+    bench_load "$BENCH_REPORT_FROM" sound2-ten-minute
+    report_and_publish
+fi
+
 NULL_RUN="${CHORUS_TEN_MINUTE_NULL:-0}"
+BENCH_ON=0
 if [ "$NULL_RUN" = "1" ]; then
     LOG="${1:-${TMPDIR:-/tmp}/chorus-ten-minute-null/ten-minute-run-null.log}"
 else
-    LOG="${1:-$REPO_ROOT/docs/measurements/ten-minute-run.log}"
+    LOG="${1:-}"
 fi
 
 build_once
@@ -50,6 +84,12 @@ if [ "$NULL_RUN" = "1" ]; then
     fi
 else
     require_pacing_audio_device "$CRITERION"
+    # A device that paces is real hardware: this run is a bench run.
+    BENCH_ON=1
+    bench_begin sound2-ten-minute "$CRITERION"
+    bench_device "playback: ALSA $(audio_device)"
+    bench_reproduce "tools/ten-minute-run.sh"
+    LOG="${LOG:-$BENCH_RUN_DIR/raw/ten-minute-run.log}"
 fi
 
 DEVICE="$(audio_device)"
@@ -104,9 +144,18 @@ set -e
 say "chorus: client exited $CLIENT_STATUS"
 if [ "$CLIENT_STATUS" -ne 0 ]; then
     say "chorus: the run did not finish cleanly; the log is still at $LOG"
+    # A run that did not finish is a result too, and the bench report says so.
+    if [ "$BENCH_ON" = 1 ] && [ -f "$LOG" ]; then
+        [ "$LOG" = "$BENCH_RUN_DIR/raw/ten-minute-run.log" ] || cp "$LOG" "$BENCH_RUN_DIR/raw/ten-minute-run.log"
+        report_and_publish
+    fi
     exit "$CLIENT_STATUS"
 fi
 
+if [ "$BENCH_ON" = 1 ]; then
+    [ "$LOG" = "$BENCH_RUN_DIR/raw/ten-minute-run.log" ] || cp "$LOG" "$BENCH_RUN_DIR/raw/ten-minute-run.log"
+    report_and_publish
+fi
 if [ "$NULL_RUN" != "1" ]; then
     "$BIN_DIR/chorus-delaylog-check" "$LOG" \
         --min-graded-seconds 600 \

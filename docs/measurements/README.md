@@ -13,3 +13,7 @@ Every report carries two lines, held by `tools/conventions/check-measurements.sh
 As of 2026-09-30 no report here is `hardware`: four are `synthetic`, four are `host` and one is
 `simulation` (`sim-house-8-rooms.md`). The build commits the reports written before the rule first named no longer exist; each report says which
 commit replaced it and why (K48, audit A-6).
+
+Hardware reports arrive through the bench scripts (K45, `docs/bench.md`): each is
+`<topic>-<date>.md` with `Source: hardware`, its raw files hashed and, up to the size limit, committed
+under `raw/<topic>-<date>/`, validated by `tools/bench/validate-report.sh` before it merges.

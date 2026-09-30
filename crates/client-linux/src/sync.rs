@@ -327,6 +327,17 @@ pub enum Correction {
         /// The error this correction answers.
         error_ns: f64,
     },
+    /// Correction is DISABLED (`--free-run`, audit A-4): the error was formed
+    /// and nothing is corrected, so the endpoint's DAC walks at its own rate.
+    /// What the error is, and where on the server timeline it was formed, go
+    /// to the offsets series and nowhere else.
+    FreeRun {
+        /// The error, formed exactly as for a correction.
+        error_ns: f64,
+        /// This tick's instant on the server timeline: the client's monotonic
+        /// now plus the filtered offset in use.
+        server_now_ns: i64,
+    },
     /// Step: mute, move the playout pointer by `step_ns`, resume.
     HardResync {
         /// How far the playout pointer moves, in nanoseconds.
@@ -411,6 +422,8 @@ pub struct SyncLoop {
     clamped: bool,
     accepted: u64,
     discarded: u64,
+    /// Correction disabled: the error is formed and reported, never applied.
+    free_run: bool,
 }
 
 impl SyncLoop {
@@ -426,7 +439,21 @@ impl SyncLoop {
             clamped: false,
             accepted: 0,
             discarded: 0,
+            free_run: false,
         }
+    }
+
+    /// Disable correction (`chorus-client --free-run`, audit A-4): every tick
+    /// that would have corrected answers [`Correction::FreeRun`] instead, the
+    /// servo is never updated, and the correction in force stays zero. This is
+    /// the mode a free-run drift baseline is taken in, and nothing else.
+    pub fn set_free_run(&mut self, free_run: bool) {
+        self.free_run = free_run;
+    }
+
+    /// Whether correction is disabled.
+    pub fn free_run(&self) -> bool {
+        self.free_run
     }
 
     /// The configuration this loop runs under.
@@ -514,6 +541,13 @@ impl SyncLoop {
         let target_ns = next_write_ts_ns as f64 + self.config.playout_latency_ns as f64;
         let audible_ns = client_now_ns as f64 + delay_ns + offset_ns;
         let error_ns = target_ns - audible_ns;
+
+        if self.free_run {
+            return Ok(Correction::FreeRun {
+                error_ns,
+                server_now_ns: (client_now_ns as f64 + offset_ns).round() as i64,
+            });
+        }
 
         let interval_s = self.config.interval_ms as f64 / 1_000.0;
         Ok(match self.servo.update(error_ns, interval_s) {

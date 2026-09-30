@@ -6,7 +6,8 @@
 //! take the capture can reproduce every figure from the committed fixtures.
 //!
 //! ```text
-//! chorus-measure lag <capture.wav> --label <name> [--out <dir>] [--baseline <file>]
+//! chorus-measure lag <capture.wav> --label <name> --source fixture|hardware [--out <dir>] [--baseline <file>]
+//! chorus-measure pair <a.offsets> <b.offsets> --label <name> --source fixture|hardware --series-out <file>
 //! chorus-measure free-run <series.offsets> --label <name> --source fixture|hardware [--out <dir>]
 //! chorus-measure jitter <series.offsets> --label <name> --mode <power save> --transport <t>
 //! chorus-measure fixtures [--check]
@@ -21,11 +22,14 @@ use chorus_measure::freerun::{self, SlopeSettings};
 use chorus_measure::jitter::{self, JitterError, JitterRun, PowerSaveMode};
 use chorus_measure::lag::{self, LagSettings};
 use chorus_measure::report::{self, Baseline, FreeRunRun, LagRun, BASELINE_FILE, MEASUREMENTS_DIR};
-use chorus_measure::{fixtures, repository_root, wav};
+use chorus_measure::{fixtures, pair, repository_root, wav};
 
 const USAGE: &str = "\
 usage:
-  chorus-measure lag <capture.wav> --label <name> [--out <dir>] [--baseline <file>]
+  chorus-measure lag <capture.wav> --label <name> --source fixture|hardware
+                     [--out <dir>] [--baseline <file>]
+  chorus-measure pair <a.offsets> <b.offsets> --label <name> --source fixture|hardware
+                      --series-out <file> [--max-gap-ms <ms>] [--out <dir>] [--baseline-out <file>]
   chorus-measure free-run <series.offsets> --label <name> --source fixture|hardware
                           [--out <dir>] [--baseline-out <file>]
   chorus-measure jitter <series.offsets> --label <name> --mode none|min-modem|max-modem
@@ -45,6 +49,7 @@ fn main() -> ExitCode {
     let result = match command.as_str() {
         "lag" => lag_command(&args[1..]),
         "free-run" => free_run_command(&args[1..]),
+        "pair" => pair_command(&args[1..]),
         "jitter" => jitter_command(&args[1..]),
         "fixtures" => fixtures_command(&args[1..]),
         "--help" | "-h" | "help" => {
@@ -125,7 +130,7 @@ fn slug(label: &str) -> String {
 }
 
 fn lag_command(args: &[String]) -> Result<(), String> {
-    let options = Options::parse(args, &["label", "out", "baseline", "rate"])?;
+    let options = Options::parse(args, &["label", "out", "baseline", "rate", "source"])?;
     let capture_path = options
         .positional
         .first()
@@ -133,6 +138,10 @@ fn lag_command(args: &[String]) -> Result<(), String> {
     let label = options
         .value("label")
         .ok_or_else(|| format!("--label is required\n\n{}", USAGE))?;
+    // Required, with no default, for the reason free-run's is (audit A-5): the
+    // saved report's `Source:` line has to say whether the capture came from
+    // real line outputs or from a committed fixture, and this rig will not guess.
+    let source = run_source(&options)?;
 
     let root = repository_root();
     let config = MeasureConfig::read(&root).map_err(|e| e.to_string())?;
@@ -155,6 +164,7 @@ fn lag_command(args: &[String]) -> Result<(), String> {
     let analysis_us = timeline.now_us();
 
     let build = report::build_identity(&root).map_err(|e| e.to_string())?;
+    report::require_clean_for_hardware(&build, source).map_err(|e| e.to_string())?;
     let baseline_path = options
         .value("baseline")
         .map(PathBuf::from)
@@ -166,9 +176,10 @@ fn lag_command(args: &[String]) -> Result<(), String> {
     };
 
     let command = format!(
-        "cargo run -p chorus-measure --bin chorus-measure -- lag {} --label {}",
+        "cargo run -p chorus-measure --bin chorus-measure -- lag {} --label {} --source {}",
         report::relative_display(Path::new(capture_path), &root),
-        label
+        label,
+        options.value("source").unwrap_or_default()
     );
     let run = LagRun {
         label,
@@ -177,6 +188,7 @@ fn lag_command(args: &[String]) -> Result<(), String> {
         summary: &summary,
         build: &build,
         baseline: baseline.as_ref(),
+        source,
         command: &command,
         analysis_us,
         root: &root,
@@ -194,6 +206,87 @@ fn lag_command(args: &[String]) -> Result<(), String> {
     );
     println!("chorus-measure: wrote {}", written.display());
     Ok(())
+}
+
+/// The `--source` word of a run, mapped to its report's `Source:` word.
+fn run_source(options: &Options) -> Result<&'static str, String> {
+    let word = options.value("source").ok_or_else(|| {
+        format!(
+            "--source is required: 'fixture' for a committed input, 'hardware' for a capture \
+             or series taken from real devices. The saved report has to say which it is, and \
+             this rig will not guess\n\n{}",
+            USAGE
+        )
+    })?;
+    match word {
+        "fixture" | "hardware" => Ok(report::report_source(word).unwrap_or("synthetic")),
+        other => Err(format!(
+            "--source is 'fixture' or 'hardware', not '{}'",
+            other
+        )),
+    }
+}
+
+/// Audit A-4: two clients' free-run series in, the relative series out, then
+/// the free-run fit and the baseline over it exactly as `free-run` does.
+fn pair_command(args: &[String]) -> Result<(), String> {
+    let options = Options::parse(
+        args,
+        &[
+            "label",
+            "source",
+            "series-out",
+            "max-gap-ms",
+            "out",
+            "baseline-out",
+        ],
+    )?;
+    let (Some(a_path), Some(b_path)) = (options.positional.first(), options.positional.get(1))
+    else {
+        return Err(format!("two client series are required\n\n{}", USAGE));
+    };
+    let label = options
+        .value("label")
+        .ok_or_else(|| format!("--label is required\n\n{}", USAGE))?;
+    run_source(&options)?;
+    let series_out = options
+        .value("series-out")
+        .ok_or_else(|| format!("--series-out is required\n\n{}", USAGE))?;
+    // Five seconds is ten sync ticks at the committed 500 ms cadence: a choice
+    // about what counts as a missing stretch, not a measured value.
+    let max_gap_ms: i64 = match options.value("max-gap-ms") {
+        Some(text) => text
+            .parse()
+            .map_err(|_| format!("--max-gap-ms '{}' is not a number of milliseconds", text))?,
+        None => 5_000,
+    };
+    let a = pair::read_client_series(Path::new(a_path)).map_err(|e| e.to_string())?;
+    let b = pair::read_client_series(Path::new(b_path)).map_err(|e| e.to_string())?;
+    let pairs = pair::pair(&a, &b, max_gap_ms * 1_000_000).map_err(|e| e.to_string())?;
+    let text = pair::render_paired(label, &a, &b, &pairs);
+    std::fs::write(series_out, text)
+        .map_err(|e| format!("{} could not be written: {}", series_out, e))?;
+    println!(
+        "chorus-measure: paired {} observations of {} with {} into {}",
+        pairs.len(),
+        a.series.label,
+        b.series.label,
+        series_out
+    );
+    let mut fit_args = vec![
+        series_out.to_string(),
+        "--label".to_string(),
+        label.to_string(),
+        "--source".to_string(),
+        options.value("source").unwrap_or_default().to_string(),
+    ];
+    for key in ["out", "baseline-out"] {
+        if let Some(value) = options.value(key) {
+            fit_args.push(format!("--{}", key));
+            fit_args.push(value.to_string());
+        }
+    }
+    free_run_command(&fit_args)
 }
 
 fn free_run_command(args: &[String]) -> Result<(), String> {
@@ -247,6 +340,8 @@ fn free_run_command(args: &[String]) -> Result<(), String> {
     let series = freerun::read_series(Path::new(series_path)).map_err(|e| e.to_string())?;
     let fit = freerun::fit(&series, &settings).map_err(|e| e.to_string())?;
     let build = report::build_identity(&root).map_err(|e| e.to_string())?;
+    report::require_clean_for_hardware(&build, report::report_source(&source).unwrap_or(""))
+        .map_err(|e| e.to_string())?;
 
     let report_name = format!("rig3-free-run-{}.md", slug(label));
     let baseline = Baseline {
@@ -350,6 +445,9 @@ fn jitter_command(args: &[String]) -> Result<(), String> {
     let series = freerun::read_series(Path::new(series_path)).map_err(|e| e.to_string())?;
     let summary = jitter::analyse(&series).map_err(|e| e.to_string())?;
     let build = report::build_identity(&root).map_err(|e| e.to_string())?;
+    if options.flag("measured") {
+        report::require_clean_for_hardware(&build, "hardware").map_err(|e| e.to_string())?;
+    }
 
     // A series is a fixture unless the run says it was taken over a real link.
     // The default is the cautious one: a report that wrongly says "fixture" is

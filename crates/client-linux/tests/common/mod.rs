@@ -820,6 +820,7 @@ impl ModelledEndpoint {
                     Err(_) => break,
                     Ok(Correction::NoDeviceDelay) | Ok(Correction::NoOffset) => {}
                     Ok(Correction::Stale { .. }) => stale_ticks += 1,
+                    Ok(Correction::FreeRun { error_ns, .. }) => loop_error_ns = Some(error_ns),
                     Ok(Correction::Fine {
                         correction_ppm,
                         clamped,
