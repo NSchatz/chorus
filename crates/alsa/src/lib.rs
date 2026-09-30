@@ -28,6 +28,8 @@
 //! `snd_pcm_delay`.
 
 #![warn(missing_docs)]
+// Unsafe allowed crate-wide: this crate is the dlopen binding to libasound, and every function in it crosses that FFI boundary.
+#![allow(unsafe_code)]
 
 use std::ffi::{CStr, CString};
 use std::fmt;
@@ -242,8 +244,9 @@ impl Format {
 }
 
 fn last_dl_error() -> String {
-    // SAFETY: dlerror returns either NUL or a pointer to a NUL-terminated
-    // string owned by the loader, valid until the next dlerror call.
+    // SAFETY: dlerror takes no arguments and returns either null (checked)
+    // or a NUL-terminated string owned by the loader, valid until the next
+    // dl* call; it is copied into an owned String before this block ends.
     unsafe {
         let raw = dlerror();
         if raw.is_null() {
@@ -256,8 +259,8 @@ fn last_dl_error() -> String {
 
 fn load_symbol(handle: *mut c_void, name: &str) -> Result<*mut c_void, AlsaError> {
     let c_name = CString::new(name).expect("symbol names in this crate are literals without NUL");
-    // SAFETY: handle came from a successful dlopen and c_name is NUL
-    // terminated for the duration of the call.
+    // SAFETY: handle is the non-null result of dlopen (checked in load_lib)
+    // and never dlclosed; c_name is NUL terminated and outlives the call.
     let sym = unsafe {
         let _ = dlerror();
         dlsym(handle, c_name.as_ptr())
@@ -272,7 +275,8 @@ fn load_symbol(handle: *mut c_void, name: &str) -> Result<*mut c_void, AlsaError
 
 fn load_lib() -> Result<Lib, AlsaError> {
     let soname = CString::new(LIBASOUND_SONAME).expect("the soname is a literal without NUL");
-    // SAFETY: soname is NUL terminated and lives across the call.
+    // SAFETY: soname is a NUL-terminated CString that outlives the call;
+    // dlerror is called first only to clear stale loader state.
     let handle = unsafe {
         let _ = dlerror();
         dlopen(soname.as_ptr(), RTLD_NOW)
@@ -284,10 +288,12 @@ fn load_lib() -> Result<Lib, AlsaError> {
         });
     }
 
-    // SAFETY: every symbol below is looked up by its documented name in
-    // libasound and transmuted to the signature `alsa/pcm.h` declares for it.
-    // A wrong signature here would be undefined behaviour, so each one is
-    // written out rather than generated.
+    // SAFETY: each pointer is non-null (load_symbol checks) and names the
+    // libasound function it is looked up by; it is transmuted to the
+    // signature `alsa/pcm.h` declares for that function. A wrong signature
+    // here would be undefined behaviour, so each one is written out rather
+    // than generated. The library is never dlclosed, so the pointers stay
+    // valid for the life of the process.
     unsafe {
         Ok(Lib {
             open: std::mem::transmute::<*mut c_void, SndPcmOpen>(load_symbol(
@@ -379,8 +385,9 @@ pub struct Pcm {
     closed: bool,
 }
 
-// SAFETY: a Pcm owns its handle exclusively. The client moves one into the
-// playout thread and never shares it; nothing here is Sync.
+// SAFETY: a Pcm owns its snd_pcm_t exclusively and ALSA does not tie a
+// handle to the thread that opened it, so moving it to another thread is
+// sound. Pcm is not Sync, so no two threads ever call into one handle at once.
 unsafe impl Send for Pcm {}
 
 impl Pcm {
@@ -437,7 +444,8 @@ impl Pcm {
         })?;
 
         let mut handle: *mut c_void = std::ptr::null_mut();
-        // SAFETY: c_device outlives the call; ALSA copies the name.
+        // SAFETY: &mut handle is a live out-parameter and c_device is a
+        // NUL-terminated CString that outlives the call; ALSA copies the name.
         let rc = unsafe { (lib.open)(&mut handle, c_device.as_ptr(), stream, 0) };
         if rc < 0 || handle.is_null() {
             return Err(Pcm::error(lib, "snd_pcm_open", device, rc));
@@ -452,7 +460,8 @@ impl Pcm {
             closed: false,
         };
 
-        // SAFETY: handle is a live snd_pcm_t from the open above.
+        // SAFETY: pcm.handle is the non-null snd_pcm_t the open above
+        // returned (rc and null both checked); only integers are passed.
         let rc = unsafe {
             (lib.set_params)(
                 pcm.handle,
@@ -470,7 +479,7 @@ impl Pcm {
             return Err(err);
         }
 
-        // SAFETY: handle is live and configured.
+        // SAFETY: pcm.handle is the open, just-configured snd_pcm_t from above.
         let rc = unsafe { (lib.prepare)(pcm.handle) };
         if rc < 0 {
             let err = Pcm::error(lib, "snd_pcm_prepare", device, rc);
@@ -482,7 +491,8 @@ impl Pcm {
     }
 
     fn error(lib: &Lib, call: &'static str, device: &str, code: c_int) -> AlsaError {
-        // SAFETY: snd_strerror returns a static NUL-terminated string.
+        // SAFETY: snd_strerror takes any int and returns null (checked) or a
+        // pointer to a static NUL-terminated string, copied before use ends.
         let detail = unsafe {
             let raw = (lib.strerror)(code);
             if raw.is_null() {
@@ -538,8 +548,12 @@ impl Pcm {
             if frames_left == 0 {
                 break;
             }
-            // SAFETY: the slice is live for the call and describes exactly
-            // frames_left frames of the configured format.
+            // SAFETY: handle is the non-null snd_pcm_t from a successful
+            // snd_pcm_open (the only way a Pcm is built) and is closed only by
+            // close_inner, after which no method runs;
+            // &mut self makes this the only call on it. frames_left *
+            // frame_len <= pcm.len() - offset, so ALSA reads only inside the
+            // borrowed slice, which outlives the call.
             let rc = unsafe {
                 (lib.writei)(
                     self.handle,
@@ -568,8 +582,9 @@ impl Pcm {
             if code == NEG_EPIPE {
                 underran = true;
             }
-            // SAFETY: handle is live; silent recovery, the client does the
-            // reporting.
+            // SAFETY: self.handle is the open snd_pcm_t (see the writei call
+            // above); only integers are passed. Silent recovery: the client
+            // does the reporting.
             let recovered = unsafe { (lib.recover)(self.handle, code, 1) };
             if recovered < 0 {
                 if recovered as c_int == NEG_ENODEV {
@@ -607,8 +622,12 @@ impl Pcm {
             if frames_left == 0 {
                 break;
             }
-            // SAFETY: the slice is live for the call and has room for exactly
-            // frames_left frames of the configured format.
+            // SAFETY: handle is the non-null snd_pcm_t from a successful
+            // snd_pcm_open (the only way a Pcm is built) and is closed only by
+            // close_inner, after which no method runs;
+            // &mut self makes this the only call on it. frames_left *
+            // frame_len <= pcm.len() - offset, so ALSA writes only inside the
+            // mutably borrowed slice, which outlives the call.
             let rc = unsafe {
                 (lib.readi)(
                     self.handle,
@@ -635,7 +654,8 @@ impl Pcm {
             if code == NEG_EPIPE {
                 overran = true;
             }
-            // SAFETY: handle is live.
+            // SAFETY: self.handle is the open snd_pcm_t (see the readi call
+            // above); only integers are passed.
             let recovered = unsafe { (lib.recover)(self.handle, code, 1) };
             if recovered < 0 {
                 if recovered as c_int == NEG_ENODEV {
@@ -663,7 +683,10 @@ impl Pcm {
     pub fn delay_frames(&self) -> Result<i64, AlsaError> {
         let lib = lib()?;
         let mut frames: c_long = 0;
-        // SAFETY: handle is live and frames is a live out-parameter.
+        // SAFETY: handle is the non-null snd_pcm_t from a successful
+        // snd_pcm_open (the only way a Pcm is built) and is closed only by
+        // close_inner, after which no method runs;
+        // &mut frames is a live c_long out-parameter.
         let rc = unsafe { (lib.delay)(self.handle, &mut frames) };
         if rc < 0 {
             let code = rc as c_int;
@@ -687,7 +710,10 @@ impl Pcm {
     /// The device's own signal, read straight from `snd_pcm_state`.
     pub fn in_xrun(&self) -> Result<bool, AlsaError> {
         let lib = lib()?;
-        // SAFETY: handle is live.
+        // SAFETY: handle is the non-null snd_pcm_t from a successful
+        // snd_pcm_open (the only way a Pcm is built) and is closed only by
+        // close_inner, after which no method runs;
+        // only the handle is passed.
         let state = unsafe { (lib.state)(self.handle) };
         if state == STATE_DISCONNECTED {
             return Err(AlsaError::Disconnected {
@@ -700,7 +726,10 @@ impl Pcm {
     /// Play out everything the device already holds, then stop.
     pub fn drain(&mut self) -> Result<(), AlsaError> {
         let lib = lib()?;
-        // SAFETY: handle is live.
+        // SAFETY: handle is the non-null snd_pcm_t from a successful
+        // snd_pcm_open (the only way a Pcm is built) and is closed only by
+        // close_inner, after which no method runs;
+        // &mut self makes this the only call on it.
         let rc = unsafe { (lib.drain)(self.handle) };
         if rc < 0 {
             return Err(Pcm::error(lib, "snd_pcm_drain", &self.device, rc as c_int));
@@ -714,7 +743,10 @@ impl Pcm {
         }
         self.closed = true;
         if let Ok(lib) = lib() {
-            // SAFETY: handle is live and is not used again.
+            // SAFETY: the closed flag above makes this run at most once, on
+            // the handle snd_pcm_open returned; nothing uses it afterwards
+            // (close_inner runs from Drop, or on an open path that then
+            // drops the Pcm).
             unsafe {
                 (lib.close)(self.handle);
             }
