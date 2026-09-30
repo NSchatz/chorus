@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "console_esp.h"
 #include "esp_hal.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -210,6 +211,11 @@ void app_main(void)
         (void)controller.stop_clock(controller.ctx);
         return;
     }
+
+    /* The serial console (audit A-13): runtime-only settings and the bench's
+     * commands. A console that cannot start is logged and the endpoint plays
+     * on without it. */
+    (void)chorus_esp_console_start(&config, &session);
 
     chorus_session_result_t result;
     (void)chorus_session_run(&session, &result);

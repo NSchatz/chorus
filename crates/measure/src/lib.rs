@@ -59,6 +59,7 @@ pub mod freerun;
 pub mod jitter;
 pub mod lag;
 pub mod pair;
+pub mod rate;
 pub mod report;
 pub mod rng;
 pub mod wav;

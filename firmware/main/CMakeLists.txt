@@ -22,6 +22,7 @@ idf_component_register(
     SRCS
         "app_main.c"
         "esp_hal.c"
+        "console_esp.c"
         "../src/conf.c"
         "../src/protocol.c"
         "../src/protocol_v2.c"
@@ -40,6 +41,8 @@ idf_component_register(
         "../src/codec.c"
         "../src/codec_flac.c"
         "../src/codec_opus.c"
+        "../src/console.c"
+        "../src/decode_cost.c"
         "${CHORUS_THIRD_PARTY}/dr_flac/dr_flac.c"
         ${chorus_opus_srcs}
     INCLUDE_DIRS
@@ -67,8 +70,17 @@ idf_component_register(
         nvs_flash
         lwip
         mbedtls
+        console
     EMBED_TXTFILES
         "../config/endpoint.conf"
+    # The endpoint console's decode-cost fixtures (audit A-13, goal 7's S3
+    # decode-cost measurement): one FLAC and one Opus stream from fixtures/codec,
+    # the files the host test and the Linux client read.
+    EMBED_FILES
+        "../../fixtures/codec/flac-s16-stereo-44k1.fields"
+        "../../fixtures/codec/flac-s16-stereo-44k1.chunks"
+        "../../fixtures/codec/opus-tv10-celt-stereo.fields"
+        "../../fixtures/codec/opus-tv10-celt-stereo.chunks"
 )
 
 # CHORUS_TARGET_ESP32S3 selects the target clock reader in

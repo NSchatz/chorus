@@ -272,6 +272,7 @@ pub fn generate(params: &FixtureParams) -> Result<Vec<u8>, FixtureError> {
         "float-chirp" => float_chirp(params),
         "truncated-chirp-pair" => truncated_chirp_pair(params),
         "free-run" => free_run(params),
+        "skewed-chirp-pair" => skewed_chirp_pair(params),
         other => Err(FixtureError::UnknownKind {
             path: params.path.clone(),
             kind: other.to_string(),
@@ -322,6 +323,26 @@ fn chirp_pair(params: &FixtureParams) -> Result<Vec<u8>, FixtureError> {
         let (first, second) = if exchange { (b, a) } else { (a, b) };
         interleaved.push(wav::to_i16(first));
         interleaved.push(wav::to_i16(second));
+    }
+    Ok(wav::write_wav(&interleaved, 2, rate, 16, WAVE_FORMAT_PCM))
+}
+
+/// Two channels carrying the chirp, the first played `rate_ppm_a` parts per
+/// million fast against the capture clock and the second exactly on it: the
+/// produced-rate analyser's input (audit A-11, `chorus-measure rate`).
+fn skewed_chirp_pair(params: &FixtureParams) -> Result<Vec<u8>, FixtureError> {
+    let (rate, frames) = frames_of(params)?;
+    let chirp = params.chirp("amplitude")?;
+    let ratio = 1.0 + params.number("rate_ppm_a")? / 1_000_000.0;
+    let noise_amplitude = params.number("noise_amplitude")?;
+    let mut rng = Rng::new(params.integer("seed")? as u64);
+    let mut interleaved = Vec::with_capacity(frames * 2);
+    for n in 0..frames {
+        let t = n as f64 / f64::from(rate);
+        let noise_a = rng.next_symmetric() * noise_amplitude;
+        let noise_b = rng.next_symmetric() * noise_amplitude;
+        interleaved.push(wav::to_i16(chirp.at(t * ratio) + noise_a));
+        interleaved.push(wav::to_i16(chirp.at(t) + noise_b));
     }
     Ok(wav::write_wav(&interleaved, 2, rate, 16, WAVE_FORMAT_PCM))
 }
