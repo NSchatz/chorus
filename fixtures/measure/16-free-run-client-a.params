@@ -1,0 +1,21 @@
+# One client's series as `chorus-client --free-run --offsets-out` writes it:
+# the playout offset against the server timeline with correction DISABLED,
+# twice a second for ten minutes. Paired with 17-free-run-client-b by
+# `chorus-measure pair`, the relative rate is +20.0 - (-17.5) = +37.5 ppm.
+#
+# NOT A MEASUREMENT. The rates are the same plausible shape as
+# 10-free-run-noiseless (BRIEF.md section 6 expects 20 to 50 ppm per device);
+# nothing compares a measured slope against them.
+
+kind = free-run
+output = 16-free-run-client-a.offsets
+
+label = free-run-client-a
+correction = disabled
+time_base = server
+points = 1201
+interval_s = 0.5
+rate_ppm = 20.0
+jitter_us = 5.0
+initial_offset_ns = 1500000
+seed = 260016

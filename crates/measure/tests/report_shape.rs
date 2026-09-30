@@ -84,6 +84,7 @@ fn lag_report(analysed: &Analysed, build: &BuildIdentity, baseline: Option<&Base
         summary: &analysed.summary,
         build,
         baseline,
+        source: "synthetic",
         command: "make measure-fixture-reports",
         analysis_us: 0,
         root: &root,
@@ -117,6 +118,15 @@ fn a_completed_run_writes_one_report_naming_the_build_and_every_figure() {
 
     let saved = std::fs::read_to_string(&written).expect("the report is readable");
     assert!(saved.contains(&build.commit), "the report names no commit");
+    // The two provenance lines tools/conventions/check-measurements.sh holds
+    // every saved report to (goal 4 follow-up): a report this writer saves
+    // passes provenance as written.
+    assert!(saved.contains("\nSource: synthetic\n"), "{}", saved);
+    assert!(
+        saved.contains(&format!("\nBuild measured: `{}`\n", build.commit)),
+        "{}",
+        saved
+    );
     assert!(saved.contains("Tree at that commit: clean"), "{}", saved);
     assert!(saved.contains("96000 Hz"), "the capture rate is missing");
     assert!(
@@ -317,6 +327,7 @@ fn a_second_run_over_the_same_input_reports_identical_numbers() {
         summary: &once.summary,
         build: &build,
         baseline: None,
+        source: "synthetic",
         command: "make measure-fixture-reports",
         analysis_us: 0,
         root: &repository_root(),
@@ -329,6 +340,7 @@ fn a_second_run_over_the_same_input_reports_identical_numbers() {
         build: &build,
         // A different analysis time, to prove the figures do not carry one.
         baseline: None,
+        source: "synthetic",
         command: "make measure-fixture-reports",
         analysis_us: 999_999,
         root: &repository_root(),

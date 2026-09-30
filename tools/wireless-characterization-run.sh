@@ -37,9 +37,11 @@
 #
 # NEEDS AN ENVIRONMENT, and code that does not exist yet.
 #   - an endpoint serial console that sets the power-save mode and reads it
-#     back, and a client option that writes the `.offsets` series this run
-#     fetches. NEITHER EXISTS (audit A-13; goals 8 and 7), so this script
-#     refuses by name before it writes to a serial port or fetches a file
+#     back. IT DOES NOT EXIST (audit A-13; goal 8), so this script refuses by
+#     name before it writes to a serial port or fetches a file. The other half
+#     of A-13 does exist: the second endpoint writes the `.offsets` series this
+#     run fetches with `chorus-client --offsets-out` (goal 7), in the format
+#     crates/measure/src/freerun.rs reads
 #   - a wireless network the endpoint may join, in firmware/config/endpoint.conf,
 #     which this repository declares UNKNOWN and will go on declaring unknown
 #   - the access point the run is taken against, named (CHORUS_WIRELESS_AP)
@@ -59,19 +61,73 @@
 # ceiling to make a quiet capture louder, move the interface's input gain
 # instead.
 #
+# THE BENCH REPORT (K45). The run ends by writing
+# docs/measurements/wifi7-wireless-<date>.md with each mode's capture and
+# offsets series hashed (tools/bench/lib.sh), and with CHORUS_BENCH_PR=1 it
+# commits that on bench/<date>-wifi7-wireless and opens the PR.
+# `--report-from <run directory>` runs only that half, which needs no radio.
+#
 #   CHORUS_WIRELESS_AP='ubiquiti-u6-lite 5GHz' CHORUS_ESP32S3_PORT=/dev/ttyACM0 \
 #   CHORUS_SECOND_ENDPOINT=user@endpoint-b CHORUS_CAPTURE_DEVICE=hw:1,0 \
 #       ./tools/wireless-characterization-run.sh   # or: make verify-wireless
+#   ./tools/wireless-characterization-run.sh --report-from <run directory>
 
-# The run below require_endpoint_console_and_offsets_writer is unreachable on
-# purpose until that prerequisite exists (audit A-13), so it stays unrun visibly.
+# The run below require_endpoint_console is unreachable on purpose until that
+# prerequisite exists (audit A-13), so it stays unrun visibly.
 # shellcheck disable=SC2317
 
 source "$(dirname "$0")/lib.sh"
+source "$REPO_ROOT/tools/bench/lib.sh"
+bench_args "$@"
 
 CRITERION="a Wi-Fi endpoint with modem sleep disabled holds the 5 ms multiroom inter-device bound, and the jitter with the platform power save mode left in place is recorded rather than answered with servo aggression"
 
 build_once
+
+# The report and PR half: per power-save mode, the capture's inter-device lag
+# (AC-2's bound) and the second endpoint's offsets series as a measured jitter
+# report (AC-3's record). PASS needs the `none` mode's median lag under the
+# wireless bound; without a `none` run the report is MEASURED, a record only.
+report_and_publish() {
+    local bound series mode modes="" figures jitter none_median=""
+    bound="$(transport_conf wireless_bound_us)"
+    bench_lag_captures wireless
+    for series in "$BENCH_RUN_DIR"/raw/wireless-*.offsets; do
+        [ -f "$series" ] || continue
+        mode="$(basename "$series" .offsets)"
+        mode="${mode#wireless-}"
+        modes="$modes $mode"
+        if bench_analysis "jitter-$mode" "$BIN_DIR/chorus-measure" jitter "$series" \
+            --label "wireless-measured-ps-$mode" --mode "$mode" --transport wireless \
+            --measured --out "$BENCH_RUN_DIR/analysis"; then
+            jitter="$(sed -n 's/.*: median \([0-9.]*\) us, p95 \([0-9.]*\) us, max \([0-9.]*\) us, peak to peak \([0-9.]*\) us over \([0-9]*\) observations$/median \1, p95 \2, max \3, peak to peak \4 over \5 observations/p' \
+                "$BENCH_RUN_DIR/analysis/jitter-$mode.txt" | tail -n 1)"
+            bench_field "jitter_us_$mode" "$jitter"
+        else
+            bench_field "jitter_us_$mode" "the series did not analyse"
+        fi
+        if [ -f "$BENCH_RUN_DIR/analysis/lag-capture-$mode.txt" ]; then
+            read -r -a figures <<< "$(bench_lag_figures "$BENCH_RUN_DIR/analysis/lag-capture-$mode.txt")"
+            [ "$mode" = none ] && none_median="${figures[0]:-}"
+        fi
+    done
+    modes="${modes# }"
+    bench_field modes "${modes:-none recorded}"
+    bench_field bound_us "$bound (config/transport.conf wireless_bound_us)"
+    if [ -n "$none_median" ]; then
+        local abs="${none_median#[-+]}"
+        if awk -v m="$abs" -v b="$bound" 'BEGIN { exit !(m < b) }'; then
+            bench_finish PASS "power save none: median inter-device lag $none_median us inside the $bound us bound; jitter recorded for: $modes"
+        fi
+        bench_finish FAIL "power save none: median inter-device lag $none_median us, outside the $bound us bound; jitter recorded for: $modes"
+    fi
+    bench_finish MEASURED "jitter recorded for: ${modes:-no mode}; no resolved power-save-none capture, so AC-2's bound is not graded"
+}
+
+if [ -n "$BENCH_REPORT_FROM" ]; then
+    bench_load "$BENCH_REPORT_FROM" wifi7-wireless
+    report_and_publish
+fi
 
 RUN_SECONDS="${CHORUS_WIRELESS_RUN_SECONDS:-$(sync_conf sync_hour_run_seconds)}"
 CAPTURE_SECONDS="$(sync_conf sync_hour_capture_seconds)"
@@ -81,7 +137,6 @@ COEXISTENCE="$(endpoint_conf link_wifi_coexistence)"
 WIRELESS_BOUND="$(transport_conf wireless_bound_us)"
 WIRELESS_LATENCY="$(transport_conf wireless_playout_latency_us)"
 CAPTURE_DEVICE="$(capture_device)"
-OUT_DIR="${CHORUS_MEASURE_OUT:-${TMPDIR:-/tmp}}"
 
 # The two modes this characterization is OF. One report per mode is what AC-12
 # asks for, and running both is what makes the difference between them a
@@ -105,15 +160,22 @@ say "  capture device:  $CAPTURE_DEVICE"
 # Every prerequisite is checked before anything is started, so a run that cannot
 # be graded emits nothing at all, and nothing is written to a serial port or
 # fetched from another machine. The first two are absent on every machine, not
-# only this one. The endpoint console and the offsets writer this run drives do
-# not exist yet (audit A-13; goals 7 and 8 build them), and the network name and
+# only this one. The endpoint console this run drives does not exist yet (audit
+# A-13; goal 8 builds it), and the network name and
 # the secret are declared unknown in this repository and will go on being
 # declared unknown.
-require_endpoint_console_and_offsets_writer "$CRITERION"
+require_endpoint_console "$CRITERION"
 require_wireless_link "$CRITERION"
 require_esp32s3_endpoint "$CRITERION"
 require_second_endpoint "$CRITERION"
 require_capture_device "$CRITERION"
+
+bench_begin wifi7-wireless "$CRITERION"
+bench_device "capture interface: ALSA $CAPTURE_DEVICE (L = ESP32-S3 endpoint, R = second endpoint)"
+bench_device "ESP32-S3 endpoint on the wireless link, access point: $CHORUS_WIRELESS_AP"
+bench_device "second endpoint: chorus-client in another room over ssh, ALSA ${CHORUS_SECOND_DEVICE:-default} (address not recorded, K27)"
+bench_reproduce "tools/wireless-characterization-run.sh"
+OUT_DIR="$BENCH_RUN_DIR/raw"
 
 PORT="$(free_port)"
 read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
@@ -157,6 +219,7 @@ for MODE in $MODES; do
 --transport wireless \
 --zone second-room \
 --delay-log wireless-characterization-${MODE}.log \
+--offsets-out wireless-characterization-${MODE}.offsets \
 --sync-interval-ms $(sync_conf sync_interval_ms) \
 --filter-window $(sync_conf filter_window) \
 --smoothing-alpha $(sync_conf smoothing_alpha) \
@@ -174,7 +237,7 @@ for MODE in $MODES; do
     say "chorus: letting the loop acquire the timeline for ${SETTLE_SECONDS}s"
     sleep "$SETTLE_SECONDS"
 
-    WAV="$OUT_DIR/chorus-wireless-$MODE.wav"
+    WAV="$OUT_DIR/capture-$MODE.wav"
     say "chorus: capturing both line outputs for ${CAPTURE_SECONDS}s"
     "$BIN_DIR/chorus-measure-capture" \
         --record-only \
@@ -182,23 +245,15 @@ for MODE in $MODES; do
         --seconds "$CAPTURE_SECONDS" \
         --out "$WAV"
 
-    say "chorus: inter-device lag over that capture, which is what AC-2's bound is about"
-    "$BIN_DIR/chorus-measure" lag "$WAV" --label "wireless-$MODE"
-
-    say "chorus: the jitter the second endpoint's own delay log recorded, into docs/measurements/"
-    SERIES="$OUT_DIR/chorus-wireless-$MODE.offsets"
-    scp "$CHORUS_SECOND_ENDPOINT:wireless-characterization-${MODE}.offsets" "$SERIES"
-    "$BIN_DIR/chorus-measure" jitter "$SERIES" \
-        --label "wireless-measured-ps-$MODE" \
-        --mode "$MODE" \
-        --transport wireless \
-        --measured
+    say "chorus: fetching the second endpoint's offsets series (chorus-client --offsets-out)"
+    scp -q "$CHORUS_SECOND_ENDPOINT:wireless-characterization-${MODE}.offsets" \
+        "$OUT_DIR/wireless-$MODE.offsets"
 
     kill_quietly "$SECOND_PID"
 done
 
 kill_quietly "$SERVER_PID"
 say ""
-say "chorus: the characterization completed and its reports are in docs/measurements/"
-say "chorus: one report per power-save mode, each naming the mode that was in force."
-say "chorus: whatever they say, no constant in config/sync.conf moves because of it."
+say "chorus: whatever the reports say, no constant in config/sync.conf moves because of it."
+say "chorus: analysing both modes and writing the bench report"
+report_and_publish

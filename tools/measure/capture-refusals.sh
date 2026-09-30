@@ -109,7 +109,7 @@ refuses() {
     local fixture="$2"
     local expected="$3"
     set +e
-    OUT="$("$BIN_DIR/chorus-measure" lag "$FIXTURES/$fixture" --label refusal-check 2>&1)"
+    OUT="$("$BIN_DIR/chorus-measure" lag "$FIXTURES/$fixture" --label refusal-check --source fixture 2>&1)"
     STATUS=$?
     set -e
     check "$name-exits-non-zero" \

@@ -53,6 +53,7 @@ verify: tools-executable
 	bash tools/unrun-checks-are-visibly-unrun.sh
 	bash tools/measure/capture-refusals.sh
 	bash tools/wireless-expectations-check.sh
+	bash tools/bench/e2e-test.sh
 
 # The control-plane thread-population checks, run over and over on one build,
 # plus two starved runs that must go red naming the busy-worker refusal. Those
@@ -65,7 +66,7 @@ verify-control-determinism: tools-executable
 	bash tools/control-determinism.sh
 
 tools-executable:
-	chmod +x tools/*.sh tools/measure/*.sh
+	chmod +x tools/*.sh tools/measure/*.sh tools/bench/*.sh
 
 # The verifications that need an environment. Each one exits non-zero naming
 # its missing prerequisite rather than reporting green.

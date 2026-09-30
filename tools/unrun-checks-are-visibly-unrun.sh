@@ -126,6 +126,13 @@ expect_missing_prerequisite "capture-run.sh" \
     CHORUS_CAPTURE_DEVICE=chorus-no-such-capture-device \
     bash "$REPO_ROOT/tools/measure/capture-run.sh"
 
+# No second endpoint and no playback device that paces. Genuinely absent, as
+# above. This is RIG-3's free-run baseline from two real clients (audit A-4).
+expect_missing_prerequisite "free-run-run.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_SECOND_ENDPOINT= \
+    CHORUS_CLIENT_DEVICE=chorus-no-such-device \
+    bash "$REPO_ROOT/tools/measure/free-run-run.sh"
+
 # No second endpoint, no capture device and no playback device that paces.
 # Genuinely absent: this machine has one of itself and no sound card at all,
 # and nothing has told this script where a second endpoint would be. This is

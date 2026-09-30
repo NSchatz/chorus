@@ -48,15 +48,56 @@
 # The endpoint's own analog gain ceiling is in firmware/config/endpoint.conf and
 # the endpoint refuses to enable output above it.
 #
+# THE BENCH REPORT (K45). The run ends by writing
+# docs/measurements/embedded5-endpoint-rig-<date>.md with every capture and the
+# Linux endpoint's delay log hashed (tools/bench/lib.sh), and with
+# CHORUS_BENCH_PR=1 it commits that on bench/<date>-embedded5-endpoint-rig and
+# opens the PR. `--report-from <run directory>` runs only that half. AC-3's
+# analysis, the sample rate the endpoint actually produced, recovered from the
+# capture, does not exist yet: chorus-measure has no such analyser, so the
+# report hashes the captures for it and says INCOMPLETE rather than PASS.
+#
 #   CHORUS_ESP32S3_PORT=/dev/ttyACM0 CHORUS_SECOND_ENDPOINT=user@endpoint-b \
 #   CHORUS_CAPTURE_DEVICE=hw:1,0 \
 #       ./tools/endpoint-rig-run.sh          # or: make verify-endpoint-rig
+#   ./tools/endpoint-rig-run.sh --report-from <run directory>
 
 source "$(dirname "$0")/lib.sh"
+source "$REPO_ROOT/tools/bench/lib.sh"
+bench_args "$@"
 
 CRITERION="an ESP32-S3 endpoint playing a grouped stream alongside a Linux endpoint holds inter-device error within the bound SYNC-4 met, and the sample rate the 24-bit I2S configuration actually produces is measured rather than read back"
 
 build_once
+
+# The report and PR half. AC-1 is graded from the captures exactly as SYNC-4's
+# hour is; AC-3 has no analyser yet, so the best this report can say is
+# INCOMPLETE (or FAIL when AC-1 fails).
+report_and_publish() {
+    local bound median
+    bound="$(transport_conf wired_bound_us)"
+    bench_lag_captures endpoint-rig
+    median="$(printf '%s' "$BENCH_LAG_MEDIANS" | bench_median_abs)"
+    if [ -f "$BENCH_RUN_DIR/raw/endpoint-rig-linux.log" ]; then
+        bench_analysis delaylog-linux "$BIN_DIR/chorus-delaylog-check" \
+            "$BENCH_RUN_DIR/raw/endpoint-rig-linux.log" --require-zero-underruns || true
+    fi
+    bench_field captures_analysed "$BENCH_LAG_RESOLVED of $BENCH_LAG_TOTAL resolved"
+    bench_field median_of_medians_us "${median:-none}"
+    bench_field bound_us "$bound (config/transport.conf wired_bound_us)"
+    bench_field produced_rate "not analysed: chorus-measure has no produced-sample-rate analyser yet; the captures are hashed for it (AC-3)"
+    local summary="AC-1: median of $BENCH_LAG_RESOLVED capture medians ${median} us against the ${bound} us bound; AC-3: produced sample rate not analysed (no analyser yet)"
+    if [ "$BENCH_LAG_TOTAL" -gt 0 ] && [ "$BENCH_LAG_RESOLVED" = "$BENCH_LAG_TOTAL" ] \
+        && awk -v m="$median" -v b="$bound" 'BEGIN { exit !(m < b) }'; then
+        bench_finish INCOMPLETE "$summary"
+    fi
+    bench_finish FAIL "$summary"
+}
+
+if [ -n "$BENCH_REPORT_FROM" ]; then
+    bench_load "$BENCH_REPORT_FROM" embedded5-endpoint-rig
+    report_and_publish
+fi
 
 RUN_SECONDS="$(sync_conf sync_hour_run_seconds)"
 CAPTURE_SECONDS="$(sync_conf sync_hour_capture_seconds)"
@@ -66,8 +107,6 @@ CAPTURE_DEVICE="$(capture_device)"
 SAMPLE_RATE="$(endpoint_conf i2s_sample_rate_hz)"
 SLOT_WIDTH="$(endpoint_conf i2s_slot_bit_width)"
 MCLK_MULTIPLE="$(endpoint_conf i2s_mclk_multiple)"
-OUT_DIR="${CHORUS_MEASURE_OUT:-${TMPDIR:-/tmp}}"
-LOG_DIR="${CHORUS_SYNC_LOG_DIR:-$REPO_ROOT/docs/measurements}"
 
 GRADED_SECONDS=$((RUN_SECONDS - SETTLE_SECONDS))
 CAPTURE_SPACING=$((GRADED_SECONDS / CAPTURES))
@@ -87,6 +126,14 @@ require_esp32s3_endpoint "$CRITERION"
 require_amplifier_registers "$CRITERION"
 require_second_endpoint "$CRITERION"
 require_capture_device "$CRITERION"
+
+bench_begin embedded5-endpoint-rig "$CRITERION"
+bench_device "capture interface: ALSA $CAPTURE_DEVICE (L = ESP32-S3 endpoint, R = Linux endpoint)"
+bench_device "ESP32-S3 endpoint on its serial console, I2S ${SAMPLE_RATE} Hz, ${SLOT_WIDTH}-bit slots, MCLK x${MCLK_MULTIPLE} (firmware/config/endpoint.conf)"
+bench_device "Linux endpoint: chorus-client over ssh, ALSA ${CHORUS_SECOND_DEVICE:-default} (address not recorded, K27)"
+bench_reproduce "tools/endpoint-rig-run.sh"
+OUT_DIR="$BENCH_RUN_DIR/raw"
+LOG_DIR="$BENCH_RUN_DIR/raw"
 
 PORT="$(free_port)"
 read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
@@ -153,23 +200,24 @@ while [ "$CAPTURE_INDEX" -le "$CAPTURES" ]; do
     while [ $((SECONDS - RUN_STARTED)) -lt "$DUE" ]; do
         sleep 1
     done
-    WAV="$OUT_DIR/chorus-endpoint-rig-capture-$CAPTURE_INDEX.wav"
+    WAV="$OUT_DIR/capture-$CAPTURE_INDEX.wav"
     say "chorus: capture $CAPTURE_INDEX of $CAPTURES at t=$((SECONDS - RUN_STARTED))s"
     "$BIN_DIR/chorus-measure-capture" \
         --record-only \
         --capture-device "$CAPTURE_DEVICE" \
         --seconds "$CAPTURE_SECONDS" \
         --out "$WAV"
-    say "chorus: analysing capture $CAPTURE_INDEX for inter-device lag (AC-1)"
-    "$BIN_DIR/chorus-measure" lag "$WAV" --label "endpoint-rig-$CAPTURE_INDEX"
-    say "chorus: analysing capture $CAPTURE_INDEX for the produced sample rate (AC-3)"
-    "$BIN_DIR/chorus-measure" free-run "$WAV" --label "endpoint-rate-$CAPTURE_INDEX" \
-        --source hardware
     CAPTURE_INDEX=$((CAPTURE_INDEX + 1))
 done
 
+set +e
 wait "$LINUX_PID"
 LINUX_STATUS=$?
+set -e
+kill_quietly "$SERVER_PID"
 say "chorus: the Linux endpoint exited $LINUX_STATUS"
-say "chorus: the run completed and its reports are in docs/measurements/"
-exit "$LINUX_STATUS"
+scp -q "$CHORUS_SECOND_ENDPOINT:endpoint-rig-linux.log" "$LOG_DIR/endpoint-rig-linux.log" \
+    || say "chorus: the Linux endpoint's delay log could not be fetched; the report says so"
+
+say "chorus: analysing the captures and writing the bench report"
+report_and_publish

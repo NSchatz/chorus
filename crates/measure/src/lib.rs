@@ -58,6 +58,7 @@ pub mod fixtures;
 pub mod freerun;
 pub mod jitter;
 pub mod lag;
+pub mod pair;
 pub mod report;
 pub mod rng;
 pub mod wav;
@@ -77,7 +78,17 @@ use std::path::{Path, PathBuf};
 /// The same idiom `chorus_audio_path::scan::repository_root` uses, for the same
 /// reason: a fixture path has to resolve identically whichever directory
 /// `cargo test` was invoked from.
+///
+/// `CHORUS_MEASURE_ROOT`, when set, names the checkout instead. The bench
+/// scripts (`tools/bench/lib.sh`) set it to their own checkout, so a report
+/// names the build of the checkout the run was taken from even when the binary
+/// was built in another worktree.
 pub fn repository_root() -> PathBuf {
+    if let Some(root) = std::env::var_os("CHORUS_MEASURE_ROOT") {
+        if !root.is_empty() {
+            return PathBuf::from(root);
+        }
+    }
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(|p| p.parent())

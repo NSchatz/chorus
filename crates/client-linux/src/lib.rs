@@ -53,6 +53,7 @@ pub mod control;
 pub mod decode;
 pub mod delaylog;
 pub mod logcheck;
+pub mod offsets;
 pub mod receive;
 pub mod run;
 pub mod session;

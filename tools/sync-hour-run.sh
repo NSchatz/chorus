@@ -33,15 +33,73 @@
 # ceiling to make a quiet capture louder, move the interface's input gain
 # instead. This script adds no gain control and writes no amplifier register.
 #
+# THE BENCH REPORT (K45). The run ends by writing
+# docs/measurements/sync4-hour-<date>.md with every capture and both delay logs
+# hashed (tools/bench/lib.sh), and with CHORUS_BENCH_PR=1 it commits that on
+# bench/<date>-sync4-hour and opens the PR. `--report-from <run directory>`
+# runs only that half. docs/bench.md is the how-to.
+#
 #   CHORUS_SECOND_ENDPOINT=user@endpoint-b \
 #   CHORUS_CAPTURE_DEVICE=hw:1,0 CHORUS_CLIENT_DEVICE=hw:0,0 \
 #       ./tools/sync-hour-run.sh          # or: make verify-sync-hour
+#   ./tools/sync-hour-run.sh --report-from <run directory>
 
 source "$(dirname "$0")/lib.sh"
+source "$REPO_ROOT/tools/bench/lib.sh"
+bench_args "$@"
 
 CRITERION="two wired Linux endpoints playing one grouped stream for at least one hour hold median inter-device error below 0.5 ms as measured by the RIG-3 harness, with no hard resync after the first minute"
 
 build_once
+
+# The report and PR half: the captures and the delay logs in, the bench report
+# out. PASS needs every capture resolved, the median of the per-capture medians
+# under the wired bound, endpoint A's log graded clean over the hour, and no
+# hard resync after the settle in either log.
+report_and_publish() {
+    local bound settle log_a log_b median worst resyncs_a resyncs_b="none" grade_a=1 grade_b=0
+    bound="$(transport_conf wired_bound_us)"
+    settle="$(sync_conf sync_hour_settle_seconds)"
+    log_a="$BENCH_RUN_DIR/raw/sync-hour-endpoint-a.log"
+    log_b="$BENCH_RUN_DIR/raw/sync-hour-endpoint-b.log"
+    bench_lag_captures sync-hour-run
+    median="$(printf '%s' "$BENCH_LAG_MEDIANS" | bench_median_abs)"
+    worst="$(printf '%s' "$BENCH_LAG_P95S" | LC_ALL=C sort -g | tail -n 1)"
+    if bench_analysis delaylog-a "$BIN_DIR/chorus-delaylog-check" "$log_a" \
+        --min-graded-seconds 3600 --require-zero-underruns --require-no-rate-change; then
+        grade_a=0
+    fi
+    resyncs_a="$(bench_hard_resyncs_after "$log_a" "$settle")"
+    if [ -f "$log_b" ]; then
+        bench_analysis delaylog-b "$BIN_DIR/chorus-delaylog-check" "$log_b" \
+            --min-graded-seconds 3600 --require-zero-underruns --require-no-rate-change \
+            || grade_b=1
+        resyncs_b="$(bench_hard_resyncs_after "$log_b" "$settle")"
+        bench_field delaylog_b "$([ "$grade_b" = 0 ] && echo graded clean || echo failed its grading)"
+    else
+        bench_field delaylog_b "not fetched from endpoint B"
+    fi
+    bench_field captures_analysed "$BENCH_LAG_RESOLVED of $BENCH_LAG_TOTAL resolved"
+    bench_field median_of_medians_us "${median:-none}"
+    bench_field worst_p95_abs_us "${worst:-none}"
+    bench_field bound_us "$bound (config/transport.conf wired_bound_us)"
+    bench_field delaylog_a "$([ "$grade_a" = 0 ] && echo graded clean || echo failed its grading)"
+    bench_field hard_resyncs_after_settle "endpoint A $resyncs_a, endpoint B $resyncs_b"
+    local summary
+    summary="median of $BENCH_LAG_RESOLVED capture medians ${median} us against the ${bound} us bound; endpoint A's log $([ "$grade_a" = 0 ] && echo graded clean || echo failed); hard resyncs after the settle: A $resyncs_a, B $resyncs_b"
+    if [ "$BENCH_LAG_TOTAL" -gt 0 ] && [ "$BENCH_LAG_RESOLVED" = "$BENCH_LAG_TOTAL" ] \
+        && [ "$grade_a" = 0 ] && [ "$grade_b" = 0 ] && [ "$resyncs_a" = 0 ] \
+        && { [ "$resyncs_b" = none ] || [ "$resyncs_b" = 0 ]; } \
+        && awk -v m="$median" -v b="$bound" 'BEGIN { exit !(m < b) }'; then
+        bench_finish PASS "$summary"
+    fi
+    bench_finish FAIL "$summary"
+}
+
+if [ -n "$BENCH_REPORT_FROM" ]; then
+    bench_load "$BENCH_REPORT_FROM" sync4-hour
+    report_and_publish
+fi
 
 RUN_SECONDS="$(sync_conf sync_hour_run_seconds)"
 CAPTURE_SECONDS="$(sync_conf sync_hour_capture_seconds)"
@@ -49,8 +107,6 @@ SETTLE_SECONDS="$(sync_conf sync_hour_settle_seconds)"
 CAPTURES="$(sync_conf sync_hour_captures)"
 DEVICE="$(audio_device)"
 CAPTURE_DEVICE="$(capture_device)"
-OUT_DIR="${CHORUS_MEASURE_OUT:-${TMPDIR:-/tmp}}"
-LOG_DIR="${CHORUS_SYNC_LOG_DIR:-$REPO_ROOT/docs/measurements}"
 
 # The graded window is what is left of the run once the acquisition transient
 # has passed, and the captures are spread evenly across it.
@@ -70,6 +126,14 @@ say "  second endpoint: ${CHORUS_SECOND_ENDPOINT:-<unset>}"
 require_second_endpoint "$CRITERION"
 require_pacing_audio_device "$CRITERION"
 require_capture_device "$CRITERION"
+
+bench_begin sync4-hour "$CRITERION"
+bench_device "capture interface: ALSA $CAPTURE_DEVICE (L = endpoint A, R = endpoint B)"
+bench_device "endpoint A: chorus-client on the bench machine, ALSA $DEVICE"
+bench_device "endpoint B: chorus-client on the second wired Linux endpoint over ssh, ALSA ${CHORUS_SECOND_DEVICE:-default} (address not recorded, K27)"
+bench_reproduce "tools/sync-hour-run.sh"
+OUT_DIR="$BENCH_RUN_DIR/raw"
+LOG_DIR="$BENCH_RUN_DIR/raw"
 
 PORT="$(free_port)"
 read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
@@ -150,28 +214,27 @@ while [ "$CAPTURE_INDEX" -le "$CAPTURES" ]; do
     while [ $((SECONDS - RUN_STARTED)) -lt "$DUE" ]; do
         sleep 1
     done
-    WAV="$OUT_DIR/chorus-sync-hour-capture-$CAPTURE_INDEX.wav"
+    WAV="$OUT_DIR/capture-$CAPTURE_INDEX.wav"
     say "chorus: capture $CAPTURE_INDEX of $CAPTURES at t=$((SECONDS - RUN_STARTED))s"
     "$BIN_DIR/chorus-measure-capture" \
         --record-only \
         --capture-device "$CAPTURE_DEVICE" \
         --seconds "$CAPTURE_SECONDS" \
         --out "$WAV"
-    say "chorus: analysing capture $CAPTURE_INDEX"
-    "$BIN_DIR/chorus-measure" lag "$WAV" --label "sync-hour-run-$CAPTURE_INDEX"
     CAPTURE_INDEX=$((CAPTURE_INDEX + 1))
 done
 
+set +e
 wait "$CLIENT_A_PID"
 CLIENT_A_STATUS=$?
-kill_quietly "$CLIENT_B_PID"
-
+wait "$CLIENT_B_PID"
+set -e
+kill_quietly "$SERVER_PID"
 say "chorus: endpoint A exited $CLIENT_A_STATUS"
-say "chorus: grading both delay logs"
-"$BIN_DIR/chorus-delaylog-check" "$LOG_DIR/sync-hour-endpoint-a.log" \
-    --min-graded-seconds 3600 \
-    --require-zero-underruns \
-    --require-no-rate-change
 
-say "chorus: the run completed and its report is in docs/measurements/"
-exit "$CLIENT_A_STATUS"
+# Endpoint B's delay log is raw data too; the grading needs both.
+scp -q "$CHORUS_SECOND_ENDPOINT:sync-hour-endpoint-b.log" "$LOG_DIR/sync-hour-endpoint-b.log" \
+    || say "chorus: endpoint B's delay log could not be fetched; the report says so"
+
+say "chorus: analysing the captures, grading the delay logs and writing the bench report"
+report_and_publish

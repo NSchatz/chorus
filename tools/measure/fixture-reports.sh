@@ -23,7 +23,8 @@ say "chorus: the free-run baseline, from the noiseless committed series"
 
 say ""
 say "chorus: inter-device lag, over the committed reference capture"
-"$BIN_DIR/chorus-measure" lag "$FIXTURES/01-chirp-pair-a.wav" --label "fixture-reference-capture"
+"$BIN_DIR/chorus-measure" lag "$FIXTURES/01-chirp-pair-a.wav" --label "fixture-reference-capture" \
+    --source fixture
 
 # chorus#WIFI-7: one report per power-save mode. The series are MODELLED and
 # every report says so in its own words; the measured version of this run needs
