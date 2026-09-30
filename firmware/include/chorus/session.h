@@ -10,7 +10,17 @@
  * It never gives up and it never spins: the backoff starts short because most
  * outages are a server restart, and it is capped so that a link down for an
  * hour is not a busy loop. There is no retry budget to exhaust, which is the
- * property the outage-of-minutes run exists to grade. */
+ * property the outage-of-minutes run exists to grade.
+ *
+ * Every connection is a chorus protocol v2 session (docs/protocol.md, "The
+ * session, in order"): the endpoint opens the Noise XX handshake as the
+ * initiator with its id and long-term key, checks the server's key against
+ * its pin (pinning a server it has never met, refusing one whose key
+ * changed), and from then on everything on the connection is a
+ * secure_record: its hello and capabilities, the time-sync exchange, and the
+ * server's stream_format, output_delay and audio. A server whose key changed
+ * is not an outage: the endpoint sends session_refused key_changed and the
+ * run ends, because only the owner changes a pin. */
 
 #ifndef CHORUS_SESSION_H
 #define CHORUS_SESSION_H
@@ -18,10 +28,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "chorus/noise.h"
 #include "chorus/sync.h"
 #include "chorus/telemetry.h"
 
 #define CHORUS_SESSION_ADDRESS_MAX 128
+#define CHORUS_SESSION_ID_MAX 256
+
+/* The id used when the configuration names none. An id is what the server
+ * pins this endpoint's key to, so a real endpoint names its own. */
+#define CHORUS_SESSION_DEFAULT_ID "chorus-endpoint"
 
 typedef struct {
     char server[CHORUS_SESSION_ADDRESS_MAX];
@@ -37,6 +53,23 @@ typedef struct {
     double smoothing_alpha;
     /* Where to write one telemetry line per event. NULL prints nothing. */
     const char *event_log_path;
+
+    /* Who this endpoint is: its id (1 to 255 bytes; empty uses
+     * CHORUS_SESSION_DEFAULT_ID) and where its long-term X25519 secret lives
+     * (64 hex digits and a newline, mode 0600, made from the random source
+     * when the file is absent). NULL keeps a key for this run only. */
+    char endpoint_id[CHORUS_SESSION_ID_MAX];
+    const char *key_path;
+    /* Where the pinned servers live, in the adoption store's text form (one
+     * `pinned <public key hex> <server id>` line per server). NULL keeps the
+     * pins for this run only. */
+    const char *server_pins_path;
+    /* How long the server has to answer handshake_init. Zero uses 2000 ms. */
+    uint32_t handshake_timeout_ms;
+    /* The random source for keys. NULL uses chorus_noise_system_random; a
+     * test hands in fixed keys. */
+    chorus_noise_random_fn random;
+    void *random_ctx;
 } chorus_session_config_t;
 
 /* Why a run ended. Never "the server went away": that is not an end, it is a
@@ -45,7 +78,13 @@ typedef enum {
     CHORUS_SESSION_RAN_ITS_TIME = 0,
     CHORUS_SESSION_ADDRESS_UNUSABLE,
     CHORUS_SESSION_STOPPED_ON_AMP_FAULT,
-    CHORUS_SESSION_LOG_UNWRITABLE
+    CHORUS_SESSION_LOG_UNWRITABLE,
+    /* The endpoint's key or its pin store could not be read or made. */
+    CHORUS_SESSION_IDENTITY_UNUSABLE,
+    /* A server presented a key other than the one pinned to its id. Refused
+     * with session_refused key_changed, and the run ends: only the owner
+     * changes a pin. */
+    CHORUS_SESSION_SERVER_KEY_CHANGED
 } chorus_session_end_t;
 
 const char *chorus_session_end_name(chorus_session_end_t end);
@@ -62,10 +101,23 @@ typedef struct {
      * A-9). The name stays because firmware/tests/session-outage.sh reads it
      * off the summary line by that key. */
     uint32_t connections_that_played;
-    char detail[256];
+    /* Protocol v2: handshakes completed, servers pinned by this run,
+     * refusals received from the server, and records each way. */
+    uint32_t handshakes;
+    uint32_t servers_pinned;
+    uint32_t refusals_received;
+    uint64_t records_received;
+    uint64_t records_sent;
+    /* Frames inside records that were rejected (one frame each, never the
+     * session: a record's frame boundaries are known). */
+    uint64_t rejected_frames;
+    /* The fingerprint of the endpoint's own public key. */
+    char key_fingerprint[CHORUS_NOISE_FINGERPRINT_LEN];
+    char detail[512];
 } chorus_session_result_t;
 
-/* Run one session. Returns 0 when it ended because it ran its time. */
+/* Run one session. Returns 0 when it ended because it ran its time, and -1
+ * otherwise with `end` and `detail` saying why. */
 int chorus_session_run(const chorus_session_config_t *config, chorus_session_result_t *out);
 
 #endif /* CHORUS_SESSION_H */

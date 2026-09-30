@@ -30,9 +30,40 @@ CFLAGS += -DCHORUS_ENDPOINT_CONFIG_PATH='"$(FW)/config/endpoint.conf"'
 CFLAGS += -DCHORUS_CONFIG_CHECK_BIN='"$(BUILD)/chorus-endpoint-config-check"'
 LDLIBS += -lm
 
+# --- the crypto library, compiled from the pinned ESP-IDF tree ----------------
+#
+# Protocol v2's key exchange (firmware/src/noise.c) reaches its primitives only
+# through the PSA Crypto API. The device build gets that API from ESP-IDF's own
+# mbedtls component; this host build compiles the same library, TF-PSA-Crypto
+# 1.1.0, from the pinned ESP-IDF v6.1 checkout (commit
+# fff9895c82d744c7237be8847347bdd1b07c6643), with firmware/crypto's minimal
+# configuration. Nothing of it is copied into this repository: an absent tree is
+# refused by name rather than worked around.
+CHORUS_IDF_V61_DIR ?= /cache/esp/esp-idf-v6.1
+CHORUS_IDF_V61_COMMIT := fff9895c82d744c7237be8847347bdd1b07c6643
+PSA_DIR ?= $(CHORUS_IDF_V61_DIR)/components/mbedtls/mbedtls/tf-psa-crypto
+PSA_BUILD := $(BUILD)/tf-psa-crypto
+PSA_LIB := $(PSA_BUILD)/libchorus-tf-psa-crypto.a
+PSA_INCLUDES := -I$(FW)/crypto -I$(FW)/crypto/include -I$(PSA_DIR)/include \
+	-I$(PSA_DIR)/drivers/builtin/include
+PSA_PRIVATE_INCLUDES := -I$(PSA_DIR)/core -I$(PSA_DIR)/drivers/builtin/src -I$(PSA_DIR)/dispatch \
+	-I$(PSA_DIR)/platform -I$(PSA_DIR)/utilities -I$(PSA_DIR)/extras
+PSA_CONFIG := -DTF_PSA_CRYPTO_CONFIG_FILE='"chorus_psa_config.h"'
+# Every library source; the configuration decides what each one compiles to,
+# and the linker takes only what noise.c reaches. Not the endpoint's code, so
+# not held to its -Werror, but compiled with its floating-point flags anyway.
+PSA_SRC := $(sort $(wildcard $(PSA_DIR)/core/*.c $(PSA_DIR)/drivers/builtin/src/*.c \
+	$(PSA_DIR)/platform/*.c $(PSA_DIR)/utilities/*.c $(PSA_DIR)/extras/*.c))
+PSA_OBJ := $(patsubst $(PSA_DIR)/%.c,$(PSA_BUILD)/%.o,$(PSA_SRC))
+PSA_CFLAGS := -std=c11 -O2 -ffp-contract=off -fno-fast-math -D_POSIX_C_SOURCE=200809L
+
+CFLAGS += $(PSA_INCLUDES) $(PSA_CONFIG)
+
 LIB_SRC := \
 	$(FW)/src/conf.c \
 	$(FW)/src/protocol.c \
+	$(FW)/src/protocol_v2.c \
+	$(FW)/src/noise.c \
 	$(FW)/src/sync_rng.c \
 	$(FW)/src/sync_servo.c \
 	$(FW)/src/sync_sim.c \
@@ -61,7 +92,7 @@ TEST_SUPPORT := $(FW)/tests/fake_amp.c $(FW)/tests/fake_radio.c
 STAMP := $(BUILD)/config-ok.stamp
 
 .PHONY: all check config-check golden-vectors sync-scenarios safety-scans amplifier clocking \
-        telemetry wireless session-outage clean
+        telemetry wireless session-outage noise-vectors psa-tree clean
 
 # Every binary this makefile builds, enumerated. There is no wildcard over
 # firmware/tests on purpose, and the cost of that is a test has to be named in
@@ -69,12 +100,38 @@ STAMP := $(BUILD)/config-ok.stamp
 # test absent from either is a grading route pointing at something nothing
 # builds.
 all: $(BUILD)/chorus-endpoint-config-check $(BUILD)/chorus-endpoint-scan \
-     $(BUILD)/chorus-endpoint-session $(BUILD)/test_protocol $(BUILD)/test_sync \
-     $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_scan $(BUILD)/test_telemetry \
+     $(BUILD)/chorus-endpoint-session $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 \
+     $(BUILD)/test_noise $(BUILD)/test_sync $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_scan $(BUILD)/test_telemetry \
      $(BUILD)/test_wifi
 
 $(BUILD):
 	mkdir -p $(BUILD)
+
+# The tree is refused by name when it is absent, and when it is a checkout of
+# anything but the pinned commit: a different crypto library is one nobody
+# chose.
+psa-tree:
+	@if [ ! -f "$(PSA_DIR)/include/psa/crypto.h" ]; then \
+		echo "firmware: the crypto library is compiled from the pinned ESP-IDF v6.1 tree, and" \
+		     "$(PSA_DIR) holds no TF-PSA-Crypto (no include/psa/crypto.h). Install ESP-IDF v6.1" \
+		     "(commit $(CHORUS_IDF_V61_COMMIT)) and point CHORUS_IDF_V61_DIR at it." >&2; \
+		exit 2; \
+	fi
+	@found="$$(git -C "$(CHORUS_IDF_V61_DIR)" rev-parse HEAD 2>/dev/null)"; \
+	if [ "$$found" != "$(CHORUS_IDF_V61_COMMIT)" ]; then \
+		echo "firmware: $(CHORUS_IDF_V61_DIR) is at '$${found:-no git commit}', not the pinned" \
+		     "ESP-IDF v6.1 commit $(CHORUS_IDF_V61_COMMIT); the crypto library is compiled only" \
+		     "from the pinned tree." >&2; \
+		exit 2; \
+	fi
+
+$(PSA_BUILD)/%.o: $(PSA_DIR)/%.c $(FW)/crypto/chorus_psa_config.h | psa-tree
+	@mkdir -p $(dir $@)
+	$(CC) $(PSA_CFLAGS) $(PSA_CONFIG) $(PSA_INCLUDES) $(PSA_PRIVATE_INCLUDES) -c $< -o $@
+
+$(PSA_LIB): $(PSA_OBJ) $(FW)/crypto/chorus_psa_config.h | psa-tree
+	rm -f $@
+	$(AR) rcs $@ $(PSA_OBJ)
 
 # --- the configuration gate --------------------------------------------------
 #
@@ -98,23 +155,32 @@ config-check: $(STAMP)
 $(BUILD)/chorus-endpoint-scan: $(SCAN_SRC) $(FW)/check/main_endpoint_scan.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(FW)/check -o $@ $^ $(LDLIBS)
 
-$(BUILD)/chorus-endpoint-session: $(LIB_SRC) $(FW)/tests/main_session.c $(STAMP) | $(BUILD)
-	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(FW)/tests/main_session.c $(LDLIBS)
+$(BUILD)/chorus-endpoint-session: $(LIB_SRC) $(FW)/tests/main_session.c $(STAMP) $(PSA_LIB) | $(BUILD)
+	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(FW)/tests/main_session.c $(PSA_LIB) $(LDLIBS)
 
 # The scan's own tests link the scanner and not the endpoint library: the
 # scanner is host tooling and deliberately outside the tree it scans.
 $(BUILD)/test_scan: $(SCAN_SRC) $(FW)/tests/test_scan.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(FW)/check -I$(FW)/tests -o $@ $(SCAN_SRC) $(FW)/tests/test_scan.c $(LDLIBS)
 
-$(BUILD)/test_protocol $(BUILD)/test_sync $(BUILD)/test_amp $(BUILD)/test_i2s \
-$(BUILD)/test_telemetry $(BUILD)/test_wifi: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
-                         $(FW)/tests/test_%.c $(STAMP) | $(BUILD)
-	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(TEST_SUPPORT) $(FW)/tests/test_$*.c $(LDLIBS)
+$(BUILD)/test_protocol $(BUILD)/test_protocol_v2 $(BUILD)/test_noise $(BUILD)/test_sync \
+$(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_telemetry \
+$(BUILD)/test_wifi: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
+                         $(FW)/tests/test_%.c $(STAMP) $(PSA_LIB) | $(BUILD)
+	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(TEST_SUPPORT) $(FW)/tests/test_$*.c \
+		$(PSA_LIB) $(LDLIBS)
 
 # --- what CI names separately ------------------------------------------------
 
-golden-vectors: $(BUILD)/test_protocol
+# v1's three vectors, then every v2 vector (protocol v2 keeps v1's frame and
+# v1's three messages byte for byte), then the key exchange's.
+golden-vectors: $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 $(BUILD)/test_noise
 	$(BUILD)/test_protocol
+	$(BUILD)/test_protocol_v2
+	$(BUILD)/test_noise
+
+noise-vectors: $(BUILD)/test_noise
+	$(BUILD)/test_noise
 
 sync-scenarios: $(BUILD)/test_sync
 	$(BUILD)/test_sync

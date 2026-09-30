@@ -54,6 +54,8 @@ peer meets a v2 one.
 5. **v2 lives beside v1 in the library.** `chorus_protocol::v2` is a module next to the v1
    catalog, which stays as it is for the endpoint until it moves to v2 (goal 6).
    `fixtures/protocol/v2/` joins the shared-fixtures check with its C reader pending until then.
+   (Update 2026-09-30, goal 6: the C endpoint speaks v2, and `firmware/tests/test_protocol_v2.c`
+   and `firmware/tests/test_noise.c` are the C readers.)
 6. **The session layer hides the records.** `SecureWriter` seals whatever whole frames it is
    given; `SecureReader` hands v1's frames up as plain bytes and v2's other messages to a
    handler. That is what let the server's writer and reader threads and the Linux client's
@@ -62,7 +64,8 @@ peer meets a v2 one.
 ## Consequences
 
 - An endpoint still on v1 (today's ESP32-S3 firmware) cannot stream from a v2 server; goal 6
-  moves it. The refusal says why in both directions.
+  moves it. The refusal says why in both directions. (Update 2026-09-30, goal 6: moved; the
+  endpoint's outage check runs against the server at HEAD again.)
 - The frame budget of a record (65519 bytes) is the largest v2 frame, 19 bytes less than v1's
   largest. The server refuses at startup, by name, a format and chunk duration whose
   `audio_chunk` would not fit (the default, 20 ms of stereo 16-bit at 48 kHz, is 3875 bytes).
