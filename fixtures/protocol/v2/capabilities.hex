@@ -1,0 +1,40 @@
+# chorus golden vector: capabilities, protocol v2 message type 0x11.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# produce these exact bytes from the canonical input in capabilities.fields, and recover
+# exactly those fields from them (docs/protocol.md, "Version 2").
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x11, payload length 21 (0x0015), big-endian
+11 00 15
+
+# codecs = 0x07: pcm (bit 0), flac (bit 1), opus (bit 2)
+07
+
+# sample_formats = 0x03: pcm_s16le (bit 0), pcm_s24le (bit 1)
+03
+
+# max_channels = 2
+02
+
+# rate count = 2
+02
+
+# sample_rates_hz[0] = 44100
+00 00 AC 44
+
+# sample_rates_hz[1] = 48000
+00 00 BB 80
+
+# buffer_ms = 500
+01 F4
+
+# intrinsic_latency_ns = 1500000 (an example value, not a measurement)
+00 16 E3 60
+
+# led_count = 12
+00 0C
+
+# visualizer_bands = 16
+10

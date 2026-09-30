@@ -1,0 +1,14 @@
+# Canonical input for the source_offer golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly source_offer.hex, and decoding source_offer.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+
+message_type = source_offer
+source_id = 1
+kind = line_in
+signal = 1
+name = Turntable

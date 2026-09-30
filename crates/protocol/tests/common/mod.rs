@@ -5,6 +5,8 @@
 
 #![allow(dead_code)]
 
+pub mod v2;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};

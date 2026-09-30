@@ -1,0 +1,19 @@
+# chorus golden vector: controller command (join), protocol v2 message type 0x32.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# produce these exact bytes from the canonical input in controller_command_join.fields, and recover
+# exactly those fields from them (docs/protocol.md, "Version 2").
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x32, payload length 14 (0x000E), big-endian
+32 00 0E
+
+# command = 9 (join)
+09
+
+# value = 0
+00 00
+
+# target: length 10, then UTF-8 "Downstairs"
+0A 44 6F 77 6E 73 74 61 69 72 73

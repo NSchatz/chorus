@@ -1,0 +1,23 @@
+# chorus golden vector: hello (the server), protocol v2 message type 0x10.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# produce these exact bytes from the canonical input in hello_server.fields, and recover
+# exactly those fields from them (docs/protocol.md, "Version 2").
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x10, payload length 25 (0x0019), big-endian
+10 00 19
+
+# protocol_version = 2
+00 02
+
+# roles = 0: the server takes none of the endpoint roles
+00 00
+
+# name: length 0 (empty)
+00
+
+# software: length 19, then UTF-8 "chorus-server 0.2.0"
+13 63 68 6F 72 75 73 2D 73 65 72 76 65 72 20 30
+2E 32 2E 30

@@ -1,0 +1,21 @@
+# chorus golden vector: session refused (a v1 peer), protocol v2 message type 0x23.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# produce these exact bytes from the canonical input in session_refused_v1_peer.fields, and recover
+# exactly those fields from them (docs/protocol.md, "Version 2").
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x23, payload length 94 (0x005E), big-endian
+23 00 5E
+
+# reason = 1 (protocol_version)
+01
+
+# detail: length 91, then UTF-8, exactly what a v2 server sends a peer whose first frame is a v1 time_sync
+00 5B 72 65 66 75 73 65 64 20 61 20 63 68 6F 72
+75 73 20 70 72 6F 74 6F 63 6F 6C 20 76 31 20 70
+65 65 72 20 28 69 74 73 20 66 69 72 73 74 20 66
+72 61 6D 65 20 77 61 73 20 74 69 6D 65 5F 73 79
+6E 63 29 3B 20 74 68 69 73 20 73 69 64 65 20 73
+70 65 61 6B 73 20 76 32 20 6F 6E 6C 79

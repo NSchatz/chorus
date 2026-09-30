@@ -33,6 +33,7 @@
 pub mod codec;
 pub mod message;
 pub mod session;
+pub mod v2;
 
 pub use codec::{
     decode_frame, encode, encode_payload, DecodeError, EncodeError, FrameOutcome, FrameResult,

@@ -1,0 +1,13 @@
+# Canonical input for the source_control golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly source_control.hex, and decoding source_control.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+
+message_type = source_control
+source_id = 1
+action = start
+codec = flac
