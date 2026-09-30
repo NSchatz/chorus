@@ -44,7 +44,7 @@ run in both places, or the host grades code the board does not run.
 2. **The host build compiles TF-PSA-Crypto from the pinned ESP-IDF v6.1 tree, never a copy.**
    `firmware/Makefile` builds `libchorus-tf-psa-crypto.a` from
    `$(CHORUS_IDF_V61_DIR)/components/mbedtls/mbedtls/tf-psa-crypto` (default
-   `/cache/esp/esp-idf-v6.1`; CI clones tag v6.1 with only the mbedtls submodule) with
+   `/cache/esp/esp-idf-v6.1`; in CI, the v6.1 clone the image build uses) with
    `firmware/crypto/chorus_psa_config.h`, which enables the four primitives and nothing else,
    and refuses by name a tree that is absent or not at the pinned commit. Two one-line wrapper
    headers stand in for ESP-IDF's `port/include/mbedtls/{bignum,ecp}.h`. Options considered:
