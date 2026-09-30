@@ -25,8 +25,9 @@ for row in "${shared[@]}"; do
     fi
     leaf="${dir#fixtures/}"
     # Rust and C both name the directory (C through chorus_repo_path or a "%s/<sub>/" format).
-    # shellcheck disable=SC2086
+    # shellcheck disable=SC2086 # $rust and $c are space-separated path lists, split on purpose
     git grep -q -F -e "fixtures/$leaf\"" -e "\"$leaf\")" -e "fixtures/$leaf/" -e "$(basename "$leaf")\")" -- $rust || bad "$dir is not read by a Rust test under $rust"
+    # shellcheck disable=SC2086 # as above
     git grep -q -F -e "\"fixtures/$leaf\"" -e "\"fixtures/$leaf/" -e "/$(basename "$leaf")/" -- $c || bad "$dir is not read by the C test $c"
     count=0
     while IFS= read -r f; do

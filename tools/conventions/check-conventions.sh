@@ -19,8 +19,9 @@ while IFS= read -r row; do
     num="$(printf '%s' "$num" | tr -d ' ')"
     rule="$(printf '%s' "$rule" | sed 's/^ *//; s/ *$//')"
     [ "$num" = "$n" ] || bad "table row $n is numbered $num"
-    command grep -q "^## $num\. $rule\$" "$doc" || bad "rule $num '$rule' has no section '## $num. $rule'"
+    command grep -q -x -F "## $num. $rule" "$doc" || bad "rule $num '$rule' has no section '## $num. $rule'"
     scripts="$(printf '%s' "$check" | command grep -o 'tools/conventions/check-[a-z0-9-]*\.sh' || true)"
+    # shellcheck disable=SC2016 # the backticks are literal Markdown, not an expansion
     steps="$(printf '%s' "$check" | command grep -o 'gate steps\{0,1\} [^;(]*' | command grep -o '`[a-z0-9-]*`' | tr -d '`' || true)"
     [ -n "$scripts$steps" ] || bad "rule $num '$rule' names no check"
     for s in $scripts; do
@@ -28,11 +29,11 @@ while IFS= read -r row; do
         named="$named$s "
     done
     for st in $steps; do
-        command grep -E -q "^[[:space:]]*step[[:space:]]+$st[[:space:]]" tools/gate.sh || bad "rule $num names gate step '$st', which tools/gate.sh does not run"
+        command grep -E -q "^[[:space:]]*step[[:space:]]+${st}[[:space:]]" tools/gate.sh || bad "rule $num names gate step '$st', which tools/gate.sh does not run"
     done
 done <<< "$rows"
 for s in tools/conventions/check-*.sh; do
     [[ "$named" == *" $s "* ]] || bad "$s is not named by any rule in $doc"
 done
-[ "$rc" = 0 ] && echo "conventions: $n rules, each with a check; $(ls tools/conventions/check-*.sh | wc -l) check scripts, all named and all run by the gate"
+[ "$rc" = 0 ] && echo "conventions: $n rules, each with a check; $(printf '%s\n' tools/conventions/check-*.sh | wc -l) check scripts, all named and all run by the gate"
 exit "$rc"

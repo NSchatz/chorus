@@ -13,7 +13,7 @@ fi
 
 # The commit the commit-message rule starts at: origin/main when goal 3 began (the history
 # before it keeps the subjects it was written with; history is never rewritten).
-CONVENTIONS_BASE=d9a9171a7c48275700f4f5c8fab86a9c2c76601a
+export CONVENTIONS_BASE=d9a9171a7c48275700f4f5c8fab86a9c2c76601a
 
 # fail <rule> <message>: print why and where the rule lives, return non-zero.
 fail() {

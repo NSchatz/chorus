@@ -114,7 +114,8 @@ or an inline `cppcheck-suppress` with the reason beside it, and only for a prove
 
 Every tracked shell script is clean under `shellcheck` (pinned), with the repository's
 `.shellcheckrc`. A disable is a per-line directive with its reason. Scripts start with
-`#!/usr/bin/env bash` and are committed executable.
+`#!/usr/bin/env bash` and are committed executable; a sourced library instead has no shebang
+and a `# shellcheck shell=bash` line.
 
 ## 8. Workflows and YAML
 

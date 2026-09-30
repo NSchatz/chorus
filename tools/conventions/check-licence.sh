@@ -8,8 +8,11 @@ for f in LICENSE-MIT LICENSE-APACHE; do
     [ -s "$f" ] || { fail "Licence" "$f is missing or empty"; rc=1; }
 done
 command grep -q '^MIT License$' LICENSE-MIT 2> /dev/null || { fail "Licence" "LICENSE-MIT is not the MIT text"; rc=1; }
-command grep -q 'Apache License' LICENSE-APACHE 2> /dev/null &&
-    command grep -q 'Version 2.0, January 2004' LICENSE-APACHE || { fail "Licence" "LICENSE-APACHE is not the Apache-2.0 text"; rc=1; }
+if ! command grep -q 'Apache License' LICENSE-APACHE 2> /dev/null ||
+    ! command grep -q 'Version 2.0, January 2004' LICENSE-APACHE; then
+    fail "Licence" "LICENSE-APACHE is not the Apache-2.0 text"
+    rc=1
+fi
 
 # Every workspace member declares exactly the project licence.
 need cargo || exit 1
