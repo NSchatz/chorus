@@ -26,7 +26,24 @@ static const char *const KEYS[] = {
     "jitter_scale_us",
     "settle_deadline_ms",
     "error_bound_ns",
+    "path_asymmetry_us",
+    "client_wander_ppm_per_sqrt_s",
+    "burst_enter_prob",
+    "burst_exit_prob",
+    "burst_scale_us",
+    "burst_shape",
 };
+
+/* The keys only the burst model reads: required with jitter_model = burst and
+ * refused with any other model, as scenario.rs has it. */
+static const char *const BURST_KEYS[] = {
+    "burst_enter_prob",
+    "burst_exit_prob",
+    "burst_scale_us",
+    "burst_shape",
+};
+
+#define BURST_KEY_COUNT (sizeof(BURST_KEYS) / sizeof(BURST_KEYS[0]))
 
 #define KEY_COUNT (sizeof(KEYS) / sizeof(KEYS[0]))
 
@@ -178,6 +195,50 @@ chorus_scenario_status_t chorus_scenario_parse(chorus_scenario_t *out, const cha
     }
     out->config.jitter.kind = jitter_kind;
     out->config.jitter.scale_us = jitter_scale_us;
+    if (jitter_kind == CHORUS_JITTER_BURST) {
+        double *targets[BURST_KEY_COUNT] = {
+            &out->config.jitter.burst_enter_prob,
+            &out->config.jitter.burst_exit_prob,
+            &out->config.jitter.burst_scale_us,
+            &out->config.jitter.burst_shape,
+        };
+        for (size_t k = 0; k < BURST_KEY_COUNT; k++) {
+            if (chorus_conf_get(&conf, BURST_KEYS[k]) == NULL) {
+                say_detail(detail, detail_len, "missing key %s%s", BURST_KEYS[k], "");
+                return CHORUS_SCENARIO_ERR_MISSING_KEY;
+            }
+            status = need_f64(&conf, BURST_KEYS[k], targets[k], detail, detail_len);
+            if (status != CHORUS_SCENARIO_OK) {
+                return status;
+            }
+        }
+    } else {
+        for (size_t k = 0; k < BURST_KEY_COUNT; k++) {
+            if (chorus_conf_get(&conf, BURST_KEYS[k]) != NULL) {
+                say_detail(detail, detail_len, "%s is a burst model parameter and jitter_model is %s",
+                           BURST_KEYS[k], jitter_name);
+                return CHORUS_SCENARIO_ERR_BAD_VALUE;
+            }
+        }
+    }
+    /* Optional, defaulting to what changes nothing: a symmetric path and a
+     * constant-rate crystal. */
+    out->config.path_asymmetry_us = 0.0;
+    if (chorus_conf_get(&conf, "path_asymmetry_us") != NULL) {
+        status = need_f64(&conf, "path_asymmetry_us", &out->config.path_asymmetry_us, detail,
+                          detail_len);
+        if (status != CHORUS_SCENARIO_OK) {
+            return status;
+        }
+    }
+    out->config.client_wander_ppm_per_sqrt_s = 0.0;
+    if (chorus_conf_get(&conf, "client_wander_ppm_per_sqrt_s") != NULL) {
+        status = need_f64(&conf, "client_wander_ppm_per_sqrt_s",
+                          &out->config.client_wander_ppm_per_sqrt_s, detail, detail_len);
+        if (status != CHORUS_SCENARIO_OK) {
+            return status;
+        }
+    }
 
     status = need_u64(&conf, "seed", &out->config.seed, detail, detail_len);
     if (status != CHORUS_SCENARIO_OK) {

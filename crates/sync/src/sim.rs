@@ -7,8 +7,16 @@
 //! comes from the measurement rig on real hardware.
 
 use crate::config::{ConfigError, SimConfig, SERVER_TURNAROUND_NS};
+use crate::jitter::JitterProcess;
 use crate::rng::Rng;
 use crate::servo::{OffsetFilter, Sample, Servo, ServoAction};
+
+/// Added to the scenario seed to seed the crystal wander's own stream.
+///
+/// A separate stream so that switching wander on does not reshuffle the jitter
+/// draws: the same scenario with and without wander sees the same network.
+/// The constant is arbitrary (the ASCII bytes of "wander", zero padded).
+pub const WANDER_STREAM: u64 = 0x7761_6E64_6572_0000;
 
 /// One sample of the modelled playout error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,6 +136,8 @@ pub fn run_recorded(config: &SimConfig) -> Result<(SimResult, Vec<ExchangeRecord
     config.validate()?;
 
     let mut rng = Rng::new(config.seed);
+    let mut jitter = JitterProcess::new(config.jitter);
+    let mut wander_rng = Rng::new(config.seed.wrapping_add(WANDER_STREAM));
     let mut filter = OffsetFilter::new(config.servo.filter_window, config.servo.smoothing_alpha);
     let mut servo = Servo::new(config.servo);
 
@@ -136,6 +146,14 @@ pub fn run_recorded(config: &SimConfig) -> Result<(SimResult, Vec<ExchangeRecord
     let sync_interval_ns = (config.sync_interval_ms as f64) * 1_000_000.0;
     let interval_s = (config.sync_interval_ms as f64) / 1_000.0;
     let base_delay_ns = config.base_one_way_delay_us * 1_000.0;
+    let return_base_delay_ns = base_delay_ns + config.path_asymmetry_us * 1_000.0;
+
+    // A uniform increment on [-w, w] has standard deviation w / sqrt(3), so
+    // this is the half width that makes one step's increment have the
+    // configured standard deviation over a step of this length.
+    let wander_enabled = config.client_wander_ppm_per_sqrt_s > 0.0;
+    let wander_half_width_ppm =
+        config.client_wander_ppm_per_sqrt_s * (step_ns * 1e-9).sqrt() * 3.0f64.sqrt();
 
     let server_rate = 1.0 + config.server_ppm * 1e-6;
     let client_rate = 1.0 + config.client_ppm * 1e-6;
@@ -147,6 +165,12 @@ pub fn run_recorded(config: &SimConfig) -> Result<(SimResult, Vec<ExchangeRecord
     let mut correction_ppm = 0.0f64;
     let mut next_sync_ns = sync_interval_ns;
     let mut exchanges = 0u32;
+    // The crystal's departure from `client_ppm`, and the client clock time it
+    // has accumulated. Both stay exactly 0.0 without wander, and adding 0.0 to
+    // a finite double changes no bit, so a scenario without wander runs the
+    // identical arithmetic it ran before wander existed.
+    let mut wander_ppm = 0.0f64;
+    let mut wander_phase_ns = 0.0f64;
 
     let mut samples = Vec::with_capacity(steps as usize);
     let mut records: Vec<ExchangeRecord> = Vec::new();
@@ -154,14 +178,21 @@ pub fn run_recorded(config: &SimConfig) -> Result<(SimResult, Vec<ExchangeRecord
     for step in 0..steps {
         let t_ns = (step + 1) as f64 * step_ns;
 
+        if wander_enabled {
+            wander_ppm += wander_half_width_ppm * (2.0 * wander_rng.next_f64() - 1.0);
+        }
+
         // Playout advances at the client's crystal rate, plus whatever the
         // servo is currently correcting by.
-        playout_ns += step_ns * (1.0 + (config.client_ppm + correction_ppm) * 1e-6);
+        playout_ns += step_ns * (1.0 + (config.client_ppm + wander_ppm + correction_ppm) * 1e-6);
+        wander_phase_ns += step_ns * wander_ppm * 1e-6;
 
         while t_ns >= next_sync_ns {
-            let client_now_ns = t_ns * client_rate + epoch_offset_ns;
-            let forward_ns = base_delay_ns + config.jitter.sample_ns(&mut rng);
-            let return_ns = base_delay_ns + config.jitter.sample_ns(&mut rng);
+            // The wander inside one exchange (well under a millisecond) is
+            // not modelled: the crystal's departure is taken as fixed for it.
+            let client_now_ns = t_ns * client_rate + epoch_offset_ns + wander_phase_ns;
+            let forward_ns = base_delay_ns + jitter.sample_ns(&mut rng);
+            let return_ns = return_base_delay_ns + jitter.sample_ns(&mut rng);
 
             // RFC 5905 section 8. Every timestamp is taken on the clock of the
             // device that took it.
@@ -169,7 +200,8 @@ pub fn run_recorded(config: &SimConfig) -> Result<(SimResult, Vec<ExchangeRecord
             let t1 = (t_ns + forward_ns) * server_rate;
             let t2 = (t_ns + forward_ns + SERVER_TURNAROUND_NS) * server_rate;
             let t3 = (t_ns + forward_ns + SERVER_TURNAROUND_NS + return_ns) * client_rate
-                + epoch_offset_ns;
+                + epoch_offset_ns
+                + wander_phase_ns;
 
             let offset_estimate = ((t1 - t0) + (t2 - t3)) / 2.0;
             let rtt = (t3 - t0) - (t2 - t1);

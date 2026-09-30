@@ -32,6 +32,12 @@ const char *chorus_sim_status_name(chorus_sim_status_t status)
         return "too-many-steps";
     case CHORUS_SIM_ERR_OUT_OF_MEMORY:
         return "out-of-memory";
+    case CHORUS_SIM_ERR_ASYMMETRY_OUT_OF_RANGE:
+        return "asymmetry-out-of-range";
+    case CHORUS_SIM_ERR_INVALID_JITTER_PARAMETER:
+        return "invalid-jitter-parameter";
+    case CHORUS_SIM_ERR_WANDER_OUT_OF_RANGE:
+        return "wander-out-of-range";
     }
     return "unknown-status";
 }
@@ -62,6 +68,41 @@ static chorus_sim_status_t check_delay(double value_us)
 {
     if (!chorus_finite(value_us) || value_us < 0.0 || value_us > CHORUS_MAX_DELAY_US) {
         return CHORUS_SIM_ERR_DELAY_OUT_OF_RANGE;
+    }
+    return CHORUS_SIM_OK;
+}
+
+static chorus_sim_status_t check_asymmetry(double base_us, double asymmetry_us)
+{
+    double return_us = base_us + asymmetry_us;
+    if (!chorus_finite(asymmetry_us) || return_us < 0.0 || return_us > CHORUS_MAX_DELAY_US) {
+        return CHORUS_SIM_ERR_ASYMMETRY_OUT_OF_RANGE;
+    }
+    return CHORUS_SIM_OK;
+}
+
+static chorus_sim_status_t check_jitter(const chorus_jitter_t *jitter)
+{
+    if (jitter->kind != CHORUS_JITTER_BURST) {
+        return CHORUS_SIM_OK;
+    }
+    /* Mirrored from check_jitter in config.rs: a burst that can never end is
+     * not a link, and a tail index at or below 1 has no finite mean. */
+    double enter = jitter->burst_enter_prob;
+    double exit_prob = jitter->burst_exit_prob;
+    double scale = jitter->burst_scale_us;
+    double shape = jitter->burst_shape;
+    if (!chorus_finite(enter) || enter < 0.0 || enter > 1.0) {
+        return CHORUS_SIM_ERR_INVALID_JITTER_PARAMETER;
+    }
+    if (!chorus_finite(exit_prob) || exit_prob <= 0.0 || exit_prob > 1.0) {
+        return CHORUS_SIM_ERR_INVALID_JITTER_PARAMETER;
+    }
+    if (!chorus_finite(scale) || scale <= 0.0 || scale > CHORUS_MAX_DELAY_US) {
+        return CHORUS_SIM_ERR_INVALID_JITTER_PARAMETER;
+    }
+    if (!chorus_finite(shape) || shape <= 1.0 || shape > 100.0) {
+        return CHORUS_SIM_ERR_INVALID_JITTER_PARAMETER;
     }
     return CHORUS_SIM_OK;
 }
@@ -115,9 +156,21 @@ chorus_sim_status_t chorus_sim_validate(const chorus_sim_config_t *config)
     if (status != CHORUS_SIM_OK) {
         return status;
     }
+    status = check_asymmetry(config->base_one_way_delay_us, config->path_asymmetry_us);
+    if (status != CHORUS_SIM_OK) {
+        return status;
+    }
     status = check_delay(config->jitter.kind == CHORUS_JITTER_NONE ? 0.0 : config->jitter.scale_us);
     if (status != CHORUS_SIM_OK) {
         return status;
+    }
+    status = check_jitter(&config->jitter);
+    if (status != CHORUS_SIM_OK) {
+        return status;
+    }
+    double wander = config->client_wander_ppm_per_sqrt_s;
+    if (!chorus_finite(wander) || wander < 0.0 || wander > CHORUS_MAX_WANDER_PPM_PER_SQRT_S) {
+        return CHORUS_SIM_ERR_WANDER_OUT_OF_RANGE;
     }
     status = check_servo(&config->servo);
     if (status != CHORUS_SIM_OK) {
@@ -154,6 +207,10 @@ chorus_sim_status_t chorus_sim_run(const chorus_sim_config_t *config, chorus_sim
 
     chorus_rng_t rng;
     chorus_rng_init(&rng, config->seed);
+    chorus_jitter_process_t jitter;
+    chorus_jitter_process_init(&jitter, &config->jitter);
+    chorus_rng_t wander_rng;
+    chorus_rng_init(&wander_rng, config->seed + CHORUS_WANDER_STREAM);
     chorus_offset_filter_t filter;
     chorus_offset_filter_init(&filter, config->servo.filter_window, config->servo.smoothing_alpha);
     chorus_servo_t servo;
@@ -164,6 +221,12 @@ chorus_sim_status_t chorus_sim_run(const chorus_sim_config_t *config, chorus_sim
     double sync_interval_ns = (double)config->sync_interval_ms * 1000000.0;
     double interval_s = (double)config->sync_interval_ms / 1000.0;
     double base_delay_ns = config->base_one_way_delay_us * 1000.0;
+    double return_base_delay_ns = base_delay_ns + config->path_asymmetry_us * 1000.0;
+
+    /* A uniform increment on [-w, w] has standard deviation w / sqrt(3). */
+    int wander_enabled = config->client_wander_ppm_per_sqrt_s > 0.0;
+    double wander_half_width_ppm =
+        config->client_wander_ppm_per_sqrt_s * sqrt(step_ns * 1e-9) * sqrt(3.0);
 
     double server_rate = 1.0 + config->server_ppm * 1e-6;
     double client_rate = 1.0 + config->client_ppm * 1e-6;
@@ -174,6 +237,10 @@ chorus_sim_status_t chorus_sim_run(const chorus_sim_config_t *config, chorus_sim
     double playout_ns = epoch_offset_ns;
     double correction_ppm = 0.0;
     double next_sync_ns = sync_interval_ns;
+    /* Both stay exactly 0.0 without wander, and adding 0.0 changes no bit,
+     * so a scenario without wander runs the arithmetic it always ran. */
+    double wander_ppm = 0.0;
+    double wander_phase_ns = 0.0;
 
     out->samples = calloc((size_t)steps, sizeof(chorus_playout_sample_t));
     if (out->samples == NULL) {
@@ -189,14 +256,21 @@ chorus_sim_status_t chorus_sim_run(const chorus_sim_config_t *config, chorus_sim
     for (uint64_t step = 0; step < steps; step++) {
         double t_ns = (double)(step + 1) * step_ns;
 
+        if (wander_enabled) {
+            wander_ppm += wander_half_width_ppm * (2.0 * chorus_rng_next_f64(&wander_rng) - 1.0);
+        }
+
         /* Playout advances at the client's crystal rate, plus whatever the
          * servo is currently correcting by. */
-        playout_ns += step_ns * (1.0 + (config->client_ppm + correction_ppm) * 1e-6);
+        playout_ns +=
+            step_ns * (1.0 + (config->client_ppm + wander_ppm + correction_ppm) * 1e-6);
+        wander_phase_ns += step_ns * wander_ppm * 1e-6;
 
         while (t_ns >= next_sync_ns) {
-            double client_now_ns = t_ns * client_rate + epoch_offset_ns;
-            double forward_ns = base_delay_ns + chorus_jitter_sample_ns(&config->jitter, &rng);
-            double return_ns = base_delay_ns + chorus_jitter_sample_ns(&config->jitter, &rng);
+            double client_now_ns = t_ns * client_rate + epoch_offset_ns + wander_phase_ns;
+            double forward_ns = base_delay_ns + chorus_jitter_process_sample_ns(&jitter, &rng);
+            double return_ns =
+                return_base_delay_ns + chorus_jitter_process_sample_ns(&jitter, &rng);
 
             /* RFC 5905 section 8. Every timestamp is taken on the clock of the
              * device that took it. */
@@ -205,7 +279,7 @@ chorus_sim_status_t chorus_sim_run(const chorus_sim_config_t *config, chorus_sim
             double t2 = (t_ns + forward_ns + CHORUS_SERVER_TURNAROUND_NS) * server_rate;
             double t3 =
                 (t_ns + forward_ns + CHORUS_SERVER_TURNAROUND_NS + return_ns) * client_rate +
-                epoch_offset_ns;
+                epoch_offset_ns + wander_phase_ns;
 
             double offset_estimate = ((t1 - t0) + (t2 - t3)) / 2.0;
             double rtt = (t3 - t0) - (t2 - t1);

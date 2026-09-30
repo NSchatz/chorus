@@ -431,7 +431,7 @@ static void the_generator_reproduces_its_stream(void)
 
 static void jitter_is_never_negative_and_is_capped(void)
 {
-    chorus_jitter_t uniform = {CHORUS_JITTER_UNIFORM, 150.0};
+    chorus_jitter_t uniform = {.kind = CHORUS_JITTER_UNIFORM, .scale_us = 150.0};
     chorus_rng_t rng;
     chorus_rng_init(&rng, 9);
     double max_seen = 0.0;
@@ -449,7 +449,7 @@ static void jitter_is_never_negative_and_is_capped(void)
                  "uniform jitter stays inside its bound and reaches the whole range (%.1f ns)",
                  max_seen);
 
-    chorus_jitter_t exponential = {CHORUS_JITTER_EXPONENTIAL, 200.0};
+    chorus_jitter_t exponential = {.kind = CHORUS_JITTER_EXPONENTIAL, .scale_us = 200.0};
     chorus_rng_init(&rng, 11);
     double total = 0.0;
     double cap_ns = 200.0 * CHORUS_JITTER_TAIL_CAP_MULTIPLE * 1000.0;
@@ -468,7 +468,7 @@ static void jitter_is_never_negative_and_is_capped(void)
                  "configured 200 us",
                  mean_us);
 
-    chorus_jitter_t none = {CHORUS_JITTER_NONE, 0.0};
+    chorus_jitter_t none = {.kind = CHORUS_JITTER_NONE, .scale_us = 0.0};
     chorus_rng_init(&rng, 1);
     int zero = 1;
     for (int i = 0; i < 100; i++) {
@@ -477,6 +477,79 @@ static void jitter_is_never_negative_and_is_capped(void)
         }
     }
     chorus_check(zero, "no jitter means no jitter");
+}
+
+/* Mirrors a_memoryless_process_draws_what_the_model_draws and
+ * bursts_come_in_runs_and_have_a_heavy_capped_tail in jitter.rs. */
+static void the_burst_process_behaves_as_the_rust_one_does(void)
+{
+    const chorus_jitter_t memoryless[3] = {
+        {.kind = CHORUS_JITTER_NONE, .scale_us = 0.0},
+        {.kind = CHORUS_JITTER_UNIFORM, .scale_us = 60.0},
+        {.kind = CHORUS_JITTER_EXPONENTIAL, .scale_us = 150.0},
+    };
+    int same = 1;
+    for (int m = 0; m < 3; m++) {
+        chorus_rng_t a;
+        chorus_rng_t b;
+        chorus_rng_init(&a, 77);
+        chorus_rng_init(&b, 77);
+        chorus_jitter_process_t process;
+        chorus_jitter_process_init(&process, &memoryless[m]);
+        for (int i = 0; i < 1000; i++) {
+            if (chorus_jitter_process_sample_ns(&process, &a) !=
+                chorus_jitter_sample_ns(&memoryless[m], &b)) {
+                same = 0;
+            }
+        }
+        if (chorus_rng_next_u64(&a) != chorus_rng_next_u64(&b)) {
+            same = 0;
+        }
+    }
+    chorus_check(same, "a memoryless model draws the same values, and as many, through a process");
+
+    const chorus_jitter_t wifi = {.kind = CHORUS_JITTER_BURST,
+                                  .scale_us = 400.0,
+                                  .burst_enter_prob = 0.05,
+                                  .burst_exit_prob = 0.25,
+                                  .burst_scale_us = 3000.0,
+                                  .burst_shape = 1.5};
+    chorus_jitter_process_t process;
+    chorus_jitter_process_init(&process, &wifi);
+    chorus_rng_t rng;
+    chorus_rng_init(&rng, 5);
+    const int draws = 200000;
+    int in_burst = 0;
+    int runs = 0;
+    int previous = 0;
+    int bounded = 1;
+    double quiet_peak = 0.0;
+    double burst_peak = 0.0;
+    for (int i = 0; i < draws; i++) {
+        double sample = chorus_jitter_process_sample_ns(&process, &rng);
+        if (sample < 0.0 || sample > CHORUS_JITTER_BURST_CAP_US * 1000.0) {
+            bounded = 0;
+        }
+        if (process.in_burst) {
+            in_burst++;
+            if (sample > burst_peak) {
+                burst_peak = sample;
+            }
+            if (!previous) {
+                runs++;
+            }
+        } else if (sample > quiet_peak) {
+            quiet_peak = sample;
+        }
+        previous = process.in_burst;
+    }
+    double share = (double)in_burst / draws;
+    double mean_run = (double)in_burst / runs;
+    chorus_check(bounded && share > 0.15 && share < 0.18 && mean_run > 3.7 && mean_run < 4.3 &&
+                     burst_peak > 10.0 * quiet_peak,
+                 "bursts come in runs (share %.3f, mean run %.2f) with a heavy capped tail "
+                 "(%.0f ns against %.0f ns quiet)",
+                 share, mean_run, burst_peak, quiet_peak);
 }
 
 static void the_filter_and_the_servo_behave_as_the_rust_ones_do(void)
@@ -600,6 +673,38 @@ static void an_unmodellable_configuration_is_refused(void)
     chorus_check(chorus_scenario_parse(&scenario, text, detail, sizeof(detail)) ==
                      CHORUS_SCENARIO_ERR_INVALID_CONFIG,
                  "a configuration the model does not describe is refused at parse time");
+
+    chorus_check(scenario.config.path_asymmetry_us == 0.0 &&
+                     scenario.config.client_wander_ppm_per_sqrt_s == 0.0,
+                 "the asymmetry and the wander default to the model they extend");
+
+    snprintf(text, sizeof(text), "%sburst_shape = 1.5\n", sample);
+    chorus_check(chorus_scenario_parse(&scenario, text, detail, sizeof(detail)) ==
+                     CHORUS_SCENARIO_ERR_BAD_VALUE,
+                 "a burst parameter without the burst model is refused");
+
+    const char *burst =
+        "name = example\nseed = 7\nduration_ms = 30000\nstep_ms = 10\nsync_interval_ms = 1000\n"
+        "server_ppm = -12.5\nclient_ppm = 38.0\ninitial_offset_ns = -8000000\n"
+        "base_one_way_delay_us = 200.0\njitter_model = burst\njitter_scale_us = 150.0\n"
+        "burst_enter_prob = 0.02\nburst_exit_prob = 0.3\nburst_scale_us = 3000\n"
+        "path_asymmetry_us = -40\nclient_wander_ppm_per_sqrt_s = 0.05\n"
+        "settle_deadline_ms = 15000\n";
+    chorus_check(chorus_scenario_parse(&scenario, burst, detail, sizeof(detail)) ==
+                     CHORUS_SCENARIO_ERR_MISSING_KEY,
+                 "a burst model missing one of its four parameters is refused");
+    snprintf(text, sizeof(text), "%sburst_shape = 1.5\n", burst);
+    chorus_check(chorus_scenario_parse(&scenario, text, detail, sizeof(detail)) ==
+                         CHORUS_SCENARIO_OK &&
+                     scenario.config.jitter.kind == CHORUS_JITTER_BURST &&
+                     scenario.config.jitter.burst_shape == 1.5 &&
+                     scenario.config.path_asymmetry_us == -40.0 &&
+                     scenario.config.client_wander_ppm_per_sqrt_s == 0.05,
+                 "a burst scenario reads its four parameters, the asymmetry and the wander");
+    snprintf(text, sizeof(text), "%sburst_shape = 0.9\n", burst);
+    chorus_check(chorus_scenario_parse(&scenario, text, detail, sizeof(detail)) ==
+                     CHORUS_SCENARIO_ERR_INVALID_CONFIG,
+                 "a tail index with no finite mean is refused");
 }
 
 int main(void)
@@ -623,6 +728,7 @@ int main(void)
 
     chorus_section("the jitter models");
     jitter_is_never_negative_and_is_capped();
+    the_burst_process_behaves_as_the_rust_one_does();
 
     chorus_section("the filter and the correction law");
     the_filter_and_the_servo_behave_as_the_rust_ones_do();
