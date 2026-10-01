@@ -429,8 +429,8 @@ The state message carries both per room: `"av_trim_ms":0` beside `sound`, and
 ### The TV relay: when a TV plays in low-latency mode (goal 13)
 
 The server's TV relay (`crates/server/src/tvrelay.rs`; the wire is
-`docs/protocol.md` "Low-latency path", the integration's choices the tv-path
-ADR under `docs/decisions/`) plays a TV input in low-latency mode when, at the
+`docs/protocol.md` "Low-latency path", the integration's choices
+`docs/decisions/0093-the-tv-relay-and-the-low-latency-endpoints.md`) plays a TV input in low-latency mode when, at the
 conductor's pass, all of these hold, and otherwise leaves it on its stream slot
 (ADR 0079), unchanged:
 
@@ -469,6 +469,7 @@ The server's flags for it:
 |---|---|---|
 | `--low-latency-port <port>` | the audio port + 1 (ASSUMED); with an ephemeral audio port, ephemeral | the relay's UDP port, on the audio listener's address; 0 asks for an ephemeral one |
 | `--tv-latency-ms <ms>` | 20 (`lowlat::DEFAULTS`) | `L_tv`; refused outside 10..40 or below the plan's floor (19.417 ms at the defaults) |
+| `--test-tv-latency-ms <ms>` | off | **tests only**: `L_tv` outside 10..40 (up to 5 s), still never below the floor; a loaded test host does not keep a 20 ms deadline |
 | `--fec-k <k>`, `--fec-depth <d>` | 4, 1 | the streams' FEC; `--fec-k 0` is no FEC (the tests' negative control) |
 | `--udp-loss <ppm>,<seed>` | off | **tests only**: drop that many datagrams per million, seeded, on both legs (each received from a hub, each sent to a player); never set in a deployment |
 
