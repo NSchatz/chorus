@@ -929,8 +929,18 @@ fn a_subscriber_past_the_ceiling_is_refused_by_name_rather_than_served_by_a_new_
 
     // The third stream is past the ceiling: answered by name and closed,
     // rather than held by a thread that did not exist at report time.
-    let (status, body) = common::http(plane.address.as_str(), &get_request("/api/events"));
-    assert!(status.contains(BUSY_STATUS), "{} {}", status, body);
+    // Asked until a worker answers it: with ONE worker, the connection can
+    // arrive a moment before that worker has handed its slot back from the
+    // command above, which is the pool's refusal and not the one graded here.
+    let body = plane.serve("the event writer's answer past its ceiling", |_| {
+        let (status, body) = common::http(plane.address.as_str(), &get_request("/api/events"));
+        if body.contains(BUSY_REASON) {
+            Attempt::NotServed(body)
+        } else {
+            Attempt::Served(format!("{} {}", status, body))
+        }
+    });
+    assert!(body.contains(BUSY_STATUS), "{}", body);
     assert!(
         body.contains(STREAMS_HELD_REASON) && body.contains("2 event streams"),
         "the refusal has to say why: {}",
