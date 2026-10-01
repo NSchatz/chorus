@@ -915,7 +915,8 @@ fn main() -> ExitCode {
                 Arc::clone(&state),
                 Arc::clone(&router),
                 (config.slots > 0).then(|| slot_commands.clone()),
-            );
+            )
+            .with_transports(transports.clone());
             if let Some(zone) = schedule_zone.take() {
                 let civil = match (config.civil_time, config.civil_time_from) {
                     (Some(at), _) => CivilClock::Fixed(fixed_civil_instant(&zone, at)),

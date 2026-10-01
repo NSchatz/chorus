@@ -1,0 +1,22 @@
+# A steady 1 kHz sine at -6.02 dBFS (amplitude 0.5), at 16 kHz to show the
+# analyser at a rate other than the server's usual 48 kHz.
+#
+# Expected, after settle_ms: the loudest band is the one holding 1 kHz (or
+# its neighbour, when the window's main lobe straddles a band edge); that
+# band and its two neighbours together hold the tone's level within
+# band_tolerance_db; the peak is level_byte(-6.02 dB) within peak_tolerance;
+# and nothing beats after the tone's own start.
+
+kind = tone
+output = 02-tone-1khz.wav
+sample_rate_hz = 16000
+duration_ms = 1000
+
+tone_hz = 1000
+amplitude = 0.5
+
+expect = tone
+settle_ms = 100
+expect_band_db = -6.02
+band_tolerance_db = 1.0
+peak_tolerance = 1

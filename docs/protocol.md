@@ -741,6 +741,14 @@ and beats are computed on the server from the audio (the DSP library, goal 12)
 and timestamped on the server timeline, so an endpoint shows them when the
 audio they describe is heard.
 
+From goal 12 the server sends them (`docs/visualizer.md`): 25 frames a second
+to every session of the playing room or group that declared the `visualizer`
+role, each stamped when that session's room hears the audio (the frame's
+instant on the stream's grid plus the room's playout latency), with the bands
+its `visualizer_bands` asked for (at most 60: the server analyses 60
+sixth-octave bands); a `color` at most every 500 ms, only when it changed. A
+session without the role is sent neither.
+
 #### 0x34 visualizer frame
 
 | offset | size | field | notes |

@@ -829,6 +829,7 @@ impl Snapshot {
             },
             controller_state: (session_roles & roles::CONTROLLER != 0)
                 .then(|| room.controller_state.clone()),
+            ..SessionStart::default()
         }
     }
 }

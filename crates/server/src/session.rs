@@ -441,7 +441,7 @@ impl SessionContext {
     /// it: from the room model when this server runs a control plane, else
     /// the one stream and nothing more (there is no room to have a volume).
     pub fn start_for(&self, greeting: &Greeting) -> SessionStart {
-        match &self.control {
+        let start = match &self.control {
             Some(control) => {
                 control.session_start(&greeting.endpoint_id, greeting.roles, self.router.idle())
             }
@@ -449,6 +449,10 @@ impl SessionContext {
                 route: self.router.idle(),
                 ..SessionStart::default()
             },
+        };
+        SessionStart {
+            visualizer_bands: greeting.visualizer_bands,
+            ..start
         }
     }
 
@@ -470,6 +474,9 @@ pub struct Greeting {
     pub endpoint_id: String,
     /// The roles its `hello` declared.
     pub roles: u16,
+    /// The most visualizer bands its `capabilities` asked for (0 to 64,
+    /// validated by the decoder); what its `visualizer_frame`s carry.
+    pub visualizer_bands: u8,
 }
 
 /// The session the reader runs its requests over.
@@ -608,7 +615,7 @@ pub fn establish<'a>(
     let f = &ctx.offer.stream_format;
     ctx.say(&format!(
         "client session peer={} id={} key={} verdict={} roles={} software=\"{}\" codec=pcm \
-         rate_hz={} channels={} sample_format={}",
+         rate_hz={} channels={} sample_format={} visualizer_bands={}",
         peer,
         established.peer_id,
         key,
@@ -621,7 +628,8 @@ pub fn establish<'a>(
         hello.software,
         f.sample_rate_hz,
         f.channel_map.len(),
-        f.sample_format.name()
+        f.sample_format.name(),
+        caps.visualizer_bands
     ));
     // What the endpoint says from now on (its telemetry, a later hello) is
     // counted; none of it reaches the v1 request reader.
@@ -634,6 +642,7 @@ pub fn establish<'a>(
             messages: ctx.offer.greeting(),
             endpoint_id: established.peer_id,
             roles: hello.roles,
+            visualizer_bands: caps.visualizer_bands,
         },
     ))
 }

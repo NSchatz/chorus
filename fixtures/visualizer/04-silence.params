@@ -1,0 +1,11 @@
+# Half a second of digital silence at 48 kHz.
+#
+# Expected: every frame is silent (no peak, no beat, every band at the
+# floor) and no colour is sent.
+
+kind = silence
+output = 04-silence.wav
+sample_rate_hz = 48000
+duration_ms = 500
+
+expect = silent

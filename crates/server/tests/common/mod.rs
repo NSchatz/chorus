@@ -171,6 +171,28 @@ impl RunningServer {
         );
     }
 
+    /// Wait for a line containing every one of `what`, and give it back.
+    pub fn wait_for_all(&mut self, what: &[&str]) -> String {
+        let all = |l: &String| what.iter().all(|w| l.contains(w));
+        if let Some(line) = self.seen.iter().find(|l| all(l)) {
+            return line.clone();
+        }
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < deadline {
+            if let Ok(line) = self.lines.recv_timeout(Duration::from_millis(100)) {
+                self.seen.push(line.clone());
+                if all(&line) {
+                    return line;
+                }
+            }
+        }
+        panic!(
+            "the server never said {:?}; it said:\n{}",
+            what,
+            self.seen.join("\n")
+        );
+    }
+
     /// `POST /api/command`: the status line and the body.
     pub fn command(&self, body: &str) -> (String, String) {
         http(
@@ -237,16 +259,22 @@ impl Player {
     /// Open a session as `endpoint`, declaring the player role and `extra`
     /// roles.
     pub fn connect(address: &str, endpoint: &str, extra_roles: u16) -> Player {
+        let config = ClientConfig {
+            extra_roles,
+            ..ClientConfig::default()
+        };
+        Player::connect_with(address, endpoint, &config)
+    }
+
+    /// Open a session as `endpoint` with the Linux client's `config` (its
+    /// `hello` and `capabilities` are what that configuration declares).
+    pub fn connect_with(address: &str, endpoint: &str, config: &ClientConfig) -> Player {
         let stream = TcpStream::connect(address).expect("the server is listening");
         stream
             .set_read_timeout(Some(Duration::from_millis(200)))
             .unwrap();
         let mut me = EndpointIdentity::ephemeral(endpoint).expect("an identity");
-        let config = ClientConfig {
-            extra_roles,
-            ..ClientConfig::default()
-        };
-        let mut session = session::open(stream, &mut me, &config)
+        let mut session = session::open(stream, &mut me, config)
             .unwrap_or_else(|e| panic!("the v2 session opens: {}", e));
         let messages = Arc::new(Mutex::new(Vec::new()));
         {

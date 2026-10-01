@@ -195,6 +195,12 @@ pub struct ClientConfig {
     /// 0074), and until the first `room_volume` the endpoint plays at it.
     /// Default 1.000, ASSUMED: a policy default, not a measurement.
     pub max_volume: Volume,
+    /// `--visualizer-bands <n>`: declare the `visualizer` role and ask for
+    /// `n` bands (1 to 64) per `visualizer_frame` (docs/protocol.md 0x11);
+    /// every frame's beat and every colour received is then logged. 0, the
+    /// default, declares nothing (a front panel whose light follows the
+    /// visualizer declares the role on its own, asking for no bands).
+    pub visualizer_bands: u8,
 }
 
 /// The source number a configured line-in is offered under. One input per
@@ -287,6 +293,7 @@ impl Default for ClientConfig {
             output_map: None,
             two_way: None,
             max_volume: Volume::FULL,
+            visualizer_bands: 0,
         }
     }
 }
@@ -300,6 +307,11 @@ pub enum ConfigError {
         argument: String,
         /// The value as written.
         value: String,
+    },
+    /// `--visualizer-bands` is above the protocol's 64.
+    TooManyVisualizerBands {
+        /// The value as written.
+        value: u64,
     },
     /// `--free-run` was given without `--offsets-out`.
     FreeRunWithoutSeries,
@@ -517,6 +529,12 @@ impl fmt::Display for ConfigError {
                 write!(f, "argument '{}' needs a value", argument)
             }
             ConfigError::OutputMap(e) => write!(f, "{}", e),
+            ConfigError::TooManyVisualizerBands { value } => write!(
+                f,
+                "argument '--visualizer-bands' got {}; a visualizer frame carries 0 to 64 bands \
+                 (docs/protocol.md, visualizer_bands)",
+                value
+            ),
             ConfigError::TwoWay { value, detail } => write!(
                 f,
                 "--two-way got '{}': {} (the form is \
@@ -710,6 +728,13 @@ impl ClientConfig {
                 "--endpoint" => config.endpoint = value()?,
                 "--endpoint-id" => config.endpoint_id = Some(value()?),
                 "--front-panel" => config.front_panel = Some(value()?),
+                "--visualizer-bands" => {
+                    let n = number(&arg, &value()?)?;
+                    if n > 64 {
+                        return Err(ConfigError::TooManyVisualizerBands { value: n });
+                    }
+                    config.visualizer_bands = n as u8;
+                }
                 "--identity-dir" => config.identity_dir = Some(value()?),
                 "--ephemeral-identity" => config.ephemeral_identity = true,
                 "--rejoin" => config.rejoin = true,
@@ -1175,6 +1200,18 @@ mod tests {
         // A bound with no policy asked for is no request at all, and is not refused.
         let (c, _) = ClientConfig::from_args(args(&["--rttime-us", "0"])).unwrap();
         c.validate().expect("no real-time request");
+    }
+
+    #[test]
+    fn visualizer_bands_are_0_to_64_and_default_to_none() {
+        let (c, _) = ClientConfig::from_args(args(&[])).unwrap();
+        assert_eq!(c.visualizer_bands, 0);
+        let (c, _) = ClientConfig::from_args(args(&["--visualizer-bands", "16"])).unwrap();
+        assert_eq!(c.visualizer_bands, 16);
+        assert_eq!(
+            ClientConfig::from_args(args(&["--visualizer-bands", "65"])).unwrap_err(),
+            ConfigError::TooManyVisualizerBands { value: 65 }
+        );
     }
 
     #[test]
