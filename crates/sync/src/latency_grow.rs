@@ -528,6 +528,37 @@ impl CubicResampler {
         }
     }
 
+    /// A resampler for `channels` interleaved channels that holds up to
+    /// `frames` source frames without allocating: the server's line-in runs
+    /// one on its real-time audio thread, where a push must never grow the
+    /// buffer (`crates/server/src/slots.rs`). A caller that holds that to it
+    /// pushes no more than [`CubicResampler::room`] frames.
+    pub fn with_capacity(channels: usize, frames: usize) -> CubicResampler {
+        assert!(channels > 0, "a stream has at least one channel");
+        CubicResampler {
+            channels,
+            first_held: 0,
+            samples: VecDeque::with_capacity(frames * channels),
+        }
+    }
+
+    /// Frames that can be pushed before the buffer would have to grow.
+    pub fn room(&self) -> usize {
+        (self.samples.capacity() - self.samples.len()) / self.channels
+    }
+
+    /// Frames held now.
+    pub fn held(&self) -> usize {
+        self.samples.len() / self.channels
+    }
+
+    /// Forget every frame and start the stream again at source frame 0,
+    /// keeping the buffer (no allocation, no free).
+    pub fn clear(&mut self) {
+        self.samples.clear();
+        self.first_held = 0;
+    }
+
     /// Append whole interleaved source frames.
     pub fn push(&mut self, interleaved: &[f64]) {
         assert_eq!(

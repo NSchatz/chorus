@@ -1,56 +1,71 @@
 //! The conductor: every change to the room model, carried to the sessions it
-//! concerns.
+//! concerns, and the schedule runtime run on the clocks.
 //!
 //! # What it does
 //!
 //! One thread, created with the rest of the population before the scheduling
 //! report (`crates/server/src/main.rs`). It wakes when the control plane
 //! commits a change (a command, an endpoint's button, a session coming up:
-//! `ControlState::wake_conductor`), reads the room model once
-//! (`ControlState::snapshot`), and makes the audio sessions agree with it:
+//! `ControlState::wake_conductor`), when a line-in says something
+//! (`crate::linein`), when the schedule runtime has something due, and at
+//! least every [`IDLE`]. Each pass:
 //!
-//! - **routing** (`--slots S`): what each stream slot plays
-//!   ([`SlotCommand`] to the audio thread, at its next chunk boundary), and
-//!   which slot each session hears (`Router::move_to`, between two ticks);
-//! - **`room_volume`** to every player session of a room whose gain (volume,
-//!   mute) or effective limit changed (docs/decisions/0074-*);
-//! - **`controller_state`** to every controller session of a room whose
-//!   volume, mute or group changed, wherever the change was made: the page, an
-//!   endpoint's buttons, another endpoint (the ADR 0067 follow-up).
+//! 1. **The schedule runtime** (`crate::schedule_runtime`, ADR 0076), when
+//!    this server has a control plane: every line-in event
+//!    (`on_input_signal`, `on_input_gone`), every person's command applied
+//!    since the last pass (`on_command_applied`; never one the runtime made),
+//!    then `tick` when one is due (at least once a second of schedule time,
+//!    and at `next_deadline_ns`). Each runs over the room model through
+//!    `ControlState::runtime`, which plans the slots, persists and fans out
+//!    as a command does. Its effects are applied here: `Log` to the log,
+//!    `SourceControl` to the input's own session, a ramp step's
+//!    `RoomVolume` to every player of the room with its `ramp_ms`.
+//! 2. **Routing** (`--slots S`): what each stream slot plays
+//!    ([`SlotCommand`] to the audio thread, at its next chunk boundary: the
+//!    configured stream, a rendered chime, a line-in's port, silence, and a
+//!    line-in's latency target), and which slot each session hears
+//!    (`Router::move_to`, between two ticks).
+//! 3. **`room_volume`** to every player session of a room whose gain or
+//!    effective limit changed (docs/decisions/0074-*), at once.
+//! 4. **`controller_state`** to every controller session of a room whose
+//!    volume, mute or group changed, wherever the change was made.
 //!
 //! Each push is deduped against what the session was last sent
 //! (`crate::router`), so a change concerning another room sends nothing, and a
 //! push a full queue refused is left owed and tried again on the next pass,
 //! [`RETRY`] later.
 //!
-//! # No clock, and the seam for the one that comes next
+//! # The clocks, read here and nowhere else in the server
 //!
-//! In this change the conductor reads NO clock: it is change-driven, and
-//! every value it sends was computed by the room model from commands. The
-//! next goal 11 track adds the time-driven work (alarms, sleep timers, the
-//! quiet-hours clock, ramps) through a pure module, `schedule_runtime.rs`,
-//! whose `tick` returns effects. It plugs in at exactly two places, both named
-//! here so that change is small:
+//! Civil time is for scheduling only (K30): it decides when an alarm rings
+//! and which quiet-hours window is active, and nothing it yields crosses to
+//! the audio path but a volume in thousandths or a source. The monotonic
+//! clock times ramps, fades, holds and sleep timers. Both are read ONCE per
+//! wake ([`Clocks::now`]). For tests and a host with no time source the civil
+//! clock can be held fixed (`--civil-time`) or run from a given instant
+//! (`--civil-time-from`), and `--schedule-time-scale` runs the schedule's
+//! durations (and the civil clock it runs from) faster; the audio thread's
+//! pace is never scaled, and a ramp step's `ramp_ms` on the wire is divided
+//! by the same factor so an endpoint's ramp keeps up with the steps.
 //!
-//! - [`Conductor::wait`] is the loop's wake: today a poke or [`IDLE`]; there
-//!   the earlier of that and the runtime's next deadline.
-//! - [`Conductor::pass`] is the effect application: today it applies the room
-//!   model to the sessions; there it first applies the runtime's effects to
-//!   the room model through `ControlState`'s runtime hooks (each of which
-//!   wakes this thread again), then does what it does now.
-//!
-//! Control code: it touches no PCM and stamps nothing.
+//! Control code: it touches no PCM and stamps nothing. `audio-path.conf`
+//! records it as excluded.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use chorus_protocol::v2::roles;
+use chorus_control::rooms::Source;
+use chorus_control::transport::{Transport, ZoneTransports, WIRELESS_POLICY};
+use chorus_protocol::v2::{roles, Codec, Message, RoomVolume, SourceAction, SourceControl};
+use chorus_schedule::chime::CHIMES;
 
 use crate::control::{ControlState, Snapshot};
+use crate::linein::{InputEvent, LineIns};
 use crate::router::Router;
-use crate::slots::{SlotCommand, SlotInput};
+use crate::schedule_runtime::{Effect, InputAction, Runtime};
+use crate::slots::{SlotCommand, SlotInput, LOCAL_LATENCY_NS};
 
 /// How long the conductor waits for a poke before it looks up to see whether
 /// it is still wanted.
@@ -60,6 +75,16 @@ pub const IDLE: Duration = Duration::from_millis(200);
 /// channel) is run again. ASSUMED: a few chunk durations at the default
 /// 20 ms; a queue that full is 128 items behind already.
 pub const RETRY: Duration = Duration::from_millis(50);
+
+/// The schedule runtime is ticked at least this often, in schedule time
+/// (ADR 0076: alarms and quiet windows are minute resolution, ramps step
+/// once a second).
+pub const TICK: Duration = Duration::from_secs(1);
+
+/// The latency a wired group plays a line-in at: the endpoints' fixed playout
+/// latency, `config/sync.conf` `playout_latency_us` (ADR 0071's L_group for
+/// the wired tier); a test holds the two equal.
+pub const WIRED_GROUP_LATENCY_NS: i64 = 180_000_000;
 
 /// What one pass did, for the tests and a status line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -76,6 +101,92 @@ pub struct PassReport {
     pub owed: usize,
 }
 
+/// Where the civil clock comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CivilClock {
+    /// The host's wall clock (`SystemTime`), read once per wake.
+    Live,
+    /// Held at this UTC instant, seconds (`--civil-time`).
+    Fixed(i64),
+    /// This UTC instant, in ns, plus the schedule time elapsed since the
+    /// conductor started (`--civil-time-from`).
+    From(i128),
+}
+
+/// The two clocks the schedule runs on.
+#[derive(Debug, Clone, Copy)]
+pub struct Clocks {
+    civil: CivilClock,
+    scale: u32,
+    origin: Instant,
+}
+
+impl Clocks {
+    /// Clocks starting now; `scale` (at least 1) speeds up schedule time.
+    pub fn new(civil: CivilClock, scale: u32) -> Clocks {
+        Clocks {
+            civil,
+            scale: scale.max(1),
+            origin: Instant::now(),
+        }
+    }
+
+    /// The schedule's speed-up.
+    pub fn scale(&self) -> u32 {
+        self.scale
+    }
+
+    /// Schedule-time monotonic ns and civil UTC seconds, now.
+    pub fn now(&self) -> (u64, i64) {
+        let real = self.origin.elapsed().as_nanos();
+        let mono = real.saturating_mul(u128::from(self.scale));
+        let utc_s = match self.civil {
+            CivilClock::Live => SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0),
+            CivilClock::Fixed(t) => t,
+            CivilClock::From(t0_ns) => ((t0_ns + mono as i128).div_euclid(1_000_000_000)) as i64,
+        };
+        (mono.min(u128::from(u64::MAX)) as u64, utc_s)
+    }
+
+    /// Real time until schedule-time instant `mono_ns`.
+    fn until(&self, mono_ns: u64) -> Duration {
+        let real_target = Duration::from_nanos(mono_ns / u64::from(self.scale));
+        real_target.saturating_sub(self.origin.elapsed())
+    }
+}
+
+/// The time-driven half of the conductor: the schedule runtime, its clocks,
+/// the line-ins it starts and stops, and when it is next due.
+pub struct Schedule {
+    runtime: Runtime,
+    clocks: Clocks,
+    line_ins: Option<Arc<LineIns>>,
+    transports: ZoneTransports,
+    next_tick_ns: u64,
+}
+
+impl Schedule {
+    /// The runtime on `clocks`, starting and stopping `line_ins` (`None`: no
+    /// line-in can be played), with each room's declared tier.
+    pub fn new(
+        runtime: Runtime,
+        clocks: Clocks,
+        line_ins: Option<Arc<LineIns>>,
+        transports: ZoneTransports,
+    ) -> Schedule {
+        Schedule {
+            runtime,
+            clocks,
+            line_ins,
+            transports,
+            next_tick_ns: 0,
+        }
+    }
+}
+
 /// The conductor's state between passes.
 pub struct Conductor {
     state: Arc<ControlState>,
@@ -83,6 +194,9 @@ pub struct Conductor {
     slots: Option<SyncSender<SlotCommand>>,
     /// What each slot was last told to play.
     inputs: Vec<SlotInput>,
+    /// The latency each slot's line-in was last told to grow to.
+    targets: Vec<Option<i64>>,
+    schedule: Option<Schedule>,
 }
 
 impl Conductor {
@@ -95,29 +209,56 @@ impl Conductor {
         slots: Option<SyncSender<SlotCommand>>,
     ) -> Conductor {
         let inputs = vec![SlotInput::Silence; router.slots()];
+        let targets = vec![None; router.slots()];
         Conductor {
             state,
             router,
             slots,
             inputs,
+            targets,
+            schedule: None,
         }
     }
 
-    /// The loop's wake (the seam the schedule runtime's deadline joins):
-    /// `true` when woken or timed out and still wanted, `false` when the run
-    /// is stopping.
+    /// Run the schedule runtime as part of every pass.
+    pub fn with_schedule(mut self, schedule: Schedule) -> Conductor {
+        self.schedule = Some(schedule);
+        self
+    }
+
+    /// The loop's wake: `true` when woken or timed out and still wanted,
+    /// `false` when the run is stopping. Waits at most until the schedule
+    /// runtime is next due.
     pub fn wait(&self, woken: &Receiver<()>, owed: bool, keep: &AtomicBool) -> bool {
-        match woken.recv_timeout(if owed { RETRY } else { IDLE }) {
+        let mut timeout = if owed { RETRY } else { IDLE };
+        if let Some(s) = &self.schedule {
+            timeout = timeout.min(s.clocks.until(s.next_tick_ns));
+        }
+        match woken.recv_timeout(timeout) {
             Ok(()) | Err(RecvTimeoutError::Timeout) => keep.load(Ordering::SeqCst),
             Err(RecvTimeoutError::Disconnected) => false,
         }
     }
 
-    /// One pass (the seam the schedule runtime's effects join): read the
-    /// room model once and make every session agree with it.
+    /// One pass: the schedule runtime's work, then read the room model once
+    /// and make every session agree with it.
     pub fn pass(&mut self) -> PassReport {
+        let effects = self.run_schedule();
         let snapshot = self.state.snapshot();
         let mut report = PassReport::default();
+        self.apply_effects(&effects, &snapshot, &mut report);
+        for session in self.router.sessions() {
+            let room = snapshot.room_of(&session.endpoint);
+            if let Some(room) = room {
+                if session.roles & roles::PLAYER != 0 {
+                    match self.router.push_room_volume(session.id, room.room_volume) {
+                        Some(true) => report.room_volumes += 1,
+                        Some(false) => {}
+                        None => report.owed += 1,
+                    }
+                }
+            }
+        }
         self.route_inputs(&snapshot, &mut report);
         for session in self.router.sessions() {
             let room = snapshot.room_of(&session.endpoint);
@@ -130,13 +271,6 @@ impl Conductor {
             let Some(room) = room else {
                 continue;
             };
-            if session.roles & roles::PLAYER != 0 {
-                match self.router.push_room_volume(session.id, room.room_volume) {
-                    Some(true) => report.room_volumes += 1,
-                    Some(false) => {}
-                    None => report.owed += 1,
-                }
-            }
             if session.roles & roles::CONTROLLER != 0 {
                 match self
                     .router
@@ -151,24 +285,235 @@ impl Conductor {
         report
     }
 
+    /// The schedule runtime's entry points, in order: what the line-ins said,
+    /// what people did, and the tick when it is due.
+    fn run_schedule(&mut self) -> Vec<Effect> {
+        let Some(schedule) = self.schedule.as_mut() else {
+            // No runtime: every applied command is still taken, so the list
+            // does not grow for nobody.
+            let _ = self.state.take_applied();
+            return Vec::new();
+        };
+        let (mono, utc) = schedule.clocks.now();
+        let mut effects = Vec::new();
+        if let Some(line_ins) = &schedule.line_ins {
+            for event in line_ins.take_events() {
+                let runtime = &mut schedule.runtime;
+                match event {
+                    InputEvent::Signal(input, signal) => effects.extend(
+                        self.state
+                            .runtime(|zones| runtime.on_input_signal(&input, signal, mono, zones)),
+                    ),
+                    InputEvent::Gone(input) => effects.extend(
+                        self.state
+                            .runtime(|zones| runtime.on_input_gone(&input, mono, zones)),
+                    ),
+                    InputEvent::Refused { input, detail } => {
+                        effects.push(Effect::Log(format!(
+                            "line-in refused input={} reason=format-mismatch detail=\"{}\"",
+                            input.literal(),
+                            detail
+                        )));
+                        effects.push(Effect::SourceControl {
+                            input,
+                            action: InputAction::Stop,
+                        });
+                    }
+                }
+            }
+        }
+        for command in self.state.take_applied() {
+            let runtime = &mut schedule.runtime;
+            effects.extend(
+                self.state
+                    .runtime(|zones| runtime.on_command_applied(&command, mono, zones)),
+            );
+        }
+        if mono >= schedule.next_tick_ns {
+            let runtime = &mut schedule.runtime;
+            effects.extend(self.state.runtime(|zones| runtime.tick(mono, utc, zones)));
+            let step = TICK.as_nanos() as u64;
+            let mut next = mono + step;
+            if let Some(due) = schedule.runtime.next_deadline_ns() {
+                next = next.min(due.max(mono + 1));
+            }
+            schedule.next_tick_ns = next;
+        } else if let Some(due) = schedule.runtime.next_deadline_ns() {
+            schedule.next_tick_ns = schedule.next_tick_ns.min(due);
+        }
+        effects
+    }
+
+    /// What the conductor does for the runtime's effects (ADR 0076's table):
+    /// the log, `source_control` to an input's session, and a ramp step's
+    /// `room_volume`. A source change needs nothing more here: the slots are
+    /// routed from the room model below. An at-once `room_volume` is sent by
+    /// the pass from the room model; a ramp step goes out here with its
+    /// `ramp_ms`, but only while its gain and limit are what the room model
+    /// says now (a limit the runtime holds back for a ramp to come down
+    /// first goes out at once with the gain instead: ADR 0077's rule that a
+    /// limit lowered is in force at the next message).
+    fn apply_effects(&self, effects: &[Effect], snapshot: &Snapshot, report: &mut PassReport) {
+        let scale = self.schedule.as_ref().map_or(1, |s| s.clocks.scale());
+        for effect in effects {
+            match effect {
+                Effect::Log(line) => println!("chorus-server: {}", line),
+                Effect::SetSource { .. } | Effect::Persist => {}
+                Effect::SourceControl { input, action } => self.source_control(input, *action),
+                Effect::RoomVolume {
+                    zone,
+                    gain,
+                    limit,
+                    ramp_ms,
+                } => {
+                    if *ramp_ms == 0 {
+                        continue;
+                    }
+                    let Some(room) = snapshot.rooms.iter().find(|r| r.id == *zone) else {
+                        continue;
+                    };
+                    if room.room_volume.gain != *gain || room.room_volume.limit != *limit {
+                        continue;
+                    }
+                    let message = RoomVolume {
+                        gain: *gain,
+                        limit: *limit,
+                        ramp_ms: ramp_ms.div_ceil(scale as u16).max(1),
+                    };
+                    for session in self.router.sessions() {
+                        if session.roles & roles::PLAYER == 0
+                            || snapshot.room_of(&session.endpoint).map(|r| &r.id) != Some(zone)
+                        {
+                            continue;
+                        }
+                        match self.router.push_room_volume(session.id, message) {
+                            Some(true) => report.room_volumes += 1,
+                            Some(false) => {}
+                            None => report.owed += 1,
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn source_control(&self, input: &chorus_control::rooms::InputId, action: InputAction) {
+        let Some(line_ins) = self.schedule.as_ref().and_then(|s| s.line_ins.as_ref()) else {
+            return;
+        };
+        let (addressed, word) = match action {
+            InputAction::Start => (line_ins.start(input), "start"),
+            InputAction::Stop => (line_ins.stop(input), "stop"),
+        };
+        let Some(at) = addressed else {
+            println!(
+                "chorus-server: line-in {} input={} outcome=not-offered-or-no-free-port",
+                word,
+                input.literal()
+            );
+            return;
+        };
+        let message = Message::SourceControl(SourceControl {
+            source_id: at.source_id,
+            action: match action {
+                InputAction::Start => SourceAction::Start,
+                InputAction::Stop => SourceAction::Stop,
+            },
+            codec: Codec::Pcm,
+        });
+        let sent = self.router.push_message(at.session, &message);
+        println!(
+            "chorus-server: line-in {} input={} source_id={} port={} sent={}",
+            word,
+            input.literal(),
+            at.source_id,
+            at.port.map_or("-".to_string(), |p| p.to_string()),
+            u8::from(sent)
+        );
+    }
+
+    /// What a slot plays for its group's source, from what this server holds.
+    fn input_for(&self, source: &Source) -> SlotInput {
+        match source {
+            Source::Stream => SlotInput::Stream,
+            Source::None => SlotInput::Silence,
+            Source::Chime(name) => CHIMES
+                .iter()
+                .position(|c| c.name() == name)
+                .map_or(SlotInput::Silence, |i| SlotInput::Chime(i as u8)),
+            Source::LineIn(input) => self
+                .schedule
+                .as_ref()
+                .and_then(|s| s.line_ins.as_ref())
+                .and_then(|l| l.port_of(input))
+                .map_or(SlotInput::Silence, |p| SlotInput::LineIn(p as u8)),
+        }
+    }
+
+    /// The latency a slot's line-in plays at: L_local while its group is the
+    /// source endpoint's own room alone, else the group's tier latency.
+    fn latency_for(&self, snapshot: &Snapshot, rooms: &[String], source: &Source) -> i64 {
+        let Source::LineIn(input) = source else {
+            return LOCAL_LATENCY_NS;
+        };
+        let own = snapshot.room_of(&input.endpoint).map(|r| r.id.as_str());
+        if rooms.len() == 1 && own == Some(rooms[0].as_str()) {
+            return LOCAL_LATENCY_NS;
+        }
+        let wireless = self.schedule.as_ref().is_some_and(|s| {
+            rooms
+                .iter()
+                .any(|r| s.transports.of(r) == Transport::Wireless)
+        });
+        if wireless {
+            WIRELESS_POLICY.playout_latency_us as i64 * 1_000
+        } else {
+            WIRED_GROUP_LATENCY_NS
+        }
+    }
+
     fn route_inputs(&mut self, snapshot: &Snapshot, report: &mut PassReport) {
         let Some(slots) = &self.slots else {
             return;
         };
-        for (slot, wanted) in snapshot.inputs.iter().enumerate() {
-            if self.inputs.get(slot) == Some(wanted) {
-                continue;
-            }
-            match slots.try_send(SlotCommand::Input {
-                slot,
-                input: *wanted,
-            }) {
-                Ok(()) => {
-                    self.inputs[slot] = *wanted;
-                    report.inputs += 1;
+        for (slot, group) in snapshot.slots.iter().enumerate() {
+            let wanted = match group {
+                Some(g) => self.input_for(&g.source),
+                None => SlotInput::Silence,
+            };
+            if self.inputs.get(slot) != Some(&wanted) {
+                match slots.try_send(SlotCommand::Input {
+                    slot,
+                    input: wanted,
+                }) {
+                    Ok(()) => {
+                        self.inputs[slot] = wanted;
+                        report.inputs += 1;
+                    }
+                    Err(TrySendError::Full(_)) => {
+                        report.owed += 1;
+                        continue;
+                    }
+                    Err(TrySendError::Disconnected(_)) => continue,
                 }
-                Err(TrySendError::Full(_)) => report.owed += 1,
-                Err(TrySendError::Disconnected(_)) => {}
+            }
+            if let (SlotInput::LineIn(_), Some(g)) = (wanted, group) {
+                let latency_ns = self.latency_for(snapshot, &g.rooms, &g.source);
+                if self.targets[slot] != Some(latency_ns) {
+                    match slots.try_send(SlotCommand::LatencyTarget { slot, latency_ns }) {
+                        Ok(()) => {
+                            println!(
+                                "chorus-server: line-in latency slot={} group={} target_ms={}",
+                                slot,
+                                g.group,
+                                latency_ns / 1_000_000
+                            );
+                            self.targets[slot] = Some(latency_ns);
+                        }
+                        Err(TrySendError::Full(_)) => report.owed += 1,
+                        Err(TrySendError::Disconnected(_)) => {}
+                    }
+                }
             }
         }
     }

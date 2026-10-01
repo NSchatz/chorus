@@ -63,7 +63,7 @@ use chorus_protocol::v2::Message;
 
 use crate::hostreport::register_ordinary_thread;
 use crate::session::{establish, route_controller, Greeting, SessionContext};
-use crate::stream::{read_requests, write_outbound, Outbound, SUBSCRIBER_QUEUE_LIMIT};
+use crate::stream::{read_requests_and_upstream, write_outbound, Outbound, SUBSCRIBER_QUEUE_LIMIT};
 
 /// How often a writer waiting for its session looks up to see whether it is
 /// still wanted: the same interval the request reader's socket timeout uses.
@@ -296,7 +296,27 @@ impl ClientPool {
                             route_controller(&mut reader, &session, &hello, id);
                             if greeting.send(hello).is_ok() {
                                 (session.on_session)();
-                                read_requests(&mut reader, timeline, &out, &going);
+                                // A line-in's upstream chunks, into its port.
+                                let line_ins = session.line_ins.clone();
+                                let mut upstream = |m: &chorus_protocol::Message| {
+                                    if let (
+                                        Some(line_ins),
+                                        chorus_protocol::Message::AudioChunk(c),
+                                    ) = (&line_ins, m)
+                                    {
+                                        line_ins.chunk(id, &c.audio_data);
+                                    }
+                                };
+                                read_requests_and_upstream(
+                                    &mut reader,
+                                    timeline,
+                                    &out,
+                                    &going,
+                                    &mut upstream,
+                                );
+                            }
+                            if let Some(line_ins) = &session.line_ins {
+                                line_ins.session_ended(id);
                             }
                             session.router.unregister(id);
                         }

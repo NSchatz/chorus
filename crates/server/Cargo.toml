@@ -18,6 +18,10 @@ chorus-discovery = { path = "../discovery" }
 # from TZif, the due query, ramps and the chime names. A pure crate with no
 # dependency of its own.
 chorus-schedule = { path = "../schedule" }
+# A line-in's latency grows without a glitch when rooms join its group (K94,
+# ADR 0071): the latency plan and the cubic resampler, run on the audio thread
+# by src/slots.rs. A pure library with no third-party dependency.
+chorus-sync = { path = "../sync" }
 # The rig's chirp, for `--source chirp`: the waveform and the amplitude ceiling
 # come from the one place that defines them, so what the endpoints play is what
 # the lag analyser looks for. A pure library with no third-party dependency; its

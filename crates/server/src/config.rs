@@ -132,6 +132,20 @@ pub struct ServerConfig {
     /// schedule runtime, the next goal 11 track, supplies it). `None` makes
     /// every quiet-hours window inactive.
     pub civil_time: Option<CivilTime>,
+    /// The time zone file the schedule keeps civil time in (`--tz <path>`, a
+    /// TZif file). `None`: `$TZ`, then `/etc/localtime`, else UTC, decided at
+    /// start (`main.rs`).
+    pub tz: Option<String>,
+    /// Run the civil clock from this UTC instant, seconds since the epoch,
+    /// plus the schedule time elapsed since start (`--civil-time-from
+    /// 2026-10-05T06:59:50Z`). For tests: alarms ring at a civil time the
+    /// test chose, on whatever day the test runs.
+    pub civil_time_from: Option<i64>,
+    /// Run the schedule's durations this many times faster (ramps, fades,
+    /// holds, sleep timers, and the civil clock `--civil-time-from` runs).
+    /// For tests only; the audio thread's pace is never scaled. 1 is real
+    /// time.
+    pub schedule_time_scale: u32,
 }
 
 impl Default for ServerConfig {
@@ -169,6 +183,9 @@ impl Default for ServerConfig {
             slots: 0,
             event_streams: crate::events::DEFAULT_EVENT_STREAMS,
             civil_time: None,
+            tz: None,
+            civil_time_from: None,
+            schedule_time_scale: 1,
         }
     }
 }
@@ -217,6 +234,18 @@ pub enum ServerConfigError {
         /// The value as it was given.
         value: String,
     },
+    /// A `--civil-time-from` that is not a UTC RFC 3339 instant.
+    NotAnInstant {
+        /// The value as it was given.
+        value: String,
+    },
+    /// A schedule time scale of 0 or above the ceiling.
+    NotATimeScale {
+        /// The value as it was given.
+        value: u64,
+    },
+    /// Two ways of setting the civil clock at once.
+    TwoCivilClocks,
     /// A `--group-audio` argument that is not `group=address`.
     NotAGroupAddress {
         /// The value as it was given.
@@ -296,6 +325,22 @@ impl fmt::Display for ServerConfigError {
                  for example mon-23:30",
                 value,
                 DAY_NAMES.join(" ")
+            ),
+            ServerConfigError::NotAnInstant { value } => write!(
+                f,
+                "'{}' is not an instant; --civil-time-from takes a UTC RFC 3339 instant, \
+                 YYYY-MM-DDTHH:MM:SSZ, for example 2026-10-05T06:59:50Z",
+                value
+            ),
+            ServerConfigError::NotATimeScale { value } => write!(
+                f,
+                "--schedule-time-scale {} is not 1 to {}",
+                value, MAX_TIME_SCALE
+            ),
+            ServerConfigError::TwoCivilClocks => write!(
+                f,
+                "--civil-time holds the civil clock fixed and --civil-time-from runs it from an \
+                 instant; give one of them"
             ),
             ServerConfigError::NotAGroupAddress { value } => write!(
                 f,
@@ -433,6 +478,21 @@ impl ServerConfig {
                             value: text.clone(),
                         })?);
                 }
+                "--tz" => config.tz = Some(value()?),
+                "--civil-time-from" => {
+                    let text = value()?;
+                    config.civil_time_from =
+                        Some(utc_instant(&text).ok_or(ServerConfigError::NotAnInstant {
+                            value: text.clone(),
+                        })?);
+                }
+                "--schedule-time-scale" => {
+                    let n = number(&arg, &value()?)?;
+                    if n == 0 || n > u64::from(MAX_TIME_SCALE) {
+                        return Err(ServerConfigError::NotATimeScale { value: n });
+                    }
+                    config.schedule_time_scale = n as u32;
+                }
                 "--advertise" => config.advertise = true,
                 "--instance" => config.instance = value()?,
                 other => {
@@ -462,11 +522,58 @@ impl ServerConfig {
         if config.slots > 0 && !config.group_audio.is_empty() {
             return Err(ServerConfigError::SlotsWithGroupAudio);
         }
+        if config.civil_time.is_some() && config.civil_time_from.is_some() {
+            return Err(ServerConfigError::TwoCivilClocks);
+        }
         if config.event_streams == 0 {
             return Err(ServerConfigError::NoEventStreamsAllowed);
         }
         Ok(config)
     }
+}
+
+/// The largest `--schedule-time-scale`. ASSUMED: a minute of schedule a
+/// second, enough to run a 30 s ramp in half a second.
+pub const MAX_TIME_SCALE: u32 = 60;
+
+/// `YYYY-MM-DDTHH:MM:SSZ` (RFC 3339, UTC, whole seconds) as seconds since
+/// the Unix epoch.
+pub fn utc_instant(text: &str) -> Option<i64> {
+    let b = text.as_bytes();
+    if b.len() != 20
+        || b[4] != b'-'
+        || b[7] != b'-'
+        || b[10] != b'T'
+        || b[13] != b':'
+        || b[16] != b':'
+        || b[19] != b'Z'
+    {
+        return None;
+    }
+    let field = |from: usize, to: usize| -> Option<i64> {
+        let digits = &text[from..to];
+        digits
+            .bytes()
+            .all(|c| c.is_ascii_digit())
+            .then(|| digits.parse().ok())?
+    };
+    let (year, month, day) = (field(0, 4)?, field(5, 7)? as u32, field(8, 10)? as u32);
+    let (hour, minute, second) = (field(11, 13)?, field(14, 16)?, field(17, 19)?);
+    if !(1..=12).contains(&month)
+        || day == 0
+        || day > chorus_schedule::civil::days_in_month(year, month)
+        || hour > 23
+        || minute > 59
+        || second > 59
+    {
+        return None;
+    }
+    Some(
+        chorus_schedule::civil::days_from_civil(year, month, day) * 86_400
+            + hour * 3_600
+            + minute * 60
+            + second,
+    )
 }
 
 /// `<day>-<HH:MM>`: a weekday as the catalog spells it and a time of day.
@@ -707,5 +814,58 @@ mod tests {
         assert_eq!(c.max_clients, 4, "docs/decisions/0014 records why 4");
         let c = ServerConfig::from_args(["--max-clients".to_string(), "2".to_string()]).unwrap();
         assert_eq!(c.max_clients, 2);
+    }
+
+    #[test]
+    fn the_schedule_test_clocks_are_parsed_and_refused_by_name() {
+        let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let c = ServerConfig::from_args(args(&[
+            "--civil-time-from",
+            "2026-10-05T06:59:50Z",
+            "--schedule-time-scale",
+            "10",
+            "--tz",
+            "/x",
+        ]))
+        .unwrap();
+        // 2026-10-05 is 20731 days after 1970-01-01.
+        assert_eq!(
+            c.civil_time_from,
+            Some(20_731 * 86_400 + 6 * 3_600 + 59 * 60 + 50)
+        );
+        assert_eq!(c.schedule_time_scale, 10);
+        assert_eq!(c.tz.as_deref(), Some("/x"));
+        assert_eq!(ServerConfig::default().schedule_time_scale, 1);
+        for bad in [
+            "2026-10-05 06:59:50Z",
+            "2026-13-05T06:59:50Z",
+            "2026-02-30T00:00:00Z",
+            "x",
+        ] {
+            assert!(
+                matches!(
+                    ServerConfig::from_args(args(&["--civil-time-from", bad])),
+                    Err(ServerConfigError::NotAnInstant { .. })
+                ),
+                "{}",
+                bad
+            );
+        }
+        for bad in ["0", "61"] {
+            assert!(matches!(
+                ServerConfig::from_args(args(&["--schedule-time-scale", bad])),
+                Err(ServerConfigError::NotATimeScale { .. })
+            ));
+        }
+        assert_eq!(
+            ServerConfig::from_args(args(&[
+                "--civil-time",
+                "mon-07:00",
+                "--civil-time-from",
+                "2026-10-05T06:59:50Z"
+            ]))
+            .unwrap_err(),
+            ServerConfigError::TwoCivilClocks
+        );
     }
 }

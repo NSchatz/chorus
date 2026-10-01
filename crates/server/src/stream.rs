@@ -258,6 +258,19 @@ pub fn read_requests<R: Read>(
     out: &SyncSender<Outbound>,
     keep_going: &dyn Fn() -> bool,
 ) -> RequestStop {
+    read_requests_and_upstream(source, timeline, out, keep_going, &mut |_| {})
+}
+
+/// [`read_requests`], handing every other frame the client sent (a line-in's
+/// upstream `audio_chunk` and `stream_end`, ADR 0066) to `upstream`, in
+/// order, on this thread.
+pub fn read_requests_and_upstream<R: Read>(
+    source: &mut R,
+    timeline: MonotonicTimeline,
+    out: &SyncSender<Outbound>,
+    keep_going: &dyn Fn() -> bool,
+    upstream: &mut dyn FnMut(&Message),
+) -> RequestStop {
     let mut pending: Vec<u8> = Vec::new();
     let mut scratch = vec![0u8; 4_096];
     loop {
@@ -283,6 +296,12 @@ pub fn read_requests<R: Read>(
                 break;
             }
             at += result.consumed;
+            if let FrameOutcome::Decoded(m @ (Message::AudioChunk(_) | Message::StreamEnd(_))) =
+                &result.outcome
+            {
+                upstream(m);
+                continue;
+            }
             if let FrameOutcome::Decoded(Message::TimeSync(request)) = result.outcome {
                 let answer = Outbound::Answer {
                     t0_ns: request.t0_ns,

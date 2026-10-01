@@ -47,8 +47,12 @@ use std::thread;
 use std::time::Duration;
 
 use chorus_audio::MonotonicTimeline;
-use chorus_protocol::{encode, AudioChunk, Message, RESERVED_LEN};
+use chorus_protocol::{encode, AudioChunk, Message, SampleFormat, RESERVED_LEN};
+use chorus_sync::latency_grow::{
+    CubicResampler, GrowthConfig, LatencyPlan, MAX_RATE_DEVIATION, RAMP_MS,
+};
 
+use crate::linein::{encode_sample, Port};
 use crate::router::Router;
 use crate::serve::{ServeError, ServeParams};
 use crate::source::PcmSource;
@@ -67,6 +71,13 @@ pub enum SlotInput {
     Silence,
     /// The configured `--source`, shared by every slot that plays it.
     Stream,
+    /// A generated chime, by its index in `chorus_schedule::chime::CHIMES`,
+    /// rendered at start ([`SlotMedia::chimes`]) and repeated with a
+    /// [`CHIME_GAP_MS`] gap for as long as it is the slot's input.
+    Chime(u8),
+    /// An endpoint's line-in, by the port its upstream goes into
+    /// (`crate::linein`), played through the latency plan.
+    LineIn(u8),
 }
 
 impl SlotInput {
@@ -75,6 +86,8 @@ impl SlotInput {
         match self {
             SlotInput::Silence => "silence",
             SlotInput::Stream => "stream",
+            SlotInput::Chime(_) => "chime",
+            SlotInput::LineIn(_) => "line-in",
         }
     }
 }
@@ -89,6 +102,72 @@ pub enum SlotCommand {
         /// What it plays.
         input: SlotInput,
     },
+    /// The latency a line-in on `slot` is to be played at, ns from its
+    /// anchor (ADR 0071: L_local while the group is only the source's own
+    /// room, the group's tier latency otherwise). The plan grows or shrinks
+    /// to it without a glitch; it is kept for the slot's next line-in too.
+    LatencyTarget {
+        /// The slot.
+        slot: usize,
+        /// The latency, ns.
+        latency_ns: i64,
+    },
+}
+
+/// The gap between two plays of a chime while it is a slot's input, ms.
+/// ASSUMED: two seconds, long enough to read as a repeated chime rather than
+/// a drone, short enough that an alarm keeps sounding.
+pub const CHIME_GAP_MS: u64 = 2_000;
+
+/// The latency a line-in starts at: ADR 0071's L_local, ns. ASSUMED there
+/// (a 20 ms chunk to fill, the wired path, server processing and an endpoint
+/// guard). On the wire it is the stamp offset the line-in starts at: chunks
+/// are stamped on the slots' one grid, so a session moving into or out of a
+/// line-in's slot sees no timestamp jump, and what the plan moves is which
+/// source frames each grid chunk carries.
+pub const LOCAL_LATENCY_NS: i64 = 30_000_000;
+
+/// Whole chunks a line-in's port must hold before its plan starts.
+/// ASSUMED: two (40 ms at the default chunk): one to play and one of slack
+/// against the upstream's arrival jitter. A tick that still finds too little
+/// plays silence and the plan waits (the latency grows by that chunk and
+/// the shortfall is counted), so a late upstream costs a gap, never a splice.
+pub const LINE_IN_START_CHUNKS: usize = 2;
+
+/// How many source frames a line-in's resampler holds at most, in ms.
+/// ASSUMED: two seconds, above the start fill plus the largest growth
+/// (L_local to the wireless tier's 500 ms) with room for jitter.
+pub const LINE_IN_HOLD_MS: u64 = 2_000;
+
+/// What the inputs that carry their own audio are made of, built before the
+/// audio thread starts so that it allocates nothing for them.
+#[derive(Debug, Clone, Default)]
+pub struct SlotMedia {
+    /// Each chime of `chorus_schedule::chime::CHIMES`, rendered at the
+    /// server's format.
+    pub chimes: Vec<Arc<[u8]>>,
+    /// The line-in ports (`crate::linein`).
+    pub ports: Vec<Arc<Port>>,
+}
+
+/// What a slot's line-in is doing, on the audio thread. One per slot,
+/// allocated at start.
+struct LineInPlayer {
+    port: usize,
+    generation: u64,
+    plan: Option<LatencyPlan>,
+    resampler: CubicResampler,
+    out: Vec<f64>,
+    target_ns: i64,
+}
+
+/// What the audio thread counts about line-ins, for the run's last line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LineInCounts {
+    /// Ticks a playing line-in had too little upstream for, after it started.
+    pub underruns: u64,
+    /// Line-in plans started (one per stream).
+    pub starts: u64,
 }
 
 /// What the audio thread tells the supervisor.
@@ -109,6 +188,8 @@ pub struct SlotsReport {
     pub ticks: u64,
     /// Sequence of the last tick, when there was one.
     pub final_sequence: u32,
+    /// The line-ins.
+    pub line_in: LineInCounts,
 }
 
 /// Serve every slot until `keep` says stop or the configured stream fails.
@@ -116,10 +197,12 @@ pub struct SlotsReport {
 /// `router` holds the fanouts (slot by slot, then the silent one) and the grid
 /// guard; `commands` are drained once per tick; `streams` delivers the
 /// configured stream, and again after each [`SlotEvent::StreamEnded`].
+#[allow(clippy::too_many_arguments)]
 pub fn serve_slots(
     params: ServeParams,
     timeline: MonotonicTimeline,
     router: &Router,
+    media: &SlotMedia,
     commands: &Receiver<SlotCommand>,
     streams: &Receiver<Box<dyn PcmSource>>,
     events: &Sender<SlotEvent>,
@@ -131,7 +214,34 @@ pub fn serve_slots(
         .format
         .frames_in(params.chunk_us)
         .map_err(|e| ServeError::Encode(e.to_string()))?;
-    let bytes_per_chunk = frames * params.format.frame_len();
+    let frame_len = params.format.frame_len();
+    let bytes_per_chunk = frames * frame_len;
+    let channels = usize::from(params.format.channels);
+    let rate = u64::from(params.format.sample_rate_hz);
+    let growth = GrowthConfig {
+        sample_rate_hz: params.format.sample_rate_hz,
+        chunk_frames: frames as u32,
+        max_rate_deviation: MAX_RATE_DEVIATION,
+        ramp_frames: RAMP_MS * rate / 1_000,
+    };
+    let line_ins_playable = growth.validate().is_ok();
+    // Everything the chimes and line-ins need, allocated here, before the
+    // first tick: each slot's own PCM, its chime position, its line-in
+    // player with a resampler and an output buffer at their full size.
+    let mut slot_pcm = vec![vec![0u8; bytes_per_chunk]; slots];
+    let mut chime_at = vec![0usize; slots];
+    let gap_bytes = (CHIME_GAP_MS * rate / 1_000) as usize * frame_len;
+    let hold_frames = (LINE_IN_HOLD_MS * rate / 1_000) as usize;
+    let mut players: Vec<LineInPlayer> = (0..slots)
+        .map(|_| LineInPlayer {
+            port: usize::MAX,
+            generation: 0,
+            plan: None,
+            resampler: CubicResampler::with_capacity(channels, hold_frames),
+            out: Vec::with_capacity(frames * channels),
+            target_ns: LOCAL_LATENCY_NS,
+        })
+        .collect();
     let chunk_ns = params.chunk_us * 1_000;
     let interval_ns = params.emit_interval_ns();
     let origin_ns = timeline.now_ns();
@@ -146,9 +256,27 @@ pub fn serve_slots(
     while keep.load(Ordering::SeqCst) {
         // At the chunk boundary: what each slot plays from this tick on.
         while let Ok(command) = commands.try_recv() {
-            let SlotCommand::Input { slot, input } = command;
-            if let Some(at) = inputs.get_mut(slot) {
-                *at = input;
+            match command {
+                SlotCommand::Input { slot, input } => {
+                    if let Some(at) = inputs.get_mut(slot) {
+                        if *at != input {
+                            *at = input;
+                            chime_at[slot] = 0;
+                            // A line-in starts from its own anchor: the
+                            // player is emptied here and refilled from the
+                            // port, keeping the buffers it was given.
+                            players[slot].port = usize::MAX;
+                        }
+                    }
+                }
+                SlotCommand::LatencyTarget { slot, latency_ns } => {
+                    if let Some(p) = players.get_mut(slot) {
+                        p.target_ns = latency_ns;
+                        if let Some(plan) = p.plan.as_mut() {
+                            let _ = plan.set_target(latency_ns);
+                        }
+                    }
+                }
             }
         }
         if stream.is_none() {
@@ -192,6 +320,34 @@ pub fn serve_slots(
             }
         }
 
+        // The inputs that carry their own audio: each into its slot's own
+        // buffer, with no allocation.
+        for slot in 0..slots {
+            match inputs[slot] {
+                SlotInput::Chime(c) => match media.chimes.get(usize::from(c)) {
+                    Some(chime) => {
+                        chime_at[slot] =
+                            play_chime(chime, gap_bytes, chime_at[slot], &mut slot_pcm[slot]);
+                    }
+                    None => slot_pcm[slot].fill(0),
+                },
+                SlotInput::LineIn(p) => match media.ports.get(usize::from(p)) {
+                    Some(port) if line_ins_playable => play_line_in(
+                        &mut players[slot],
+                        usize::from(p),
+                        port,
+                        &growth,
+                        frames,
+                        params.format.sample_format,
+                        &mut slot_pcm[slot],
+                        &mut report.line_in,
+                    ),
+                    _ => slot_pcm[slot].fill(0),
+                },
+                SlotInput::Silence | SlotInput::Stream => {}
+            }
+        }
+
         let timestamp_ns = origin_ns.saturating_add(u64::from(sequence) * chunk_ns);
         let cut = |bytes: &[u8]| -> Result<Outbound, ServeError> {
             let chunk = AudioChunk {
@@ -214,6 +370,7 @@ pub fn serve_slots(
             for (slot, input) in inputs.iter().enumerate() {
                 let frame = match (input, &playing) {
                     (SlotInput::Stream, Some(frame)) => frame.clone(),
+                    (SlotInput::Chime(_) | SlotInput::LineIn(_), _) => cut(&slot_pcm[slot])?,
                     _ => quiet.clone(),
                 };
                 router.fanouts()[slot].broadcast(frame);
@@ -225,6 +382,120 @@ pub fn serve_slots(
         sequence = sequence.wrapping_add(1);
     }
     Ok(report)
+}
+
+/// One chunk of a chime played on repeat: the rendered chime, then
+/// `gap_bytes` of silence, from byte `at` of that cycle. Returns where the
+/// next chunk starts.
+fn play_chime(chime: &[u8], gap_bytes: usize, mut at: usize, out: &mut [u8]) -> usize {
+    let cycle = chime.len() + gap_bytes;
+    if cycle == 0 {
+        out.fill(0);
+        return 0;
+    }
+    let mut written = 0usize;
+    while written < out.len() {
+        at %= cycle;
+        let n = if at < chime.len() {
+            let n = (chime.len() - at).min(out.len() - written);
+            out[written..written + n].copy_from_slice(&chime[at..at + n]);
+            n
+        } else {
+            let n = (cycle - at).min(out.len() - written);
+            out[written..written + n].fill(0);
+            n
+        };
+        written += n;
+        at += n;
+    }
+    at % cycle
+}
+
+/// One chunk of a line-in through its latency plan (ADR 0071), into `out`.
+///
+/// Whatever the port holds is moved into the resampler first (as much as it
+/// has room for, so the resampler never grows). Until the start fill is in
+/// hand the chunk is silence; then the plan starts at [`LOCAL_LATENCY_NS`]
+/// heading for the slot's target, and every chunk is the plan's next one,
+/// rendered by the cubic resampler. The plan's first chunk is two frames
+/// short (its lookahead): its first frame is held for those two, so the
+/// stream starts with no inserted zeros. A tick whose source frames have not
+/// all arrived plays silence and the plan does NOT move on (it is a clone
+/// that is asked first), so a late upstream costs a gap and a chunk of added
+/// latency, never a dropped or repeated frame of the source.
+#[allow(clippy::too_many_arguments)]
+fn play_line_in(
+    player: &mut LineInPlayer,
+    port_index: usize,
+    port: &Port,
+    growth: &GrowthConfig,
+    frames: usize,
+    format: SampleFormat,
+    out: &mut [u8],
+    counts: &mut LineInCounts,
+) {
+    let channels = out.len() / frames / format.bytes_per_sample();
+    let width = format.bytes_per_sample();
+    if player.port != port_index || player.generation != port.generation() {
+        player.port = port_index;
+        player.generation = port.generation();
+        player.plan = None;
+        player.resampler.clear();
+    }
+    let room = player.resampler.room();
+    let resampler = &mut player.resampler;
+    let (_, generation) = port.drain(room, |samples| resampler.push(samples));
+    if generation != player.generation {
+        // Reset between the check and the drain: start again next tick.
+        player.generation = generation;
+        player.plan = None;
+        player.resampler.clear();
+        out.fill(0);
+        return;
+    }
+    if player.plan.is_none() {
+        if player.resampler.held() < LINE_IN_START_CHUNKS * frames {
+            out.fill(0);
+            return;
+        }
+        match LatencyPlan::new(*growth, 0, LOCAL_LATENCY_NS) {
+            Ok(mut plan) => {
+                let _ = plan.set_target(player.target_ns);
+                player.plan = Some(plan);
+                counts.starts += 1;
+            }
+            Err(_) => {
+                out.fill(0);
+                return;
+            }
+        }
+    }
+    let Some(plan) = player.plan.as_mut() else {
+        out.fill(0);
+        return;
+    };
+    let mut trial = plan.clone();
+    let chunk = trial.next_chunk();
+    if player.resampler.render(&chunk, &mut player.out).is_err() {
+        counts.underruns += 1;
+        out.fill(0);
+        return;
+    }
+    *plan = trial;
+    // The plan's first chunk is LOOKAHEAD_FRAMES short: hold its first frame.
+    let short = frames.saturating_sub(chunk.frames as usize);
+    let mut at = 0usize;
+    for _ in 0..short {
+        for c in 0..channels {
+            encode_sample(player.out[c], format, &mut out[at..at + width]);
+            at += width;
+        }
+    }
+    for x in player.out.iter().take((frames - short) * channels) {
+        encode_sample(*x, format, &mut out[at..at + width]);
+        at += width;
+    }
+    out[at..].fill(0);
 }
 
 /// Fill `buf` from `source`: `Ok(true)` when it is full, `Ok(false)` when the
@@ -322,6 +593,7 @@ mod tests {
             params,
             MonotonicTimeline::new(),
             &router,
+            &SlotMedia::default(),
             &commands,
             &streams,
             &events,

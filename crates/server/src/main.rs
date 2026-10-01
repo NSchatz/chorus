@@ -95,19 +95,21 @@ use chorus_discovery::dnssd::{Advertisement, AUDIO_SERVICE, CONTROL_SERVICE};
 use chorus_discovery::net::{advertisable_addresses, Advertiser};
 use chorus_hostctl::ThreadRegistry;
 use chorus_server::clients::ClientPool;
-use chorus_server::conductor::{self, Conductor};
+use chorus_server::conductor::{self, CivilClock, Clocks, Conductor, Schedule};
 use chorus_server::config::{ServerConfig, ServerConfigError};
 use chorus_server::control::{initial_state, ControlPlane, ControlState};
 use chorus_server::hostreport::{
     decide_memory_lock, register_ordinary_thread, scheduling_report, take_contract_for_this_thread,
     ContractRefused, RealTimeOutcome, SchedulingVerdict,
 };
+use chorus_server::linein::LineIns;
 use chorus_server::router::Router;
+use chorus_server::schedule_runtime::Runtime;
 use chorus_server::serve::{serve_stream, ServeError, ServeParams, ServeReport};
 use chorus_server::session::{
     identity_source, load_identity, IdentitySource, Offer, OfferRefused, SessionContext,
 };
-use chorus_server::slots::{serve_slots, SlotCommand, SlotEvent};
+use chorus_server::slots::{serve_slots, SlotCommand, SlotEvent, SlotMedia};
 use chorus_server::source::{self, PcmSource};
 use chorus_server::stream::FanoutSink;
 
@@ -227,7 +229,13 @@ control plane:
   --zone <id[=transport]>       declare a zone (repeatable)
   --group-audio <group=addr>    where a group's stream is served (repeatable; not with --slots)
   --event-streams <n>           GET /api/events streams held at once (default 64)
-  --civil-time <day-HH:MM>      evaluate quiet hours at this civil time, held fixed (tests)
+  --civil-time <day-HH:MM>      hold the civil clock at this weekday and time (tests)
+  --civil-time-from <instant>   run the civil clock from this UTC instant,
+                                YYYY-MM-DDTHH:MM:SSZ (tests)
+  --schedule-time-scale <n>     run the schedule's durations n times faster, 1-60 (tests;
+                                never the audio)
+  --tz <path>                   the TZif file civil time is kept in (default: $TZ, then
+                                /etc/localtime, else UTC)
   --advertise --instance <label>  advertise by multicast DNS
 
 health:
@@ -236,6 +244,63 @@ health:
 
   -h, --help                  print this and exit 0
 ";
+
+/// Where the schedule's civil time comes from: `--tz <path>`, else `$TZ` (a
+/// zoneinfo name checked with the schedule library's safe-name rule and read
+/// under `/usr/share/zoneinfo`, an absolute path, or a POSIX TZ string), else
+/// `/etc/localtime`, else UTC. A file named and unreadable, or not a zone, is
+/// a refusal (exit 2): an alarm kept in a zone nobody chose rings at the
+/// wrong hour.
+fn load_zone(flag: Option<&str>) -> Result<(chorus_schedule::Zone, String), String> {
+    use chorus_schedule::zone::is_safe_zoneinfo_name;
+    use chorus_schedule::Zone;
+    let read = |path: &str, source: &str| -> Result<(Zone, String), String> {
+        let bytes = std::fs::read(path).map_err(|e| format!("{} ({}): {}", path, source, e))?;
+        let zone = Zone::from_tzif(&bytes)
+            .map_err(|e| format!("{} ({}) is not a TZif zone: {}", path, source, e))?;
+        Ok((zone, format!("tz={} source={}", path, source)))
+    };
+    if let Some(path) = flag {
+        return read(path, "--tz");
+    }
+    if let Ok(tz) = std::env::var("TZ") {
+        let tz = tz.strip_prefix(':').unwrap_or(&tz).to_string();
+        if !tz.is_empty() {
+            if tz.starts_with('/') {
+                return read(&tz, "TZ");
+            }
+            if is_safe_zoneinfo_name(&tz) {
+                let path = format!("/usr/share/zoneinfo/{}", tz);
+                if std::path::Path::new(&path).exists() {
+                    return read(&path, "TZ");
+                }
+            }
+            return match Zone::from_posix(&tz) {
+                Ok(zone) => Ok((zone, format!("tz={} source=TZ-posix", tz))),
+                Err(_) => Err(format!(
+                    "$TZ is '{}', which is neither a safe zoneinfo name under \
+                     /usr/share/zoneinfo nor a POSIX TZ string",
+                    tz
+                )),
+            };
+        }
+    }
+    if std::path::Path::new("/etc/localtime").exists() {
+        return read("/etc/localtime", "localtime");
+    }
+    Ok((Zone::utc(), "tz=UTC source=default".to_string()))
+}
+
+/// The UTC instant a `--civil-time <day>-<HH:MM>` names in `zone`: that
+/// weekday and time in the week of Monday 2024-01-01 (any week would do; this
+/// one has no daylight-saving change in the northern hemisphere's zones).
+fn fixed_civil_instant(zone: &chorus_schedule::Zone, at: chorus_control::rooms::CivilTime) -> i64 {
+    let monday = chorus_schedule::civil::days_from_civil(2024, 1, 1);
+    zone.instant_of(
+        monday + i64::from(at.weekday),
+        i64::from(at.time.minutes()) * 60,
+    )
+}
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -362,7 +427,31 @@ fn main() -> ExitCode {
     // reporting itself as controllable, and doing it first is what makes that
     // true by construction rather than by care.
     let mut control = None;
+    let mut schedule_zone = None;
     if let Some(address) = config.control_listen.clone() {
+        // Civil time for the schedule, loaded before any thread exists.
+        match load_zone(config.tz.as_deref()) {
+            Ok((zone, said)) => {
+                println!(
+                    "chorus-server: civil {} clock={} schedule_time_scale={}",
+                    said,
+                    if config.civil_time.is_some() {
+                        "fixed"
+                    } else if config.civil_time_from.is_some() {
+                        "from"
+                    } else {
+                        "system"
+                    },
+                    config.schedule_time_scale
+                );
+                schedule_zone = Some(zone);
+            }
+            Err(e) => {
+                report("the time zone was refused", &e);
+                println!("chorus-server: stopped reason=tz-refused chunks_sent=0 played=0");
+                return ExitCode::from(EXIT_CONFIG);
+            }
+        }
         let default_audio = config.listen.clone();
         let (mut zones, state_path, from_file) = match initial_state(
             config.state_file.as_deref(),
@@ -524,6 +613,38 @@ fn main() -> ExitCode {
     });
     let fanout = Arc::clone(&router.fanouts()[0]);
     let keep = Arc::new(AtomicBool::new(true));
+    // What the slots' own inputs are made of, before the audio thread
+    // exists: every chime rendered at this server's format, and one line-in
+    // port per slot (one input feeds at most one slot).
+    let mut media = SlotMedia::default();
+    let mut line_ins = None;
+    if config.slots > 0 {
+        if let Some(pcm) = chorus_schedule::PcmFormat::from_name(&config.sample_format) {
+            for chime in chorus_schedule::chime::CHIMES {
+                if let Ok(bytes) =
+                    chorus_schedule::render(chime, format.sample_rate_hz, format.channels, pcm)
+                {
+                    media.chimes.push(Arc::from(bytes));
+                }
+            }
+        }
+        if let Some((_, state)) = &control {
+            let state = Arc::clone(state);
+            let l = Arc::new(LineIns::new(
+                format,
+                config.slots,
+                Box::new(move || state.wake_conductor()),
+            ));
+            media.ports = l.ports().to_vec();
+            line_ins = Some(l);
+        }
+        println!(
+            "chorus-server: slot-media chimes={} rendered_bytes={} line_in_ports={}",
+            media.chimes.len(),
+            media.chimes.iter().map(|c| c.len()).sum::<usize>(),
+            media.ports.len()
+        );
+    }
     let params = ServeParams {
         format,
         chunk_us: config.chunk_us,
@@ -579,6 +700,7 @@ fn main() -> ExitCode {
                     params,
                     timeline,
                     &router,
+                    &media,
                     &slot_inbox,
                     &stream_jobs,
                     &slot_events,
@@ -713,6 +835,7 @@ fn main() -> ExitCode {
         // when this server runs one (ADR 0063, docs/decisions/0067-*).
         control: control.as_ref().map(|(_, state)| Arc::clone(state)),
         router: Arc::clone(&router),
+        line_ins: line_ins.clone(),
     });
     drop(arrived);
 
@@ -788,11 +911,24 @@ fn main() -> ExitCode {
             });
         }
         {
-            let conductor = Conductor::new(
+            let mut conductor = Conductor::new(
                 Arc::clone(&state),
                 Arc::clone(&router),
                 (config.slots > 0).then(|| slot_commands.clone()),
             );
+            if let Some(zone) = schedule_zone.take() {
+                let civil = match (config.civil_time, config.civil_time_from) {
+                    (Some(at), _) => CivilClock::Fixed(fixed_civil_instant(&zone, at)),
+                    (None, Some(from)) => CivilClock::From(i128::from(from) * 1_000_000_000),
+                    (None, None) => CivilClock::Live,
+                };
+                conductor = conductor.with_schedule(Schedule::new(
+                    Runtime::new(zone),
+                    Clocks::new(civil, config.schedule_time_scale),
+                    line_ins.clone(),
+                    transports.clone(),
+                ));
+            }
             let keep = Arc::clone(&keep);
             let registry = Arc::clone(&registry);
             let ready = ready.clone();

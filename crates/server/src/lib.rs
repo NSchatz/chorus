@@ -60,6 +60,7 @@ pub mod controller;
 pub mod events;
 pub mod health;
 pub mod hostreport;
+pub mod linein;
 pub mod router;
 pub mod schedule_runtime;
 pub mod serve;
