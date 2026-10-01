@@ -6,9 +6,10 @@
 #include <string.h>
 
 #include "chorus/codec.h"
+#include "chorus/dsp_cost.h"
 
-const char *const chorus_console_commands[] = {"power-save",  "server",    "status",
-                                               "decode-cost", "resources", "help"};
+const char *const chorus_console_commands[] = {"power-save", "server",    "status", "decode-cost",
+                                               "dsp-cost",   "resources", "help"};
 const size_t chorus_console_command_count =
     sizeof(chorus_console_commands) / sizeof(chorus_console_commands[0]);
 
@@ -182,6 +183,60 @@ static int decode_cost(chorus_console_t *c, int argc, char words[MAX_WORDS][WORD
     return 0;
 }
 
+/* `dsp-cost [config]`: every configuration of the chain, or the one named,
+ * after decode-cost's shape: one reply line, one `name:` group each, and an
+ * error rather than a figure for a chain whose output is not the host's. */
+static int dsp_cost(chorus_console_t *c, int argc, char words[MAX_WORDS][WORD_LEN], char *out,
+                    size_t out_len)
+{
+    if (argc > 2) {
+        return refuse(out, out_len, "dsp-cost", "usage", "dsp-cost [flat|all-on|sub|two-way]");
+    }
+    if (c->now_ns == NULL) {
+        return refuse(out, out_len, "dsp-cost", "no-clock", "this image binds no clock to time on");
+    }
+    size_t used = (size_t)snprintf(out, out_len, "dsp-cost");
+    int ran = 0;
+    for (size_t i = 0; i < CHORUS_DSP_COST_CONFIGS; i++) {
+        if (argc == 2 && strcmp(words[1], chorus_dsp_cost_names[i]) != 0) {
+            continue;
+        }
+        chorus_dsp_cost_t cost;
+        char detail[256];
+        detail[0] = '\0';
+        if (chorus_dsp_cost_run(i, c->now_ns, c->dsp_alloc, c->dsp_free, &cost, detail,
+                                sizeof(detail)) != 0) {
+            return refuse(out, out_len, "dsp-cost", "chain-failed", detail);
+        }
+        if (used < out_len) {
+            used += (size_t)snprintf(
+                out + used, out_len - used,
+                " %s:rate=%u,channels=2,outputs=%u,frames=%llu,elapsed_us=%llu,"
+                "frames_per_s=%.0f,cpu_fraction=%.4f,deviation=%.1e,output_matches=%s,"
+                "bit_exact=%s",
+                cost.name, (unsigned)CHORUS_DSP_COST_RATE_HZ, (unsigned)cost.outputs,
+                (unsigned long long)cost.frames, (unsigned long long)(cost.elapsed_ns / 1000u),
+                cost.frames_per_s, cost.cpu_fraction, cost.deviation,
+                cost.output_matches ? "yes" : "no", cost.bit_exact ? "yes" : "no");
+        }
+        if (!cost.output_matches) {
+            return refuse(out, out_len, "dsp-cost", "output-differs",
+                          "a chain's output is not within tolerance of the host's checksum; no "
+                          "figure is published for audio that is wrong");
+        }
+        ran++;
+    }
+    if (ran == 0) {
+        return refuse(out, out_len, "dsp-cost", "no-such-config",
+                      "the configurations are flat, all-on, sub and two-way");
+    }
+    if (c->stack_free_bytes != NULL && used < out_len) {
+        snprintf(out + used, out_len - used, " stack_free_bytes=%u",
+                 (unsigned)c->stack_free_bytes());
+    }
+    return 0;
+}
+
 /* `resources`: heap, the named tasks' least free stack, the FIFO after the
  * writer and the marker's counts, on one line. A value the image cannot give
  * reads `none` (no PSRAM, no marker pin) or `absent` (no such task running)
@@ -271,14 +326,18 @@ int chorus_console_execute(chorus_console_t *console, const char *line, char *ou
     if (strcmp(words[0], "decode-cost") == 0) {
         return decode_cost(console, argc, words, out, out_len);
     }
+    if (strcmp(words[0], "dsp-cost") == 0) {
+        return dsp_cost(console, argc, words, out, out_len);
+    }
     if (strcmp(words[0], "resources") == 0) {
         return resources(console, argc, out, out_len);
     }
     if (strcmp(words[0], "help") == 0) {
         return reply(out, out_len, 0,
-                     "help commands=power-save,server,status,decode-cost,resources "
+                     "help commands=power-save,server,status,decode-cost,dsp-cost,resources "
                      "values=runtime-only");
     }
     return refuse(out, out_len, "console", "unknown-command",
-                  "the commands are power-save, server, status, decode-cost, resources and help");
+                  "the commands are power-save, server, status, decode-cost, dsp-cost, resources "
+                  "and help");
 }

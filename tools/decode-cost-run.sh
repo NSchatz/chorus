@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# What FLAC and Opus decoding cost on the ESP32-S3 itself (chorus goal 6's
+# What FLAC and Opus decoding and the DSP chain cost on the ESP32-S3 itself (chorus goal 6's
 # follow-up, goal 7's deferred S3 decode-cost measurement; goal 8's console,
 # audit A-13).
 #
@@ -13,6 +13,20 @@
 # published for a decode that hashed to the fixture's decode_fnv1a64, so it is
 # always about a decode that produced the right audio. The reply also names the
 # console task's least free stack, since the decoders run on it.
+#
+# The DSP chain beside them (goal 12): the same session then asks for
+# `dsp-cost`, which runs the endpoint's DSP chain (firmware/src/dsp.c, the
+# chain the playout path runs) in four configurations (flat; all-on: tone,
+# loudness, speech, night and eight room-EQ filters; the LFE member of a 2.1
+# set; the two-way split) over one second of a generated 48 kHz stereo signal
+# in the playout path's 32-frame calls, times the chain calls on the same
+# monotonic clock, and replies per configuration with frames per second and
+# the fraction of one core (firmware/src/dsp_cost.c). Its figure is published
+# only for a chain whose output sums to the checksum the host computed for the
+# same input, within a tolerance (libm may round a last place differently on
+# the chip; bit_exact says whether it did). The figures go in this same
+# report, so S6 is still one command: a decode and a chain both run on this
+# chip's one audio path, and the playout budget needs both from one image.
 #
 # NOT PASSED ANYWHERE IN THIS REPOSITORY, and nothing is graded against a bound:
 # the result is MEASURED, a record for the playout and DSP budgets (whether a
@@ -36,7 +50,7 @@ source "$(dirname "$0")/lib.sh"
 source "$REPO_ROOT/tools/bench/lib.sh"
 bench_args "$@"
 
-CRITERION="the FLAC and Opus decode cost is measured on the ESP32-S3 itself, from a decode that matches its reference, rather than inferred from the host's"
+CRITERION="the FLAC and Opus decode cost and the DSP chain's cost are measured on the ESP32-S3 itself, from a decode and a chain output that match their references, rather than inferred from the host's"
 TOPIC=embedded5-decode-cost
 
 # One `name:key=value,...` group per fixture in the reply; print one field.
@@ -63,10 +77,35 @@ report_and_publish() {
         bench_field "${codec:-missing}_decode_matches" "$(decode_figure "$reply" "$name" decode_matches)"
     done
     bench_field console_stack_free_bytes "${stack:-not reported} (of 16384, firmware/main/console_esp.c)"
+
+    # The DSP chain: one `name:key=value,...` group per configuration, the
+    # same shape (firmware/src/console.c's dsp_cost).
+    local dsp dsp_stack config key
+    dsp="$(sed -n 's/^\(dsp-cost .*\)$/\1/p' "$raw/dsp-console.txt" 2>/dev/null | head -n 1)"
+    for config in flat all-on sub two-way; do
+        key="dsp_$(printf '%s' "$config" | tr '-' '_')"
+        if [ -n "$dsp" ]; then
+            bench_field "${key}_frames_per_s" "$(decode_figure "$dsp" "$config" frames_per_s) (outputs $(decode_figure "$dsp" "$config" outputs))"
+            bench_field "${key}_cpu_fraction" "$(decode_figure "$dsp" "$config" cpu_fraction)"
+            bench_field "${key}_output_matches" "$(decode_figure "$dsp" "$config" output_matches) (deviation $(decode_figure "$dsp" "$config" deviation), bit exact $(decode_figure "$dsp" "$config" bit_exact))"
+        else
+            bench_field "${key}_frames_per_s" "no reply"
+            bench_field "${key}_cpu_fraction" "no reply"
+        fi
+    done
+    dsp_stack="$(printf '%s\n' "$dsp" | tr ' ' '\n' | sed -n 's/^stack_free_bytes=//p' | head -n 1)"
+    bench_field dsp_console_stack_free_bytes "${dsp_stack:-not reported} (after dsp-cost; of 16384)"
+
     if printf '%s' "$reply" | grep -q 'decode_matches=no'; then
         bench_finish FAIL "a decode did not match its reference; no figure is published"
     fi
-    bench_finish MEASURED "FLAC $(decode_figure "$reply" flac-s16-stereo-44k1 cpu_fraction) and Opus $(decode_figure "$reply" opus-tv10-celt-stereo cpu_fraction) of one core for real-time playback, on the chip"
+    if [ -z "$dsp" ]; then
+        bench_finish FAIL "the console gave no dsp-cost reply: $(grep -v '^#' "$raw/dsp-console.txt" 2>/dev/null | head -n 1)"
+    fi
+    if printf '%s' "$dsp" | grep -q 'output_matches=no'; then
+        bench_finish FAIL "a DSP chain's output did not match the host's checksum; no figure is published"
+    fi
+    bench_finish MEASURED "FLAC $(decode_figure "$reply" flac-s16-stereo-44k1 cpu_fraction) and Opus $(decode_figure "$reply" opus-tv10-celt-stereo cpu_fraction) of one core for real-time playback, the DSP chain $(decode_figure "$dsp" flat cpu_fraction) flat and $(decode_figure "$dsp" all-on cpu_fraction) all-on, on the chip"
 }
 
 if [ -n "$BENCH_REPORT_FROM" ]; then
@@ -89,4 +128,7 @@ mkdir -p "$OUT_DIR"
 say "chorus: asking for decode-cost (the decode takes a few seconds on the chip)"
 endpoint_console decode-cost 60 > "$OUT_DIR/console.txt" || printf 'no reply\n' > "$OUT_DIR/console.txt"
 cat "$OUT_DIR/console.txt"
+say "chorus: asking for dsp-cost (four configurations of the chain, a few seconds on the chip)"
+endpoint_console dsp-cost 120 > "$OUT_DIR/dsp-console.txt" || printf 'no reply\n' > "$OUT_DIR/dsp-console.txt"
+cat "$OUT_DIR/dsp-console.txt"
 report_and_publish

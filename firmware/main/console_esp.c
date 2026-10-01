@@ -17,7 +17,8 @@
 
 static const char *TAG = "chorus-console";
 
-/* The REPL task's stack. decode-cost runs FLAC and Opus on this task, and
+/* The REPL task's stack. decode-cost runs FLAC and Opus on this task (and
+ * dsp-cost the chain, whose buffers are about 1.3 KB of it), and
  * libopus keeps its scratch on the caller's stack (goal 6's note), so this is
  * well above ESP-IDF's 4096-byte default. ASSUMED, not measured: the least
  * free stack on a board is a bench question (the decode-cost reply carries it
@@ -153,6 +154,15 @@ static void read_resources(void *ctx, chorus_console_resources_t *out)
     }
 }
 
+/* dsp-cost's chain object in internal RAM, where app_main.c puts the playout
+ * path's own chain, so the figure is the one the endpoint pays and not a
+ * slower external-RAM one. A board short of it gets the command's no-memory
+ * refusal by name. */
+static void *dsp_alloc_internal(size_t bytes)
+{
+    return heap_caps_malloc(bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+}
+
 static int set_server(void *ctx, const char *address)
 {
     shared_t *s = (shared_t *)ctx;
@@ -244,6 +254,8 @@ int chorus_esp_console_start(const chorus_endpoint_config_t *config)
     console.fixtures = fixtures;
     console.fixture_count = 2;
     console.now_ns = chorus_monotonic_now_ns;
+    console.dsp_alloc = dsp_alloc_internal;
+    console.dsp_free = heap_caps_free;
     console.stack_free_bytes = stack_free_bytes;
     console.resources = read_resources;
     if (config->pins.marker != CHORUS_PIN_NONE) {
@@ -277,6 +289,7 @@ int chorus_esp_console_start(const chorus_endpoint_config_t *config)
         "server <host>:<port>: the server the next connection goes to (runtime only)",
         "status: the telemetry line",
         "decode-cost [fixture]: time FLAC and Opus decode of the carried fixtures",
+        "dsp-cost [flat|all-on|sub|two-way]: time the DSP chain on a generated signal",
         "resources: free heap, task stacks, the FIFO after the writer, the GPIO marker",
         "help: the commands"};
     /* chorus's own `help` rather than ESP-IDF's: the bench scripts check the
@@ -298,7 +311,7 @@ int chorus_esp_console_start(const chorus_endpoint_config_t *config)
         ESP_LOGE(TAG, "the console REPL could not start (%s)", esp_err_to_name(err));
         return -1;
     }
-    ESP_LOGI(TAG, "console up: power-save, server, status, decode-cost, resources (values are "
-                  "runtime only)");
+    ESP_LOGI(TAG, "console up: power-save, server, status, decode-cost, dsp-cost, resources "
+                  "(values are runtime only)");
     return 0;
 }

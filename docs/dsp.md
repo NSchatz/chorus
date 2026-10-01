@@ -146,6 +146,13 @@ End to end on fakes, both endpoint kinds against the real server (done-when line
 `cargo test -p chorus-server --test dsp_end_to_end` (the Linux client) and
 `make -C firmware dsp-session` (the C endpoint).
 
+What the chain costs on the ESP32-S3 is unmeasured until the owner runs bench S6
+(`docs/bench-packet.md`): the endpoint console's `dsp-cost` times it in four configurations
+(flat, all-on, the LFE member of a 2.1 set, the two-way) on the chip's monotonic clock and
+publishes a figure only for output within tolerance of the host's checksum
+(`docs/decisions/` "the DSP chain's cost on the chip"). No headroom claim is made before that
+report exists.
+
 ## Defaults and ASSUMED values
 
 Every value below that is not cited is ASSUMED: chorus's choice, not measured, and marked so in
