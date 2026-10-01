@@ -342,7 +342,9 @@ fn run<A: Adapter>(
         }
         for effect in effects {
             match effect {
-                Effect::Volume(VolumeKey::Up) => send(Command::VolumeStep, VOLUME_STEP, "volume-up"),
+                Effect::Volume(VolumeKey::Up) => {
+                    send(Command::VolumeStep, VOLUME_STEP, "volume-up")
+                }
                 Effect::Volume(VolumeKey::Down) => {
                     send(Command::VolumeStep, -VOLUME_STEP, "volume-down")
                 }
@@ -416,10 +418,18 @@ mod tests {
             log,
         );
         wait("the claim", || {
-            lines.lock().unwrap().iter().any(|l| l.starts_with("cec claimed"))
+            lines
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|l| l.starts_with("cec claimed"))
         });
         // No session: a key is decided and counted unsent.
-        tv.send(build::system_audio_mode_request(TV, AUDIO_SYSTEM, Some(PhysicalAddress::TV)));
+        tv.send(build::system_audio_mode_request(
+            TV,
+            AUDIO_SYSTEM,
+            Some(PhysicalAddress::TV),
+        ));
         tv.press(ui::VOLUME_UP);
         wait("an unsent command", || {
             cec.counters().commands_unsent.load(Ordering::Relaxed) == 1
@@ -508,7 +518,11 @@ mod tests {
             log,
         );
         wait("the claim", || {
-            lines.lock().unwrap().iter().any(|l| l.starts_with("cec claimed"))
+            lines
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|l| l.starts_with("cec claimed"))
         });
         bus.close();
         wait("the stop line", || {

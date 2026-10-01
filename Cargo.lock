@@ -189,6 +189,7 @@ version = "0.1.0"
 dependencies = [
  "chorus-audio",
  "chorus-audio-path",
+ "chorus-cec",
  "chorus-client-linux",
  "chorus-control",
  "chorus-discovery",
