@@ -563,6 +563,9 @@ fn refused(code: u8, reason: &str) -> SessionOutcome {
     }
 }
 
+// The session's inputs are each their own thing (the panel and CEC are both optional
+// controllers); a struct of them would only rename the list.
+#[allow(clippy::too_many_arguments)]
 fn play(
     config: &ClientConfig,
     server: &str,
