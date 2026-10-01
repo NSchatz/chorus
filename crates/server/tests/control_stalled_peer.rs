@@ -1,5 +1,5 @@
-//! A control peer that stops draining its receive window must not keep a
-//! worker slot forever.
+//! A control peer that stops draining its receive window is dropped by the
+//! event writer, and nobody else is delayed by it (audit finding B-5).
 //!
 //! AC-11 is about a subscriber that stops reading, and
 //! `crates/control/tests/slow_subscriber.rs` grades every clause of it at the
@@ -7,50 +7,33 @@
 //! missed counted and reported, nobody else delayed, the audio path neither
 //! blocked nor reordered. All of that holds.
 //!
-//! This is the layer underneath, and it is not the same question. A peer that
-//! stops draining its TCP receive window - rather than closing - blocks its
-//! worker inside `write`. The fanout still drops the SUBSCRIBER at the ceiling,
-//! but the WORKER is stuck in a system call and never reaches `recv_timeout`,
-//! so its slot in the fixed pool is never returned. The pool is fixed on
-//! purpose (`crates/server/src/main.rs`: every thread this process will ever
-//! run exists before the scheduling report), so a slot that is never returned
-//! cannot be replaced by growing the pool, and enough such peers make the
-//! accept loop answer `503 Service Unavailable` to everybody.
+//! This is the layer underneath. A peer that stops draining its TCP receive
+//! window - rather than closing - used to block the worker holding its stream
+//! inside `write`, until `crates/server/src/control.rs::WRITE_TIMEOUT` gave the
+//! slot back. Every stream is now written by ONE thread, the event writer
+//! (`crates/server/src/events.rs`), on non-blocking sockets, so the hazard is
+//! a different one and so is the demonstration, over real sockets against the
+//! real binary, with ONE control worker:
 //!
-//! `crates/server/src/control.rs::WRITE_TIMEOUT` is what bounds it. This test
-//! is the demonstration, over real sockets against the real binary, with two
-//! workers: one an event stream may take, and one kept for commands
-//! (`control.rs::stream_slots`).
+//! 1. A subscriber attaches to `/api/events` and never reads a byte; a second,
+//!    well-behaved one attaches and reads everything.
+//! 2. Commands are applied, each answered `200` by the one worker (a stream
+//!    holds no worker), and EVERY one reaches the well-behaved subscriber
+//!    within [`PROMPT`] while the stalled one's socket is full: the writer is
+//!    never inside a `write` that waits.
+//! 3. The fanout drops the stalled subscriber at its queue's ceiling, and the
+//!    writer drops its stream once it has made no write progress for
+//!    [`WRITE_TIMEOUT`], counted in the report (`stalled_dropped=1`), leaving
+//!    the well-behaved one the only stream held.
 //!
-//! 1. A subscriber attaches to `/api/events` and never reads a byte.
-//! 2. Commands are applied until the fanout reports that subscriber DROPPED.
-//!    The queue only backs up if the worker is not draining it, so the drop is
-//!    itself the evidence that the worker is stuck inside `write`.
-//! 3. A second, well-behaved subscriber is refused `503`: the only worker a
-//!    stream may have is the stuck one. A command is still served, by the
-//!    worker kept for commands.
-//! 4. The stuck worker's write times out, its connection is dropped and its
-//!    slot comes back, so the second subscriber is served.
-//!
-//! Without a write timeout step 4 never happens and this test fails at its
-//! deadline, which is what it is for.
-//!
-//! # Scheduling cannot decide it
-//!
-//! Step 3's refusal holds only while the stuck worker is still inside its
-//! write, which ends [`WRITE_TIMEOUT`] after it blocked. The write cannot have
-//! blocked before the stalled subscriber attached, so a step 3 that sees the
-//! second subscriber served LESS than [`WRITE_TIMEOUT`] after that attach is a
-//! real failure, and one that sees it served later has only lost the window to
-//! a slow machine. The second is not a verdict: the scenario is run again on a
-//! fresh server, a bounded number of times. Every server binds port 0 and is
-//! asked where it landed, and every wait polls to a bounded deadline instead
-//! of sleeping a fixed time.
+//! Every server binds port 0 and is asked where it landed, and every wait polls
+//! to a bounded deadline instead of sleeping a fixed time.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
 /// Enough zones that one state message is tens of kilobytes, so a handful of
@@ -58,8 +41,13 @@ use std::time::{Duration, Instant};
 /// would need thousands of round trips to fill one.
 const ZONES: usize = 400;
 
-/// Two: one worker a stream may take, and the one kept for commands.
-const WORKERS: usize = 2;
+/// One: an event stream holds no worker, so one is enough for every command.
+const WORKERS: usize = 1;
+
+/// How long a state may take to reach a subscriber that is reading. Far longer
+/// than the writer takes (it is woken by every change); what this rules out is
+/// a write to the stalled peer holding the writer for [`WRITE_TIMEOUT`].
+const PROMPT: Duration = Duration::from_secs(2);
 
 /// `crates/server/src/control.rs::WRITE_TIMEOUT`.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -70,10 +58,6 @@ const RECLAIM_DEADLINE: Duration = Duration::from_secs(45);
 
 /// How long any other wait here may take before it is a failure.
 const PATIENCE: Duration = Duration::from_secs(30);
-
-/// How many times the scenario is run before a window lost every time to a
-/// slow machine is reported as that.
-const ATTEMPTS: usize = 3;
 
 struct Server {
     child: Child,
@@ -182,8 +166,7 @@ fn request(address: &str, head: &str, body: &str) -> Option<String> {
 /// past, never judged.
 fn momentarily_full(answer: &str) -> bool {
     answer.is_empty()
-        || (answer.contains("503 Service Unavailable")
-            && !answer.contains("event-stream control workers"))
+        || (answer.contains("503 Service Unavailable") && !answer.contains("event streams is held"))
 }
 
 /// A request served by a worker, retried past [`momentarily_full`] only.
@@ -275,168 +258,113 @@ fn wait_for_report(address: &str, wanted: &str) -> Result<String, String> {
     }
 }
 
-/// What one run of steps 1 to 3 came to.
-enum Premise {
-    /// The stalled peer holds the stream worker and the pool is as step 3 says.
-    Held {
-        server: Server,
-        stalled: TcpStream,
-        began: Instant,
-        dropped: String,
-    },
-    /// The stuck write may already have timed out, so step 3 decided nothing.
-    WindowLost(Duration),
-}
-
-fn steps_one_to_three() -> Premise {
+#[test]
+fn a_peer_that_stops_reading_is_dropped_by_the_event_writer_and_delays_nobody() {
     let server = start();
     let address = server.control.clone();
 
-    // 1. A subscriber that never reads a byte of what it asked for, attached on
-    //    the control plane's own count before anything is sent.
-    let began = Instant::now();
+    // 1. The stalled subscriber, attached on the control plane's own count
+    //    before anything is sent, and a reading one beside it.
     let stalled = subscribe(&address);
     if let Err(last) = wait_for_report(&address, "subscribers=1 ") {
         panic!("the stalled subscriber never attached: {}", last);
     }
+    let mut reading = attach(&address).expect("the reading subscriber is served");
+    reading
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
+    let seen = Arc::new(AtomicUsize::new(0));
+    let stop = Arc::new(AtomicBool::new(false));
+    let reader = {
+        let seen = Arc::clone(&seen);
+        let stop = Arc::clone(&stop);
+        std::thread::spawn(move || {
+            let mut tail: Vec<u8> = Vec::new();
+            let mut scratch = [0u8; 65_536];
+            while !stop.load(Ordering::SeqCst) {
+                match reading.read(&mut scratch) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        tail.extend_from_slice(&scratch[..n]);
+                        let mut at = 0;
+                        while let Some(i) = find(&tail[at..], b"\n\ndata: ") {
+                            seen.fetch_add(1, Ordering::SeqCst);
+                            at += i + 1;
+                        }
+                        let keep = tail.len().saturating_sub(8).max(at);
+                        tail.drain(..keep);
+                    }
+                    Err(_) => {}
+                }
+            }
+        })
+    };
 
-    // 2. Apply commands until the fanout says it dropped that subscriber. The
-    //    queue only backs up while the worker is not draining it, so this is
-    //    the point at which the worker is known to be inside `write`.
+    // 2. Commands, each served and each reaching the reading subscriber
+    //    promptly, until the writer has dropped the stalled stream.
+    let began = Instant::now();
     let mut applied = 0usize;
-    let mut dropped = String::new();
-    let step_two = Instant::now();
-    while step_two.elapsed() < PATIENCE {
+    let mut slowest = Duration::ZERO;
+    let mut report_text = String::new();
+    while began.elapsed() < RECLAIM_DEADLINE {
         let answer = post(&address);
         assert!(
             answer.contains("200 OK"),
-            "a command was not applied while the stalled peer was being filled: {}",
+            "a command was not served while a stalled stream was held: {}",
             answer.lines().next().unwrap_or("nothing at all")
         );
         applied += 1;
-        if applied.is_multiple_of(8) {
-            let text = report(&address);
-            if text.contains("dropped_subscribers=1") {
-                dropped = text;
-                break;
-            }
-        }
-    }
-    assert!(
-        dropped.contains("dropped_subscribers=1"),
-        "the stalled subscriber was never dropped after {} commands over {:?}, so this test never \
-         reached the state it is about. The last report was:\n{}",
-        applied,
-        step_two.elapsed(),
-        report(&address)
-    );
-
-    // 3. The only worker a stream may have is the stuck one, so a second,
-    //    well-behaved subscriber is refused, and the worker kept for commands
-    //    still serves one.
-    match attach(&address) {
-        Ok(_) => {
-            let since = began.elapsed();
+        // `attach` read the opening up to its `data: `; each later state is
+        // counted when its own `data: ` arrives after the last one's end.
+        let sent = Instant::now();
+        while seen.load(Ordering::SeqCst) < applied {
             assert!(
-                since >= WRITE_TIMEOUT,
-                "a second subscriber was served {:?} after the stalled one attached, which is \
-                 inside the {:?} write timeout: the stalled peer's worker is still inside \
-                 `write`, so a stream was given a worker it may not have",
-                since,
-                WRITE_TIMEOUT
+                sent.elapsed() < PROMPT,
+                "command {} did not reach the reading subscriber within {:?} ({} of {} \
+                 arrived): the stalled peer delayed it",
+                applied,
+                PROMPT,
+                seen.load(Ordering::SeqCst),
+                applied
             );
-            return Premise::WindowLost(since);
+            std::thread::sleep(Duration::from_millis(5));
         }
-        Err(refused) => assert!(
-            refused.contains("503 Service Unavailable") && refused.contains("kept for commands"),
-            "the second subscriber was neither served nor refused for want of a stream worker: \
-             {}",
-            refused
-        ),
+        slowest = slowest.max(sent.elapsed());
+        report_text = report(&address);
+        if report_text.contains("stalled_dropped=1") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
     }
-    let answer = post(&address);
+
+    // 3. Dropped, counted, and the reading one the only stream held.
     assert!(
-        answer.contains("200 OK"),
-        "with the stream worker stuck, a command still has the worker kept for it, and it was \
-         answered: {}",
-        answer.lines().next().unwrap_or("nothing at all")
+        report_text.contains("stalled_dropped=1"),
+        "the event writer never dropped the stalled stream within {:?} ({} commands): {}",
+        RECLAIM_DEADLINE,
+        applied,
+        report_text
     );
-    Premise::Held {
-        server,
-        stalled,
-        began,
-        dropped,
-    }
+    assert!(
+        began.elapsed() >= WRITE_TIMEOUT - Duration::from_millis(500),
+        "dropped before the stall bound could have run out: {:?}",
+        began.elapsed()
+    );
+    let held = wait_for_report(&address, "events held=1 ")
+        .unwrap_or_else(|last| panic!("the reading stream is not the only one held: {}", last));
+    println!(
+        "stalled stream dropped by the event writer {:?} after it attached, {} commands each \
+         reaching the reading subscriber within {:?}; {}",
+        began.elapsed(),
+        applied,
+        slowest,
+        held.lines().last().unwrap_or("").trim()
+    );
+    stop.store(true, Ordering::SeqCst);
+    let _ = reader.join();
+    drop(stalled);
 }
 
-#[test]
-fn a_peer_that_stops_reading_gives_its_worker_slot_back() {
-    let mut lost = Vec::new();
-    let (server, stalled, began, dropped) = loop {
-        match steps_one_to_three() {
-            Premise::Held {
-                server,
-                stalled,
-                began,
-                dropped,
-            } => break (server, stalled, began, dropped),
-            Premise::WindowLost(after) => {
-                lost.push(after);
-                assert!(
-                    lost.len() < ATTEMPTS,
-                    "in {} runs this machine never reached step 3 inside the {:?} write \
-                     timeout (it took {:?}), so the premise could not be checked at all",
-                    ATTEMPTS,
-                    WRITE_TIMEOUT,
-                    lost
-                );
-            }
-        }
-    };
-    let address = server.control.clone();
-
-    // 4. And then the stuck worker's write times out, so the stream slot comes
-    //    back without anybody doing anything.
-    let deadline = Instant::now() + RECLAIM_DEADLINE;
-    let mut last = String::new();
-    let mut polite = None;
-    while Instant::now() < deadline {
-        match attach(&address) {
-            Ok(socket) => {
-                polite = Some(socket);
-                break;
-            }
-            Err(refused) => last = refused,
-        }
-        std::thread::sleep(Duration::from_millis(250));
-    }
-    let took = began.elapsed();
-    assert!(
-        polite.is_some(),
-        "AC-11's fixed worker pool never got the slot back: {:?} after the stalled peer attached, \
-         a subscriber is still refused because a peer that stopped reading is still holding a \
-         worker inside `write`. The fanout dropped the subscriber ({}), but the WORKER was never \
-         reclaimed. The last refusal:\n{}",
-        took,
-        dropped.lines().last().unwrap_or("").trim(),
-        last.lines().last().unwrap_or("")
-    );
-    println!(
-        "the stuck worker's slot came back {:?} after the stalled peer attached, with no operator \
-         action{}",
-        took,
-        if lost.is_empty() {
-            String::new()
-        } else {
-            format!(
-                " (step 3's window was lost to scheduling {} time(s) first)",
-                lost.len()
-            )
-        }
-    );
-
-    // The stalled peer is still open here, and dropping it is the test's own
-    // cleanup rather than anything the server needed.
-    drop(stalled);
-    drop(polite);
+fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
