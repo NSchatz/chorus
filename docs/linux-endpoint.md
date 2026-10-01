@@ -77,6 +77,38 @@ file's own comments list every argument worth setting. At least:
   (`chorus`, ASSUMED; 1 to 14 printable ASCII bytes). An adapter that cannot be opened or
   claimed is logged (`cec unusable`) and retried; the endpoint plays on.
 
+### A TV input (optical, HDMI ARC)
+
+`--line-in <device> --line-in-kind optical` (or `hdmi_arc`) makes this endpoint the TV's hub: it
+offers the TV as a source any room can play (`--line-in-name` names it). A TV input is clocked
+by the TV, which may run up to +/-1000 ppm off its nominal rate (IEC 60958-3 Level II), so the
+hub does not send it as captured (ADR 0090):
+
+- **Rate matching.** It reads the device in 5 ms periods (240 frames at 48 kHz), filters each
+  period's timestamp through a delay-locked loop (Adriaensen 2005) to estimate the TV's true
+  rate, and resamples to exactly the nominal rate on the server's timeline with a ratio loop
+  (Adriaensen 2012, 0.05 Hz after a 4 s start-up). Every chunk upstream is stamped with the
+  capture instant of its first frame, and consecutive chunks are exactly one chunk apart. The
+  first 0.5 s after the TV appears is the loop's warm-up: nothing is sent yet.
+- **Refusals.** The hub forwards nothing and offers the input with no signal when:
+  - `non-pcm`: the TV sends a compressed format (IEC 61937: AC-3, DTS). Set the TV's digital
+    audio output to PCM (often "PCM" or "Stereo" rather than "Auto" or "Bitstream"). It is
+    taken back 250 ms after the stream is PCM again.
+  - `no-lock`: no frames for 100 ms (the TV is off or unplugged) or the device fails. Taken
+    back 0.5 s after frames return.
+  - `rate-out-of-range`: the TV runs outside +/-1500 ppm of `--line-in-rate-hz` for 2 s (usually
+    the wrong rate configured: a TV at 44.1 kHz on a 48 kHz setting). Taken back when a fresh
+    measurement is inside.
+
+  Each refusal is a journal line, `source-tv-refused source_id=1 reason=<reason> detail=<what to
+  do>`, and the offer that follows says `signal=0 reason=<reason>`. At the end of a session the
+  hub prints `source-tv ppm=<the TV's measured rate error> relocks=... ring_overflows=...
+  ring_underflows=... non_pcm_periods=... refused_non_pcm=... refused_no_lock=... refused_rate=...
+  frames_dropped=...`; a relock (`source-tv-relock reason=...`) is a capture overrun or a jump in
+  the timeline, after which the hub starts the loop again.
+
+A `line_in` (analogue) input is captured and stamped as before, without rate matching.
+
 The room's sound (bass, treble, loudness, night, speech, room correction) and, in a bonded set,
 bass management come from the server's `sound` message and need no setting here: the client runs
 the sound chain from the first `sound` it receives (`dsp engaged ...` on its output) and prints

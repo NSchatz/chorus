@@ -40,6 +40,22 @@
 //! device; it is counted and logged, the sequence carries on, and the next
 //! chunk's timestamp (from its own capture instant) shows the gap.
 //!
+//! # A TV input (optical, HDMI ARC)
+//!
+//! An input of kind `optical` or `hdmi_arc` is clocked by the TV, not by
+//! this endpoint, so it runs through [`run_tv`] instead: it is read in
+//! [`crate::ratematch::PERIOD_FRAMES`]-frame periods with a bounded wait,
+//! every period goes through `crate::tvcapture` (the IEC 61937 scan, the
+//! lock and rate-range checks) and `crate::ratematch` (a DLL on the period
+//! timestamps, a ratio loop, a resampler), and what goes upstream is the
+//! rate-matched output: exactly the nominal rate on the server timeline,
+//! chunk `k` stamped `S0 + k * chunk / rate`, where `S0` is the capture
+//! instant of the frame it starts on as the DLL maps it. A refused input
+//! (`non-pcm`, `no-lock`, `rate-out-of-range`) forwards nothing and is
+//! offered with `signal = false`; the log says why. A `line_in` keeps the
+//! loop above, unchanged: an analogue input is digitized by this endpoint's
+//! own converter on this endpoint's own clock (ADR 0090).
+//!
 //! # What is modelled and what is not
 //!
 //! The shipped client reads exactly one implementation of [`CaptureSource`],
@@ -57,7 +73,9 @@ use std::sync::{Arc, Mutex, TryLockError};
 use std::thread::{self, JoinHandle};
 
 use chorus_alsa::{AlsaError, Format, Pcm};
+use chorus_protocol::v2::catalog::signal_reason;
 use chorus_protocol::v2::session::SecureWriter;
+use chorus_protocol::v2::SourceKind;
 use chorus_protocol::v2::{
     ChannelPosition, Codec, Message, SourceAction, SourceControl, SourceOffer, StreamFormat,
 };
@@ -65,11 +83,24 @@ use chorus_protocol::{AudioChunk, SampleFormat, StreamEnd, RESERVED_LEN};
 
 use crate::buffer::Counters;
 use crate::config::LineInConfig;
+use crate::ratematch::PERIOD_FRAMES;
+use crate::tvcapture::{ChannelStatus, Refusal, TvFrontEnd, TvShape};
 
 /// The capture ring asked of the device, in microseconds: ten 20 ms chunks.
 /// `ASSUMED`: enough that a reader scheduled a little late does not overrun,
 /// not measured on a line-in.
 pub const CAPTURE_BUFFER_US: u32 = 200_000;
+
+/// The capture ring asked of the device for a TV input, in microseconds:
+/// four [`PERIOD_FRAMES`] periods at 48 kHz (research `capture.md` section
+/// 6.1). `ASSUMED` until a bench report shows the hub reads it in time.
+pub const TV_CAPTURE_BUFFER_US: u32 = 20_000;
+
+/// How long one read of a TV input waits for its period before it returns
+/// with nothing, ms: a stalled receiver (the TV off, its clock stopped) never
+/// blocks the loop, which keeps answering the server and counting the stall
+/// toward `crate::tvcapture::NO_FRAMES_MS`. `ASSUMED`.
+pub const TV_READ_WAIT_MS: u64 = 20;
 
 /// The level window signal presence is judged over. `ASSUMED`.
 pub const SIGNAL_WINDOW_MS: u32 = 100;
@@ -141,6 +172,30 @@ pub trait CaptureSource: Send {
     /// How long ago, in frames, the next frame a read returns was digitized;
     /// `None` while the device is in its overrun state.
     fn delay_frames(&mut self) -> Result<Option<i64>, CaptureError>;
+
+    /// Fill `pcm` like [`CaptureSource::read`], waiting at most `wait_ns`
+    /// for the frames: `None` when they did not all arrive in time (nothing
+    /// was read). A source that cannot wait in bounds blocks, as `read`.
+    fn read_within(
+        &mut self,
+        pcm: &mut [u8],
+        wait_ns: u64,
+    ) -> Result<Option<CaptureRead>, CaptureError> {
+        let _ = wait_ns;
+        self.read(pcm).map(Some)
+    }
+
+    /// What the receiver says about the stream besides its samples (the
+    /// channel-status non-audio bit), where it says anything.
+    fn channel_status(&mut self) -> ChannelStatus {
+        ChannelStatus::default()
+    }
+}
+
+/// Whether an input of this kind is a TV input: clocked by the TV, so rate
+/// matched, scanned for IEC 61937 and lock-checked ([`run_tv`]).
+pub fn is_tv(kind: SourceKind) -> bool {
+    matches!(kind, SourceKind::Optical | SourceKind::HdmiArc)
 }
 
 /// The ALSA capture device the shipped client reads a line-in from.
@@ -156,12 +211,17 @@ impl AlsaCapture {
             SampleFormat::PcmS24Le => Format::S24Packed3Le,
             SampleFormat::PcmF32Le => Format::F32Le,
         };
+        let buffer_us = if is_tv(input.kind) {
+            TV_CAPTURE_BUFFER_US
+        } else {
+            CAPTURE_BUFFER_US
+        };
         let pcm = Pcm::open_capture(
             &input.device,
             format,
             input.channels,
             input.rate_hz,
-            CAPTURE_BUFFER_US,
+            buffer_us,
         )?;
         Ok(AlsaCapture { pcm })
     }
@@ -186,6 +246,29 @@ impl CaptureSource for AlsaCapture {
 
     fn delay_frames(&mut self) -> Result<Option<i64>, CaptureError> {
         Ok(self.pcm.capture_delay_frames()?)
+    }
+
+    /// Polls `snd_pcm_avail` every millisecond until the period is there or
+    /// the wait is over; a device in its overrun state is read at once, so
+    /// the read reports and recovers the overrun. The deadline is on the
+    /// monotonic clock (`Instant`).
+    fn read_within(
+        &mut self,
+        pcm: &mut [u8],
+        wait_ns: u64,
+    ) -> Result<Option<CaptureRead>, CaptureError> {
+        let want = (pcm.len() / self.pcm.frame_len().max(1)) as i64;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_nanos(wait_ns);
+        loop {
+            match self.pcm.avail_frames()? {
+                Some(avail) if avail < want => {}
+                _ => return self.read(pcm).map(Some),
+            }
+            if std::time::Instant::now() >= deadline {
+                return Ok(None);
+            }
+            thread::sleep(std::time::Duration::from_millis(1));
+        }
     }
 }
 
@@ -449,6 +532,25 @@ pub struct SourceStats {
     pub dropped_no_offset: AtomicU64,
     /// Whether a signal is present, as last offered.
     pub signal: AtomicBool,
+    /// A TV input: periods muted as non-PCM.
+    pub tv_non_pcm_periods: AtomicU64,
+    /// A TV input: refusals begun, by reason.
+    pub tv_refused_non_pcm: AtomicU64,
+    /// A TV input: `no-lock` refusals begun.
+    pub tv_refused_no_lock: AtomicU64,
+    /// A TV input: `rate-out-of-range` refusals begun.
+    pub tv_refused_rate: AtomicU64,
+    /// A TV input: rate-matcher relocks.
+    pub tv_relocks: AtomicU64,
+    /// A TV input: capture ring overflows (each a relock).
+    pub tv_ring_overflows: AtomicU64,
+    /// A TV input: capture ring underflows (each a relock).
+    pub tv_ring_underflows: AtomicU64,
+    /// A TV input: rate-matched frames dropped (refused, before an offset,
+    /// or a partial chunk a relock cut).
+    pub tv_frames_dropped: AtomicU64,
+    /// A TV input: the DLL's rate estimate, in ppm times 1000.
+    pub tv_ppm_milli: std::sync::atomic::AtomicI64,
 }
 
 impl SourceStats {
@@ -467,6 +569,25 @@ impl SourceStats {
             g(&self.chunks_sent),
             g(&self.dropped_no_offset),
             u8::from(self.signal.load(Ordering::Relaxed))
+        )
+    }
+
+    /// The TV input's status line.
+    pub fn tv_line(&self) -> String {
+        let g = |a: &AtomicU64| a.load(Ordering::Relaxed);
+        format!(
+            "source-tv ppm={:.3} relocks={} ring_overflows={} ring_underflows={} \
+             non_pcm_periods={} refused_non_pcm={} refused_no_lock={} refused_rate={} \
+             frames_dropped={}",
+            self.tv_ppm_milli.load(Ordering::Relaxed) as f64 / 1_000.0,
+            g(&self.tv_relocks),
+            g(&self.tv_ring_overflows),
+            g(&self.tv_ring_underflows),
+            g(&self.tv_non_pcm_periods),
+            g(&self.tv_refused_non_pcm),
+            g(&self.tv_refused_no_lock),
+            g(&self.tv_refused_rate),
+            g(&self.tv_frames_dropped)
         )
     }
 }
@@ -653,6 +774,9 @@ pub fn run<C: CaptureSource, U: Upstream>(
     keep: &dyn Fn() -> bool,
     stats: &SourceStats,
 ) -> SourceStop {
+    if is_tv(setup.input.kind) {
+        return run_tv(capture, upstream, setup, keep, stats);
+    }
     let input = setup.input.clone();
     let rate = u128::from(input.rate_hz.max(1));
     let chunk_frames = input.frames_per_chunk() as usize;
@@ -679,60 +803,19 @@ pub fn run<C: CaptureSource, U: Upstream>(
 
         // The server's requests, in order, between chunks.
         while let Ok(control) = setup.controls.try_recv() {
-            match control.action {
-                SourceAction::Start => {
-                    if let Err(refusal) = check_start(&control, &input, setup.listed_codecs) {
-                        stats.refused_starts.fetch_add(1, Ordering::Relaxed);
-                        log(&format!(
-                            "source-start-refused source_id={} codec={} reason={} detail={}",
-                            control.source_id,
-                            control.codec.name(),
-                            refusal.name(),
-                            refusal
-                        ));
-                        continue;
-                    }
-                    if streaming.is_some() {
-                        log(&format!(
-                            "source-start-ignored source_id={} reason=already-started",
-                            control.source_id
-                        ));
-                        continue;
-                    }
-                    if let Err(e) = upstream.send(&Message::StreamFormat(stream_format(&input))) {
-                        return lost(e);
-                    }
-                    stats.starts.fetch_add(1, Ordering::Relaxed);
-                    log(&format!(
-                        "source-started source_id={} codec=pcm rate_hz={} channels={} \
-                         sample_format={} frames_per_chunk={}",
-                        input.source_id,
-                        input.rate_hz,
-                        input.channels,
-                        input.sample_format.name(),
-                        chunk_frames
-                    ));
-                    streaming = Some(Streaming {
-                        next_sequence: 0,
-                        sent_any: false,
-                        last_timestamp_ns: 0,
-                        held: VecDeque::new(),
-                    });
-                }
-                SourceAction::Stop => match streaming.take() {
-                    Some(s) => {
-                        if let Err(e) =
-                            end_stream(upstream, s, chunk_ns, &setup.counters, stats, &input)
-                        {
-                            return lost(e);
-                        }
-                        log(&format!("source-stopped source_id={}", input.source_id));
-                    }
-                    None => log(&format!(
-                        "source-stop-ignored source_id={} reason=not-started",
-                        control.source_id
-                    )),
-                },
+            let applied = apply_control(
+                control,
+                &input,
+                setup.listed_codecs,
+                &mut streaming,
+                upstream,
+                chunk_ns,
+                &setup.counters,
+                stats,
+                log,
+            );
+            if let Err(e) = applied {
+                return lost(e);
             }
         }
 
@@ -829,10 +912,330 @@ pub fn run<C: CaptureSource, U: Upstream>(
     }
 }
 
+/// One `source_control` from the server, applied: a start is checked
+/// ([`check_start`]) and answered with `stream_format`, a stop ends the
+/// stream with `stream_end`. Shared by the line-in and TV loops.
+#[allow(clippy::too_many_arguments)]
+fn apply_control<U: Upstream>(
+    control: SourceControl,
+    input: &LineInConfig,
+    listed_codecs: u8,
+    streaming: &mut Option<Streaming>,
+    upstream: &mut U,
+    chunk_ns: u64,
+    counters: &Counters,
+    stats: &SourceStats,
+    log: &mut Box<dyn FnMut(&str) + Send>,
+) -> io::Result<()> {
+    match control.action {
+        SourceAction::Start => {
+            if let Err(refusal) = check_start(&control, input, listed_codecs) {
+                stats.refused_starts.fetch_add(1, Ordering::Relaxed);
+                log(&format!(
+                    "source-start-refused source_id={} codec={} reason={} detail={}",
+                    control.source_id,
+                    control.codec.name(),
+                    refusal.name(),
+                    refusal
+                ));
+                return Ok(());
+            }
+            if streaming.is_some() {
+                log(&format!(
+                    "source-start-ignored source_id={} reason=already-started",
+                    control.source_id
+                ));
+                return Ok(());
+            }
+            upstream.send(&Message::StreamFormat(stream_format(input)))?;
+            stats.starts.fetch_add(1, Ordering::Relaxed);
+            log(&format!(
+                "source-started source_id={} codec=pcm rate_hz={} channels={} \
+                 sample_format={} frames_per_chunk={}",
+                input.source_id,
+                input.rate_hz,
+                input.channels,
+                input.sample_format.name(),
+                input.frames_per_chunk()
+            ));
+            *streaming = Some(Streaming {
+                next_sequence: 0,
+                sent_any: false,
+                last_timestamp_ns: 0,
+                held: VecDeque::new(),
+            });
+        }
+        SourceAction::Stop => match streaming.take() {
+            Some(s) => {
+                end_stream(upstream, s, chunk_ns, counters, stats, input)?;
+                log(&format!("source-stopped source_id={}", input.source_id));
+            }
+            None => log(&format!(
+                "source-stop-ignored source_id={} reason=not-started",
+                control.source_id
+            )),
+        },
+    }
+    Ok(())
+}
+
+/// The signal a TV input offers: wanted (audio present by the level
+/// detector, or with CEC what `chorus_cec::TvSignal` makes of it and the
+/// TV's power) and the input not refused.
+pub fn tv_signal(wanted: bool, refusal: Option<Refusal>) -> bool {
+    wanted && refusal.is_none()
+}
+
+/// The TV input's loop (see the module documentation): [`run`] hands an
+/// `optical` or `hdmi_arc` input here.
+pub fn run_tv<C: CaptureSource, U: Upstream>(
+    capture: &mut C,
+    upstream: &mut U,
+    mut setup: SourceSetup,
+    keep: &dyn Fn() -> bool,
+    stats: &SourceStats,
+) -> SourceStop {
+    let input = setup.input.clone();
+    let rate = u128::from(input.rate_hz.max(1));
+    let chunk_frames = input.frames_per_chunk();
+    let chunk_ns = (u128::from(chunk_frames) * 1_000_000_000 / rate) as u64;
+    let mut tv = TvFrontEnd::new(TvShape {
+        rate_hz: input.rate_hz,
+        channels: input.channels,
+        format: input.sample_format,
+        period_frames: PERIOD_FRAMES,
+        chunk_frames,
+    });
+    let mut detector = SignalDetector::new(
+        setup.thresholds,
+        input.rate_hz,
+        input.channels,
+        input.sample_format,
+    );
+    let mut pcm = vec![0u8; PERIOD_FRAMES as usize * capture.frame_len()];
+    let mut streaming: Option<Streaming> = None;
+    let mut offered = false;
+    let mut cec_wanted = false;
+    let mut cec_reason = "quiet";
+    let mut failing = false;
+    let log = &mut setup.log;
+    let wait_ns = TV_READ_WAIT_MS * 1_000_000;
+
+    let lost = |e: io::Error| SourceStop::ConnectionLost(e.to_string());
+    loop {
+        if !keep() {
+            if let Some(s) = streaming.take() {
+                let _ = end_stream(upstream, s, chunk_ns, &setup.counters, stats, &input);
+            }
+            return SourceStop::Stopped;
+        }
+
+        while let Ok(control) = setup.controls.try_recv() {
+            let was = streaming.is_some();
+            let applied = apply_control(
+                control,
+                &input,
+                setup.listed_codecs,
+                &mut streaming,
+                upstream,
+                chunk_ns,
+                &setup.counters,
+                stats,
+                log,
+            );
+            if let Err(e) = applied {
+                return lost(e);
+            }
+            if !was && streaming.is_some() {
+                // A new stream starts at the next chunk cut, never mid-way.
+                tv.clear_output();
+            }
+        }
+
+        let mut audio_edge = None;
+        let read = capture.read_within(&mut pcm, wait_ns);
+        let now_ns = (setup.clock)();
+        let changed = match read {
+            Err(e) => {
+                // A device that is gone ends the role, as a line-in's does;
+                // any other failure is a lost lock, retried.
+                if let CaptureError::Alsa(AlsaError::Disconnected { .. }) = e {
+                    log(&format!(
+                        "source-device-failed source_id={} device={} detail={}",
+                        input.source_id,
+                        capture.device(),
+                        e
+                    ));
+                    if let Some(s) = streaming.take() {
+                        let _ = end_stream(upstream, s, chunk_ns, &setup.counters, stats, &input);
+                    }
+                    if stats.signal.swap(false, Ordering::Relaxed) {
+                        let _ = offer(upstream, &input, false, stats);
+                    }
+                    return SourceStop::DeviceFailed(e.to_string());
+                }
+                if !failing {
+                    log(&format!(
+                        "source-tv-read-failed source_id={} device={} detail={}",
+                        input.source_id,
+                        capture.device(),
+                        e
+                    ));
+                }
+                failing = true;
+                let c = tv.read_failed();
+                // A failing device is retried, not spun on.
+                thread::sleep(std::time::Duration::from_nanos(wait_ns));
+                c
+            }
+            Ok(None) => tv.no_frames(now_ns),
+            Ok(Some(read)) => {
+                failing = false;
+                let delay = match capture.delay_frames() {
+                    Ok(d) => d.unwrap_or(0).max(0),
+                    Err(_) => 0,
+                };
+                stats
+                    .frames_captured
+                    .fetch_add(read.frames, Ordering::Relaxed);
+                if read.overran {
+                    let n = stats.overruns.fetch_add(1, Ordering::Relaxed) + 1;
+                    tv.overran();
+                    log(&format!(
+                        "source-overrun source_id={} device={} overruns={} detail=the capture \
+                         device signalled an overrun; the rate matcher locks again",
+                        input.source_id,
+                        capture.device(),
+                        n
+                    ));
+                }
+                let status = capture.channel_status();
+                let offset = setup.counters.offset.get();
+                let c = tv.period(&pcm, now_ns, delay, offset, status);
+                audio_edge = detector.push(&pcm);
+                c
+            }
+        };
+        if let Some(why) = tv.take_relock() {
+            log(&format!(
+                "source-tv-relock source_id={} reason={}",
+                input.source_id,
+                why.name()
+            ));
+        }
+        if let Some(refusal) = changed {
+            match refusal {
+                Some(r) => log(&format!(
+                    "source-tv-refused source_id={} reason={} detail={}",
+                    input.source_id,
+                    r.name(),
+                    r.advice()
+                )),
+                None => log(&format!("source-tv-accepted source_id={}", input.source_id)),
+            }
+        }
+        publish_tv(&tv, stats);
+
+        // With CEC the TV's power joins the audio (`chorus_cec::TvSignal`:
+        // the TV on offers the input before any audio, a standby ends it at
+        // once); a refusal still withholds it, since nothing would play.
+        let wanted = match setup.tv_power.as_mut() {
+            Some(power) => {
+                if let Some((w, why)) = power.update(audio_edge) {
+                    cec_wanted = w;
+                    cec_reason = why.name();
+                }
+                cec_wanted
+            }
+            None => detector.present(),
+        };
+        let signal = tv_signal(wanted, tv.refusal());
+        if signal != offered {
+            offered = signal;
+            stats.signal.store(signal, Ordering::Relaxed);
+            // The wire reason: a non-PCM refusal, or CEC's standby.
+            let wire = match (signal, tv.refusal()) {
+                (false, Some(Refusal::NonPcm)) => signal_reason::NON_PCM,
+                (false, None) if cec_reason == "standby" => signal_reason::STANDBY,
+                _ => signal_reason::NONE,
+            };
+            if let Err(e) = offer_why(upstream, &input, signal, wire, stats) {
+                return lost(e);
+            }
+            let reason = match (signal, tv.refusal()) {
+                (true, _) if setup.tv_power.is_some() => format!(" reason={}", cec_reason),
+                (true, _) => String::new(),
+                (false, Some(r)) => format!(" reason={}", r.name()),
+                (false, None) if setup.tv_power.is_some() => format!(" reason={}", cec_reason),
+                (false, None) => " reason=silent".to_string(),
+            };
+            log(&format!(
+                "source-offer source_id={} signal={}{}",
+                input.source_id,
+                u8::from(signal),
+                reason
+            ));
+        }
+
+        while let Some((timestamp_ns, audio)) = tv.pop_chunk() {
+            let Some(s) = streaming.as_mut() else {
+                continue;
+            };
+            let sent = upstream.send(&Message::AudioChunk(AudioChunk {
+                sequence: s.next_sequence,
+                timestamp_ns,
+                sample_rate_hz: input.rate_hz,
+                channels: input.channels,
+                sample_format: input.sample_format,
+                reserved: [0u8; RESERVED_LEN],
+                audio_data: audio,
+            }));
+            if let Err(e) = sent {
+                return lost(e);
+            }
+            s.next_sequence = s.next_sequence.wrapping_add(1);
+            s.sent_any = true;
+            s.last_timestamp_ns = timestamp_ns;
+            stats.chunks_sent.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+/// The TV front end's counters into the shared stats.
+fn publish_tv(tv: &TvFrontEnd, stats: &SourceStats) {
+    let c = tv.counters();
+    let set = |a: &AtomicU64, v: u64| a.store(v, Ordering::Relaxed);
+    set(&stats.tv_non_pcm_periods, c.non_pcm_periods);
+    set(&stats.tv_refused_non_pcm, c.refusals[0]);
+    set(&stats.tv_refused_no_lock, c.refusals[1]);
+    set(&stats.tv_refused_rate, c.refusals[2]);
+    set(&stats.tv_relocks, c.relocks);
+    set(&stats.tv_ring_overflows, c.ring_overflows);
+    set(&stats.tv_ring_underflows, c.ring_underflows);
+    set(&stats.tv_frames_dropped, c.frames_dropped);
+    if let Some(ppm) = tv.matcher().estimate_ppm() {
+        stats
+            .tv_ppm_milli
+            .store((ppm * 1_000.0).round() as i64, Ordering::Relaxed);
+    }
+}
+
 fn offer<U: Upstream>(
     upstream: &mut U,
     input: &LineInConfig,
     signal: bool,
+    stats: &SourceStats,
+) -> io::Result<()> {
+    offer_why(upstream, input, signal, signal_reason::NONE, stats)
+}
+
+/// An offer with its wire `reason` (`docs/protocol.md` 0x36: `standby`,
+/// `non_pcm`).
+fn offer_why<U: Upstream>(
+    upstream: &mut U,
+    input: &LineInConfig,
+    signal: bool,
+    reason: u8,
     stats: &SourceStats,
 ) -> io::Result<()> {
     upstream.send(&Message::SourceOffer(SourceOffer {
@@ -840,7 +1243,7 @@ fn offer<U: Upstream>(
         kind: input.kind,
         signal,
         name: input.name.clone(),
-        reason: 0,
+        reason,
     }))?;
     stats.offers_sent.fetch_add(1, Ordering::Relaxed);
     Ok(())
