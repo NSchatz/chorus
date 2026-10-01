@@ -369,6 +369,25 @@ else
     sed 's/^/    /' "$T/open-prs-strict.log" | tail -n 20
 fi
 
+# The fixture guard holds every time, not most times: a report whose one raw file
+# is a committed fixture, validated strictly 25 times, is refused 25 times. (The
+# check once piped the hash list into `grep -q` under pipefail, and a SIGPIPE
+# let about one match in twelve through.)
+git -C "$CLONE" switch -q "bench/$DATE-rig3-capture"
+REFUSED=0
+for _ in $(seq 1 25); do
+    out="$( (cd "$CLONE" && bash tools/bench/validate-report.sh "docs/measurements/rig3-capture-$DATE.md") 2>&1 || true)"
+    if grep -q 'is byte-identical to a committed fixture' <<< "$out"; then
+        REFUSED=$((REFUSED + 1))
+    fi
+done
+git -C "$CLONE" switch -q main
+if [ "$REFUSED" = 25 ]; then
+    echo "bench-pr: a fixture posing as a capture is refused on each of 25 strict validations"
+else
+    fail "a fixture posing as a capture was refused on $REFUSED of 25 strict validations"
+fi
+
 # --- refusals of the report half ---------------------------------------------------
 new_run sound2-ten-minute
 delay_log "$RUN/raw/ten-minute-run.log" 620
