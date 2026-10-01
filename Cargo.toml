@@ -5,6 +5,7 @@ members = [
     "crates/control",
     "crates/discovery",
     "crates/sync",
+    "crates/controls",
     "crates/audio",
     "crates/alsa",
     "crates/hostctl",

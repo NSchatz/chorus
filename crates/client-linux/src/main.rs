@@ -46,13 +46,14 @@ use std::io::Write;
 use std::net::TcpStream;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chorus_audio::MonotonicTimeline;
 use chorus_client_linux::config::{ClientConfig, ClientMode};
 use chorus_client_linux::control::{ControlLink, ZoneWatch};
 use chorus_client_linux::delaylog::DelayLog;
+use chorus_client_linux::front_panel::{FrontPanel, LedWriter, PanelConfig};
 use chorus_client_linux::outmap::{self, MappedSink};
 use chorus_client_linux::receive::{handshake, HandshakeError};
 use chorus_client_linux::run::{counter_lines, header_for, run_session, StopReason};
@@ -62,6 +63,7 @@ use chorus_client_linux::Counters;
 use chorus_control::transport::Transport;
 use chorus_discovery::dnssd::AUDIO_SERVICE;
 use chorus_discovery::net::locate;
+use chorus_protocol::v2::session::SecureWriter;
 
 const EXIT_CONFIG: u8 = 2;
 const EXIT_SERVER: u8 = 3;
@@ -110,6 +112,22 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
     let timeline = MonotonicTimeline::new();
     let keep = Arc::new(AtomicBool::new(true));
     let watch = Arc::new(ZoneWatch::new());
+
+    // The front panel, when one is configured: its buttons and light as the
+    // controller role (front_panel.rs). A panel that cannot start is a
+    // configuration refused, never a panel silently absent.
+    let (panel, panel_config) = match config.front_panel.as_deref() {
+        None => (None, config.clone()),
+        Some(path) => match start_panel(config, path, timeline) {
+            Ok(v) => v,
+            Err(e) => {
+                report("configuration refused", &e);
+                status("stopped reason=front-panel-refused played=0");
+                return ExitCode::from(EXIT_CONFIG);
+            }
+        },
+    };
+    let config = &panel_config;
 
     // The control channel first, so that the first session already knows its
     // zone's volume, its mute and which group's stream it is meant to be on.
@@ -186,7 +204,15 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
                 break ExitCode::from(EXIT_NO_SERVER);
             }
         };
-        let outcome = play(config, &address, session, timeline, &watch, &mut identity);
+        let outcome = play(
+            config,
+            &address,
+            session,
+            timeline,
+            &watch,
+            &mut identity,
+            panel.as_ref(),
+        );
         played_ever |= outcome.played;
         total_frames += outcome.frames_played;
         status(&format!(
@@ -235,6 +261,9 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
     };
 
     keep.store(false, Ordering::SeqCst);
+    if let Some(panel) = panel {
+        panel.stop();
+    }
     if let Some(link) = &link {
         let _ = link.leaving();
     }
@@ -242,6 +271,75 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
         let _ = handle.join();
     }
     code
+}
+
+/// Load the panel configuration at `path`, open its input device and its
+/// light, and start it. Hands back the panel and the configuration with the
+/// roles it adds, so `hello` declares exactly what this process runs.
+fn start_panel(
+    config: &ClientConfig,
+    path: &str,
+    timeline: MonotonicTimeline,
+) -> Result<(Option<FrontPanel>, ClientConfig), String> {
+    let panel = PanelConfig::load(std::path::Path::new(path)).map_err(|e| e.to_string())?;
+    let mut keys = Vec::new();
+    for input in &panel.inputs {
+        keys.push(
+            std::fs::File::open(input)
+                .map_err(|e| format!("front panel input {}: {}", input.display(), e))?,
+        );
+    }
+    let led = match &panel.led {
+        Some(dir) => Some(
+            LedWriter::open(dir)
+                .map_err(|e| format!("front panel light {}: {}", dir.display(), e))?,
+        ),
+        None => None,
+    };
+    let mut with_roles = config.clone();
+    with_roles.extra_roles = panel.roles();
+    // Every key event is stamped on the monotonic timeline when it is read.
+    // The LED is shown against the same timeline until the sync offset is
+    // published to it (a follow-up for goal 12, when the server sends a
+    // visualizer stream at all).
+    let now: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(move || timeline.now_ns());
+    let log: Arc<dyn Fn(&str) + Send + Sync> = Arc::new(status);
+    let running = FrontPanel::start(&panel, &config.zone, keys, led, Arc::clone(&now), now, log)
+        .map_err(|e| e.to_string())?;
+    status(&format!(
+        "front-panel class={} inputs={} keys={} led={} roles={}",
+        panel.speaker_class.name(),
+        panel.inputs.len(),
+        panel.keys.len(),
+        panel
+            .led
+            .as_ref()
+            .map(|d| d.display().to_string())
+            .unwrap_or_else(|| "none".to_string()),
+        with_roles.extra_roles | chorus_protocol::v2::roles::PLAYER
+    ));
+    Ok((Some(running), with_roles))
+}
+
+/// The session's writer, shared by the time-sync exchange and the front
+/// panel. Each takes the lock for one whole frame.
+struct SharedWriter(Arc<Mutex<SecureWriter<TcpStream>>>);
+
+impl std::io::Write for SharedWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        lock(&self.0).write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        lock(&self.0).flush()
+    }
+}
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    match m.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    }
 }
 
 /// This endpoint's protocol v2 identity, from `--identity-dir`, or made for
@@ -388,6 +486,7 @@ fn play(
     timeline: MonotonicTimeline,
     watch: &Arc<ZoneWatch>,
     identity: &mut EndpointIdentity,
+    panel: Option<&FrontPanel>,
 ) -> SessionOutcome {
     // The first session writes the configured log; a rejoin writes its own
     // beside it, so a run that rejoined leaves one record per session rather
@@ -475,6 +574,23 @@ fn play(
         announced,
         ..
     } = secure;
+    // One writer for the exchange and the front panel's commands.
+    let writer = Arc::new(Mutex::new(writer));
+    if let Some(panel) = panel {
+        session::also_hand(&mut stream, &announced, panel.server_messages());
+        let uplink = Arc::clone(&writer);
+        panel.connect(Box::new(move |m| lock(&uplink).send(m)));
+    }
+    // The panel is told when this session ends, whichever way it ends.
+    struct Disconnect<'a>(Option<&'a FrontPanel>);
+    impl Drop for Disconnect<'_> {
+        fn drop(&mut self) {
+            if let Some(panel) = self.0 {
+                panel.disconnect();
+            }
+        }
+    }
+    let _disconnect = Disconnect(panel);
 
     // The device cannot be opened until the stream says what it is, so the
     // first chunk is read first and carried forward.
@@ -595,7 +711,10 @@ fn play(
     // the criterion's own wording and is also the only way the round trip it
     // measures is the round trip the audio takes. It is sealed like
     // everything else in the session, and nothing else writes on it.
-    let sync_out: Option<Box<dyn std::io::Write>> = Some(Box::new(writer));
+    let sync_out: Option<Box<dyn std::io::Write>> = Some(Box::new(SharedWriter(writer)));
+    if let Some(panel) = panel {
+        panel.set_playing(true);
+    }
 
     let counters = Arc::new(Counters::new());
     let outcome = match run_session(

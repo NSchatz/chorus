@@ -43,6 +43,8 @@
 //!   the server's control channel and reduced to one atomic the audio path
 //!   reads.
 //! - [`zone`]: applying that to the PCM, at the last point before the sink.
+//! - [`front_panel`]: the endpoint's buttons and status LED as the controller
+//!   role, read through evdev and the LED class, decided by `chorus-controls`.
 //! - [`outmap`]: the output map, N device channels fed from stream positions
 //!   with per-channel gain and delay, at the sink's own edge.
 
@@ -54,6 +56,7 @@ pub mod config;
 pub mod control;
 pub mod decode;
 pub mod delaylog;
+pub mod front_panel;
 pub mod logcheck;
 pub mod offsets;
 pub mod outmap;

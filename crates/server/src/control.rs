@@ -54,7 +54,9 @@ use chorus_control::fanout::ControlFanout;
 use chorus_control::persist;
 use chorus_control::zones::Zones;
 use chorus_hostctl::ThreadRegistry;
+use chorus_protocol::v2::{ControllerCommand, ControllerState, Playback};
 
+use crate::controller::{translate, ControllerAction, THOUSANDTHS_PER_POINT};
 use crate::hostreport::register_ordinary_thread;
 
 /// Longest request the control channel will read: request line, headers and
@@ -310,6 +312,97 @@ impl ControlState {
         Ok(state)
     }
 
+    /// Apply what an endpoint's button asked for (its `controller_command`)
+    /// to the zone that endpoint is attached to, through the same checks,
+    /// persistence and fanout as `POST /api/command` (the controller role is
+    /// not a second control plane: docs/protocol.md, K65, K81, I10).
+    ///
+    /// The zone is the one whose present endpoints (else whose membership)
+    /// names `endpoint`, the session's authenticated id; an endpoint attached
+    /// to no zone is refused by name. What comes back carries the
+    /// `controller_state` to answer the endpoint with.
+    pub fn controller(
+        &self,
+        endpoint: &str,
+        command: &ControllerCommand,
+    ) -> Result<ControllerApplied, Refusal> {
+        let result = {
+            let mut zones = self.locked();
+            let zone = zones
+                .zones()
+                .iter()
+                .find(|z| z.present.iter().any(|e| e == endpoint))
+                .or_else(|| {
+                    zones
+                        .zones()
+                        .iter()
+                        .find(|z| z.endpoints.iter().any(|e| e == endpoint))
+                })
+                .map(|z| z.id.clone())
+                .ok_or_else(|| {
+                    Refusal::rejected(
+                        "endpoint",
+                        format!(
+                            "endpoint '{}' sent a controller command and is attached to no zone",
+                            endpoint
+                        ),
+                    )
+                });
+            zone.and_then(|zone| {
+                let action = translate(&zones, &zone, command)?;
+                let mut changed = None;
+                if let ControllerAction::Apply(change) = &action {
+                    zones.apply(change)?;
+                    let mut persist_error = None;
+                    if let Some(path) = &self.state_file {
+                        if let Err(e) = persist::write_file(path, &zones) {
+                            persist_error = Some(e.to_string());
+                        }
+                    }
+                    changed = Some((zones.encode_state(), persist_error));
+                }
+                let z = zones.zone(&zone).expect("translate found the zone");
+                let points = (i64::from(z.volume.thousandths()) + THOUSANDTHS_PER_POINT / 2)
+                    / THOUSANDTHS_PER_POINT;
+                let state = ControllerState {
+                    volume: points.clamp(0, 100) as u8,
+                    muted: z.muted,
+                    // The server streams to every attached endpoint; whether an
+                    // input is paused arrives with the inputs (goals 16, 17).
+                    playback: Playback::Playing,
+                    group: z.group.clone(),
+                };
+                Ok((
+                    ControllerApplied {
+                        zone,
+                        action,
+                        state,
+                    },
+                    changed,
+                ))
+            })
+        };
+        let (applied, changed) = match result {
+            Ok(v) => v,
+            Err(refusal) => {
+                self.refused.fetch_add(1, Ordering::Relaxed);
+                return Err(refusal);
+            }
+        };
+        if let Some((state, persist_error)) = changed {
+            if let Some(detail) = persist_error {
+                eprintln!(
+                    "chorus-server: the zone state could not be persisted: {}. The change is in \
+                     force in this process and will NOT survive a restart",
+                    detail
+                );
+            }
+            self.applied.fetch_add(1, Ordering::Relaxed);
+            self.fanout.broadcast(Arc::new(state));
+        }
+        Ok(applied)
+    }
+
     /// Mark an endpoint as gone and fan out the result.
     fn endpoint_left(&self, endpoint: &str) {
         let state = {
@@ -324,6 +417,18 @@ impl ControlState {
         };
         self.fanout.broadcast(Arc::new(state));
     }
+}
+
+/// What one controller command did, from [`ControlState::controller`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControllerApplied {
+    /// The zone the endpoint is attached to.
+    pub zone: String,
+    /// What the command became: a change applied, or a transport request
+    /// for the room's input.
+    pub action: ControllerAction,
+    /// The `controller_state` for the endpoint, after the change.
+    pub state: ControllerState,
 }
 
 /// How many of `workers` may hold an event stream at once.
