@@ -259,7 +259,12 @@ impl Conductor {
                 }
             }
         }
-        self.route_inputs(&snapshot, &mut report);
+        // Inputs a slot starts playing go out before the sessions move and
+        // the ones it stops playing after, so a group moving to another slot
+        // (with the moves under the audio thread's grid guard) is heard on
+        // one slot or the other at every tick, never on a slot not yet
+        // playing it.
+        self.route_inputs(&snapshot, &mut report, true);
         for session in self.router.sessions() {
             let room = snapshot.room_of(&session.endpoint);
             let route = room
@@ -282,6 +287,7 @@ impl Conductor {
                 }
             }
         }
+        self.route_inputs(&snapshot, &mut report, false);
         report
     }
 
@@ -423,12 +429,13 @@ impl Conductor {
         });
         let sent = self.router.push_message(at.session, &message);
         println!(
-            "chorus-server: line-in {} input={} source_id={} port={} sent={}",
+            "chorus-server: line-in {} input={} source_id={} port={} sent={} {}",
             word,
             input.literal(),
             at.source_id,
             at.port.map_or("-".to_string(), |p| p.to_string()),
-            u8::from(sent)
+            u8::from(sent),
+            line_ins.report()
         );
     }
 
@@ -472,7 +479,9 @@ impl Conductor {
         }
     }
 
-    fn route_inputs(&mut self, snapshot: &Snapshot, report: &mut PassReport) {
+    /// Tell the audio thread what each slot plays: with `starting`, only the
+    /// slots that start playing something.
+    fn route_inputs(&mut self, snapshot: &Snapshot, report: &mut PassReport, starting: bool) {
         let Some(slots) = &self.slots else {
             return;
         };
@@ -481,7 +490,8 @@ impl Conductor {
                 Some(g) => self.input_for(&g.source),
                 None => SlotInput::Silence,
             };
-            if self.inputs.get(slot) != Some(&wanted) {
+            if self.inputs.get(slot) != Some(&wanted) && !(starting && wanted == SlotInput::Silence)
+            {
                 match slots.try_send(SlotCommand::Input {
                     slot,
                     input: wanted,
@@ -497,18 +507,23 @@ impl Conductor {
                     Err(TrySendError::Disconnected(_)) => continue,
                 }
             }
-            if let (SlotInput::LineIn(_), Some(g)) = (wanted, group) {
+            if let (SlotInput::LineIn(port), Some(g)) = (wanted, group) {
+                let port = usize::from(port);
                 let latency_ns = self.latency_for(snapshot, &g.rooms, &g.source);
-                if self.targets[slot] != Some(latency_ns) {
-                    match slots.try_send(SlotCommand::LatencyTarget { slot, latency_ns }) {
+                if self.targets.get(port).copied().flatten() != Some(latency_ns) {
+                    match slots.try_send(SlotCommand::LatencyTarget { port, latency_ns }) {
                         Ok(()) => {
                             println!(
-                                "chorus-server: line-in latency slot={} group={} target_ms={}",
+                                "chorus-server: line-in latency port={} slot={} group={} \
+                                 target_ms={}",
+                                port,
                                 slot,
                                 g.group,
                                 latency_ns / 1_000_000
                             );
-                            self.targets[slot] = Some(latency_ns);
+                            if let Some(t) = self.targets.get_mut(port) {
+                                *t = Some(latency_ns);
+                            }
                         }
                         Err(TrySendError::Full(_)) => report.owed += 1,
                         Err(TrySendError::Disconnected(_)) => {}
@@ -561,6 +576,36 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn the_wired_group_latency_is_the_committed_playout_latency() {
+        let conf = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../config/sync.conf"
+        ))
+        .unwrap();
+        let us: i64 = conf
+            .lines()
+            .find_map(|l| l.strip_prefix("playout_latency_us = "))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert_eq!(WIRED_GROUP_LATENCY_NS, us * 1_000);
+    }
+
+    #[test]
+    fn a_civil_clock_from_an_instant_runs_at_the_schedule_scale() {
+        let clocks = Clocks::new(CivilClock::From(1_000 * 1_000_000_000), 20);
+        std::thread::sleep(Duration::from_millis(120));
+        let (mono, utc) = clocks.now();
+        // 120 ms real is at least 2.4 s of schedule time.
+        assert!(mono >= 2_400_000_000, "{}", mono);
+        assert!(utc >= 1_002, "{}", utc);
+        assert!(clocks.until(mono + 2_000_000_000) <= Duration::from_millis(100));
+        let fixed = Clocks::new(CivilClock::Fixed(77), 1);
+        assert_eq!(fixed.now().1, 77);
     }
 
     #[test]

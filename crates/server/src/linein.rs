@@ -348,13 +348,16 @@ impl LineIns {
             .count();
         let dropped: u64 = self.ports.iter().map(|p| p.dropped()).sum();
         let accepted: u64 = self.ports.iter().map(|p| p.accepted()).sum();
+        let underruns: u64 = self.ports.iter().map(|p| p.underruns()).sum();
         format!(
-            "line-ins offered={} streaming={} ports={} chunks_accepted={} chunks_dropped={}",
+            "line-ins offered={} streaming={} ports={} chunks_accepted={} chunks_dropped={} \
+             underruns={}",
             inner.inputs.len(),
             streaming,
             self.ports.len(),
             accepted,
-            dropped
+            dropped,
+            underruns
         )
     }
 }
@@ -367,6 +370,7 @@ pub struct Port {
     channels: usize,
     dropped: AtomicU64,
     accepted: AtomicU64,
+    underruns: AtomicU64,
 }
 
 #[derive(Debug)]
@@ -391,6 +395,7 @@ impl Port {
             channels: channels.max(1),
             dropped: AtomicU64::new(0),
             accepted: AtomicU64::new(0),
+            underruns: AtomicU64::new(0),
         }
     }
 
@@ -405,6 +410,18 @@ impl Port {
     /// Chunks written whole.
     pub fn accepted(&self) -> u64 {
         self.accepted.load(Ordering::Relaxed)
+    }
+
+    /// Ticks the audio thread found too little of this port's upstream for,
+    /// once its plan had started (each played a chunk of silence).
+    pub fn underruns(&self) -> u64 {
+        self.underruns.load(Ordering::Relaxed)
+    }
+
+    /// Count one underrun: the audio thread's only write here besides the
+    /// drain, an atomic add.
+    pub fn count_underrun(&self) {
+        self.underruns.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Chunks dropped because the ring was full.

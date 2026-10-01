@@ -264,6 +264,12 @@ impl Player {
         }
     }
 
+    /// The session and the messages it records, for a test that drives its
+    /// reader and writer from threads of its own.
+    pub fn split(self) -> (Session, Arc<Mutex<Vec<V2Message>>>) {
+        (self.session, self.messages)
+    }
+
     /// The next audio chunk, or `None` within `limit`.
     pub fn next_chunk(&mut self, limit: Duration) -> Option<AudioChunk> {
         let deadline = Instant::now() + limit;
