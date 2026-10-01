@@ -21,7 +21,7 @@
 //! - the TV turning on raises the TV input's signal with no audio at all
 //!   (autoplay on power), the den's autoplay rule plays the hub's input,
 //!   the TV's keys while it plays turn the den down and mute it without
-//!   detaching it from the autoplay (ADR 0094), and the TV's standby ends
+//!   detaching it from the autoplay (ADR 0092), and the TV's standby ends
 //!   the signal at once and the den is restored, volume and mute too.
 //!
 //! Nothing here is timing evidence: the bus is in memory and what is graded
@@ -355,7 +355,7 @@ fn tv_keys_move_the_rooms_volume_within_its_limit_and_tv_power_plays_and_stops_t
 
     // The den's autoplay rule for the TV input. The keys above came before
     // it; the keys below come while the autoplay plays, which must not
-    // detach the den from it (a level is not a source change, ADR 0094).
+    // detach the den from it (a level is not a source change, ADR 0092).
     server.applied(&format!(
         r#"{{"v":2,"t":"autoplay","input":"{}/line-1","target":"den","enabled":true}}"#,
         hub
