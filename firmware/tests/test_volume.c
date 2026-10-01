@@ -560,8 +560,8 @@ static void test_server_sequence_holds_the_clamp(void)
         }
         messages++;
     }
-    chorus_check(decoded_all && messages >= 8,
-                 "every frame decodes as room_volume (%u messages)", messages);
+    chorus_check(decoded_all && messages >= 8, "every frame decodes as room_volume (%u messages)",
+                 messages);
     chorus_check(clamped,
                  "at every message the applied gain is min(gain, limit), never above the limit, "
                  "and under a ceiling of 250 never above 250");

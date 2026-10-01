@@ -15,6 +15,12 @@ if ! git cat-file -e "$CONVENTIONS_BASE^{commit}" 2> /dev/null; then
     fail "Commits" "the base commit $CONVENTIONS_BASE is not in this history"
     exit 1
 fi
+# Commits already on main whose subject passed the length limit before this check caught it. A
+# pushed subject cannot be fixed without rewriting history, which is never done, so each is named
+# here by its full id and held to every other part of the rule.
+too_long_on_main=(
+    a19a713e1f86bc43b8925cf79dced5e1a4572c22 # PR #75, catalog v2 (110 characters)
+)
 rc=0
 n=0
 dash="$(printf '\342\200\224')"
@@ -26,7 +32,7 @@ while IFS= read -r c; do
         echo "${c:0:7} $s"
         fail "Commits" "subject is not '<area>: <summary>'"
         rc=1
-    elif [ "${#core}" -gt 100 ]; then
+    elif [ "${#core}" -gt 100 ] && ! printf '%s\n' "${too_long_on_main[@]}" | command grep -qx "$c"; then
         echo "${c:0:7} $s"
         fail "Commits" "subject is ${#core} characters (limit 100)"
         rc=1
