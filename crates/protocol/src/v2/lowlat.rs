@@ -624,8 +624,7 @@ impl ChunkInfo {
 /// is refused when it is built, never split.
 pub fn chunk_fits(chunk_frames: u32, channels: u16, format: SampleFormat) -> bool {
     let pcm = chunk_frames as u64 * channels as u64 * format.bytes_per_sample() as u64;
-    chunk_frames >= 1
-        && chunk_frames <= LOW_LATENCY_MAX_CHUNK_FRAMES
+    (1..=LOW_LATENCY_MAX_CHUNK_FRAMES).contains(&chunk_frames)
         && CHUNK_HEADER_LEN as u64 + pcm <= MAX_DATA_PLAINTEXT_LEN as u64
 }
 
