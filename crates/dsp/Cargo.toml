@@ -1,0 +1,13 @@
+[package]
+name = "chorus-dsp"
+description = "the chorus DSP library: RBJ biquads, LR4 crossovers, delay, a look-ahead limiter, a night compressor, ISO 226 loudness compensation, speech enhancement, bass management, the two-way split and the endpoint chain; no I/O, no clock"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

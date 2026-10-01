@@ -16,6 +16,7 @@ members = [
     "crates/client-linux",
     "crates/opus-sys",
     "crates/schedule",
+    "crates/dsp",
 ]
 
 [workspace.package]

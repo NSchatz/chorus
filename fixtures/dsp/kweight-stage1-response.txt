@@ -1,0 +1,21 @@
+# The same stage 1, judged by what it does rather than by its coefficients: the
+# magnitude of the cookbook design and of the filter ITU-R BS.1770-5 Table 1
+# prints, compared at each frequency (largest difference here 0.0022 dB;
+# tolerance 0.01 dB). And the running f32 section's impulse response against the
+# printed filter's, run in f64 Direct Form I (tolerance 3e-4 per sample over
+# 64 samples: the coefficient difference above, rounded to f32).
+
+kind = biquad_reference
+source = https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.1770-5-202311-I!!PDF-E.pdf https://github.com/csteinmetz1/pyloudnorm/blob/master/pyloudnorm/meter.py
+read = 2026-10-01
+type = highshelf
+rate_hz = 48000
+f0_hz = 1500
+q = 0.7071067811865475
+gain_db = 4
+ref_b = 1.53512485958697 -2.69169618940638 1.19839281085285
+ref_a = -1.69065929318241 0.73248077421585
+freqs_hz = 20 100 500 1000 1500 2000 5000 10000 20000
+tolerance_db = 0.01
+impulse_frames = 64
+tolerance_impulse = 3e-4

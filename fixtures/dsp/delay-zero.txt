@@ -1,0 +1,11 @@
+# A zero-sample delay is a wire: y(n) = x(n). Exact.
+
+kind = delay
+source = https://ccrma.stanford.edu/~jos/pasp/Delay_Lines.html
+read = 2026-10-01
+delay_frames = 0
+frames = 64
+input = noise 9 0.5
+rate_hz = 48000
+max_frames = 4800
+refuse_frames = 4801

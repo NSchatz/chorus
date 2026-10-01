@@ -1,0 +1,14 @@
+# The RBJ cookbook as the W3C note gives it. APF, H(s) = (s^2 - s/Q + 1)/(s^2 + s/Q + 1): unit magnitude everywhere.
+# -inf: the magnitude must be below -100 dB.
+
+kind = biquad_magnitude
+source = https://www.w3.org/TR/audio-eq-cookbook/
+read = 2026-10-01
+type = allpass
+rate_hz = 48000
+f0_hz = 1000
+q = 2.0
+gain_db = 0
+freqs_hz = 0 100 1000 10000 24000
+expect_db = 0 0 0 0 0
+tolerance_db = 1e-6

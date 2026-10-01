@@ -1,0 +1,14 @@
+# The RBJ cookbook as the W3C note gives it. highShelf: 0 dB at DC, dBgain/2 at the midpoint f0, dBgain at Nyquist.
+# -inf: the magnitude must be below -100 dB.
+
+kind = biquad_magnitude
+source = https://www.w3.org/TR/audio-eq-cookbook/
+read = 2026-10-01
+type = highshelf
+rate_hz = 48000
+f0_hz = 5000
+q = 0.7071067811865475
+gain_db = -9
+freqs_hz = 0 5000 24000
+expect_db = 0 -4.5 -9
+tolerance_db = 1e-6

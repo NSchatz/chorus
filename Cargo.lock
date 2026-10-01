@@ -130,6 +130,10 @@ name = "chorus-discovery"
 version = "0.1.0"
 
 [[package]]
+name = "chorus-dsp"
+version = "0.1.0"
+
+[[package]]
 name = "chorus-hostctl"
 version = "0.1.0"
 
