@@ -206,6 +206,14 @@ expect_missing_prerequisite "restart-storm-run.sh" \
     env CHORUS_SKIP_BUILD=1 CHORUS_CLIENT_DEVICE=chorus-no-such-device \
     bash "$REPO_ROOT/tools/restart-storm-run.sh"
 
+# The same for the house soak (goal 11, ADR 0078): ten real endpoints on a
+# device that must open, so a device that does not exist is the prerequisite
+# made absent. It refuses before it starts a process or makes a run directory.
+expect_missing_prerequisite "house-soak-run.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_CLIENT_DEVICE=chorus-no-such-device \
+    CHORUS_HOUSE_SOAK_SECONDS=60 CHORUS_HOUSE_SOAK_REPORT= \
+    bash "$REPO_ROOT/tools/house-soak-run.sh"
+
 # The same, for AC-2's fallback half run all the way to playing. It needs a
 # device that opens and no multicast at all, so the device is the prerequisite
 # that is made absent here.
