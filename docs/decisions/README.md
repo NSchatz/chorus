@@ -57,4 +57,4 @@ the number of the pull request that added it.
 | 0067 | [one controller model in two languages, a Linux front panel read through evdev and the LED class, and the server routes an endpoint's controller commands through the control plane](0067-the-linux-front-panel-and-one-controller-model.md) |
 | 0068 | [chorus-client drives N device channels through an output map at the sink's edge, and multichannel on the Linux tier is a Pi 5 parallel-lane DAC HAT](0068-the-output-map.md) |
 | 0069 | [the Linux endpoint ships as one .deb per architecture, cross-built for glibc 2.36 with zig, run by a hardened systemd unit with real-time limits](0069-the-linux-endpoint-package.md) |
-| 0000 | [a line-in's latency grows from L_local to L_group by a bounded, raised-cosine time stretch planned on the server, proven against a stated glitch criterion in the simulator](0000-latency-growth.md) |
+| 0071 | [a line-in's latency grows from L_local to L_group by a bounded, raised-cosine time stretch planned on the server, proven against a stated glitch criterion in the simulator](0071-latency-growth.md) |

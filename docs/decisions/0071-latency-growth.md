@@ -1,4 +1,4 @@
-# 0000: a line-in's latency grows from L_local to L_group by a bounded, raised-cosine time stretch planned on the server, proven against a stated glitch criterion in the simulator
+# 0071: a line-in's latency grows from L_local to L_group by a bounded, raised-cosine time stretch planned on the server, proven against a stated glitch criterion in the simulator
 
 - Status: accepted (goal 11, 2026-10-01)
 - Decided by: the goal (item 4, K94); cheap to reverse (a pure library nothing calls yet), so
