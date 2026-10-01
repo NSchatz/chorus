@@ -47,6 +47,7 @@ use chorus_protocol::{SampleFormat, MAX_CHANNELS, MAX_SAMPLE_RATE_HZ, MIN_SAMPLE
 use crate::coded::CodedStream;
 use crate::config::ClientConfig;
 use crate::receive::StreamShape;
+use crate::zone::RoomVolumeInbox;
 
 /// The file holding the endpoint's long-term secret key.
 pub const KEY_FILE: &str = "endpoint.key";
@@ -237,7 +238,26 @@ pub struct Announced {
     pub decoded_chunks: u64,
     /// Where the server's `source_control`s go (the source role's channel).
     pub source_controls: SourceControls,
+    /// `room_volume`s received (goal 11).
+    pub room_volumes: u64,
+    /// Where they go: the playout loop's inbox
+    /// ([`deliver_room_volume_to`]).
+    pub room_volume_inbox: RoomVolumeTap,
 }
+
+/// Where the session hands `room_volume` (the playout loop's inbox, held by
+/// `crate::control::ZoneWatch`). Plumbing, like [`SourceControls`]: it
+/// compares equal to any other.
+#[derive(Debug, Clone, Default)]
+pub struct RoomVolumeTap(Option<Arc<RoomVolumeInbox>>);
+
+impl PartialEq for RoomVolumeTap {
+    fn eq(&self, _: &RoomVolumeTap) -> bool {
+        true
+    }
+}
+
+impl Eq for RoomVolumeTap {}
 
 /// The sending end of the source role's control channel, kept with what the
 /// server announced so that every handler the session's reader is given
@@ -526,6 +546,18 @@ pub fn open(
     })
 }
 
+/// From now on, hand every `room_volume` this session receives to `inbox`,
+/// where the playout loop takes it (`crate::control::ZoneWatch::apply`).
+/// Called right after [`open`], before the stream is read: the server sends
+/// `room_volume` after its `hello`, which is where `open` stops reading.
+pub fn deliver_room_volume_to(announced: &Arc<Mutex<Announced>>, inbox: Arc<RoomVolumeInbox>) {
+    let mut a = match announced.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    a.room_volume_inbox = RoomVolumeTap(Some(inbox));
+}
+
 /// From now on, also show every v2 message the session receives to `also`
 /// (the front panel takes `controller_state`, `visualizer_frame` and
 /// `color`); what [`open`] records is recorded as before.
@@ -557,6 +589,14 @@ fn record(announced: &Arc<Mutex<Announced>>, m: Message) {
                 let _ = tx.send(c);
             }
             a.other += 1;
+        }
+        Message::RoomVolume(v) => {
+            // Validated by the decoder already (a value out of range never
+            // reaches here); the playout loop clamps it (zone.rs).
+            if let Some(inbox) = &a.room_volume_inbox.0 {
+                inbox.deliver(v);
+            }
+            a.room_volumes += 1;
         }
         _ => a.other += 1,
     }

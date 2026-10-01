@@ -125,7 +125,9 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
     }
     let timeline = MonotonicTimeline::new();
     let keep = Arc::new(AtomicBool::new(true));
-    let watch = Arc::new(ZoneWatch::new());
+    // The zone's state from the control plane and the room's volume from the
+    // audio wire, under this endpoint's own ceiling (`--max-volume`, ADR 0070).
+    let watch = Arc::new(ZoneWatch::with_max_volume(config.max_volume));
 
     // The front panel, when one is configured: its buttons and light as the
     // controller role (front_panel.rs). A panel that cannot start is a
@@ -562,7 +564,7 @@ fn play(
     status(&format!(
         "starting server={} device={} min_us={} max_us={} start_fill_us={} \
          device_target_us={} delay_log={} session={} zone={} transport={} bound_us={} \
-         playout_latency_us={} wifi_ps_declared={} wifi_ps_in_force={}",
+         playout_latency_us={} wifi_ps_declared={} wifi_ps_in_force={} max_volume={}",
         server,
         config.device,
         config.min_us,
@@ -576,7 +578,8 @@ fn play(
         config.transport.bound_us(),
         config.sync.playout_latency_ns / 1_000,
         wifi_ps,
-        wifi_ps
+        wifi_ps,
+        config.max_volume.literal()
     ));
 
     let stream = match TcpStream::connect(server) {
@@ -625,6 +628,9 @@ fn play(
     // inside a frame.
     let writer = SharedWriter::new(writer);
     let counters = Arc::new(Counters::new());
+    // The room's volume on the audio wire reaches the playout loop through the
+    // watch, before the stream is read (goal 11).
+    session::deliver_room_volume_to(&announced, watch.room_inbox());
     if let Some(panel) = panel {
         session::also_hand(&mut stream, &announced, panel.server_messages());
         let mut uplink = writer.clone();

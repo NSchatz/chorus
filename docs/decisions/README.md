@@ -57,3 +57,4 @@ the number of the pull request that added it.
 | 0067 | [one controller model in two languages, a Linux front panel read through evdev and the LED class, and the server routes an endpoint's controller commands through the control plane](0067-the-linux-front-panel-and-one-controller-model.md) |
 | 0068 | [chorus-client drives N device channels through an output map at the sink's edge, and multichannel on the Linux tier is a Pi 5 parallel-lane DAC HAT](0068-the-output-map.md) |
 | 0069 | [the Linux endpoint ships as one .deb per architecture, cross-built for glibc 2.36 with zig, run by a hardened systemd unit with real-time limits](0069-the-linux-endpoint-package.md) |
+| 0070 | [the room's gain and limit travel on the audio wire as room_volume, and both endpoint kinds enforce min(ramped gain, limit, own ceiling) at every frame](0070-room-volume-on-the-audio-wire.md) |
