@@ -74,8 +74,9 @@ pub fn filter_db(p: &RoomEqFilter, rate_hz: f64, f: f64) -> f64 {
     peaking_db(rate_hz, f64::from(p.freq_hz), gain_db(p), q(p), f)
 }
 
-/// The catalog's JSON spelling of one filter, `{"freq_hz":120,"gain_db":-3.5,"q":4.2}`: gain to
-/// its 0.01 dB quantum and Q to its 0.001 quantum, trailing zeros dropped.
+/// The catalog's JSON spelling of one filter, `{"freq_hz":42,"gain_db":-6.00,"q":4.500}`: gain
+/// to its 0.01 dB quantum and Q to its 0.001 quantum, every place written, as the catalog's own
+/// `room_eq` vector spells them (`fixtures/control/v2/room_eq.json`).
 pub fn filter_json(p: &RoomEqFilter) -> String {
     format!(
         "{{\"freq_hz\":{},\"gain_db\":{},\"q\":{}}}",
@@ -85,23 +86,23 @@ pub fn filter_json(p: &RoomEqFilter) -> String {
     )
 }
 
-/// A fixed-point integer as the shortest decimal: `fixed(-350, 2)` is `-3.5`, `fixed(4000, 3)`
-/// is `4`.
+/// A fixed-point integer with all its places: `fixed(-600, 2)` is `-6.00`, `fixed(4500, 3)` is
+/// `4.500`, `fixed(-5, 2)` is `-0.05`.
 fn fixed(value: i64, places: u32) -> String {
     let scale = 10i64.pow(places);
     let sign = if value < 0 { "-" } else { "" };
-    let whole = value.abs() / scale;
-    let frac = value.abs() % scale;
-    if frac == 0 {
-        return format!("{sign}{whole}");
-    }
-    let digits = format!("{frac:0width$}", width = places as usize);
-    format!("{sign}{whole}.{}", digits.trim_end_matches('0'))
+    format!(
+        "{sign}{}.{:0width$}",
+        value.abs() / scale,
+        value.abs() % scale,
+        width = places as usize
+    )
 }
 
-/// The `room_eq` catalog command carrying `filters` for `zone`, enabled:
-/// `{"type":"room_eq","zone":"...","filters":[...],"enabled":true}`. The zone is written as a
-/// JSON string with `"` and `\` escaped; the catalog itself validates it.
+/// The catalog's `room_eq` command (control catalog v2, `docs/control-plane.md`) setting
+/// `filters` on `zone` and enabling them, byte for byte as the catalog's vector spells it:
+/// `{"v":2,"t":"room_eq","zone":"living","filters":[...],"enabled":true}`. The zone is written
+/// as a JSON string with `"`, `\` and control characters escaped; the catalog validates it.
 pub fn room_eq_command_json(zone: &str, filters: &[RoomEqFilter]) -> String {
     let mut z = String::with_capacity(zone.len());
     for c in zone.chars() {
@@ -114,7 +115,7 @@ pub fn room_eq_command_json(zone: &str, filters: &[RoomEqFilter]) -> String {
     }
     let list: Vec<String> = filters.iter().map(filter_json).collect();
     format!(
-        "{{\"type\":\"room_eq\",\"zone\":\"{z}\",\"filters\":[{}],\"enabled\":true}}",
+        "{{\"v\":2,\"t\":\"room_eq\",\"zone\":\"{z}\",\"filters\":[{}],\"enabled\":true}}",
         list.join(",")
     )
 }

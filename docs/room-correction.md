@@ -119,7 +119,7 @@ what the endpoints run. Beyond the per-filter bounds it holds three rules of its
    than 1% (ASSUMED), or at 8 filters.
 
 The result converts to the catalog's command with `room_eq_command_json(zone, &filters)`:
-`{"type":"room_eq","zone":"...","filters":[{"freq_hz":45,"gain_db":-9.32,"q":6.409},...],
+`{"v":2,"t":"room_eq","zone":"...","filters":[{"freq_hz":45,"gain_db":-9.32,"q":6.409},...],
 "enabled":true}`.
 
 ## The fixtures and what the tests hold

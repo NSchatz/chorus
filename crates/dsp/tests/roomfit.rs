@@ -133,8 +133,9 @@ fn every_fit_is_at_most_eight_filters_inside_the_bounds() {
             assert!(t60 <= 0.5, "{}: {p:?} rings for {t60:.3} s", f.name);
         }
         let json = room_eq_command_json("living", &fit.filters);
-        assert!(json
-            .starts_with("{\"type\":\"room_eq\",\"zone\":\"living\",\"filters\":[{\"freq_hz\":"));
+        assert!(json.starts_with(
+            "{\"v\":2,\"t\":\"room_eq\",\"zone\":\"living\",\"filters\":[{\"freq_hz\":"
+        ));
         assert_eq!(json.matches("\"freq_hz\"").count(), fit.filters.len());
     }
 }
@@ -523,39 +524,49 @@ fn refusals_name_themselves() {
     }
 }
 
-/// The catalog spelling of a filter: whole Hz, gain to 0.01 dB, Q to 0.001, shortest decimal.
+/// The catalog spelling, byte for byte as the catalog's own `room_eq` vector
+/// (`fixtures/control/v2/room_eq.json`, goal 12's sound-catalog track) spells it: whole Hz, gain
+/// with two places, Q with three.
 #[test]
-fn a_filter_is_spelled_as_the_catalog_takes_it() {
-    let p = RoomEqFilter {
-        freq_hz: 45,
-        gain_cdb: -950,
-        q_milli: 4250,
-    };
+fn a_fit_is_spelled_as_the_catalog_spells_room_eq() {
+    let filters = [
+        RoomEqFilter {
+            freq_hz: 42,
+            gain_cdb: -600,
+            q_milli: 4500,
+        },
+        RoomEqFilter {
+            freq_hz: 120,
+            gain_cdb: -325,
+            q_milli: 2000,
+        },
+    ];
     assert_eq!(
-        filter_json(&p),
-        "{\"freq_hz\":45,\"gain_db\":-9.5,\"q\":4.25}"
+        room_eq_command_json("living", &filters),
+        "{\"v\":2,\"t\":\"room_eq\",\"zone\":\"living\",\"filters\":[{\"freq_hz\":42,\"gain_db\":-6.00,\
+         \"q\":4.500},{\"freq_hz\":120,\"gain_db\":-3.25,\"q\":2.000}],\"enabled\":true}"
     );
-    let p = RoomEqFilter {
-        freq_hz: 1000,
-        gain_cdb: 300,
-        q_milli: 500,
-    };
-    assert_eq!(
-        filter_json(&p),
-        "{\"freq_hz\":1000,\"gain_db\":3,\"q\":0.5}"
-    );
-    let p = RoomEqFilter {
+    let edge = RoomEqFilter {
         freq_hz: 20,
         gain_cdb: -5,
         q_milli: 10_000,
     };
     assert_eq!(
-        filter_json(&p),
-        "{\"freq_hz\":20,\"gain_db\":-0.05,\"q\":10}"
+        filter_json(&edge),
+        "{\"freq_hz\":20,\"gain_db\":-0.05,\"q\":10.000}"
+    );
+    let edge = RoomEqFilter {
+        freq_hz: 1000,
+        gain_cdb: 300,
+        q_milli: 500,
+    };
+    assert_eq!(
+        filter_json(&edge),
+        "{\"freq_hz\":1000,\"gain_db\":3.00,\"q\":0.500}"
     );
     assert_eq!(
         room_eq_command_json("a\"b", &[]),
-        "{\"type\":\"room_eq\",\"zone\":\"a\\\"b\",\"filters\":[],\"enabled\":true}"
+        "{\"v\":2,\"t\":\"room_eq\",\"zone\":\"a\\\"b\",\"filters\":[],\"enabled\":true}"
     );
 }
 
