@@ -338,7 +338,8 @@ bound on the state message's size, far past a house of a dozen rooms).
 them.** Firing an alarm, ramping it, counting a sleep timer down and fading it,
 and starting a line-in are the server runtime's, which tells the room model
 what it did through the model's hooks (`crates/control/src/zones.rs`, "What the
-runtime drives"), and every volume it sets is clamped like any other.
+runtime drives"), and every volume it sets is clamped like any other. What the
+server's runtime does is "The schedule runtime" below.
 
 ### Take the room (K78)
 
@@ -581,10 +582,11 @@ default) the server is the one-stream shape it always was.
   (`slots group=<id> source=none reason=every-slot-in-use`). The deployment's
   answer is S = the number of rooms, which can never run out.
 - **What a slot plays** follows its group's source: `stream` is the configured
-  `--source` (read once per chunk however many slots play it); a chime or a
-  line-in plays silence until the schedule runtime's inputs exist (the next goal
-  11 track). In this shape a source that ends (a file) is reopened, and no slot
-  sends `stream_end`.
+  `--source` (read once per chunk however many slots play it); `chime:<name>`
+  is that chime, rendered at start and repeated with a gap; `line-in:<endpoint>/
+  <input>` is that endpoint's input (below, "The schedule runtime"); `none` is
+  no slot at all. In this shape a source that ends (a file) is reopened, and no
+  slot sends `stream_end`.
 - **The conductor** is the thread that carries every change to the sessions it
   concerns: which slot each plays and each session hears, `room_volume` to the
   players of a room whose gain or effective limit changed (`docs/protocol.md`,
@@ -593,9 +595,95 @@ default) the server is the one-stream shape it always was.
   session was last sent, and a session's greeting carries both before its first
   chunk.
 
-`--civil-time <day>-<HH:MM>` holds the civil time the quiet hours are evaluated
-at fixed for the run: for tests and a server with no time source, since this
-server reads no clock for scheduling yet.
+## The schedule runtime: alarms, sleep timers, quiet hours, line-in autoplay
+
+With `--control-listen` the conductor runs the schedule runtime
+(`crates/server/src/schedule_runtime.rs`, ADR 0076) as part of every pass, and
+this is what carries out the alarms, sleep timers, quiet hours and autoplay
+rules the catalog configures (ADR 0079 wires it):
+
+- **Civil time** is kept in one time zone, loaded at start before any thread:
+  `--tz <path>` (a TZif file), else `$TZ` (a zoneinfo name, which must pass the
+  schedule library's safe-name check and is read under `/usr/share/zoneinfo`,
+  an absolute path, or a POSIX TZ string), else `/etc/localtime`, else UTC. The
+  server says which (`civil tz=<what> source=<--tz|TZ|TZ-posix|localtime|
+  default> clock=<system|fixed|from>`); a file it was told to read and cannot,
+  or that is not a zone, stops it with exit 2. The civil clock is the host's
+  wall clock, read by the conductor once per wake and nowhere else in the
+  server; it decides only WHEN (an alarm's minute, which quiet window is
+  active). Everything timed (ramps, fades, holds, sleep timers) is on the
+  monotonic clock.
+- **The tick.** The runtime is ticked at least once a second and whenever it
+  has something due (a ramp step, an alarm's end, a sleep fade, an autoplay
+  hold); every person's command applied (on the page, or an endpoint's
+  `controller_command`) is handed to it after it commits, never one the
+  runtime applied itself; and every line-in's offer and departure. What it
+  changes goes through the room model like a command: planned onto the slots,
+  persisted when it says so, fanned out. A change of its that would need a
+  slot more than the server has is not refused (an alarm must not be lost):
+  that group plays nothing (`schedule group=<id> source=none
+  outcome=no-free-slot`).
+- **Ramps** (an alarm's rise, its 2 s end fade, a sleep timer's 30 s fade) are
+  stepped once a second: each step sets the room's volume in the state to
+  where the ramp will be at the step's end and sends its players `room_volume`
+  with that gain and `ramp_ms` the step's length, so an endpoint draws one
+  straight line. A volume set any other way is sent at once (`ramp_ms` 0), and
+  so is a limit or a quiet window pulling a room down, gain and limit in one
+  message.
+- **Alarms** ring at their civil minute (a minute a daylight-saving change
+  skips rings at the first valid instant, a repeated one once), never twice
+  for one instant whatever the wall clock does, and are skipped when more than
+  60 s late (a server that was down). A ringing alarm takes its target (K78)
+  with its source, sets its rooms to 0 and ramps them to its volume over
+  `ramp_s`, clamped to each room's effective limit all the way; a source that
+  cannot play (a line-in not offered, or played by another group) plays the
+  `bell` chime instead. It ends after `duration_min`, on `alarm_stop` or
+  `alarm_delete`, or when a person changes one of its rooms; then it fades
+  out and the rooms go back to what they were (their group, volume, mute and
+  source).
+- **Sleep timers** fade the target to 0 over the last 30 s, then set its
+  source to `none` and put the volumes back, silently, for next time. A person
+  turning a fading room's volume cancels the timer.
+- **Quiet hours** follow the civil clock: a window starting pulls a room's
+  volume down to its cap (and holds an alarm's rise under it); a window ending
+  raises nothing.
+- **Line-in autoplay**: an input whose signal arrives with an enabled rule
+  takes the rule's target and plays the input; when the signal goes it is held
+  30 s (on top of the endpoint's own 2 s), then stopped and the target
+  restored; the signal coming back within the hold cancels the stop.
+
+Every default above is ASSUMED and listed in ADR 0076 and ADR 0079.
+
+**Line-ins in the slots.** A line-in is the source role's input (ADR 0066) on
+an endpoint's own session. The server starts it (`source_control` start, PCM,
+in that session) while some group plays it and stops it when none does; the
+input's `stream_format` must be the server's own format or it is stopped and
+refused by name (`line-in refused reason=format-mismatch`). Its chunks go into
+one of S fixed ports (at most S line-ins stream at once), each holding one
+second; the audio thread plays a port through the latency-growth plan and the
+cubic resampler (`crates/sync/src/latency_grow.rs`, ADR 0071) once it holds
+two chunks. The chunks go out on the slots' ONE grid (the same sequence and
+timestamp as every other slot), so moving into or out of a line-in's group is
+no timestamp jump; what the plan moves is which source frames each chunk
+carries. While the group is only the source endpoint's own room the line-in
+plays at L_local (30 ms, ASSUMED); once another room joins, the plan grows the
+offset to the group's latency (180 ms wired, the wireless tier's 500 ms) by a
+bounded, smooth time stretch (500 ppm at most), with no frame dropped,
+repeated or zero-inserted for the room already playing, and shrinks it back
+the same way when the room is alone again (K94). A tick that finds too little
+of the input plays silence and the plan waits (counted, `underruns=` in the
+`line-in` lines). The latency is the stamp offset on the wire; today's
+endpoints add their own playout latency on top of every stamp, so a line-in
+is heard at L_local plus that until an endpoint mode for local line-ins
+exists (ADR 0079's follow-ups).
+
+**Test clocks.** `--civil-time <day>-<HH:MM>` holds the civil clock at that
+weekday and time (of the week of Monday 2024-01-01, in the zone loaded);
+`--civil-time-from <YYYY-MM-DDTHH:MM:SSZ>` runs it from that UTC instant; and
+`--schedule-time-scale <n>` (1 to 60) runs the schedule's durations, and the
+civil clock `--civil-time-from` runs, `n` times faster, dividing a ramp step's
+`ramp_ms` by the same factor. The audio thread's pace is never scaled. The two
+civil flags are not given together.
 
 ## Discovery
 

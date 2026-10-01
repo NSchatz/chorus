@@ -126,11 +126,10 @@ pub struct ServerConfig {
     pub slots: usize,
     /// How many `GET /api/events` streams the event writer holds at once.
     pub event_streams: usize,
-    /// A civil time the room model's quiet hours are evaluated at, held fixed
-    /// for the run (`--civil-time mon-23:30`). For tests and a server with no
-    /// time source: this server reads no clock for scheduling yet (the
-    /// schedule runtime, the next goal 11 track, supplies it). `None` makes
-    /// every quiet-hours window inactive.
+    /// Hold the schedule's civil clock at this weekday and time for the run
+    /// (`--civil-time mon-23:30`), which decides the quiet hours and when an
+    /// alarm rings. For tests and a server with no time source. `None` runs
+    /// the civil clock from the host's wall clock (or `--civil-time-from`).
     pub civil_time: Option<CivilTime>,
     /// The time zone file the schedule keeps civil time in (`--tz <path>`, a
     /// TZif file). `None`: `$TZ`, then `/etc/localtime`, else UTC, decided at

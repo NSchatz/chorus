@@ -23,12 +23,19 @@
 //! # Inputs
 //!
 //! What a slot plays is switched at a chunk boundary, by a [`SlotCommand`]
-//! drained with `try_recv` at the top of each tick, so the conductor that
-//! decides it never blocks this thread and this thread never waits for it.
-//! This change carries two inputs, [`SlotInput::Silence`] and
-//! [`SlotInput::Stream`] (the configured `--source`, read ONCE per tick
-//! however many slots play it); the enum and the channel are where the
-//! generated chimes and the endpoints' line-ins join (the next goal 11 track).
+//! drained with `try_recv` (at the top of each tick, and again under the grid
+//! guard just before the broadcast), so the conductor that decides it never
+//! blocks this thread and this thread never waits for it. The inputs are
+//! [`SlotInput::Silence`], [`SlotInput::Stream`] (the configured `--source`,
+//! read ONCE per tick however many slots play it), [`SlotInput::Chime`] (a
+//! chime rendered at start, repeated with a gap) and [`SlotInput::LineIn`]
+//! (an endpoint's line-in through its port, `crate::linein`, played through
+//! the latency-growth plan of ADR 0071 so its latency grows without a glitch
+//! when a room joins its group, K94).
+//!
+//! A line-in's chunks carry the grid's sequence and timestamp like every
+//! other slot's: what its plan moves is which source frames a chunk carries,
+//! so a session that moves into or out of its group sees no timestamp jump.
 //!
 //! The configured stream is handed to this thread over a channel, as the
 //! one-stream shape hands it, and when it ends (a file's last byte) the

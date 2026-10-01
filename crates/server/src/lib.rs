@@ -23,7 +23,12 @@
 //! port, to the stream of the group its room is in. [`slot_table`] plans which
 //! group holds which slot before a change commits, and [`conductor`] carries
 //! every change to the sessions it concerns (`room_volume`,
-//! `controller_state`, routing).
+//! `controller_state`, routing). The conductor also runs the
+//! [`schedule_runtime`] (alarms, sleep timers, quiet hours, line-in autoplay)
+//! on the civil and monotonic clocks, the only place this server reads the
+//! civil one; a slot can play a generated chime or an endpoint's line-in,
+//! which [`linein`] accepts from the endpoint's session and the slot plays
+//! through the latency-growth plan (`chorus_sync::latency_grow`).
 //!
 //! **The control half** ([`control`]) is the second, separate catalog: zones
 //! with names, groups, volume and mute, changed by a versioned JSON message and
