@@ -1,0 +1,21 @@
+# Linkwitz-Riley 4th order (RaneNote 160): two cascaded 2nd-order Butterworth
+# sections per branch; each branch -6 dB at the crossover (.707 x .707 = .5, so
+# 20 log10 0.5 = -6.0206 dB); the branches "everywhere in phase"; "the summed
+# response is perfectly flat" (an all-pass). Checked on the designed response
+# (sum here within 2.9e-14 dB) and on the running f32 split: a sine at the
+# crossover, amplitude 1, comes out of each branch at amplitude 0.5 once settled
+# (sqrt(2 x mean square) over the last tenth, a whole number of cycles;
+# tolerance 2e-4).
+
+kind = lr4
+source = https://www.ranecommercial.com/legacy/note160.html https://www.linkwitzlab.com/filters.htm
+read = 2026-10-01
+rate_hz = 48000
+crossover_hz = 2000
+at_crossover_db = -6.020599913279624
+tolerance_db = 1e-6
+freqs_hz = 250 1000 2000 4000 16000
+sum_tolerance_db = 1e-6
+phase_tolerance_deg = 1e-6
+sine_frames = 48000
+sine_tolerance = 2e-4

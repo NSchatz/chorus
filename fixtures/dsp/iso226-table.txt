@@ -1,0 +1,18 @@
+# ISO 226:2003's parameter table (af, Lu, Tf), the rows this fixture names, as
+# reproduced at https://www.dsprelated.com/showcode/174.php (read 2026-10-01); the implementations' tables must equal
+# them (tolerance 1e-12). Then the standard's formula (the same page):
+# Af = 4.47e-3 (10^(0.025 Ln) - 1.15) + (0.4 10^((Tf + Lu)/10 - 9))^af,
+# Lp = (10/af) log10(Af) - Lu + 94, at each (frequency, phon) pair, computed here
+# from the cited table and formula.
+
+kind = iso226
+source = https://www.iso.org/standard/34222.html https://www.dsprelated.com/showcode/174.php
+read = 2026-10-01
+table_freqs_hz = 20 50 100 1000 4000 10000 12500
+af = 0.532 0.432 0.367 0.25 0.242 0.271 0.301
+lu = -31.6 -15.9 -8.1 0 1.2 -10.7 -3.1
+tf = 78.5 44 26.5 2.4 -5.4 13.9 12.3
+freqs_hz = 20 50 100 1000 1000 1000 4000 10000 12500 50
+phon = 40 40 60 20 40 80 60 80 40 80
+expect_spl_db = 99.85392333928948 77.78487093645847 78.65461862737874 20.005170394742294 40.01004636995222 80.01207548291157 57.56993838103854 91.73608675371527 51.48590719390804 101.72136974708599
+tolerance_db = 1e-9

@@ -1,0 +1,15 @@
+# Input that never exceeds the ceiling passes at unity gain: the output is the
+# input delayed by the look-ahead, bit for bit, on every frame.
+
+kind = limiter
+source = https://www.steinberg.help/r/groove-agent/6.0/en/halion/topics/effects_reference/brickwalllimiter_r.html
+read = 2026-10-01
+rate_hz = 48000
+ceiling = 0.5
+lookahead_frames = 96
+release_ms = 100
+frames = 9600
+input.0 = noise 3 0.4 + sine 440 0.09
+input.1 = sine 97 0.49
+check = unity
+unity_tail_frames = 9600
