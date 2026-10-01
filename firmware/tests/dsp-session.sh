@@ -301,7 +301,11 @@ def shelf_db(kind, f0, gain_db, f):
     return 20 * math.log10(abs(h))
 
 before = window("fl", marks["c"] - 1.0)
-after = window("fl", marks["c"] + SETTLE)
+# The sound change is measured two seconds after its command, not SETTLE:
+# on a loaded host it reached the pins up to a quarter second past SETTLE and
+# the median of the window then caught both levels (goal 13, PR #93's third
+# red round). The limit lands at marks["d"], a second past this window's end.
+after = window("fl", marks["c"] + 2.0)
 for f in TONES:
     if lr4(120.0, f, True) < -30:
         continue
