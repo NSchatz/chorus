@@ -79,8 +79,10 @@ const MAX_CLIENTS: usize = 2;
 
 /// Event streams the first check holds open while it issues commands.
 ///
-/// Fewer than the ceiling on purpose: the commands are served by what is left,
-/// which puts the pool under the check rather than beside it.
+/// Fewer than the workers on purpose here, and more than them later: an event
+/// stream is held by the one event writer (`crates/server/src/events.rs`,
+/// audit finding B-5), never by a worker, so the count of streams held says
+/// nothing about the pool and the population must not move with it.
 const HELD_STREAMS: usize = 3;
 
 /// The control plane's own answer to a connection it has no worker for.
@@ -106,16 +108,8 @@ const REFUSAL_TAIL: Duration = Duration::from_millis(200);
 /// wrong call here makes the pool look fuller than it is.
 const SILENT_PEEK: Duration = Duration::from_millis(250);
 
-/// How many of `workers` may hold an event stream at once: all but the one kept
-/// for commands. `crates/server/src/control.rs::stream_slots`, restated because
-/// this is a test of the binary and not of the library.
-fn stream_slots(workers: usize) -> usize {
-    if workers > 1 {
-        workers - 1
-    } else {
-        workers
-    }
-}
+/// The event writer's own answer to a stream past its ceiling.
+const STREAMS_HELD_REASON: &str = "event streams is held";
 
 /// How long to wait for an answer the control plane owes.
 const READ_TIMEOUT: Duration = Duration::from_secs(5);
@@ -315,14 +309,32 @@ fn audio_address(startup: &[String]) -> String {
 /// red saying so; a repeated run in which that starved run went green would be a
 /// repeated run of checks that had stopped needing the pool at all.
 fn control_workers() -> usize {
-    match std::env::var("CHORUS_DETERMINISM_WORKERS") {
-        Err(_) => DEFAULT_CONTROL_WORKERS,
+    knob(
+        "CHORUS_DETERMINISM_WORKERS",
+        DEFAULT_CONTROL_WORKERS,
+        "control worker count",
+    )
+}
+
+/// The event-stream ceiling the first check's control plane is started with:
+/// the server's own default unless `CHORUS_DETERMINISM_STREAMS` starves it,
+/// which is the other way `tools/control-determinism.sh` makes these checks
+/// unservable on purpose (fewer streams than [`HELD_STREAMS`]).
+fn event_streams() -> Option<usize> {
+    std::env::var("CHORUS_DETERMINISM_STREAMS")
+        .ok()
+        .map(|_| knob("CHORUS_DETERMINISM_STREAMS", 0, "event-stream ceiling"))
+}
+
+fn knob(name: &str, default: usize, what: &str) -> usize {
+    match std::env::var(name) {
+        Err(_) => default,
         Ok(value) => match value.trim().parse::<usize>() {
-            Ok(workers) if workers > 0 => workers,
+            Ok(n) if n > 0 => n,
             _ => panic!(
-                "CHORUS_DETERMINISM_WORKERS is {:?}, which is not a control worker count. It \
-                 starves the control plane on purpose and has to be a whole number above zero",
-                value
+                "{} is {:?}, which is not a {}. It starves the control plane on purpose and has \
+                 to be a whole number above zero",
+                name, value, what
             ),
         },
     }
@@ -514,6 +526,9 @@ struct Plane {
     /// "every worker is busy" means a different thing at two workers and at
     /// forty.
     workers: usize,
+    /// The event-stream ceiling, named in every failure for the same reason;
+    /// `None` is the server's default.
+    streams: Option<usize>,
     /// A zone whose volume can be set to provoke the pool.
     zone: String,
     /// Event streams these checks are holding open right now.
@@ -521,10 +536,11 @@ struct Plane {
 }
 
 impl Plane {
-    fn new(address: String, workers: usize, zone: &str) -> Plane {
+    fn new(address: String, workers: usize, streams: Option<usize>, zone: &str) -> Plane {
         Plane {
             address,
             workers,
+            streams,
             zone: zone.to_string(),
             held: Cell::new(0),
         }
@@ -557,12 +573,15 @@ impl Plane {
                 panic!(
                     "the control plane refused to serve {}, and this check requires it to be \
                      served.\n  attempts:                 {} over {:?}\n  \
-                     control workers in force: {}\n  attachments held:         {}\n  \
-                     what came back:\n{}",
+                     control workers in force: {}\n  event streams in force:   {}\n  \
+                     attachments held:         {}\n  what came back:\n{}",
                     what,
                     tries,
                     started.elapsed(),
                     self.workers,
+                    self.streams
+                        .map(|n| n.to_string())
+                        .unwrap_or_else(|| "the default".to_string()),
                     self.held.get(),
                     refusals
                         .iter()
@@ -704,21 +723,16 @@ fn answer_past_the_ceiling(address: &str) -> String {
     answer
 }
 
-#[test]
-fn the_control_plane_creates_every_thread_it_will_run_before_the_report_is_taken() {
-    let workers = control_workers();
-    let (server, pid, _rest, startup) = start(&[
-        "--max-clients".to_string(),
-        MAX_CLIENTS.to_string(),
-        "--control-workers".to_string(),
-        workers.to_string(),
-        "--zone".to_string(),
-        "kitchen".to_string(),
-        "--zone".to_string(),
-        "study".to_string(),
-    ]);
+/// The population with the control plane on: 1 supervisor + 1 audio + 1
+/// acceptor + 2 per client slot + 1 control acceptor + 1 per control worker +
+/// the event writer + the conductor. Not a function of `--slots`, nor of how
+/// many endpoints or subscribers there are.
+fn population(max_clients: usize, workers: usize) -> usize {
+    1 + 1 + 1 + 2 * max_clients + 1 + workers + 1 + 1
+}
 
-    let rows = reported(&startup);
+/// Every row the report must carry, by role.
+fn assert_roles(rows: &[ReportedThread], workers: usize, startup: &[String]) {
     assert!(!rows.is_empty(), "no thread rows at all: {:?}", startup);
     assert!(
         !rows.iter().any(|r| r.role == "unregistered"),
@@ -726,7 +740,14 @@ fn the_control_plane_creates_every_thread_it_will_run_before_the_report_is_taken
         rows
     );
     let roles: BTreeSet<String> = rows.iter().map(|r| r.role.clone()).collect();
-    for wanted in ["supervisor", "audio", "acceptor", "control-acceptor"] {
+    for wanted in [
+        "supervisor",
+        "audio",
+        "acceptor",
+        "control-acceptor",
+        "event-writer",
+        "conductor",
+    ] {
         assert!(roles.contains(wanted), "no {} row in {:?}", wanted, roles);
     }
     for index in 0..workers {
@@ -737,10 +758,30 @@ fn the_control_plane_creates_every_thread_it_will_run_before_the_report_is_taken
             roles
         );
     }
+}
 
-    // 1 supervisor + 1 audio + 1 acceptor + 2 per client slot + 1 control
-    // acceptor + 1 per control worker.
-    let expected = 1 + 1 + 1 + 2 * MAX_CLIENTS + 1 + workers;
+#[test]
+fn the_control_plane_creates_every_thread_it_will_run_before_the_report_is_taken() {
+    let workers = control_workers();
+    let streams = event_streams();
+    let mut extra = vec![
+        "--max-clients".to_string(),
+        MAX_CLIENTS.to_string(),
+        "--control-workers".to_string(),
+        workers.to_string(),
+        "--zone".to_string(),
+        "kitchen".to_string(),
+        "--zone".to_string(),
+        "study".to_string(),
+    ];
+    if let Some(n) = streams {
+        extra.extend(["--event-streams".to_string(), n.to_string()]);
+    }
+    let (server, pid, _rest, startup) = start(&extra);
+
+    let rows = reported(&startup);
+    assert_roles(&rows, workers, &startup);
+    let expected = population(MAX_CLIENTS, workers);
     let before = kernel_threads(pid);
     assert_eq!(
         before.len(),
@@ -760,7 +801,7 @@ fn the_control_plane_creates_every_thread_it_will_run_before_the_report_is_taken
     // Now put the control plane through what a subscriber does: attach, hold
     // an event stream open, issue commands, and leave. Not one of those may
     // change the answer above.
-    let plane = Plane::new(control_address(&startup), workers, "kitchen");
+    let plane = Plane::new(control_address(&startup), workers, streams, "kitchen");
     let subscribers: Vec<Subscriber> = (0..HELD_STREAMS).map(|_| plane.subscriber()).collect();
     // Every one of them is attached, on the control plane's own count, before
     // anything is asserted about what holding them did.
@@ -784,7 +825,7 @@ fn the_control_plane_creates_every_thread_it_will_run_before_the_report_is_taken
 
     drop(subscribers);
     // Gone from the control plane's own count, which is the same moment the
-    // worker holding each of them is done with it.
+    // event writer is done with each of them.
     plane.wait_until_attached(0);
     thread::sleep(SETTLE);
     let after = kernel_threads(pid);
@@ -794,21 +835,13 @@ fn the_control_plane_creates_every_thread_it_will_run_before_the_report_is_taken
     );
 
     // And the same again, with the audio path busy, because that is the
-    // combination the deployment actually runs.
+    // combination the deployment actually runs. More streams than there are
+    // workers this time: a stream holds no worker (B-5), so a command is
+    // still served beside them all.
     let mut client = common::v2_client(audio_address(&startup).as_str(), READ_TIMEOUT);
     let mut scratch = vec![0u8; 65_536];
     assert!(client.reader.read(&mut scratch).expect("audio comes down") > 0);
-    // Every worker a stream may have (all but the one kept for commands,
-    // `crates/server/src/control.rs::stream_slots`), and a command served
-    // beside them by the one that is left.
-    let held: Vec<Subscriber> = (0..stream_slots(workers))
-        .map(|_| plane.subscriber())
-        .collect();
-    assert_eq!(
-        held.len(),
-        stream_slots(workers),
-        "every worker a stream may have is holding a served event stream"
-    );
+    let held: Vec<Subscriber> = (0..workers + 1).map(|_| plane.subscriber()).collect();
     let response = plane.command(&volume_body("kitchen", "0.250"));
     assert!(response.contains("200 OK"), "{}", response);
     thread::sleep(SETTLE);
@@ -823,33 +856,89 @@ fn the_control_plane_creates_every_thread_it_will_run_before_the_report_is_taken
 }
 
 #[test]
+fn the_population_does_not_depend_on_the_number_of_stream_slots() {
+    let mut counts = Vec::new();
+    for slots in [1usize, 8] {
+        let (server, pid, _rest, startup) = start(&[
+            "--max-clients".to_string(),
+            MAX_CLIENTS.to_string(),
+            "--control-workers".to_string(),
+            "2".to_string(),
+            "--slots".to_string(),
+            slots.to_string(),
+            "--zone".to_string(),
+            "kitchen".to_string(),
+            "--zone".to_string(),
+            "study".to_string(),
+        ]);
+        let rows = reported(&startup);
+        assert_roles(&rows, 2, &startup);
+        let threads = kernel_threads(pid);
+        let declared: BTreeSet<u32> = rows.iter().map(|r| r.tid).collect();
+        assert_eq!(declared, threads, "--slots {}: {:?}", slots, rows);
+        assert_eq!(
+            threads.len(),
+            population(MAX_CLIENTS, 2),
+            "--slots {} runs {} threads: {:?}",
+            slots,
+            threads.len(),
+            rows
+        );
+        // A session on a slot, and the population again.
+        let mut client = common::v2_client(audio_address(&startup).as_str(), READ_TIMEOUT);
+        let mut scratch = vec![0u8; 65_536];
+        assert!(client.reader.read(&mut scratch).expect("audio comes down") > 0);
+        thread::sleep(SETTLE);
+        assert_eq!(
+            kernel_threads(pid),
+            threads,
+            "--slots {}: a session made a thread",
+            slots
+        );
+        counts.push(threads.len());
+        drop(server);
+    }
+    assert_eq!(counts[0], counts[1], "S = 1 and S = 8 run the same threads");
+    println!(
+        "population with --slots 1 and --slots 8: {} threads each (6 + 2N + M, N={}, M=2)",
+        counts[0], MAX_CLIENTS
+    );
+}
+
+#[test]
 fn a_subscriber_past_the_ceiling_is_refused_by_name_rather_than_served_by_a_new_thread() {
     let (server, pid, _rest, startup) = start(&[
         "--max-clients".to_string(),
         "1".to_string(),
         "--control-workers".to_string(),
+        "1".to_string(),
+        "--event-streams".to_string(),
         "2".to_string(),
         "--zone".to_string(),
         "kitchen".to_string(),
     ]);
-    let plane = Plane::new(control_address(&startup), 2, "kitchen");
+    let plane = Plane::new(control_address(&startup), 1, Some(2), "kitchen");
     let before = kernel_threads(pid);
-    assert_eq!(before.len(), 1 + 1 + 1 + 2 + 1 + 2);
+    assert_eq!(before.len(), population(1, 1));
 
-    // One worker held by an event stream that never closes, which is every
-    // worker a stream may have, and the other, kept for commands, held by a
-    // connection that has not sent its request. The attachment is established
-    // as SERVED and the silent connection as picked up, so what the third
-    // connection meets is a pool that is genuinely full rather than one that
-    // might be. The silent connection holds its worker until the request
-    // deadline (`control.rs::REQUEST_DEADLINE`), which is far longer than the
-    // accept loop takes to answer the third.
-    let held: Vec<Subscriber> = (0..stream_slots(2)).map(|_| plane.subscriber()).collect();
-    assert_eq!(
-        held.len(),
-        1,
-        "the stream worker is holding a served event stream"
+    // Both of the event writer's streams held, on a server with ONE control
+    // worker: a stream costs no worker, so a command is still served.
+    let held: Vec<Subscriber> = (0..2).map(|_| plane.subscriber()).collect();
+    let response = plane.command(&volume_body("kitchen", "0.300"));
+    assert!(response.contains("200 OK"), "{}", response);
+
+    // The third stream is past the ceiling: answered by name and closed,
+    // rather than held by a thread that did not exist at report time.
+    let (status, body) = common::http(plane.address.as_str(), &get_request("/api/events"));
+    assert!(status.contains(BUSY_STATUS), "{} {}", status, body);
+    assert!(
+        body.contains(STREAMS_HELD_REASON) && body.contains("2 event streams"),
+        "the refusal has to say why: {}",
+        body
     );
+
+    // And the worker pool's own ceiling: the one worker held by a connection
+    // that has not sent its request, so the next connection has no worker.
     let silent = plane.serve("a connection a worker picks up", |_| {
         let mut socket = match TcpStream::connect(plane.address.as_str()) {
             Ok(socket) => socket,
@@ -860,9 +949,6 @@ fn a_subscriber_past_the_ceiling_is_refused_by_name_rather_than_served_by_a_new_
             None => Attempt::Served(socket),
         }
     });
-
-    // The third connection has no worker to go to. It must be answered and
-    // closed rather than served by a thread that did not exist at report time.
     let response = answer_past_the_ceiling(plane.address.as_str());
     assert!(
         response.contains(BUSY_STATUS),
@@ -877,7 +963,7 @@ fn a_subscriber_past_the_ceiling_is_refused_by_name_rather_than_served_by_a_new_
     assert_eq!(
         kernel_threads(pid),
         before,
-        "refusing a connection created a thread"
+        "refusing a stream and a connection created a thread"
     );
     drop(silent);
     drop(held);
