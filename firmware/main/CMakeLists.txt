@@ -47,6 +47,7 @@ idf_component_register(
         "../src/protocol.c"
         "../src/protocol_v2.c"
         "../src/noise.c"
+        "../src/lowlat.c"
         "../src/sync_rng.c"
         "../src/sync_servo.c"
         "../src/sync_sim.c"

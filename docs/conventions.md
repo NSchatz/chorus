@@ -150,6 +150,8 @@ reader and fails on a file of a kind neither reads. `fixtures/control`, `fixture
 `fixtures/protocol/v2` (protocol v2, goal 5) and `fixtures/protocol/v2/noise` are shared like the
 rest: since the endpoint moved to v2 (goal 6) the check holds them to their Rust readers and to
 `firmware/tests/test_protocol_v2.c` and `firmware/tests/test_noise.c`.
+`fixtures/protocol/lowlat` (goal 13) holds the low-latency datagrams and their loss cases, read by
+`crates/protocol/tests/lowlat.rs` and `firmware/tests/test_lowlat.c`.
 `fixtures/codec` (goal 6) holds FLAC and Opus streams as the wire carries them with their
 reference decodes, read by `firmware/tests/test_codec.c` and
 `crates/client-linux/tests/codec_fixtures.rs`; `fixtures/README.md` says what each file is.
