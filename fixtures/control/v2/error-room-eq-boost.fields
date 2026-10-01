@@ -1,0 +1,16 @@
+# Canonical input for the catalog v2 error-room-eq-boost vector.
+#
+# `input` is refused, by the decoder or by the room state the commands below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-room-eq-boost.json. Nothing of it is applied.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# A boost 0.01 dB past the +3.00 the room-correction bounds allow.
+
+message_type = error
+zones = living,kitchen
+input = {"v":2,"t":"room_eq","zone":"living","filters":[{"freq_hz":120,"gain_db":3.01,"q":2.000}]}
+field = filters
+ends_the_session = 0
