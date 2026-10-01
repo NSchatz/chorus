@@ -1,0 +1,15 @@
+# Canonical input for the room_volume_above_limit golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly room_volume_above_limit.hex, and decoding room_volume_above_limit.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+#
+# A gain above the limit is a valid message: the player plays it at the limit (0.600).
+
+message_type = room_volume
+gain = 900
+limit = 600
+ramp_ms = 0

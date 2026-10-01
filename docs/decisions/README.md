@@ -59,3 +59,4 @@ the number of the pull request that added it.
 | 0069 | [the Linux endpoint ships as one .deb per architecture, cross-built for glibc 2.36 with zig, run by a hardened systemd unit with real-time limits](0069-the-linux-endpoint-package.md) |
 | 0072 | [the schedule library is a pure crate that reads no clock: civil time from TZif with a gap and a fold rule, weekly windows, alarms, sleep fades, integer ramps and generated chimes](0072-the-schedule-library.md) |
 | 0073 | [control catalog v2: rooms, bonded sets with a wired-only rule, saved and live groups, take-the-room, Sonos-style group volume, clamped limits and quiet hours, alarm, sleep and autoplay configuration, state-file format 2](0073-control-catalog-v2.md) |
+| 0074 | [the room's gain and limit travel on the audio wire as room_volume, and both endpoint kinds enforce min(ramped gain, limit, own ceiling) at every frame](0074-room-volume-on-the-audio-wire.md) |

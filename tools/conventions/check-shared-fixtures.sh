@@ -7,7 +7,8 @@
 # Rust-only by declaration (the endpoint does not speak them yet; goal 6 moves control here).
 # fixtures/protocol/v2 is read by firmware/tests/test_protocol_v2.c (every vector, both
 # assertions) and its noise/ directory by firmware/tests/test_noise.c (the published vector in
-# both roles), since the endpoint moved to protocol v2 (goal 6). fixtures/controls is the
+# both roles), since the endpoint moved to protocol v2 (goal 6), and its rejected/ directory
+# (goal 11: frames the format does not accept) by the same C test and v2_rules.rs. fixtures/controls is the
 # controller role's and the status LED's (goal 9): the C controls must produce its .hex bytes and
 # the server decodes and applies them (crates/server/tests/controller_role.rs); the Rust twin
 # (crates/controls, goal 10) must produce the same bytes and LED moments (crates/controls/tests).
@@ -19,6 +20,7 @@ shared=(
     "fixtures/sync/crosscheck|expected|crates/sync/tests crates/sync/src/crosscheck.rs|firmware/tests/test_sync.c"
     "fixtures/dsp|*|crates/dsp/tests|firmware/tests/test_dsp.c"
     "fixtures/protocol/v2|hex fields|crates/protocol/tests|firmware/tests/test_protocol_v2.c"
+    "fixtures/protocol/v2/rejected|hex fields|crates/protocol/tests|firmware/tests/test_protocol_v2.c"
     "fixtures/protocol/v2/noise|fields|crates/protocol/tests|firmware/tests/test_noise.c"
     "fixtures/codec|fields chunks pcm|crates/client-linux/tests|firmware/tests/test_codec.c"
     "fixtures/controls|hex led|crates/server/tests crates/controls/tests|firmware/tests/test_controls.c"

@@ -1,6 +1,7 @@
 #include "chorus/endpoint_config.h"
 
 #include "chorus/conf.h"
+#include "chorus/volume.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -409,6 +410,21 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
     NEED(chorus_conf_u32(conf, "amp_shutdown_wait_ms", &out->amp.shutdown_wait_ms, detail,
                          detail_len));
     NEED(chorus_conf_u32(conf, "amp_sclk_per_frame", &out->amp.sclk_per_frame, detail, detail_len));
+
+    /* The endpoint's own volume ceiling (goal 11, chorus/volume.h): nothing on
+     * the wire takes the endpoint above it. Written as a decimal, 0 to 1. */
+    const char *max_volume = chorus_conf_get(conf, "max_volume");
+    if (max_volume == NULL) {
+        snprintf(detail, detail_len, "%s has no max_volume", conf->path);
+        return -1;
+    }
+    if (chorus_volume_parse(max_volume, &out->max_volume_thousandths) != 0) {
+        snprintf(detail, detail_len,
+                 "%s: max_volume = %s is not a decimal from 0 to 1 with at most three places "
+                 "(for example 1.000 or 0.5)",
+                 conf->path, max_volume);
+        return -1;
+    }
 
     NEED(chorus_conf_string(conf, "espidf_version", out->espidf_version,
                             sizeof(out->espidf_version), detail, detail_len));

@@ -66,6 +66,10 @@ typedef struct {
     chorus_amp_config_t amp;
     chorus_amp_gain_t gain;
 
+    /* The endpoint's own volume ceiling, in thousandths of full amplitude
+     * (`max_volume`; chorus/volume.h, ADR 0074). */
+    uint32_t max_volume_thousandths;
+
     char espidf_version[CHORUS_ENDPOINT_TEXT];
 } chorus_endpoint_config_t;
 

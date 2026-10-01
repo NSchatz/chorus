@@ -28,6 +28,17 @@ pub const MAX_VISUALIZER_BANDS: usize = 64;
 /// Largest number of sample rates a `capabilities` message lists.
 pub const MAX_RATES: usize = 16;
 
+/// Full scale in a `room_volume` gain or limit: thousandths of full
+/// amplitude, the unit the control catalog's volume uses
+/// (`docs/control-plane.md`), so a room's volume crosses from the control
+/// plane to the audio wire without a conversion.
+pub const ROOM_VOLUME_FULL: u16 = 1000;
+
+/// Longest ramp a `room_volume` may ask for: 60 s, in milliseconds. Long
+/// enough for an alarm's ramp up or a sleep timer's fade out; anything longer
+/// is a server stepping the gain itself.
+pub const MAX_ROOM_VOLUME_RAMP_MS: u16 = 60_000;
+
 /// A message type in the v2 catalog.
 ///
 /// Types 0x01 to 0x03 are the v1 messages, carried into v2 unchanged
@@ -79,11 +90,13 @@ pub enum Type {
     SourceOffer,
     /// 0x37, the server starting or stopping a shared input (source role).
     SourceControl,
+    /// 0x38, the room's gain and limit for a player (player role).
+    RoomVolume,
 }
 
 impl Type {
     /// Every type in the catalog, in wire order.
-    pub const ALL: [Type; 22] = [
+    pub const ALL: [Type; 23] = [
         Type::TimeSync,
         Type::AudioChunk,
         Type::StreamEnd,
@@ -106,6 +119,7 @@ impl Type {
         Type::Color,
         Type::SourceOffer,
         Type::SourceControl,
+        Type::RoomVolume,
     ];
 
     /// The wire byte.
@@ -133,6 +147,7 @@ impl Type {
             Type::Color => 0x35,
             Type::SourceOffer => 0x36,
             Type::SourceControl => 0x37,
+            Type::RoomVolume => 0x38,
         }
     }
 
@@ -166,6 +181,7 @@ impl Type {
             Type::Color => "color",
             Type::SourceOffer => "source_offer",
             Type::SourceControl => "source_control",
+            Type::RoomVolume => "room_volume",
         }
     }
 
@@ -237,6 +253,8 @@ impl Type {
             Type::SourceOffer => 1 + 1 + 1 + 1,
             // id, action, codec
             Type::SourceControl => 1 + 1 + 1,
+            // gain, limit, ramp
+            Type::RoomVolume => 2 + 2 + 2,
         }
     }
 }

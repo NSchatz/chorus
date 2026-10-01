@@ -18,6 +18,7 @@
 
 use std::fmt;
 
+use chorus_control::catalog::Volume;
 use chorus_control::transport::{Transport, DEFAULT_TRANSPORT, WIRELESS_POLICY};
 use chorus_protocol::v2::SourceKind;
 use chorus_protocol::{SampleFormat, MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ};
@@ -181,6 +182,13 @@ pub struct ClientConfig {
     /// (`crate::outmap`). `None` opens the device with the stream's own
     /// channels in the stream's own order, as the client always has.
     pub output_map: Option<OutputMap>,
+    /// `--max-volume`: this endpoint's own volume ceiling, a fraction of full
+    /// amplitude written as the control catalog writes a volume (`0.000` to
+    /// `1.000`). What plays is never above it, whatever the server's
+    /// `room_volume` or the control plane's state says (`crate::zone`, ADR
+    /// 0074), and until the first `room_volume` the endpoint plays at it.
+    /// Default 1.000, ASSUMED: a policy default, not a measurement.
+    pub max_volume: Volume,
 }
 
 /// The source number a configured line-in is offered under. One input per
@@ -271,6 +279,7 @@ impl Default for ClientConfig {
             front_panel: None,
             extra_roles: 0,
             output_map: None,
+            max_volume: Volume::FULL,
         }
     }
 }
@@ -278,6 +287,13 @@ impl Default for ClientConfig {
 /// Why a client configuration was refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigError {
+    /// `--max-volume` is not a volume from 0.000 to 1.000.
+    NotAVolume {
+        /// The argument.
+        argument: String,
+        /// The value as written.
+        value: String,
+    },
     /// `--free-run` was given without `--offsets-out`.
     FreeRunWithoutSeries,
     /// The minimum bound is zero.
@@ -487,6 +503,12 @@ impl fmt::Display for ConfigError {
                 write!(f, "argument '{}' needs a value", argument)
             }
             ConfigError::OutputMap(e) => write!(f, "{}", e),
+            ConfigError::NotAVolume { argument, value } => write!(
+                f,
+                "argument '{}' got '{}', which is not a volume from 0.000 to 1.000 in steps of \
+                 0.001 (for example 1.000 or 0.5)",
+                argument, value
+            ),
             ConfigError::NotANumber { argument, value } => {
                 write!(
                     f,
@@ -736,6 +758,14 @@ impl ClientConfig {
                 }
                 "--output-channels" => output_channels = Some(value()?),
                 "--output" => outputs.push(value()?),
+                "--max-volume" => {
+                    let text = value()?;
+                    config.max_volume =
+                        Volume::parse(&text).ok_or_else(|| ConfigError::NotAVolume {
+                            argument: arg.clone(),
+                            value: text.clone(),
+                        })?;
+                }
                 other => {
                     return Err(ConfigError::UnknownArgument {
                         argument: other.to_string(),
@@ -1102,5 +1132,24 @@ mod tests {
         // A bound with no policy asked for is no request at all, and is not refused.
         let (c, _) = ClientConfig::from_args(args(&["--rttime-us", "0"])).unwrap();
         c.validate().expect("no real-time request");
+    }
+
+    #[test]
+    fn max_volume_is_a_catalog_volume_and_defaults_to_full_scale() {
+        let (c, _) = ClientConfig::from_args(args(&[])).unwrap();
+        assert_eq!(c.max_volume, Volume::FULL, "ASSUMED default 1.000");
+        let (c, _) = ClientConfig::from_args(args(&["--max-volume", "0.35"])).unwrap();
+        assert_eq!(c.max_volume.thousandths(), 350);
+        for bad in ["1.5", "-0.1", "0.0001", "loud", ""] {
+            assert_eq!(
+                ClientConfig::from_args(args(&["--max-volume", bad])).unwrap_err(),
+                ConfigError::NotAVolume {
+                    argument: "--max-volume".to_string(),
+                    value: bad.to_string()
+                },
+                "{:?} is refused by name",
+                bad
+            );
+        }
     }
 }

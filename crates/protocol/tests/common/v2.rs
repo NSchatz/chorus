@@ -38,6 +38,56 @@ pub fn v2_stems() -> Vec<String> {
     stems
 }
 
+/// The rejection vectors: frames the format does not accept.
+pub fn rejected_dir() -> PathBuf {
+    v2_dir().join("rejected")
+}
+
+/// One rejection vector: a frame, the fields it was made from, and the field
+/// both directions must name.
+pub struct RejectedVector {
+    /// The file stem.
+    pub stem: String,
+    /// The committed frame.
+    pub frame: Vec<u8>,
+    /// The message the fields describe, which no encoder may emit.
+    pub message: Message,
+    /// The field the encoder and the decoder must name.
+    pub rejected_field: String,
+    /// What is wrong with it, as the `.fields` file names it.
+    pub problem: String,
+}
+
+/// Every rejection vector, sorted by stem.
+pub fn rejected_vectors() -> Vec<RejectedVector> {
+    let dir = rejected_dir();
+    let mut stems: Vec<String> = fs::read_dir(&dir)
+        .expect("fixtures/protocol/v2/rejected exists")
+        .map(|e| e.expect("a readable entry").path())
+        .filter(|p| p.extension().is_some_and(|x| x == "hex"))
+        .map(|p| p.file_stem().unwrap().to_string_lossy().into_owned())
+        .collect();
+    stems.sort();
+    stems
+        .into_iter()
+        .map(|stem| {
+            let frame =
+                parse_hex(&fs::read_to_string(dir.join(format!("{}.hex", stem))).expect("hex"));
+            let fields = Fields::parse(
+                &format!("v2/rejected/{}.fields", stem),
+                &fs::read_to_string(dir.join(format!("{}.fields", stem))).expect("fields"),
+            );
+            RejectedVector {
+                message: v2_message_from_fields(&fields),
+                rejected_field: fields.str("rejected_field").to_string(),
+                problem: fields.str("problem").to_string(),
+                stem,
+                frame,
+            }
+        })
+        .collect()
+}
+
 /// Load one v2 vector by stem.
 pub fn load_v2(stem: &str) -> V2Vector {
     let dir = v2_dir();
@@ -221,6 +271,11 @@ pub fn v2_message_from_fields(f: &Fields) -> Message {
             source_id: f.u64("source_id") as u8,
             action: named("action", SourceAction::from_name(f.str("action"))),
             codec: named("codec", Codec::from_name(f.str("codec"))),
+        }),
+        Type::RoomVolume => Message::RoomVolume(RoomVolume {
+            gain: f.u64("gain") as u16,
+            limit: f.u64("limit") as u16,
+            ramp_ms: f.u64("ramp_ms") as u16,
         }),
         Type::TimeSync | Type::AudioChunk | Type::StreamEnd => {
             panic!("v1 messages are vectored at the top of fixtures/protocol/")

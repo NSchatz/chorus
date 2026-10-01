@@ -1,0 +1,15 @@
+# Canonical input for the room_volume_fade_to_mute golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly room_volume_fade_to_mute.hex, and decoding room_volume_fade_to_mute.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+#
+# A sleep timer's fade: to silence over 30 s (gain 0 is also what a mute sends).
+
+message_type = room_volume
+gain = 0
+limit = 1000
+ramp_ms = 30000

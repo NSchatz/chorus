@@ -33,6 +33,9 @@ use std::time::Duration;
 
 use chorus_control::catalog::{Volume, VOLUME_SCALE};
 use chorus_control::json::{self, Value};
+use chorus_protocol::v2::RoomVolume;
+
+use crate::zone::{RoomGain, RoomVolumeInbox, ZoneGain};
 
 /// How long the endpoint waits for the control channel before giving up on one
 /// attempt.
@@ -71,16 +74,17 @@ pub struct ZoneWatch {
     /// State messages applied.
     updates: AtomicU64,
     facts: Mutex<ZoneFacts>,
+    /// The room's volume from the audio wire (`room_volume`, goal 11): where
+    /// the session delivers it, and the gain, limit, ramp and ceiling the
+    /// playout loop applies. Held for the life of the process, like the zone
+    /// gain above: a new session is not a reason to play louder.
+    room_inbox: Arc<RoomVolumeInbox>,
+    room: Mutex<RoomGain>,
 }
 
 impl Default for ZoneWatch {
     fn default() -> ZoneWatch {
-        ZoneWatch {
-            gain: AtomicU32::new(VOLUME_SCALE),
-            moves: AtomicU64::new(0),
-            updates: AtomicU64::new(0),
-            facts: Mutex::new(ZoneFacts::default()),
-        }
+        ZoneWatch::with_max_volume(Volume::FULL)
     }
 }
 
@@ -88,6 +92,59 @@ impl ZoneWatch {
     /// A watch that has heard nothing, and therefore plays at full scale.
     pub fn new() -> ZoneWatch {
         ZoneWatch::default()
+    }
+
+    /// A watch with this endpoint's own volume ceiling (`--max-volume`): it
+    /// plays at the ceiling until something lowers it, and nothing raises it.
+    pub fn with_max_volume(ceiling: Volume) -> ZoneWatch {
+        ZoneWatch {
+            gain: AtomicU32::new(VOLUME_SCALE),
+            moves: AtomicU64::new(0),
+            updates: AtomicU64::new(0),
+            facts: Mutex::new(ZoneFacts::default()),
+            room_inbox: Arc::new(RoomVolumeInbox::default()),
+            room: Mutex::new(RoomGain::new(ceiling)),
+        }
+    }
+
+    /// Where the audio session delivers `room_volume`
+    /// (`crate::session::deliver_room_volume_to`).
+    pub fn room_inbox(&self) -> Arc<RoomVolumeInbox> {
+        Arc::clone(&self.room_inbox)
+    }
+
+    /// The room's state, copied out, for a status line and the tests.
+    pub fn room(&self) -> RoomGain {
+        match self.room.lock() {
+            Ok(g) => g.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    /// Apply everything this endpoint knows about its volume to `pcm`, the
+    /// next frames to be written: min(the room's ramped gain, the room's
+    /// limit, this endpoint's ceiling, the control plane's zone gain), frame
+    /// by frame, never changing how many frames there are. A `room_volume`
+    /// waiting in the inbox is taken first and returned, so the caller can
+    /// log it. Called by the playout loop only, so the lock is uncontended.
+    pub fn apply(
+        &self,
+        applier: &ZoneGain,
+        channels: usize,
+        rate_hz: u32,
+        pcm: &mut [u8],
+    ) -> Option<RoomVolume> {
+        let zone = self.gain();
+        let mut room = match self.room.lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let taken = self.room_inbox.take();
+        if let Some(m) = &taken {
+            room.set(m, zone, rate_hz);
+        }
+        room.apply(zone, applier, channels, pcm);
+        taken
     }
 
     /// The gain the audio path multiplies by. One atomic load.
@@ -117,9 +174,10 @@ impl ZoneWatch {
     /// One line for a status report.
     pub fn line(&self) -> String {
         let facts = self.facts();
+        let room = self.room();
         format!(
             "zone id_known={} name={} group={} audio={} volume={} muted={} gain={} serial={} \
-             updates={} moves={}",
+             updates={} moves={} room_limit={} max_volume={} room_volumes={}",
             u8::from(facts.known),
             facts.name,
             facts.group,
@@ -131,7 +189,10 @@ impl ZoneWatch {
             self.gain().literal(),
             facts.serial,
             self.updates(),
-            self.moves()
+            self.moves(),
+            room.limit().literal(),
+            room.ceiling().literal(),
+            self.room_inbox.received()
         )
     }
 
@@ -168,6 +229,15 @@ impl ZoneWatch {
                 .and_then(Value::as_num)
                 .and_then(Volume::parse)
                 .unwrap_or(Volume::FULL);
+            // A state that also carries the room's effective limit (the v2
+            // state, goal 11) bounds the gain by it as well: the server has
+            // already clamped `volume` to it, and holding it here too is the
+            // endpoint enforcing it rather than trusting that (I10).
+            let limit = candidate
+                .get("effective_limit")
+                .and_then(Value::as_num)
+                .and_then(Volume::parse)
+                .unwrap_or(Volume::FULL);
             let facts = ZoneFacts {
                 known: true,
                 name: candidate
@@ -189,7 +259,13 @@ impl ZoneWatch {
                 volume_thousandths: volume.thousandths(),
                 serial,
             };
-            let gain = if muted { Volume::SILENT } else { volume };
+            let gain = if muted {
+                Volume::SILENT
+            } else if limit.thousandths() < volume.thousandths() {
+                limit
+            } else {
+                volume
+            };
             let moved = {
                 let mut held = match self.facts.lock() {
                     Ok(g) => g,
@@ -436,5 +512,26 @@ mod tests {
             assert!(!watch.absorb(text, "kitchen"), "{}", text);
         }
         assert_eq!(watch.gain().thousandths(), 375, "and nothing moved");
+    }
+
+    #[test]
+    fn a_v2_state_with_an_effective_limit_bounds_the_gain_by_it() {
+        let watch = ZoneWatch::new();
+        let v2 = STATE.replace(
+            r#""muted":false"#,
+            r#""muted":false,"effective_limit":0.250"#,
+        );
+        assert!(watch.absorb(&v2, "kitchen"));
+        assert_eq!(watch.gain().thousandths(), 250, "min(0.375, 0.250)");
+        let v2 = STATE.replace(
+            r#""muted":false"#,
+            r#""muted":false,"effective_limit":0.900"#,
+        );
+        assert!(watch.absorb(&v2, "kitchen"));
+        assert_eq!(
+            watch.gain().thousandths(),
+            375,
+            "a limit above the volume changes nothing"
+        );
     }
 }

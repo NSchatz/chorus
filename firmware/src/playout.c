@@ -63,6 +63,7 @@ chorus_playout_config_t chorus_playout_config_from(const chorus_sync_conf_t *syn
     c.servo.hard_resync_threshold_ns = (double)sync->hard_resync_threshold_us * 1000.0;
     c.servo.filter_window = sync->filter_window;
     c.servo.smoothing_alpha = sync->smoothing_alpha;
+    c.max_volume_thousandths = CHORUS_VOLUME_DEFAULT_CEILING;
     return c;
 }
 
@@ -104,7 +105,8 @@ int chorus_playout_init(chorus_playout_t *p, const chorus_playout_config_t *conf
         (config->out_sample_bytes != 2 && config->out_sample_bytes != 3 &&
          config->out_sample_bytes != 4) ||
         config->capacity_frames == 0 || config->max_chunks == 0 || config->interval_ms == 0 ||
-        ring == NULL || chunks == NULL || now_ns == NULL) {
+        config->max_volume_thousandths > CHORUS_VOLUME_FULL || ring == NULL || chunks == NULL ||
+        now_ns == NULL) {
         return -1;
     }
     p->config = *config;
@@ -112,6 +114,7 @@ int chorus_playout_init(chorus_playout_t *p, const chorus_playout_config_t *conf
     p->chunks = chunks;
     p->now_ns = now_ns;
     chorus_servo_init(&p->servo, config->servo);
+    chorus_volume_init(&p->volume, config->max_volume_thousandths);
     /* The marker's ns per frame in 16.16, for the interrupt. Below 16 kHz it
      * does not fit 32 bits; no chorus stream is that slow, and the marker is
      * then simply off. */
@@ -419,6 +422,14 @@ void chorus_playout_set_offset(chorus_playout_t *p, double offset_ns, uint64_t a
     give_lock(p);
 }
 
+void chorus_playout_set_room_volume(chorus_playout_t *p, uint16_t gain, uint16_t limit,
+                                    uint16_t ramp_ms)
+{
+    take_lock(p);
+    chorus_volume_set(&p->volume, gain, limit, ramp_ms, p->config.rate_hz);
+    give_lock(p);
+}
+
 void chorus_playout_reset_stream(chorus_playout_t *p)
 {
     take_lock(p);
@@ -518,6 +529,7 @@ uint32_t chorus_playout_fill(chorus_playout_t *p, uint8_t *out, uint32_t frames)
             uint64_t owed = (uint64_t)(-p->pending_frames);
             uint32_t n = (owed < room) ? (uint32_t)owed : room;
             memset(out + (size_t)produced * fb, 0, (size_t)n * fb);
+            chorus_volume_skip(&p->volume, n);
             p->pending_frames += (double)n;
             p->stats.inserted_frames += n;
             produced += n;
@@ -526,6 +538,7 @@ uint32_t chorus_playout_fill(chorus_playout_t *p, uint8_t *out, uint32_t frames)
         if (!p->acquired) {
             /* Holding the buffer until the loop has placed it. */
             memset(out + (size_t)produced * fb, 0, (size_t)room * fb);
+            chorus_volume_skip(&p->volume, room);
             produced += room;
             break;
         }
@@ -533,6 +546,7 @@ uint32_t chorus_playout_fill(chorus_playout_t *p, uint8_t *out, uint32_t frames)
             /* Nothing to play: silence. Once audio has played, that silence
              * is an underrun, counted by the frame. */
             memset(out + (size_t)produced * fb, 0, (size_t)room * fb);
+            chorus_volume_skip(&p->volume, room);
             if (p->have_playout_ts) {
                 p->stats.underrun_frames += room;
             }
@@ -561,6 +575,10 @@ uint32_t chorus_playout_fill(chorus_playout_t *p, uint8_t *out, uint32_t frames)
                 front->timestamp_ns + (uint64_t)p->front_taken * 1000000000ull / c->rate_hz;
             plan_marker(p, seg_ts, n, p->written_frames + produced);
         }
+        /* The room's volume, on exactly the frames handed over: the same
+         * number of frames, at the same instants, only their content scaled
+         * (chorus/volume.h). Before the resync mute, which zeroes on top. */
+        chorus_volume_apply(&p->volume, dst, n, c->channels, c->out_sample_bytes);
         if (p->mute_frames > 0) {
             uint32_t silence = (p->mute_frames < n) ? (uint32_t)p->mute_frames : n;
             memset(dst, 0, (size_t)silence * fb);
@@ -696,6 +714,8 @@ void chorus_playout_stats(chorus_playout_t *p, chorus_playout_stats_t *out)
     p->stats.queued_frames = p->ring_count;
     p->stats.correction_ppm = p->correction_ppm;
     p->stats.marker_edges = p->marker_edges32;
+    p->stats.room_volume_messages = p->volume.messages;
+    p->stats.applied_volume_thousandths = chorus_volume_applied_thousandths(&p->volume);
     uint64_t missed_in_interrupt = p->marker_missed32;
     *out = p->stats;
     out->marker_missed += missed_in_interrupt;
