@@ -127,17 +127,19 @@ chorus/volume.h`, `firmware/tests/test_volume.c`, `tools/control-determinism.sh`
 
 ## How the schedule runtime plugs in (the next goal 11 track)
 
-The time-driven work (alarms, sleep, the quiet-hours clock, ramps) is a pure
-`crates/server/src/schedule_runtime.rs` whose `tick` returns effects; another agent writes it, and
-this change neither creates nor edits it. It joins the conductor at two named seams, so the
+The time-driven work (alarms, sleep, the quiet-hours clock, ramps) is the pure
+`crates/server/src/schedule_runtime.rs` (ADR 0076: `Runtime::tick` returning `Effect`s,
+`next_deadline_ns`, `on_command_applied`, `on_input_signal`, `on_input_gone`), written in
+parallel; this change neither creates nor edits it. It joins the conductor at two named seams, so the
 change there is small:
 
 - `Conductor::wait` is the loop's wake: today a poke or 200 ms; there, the earlier of that and
-  the runtime's next deadline. The thread loop then reads the civil and monotonic clocks ONCE per
+  `next_deadline_ns`. The thread loop then reads the civil and monotonic clocks ONCE per
   wake and hands them to `tick` (conductor.rs moves from "reads no clock" to "reads them once per
   tick, for scheduling only"; it stays excluded from the audio path).
 - `Conductor::pass` is the effect application: today it applies the room model to the sessions;
-  there it first applies `tick`'s effects through `ControlState`'s runtime hooks
+  there it first applies `tick`'s effects (and calls `on_command_applied` for a change a person
+  made, which the poke now carries) through `ControlState`'s runtime hooks
   (`set_civil_time`, the catalog's `set_group_source`, `start_ramp`, `runtime_volume`,
   `set_alarm_ringing`, `sleep_expired`, each of which commits, plans the slots and pokes the
   conductor again), sends any `SlotCommand` an effect names (a chime or a line-in input: the enum
