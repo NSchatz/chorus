@@ -41,7 +41,7 @@
 
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -145,14 +145,10 @@ pub fn serve_slots(
 
     while keep.load(Ordering::SeqCst) {
         // At the chunk boundary: what each slot plays from this tick on.
-        loop {
-            match commands.try_recv() {
-                Ok(SlotCommand::Input { slot, input }) => {
-                    if let Some(at) = inputs.get_mut(slot) {
-                        *at = input;
-                    }
-                }
-                Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
+        while let Ok(command) = commands.try_recv() {
+            let SlotCommand::Input { slot, input } = command;
+            if let Some(at) = inputs.get_mut(slot) {
+                *at = input;
             }
         }
         if stream.is_none() {
@@ -345,20 +341,17 @@ mod tests {
                 "one chunk per tick on every fanout"
             );
         }
-        for k in 0..got[0].len() {
-            assert_eq!(got[0][k].sequence, k as u32);
-            assert_eq!(got[1][k].sequence, got[0][k].sequence);
-            assert_eq!(got[2][k].timestamp_ns, got[0][k].timestamp_ns, "one grid");
+        for (k, ((a, b), idle)) in got[0].iter().zip(&got[1]).zip(&got[2]).enumerate() {
+            assert_eq!(a.sequence, k as u32);
+            assert_eq!(b.sequence, a.sequence);
+            assert_eq!(idle.timestamp_ns, a.timestamp_ns, "one grid");
             assert!(
-                got[0][k].audio_data.iter().all(|b| *b == 7),
+                a.audio_data.iter().all(|x| *x == 7),
                 "slot 0 plays the stream"
             );
+            assert!(b.audio_data.iter().all(|x| *x == 0), "slot 1 plays silence");
             assert!(
-                got[1][k].audio_data.iter().all(|b| *b == 0),
-                "slot 1 plays silence"
-            );
-            assert!(
-                got[2][k].audio_data.iter().all(|b| *b == 0),
+                idle.audio_data.iter().all(|x| *x == 0),
                 "and so does the idle one"
             );
         }

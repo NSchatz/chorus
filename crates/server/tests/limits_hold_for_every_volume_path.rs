@@ -464,8 +464,10 @@ fn every_volume_path_reaches_every_affected_player_clamped_on_server_and_linux_c
     let written = tape.lock().unwrap().clone();
     let ceiling = i64::from(SOURCE) * i64::from(highest_kitchen_limit.thousandths()) / 1000;
     let samples: Vec<i16> = written
-        .chunks_exact(2)
-        .map(|c| i16::from_le_bytes([c[0], c[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| i16::from_le_bytes(*c))
         .collect();
     assert!(
         samples.len() > 48_000,
