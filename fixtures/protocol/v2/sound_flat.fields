@@ -1,0 +1,23 @@
+# Canonical input for the sound_flat golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly sound_flat.hex, and decoding sound_flat.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+# `role` is a channel position number (0 = in no bonded set); `flags_reserved` is a
+# number ORed into `flags` (rejection vectors only); each `filter.<n>` is
+# `freq_hz gain_cdb q_milli`, numbered from 0, and eq_count is how many there are.
+#
+# A room at the defaults, an endpoint in no bonded set: flat tone, loudness on (ASSUMED,
+# the catalog's default), no filters, the 80 Hz crossover unused.
+
+message_type = sound
+bass_db = 0
+treble_db = 0
+flags = loudness room_eq
+role = 0
+sub_present = 0
+crossover_hz = 80
+sub_level_cdb = 0

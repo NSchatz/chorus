@@ -286,6 +286,44 @@ pub struct RoomVolume {
     pub ramp_ms: u16,
 }
 
+/// One room-correction filter in a `sound`: a peaking EQ.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SoundFilter {
+    /// Centre frequency, Hz, 20 to 1000.
+    pub freq_hz: u16,
+    /// Gain, hundredths of a dB, -1200 to 300.
+    pub gain_cdb: i16,
+    /// Q, thousandths, 500 to 10000.
+    pub q_milli: u16,
+}
+
+/// A room's sound settings, from the server to one player
+/// (`docs/protocol.md`, "0x39 sound"): the control catalog's `sound`,
+/// `bass_management` and `room_eq` for the player's room, plus where this
+/// player sits in the room's bonded set. Every player of a set receives the
+/// room's whole stream, so bass management is the player's own work, from
+/// `role` and `sub_present`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sound {
+    /// Low-shelf gain, whole dB, -10 to 10.
+    pub bass_db: i8,
+    /// High-shelf gain, whole dB, -10 to 10.
+    pub treble_db: i8,
+    /// [`crate::v2::catalog::sound_flags`] bits; any other bit is rejected.
+    pub flags: u8,
+    /// The player's channel position in the room's bonded set
+    /// ([`crate::v2::ChannelPosition`]'s numbers), 0 when it is in no set.
+    pub role: u8,
+    /// Whether the room's set has an LFE member (bass management on).
+    pub sub_present: bool,
+    /// The crossover, Hz, 40 to 200.
+    pub crossover_hz: u16,
+    /// The sub's level trim, hundredths of a dB, -1200 to 600.
+    pub sub_level_cdb: i16,
+    /// The room-correction filters, at most 8.
+    pub filters: Vec<SoundFilter>,
+}
+
 /// Any message in the v2 catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Message {
@@ -335,6 +373,8 @@ pub enum Message {
     SourceControl(SourceControl),
     /// 0x38.
     RoomVolume(RoomVolume),
+    /// 0x39.
+    Sound(Sound),
 }
 
 impl Message {
@@ -364,6 +404,7 @@ impl Message {
             Message::SourceOffer(_) => Type::SourceOffer,
             Message::SourceControl(_) => Type::SourceControl,
             Message::RoomVolume(_) => Type::RoomVolume,
+            Message::Sound(_) => Type::Sound,
         }
     }
 }

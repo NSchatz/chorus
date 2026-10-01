@@ -1,0 +1,31 @@
+# Canonical input for the sound_eq_count_9 rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# sound_eq_count_9.hex as that field, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# Nine filters, one past the eight the format allows.
+
+message_type = sound
+bass_db = -10
+treble_db = 10
+flags = night speech room_eq
+role = 1
+sub_present = 1
+crossover_hz = 80
+sub_level_cdb = 600
+filter.0 = 20 -1200 500
+filter.1 = 42 -600 4500
+filter.2 = 63 -325 2000
+filter.3 = 88 -150 7070
+filter.4 = 120 -900 3000
+filter.5 = 250 100 1000
+filter.6 = 500 -50 1414
+filter.7 = 1000 300 10000
+filter.8 = 1000 0 1000
+rejected_field = eq_count
+problem = out_of_range

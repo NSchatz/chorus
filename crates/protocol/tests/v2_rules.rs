@@ -149,16 +149,18 @@ fn the_committed_rejection_vectors_are_refused_both_ways_as_their_field() {
         "fixtures/protocol/v2/rejected holds vectors"
     );
     for v in &vectors {
-        assert_eq!(
-            v.problem, "out_of_range",
-            "{}: the problem these name",
-            v.stem
-        );
+        // Out of range for a number; undefined for a bit or a role no
+        // version defines (sound's `flags` and `role`).
+        let kind_ok = |p: &Problem| match v.problem.as_str() {
+            "out_of_range" => matches!(p, Problem::OutOfRange(_)),
+            "undefined" => matches!(p, Problem::Undefined(_)),
+            other => panic!("{}: a problem these do not name: {}", v.stem, other),
+        };
         // The encoder refuses the fields by name and emits nothing.
         match encode(&v.message) {
             Err(EncodeError::InvalidField(e)) => {
                 assert_eq!(e.field, v.rejected_field, "{}", v.stem);
-                assert!(matches!(e.problem, Problem::OutOfRange(_)), "{}", v.stem);
+                assert!(kind_ok(&e.problem), "{}: {:?}", v.stem, e.problem);
             }
             other => panic!("{}: the encoder must refuse it, got {:?}", v.stem, other),
         }
@@ -169,11 +171,7 @@ fn the_committed_rejection_vectors_are_refused_both_ways_as_their_field() {
         match d.outcome {
             Outcome::Rejected(DecodeError::InvalidField { error, .. }) => {
                 assert_eq!(error.field, v.rejected_field, "{}", v.stem);
-                assert!(
-                    matches!(error.problem, Problem::OutOfRange(_)),
-                    "{}",
-                    v.stem
-                );
+                assert!(kind_ok(&error.problem), "{}: {:?}", v.stem, error.problem);
             }
             other => panic!("{}: the decoder must reject it, got {:?}", v.stem, other),
         }
@@ -271,5 +269,66 @@ fn every_prefix_of_a_stream_of_all_the_vectors_is_safe() {
         let (outcomes, consumed) = decode_all(&stream[..cut]);
         assert!(consumed <= cut);
         assert!(outcomes.iter().all(|o| matches!(o, Outcome::Decoded(_))));
+    }
+}
+
+#[test]
+fn sound_is_held_to_its_ranges_and_its_edges_are_accepted() {
+    let base = load_v2("sound_sub_2_1").message;
+    let Message::Sound(sound) = base else {
+        panic!("sound_sub_2_1 is a sound")
+    };
+    let with = |f: &dyn Fn(&mut Sound)| {
+        let mut s = sound.clone();
+        f(&mut s);
+        Message::Sound(s)
+    };
+    refused_both_ways(with(&|s| s.bass_db = -11), "bass_db");
+    refused_both_ways(with(&|s| s.treble_db = 11), "treble_db");
+    refused_both_ways(with(&|s| s.flags = 0x80), "flags");
+    refused_both_ways(with(&|s| s.role = 200), "role");
+    refused_both_ways(with(&|s| s.crossover_hz = 0), "crossover_hz");
+    refused_both_ways(with(&|s| s.sub_level_cdb = i16::MIN), "sub_level_cdb");
+    refused_both_ways(with(&|s| s.filters[0].q_milli = 0), "q_milli");
+    // The edges of every range are values the format accepts.
+    for edge in [
+        with(&|s| {
+            s.bass_db = -10;
+            s.treble_db = 10;
+            s.flags = sound_flags::DEFINED;
+            s.role = 18;
+            s.crossover_hz = 40;
+            s.sub_level_cdb = -1200;
+        }),
+        with(&|s| {
+            s.role = 0;
+            s.sub_present = false;
+            s.crossover_hz = 200;
+            s.sub_level_cdb = 600;
+            s.flags = 0;
+            s.filters.clear();
+        }),
+    ] {
+        validate(&edge).unwrap_or_else(|e| panic!("{:?} must be accepted: {}", edge, e));
+        let frame = encode(&edge).unwrap();
+        assert_eq!(decode_frame(&frame).outcome, Outcome::Decoded(edge));
+    }
+}
+
+#[test]
+fn a_sound_whose_sub_present_is_not_a_bool_is_rejected_as_that_field() {
+    // sound_flat.hex with sub_present (payload byte 4) set to 2. The message
+    // type holds a bool, so this one has no rejection vector of its own: it
+    // can only be made on the wire.
+    let mut frame = load_v2("sound_flat").frame;
+    frame[3 + 4] = 2;
+    let d = decode_frame(&frame);
+    assert_eq!(d.consumed, frame.len());
+    match d.outcome {
+        Outcome::Rejected(DecodeError::InvalidField { error, .. }) => {
+            assert_eq!(error.field, "sub_present");
+            assert!(matches!(error.problem, Problem::Undefined(2)));
+        }
+        other => panic!("rejected as sub_present, got {:?}", other),
     }
 }

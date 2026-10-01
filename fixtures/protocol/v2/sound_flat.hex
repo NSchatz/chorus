@@ -1,0 +1,34 @@
+# chorus golden vector: sound, protocol v2 message type 0x39.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# produce these exact bytes from the canonical input in sound_flat.fields, and recover
+# exactly those fields from them (docs/protocol.md, "0x39 sound").
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x39, payload length 10 (0x000A), big-endian
+39 00 0A
+
+# bass_db = 0 dB
+00
+
+# treble_db = 0 dB
+00
+
+# flags = 0x09 (loudness room_eq)
+09
+
+# role = 0 (not in a set)
+00
+
+# sub_present = 0
+00
+
+# crossover_hz = 80
+00 50
+
+# sub_level_cdb = 0 (0.00 dB)
+00 00
+
+# eq_count = 0
+00

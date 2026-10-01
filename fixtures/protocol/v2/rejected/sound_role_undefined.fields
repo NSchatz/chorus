@@ -1,0 +1,22 @@
+# Canonical input for the sound_role_undefined rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# sound_role_undefined.hex as that field, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# A role past the last channel position (18).
+
+message_type = sound
+bass_db = 0
+treble_db = 0
+flags = loudness room_eq
+role = 19
+sub_present = 0
+crossover_hz = 80
+sub_level_cdb = 0
+rejected_field = role
+problem = undefined

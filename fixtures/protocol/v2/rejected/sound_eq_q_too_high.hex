@@ -1,0 +1,36 @@
+# chorus rejection vector: sound, protocol v2 message type 0x39, q_milli out of range.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# reject this frame naming q_milli (see sound_eq_q_too_high.fields).
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x39, payload length 16 (0x0010), big-endian
+39 00 10
+
+# bass_db = 3 dB
+03
+
+# treble_db = -2 dB
+FE
+
+# flags = 0x19 (loudness room_eq sub_inverted)
+19
+
+# role = 4 (LFE)
+04
+
+# sub_present = 1
+01
+
+# crossover_hz = 100
+00 64
+
+# sub_level_cdb = -350 (-3.50 dB)
+FE A2
+
+# eq_count = 1
+01
+
+# filter 0: freq_hz = 120, gain_cdb = -300 (-3.00 dB), q_milli = 10001 (Q 10.001)
+00 78 FE D4 27 11

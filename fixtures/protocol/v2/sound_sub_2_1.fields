@@ -1,0 +1,24 @@
+# Canonical input for the sound_sub_2_1 golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly sound_sub_2_1.hex, and decoding sound_sub_2_1.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+# `role` is a channel position number (0 = in no bonded set); `flags_reserved` is a
+# number ORed into `flags` (rejection vectors only); each `filter.<n>` is
+# `freq_hz gain_cdb q_milli`, numbered from 0, and eq_count is how many there are.
+#
+# The LFE member (role 4) of a 2.1 set: bass management on, the sub inverted at
+# -3.50 dB, a 100 Hz crossover, one room-correction filter.
+
+message_type = sound
+bass_db = 3
+treble_db = -2
+flags = loudness room_eq sub_inverted
+role = 4
+sub_present = 1
+crossover_hz = 100
+sub_level_cdb = -350
+filter.0 = 42 -600 4500
