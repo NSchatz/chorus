@@ -174,7 +174,7 @@ static int read_text_file(const char *path, char *text, size_t text_len, char *d
 int chorus_endpoint_config_load_profile(chorus_endpoint_config_t *out, const char *base_path,
                                         const char *profile_path, char *detail, size_t detail_len)
 {
-    static char base[16384];
+    static char base[32768];
     static char profile[8192];
     if (read_text_file(base_path, base, sizeof(base), detail, detail_len) != 0 ||
         read_text_file(profile_path, profile, sizeof(profile), detail, detail_len) != 0) {
@@ -425,6 +425,48 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
                  conf->path, max_volume);
         return -1;
     }
+
+    /* The two-way split (goal 12, chorus/endpoint_dsp.h): the speaker's own
+     * drivers. Read whether or not it is on, so a value that is wrong is
+     * refused before anyone turns it on. */
+    const char *two_way = chorus_conf_get(conf, "two_way");
+    if (two_way == NULL) {
+        snprintf(detail, detail_len, "%s has no two_way", conf->path);
+        return -1;
+    }
+    if (strcmp(two_way, "on") == 0) {
+        out->two_way.enabled = true;
+    } else if (strcmp(two_way, "off") == 0) {
+        out->two_way.enabled = false;
+    } else {
+        snprintf(detail, detail_len, "%s: two_way = %s is not `on` or `off`", conf->path, two_way);
+        return -1;
+    }
+    NEED(chorus_conf_u32(conf, "two_way_crossover_hz", &out->two_way.crossover_hz, detail,
+                         detail_len));
+    /* The chain's own corner rule (chorus/dsp.h): 20 Hz up to 0.45 x the rate,
+     * here the I2S rate every stream this endpoint plays is at. */
+    if (out->two_way.crossover_hz < 20u ||
+        (double)out->two_way.crossover_hz > 0.45 * (double)out->clock.sample_rate_hz) {
+        snprintf(detail, detail_len,
+                 "%s: two_way_crossover_hz = %u is outside 20 Hz to 0.45 x i2s_sample_rate_hz "
+                 "(%u Hz)",
+                 conf->path, (unsigned)out->two_way.crossover_hz,
+                 (unsigned)(0.45 * (double)out->clock.sample_rate_hz));
+        return -1;
+    }
+    uint32_t woofer = 0, tweeter = 0;
+    NEED(chorus_conf_u32(conf, "two_way_woofer_slot", &woofer, detail, detail_len));
+    NEED(chorus_conf_u32(conf, "two_way_tweeter_slot", &tweeter, detail, detail_len));
+    if (woofer > 1u || tweeter > 1u || woofer == tweeter) {
+        snprintf(detail, detail_len,
+                 "%s: two_way_woofer_slot = %u and two_way_tweeter_slot = %u are not the two I2S "
+                 "slots, 0 and 1, one each",
+                 conf->path, (unsigned)woofer, (unsigned)tweeter);
+        return -1;
+    }
+    out->two_way.woofer_slot = (uint8_t)woofer;
+    out->two_way.tweeter_slot = (uint8_t)tweeter;
 
     NEED(chorus_conf_string(conf, "espidf_version", out->espidf_version,
                             sizeof(out->espidf_version), detail, detail_len));

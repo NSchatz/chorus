@@ -82,6 +82,14 @@ pub struct ZoneWatch {
     room: Mutex<RoomGain>,
     /// The room's sound from the audio wire (`sound`, goal 12), kept.
     sound_inbox: Arc<SoundInbox>,
+    /// While the endpoint DSP is engaged (`crate::dsp::DspSink`), the gain is
+    /// applied inside its chain rather than to the PCM here (the library's
+    /// order: the volume after the sound stages, before the limiter;
+    /// `docs/dsp.md`). [`ZoneWatch::apply`] then leaves the samples alone
+    /// and queues the gain each frame plays at, which the sink takes for the
+    /// same frames at its next write. `None`: the gain is applied here, as
+    /// it always was.
+    dsp_gains: Mutex<Option<Vec<u32>>>,
 }
 
 impl Default for ZoneWatch {
@@ -107,7 +115,36 @@ impl ZoneWatch {
             room_inbox: Arc::new(RoomVolumeInbox::default()),
             room: Mutex::new(RoomGain::new(ceiling)),
             sound_inbox: Arc::new(SoundInbox::default()),
+            dsp_gains: Mutex::new(None),
         }
+    }
+
+    /// Hand the gain to the endpoint DSP (`on`), or take it back. While it is
+    /// handed over, [`ZoneWatch::apply`] scales nothing and queues the Q16
+    /// gain of every frame it is shown instead ([`ZoneWatch::take_dsp_gains`]).
+    pub fn defer_gain_to_dsp(&self, on: bool) {
+        let mut g = match self.dsp_gains.lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *g = if on { Some(Vec::new()) } else { None };
+    }
+
+    /// The per-frame Q16 gains queued since the last call, oldest first:
+    /// exactly one per frame [`ZoneWatch::apply`] was shown while the gain was
+    /// deferred. Empty when it is not.
+    pub fn take_dsp_gains(&self) -> Vec<u32> {
+        let mut g = match self.dsp_gains.lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        g.as_mut().map(std::mem::take).unwrap_or_default()
+    }
+
+    /// The sound messages received this process: a change in it is a new
+    /// `sound` for the endpoint DSP to apply.
+    pub fn sounds_received(&self) -> u64 {
+        self.sound_inbox.received()
     }
 
     /// Where the audio session delivers `sound`
@@ -163,7 +200,20 @@ impl ZoneWatch {
         if let Some(m) = &taken {
             room.set(m, zone, rate_hz);
         }
-        room.apply(zone, applier, channels, pcm);
+        let mut deferred = match self.dsp_gains.lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        match deferred.as_mut() {
+            // The endpoint DSP applies the gain inside its chain: the ramp
+            // advances over the same frames, by the same arithmetic, and
+            // the samples are left as they are.
+            Some(gains) => {
+                let frame_len = channels.max(1) * applier.format().bytes_per_sample();
+                room.gains_q16(zone, pcm.len() / frame_len, gains);
+            }
+            None => room.apply(zone, applier, channels, pcm),
+        }
         taken
     }
 

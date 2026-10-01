@@ -102,6 +102,7 @@ dependencies = [
  "chorus-control",
  "chorus-controls",
  "chorus-discovery",
+ "chorus-dsp",
  "chorus-hostctl",
  "chorus-opus-sys",
  "chorus-protocol",

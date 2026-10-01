@@ -905,8 +905,13 @@ static int handle_inner(session_state_t *state, stream_state_t *stream,
         stream->format.codec_config.data = NULL;
         stream->announced = 1;
         if (config->playout != NULL) {
-            /* A new stream starts from an empty buffer and a fresh loop. */
+            /* A new stream starts from an empty buffer and a fresh loop, and
+             * the sound chain (goal 12) from this stream's channel map. */
             chorus_playout_reset_stream(config->playout);
+            uint8_t map[CHORUS_MAX_CHANNELS];
+            size_t n = (f->channels < CHORUS_MAX_CHANNELS) ? f->channels : CHORUS_MAX_CHANNELS;
+            memcpy(map, f->channel_map, n);
+            chorus_playout_set_stream_layout(config->playout, (uint32_t)n, map);
         }
         chorus_codec_close(stream->decoder);
         stream->decoder = NULL;
@@ -984,10 +989,15 @@ static int handle_inner(session_state_t *state, stream_state_t *stream,
         return 0;
     case CHORUS_V2_SOUND: {
         /* The room's sound (goal 12): held to its ranges by the decoder,
-         * kept as the last one received, and handed on. Phase A stores it;
-         * the endpoint DSP configures its chain from it. */
+         * kept as the last one received, and handed on. The playout path's
+         * sound chain is configured from it (chorus/endpoint_dsp.h). */
         const chorus_v2_sound_t *sound = &frame->message.as.sound;
         chorus_session_keep_sound(state->out, sound);
+        if (config->playout != NULL) {
+            /* Into the playout path's sound chain, from the next frame
+             * written (chorus/endpoint_dsp.h). */
+            chorus_playout_set_sound(config->playout, sound);
+        }
         if (config->on_sound != NULL) {
             config->on_sound(config->sound_ctx, sound);
         }

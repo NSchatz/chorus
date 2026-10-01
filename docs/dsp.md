@@ -111,6 +111,41 @@ Fixed maximums (both languages): 8 stream channels, 8 outputs, 4800 delay frames
 9600 for all outputs together, a 768-frame look-ahead. A `chorus_dsp_chain_t` is 72680 bytes,
 one static object; nothing on the audio path allocates.
 
+## On the endpoints
+
+Both endpoints run the chain on every frame they write (the decisions: `docs/decisions/` "the DSP
+chain on the endpoints"). The C endpoint runs it in the playout path's writer
+(`firmware/src/endpoint_dsp.c`, called from `chorus_playout_fill` where `room_volume`'s gain was
+applied), the Linux client at the sink's edge (`crates/client-linux/src/dsp.rs`, `DspSink`, which
+also resolves the output map after the chain). The same rules on both:
+
+- **When.** The chain engages once the endpoint knows its stream and has received a `sound` or
+  has a two-way. The server sends `sound` in its greeting, before any audio, so the chain is in
+  the path from a stream's first frame. Before that the endpoint plays exactly as before goal 12.
+  A new stream builds a new chain; each `sound` is `set_sound` (a refused one keeps the settings
+  in force and is counted).
+- **The gain.** The room's gain goes into the chain (the order above: after the sound stages,
+  before the limiter), not onto the samples before it. The ramp is taken in blocks of 32 frames
+  (ASSUMED), each at its first frame's gain. The limiter's limit is the least of the room's limit
+  and the endpoint's own ceiling (`max_volume`, `--max-volume`).
+- **Time.** The chain's latency (the 2 ms look-ahead) is added to the device delay each
+  endpoint's sync loop reads, so a frame is written that much earlier and heard at the sync
+  target; the C endpoint shifts its GPIO marker by the same frames.
+- **Outputs.** One chain output (a bonded main, the subwoofer) goes to every device channel when
+  no output map says otherwise; a two-way's woofer and tweeter go to the outputs its
+  configuration names (C: `two_way_woofer_slot`, `two_way_tweeter_slot` in
+  `firmware/config/endpoint.conf`; Linux: `--two-way crossover-hz=..,woofer=..,tweeter=..`). On
+  Linux an output map is resolved against the chain's outputs: the stream's positions when the
+  endpoint is in no set, else its role, so `--output 0=LFE` takes a subwoofer's feed from a
+  stereo stream.
+- **The subwoofer's knobs** (C, ADR 0063): the local level (a cut, -12..0 dB) adds to the
+  catalog's `sub_level_cdb`, held to -12..+6 dB, and a phase knob at 90 degrees or more inverts
+  the polarity the catalog sets (ASSUMED until a variable-phase all-pass is designed).
+
+End to end on fakes, both endpoint kinds against the real server (done-when line C):
+`cargo test -p chorus-server --test dsp_end_to_end` (the Linux client) and
+`make -C firmware dsp-session` (the C endpoint).
+
 ## Defaults and ASSUMED values
 
 Every value below that is not cited is ASSUMED: chorus's choice, not measured, and marked so in
@@ -140,6 +175,10 @@ the code.
 | A role the stream lacks | silence (a mono stream plays on every main role) | ASSUMED |
 | Two-way example | 2 kHz | ASSUMED (until goals 24-25 design the drivers) |
 | Driver trim range | -24..0 dB | ASSUMED |
+| Gain block on the endpoints | 32 frames at one room gain while it ramps | ASSUMED |
+| One chain output, no output map | on every device channel (both I2S slots) | ASSUMED |
+| Sub phase knob | 90 degrees or more inverts the polarity | ASSUMED |
+| Two-way on the endpoints | 2000 Hz, woofer output 0, tweeter output 1 | ASSUMED (the example above) |
 
 ## Citations
 
