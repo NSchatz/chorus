@@ -1,0 +1,18 @@
+# Canonical input for the catalog v2 autoplay-tv vector.
+#
+# Encoding these field values must produce exactly autoplay-tv.json, and decoding
+# autoplay-tv.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# Goal 13 (K81): a TV input's rule that keeps playing through the TV's
+# standby for the hold (stop_on_standby false) and stays on the slot path
+# (low_latency false). Both default to true and are written only when false.
+
+message_type = autoplay
+input = hub/tv
+target = living
+enabled = 1
+stop_on_standby = 0
+low_latency = 0

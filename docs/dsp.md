@@ -108,8 +108,61 @@ setting changes nothing. A new stream (rate or channel map) or new endpoint conf
 new chain.
 
 Fixed maximums (both languages): 8 stream channels, 8 outputs, 4800 delay frames per output and
-9600 for all outputs together, a 768-frame look-ahead. A `chorus_dsp_chain_t` is 72680 bytes,
+9600 for all outputs together, a 768-frame look-ahead. A `chorus_dsp_chain_t` is 72872 bytes (goal 13's mix rows and ambient filters included),
 one static object; nothing on the audio path allocates.
+
+## The theater maps (goal 13)
+
+What step 6 plays when the stream and the room's set do not match: a stereo TV into a 5.1 set, a
+5.1 stream into a stereo pair or one speaker. The same rules in both languages
+(`crates/dsp/src/chain.rs`, `firmware/src/dsp.c`); each row is a shared fixture
+(`fixtures/dsp/chain-theater-*.txt`, read by `crates/dsp/tests/shared_fixtures.rs` and
+`firmware/tests/test_dsp.c`), its expected value computed from the cited coefficient in
+`tools/dsp-fixtures/generate.py`, and its samples held to the Rust chain's.
+
+| the endpoint | the stream | it plays | source |
+|---|---|---|---|
+| a role the stream carries | any | that channel (as goal 12) | |
+| FL or FR, the set has no FC (`fold_centre`) | has FC | `+ FC / sqrt 2` | BS.775-4 Table 2, 2/0 and 2/2 |
+| FL or FR, the set has no surrounds (`fold_surround`) | has its side's surround(s) | `+ BL / sqrt 2 + SL / sqrt 2` (FR: BR, SR) | BS.775-4 Table 2, 2/0 and 3/0 |
+| FC | no FC, has FL and FR | `(FL + FR) / sqrt 2` | the passive matrix's centre [DS] |
+| SL, SR, BL or BR | lacks it, has the other naming (BL for SL) | that channel | 5.1's two namings [MS] |
+| SL, SR, BL or BR | no surround at all, `tv_upmix` off | silence | ASSUMED default |
+| SL, SR, BL or BR | no surround at all, `tv_upmix` ambient | `(FL - FR) / sqrt 2`, band 100 Hz..7 kHz, 20 ms late | the passive matrix's surround [DS] [SOS] |
+| LFE | any | as goal 12 (low branch of the mains + LFE at +10 dB) | ATSC A/52 |
+| not in a set, `stereo_downmix`, not two-way | has FC or a surround | two outputs, `Lo = FL + FC / sqrt 2 + LS / sqrt 2`, `Ro` likewise; LFE dropped | BS.775-4 Table 2, 2/0; Annex 7 |
+| not in a set, two-way | has FC or a surround | `(Lo + Ro) / 2` into the split | BS.775-4 Table 2, the chain's own mean |
+| a mono stream | `MONO` | its one channel (as goal 12) | |
+
+- **The coefficient.** BS.775-4 prints 0.7071; the chain uses 1/sqrt 2 exactly (designed in f64,
+  rounded to f32 once). Every term is summed in a fixed order (the role's own channel, FC, then
+  the back and side surrounds), so both languages agree bit for bit.
+- **The centre on a stereo stream** is the passive Dolby Surround decoder's: its encoder puts
+  the centre into Lt and Rt "divided equally ... with a 3 dB level reduction", so
+  `(Lt + Rt) / sqrt 2` gives a centre-panned sound back at unity (computed). The front members
+  keep FL and FR whole, as the envelope asks (no "phantom" subtraction).
+- **The ambient surround** is the same decoder's surround: "the difference of Lt and Rt, then
+  ... a 7 kHz low-pass filter, a delay line" [DS]; a band-pass "below 100Hz and above 7kHz" and
+  the surrounds "about 20mS after the direct sound from the front channels" [SOS]. Both
+  surround members play the same mono surround (the matrix carries one). The band is one RBJ
+  high-pass at 100 Hz and one RBJ low-pass at 7 kHz, each Q 1/sqrt 2 (ASSUMED: the sources give
+  the corners, not the slopes); the 20 ms rides the output's own delay line, so it adds to
+  `output_delay_us` and a chain where it does not fit (above 4800 frames, so at 384 kHz) is
+  refused as any too-long delay is. This is the one place a setting moves an output in time, on
+  purpose (the precedence effect keeps the image on the screen), and only on a surround member
+  that has nothing of its own to play; the chain's reported latency stays the look-ahead, so no
+  endpoint's sync compensates it away. A centred sound (FL = FR) cancels exactly and leaves the
+  surrounds silent (`chain-theater-2p0-ambient-centre.txt`).
+- **The LFE in a downmix** is dropped: "The LFE channel is often not included in a 2-channel
+  downmix" (BS.775-4, Annex 7). A stereo pair with a sub keeps the sub's feed as goal 12 has it.
+- **Where the facts come from.** `fold_centre`, `fold_surround` and `tv_upmix` arrive in the
+  `sound` message's theater block (`docs/protocol.md`, 0x39): the server tells a front member
+  what its set lacks. `stereo_downmix` is the endpoint's own (`EndpointDsp`,
+  `chorus_dsp_endpoint_t`): whether it is one stereo speaker. Nothing sets it yet on either
+  endpoint (a follow-up: the firmware is 2-channel and is refused a 5.1 stream at negotiation
+  today; the Linux client would set it for a 2-channel device without an output map).
+- **Positions past 5.1** (FLC, FRC, BC, the tops) are not folded: they are silent on an endpoint
+  that does not play them, as before.
 
 ## On the endpoints
 
@@ -186,6 +239,9 @@ the code.
 | One chain output, no output map | on every device channel (both I2S slots) | ASSUMED |
 | Sub phase knob | 90 degrees or more inverts the polarity | ASSUMED |
 | Two-way on the endpoints | 2000 Hz, woofer output 0, tweeter output 1 | ASSUMED (the example above) |
+| `tv_upmix` default | off (silence on the surrounds of a stereo stream) | ASSUMED |
+| Ambient surround band slopes | 2nd order each (RBJ, Q 1/sqrt 2) | ASSUMED; corners cited |
+| Folding past 5.1 (7.1 side and back both) | each at 1/sqrt 2 | ASSUMED extension of BS.775-4 |
 
 ## Citations
 
@@ -223,6 +279,18 @@ All read 2026-10-01.
 - J. T. Geiger, P. Grosche, Y. Lacouture Parodi, "Dialogue enhancement of stereo sound", EUSIPCO
   2015 (the "simple center extraction and gain" baseline, "amplified (by 3.8 dB)"):
   <https://www.eurasip.org/Proceedings/Eusipco/Eusipco2015/papers/1570096395.pdf>.
+
+- [BS] ITU-R BS.775-4 (12/2022), "Multichannel stereophonic sound system with and without
+  accompanying picture", Annex 4 Table 2 (the downmix equations) and Annex 7 (the LFE):
+  <https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.775-4-202212-I!!PDF-E.pdf>.
+- [DS] R. Dressler, "Dolby Surround Pro Logic Decoder Principles of Operation", sections 1.1,
+  1.2 and 2 (the matrix encoder, the passive decoder, the surround's delay and 7 kHz filter):
+  <https://educypedia.org/library/208_Dolby_Surround_Pro_Logic_Decoder.pdf>.
+- [SOS] Sound On Sound, "Surround Sound Explained: Part 2" (the 100 Hz..7 kHz band, "about
+  20mS"): <https://www.soundonsound.com/techniques/surround-sound-explained-part-2>.
+- [MS] Microsoft, `KSAUDIO_CHANNEL_CONFIG` (`KSAUDIO_SPEAKER_5POINT1` with back speakers,
+  `KSAUDIO_SPEAKER_5POINT1_SURROUND` with side speakers):
+  <https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ksmedia/ns-ksmedia-ksaudio_channel_config>.
 
 No GPL source was opened. The code is written here from the formulas above.
 

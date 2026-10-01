@@ -1,0 +1,24 @@
+# Canonical input for the sound_fold_reserved rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# sound_fold_reserved.hex as that field, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# A fold bit past surround (0x04).
+
+message_type = sound
+bass_db = 0
+treble_db = 0
+flags = loudness
+role = 1
+sub_present = 0
+crossover_hz = 80
+sub_level_cdb = 0
+fold = centre
+fold_reserved = 4
+rejected_field = fold
+problem = undefined

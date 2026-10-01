@@ -31,6 +31,7 @@ use chorus_client_linux::ratematch::SETTLED_BOUND_FRAMES;
 use chorus_client_linux::source::{self, SignalThresholds, SourceSetup, SourceStats, Upstream};
 use chorus_client_linux::tvcapture::{IEC61937_PA, IEC61937_PB};
 use chorus_client_linux::Counters;
+use chorus_protocol::v2::catalog::signal_reason;
 use chorus_protocol::v2::{Codec, Message, SourceAction, SourceControl, SourceKind};
 use chorus_protocol::{AudioChunk, SampleFormat};
 use common::tv::{ClockSegment, Content, ModelledTv, TvTimeline};
@@ -56,13 +57,17 @@ type OnChunk = Box<dyn FnMut(&AudioChunk) + Send>;
 struct Probe {
     on_chunk: OnChunk,
     offers: Arc<Mutex<Vec<bool>>>,
+    reasons: Arc<Mutex<Vec<u8>>>,
 }
 
 impl Upstream for Probe {
     fn send(&mut self, message: &Message) -> std::io::Result<()> {
         match message {
             Message::AudioChunk(c) => (self.on_chunk)(c),
-            Message::SourceOffer(o) => self.offers.lock().unwrap().push(o.signal),
+            Message::SourceOffer(o) => {
+                self.offers.lock().unwrap().push(o.signal);
+                self.reasons.lock().unwrap().push(o.reason);
+            }
             _ => {}
         }
         Ok(())
@@ -73,6 +78,7 @@ struct Outcome {
     lines: Vec<String>,
     stats: SourceStats,
     offers: Vec<bool>,
+    reasons: Vec<u8>,
 }
 
 /// Run the source loop on `tv` for `seconds` of modelled time, started at
@@ -95,6 +101,7 @@ fn run(mut tv: ModelledTv, seconds: f64, on_chunk: OnChunk) -> Outcome {
     .unwrap();
     let lines = Arc::new(Mutex::new(Vec::new()));
     let offers = Arc::new(Mutex::new(Vec::new()));
+    let reasons = Arc::new(Mutex::new(Vec::new()));
     let setup = SourceSetup {
         input,
         listed_codecs: Codec::Pcm.bit(),
@@ -118,6 +125,7 @@ fn run(mut tv: ModelledTv, seconds: f64, on_chunk: OnChunk) -> Outcome {
     let mut probe = Probe {
         on_chunk,
         offers: Arc::clone(&offers),
+        reasons: Arc::clone(&reasons),
     };
     let stats = SourceStats::default();
     let end = (seconds * 1e9) as u64;
@@ -127,10 +135,12 @@ fn run(mut tv: ModelledTv, seconds: f64, on_chunk: OnChunk) -> Outcome {
     drop(tx);
     let lines = lines.lock().unwrap().clone();
     let offers = offers.lock().unwrap().clone();
+    let reasons = reasons.lock().unwrap().clone();
     Outcome {
         lines,
         stats,
         offers,
+        reasons,
     }
 }
 
@@ -476,6 +486,8 @@ fn an_iec61937_stream_is_refused_as_non_pcm_and_nothing_of_it_is_forwarded() {
     assert_eq!(during, 0, "nothing forwarded while refused");
     assert!(seen.iter().filter(|(t, _)| *t > back).count() > 400);
     assert_eq!(out.offers, [true, false, true]);
+    // The withdrawal says why on the wire too (`docs/protocol.md` 0x36).
+    assert_eq!(out.reasons, [0, signal_reason::NON_PCM, 0]);
     assert!(out.stats.tv_non_pcm_periods.load(Ordering::Relaxed) > 2_000);
 }
 

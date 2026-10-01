@@ -1,0 +1,13 @@
+# Canonical input for the catalog v2 av_trim-delay vector.
+#
+# Encoding these field values must produce exactly av_trim-delay.json, and decoding
+# av_trim-delay.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# Goal 13: the A/V trim at its top bound, +200 ms (positive delays the audio).
+
+message_type = av_trim
+zone = living
+av_trim_ms = 200

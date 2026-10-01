@@ -1,0 +1,14 @@
+# Canonical input for the catalog v2 av_trim vector.
+#
+# Encoding these field values must produce exactly av_trim.json, and decoding
+# av_trim.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# Goal 13: a room's A/V trim, here 40 ms earlier than the room's TV latency
+# (negative brings the TV audio earlier; -100 to +200 ms, ASSUMED bounds).
+
+message_type = av_trim
+zone = living
+av_trim_ms = -40

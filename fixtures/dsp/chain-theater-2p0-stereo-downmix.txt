@@ -1,0 +1,17 @@
+# Goal 13, stereo_downmix on a 2.0 stream: nothing to fold, so both channels
+# pass, bit for bit.
+
+kind = chain
+source = docs/dsp.md
+read = 2026-10-01
+rate_hz = 48000
+room_gain = 1
+limit_gain = 1
+channel_map = 1 2
+frames = 4800
+stereo_downmix = 1
+input.0 = noise 51 0.7
+input.1 = noise 52 0.7
+out_channels = 2
+exact.0 = 0
+exact.1 = 1

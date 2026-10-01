@@ -1,0 +1,32 @@
+# Goal 13, a 2.0 stream into a theater set, a surround role (SR) with tv_upmix
+# ambient: the passive matrix surround (FL - FR) / sqrt 2 (Dressler section 1.2,
+# "taking the difference of Lt and Rt, then passing it through a 7 kHz low-pass
+# filter, a delay line", https://educypedia.org/library/208_Dolby_Surround_Pro_Logic_Decoder.pdf; Sound On Sound: a band-pass "below 100Hz and
+# above 7kHz" and the surround "about 20mS after the direct sound", https://www.soundonsound.com/techniques/surround-sound-explained-part-2; both
+# read 2026-10-01). The band is one RBJ high-pass at 100 Hz and one RBJ low-pass at
+# 7 kHz, Q 1/sqrt 2 (ASSUMED slopes), and the 20 ms (960 frames) delay rides the
+# output's delay line. FL a 1 kHz tone of 0.5, FR its negative: FL - FR is the
+# tone at 1.0, so the output settles at |H_hp(1k)| |H_lp(1k)| / sqrt 2 =
+# 0.706961335 (the designed responses, computed here).
+
+kind = chain
+source = https://educypedia.org/library/208_Dolby_Surround_Pro_Logic_Decoder.pdf https://www.soundonsound.com/techniques/surround-sound-explained-part-2 https://www.w3.org/TR/audio-eq-cookbook/
+read = 2026-10-01
+rate_hz = 48000
+room_gain = 1
+limit_gain = 1
+channel_map = 1 2
+frames = 9600
+role = 11
+tv_upmix = 1
+input.0 = sine 1000 0.5
+input.1 = sine 1000 -0.5
+out_channels = 1
+amplitude.0 = 0.7069613346827424
+amplitude_from = 4800
+amplitude_tolerance = 1e-4
+golden = 1
+# The Rust chain's output (the chain_samples example): a drift check.
+samples_from = 9536
+samples_tolerance = 1e-6
+samples.0 = -0.5948273 -0.6396095 -0.67344785 -0.69576335 -0.70617425 -0.70450234 -0.69077617 -0.66523075 -0.6283032 -0.58062524 -0.52301264 -0.45645133 -0.38208005 -0.30117133 -0.21510957 -0.12536734 -0.033480138 0.05897984 0.15043059 0.23930733 0.32408935 0.40332603 0.4756616 0.53985834 0.5948179 0.63959986 0.673438 0.69575334 0.706164 0.704492 0.69076574 0.6652202 0.6282923 0.58061415 0.5230014 0.45643982 0.3820683 0.3011594 0.21509752 0.12535512 0.033467755 -0.05899238 -0.15044326 -0.23932013 -0.3241023 -0.40333918 -0.4756749 -0.5398718 -0.59483165 -0.63961387 -0.67345226 -0.6957678 -0.7061788 -0.70450693 -0.6907809 -0.6652355 -0.62830794 -0.58062994 -0.5230174 -0.45645607 -0.38208482 -0.30117616 -0.21511447 -0.12537229

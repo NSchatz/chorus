@@ -28,6 +28,12 @@
 //!   room this runtime is holding" reach it.
 //! - [`Runtime::on_input_signal`] and [`Runtime::on_input_gone`]: a line-in's
 //!   `source_offer` changed, or its endpoint's session ended.
+//! - [`Runtime::on_input_standby`] (goal 13, K81): a TV input's signal ended
+//!   because the TV went to standby. A TV autoplay whose rule says
+//!   `stop_on_standby` (the default) stops at once, without
+//!   [`AUTOPLAY_HOLD_MS`], and restores what its rooms played; otherwise it is
+//!   a signal gone, hold and all. TV on is an ordinary signal: autoplay's
+//!   `take` already takes the target room out of any group it was in.
 //!
 //! # The effects, and the order they come in
 //!
@@ -472,6 +478,34 @@ impl Runtime {
                 ));
             }
         }
+        self.finish(now_mono_ns, zones)
+    }
+
+    /// (goal 13) A TV input's signal ended because the TV went to standby
+    /// (`InputEvent::Standby`; only an `optical` or `hdmi_arc` input's offer
+    /// is ever one). The input is withdrawn as for any signal gone; an
+    /// autoplay playing it whose rule says `stop_on_standby` stops NOW and
+    /// restores its rooms (no hold: the TV is off, nobody is watching), and
+    /// one whose rule says otherwise holds as a signal gone does.
+    pub fn on_input_standby(
+        &mut self,
+        input: &InputId,
+        now_mono_ns: u64,
+        zones: &mut Zones,
+    ) -> Vec<Effect> {
+        let stop = zones
+            .autoplay_rules()
+            .iter()
+            .find(|r| r.input == *input)
+            .is_none_or(|r| r.stop_on_standby);
+        if !stop || !self.playing.iter().any(|p| p.input == *input) {
+            return self.on_input_signal(input, false, now_mono_ns, zones);
+        }
+        if !self.connected.contains(input) {
+            self.connected.push(input.clone());
+        }
+        zones.withdraw_input(input);
+        self.end_autoplay(input, "standby", zones);
         self.finish(now_mono_ns, zones)
     }
 

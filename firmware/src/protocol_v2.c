@@ -656,6 +656,10 @@ static int decode_payload(uint8_t type, const uint8_t *payload, size_t len, chor
             read_short_text(&r, "name", &s->name) != 0) {
             return -1;
         }
+        s->reason = 0;
+        if (r.at < r.len && read_u8(&r, "reason", &s->reason) != 0) {
+            return -1;
+        }
         return 0;
     }
     case CHORUS_V2_SOURCE_CONTROL: {
@@ -704,6 +708,15 @@ static int decode_payload(uint8_t type, const uint8_t *payload, size_t len, chor
                 return -1;
             }
             s->filters[i].gain_cdb = (int16_t)gain;
+        }
+        /* The theater block (goal 13): each byte read when it is there. */
+        s->tv_upmix = 0;
+        s->fold = 0;
+        if (r.at < r.len && read_u8(&r, "tv_upmix", &s->tv_upmix) != 0) {
+            return -1;
+        }
+        if (r.at < r.len && read_u8(&r, "fold", &s->fold) != 0) {
+            return -1;
         }
         return 0;
     }
@@ -1088,7 +1101,13 @@ int chorus_v2_validate(const chorus_v2_message_t *message, chorus_v2_field_error
         if (s->signal > 1) {
             return fail(error, "signal", CHORUS_V2_PROBLEM_UNDEFINED, NULL);
         }
-        return text_ok("name", &s->name, short_max, error);
+        if (text_ok("name", &s->name, short_max, error) != 0) {
+            return -1;
+        }
+        if (s->reason > CHORUS_V2_SIGNAL_REASON_MAX) {
+            return fail(error, "reason", CHORUS_V2_PROBLEM_UNDEFINED, NULL);
+        }
+        return 0;
     }
     case CHORUS_V2_SOURCE_CONTROL: {
         const chorus_v2_source_control_t *s = &message->as.source_control;
@@ -1164,6 +1183,12 @@ static int validate_sound(const chorus_v2_sound_t *s, chorus_v2_field_error_t *e
             f->q_milli > CHORUS_V2_SOUND_EQ_Q_MILLI_MAX) {
             return fail(error, "q_milli", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
         }
+    }
+    if (s->tv_upmix > CHORUS_V2_SOUND_TV_UPMIX_MAX) {
+        return fail(error, "tv_upmix", CHORUS_V2_PROBLEM_UNDEFINED, NULL);
+    }
+    if ((s->fold & (uint8_t)~CHORUS_V2_SOUND_FOLD_DEFINED) != 0) {
+        return fail(error, "fold", CHORUS_V2_PROBLEM_UNDEFINED, NULL);
     }
     return 0;
 }
@@ -1433,6 +1458,9 @@ static void write_payload(writer_t *w, const chorus_v2_message_t *m)
         put_u8(w, m->as.source_offer.kind);
         put_u8(w, m->as.source_offer.signal);
         put_short_text(w, &m->as.source_offer.name);
+        if (m->as.source_offer.reason != 0) {
+            put_u8(w, m->as.source_offer.reason);
+        }
         break;
     case CHORUS_V2_SOURCE_CONTROL:
         put_u8(w, m->as.source_control.source_id);
@@ -1458,6 +1486,10 @@ static void write_payload(writer_t *w, const chorus_v2_message_t *m)
             put_u16(w, s->filters[i].freq_hz);
             put_u16(w, (uint16_t)s->filters[i].gain_cdb);
             put_u16(w, s->filters[i].q_milli);
+        }
+        if (s->tv_upmix != 0 || s->fold != 0) {
+            put_u8(w, s->tv_upmix);
+            put_u8(w, s->fold);
         }
         break;
     }

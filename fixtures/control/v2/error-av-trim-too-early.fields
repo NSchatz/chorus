@@ -1,0 +1,16 @@
+# Canonical input for the catalog v2 error-av-trim-too-early vector.
+#
+# `input` is refused, by the decoder or by the room state the commands below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-av-trim-too-early.json. Nothing of it is applied.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# A trim one millisecond past the -100 the catalog declares.
+
+message_type = error
+zones = living,kitchen
+input = {"v":2,"t":"av_trim","zone":"living","av_trim_ms":-101}
+field = av_trim_ms
+ends_the_session = 0

@@ -73,6 +73,7 @@ use std::sync::{Arc, Mutex, TryLockError};
 use std::thread::{self, JoinHandle};
 
 use chorus_alsa::{AlsaError, Format, Pcm};
+use chorus_protocol::v2::catalog::signal_reason;
 use chorus_protocol::v2::session::SecureWriter;
 use chorus_protocol::v2::SourceKind;
 use chorus_protocol::v2::{
@@ -1152,7 +1153,13 @@ pub fn run_tv<C: CaptureSource, U: Upstream>(
         if signal != offered {
             offered = signal;
             stats.signal.store(signal, Ordering::Relaxed);
-            if let Err(e) = offer(upstream, &input, signal, stats) {
+            // The wire reason: a non-PCM refusal, or CEC's standby.
+            let wire = match (signal, tv.refusal()) {
+                (false, Some(Refusal::NonPcm)) => signal_reason::NON_PCM,
+                (false, None) if cec_reason == "standby" => signal_reason::STANDBY,
+                _ => signal_reason::NONE,
+            };
+            if let Err(e) = offer_why(upstream, &input, signal, wire, stats) {
                 return lost(e);
             }
             let reason = match (signal, tv.refusal()) {
@@ -1219,11 +1226,24 @@ fn offer<U: Upstream>(
     signal: bool,
     stats: &SourceStats,
 ) -> io::Result<()> {
+    offer_why(upstream, input, signal, signal_reason::NONE, stats)
+}
+
+/// An offer with its wire `reason` (`docs/protocol.md` 0x36: `standby`,
+/// `non_pcm`).
+fn offer_why<U: Upstream>(
+    upstream: &mut U,
+    input: &LineInConfig,
+    signal: bool,
+    reason: u8,
+    stats: &SourceStats,
+) -> io::Result<()> {
     upstream.send(&Message::SourceOffer(SourceOffer {
         source_id: input.source_id,
         kind: input.kind,
         signal,
         name: input.name.clone(),
+        reason,
     }))?;
     stats.offers_sent.fetch_add(1, Ordering::Relaxed);
     Ok(())

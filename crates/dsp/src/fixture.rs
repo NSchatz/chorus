@@ -210,12 +210,18 @@ pub fn sound_settings(f: &Fields) -> Result<SoundSettings, String> {
         crossover_hz: f.num_or("crossover_hz", 80.0)? as u16,
         sub_level_cdb: f.num_or("sub_level_cdb", 0.0)? as i16,
         room_eq,
+        tv_upmix: f.num_or("tv_upmix", 0.0)? as u8,
+        fold_centre: flag(f, "fold_centre")?,
+        fold_surround: flag(f, "fold_surround")?,
     })
 }
 
 /// A `chain` fixture's endpoint configuration.
 pub fn endpoint_dsp(f: &Fields) -> Result<EndpointDsp, String> {
-    let mut e = EndpointDsp::default();
+    let mut e = EndpointDsp {
+        stereo_downmix: flag(f, "stereo_downmix")?,
+        ..EndpointDsp::default()
+    };
     if flag(f, "two_way")? {
         e.two_way = Some(TwoWay {
             crossover_hz: f.num("two_way_hz")? as u32,

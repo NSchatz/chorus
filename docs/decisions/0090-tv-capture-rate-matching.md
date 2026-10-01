@@ -74,7 +74,8 @@ envelope, `crates/sync/src/latency_grow.rs`, `crates/server/src/{linein,slots,co
    output at a fresh `S0`; a partial chunk is dropped and counted, never sent with a wrong stamp.
 7. **Refusals** (`tvcapture::Refusal`), each logged `source-tv-refused reason=<name>` with the
    owner's advice, counted, and offered as `signal = false` (`source-offer ... signal=0
-   reason=<name>`); nothing captured is forwarded while one stands:
+   reason=<name>`, and on the wire `non-pcm` carries the 0x36 offer's `reason` 2, `non_pcm`, as
+   a CEC standby carries 1, ADR 0088); nothing captured is forwarded while one stands:
    - `non-pcm`: a frame whose left and right top 16 bits are Pa and Pb, or the receiver's
      non-audio bit (`CaptureSource::channel_status`; ALSA exposes none today), mutes from the
      period it is in; it lifts after 250 ms with neither (research 6.5, ASSUMED). The level
