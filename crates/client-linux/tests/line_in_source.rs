@@ -23,7 +23,7 @@ mod common;
 
 use std::io::Read;
 use std::net::{TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
@@ -488,6 +488,29 @@ fn a_line_in_is_offered_started_streamed_bit_for_bit_on_the_server_timeline_and_
     let clock = Arc::new(AtomicU64::new(CAPTURE_BASE_NS));
     let served = Arc::new(Mutex::new(Vec::new()));
     let lines = Arc::new(Mutex::new(Vec::<String>::new()));
+    // The session's `source_control`s reach the role through this relay,
+    // which counts each one as it lands in the role's inbox. The role reads
+    // its inbox between captured chunks, so the test waits for a control to
+    // land before releasing the chunk it should take effect after: the
+    // control rides the session behind whatever audio the playout's reader
+    // has yet to take in, and on a loaded machine that can be longer than the
+    // script the role would otherwise read meanwhile (the stop then found
+    // the script used up, and the device's failure, not the stop, ended the
+    // stream).
+    let delivered = Arc::new(AtomicUsize::new(0));
+    let controls = {
+        let (tx, rx) = mpsc::channel();
+        let delivered = Arc::clone(&delivered);
+        thread::spawn(move || {
+            for control in source_control {
+                if tx.send(control).is_err() {
+                    return;
+                }
+                delivered.fetch_add(1, Ordering::SeqCst);
+            }
+        });
+        rx
+    };
     let capture = ModelledCapture {
         script: Arc::new(script()),
         pos: 0,
@@ -507,7 +530,7 @@ fn a_line_in_is_offered_started_streamed_bit_for_bit_on_the_server_timeline_and_
                 listed_codecs: caps.codecs,
                 clock: Box::new(move || clock.load(Ordering::SeqCst)),
                 counters: Arc::clone(&source_counters),
-                controls: source_control,
+                controls,
                 thresholds: SignalThresholds::default(),
                 log: Box::new(move |l| lines.lock().unwrap().push(l.to_string())),
                 tv_power: None,
@@ -564,6 +587,9 @@ fn a_line_in_is_offered_started_streamed_bit_for_bit_on_the_server_timeline_and_
     //    a start in PCM is honoured: stream_format first.
     server.control(SourceAction::Start, Codec::Flac);
     server.control(SourceAction::Start, Codec::Pcm);
+    wait_until("both starts to reach the role", || {
+        delivered.load(Ordering::SeqCst) == 2
+    });
     let mut chunks: Vec<AudioChunk> = Vec::new();
     let format = match server.release_until_message(&released, &mut chunks) {
         Message::StreamFormat(f) => f,
@@ -625,17 +651,25 @@ fn a_line_in_is_offered_started_streamed_bit_for_bit_on_the_server_timeline_and_
 
     // 6. Stop: stream_end.
     server.control(SourceAction::Stop, Codec::Pcm);
+    wait_until("the stop to reach the role", || {
+        delivered.load(Ordering::SeqCst) == 3
+    });
     let end = match server.release_until_message(&released, &mut chunks) {
         Message::StreamEnd(e) => e,
         other => panic!("expected chunks then stream_end, got {:?}", other),
     };
-    assert!(
-        lines
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|l| l == "source-stopped source_id=1"),
-        "the stop, not the end of the script, ended the stream"
+    // The role logs the stop AFTER it has sent stream_end (the line says
+    // what happened, so it follows it), so the line can trail the message
+    // just read by however long a loaded CPU keeps the role's thread off it.
+    wait_until(
+        "the stop, not the end of the script, to end the stream",
+        || {
+            lines
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|l| l == "source-stopped source_id=1")
+        },
     );
     release(&released, TOTAL);
 
@@ -753,7 +787,17 @@ fn a_line_in_is_offered_started_streamed_bit_for_bit_on_the_server_timeline_and_
     assert_eq!(stats.stops.load(Ordering::SeqCst), 1);
     assert_eq!(stats.offers_sent.load(Ordering::SeqCst), 2);
 
-    // The player kept playing through all of it, in the same session.
+    // The player kept playing through all of it, in the same session. Its
+    // sync loop asks for an exchange every 500 ms and takes the reply in at
+    // its next tick, discarding one whose round trip was over 100 ms
+    // (`crate::sync`), so the second or so the steps above take is one
+    // accepted exchange at best unloaded and none on a loaded machine (the
+    // flake: "the exchange ran on the shared writer"). The stream is stopped
+    // once the loop has published an offset, which it does only from an
+    // accepted exchange, not after a fixed time.
+    wait_until("the playout loop to accept a time-sync exchange", || {
+        counters.offset.get().is_some()
+    });
     server.stop_playback.store(true, Ordering::SeqCst);
     let (outcome, underruns) = player.join().expect("the player thread");
     assert!(

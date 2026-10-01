@@ -735,7 +735,15 @@ rules the catalog configures (ADR 0079 wires it):
 - **Line-in autoplay**: an input whose signal arrives with an enabled rule
   takes the rule's target and plays the input; when the signal goes it is held
   30 s (on top of the endpoint's own 2 s), then stopped and the target
-  restored; the signal coming back within the hold cancels the stop.
+  restored; the signal coming back within the hold cancels the stop. A
+  person's command that changes what a held room plays or where it is
+  (`group`, `ungroup`, `join`, `take`) lets that room go (`schedule autoplay
+  input=<id> zone=<room> detached by a person's command`); a volume or a mute
+  (`volume`, `volume_step`, `group_volume`, `group_volume_step`, `mute`,
+  including a TV remote's keys through the hub's CEC role) does not, so the
+  end of the autoplay still restores the room, to the volume and mute it had
+  before the autoplay took it (goal 13, ADR 0092). An alarm is unchanged: any
+  person's command naming its room ends it.
 - **TV autoplay** (goal 13, K81): a TV input (`optical`, `hdmi_arc`) is an
   input like any other, so the TV coming on is a signal and its rule's `take`
   takes the target room out of whatever group it was in. The TV going to

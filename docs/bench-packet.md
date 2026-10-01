@@ -438,12 +438,223 @@ edge delta between D0 and D1 at most tens of microseconds once both are synced; 
 capture yet and a Linux client has no marker until the Linux tier (chorus goal 10) adds one: put
 `marker.csv` in the Needs item, and a later goal turns it into a report.
 
+### S8. The TV capture session: a TV's sound into the hub, measured (goal 13; after S0 and S1)
+
+The TV path (chorus goal 13, BRIEF.md section 5.7, P2 Option A: stereo LPCM over optical or an
+ARC extractor, CEC through the kernel) is built and tested only against modelled TVs, a fake CEC
+bus and simulated networks. Every TV-dependent value in it is `ASSUMED` until this session
+answers it, and each step below names the value its answer replaces. Nothing here flashes,
+burns or changes a TV setting beyond its own audio menu; run it at the owner's pace, one TV at a
+time.
+
+**First, the TVs (no hardware).** Answer the Needs item "The three TVs: model, eARC port, optical
+out and audio menu" for each of the owner's three TVs before buying anything: the model (from
+the label or Settings > System > About), which HDMI port says ARC or eARC, whether it has an
+optical (TOSLINK) output, and the audio menu's choices for its digital output (on a Roku TV:
+Settings > System > Audio > S/PDIF and ARC, P2 [S1]). Until it is answered every TV value in
+the code and the docs is `ASSUMED` (ADRs 0087, 0088, 0090, 0091). What changes: which TV gets
+optical and which needs the ARC extractor (B-lines below), and whether one TV is skipped (no
+optical and no ARC).
+
+**Needs** (prices, sellers and URLs are P2's, re-checked 2026-09-30,
+`docs/proposals/P2-theater-scope.md` section "Re-check" and its source list; confirm each in a
+browser before buying; nothing is ordered by the program, K4):
+
+| # | Part | Steps | Qty | Line |
+|---|---|---|---|---|
+| A1, A3, A4 | Raspberry Pi 5 2GB, its PSU and SD card, as the hub (section 1, P4) | all | 1 | from section 1 |
+| T1 | HiFiBerry Digi+ I/O (optical and coax in and out, Pi HAT), P2 [H7] https://www.hifiberry.com/shop/boards/hifiberry-digi-io/ (**NON-US EXCEPTION**, Swiss seller `ASSUMED`; PiShop.us US$44.75 not re-read) | S8.1-S8.8 | 1 | US$54.90 |
+| T2 | or a DIR9001 receiver module (TI DIR9001, P2 [H5], [H6]) instead of T1 | S8.1-S8.8 | 1 | `ASSUMED` US$10-20 |
+| T3 | OREI BK-931 HDMI ARC/eARC audio extractor, for a TV without optical, P2 [H4] https://www.orei.com/products/8k-hdmi-or-earc-audio-extractor-bk-931 | S8.8, S8.9 | 1 | US$109.99 |
+| T4 | Pulse-Eight USB-CEC adapter, only if the hub's own HDMI port cannot reach the TV, P2 [H8] https://www.pulse-eight.com/p/104/usb-hdmi-cec-adapter (**NON-US EXCEPTION**, UK seller `ASSUMED`) | S8.2, S8.9 | 1 | US$48.08 |
+| T5 | a TOSLINK cable and a micro-HDMI to HDMI cable (the Pi 5's port) | all | 1 each | `ASSUMED` US$10-15 |
+| A2, A5, A8 | S1's DAC+, the UMC202HD and its cables, for the lip-sync step (S8.7) | S8.7 | | from section 1 |
+
+Also needed, not bought: a phone that films at 240 frames a second (BRIEF.md section 10), a
+second wired host on the house LAN for S8.6 (endpoint A of S0, or any Linux machine).
+
+**Wiring:**
+
+```
+ TV optical out --TOSLINK--> Digi+ I/O optical in (on the hub, a Pi 5)
+ TV HDMI (any input, or its ARC port only with --cec-arc) <--micro-HDMI-- hub HDMI0 (CEC)
+ hub --Ethernet-- house LAN -- server (endpoint A) and the room's wired speakers
+ for a TV without optical: TV HDMI ARC/eARC --> BK-931 --optical out--> Digi+ I/O optical in
+```
+
+Enable the HAT with `dtoverlay=hifiberry-digi` in `/boot/firmware/config.txt` (the overlay name
+is `ASSUMED`: confirm it on HiFiBerry's page [H7] before rebooting), reboot, and take the card's
+number from `arecord -l` (`hw:<digi card>,0` below). Set the TV's digital output to PCM (P2 [S3]:
+"Set the digital audio output on your TV to PCM").
+
+#### S8.1 The capture, the TV's rate and the receiver with the TV off
+
+On the hub, a capture probe with the TV playing, then with the TV in standby:
+
+```
+timeout 10 chorus-client --line-in hw:<digi card>,0 --line-in-kind optical --probe-line-in
+```
+
+**Expected** with the TV playing: `line-in-probe device=hw:<digi card>,0 usable=1
+frames_read=9600 overran=0 delay_frames=<n> signal=1 frame_len=4`. With the TV in standby, one
+of two answers, both recorded: the probe returns with `signal=0` (the receiver free-runs and
+reads zeros) or `timeout` ends it with exit 124 (the receiver stalls reads). What changes: a
+stall is what ADR 0090's `no-lock` refusal (100 ms without frames, `NO_FRAMES_MS`, `ASSUMED`)
+and its bounded read (`TV_READ_WAIT_MS` 20) were built for; free-running zeros mean the TV's
+standby reaches chorus only through CEC (S8.2) and the level detector's hold.
+
+Then a real session, as the room's hub (the server on endpoint A plays the room; the TV input
+autoplays per `docs/control-plane.md` "TV autoplay"), for ten minutes of TV:
+
+```
+chorus-client --server <server>:4010 --zone <room> --line-in hw:<digi card>,0 \
+    --line-in-kind optical --line-in-name TV --cec /dev/cec0 2>&1 | tee s8-hub.log
+```
+
+At the session's end (Ctrl+C) the client prints `source-tv ppm=<p> relocks=<n>
+ring_overflows=0 ring_underflows=0 non_pcm_periods=0 refused_non_pcm=0 refused_no_lock=<n>
+refused_rate=0 frames_dropped=<n>`. **Expected:** `ppm` inside +/-1000 (IEC 60958-3 Level II,
+ADR 0090), no ring over- or underflow, `refused_rate=0`. Repeat on each TV. What changes: the
+TV's measured rate error replaces the modelled +/-200 and +/-1400 ppm sources of
+`tests/tv_capture.rs` as the case that matters, and a TV near the +/-1500 ppm clamp is named in
+the Needs item.
+
+#### S8.2 CEC through chorus's own client (no `cec-ctl` needed)
+
+Give the service the CEC node first (`docs/cec.md` "Bench steps", step 4), with the TV's CEC on
+(Roku TV: Settings > System > Control other devices (CEC)). In `s8-hub.log` from S8.1:
+
+- `cec started device=/dev/cec0 ...` then `cec claimed logical_address=5 physical_address=<p.p.p.p>`;
+- the TV turning System Audio Mode on: `cec system-audio-mode on=1`;
+- the TV's remote, volume up, down and mute: `cec command=volume_step value=2 key=volume-up
+  sent=1`, `... value=-2 key=volume-down ...`, `cec command=mute_set value=1 key=mute sent=1`,
+  and the room's volume moving on the control page while the TV plays (ADR 0092: the keys no
+  longer detach the room from its TV autoplay);
+- the TV to standby: `cec tv-power state=standby` and `source-offer source_id=1 signal=0
+  reason=standby`, and the room going back to what it played before the TV.
+
+**Expected:** each line in that order; no `cec transmit-failed`; `cec unusable` names why if the
+node is missing. If `/dev/cec0` never claims (the Pi's port sees no TV), try `/dev/cec1` (the
+other connector), then T4 (`docs/cec.md`, "A Pulse-Eight USB-CEC adapter"). What changes:
+whether this TV forwards volume keys to an Audio System on a non-ARC input (a LEAD in the
+research, `docs/research/research-tv-path.md` section 1), `--cec-arc` for a TV on its ARC port,
+and the `ASSUMED` 30 s power poll if the TV announces nothing.
+
+#### S8.3 The non-audio bit: what the receiver's ALSA controls expose
+
+```
+amixer -c <digi card> contents > s8-amixer.txt
+amixer -c <digi card> contents | grep -i -E 'iec958|spdif|status|audio'
+```
+
+Then switch the TV's digital output to "Auto passthrough" or Dolby Digital (a film with a 5.1
+track) and back to PCM, running the second command in each state. **Expected:** a control whose
+value changes between the two (an IEC958 channel-status mask, or a "non-audio" switch), or no
+such control at all, recorded either way. Also in `s8-hub.log` with the bitstream on:
+`source-tv-refused source_id=1 reason=non-pcm` within one period and `refused_non_pcm=` above 0
+at the end (the IEC 61937 preamble scan, ADR 0090). What changes: a named control lets
+`CaptureSource::channel_status` read the bit (today it reads none, ADR 0090 follow-up); a
+`non-pcm` refusal on PCM programme would be a false positive for the 96-bit sync code follow-up.
+
+#### S8.4 The hub's wakeup jitter at the capture's period
+
+The existing host probe (`crates/hostprobe`, ADR 0047; `docs/measurements/host-wakeup-jitter.md`
+for the method), at the TV capture's 5 ms period (`PERIOD_FRAMES` 240) and at 1 ms, with the
+hub otherwise idle and then during S8.1's session:
+
+```
+target/release/chorus-wakeup-probe --period-us 5000 --seconds 600 --raw hub-w5ms.raw
+target/release/chorus-wakeup-probe --period-us 1000 --seconds 600 --raw hub-w1ms.raw
+```
+
+**Expected:** a lateness table (p50, p99, p99.9, max). What changes: ADR 0090's DLL tests assume
+wakeups late by up to 100 us (uniform, `tests/common/tv.rs`); a p99.9 well above that moves
+`DLL_BANDWIDTH_HZ` and the ring (`RING_FRAMES`), and ADR 0091's 2 ms capture-buffering term.
+
+#### S8.5 The lip-sync measurement and the A/V trim
+
+BRIEF.md section 5.7: "calibrated with a flash+beep clip and a high-frame-rate phone camera". On
+the TV, play a flash+beep sync clip (a white frame and a short beep in the same frame; any
+published A/V sync test clip, or one made with any video editor) with the room playing the TV
+through chorus. Film the TV screen and one of the room's speakers in one shot at 240 frames a
+second, from about 1 m, five times. On the computer, step frame by frame: for each flash, the
+frame the screen first lights and the frame the beep's waveform starts in the video's audio
+track (or the speaker cone moves), each frame 4.17 ms. Sign as ITU-R BT.1359-1 does: positive =
+sound leads.
+
+**Expected:** within the window chorus targets, audio -40..+15 ms against video (BRIEF.md section
+2.2), at `av_trim_ms` 0; the low-latency path's budget predicts about -21 ms with a
+standard-mode TV (`docs/measurements/low-latency-budget-sim.md`, simulation, not timing evidence).
+Then set the trim to the measured lead and film again:
+`{"v":2,"t":"av_trim","zone":"<room>","av_trim_ms":<ms>}` on the control page's command box
+(positive delays the audio). Repeat with the TV's game mode on and off. What changes: the room's
+`av_trim_ms` (per TV), the TV's own audio lag in ADR 0091's lip-sync sum (`ASSUMED` 1 ms
+standard, 66 ms game mode, one set, LEAD), and whether the -100..+200 ms trim bounds hold.
+
+#### S8.6 The LAN's loss, bursts and jitter for the UDP legs
+
+`chorus-udp-loss` (`crates/hostprobe`, goal 13) sends one 1472-byte datagram every 2.5 ms (the
+low-latency wire's chunk at its defaults, ADR 0091) and the receiver tallies loss, the
+burst-length histogram, reordering, duplicates and RFC 3550's transit variation. On the hub
+(receiving) and on endpoint A (sending), both wired, for 24 hours:
+
+```
+target/release/chorus-udp-loss recv --bind 0.0.0.0:47100 --seconds 86460 | tee s8-udp.txt   # on the hub, first
+target/release/chorus-udp-loss send --to <hub>:47100 --seconds 86400                      # on endpoint A
+```
+
+**Expected:** `udp-loss role=recv ... received=34560000 lost=<n> loss_ratio=<r> ...`, one
+`udp-loss burst length=<L> count=<n>` line per burst length and a `transit-variation` table. If
+the hub's firewall drops the port, open it for the run only. What changes: ADR 0091's FEC
+choice. Single losses only: depth 1 (the default) stands. Bursts of 2 or more: depth 2 with
+`L_tv` 30 ms, which the simulator already prices. The `transit-variation` p99.9 replaces the 2 ms
+jitter margin, and a loss ratio well above 1e-3 per leg is a wiring finding before it is a FEC
+one. (One-way delay, the `ASSUMED` 0.25 ms per leg, needs agreeing clocks and is not measured
+here.)
+
+#### S8.7 The receiver's output with no TV signal, on the speakers
+
+With the room playing the TV input and the TV switched off by its power button (not standby
+through CEC), listen on the room's speakers and on S1's headphones through the UMC202HD for a
+minute. **Expected:** silence, no click train or buzz, and `source-tv-refused ... reason=no-lock`
+in the hub's log if S8.1 found a stall. What changes: a buzz means the receiver free-runs noise,
+not zeros, and the level detector's threshold needs the measured floor.
+
+#### S8.8 The ARC extractor instead of optical (a TV without optical, or to compare)
+
+Rewire through T3 (the wiring's last line), set the TV's ARC on, repeat S8.1 and S8.2.
+**Expected:** as optical. Also: does the extractor answer CEC as an Audio System itself? In the
+hub's log, `cec claimed logical_address=5` means address 5 was free; a claim of another address,
+or the TV sending its volume keys elsewhere (no `cec command=` lines), means the extractor holds
+the Audio System role. What changes: whether P2's ARC path works with chorus as the TV's Audio
+System, or the room's volume keys need the extractor's own CEC disabled (record its menu or
+switch).
+
+#### S8.9 CEC volume with optical, not ARC
+
+With the TV's sound on optical (S8.1's wiring) and the hub's HDMI on an ordinary input (not
+ARC), press the TV remote's volume keys. **Expected:** `cec command=volume_step` lines, or none
+(the TV sends volume keys to an Audio System only on its ARC port: the research's LEAD for Roku
+TVs). What changes: if none, the owner's remote works only with ARC (T3, or the hub on the ARC
+port with `--cec-arc`), recorded per TV.
+
+**The reports.** None of S8's steps has a bench script, a grader or a topic in
+`tools/bench/topics.conf` (a topic needs its grader); each result is written by hand as a report
+under `docs/measurements/` with `Source: hardware`, the build commit, the device notes (TV model
+from the Needs item, the hub, the receiver) and the raw files (`s8-hub.log`, `s8-amixer.txt`,
+`hub-w5ms.raw`, `hub-w1ms.raw`, `s8-udp.txt`, the lip-sync frame counts) under
+`docs/measurements/raw/tv-capture-<date>/`, on a `bench/<date>-tv-capture` branch with a pull
+request from the hub, as the production wakeup run does (section 6). A later chorus goal
+validates it and replaces each `ASSUMED` value it answers.
+
 ## 4. Order and what each session unblocks
 
 S0 first; S1 needs one Pi; S2 needs both and the interface; S3 needs S2's rig trusted; S4 after
 S3. S5 is independent (the owner's own board) and can run any time; S6 follows S5 on the same
 board. S7 needs an Audio Brick (B1): S7.1-S7.3 after S0 alone, S7.4 after S2's rig is trusted,
-S7.5 whenever a logic analyzer and a free pin exist. None of these blocks a chorus
+S7.5 whenever a logic analyzer and a free pin exist. S8 needs the three TVs' answers first, then
+one Pi as the hub (S0) and a receiver HAT (T1 or T2); S8.5 and S8.7 also need S1's endpoint. None
+of these blocks a chorus
 goal (K7): each goal that can use a result re-checks for its pull request.
 
 ## 5. How results come back
@@ -467,6 +678,8 @@ Needs items.
   committed under `docs/measurements/raw/production-wakeup-<date>/` on a
   `bench/<date>-production-wakeup` branch with a pull request, from which a chorus goal writes the
   report (there is no bench script for it yet).
+- A bench script and grader for S8 (the TV capture session): its reports are written by hand
+  until a goal adds the `tv-capture` topic with its grader.
 - `make verify-host` (the host contract and the spin test): they need a real-time priority grant,
   a host setting rather than bench hardware. Since chorus goal 10 the Linux endpoint package
   carries them as `chorus-verify-host` (ADR 0069); running it on an endpoint, under the service's

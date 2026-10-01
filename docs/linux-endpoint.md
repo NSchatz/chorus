@@ -115,7 +115,12 @@ the sound chain from the first `sound` it receives (`dsp engaged ...` on its out
 `dsp engaged=... sounds_applied=... refusals=... clipped_samples=...` at the end of a session. A
 member of a bonded set plays its own role; with no output map that role's feed goes to every
 device channel, and an output map (`--output 0=LFE` on a subwoofer) is resolved against the
-role, so a stereo stream's subwoofer feed reaches the output that names `LFE`.
+role, so a stereo stream's subwoofer feed reaches the output that names `LFE`. A surround
+stream (a 5.1 film) on a two-channel device with no output map and no `--two-way` is folded to
+stereo by ITU-R BS.775-4's 2/0 downmix, centre and surrounds in, LFE dropped (`dsp
+stereo-downmix ...` on its output); a device that refuses six channels is opened with two for it
+(`device-channels ... reason=stream-count-refused`). An output map, if given, says what each
+output plays instead.
 
 The unit adds `--rejoin --identity-dir /var/lib/chorus-client` itself: the endpoint's key and
 its server pins live in `/var/lib/chorus-client` and survive restarts and upgrades.
