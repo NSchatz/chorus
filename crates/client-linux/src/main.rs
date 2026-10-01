@@ -696,9 +696,16 @@ fn play(
     // The source role runs for the whole session, beside the playout, and is
     // stopped (with `stream_end` for a started input) whichever way the
     // session ends.
-    let _source = SourceGuard(config.line_in.as_ref().and_then(|input| {
-        start_source(config, input, &writer, &counters, timeline, source_control)
-    }));
+    let tv_input = config
+        .line_in
+        .as_ref()
+        .is_some_and(|i| chorus_client_linux::source::is_tv(i.kind));
+    let _source = SourceGuard(
+        tv_input,
+        config.line_in.as_ref().and_then(|input| {
+            start_source(config, input, &writer, &counters, timeline, source_control)
+        }),
+    );
 
     // The device cannot be opened until the stream says what it is, so the
     // first chunk is read first and carried forward.
@@ -912,14 +919,17 @@ fn play(
 }
 
 /// Stops the source role when a session ends, however it ends, and says what
-/// it did.
-struct SourceGuard(Option<SourceHandle>);
+/// it did (a TV input's rate matching and refusals too, when it is one).
+struct SourceGuard(bool, Option<SourceHandle>);
 
 impl Drop for SourceGuard {
     fn drop(&mut self) {
-        if let Some(handle) = self.0.take() {
+        if let Some(handle) = self.1.take() {
             let (stop, stats) = handle.stop();
             status(&stats.line());
+            if self.0 {
+                status(&stats.tv_line());
+            }
             status(&format!("source stopped reason={}", stop.name()));
         }
     }

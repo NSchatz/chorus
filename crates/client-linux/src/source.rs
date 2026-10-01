@@ -54,7 +54,7 @@
 //! (`non-pcm`, `no-lock`, `rate-out-of-range`) forwards nothing and is
 //! offered with `signal = false`; the log says why. A `line_in` keeps the
 //! loop above, unchanged: an analogue input is digitized by this endpoint's
-//! own converter on this endpoint's own clock (ADR for goal 13's capture).
+//! own converter on this endpoint's own clock (ADR 0090).
 //!
 //! # What is modelled and what is not
 //!
