@@ -1,0 +1,15 @@
+# The RBJ cookbook as the W3C note gives it. BPF (constant 0 dB peak gain), H(s) = (s/Q)/(s^2 + s/Q + 1): 0 dB at f0, zeros at DC
+# and Nyquist.
+# -inf: the magnitude must be below -100 dB.
+
+kind = biquad_magnitude
+source = https://www.w3.org/TR/audio-eq-cookbook/
+read = 2026-10-01
+type = bandpass
+rate_hz = 48000
+f0_hz = 1000
+q = 2.0
+gain_db = 0
+freqs_hz = 0 1000 24000
+expect_db = -inf 0 -inf
+tolerance_db = 1e-6

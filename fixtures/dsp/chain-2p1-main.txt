@@ -1,0 +1,29 @@
+# Bass management, a main in a 2.1 set (FL FR LFE; role FL, a subwoofer present,
+# the 80 Hz default: "The most common crossover frequency recommended (and the
+# THX standard) is 80 Hz", https://www.svsound.com/blogs/subwoofer-setup-and-tuning/tips-for-setting-the-proper-crossover-frequency-for-a-subwoofer, read 2026-10-01). The output is FL through the LR4
+# high branch: a 40 Hz tone of 0.5 settles at 0.5 |H_high(40)| = 0.029411006
+# (the designed response, computed here); FR and LFE do not reach it.
+
+kind = chain
+source = docs/dsp.md
+read = 2026-10-01
+rate_hz = 48000
+room_gain = 1
+limit_gain = 1
+channel_map = 1 2 4
+frames = 48000
+role = 1
+sub_present = 1
+crossover_hz = 80
+input.0 = sine 40 0.5
+input.1 = sine 1000 0.5
+input.2 = sine 50 0.5
+out_channels = 1
+amplitude.0 = 0.029411005800395826
+amplitude_from = 38400
+amplitude_tolerance = 1e-4
+golden = 1
+# The Rust chain's output (the chain_samples example): a drift check.
+samples_from = 47936
+samples_tolerance = 1e-6
+samples.0 = -0.020936005 -0.021043852 -0.021151073 -0.021257736 -0.021363862 -0.021469422 -0.021574348 -0.021678664 -0.021782413 -0.021885589 -0.02198819 -0.022090249 -0.022191651 -0.02229242 -0.022392638 -0.022492215 -0.02259121 -0.022689477 -0.022787146 -0.02288419 -0.022980645 -0.023076393 -0.0231715 -0.023265958 -0.023359753 -0.023452915 -0.023545466 -0.023637354 -0.023728594 -0.023819223 -0.023909166 -0.023998454 -0.024087079 -0.024175033 -0.024262324 -0.024348967 -0.024434932 -0.024520263 -0.02460491 -0.024688877 -0.024772167 -0.024854772 -0.024936706 -0.025017895 -0.02509839 -0.025178157 -0.025257193 -0.025335528 -0.0254132 -0.025490105 -0.025566287 -0.02564177 -0.025716491 -0.025790527 -0.025863856 -0.025936462 -0.026008375 -0.026079588 -0.026150092 -0.026219897 -0.026288971 -0.0263573 -0.02642493 -0.02649182

@@ -1,0 +1,17 @@
+# chorus's loudness compensation (docs/dsp.md; every constant ASSUMED there):
+# listening at L = 80 - att phon (held to 20..80), the boost a frequency needs is
+# (Lp(f, L) - Lp(1k, L)) - (Lp(f, 80) - Lp(1k, 80)), taken at 50 Hz for the low
+# shelf (capped at +12 dB) and at 10 kHz for the high shelf (capped at +6 dB),
+# never negative. Lp is ISO 226:2003 (the table and formula cited in
+# iso226-table.txt); the expected gains are computed here from them. The room
+# gain's attenuation is quantised to 0.5 dB steps (0 is the bottom, 60 dB).
+
+kind = loudness
+source = https://www.dsprelated.com/showcode/174.php docs/dsp.md
+read = 2026-10-01
+attenuations_db = 0 6 10 20 30 40 60
+expect_low_db = 0 2.4930550840095975 4.1473551441181655 8.242575041715106 12 12 12
+expect_high_db = 0 0.44016513363710885 0.7281272215063694 1.4195047359567994 2.0447801461603063 2.5500726101917053 2.69637471584862
+tolerance_db = 1e-9
+room_gains = 1 0.5 0.1 0.01 0.001 0
+expect_attenuation_db = 0 6 20 40 60 60

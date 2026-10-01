@@ -1,0 +1,14 @@
+# The gain computer's static characteristic, Giannoulis, Massberg and Reiss
+# (JAES 2012), as MathWorks prints it citing them: y = x below the knee,
+# y = x + (1/R - 1)(x - T + W/2)^2/(2W) inside it, y = T + (x - T)/R above.
+# T = -20 dB, R = 4, W = 10 dB. Expected values computed from that equation.
+
+kind = compressor_static
+source = https://secure.aes.org/forum/pubs/journal/?ID=174 https://www.mathworks.com/help/audio/ref/compressor-system-object.html
+read = 2026-10-01
+threshold_db = -20
+ratio = 4
+knee_db = 10
+inputs_db = -60 -26 -22.5 -20 -17.5 -14 0
+expect_db = -60 -26 -22.734375 -20.9375 -19.609375 -18.5 -15
+tolerance_db = 1e-9

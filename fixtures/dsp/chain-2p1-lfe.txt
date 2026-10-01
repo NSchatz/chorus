@@ -1,0 +1,22 @@
+# The LFE channel into the subwoofer feed at +10 dB: ATSC A/52:2018 section 3,
+# the LFE channel "is intended to be reproduced at a level +10 dB with respect to
+# the fbw channels" (https://www.atsc.org/wp-content/uploads/2021/04/A52-2018.pdf, read 2026-10-01). Mains silent, LFE a 50 Hz tone of 0.1: the feed
+# has amplitude 0.1 x 10^(10/20) = 0.316227766.
+
+kind = chain
+source = https://www.atsc.org/wp-content/uploads/2021/04/A52-2018.pdf https://en.wikipedia.org/wiki/Bass_management
+read = 2026-10-01
+rate_hz = 48000
+room_gain = 1
+limit_gain = 1
+channel_map = 1 2 4
+frames = 9600
+role = 4
+sub_present = 1
+input.0 = silence
+input.1 = silence
+input.2 = sine 50 0.1
+out_channels = 1
+amplitude.0 = 0.316227766016838
+amplitude_from = 4800
+amplitude_tolerance = 1e-5

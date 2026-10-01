@@ -1,0 +1,33 @@
+# Bass management, the LFE member of a 2.1 set: the LR4 low branch of FL + FR, at
+# the subwoofer level (-3 dB), inverted. FL = FR = a 40 Hz tone of 0.2, so the
+# feed settles at 0.4 |H_low(40)| 10^(-3/20) = 0.266521196 (the
+# designed response in f64). The tolerance, 3e-4, is wider than the main's: the
+# low-pass sections at 80 Hz of 48 kHz have their poles close to z = 1, and
+# rounding their coefficients to f32 (BRIEF section 5.6) moves the 40 Hz gain by
+# -0.005 dB (computed here: 0.99945 of the f64 design).
+
+kind = chain
+source = docs/dsp.md
+read = 2026-10-01
+rate_hz = 48000
+room_gain = 1
+limit_gain = 1
+channel_map = 1 2 4
+frames = 48000
+role = 4
+sub_present = 1
+crossover_hz = 80
+sub_level_cdb = -300
+sub_polarity_inverted = 1
+input.0 = sine 40 0.2
+input.1 = sine 40 0.2
+input.2 = silence
+out_channels = 1
+amplitude.0 = 0.2665211956961415
+amplitude_from = 38400
+amplitude_tolerance = 3e-4
+golden = 1
+# The Rust chain's output (the chain_samples example): a drift check.
+samples_from = 47936
+samples_tolerance = 1e-6
+samples.0 = 0.18967094 0.19064768 0.19161914 0.19258538 0.19354628 0.19450185 0.19545208 0.19639692 0.19733636 0.19827038 0.19919895 0.20012203 0.2010396 0.20195164 0.20285815 0.20375912 0.20465454 0.20554438 0.20642856 0.20730704 0.20817982 0.20904687 0.20990822 0.21076384 0.21161373 0.21245779 0.21329601 0.21412839 0.21495491 0.21577558 0.21659034 0.21739917 0.21820207 0.218999 0.21978992 0.22057483 0.22135366 0.22212644 0.22289313 0.22365373 0.2244082 0.2251565 0.22589861 0.22663452 0.22736423 0.2280877 0.22880495 0.22951591 0.23022056 0.2309189 0.23161092 0.2322966 0.23297589 0.23364878 0.23431528 0.23497534 0.23562895 0.2362761 0.23691678 0.23755096 0.2381786 0.23879969 0.23941424 0.24002221

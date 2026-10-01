@@ -1,0 +1,14 @@
+# The smoothing's time constants as MathWorks defines them (citing Giannoulis et
+# al.): alpha = exp(-ln 9 / (Fs T)), so T is the 10 % to 90 % time of a step. A
+# step of the computed gain from 0 to -10 dB crosses -1 dB and -9 dB
+# attack_ms x rate / 1000 frames apart (here 480), and back up crosses
+# -9 and -1 dB release_ms x rate / 1000 apart (4800), each within one frame.
+
+kind = compressor_timing
+source = https://www.mathworks.com/help/audio/ref/compressor-system-object.html
+read = 2026-10-01
+rate_hz = 48000
+attack_ms = 10
+release_ms = 100
+step_db = -10
+tolerance_frames = 1
