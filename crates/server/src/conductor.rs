@@ -27,6 +27,9 @@
 //!    (`Router::move_to`, between two ticks).
 //! 3. **`room_volume`** to every player session of a room whose gain or
 //!    effective limit changed (docs/decisions/0074-*), at once.
+//!    Then **`sound`** (goal 12) to every player session whose room's sound,
+//!    bass management, room EQ or bonded set changed what it would be told
+//!    (its role is its own, so a bond change reaches each member).
 //! 4. **`controller_state`** to every controller session of a room whose
 //!    volume, mute or group changed, wherever the change was made.
 //!
@@ -91,6 +94,8 @@ pub const WIRED_GROUP_LATENCY_NS: i64 = 180_000_000;
 pub struct PassReport {
     /// `room_volume` messages sent.
     pub room_volumes: usize,
+    /// `sound` messages sent (goal 12).
+    pub sounds: usize,
     /// `controller_state` messages sent.
     pub controller_states: usize,
     /// Sessions moved between fanouts.
@@ -255,6 +260,14 @@ impl Conductor {
                         Some(true) => report.room_volumes += 1,
                         Some(false) => {}
                         None => report.owed += 1,
+                    }
+                    // After room_volume, as in the greeting.
+                    if let Some(sound) = room.sound_for(&session.endpoint) {
+                        match self.router.push_sound(session.id, sound) {
+                            Some(true) => report.sounds += 1,
+                            Some(false) => {}
+                            None => report.owed += 1,
+                        }
                     }
                 }
             }

@@ -21,6 +21,7 @@ use chorus_control::rooms::{
     Alarm, Autoplay, BondMember, CivilTime, ClockTime, Days, InputId, Link, QuietWindow, Role,
     Source,
 };
+use chorus_control::sound::{EqFilter, FixedPoint, Polarity};
 use chorus_control::transport::{Transport, ZoneTransports};
 use chorus_control::zones::{GroupKind, Zone, Zones};
 use chorus_protocol::v2::{self as wire, ControllerCommand};
@@ -48,6 +49,9 @@ const EVERY_V2_MESSAGE_TYPE: &[&str] = &[
     "alarm_stop",
     "sleep",
     "autoplay",
+    "sound",
+    "bass_management",
+    "room_eq",
     "state",
     "error",
     "refused",
@@ -335,6 +339,44 @@ fn command_from(fields: &Fields) -> Command {
             target: get("target"),
             enabled: flag("enabled"),
         }),
+        "sound" => {
+            let tone = |k: &str| fields.has(k).then(|| num(k) as i8);
+            let flag = |k: &str| fields.has(k).then(|| fields.get(k) == "1");
+            Command::Sound {
+                zone: get("zone"),
+                bass: tone("bass"),
+                treble: tone("treble"),
+                loudness: flag("loudness"),
+                night: flag("night"),
+                speech: flag("speech"),
+            }
+        }
+        "bass_management" => Command::BassManagement {
+            zone: get("zone"),
+            crossover_hz: fields
+                .has("crossover_hz")
+                .then(|| num("crossover_hz") as u16),
+            sub_level_cdb: fields
+                .has("sub_level_db")
+                .then(|| FixedPoint::parse(&get("sub_level_db"), 2).unwrap() as i16),
+            sub_polarity: fields
+                .has("sub_polarity")
+                .then(|| Polarity::parse(&get("sub_polarity")).unwrap()),
+        },
+        "room_eq" => Command::RoomEq {
+            zone: get("zone"),
+            // `filters` is `freq_hz gain_db q` per filter, `;` between them,
+            // and empty for the empty list.
+            filters: fields.has("filters").then(|| {
+                get("filters")
+                    .split(';')
+                    .map(str::trim)
+                    .filter(|f| !f.is_empty())
+                    .map(|f| EqFilter::from_persisted(f).unwrap())
+                    .collect()
+            }),
+            enabled: fields.has("enabled").then(|| flag("enabled")),
+        },
         other => panic!("{} is not a v2 command", other),
     }
 }

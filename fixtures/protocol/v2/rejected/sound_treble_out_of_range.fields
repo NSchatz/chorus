@@ -1,0 +1,22 @@
+# Canonical input for the sound_treble_out_of_range rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# sound_treble_out_of_range.hex as that field, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# Treble one step past -10.
+
+message_type = sound
+bass_db = 0
+treble_db = -11
+flags = loudness room_eq
+role = 0
+sub_present = 0
+crossover_hz = 80
+sub_level_cdb = 0
+rejected_field = treble_db
+problem = out_of_range

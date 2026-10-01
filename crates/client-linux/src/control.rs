@@ -33,9 +33,9 @@ use std::time::{Duration, Instant};
 
 use chorus_control::catalog::{Volume, VOLUME_SCALE};
 use chorus_control::json::{self, Value};
-use chorus_protocol::v2::RoomVolume;
+use chorus_protocol::v2::{RoomVolume, Sound};
 
-use crate::zone::{RoomGain, RoomVolumeInbox, ZoneGain};
+use crate::zone::{RoomGain, RoomVolumeInbox, SoundInbox, ZoneGain};
 
 /// How long the endpoint waits for the control channel before giving up on one
 /// attempt.
@@ -80,6 +80,8 @@ pub struct ZoneWatch {
     /// gain above: a new session is not a reason to play louder.
     room_inbox: Arc<RoomVolumeInbox>,
     room: Mutex<RoomGain>,
+    /// The room's sound from the audio wire (`sound`, goal 12), kept.
+    sound_inbox: Arc<SoundInbox>,
 }
 
 impl Default for ZoneWatch {
@@ -104,7 +106,25 @@ impl ZoneWatch {
             facts: Mutex::new(ZoneFacts::default()),
             room_inbox: Arc::new(RoomVolumeInbox::default()),
             room: Mutex::new(RoomGain::new(ceiling)),
+            sound_inbox: Arc::new(SoundInbox::default()),
         }
+    }
+
+    /// Where the audio session delivers `sound`
+    /// (`crate::session::deliver_sound_to`).
+    pub fn sound_inbox(&self) -> Arc<SoundInbox> {
+        Arc::clone(&self.sound_inbox)
+    }
+
+    /// A `sound` received since the last call, for the playout loop to log.
+    pub fn take_sound(&self) -> Option<Sound> {
+        self.sound_inbox.take()
+    }
+
+    /// The last `sound` received this process, which the endpoint DSP
+    /// configures its chain from; `None` until the server sends one.
+    pub fn last_sound(&self) -> Option<Sound> {
+        self.sound_inbox.last()
     }
 
     /// Where the audio session delivers `room_volume`

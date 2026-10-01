@@ -1,0 +1,16 @@
+# Canonical input for the catalog v2 error-room-eq-too-many vector.
+#
+# `input` is refused, by the decoder or by the room state the commands below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-room-eq-too-many.json. Nothing of it is applied.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# Nine filters, one past the eight a room holds.
+
+message_type = error
+zones = living,kitchen
+input = {"v":2,"t":"room_eq","zone":"living","filters":[{"freq_hz":40,"gain_db":-1.00,"q":1.000},{"freq_hz":50,"gain_db":-1.00,"q":1.000},{"freq_hz":60,"gain_db":-1.00,"q":1.000},{"freq_hz":70,"gain_db":-1.00,"q":1.000},{"freq_hz":80,"gain_db":-1.00,"q":1.000},{"freq_hz":90,"gain_db":-1.00,"q":1.000},{"freq_hz":100,"gain_db":-1.00,"q":1.000},{"freq_hz":110,"gain_db":-1.00,"q":1.000},{"freq_hz":120,"gain_db":-1.00,"q":1.000}]}
+field = filters
+ends_the_session = 0

@@ -1,0 +1,23 @@
+# Canonical input for the sound_eq_freq_too_high rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# sound_eq_freq_too_high.hex as that field, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# A filter 1 Hz above the 1000 Hz the room-correction bounds allow.
+
+message_type = sound
+bass_db = 3
+treble_db = -2
+flags = loudness room_eq sub_inverted
+role = 4
+sub_present = 1
+crossover_hz = 100
+sub_level_cdb = -350
+filter.0 = 1001 -600 4500
+rejected_field = freq_hz
+problem = out_of_range

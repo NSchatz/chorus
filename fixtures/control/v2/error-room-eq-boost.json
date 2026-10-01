@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"filters","detail":"in 'filters', filter 0: gain_db 3.01 is outside the room-correction bounds, -12.00 to 3.00 dB (a correction cuts peaks; it does not fill nulls)"}

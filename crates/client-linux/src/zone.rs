@@ -52,7 +52,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use chorus_control::catalog::{Volume, VOLUME_SCALE};
-use chorus_protocol::v2::{RoomVolume, MAX_ROOM_VOLUME_RAMP_MS};
+use chorus_protocol::v2::{RoomVolume, Sound, MAX_ROOM_VOLUME_RAMP_MS};
 use chorus_protocol::SampleFormat;
 
 /// How far a scaled sample may be from the exact product, in units of the last
@@ -175,6 +175,73 @@ impl RoomVolumeInbox {
     pub fn received(&self) -> u64 {
         self.received.load(Ordering::Relaxed)
     }
+}
+
+/// Where the session's `sound` messages (0x39, goal 12) wait, and the last
+/// one received.
+///
+/// Phase A of goal 12 only keeps it: the playout loop takes each new one to
+/// log it, and [`SoundInbox::last`] is what the endpoint DSP configures its
+/// chain from (the chain itself is the endpoint DSP track's). Held for the
+/// life of the process, as the room's gain is: a new session is not a reason
+/// to forget how the room sounds.
+#[derive(Debug, Default)]
+pub struct SoundInbox {
+    fresh: Mutex<Option<Sound>>,
+    last: Mutex<Option<Sound>>,
+    received: AtomicU64,
+}
+
+impl SoundInbox {
+    /// A `sound` from the session, already validated by the decoder.
+    pub fn deliver(&self, message: Sound) {
+        *lock(&self.last) = Some(message.clone());
+        *lock(&self.fresh) = Some(message);
+        self.received.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// The latest message not yet taken, if any.
+    pub fn take(&self) -> Option<Sound> {
+        lock(&self.fresh).take()
+    }
+
+    /// The last message received, taken or not.
+    pub fn last(&self) -> Option<Sound> {
+        lock(&self.last).clone()
+    }
+
+    /// How many messages have been delivered.
+    pub fn received(&self) -> u64 {
+        self.received.load(Ordering::Relaxed)
+    }
+}
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    match m.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+/// One line for a `sound`: its fields, as the client's delay log and the
+/// tests spell them.
+pub fn sound_line(m: &Sound) -> String {
+    format!(
+        "bass_db={} treble_db={} flags=0x{:02x} role={} sub_present={} crossover_hz={} \
+         sub_level_cdb={} eq_count={}{}",
+        m.bass_db,
+        m.treble_db,
+        m.flags,
+        m.role,
+        u8::from(m.sub_present),
+        m.crossover_hz,
+        m.sub_level_cdb,
+        m.filters.len(),
+        m.filters
+            .iter()
+            .map(|f| format!(" eq={}/{}/{}", f.freq_hz, f.gain_cdb, f.q_milli))
+            .collect::<String>()
+    )
 }
 
 /// The room's gain, limit and ramp, and this endpoint's ceiling.
@@ -377,6 +444,39 @@ fn sign_extend_24(bytes: &[u8]) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_sound_is_taken_once_for_the_log_and_kept_as_the_last() {
+        use chorus_protocol::v2::SoundFilter;
+        let inbox = SoundInbox::default();
+        assert_eq!((inbox.take(), inbox.last()), (None, None));
+        let mut sound = Sound {
+            bass_db: 3,
+            treble_db: -2,
+            flags: 0x19,
+            role: 4,
+            sub_present: true,
+            crossover_hz: 100,
+            sub_level_cdb: -350,
+            filters: vec![SoundFilter {
+                freq_hz: 42,
+                gain_cdb: -600,
+                q_milli: 4500,
+            }],
+        };
+        inbox.deliver(sound.clone());
+        assert_eq!(inbox.take(), Some(sound.clone()));
+        assert_eq!(inbox.take(), None, "taken once");
+        assert_eq!(inbox.last(), Some(sound.clone()), "and kept");
+        assert_eq!(
+            sound_line(&sound),
+            "bass_db=3 treble_db=-2 flags=0x19 role=4 sub_present=1 crossover_hz=100 \
+             sub_level_cdb=-350 eq_count=1 eq=42/-600/4500"
+        );
+        sound.bass_db = 0;
+        inbox.deliver(sound.clone());
+        assert_eq!((inbox.last(), inbox.received()), (Some(sound), 2));
+    }
 
     fn s16(samples: &[i16]) -> Vec<u8> {
         samples.iter().flat_map(|s| s.to_le_bytes()).collect()

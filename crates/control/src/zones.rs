@@ -59,14 +59,15 @@
 //!   are offered.
 
 use crate::catalog::{
-    alarm_value, autoplay_value, is_display_name, is_identifier, members_value, texts,
-    window_value, Command, Refusal, Volume, MAX_IDENTIFIER_LEN, VOLUME_SCALE,
+    alarm_value, autoplay_value, centi_db_value, filters_value, is_display_name, is_identifier,
+    members_value, texts, window_value, Command, Refusal, Volume, MAX_IDENTIFIER_LEN, VOLUME_SCALE,
 };
 use crate::json::{self, Value};
 use crate::rooms::{
-    Alarm, Autoplay, BondMember, CivilTime, InputId, Link, QuietWindow, SavedGroup, SleepTimer,
-    Source, MAX_DEFINITIONS,
+    Alarm, Autoplay, BondMember, CivilTime, InputId, Link, QuietWindow, Role, SavedGroup,
+    SleepTimer, Source, MAX_DEFINITIONS,
 };
+use crate::sound::{BassManagement, RoomEq, SoundSettings};
 use crate::transport::{Transport, ZoneTransports};
 
 /// One zone: what it is called, what it plays, and how loudly.
@@ -101,6 +102,13 @@ pub struct Zone {
     pub bond: Vec<BondMember>,
     /// (v2) A ramp the runtime is running, by its target. Never persisted.
     pub ramp: Option<Volume>,
+    /// (v2, goal 12) Tone, loudness, night mode and speech enhancement.
+    pub sound: SoundSettings,
+    /// (v2, goal 12) Bass management, in force when `bond` has an `LFE`
+    /// member ([`Zone::has_sub`]).
+    pub bass: BassManagement,
+    /// (v2, goal 12) The room-correction EQ.
+    pub room_eq: RoomEq,
 }
 
 impl Zone {
@@ -121,7 +129,24 @@ impl Zone {
             quiet_active: Vec::new(),
             bond: Vec::new(),
             ramp: None,
+            sound: SoundSettings::default(),
+            bass: BassManagement::default(),
+            room_eq: RoomEq::default(),
         }
+    }
+
+    /// Whether the room's bonded set has a sub (an `LFE` member), which is
+    /// what turns its bass management on.
+    pub fn has_sub(&self) -> bool {
+        self.bond.iter().any(|b| b.role == Role::Lfe)
+    }
+
+    /// The channel role `endpoint` plays in this room's bonded set, if any.
+    pub fn role_of(&self, endpoint: &str) -> Option<Role> {
+        self.bond
+            .iter()
+            .find(|b| b.endpoint == endpoint)
+            .map(|b| b.role)
     }
 
     /// The amplitude factor this zone's endpoints apply, which is zero while
@@ -622,6 +647,43 @@ impl Zones {
                     self.autoplay.len(),
                 )?;
                 upsert(&mut self.autoplay, rule.clone(), |r| r.input.literal());
+            }
+            Command::Sound {
+                bass,
+                treble,
+                loudness,
+                night,
+                speech,
+                ..
+            } => {
+                // Partial: an absent field keeps what the room had. No
+                // volume path is touched, so the clamp has nothing to do.
+                let sound = &mut self.zones[room()].sound;
+                sound.bass = bass.unwrap_or(sound.bass);
+                sound.treble = treble.unwrap_or(sound.treble);
+                sound.loudness = loudness.unwrap_or(sound.loudness);
+                sound.night = night.unwrap_or(sound.night);
+                sound.speech = speech.unwrap_or(sound.speech);
+            }
+            Command::BassManagement {
+                crossover_hz,
+                sub_level_cdb,
+                sub_polarity,
+                ..
+            } => {
+                let bass = &mut self.zones[room()].bass;
+                bass.crossover_hz = crossover_hz.unwrap_or(bass.crossover_hz);
+                bass.sub_level_cdb = sub_level_cdb.unwrap_or(bass.sub_level_cdb);
+                bass.sub_polarity = sub_polarity.unwrap_or(bass.sub_polarity);
+            }
+            Command::RoomEq {
+                filters, enabled, ..
+            } => {
+                let eq = &mut self.zones[room()].room_eq;
+                if let Some(filters) = filters {
+                    eq.filters = filters.clone();
+                }
+                eq.enabled = enabled.unwrap_or(eq.enabled);
             }
         }
         Ok(())
@@ -1297,6 +1359,41 @@ impl Zones {
                     Some(target) => Value::Num(target.literal()),
                     None => Value::Null,
                 },
+            ),
+            (
+                "sound".to_string(),
+                Value::Obj(vec![
+                    ("bass".to_string(), Value::int(i64::from(z.sound.bass))),
+                    ("treble".to_string(), Value::int(i64::from(z.sound.treble))),
+                    ("loudness".to_string(), Value::Bool(z.sound.loudness)),
+                    ("night".to_string(), Value::Bool(z.sound.night)),
+                    ("speech".to_string(), Value::Bool(z.sound.speech)),
+                ]),
+            ),
+            (
+                "bass_management".to_string(),
+                Value::Obj(vec![
+                    (
+                        "crossover_hz".to_string(),
+                        Value::int(i64::from(z.bass.crossover_hz)),
+                    ),
+                    (
+                        "sub_level_db".to_string(),
+                        centi_db_value(z.bass.sub_level_cdb),
+                    ),
+                    (
+                        "sub_polarity".to_string(),
+                        Value::text(z.bass.sub_polarity.name()),
+                    ),
+                    ("active".to_string(), Value::Bool(z.has_sub())),
+                ]),
+            ),
+            (
+                "room_eq".to_string(),
+                Value::Obj(vec![
+                    ("enabled".to_string(), Value::Bool(z.room_eq.enabled)),
+                    ("filters".to_string(), filters_value(&z.room_eq.filters)),
+                ]),
             ),
         ]);
         Value::Obj(fields)

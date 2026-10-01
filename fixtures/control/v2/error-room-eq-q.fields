@@ -1,0 +1,16 @@
+# Canonical input for the catalog v2 error-room-eq-q vector.
+#
+# `input` is refused, by the decoder or by the room state the commands below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-room-eq-q.json. Nothing of it is applied.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# A Q below the 0.500 the room-correction bounds allow.
+
+message_type = error
+zones = living,kitchen
+input = {"v":2,"t":"room_eq","zone":"living","filters":[{"freq_hz":120,"gain_db":-3.00,"q":0.499}]}
+field = filters
+ends_the_session = 0
