@@ -1,0 +1,20 @@
+[package]
+name = "chorus-schedule"
+description = "the chorus schedule library: civil time from TZif zoneinfo, weekly windows, alarms, sleep timers, volume ramps and generated chimes; reads no clock"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+# The no-clock test holds every unit of this crate to the same settable-clock
+# vocabulary the audio-path check uses, rather than a second word list that
+# could drift from it (crates/measure/tests/no_settable_wall_clock.rs does the
+# same for the measurement harness).
+chorus-audio-path = { path = "../audio-path" }
+
+[lints]
+workspace = true

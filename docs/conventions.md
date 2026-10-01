@@ -145,8 +145,8 @@ Protocol, sync and DSP behaviour is specified by files that both the Rust and th
 implementations read: `fixtures/protocol`, `fixtures/sync`, `fixtures/sync/crosscheck`, and
 `fixtures/dsp` from goal 12. A behaviour change adds or changes a fixture, never a constant in
 one language only. `check-shared-fixtures.sh` holds each directory to a Rust reader and a C
-reader and fails on a file of a kind neither reads. `fixtures/control`, `fixtures/discovery` and
-`fixtures/measure` are Rust-only by declaration (the endpoint does not speak them yet).
+reader and fails on a file of a kind neither reads. `fixtures/control`, `fixtures/discovery`,
+`fixtures/measure` and `fixtures/schedule` are Rust-only by declaration (the endpoint does not speak them yet).
 `fixtures/protocol/v2` (protocol v2, goal 5) and `fixtures/protocol/v2/noise` are shared like the
 rest: since the endpoint moved to v2 (goal 6) the check holds them to their Rust readers and to
 `firmware/tests/test_protocol_v2.c` and `firmware/tests/test_noise.c`.
