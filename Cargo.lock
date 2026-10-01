@@ -186,6 +186,7 @@ dependencies = [
  "chorus-client-linux",
  "chorus-control",
  "chorus-discovery",
+ "chorus-dsp",
  "chorus-hostctl",
  "chorus-measure",
  "chorus-protocol",

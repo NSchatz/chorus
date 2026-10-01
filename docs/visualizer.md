@@ -5,7 +5,7 @@ and colour, computed on the server from the audio each stream slot plays, and se
 endpoint of the playing room or group that declared the `visualizer` role, stamped on the server
 timeline at the moment that endpoint's room HEARS the audio they describe. The wire messages are
 `docs/protocol.md` "Visualizer and colour" (0x34 `visualizer_frame`, 0x35 `color`); the decision
-record is `docs/decisions/0081-the-visualizer-stream.md`; the research is
+record is `docs/decisions/0084-the-visualizer-stream.md`; the research is
 `docs/research/research-dsp-phase-b.md` section 2 (read 2026-10-01).
 
 Every value below names its source or says ASSUMED. Nothing here is a timing claim: the

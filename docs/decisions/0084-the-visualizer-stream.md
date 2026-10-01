@@ -1,4 +1,4 @@
-# 0000: the server analyses each watched slot's audio on the audio thread and sends visualizer frames and colours to the slot's visualizer sessions, stamped when their room hears it
+# 0084: the server analyses each watched slot's audio on the audio thread and sends visualizer frames and colours to the slot's visualizer sessions, stamped when their room hears it
 
 - Status: accepted (goal 12, 2026-10-01)
 - Decided by: the goal (brief section 16 item 5, done-when line E; K65) through the
