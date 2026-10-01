@@ -65,6 +65,7 @@ pub mod front_panel;
 pub mod logcheck;
 pub mod offsets;
 pub mod outmap;
+pub mod ratematch;
 pub mod realtime;
 pub mod receive;
 pub mod run;
@@ -72,6 +73,7 @@ pub mod session;
 pub mod sink;
 pub mod source;
 pub mod sync;
+pub mod tvcapture;
 pub mod zone;
 
 pub use buffer::{Buffer, Counters};
