@@ -26,7 +26,21 @@
 //!    one output on every device channel.
 //!
 //! So a subwoofer on an output map and a two-way on flags both work, and the
-//! map is re-resolved whenever a `sound` moves the endpoint's role. Before
+//! map is re-resolved whenever a `sound` moves the endpoint's role.
+//!
+//! # One stereo speaker and a surround stream (goal 13)
+//!
+//! A device of exactly two channels, with no output map and no two-way, fed
+//! a stream of more than two channels (a 5.1 film into one stereo speaker)
+//! is a stereo speaker: the chain's `EndpointDsp::stereo_downmix` is set
+//! ([`stereo_fold`]) and it plays ITU-R BS.775-4 Table 2's 2/0 downmix
+//! (`docs/dsp.md`, ADR 0088), centre and surrounds folded into the pair at
+//! 1/sqrt 2 and the LFE dropped, rather than the front pair alone. The chain
+//! engages for it from the first frame, `sound` or not, as for a two-way:
+//! six channels never reach a two-channel device. The client opens a device
+//! with two channels when the device refuses the stream's count
+//! (`main.rs`); a device that accepts six (ALSA's plug layer) is fed six as
+//! before, and an output map is the owner's explicit choice and wins. Before
 //! the chain engages this is exactly `MappedSink` (or the device itself):
 //! byte for byte today's client.
 //!
@@ -179,7 +193,9 @@ fn output(n: u32, what: &str) -> Result<u16, String> {
 }
 
 /// The device channel count the client opens ALSA with: the map's, a two-way's
-/// (at least the stream's), or the stream's (today's behaviour).
+/// (at least the stream's), or the stream's (today's behaviour; a device that
+/// refuses a surround stream's count is then opened with two, `main.rs` and
+/// [`stereo_fold`]).
 pub fn device_channels(
     map: Option<&OutputMap>,
     two_way: Option<&TwoWayOutputs>,
@@ -190,6 +206,22 @@ pub fn device_channels(
         (None, Some(t)) => t.device_channels().max(stream_channels),
         (None, None) => stream_channels,
     }
+}
+
+/// Whether this endpoint is one stereo speaker for a stream of
+/// `stream_channels`: no output map (the owner's map says what each output
+/// plays), no two-way (its drivers take their own mono row), a device of two
+/// channels and a stream of more. Its chain then takes ITU-R BS.775-4's 2/0
+/// downmix (`EndpointDsp::stereo_downmix`, goal 13). A stereo or mono
+/// stream is untouched: the chain stays out of the path until a `sound`, as
+/// before.
+pub fn stereo_fold(
+    map: Option<&OutputMap>,
+    two_way: Option<&TwoWayOutputs>,
+    stream_channels: usize,
+    device_channels: usize,
+) -> bool {
+    map.is_none() && two_way.is_none() && device_channels == 2 && stream_channels > 2
 }
 
 /// The wire's `sound` as the chain's settings: the same fields, the flags
@@ -277,6 +309,8 @@ pub struct DspSink<S: PcmSink> {
     device_channels: usize,
     map: Option<OutputMap>,
     two_way: Option<TwoWayOutputs>,
+    /// The device is one stereo speaker for this stream ([`stereo_fold`]).
+    stereo_fold: bool,
     chain: Option<Chain>,
     sounds_seen: u64,
     /// The map resolved against what the device is fed: the stream (not
@@ -346,6 +380,7 @@ impl<S: PcmSink> DspSink<S> {
             device_channels,
             map: map.cloned(),
             two_way: two_way.copied(),
+            stereo_fold: stereo_fold(map, two_way, stream_map.len(), device_channels),
             chain: None,
             sounds_seen: 0,
             remap: None,
@@ -357,13 +392,20 @@ impl<S: PcmSink> DspSink<S> {
             counters: Arc::new(DspCounters::default()),
             report: Vec::new(),
         };
+        if sink.stereo_fold {
+            sink.report.push(format!(
+                "dsp stereo-downmix stream_channels={} device_channels=2 \
+                 fold=itu-r-bs775-4-2/0 lfe=dropped",
+                sink.stream_map.len()
+            ));
+        }
         // Not engaged yet: the map against the stream, exactly MappedSink.
         let positions = sink.stream_map.clone();
         sink.resolve(&positions);
         sink.refresh();
-        if sink.chain.is_none() && sink.two_way.is_some() {
+        if sink.chain.is_none() && (sink.two_way.is_some() || sink.stereo_fold) {
             return Err(sink.report.last().cloned().unwrap_or_else(|| {
-                "the two-way could not be configured for this stream".to_string()
+                "the endpoint's chain could not be configured for this stream".to_string()
             }));
         }
         Ok(sink)
@@ -413,7 +455,7 @@ impl<S: PcmSink> DspSink<S> {
             return;
         }
         let sound = self.watch.last_sound();
-        if first && sound.is_none() && self.two_way.is_none() {
+        if first && sound.is_none() && self.two_way.is_none() && !self.stereo_fold {
             return;
         }
         self.sounds_seen = seen;
@@ -421,7 +463,13 @@ impl<S: PcmSink> DspSink<S> {
         let outcome = match &mut self.chain {
             Some(chain) => chain.set_sound(&settings),
             None => {
-                let endpoint = self.two_way.map(|t| t.endpoint()).unwrap_or_default();
+                let endpoint = match self.two_way {
+                    Some(t) => t.endpoint(),
+                    None => EndpointDsp {
+                        stereo_downmix: self.stereo_fold,
+                        ..EndpointDsp::default()
+                    },
+                };
                 match Chain::new(
                     &settings,
                     &endpoint,
@@ -702,6 +750,144 @@ impl<S: PcmSink> Drop for DspSink<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A modelled two-channel device: keeps what it is written.
+    struct StereoDevice {
+        tape: Vec<u8>,
+    }
+
+    impl PcmSink for StereoDevice {
+        fn device(&self) -> &str {
+            "modelled-stereo"
+        }
+        fn frame_len(&self) -> usize {
+            4
+        }
+        fn rate_hz(&self) -> u32 {
+            48_000
+        }
+        fn write(&mut self, pcm: &[u8]) -> Result<SinkWrite, SinkError> {
+            self.tape.extend_from_slice(pcm);
+            Ok(SinkWrite {
+                frames_written: (pcm.len() / 4) as u64,
+                underran: false,
+            })
+        }
+        fn delay_frames(&mut self) -> Result<i64, SinkError> {
+            Ok(0)
+        }
+        fn in_xrun(&mut self) -> Result<bool, SinkError> {
+            Ok(false)
+        }
+        fn drain(&mut self) -> Result<(), SinkError> {
+            Ok(())
+        }
+        fn frames_played(&mut self) -> Result<u64, SinkError> {
+            Ok((self.tape.len() / 4) as u64)
+        }
+    }
+
+    #[test]
+    fn a_5_1_stream_into_one_stereo_speaker_plays_the_bs775_fold() {
+        use ChannelPosition::*;
+        // The server's 6-channel map (`docs/protocol.md`), each channel a
+        // constant so the fold reads off the samples: FL FR FC LFE BL BR.
+        let map = [
+            FrontLeft,
+            FrontRight,
+            FrontCenter,
+            LowFrequency,
+            BackLeft,
+            BackRight,
+        ];
+        let level = [0.10, 0.02, 0.20, 0.30, 0.05, 0.01];
+        let frames = 4_800;
+        let mut pcm = Vec::with_capacity(frames * 12);
+        for _ in 0..frames {
+            for v in level {
+                pcm.extend_from_slice(&((v * 32768.0f64).round() as i16).to_le_bytes());
+            }
+        }
+        // No `sound` has arrived: the fold engages anyway, from the first
+        // frame (six channels never reach a two-channel device).
+        let watch = Arc::new(ZoneWatch::new());
+        let mut sink = DspSink::new(
+            StereoDevice { tape: Vec::new() },
+            None,
+            None,
+            &map,
+            SampleFormat::PcmS16Le,
+            Arc::clone(&watch),
+        )
+        .unwrap();
+        assert!(sink.chain().is_some(), "engaged without a sound");
+        assert_eq!(sink.chain().unwrap().out_channels(), 2);
+        assert!(sink
+            .report()
+            .iter()
+            .any(|l| l.starts_with("dsp stereo-downmix stream_channels=6")));
+        assert_eq!(sink.frame_len(), 12, "the stream's frame in");
+        sink.write(&pcm).unwrap();
+        let tape = &sink.inner().tape;
+        assert_eq!(tape.len(), frames * 4, "two channels out, frame for frame");
+        // ITU-R BS.775-4 Table 2, 2/0: Lo = L + 0.7071 C + 0.7071 Ls, Ro = R +
+        // 0.7071 C + 0.7071 Rs; the LFE dropped. Past the limiter's
+        // look-ahead (2 ms) the samples are the constants' fold.
+        let g = std::f64::consts::FRAC_1_SQRT_2;
+        let lo = level[0] + g * level[2] + g * level[4];
+        let ro = level[1] + g * level[2] + g * level[5];
+        let at = |f: usize, c: usize| {
+            let i = f * 4 + c * 2;
+            f64::from(i16::from_le_bytes([tape[i], tape[i + 1]])) / 32768.0
+        };
+        for f in [480, 2_400, frames - 1] {
+            assert!(
+                (at(f, 0) - lo).abs() < 2.0 / 32768.0,
+                "Lo {} at {f}",
+                at(f, 0)
+            );
+            assert!(
+                (at(f, 1) - ro).abs() < 2.0 / 32768.0,
+                "Ro {} at {f}",
+                at(f, 1)
+            );
+        }
+        // Without the LFE dropped, Lo would carry it: it does not.
+        assert!((at(2_400, 0) - (lo + level[3])).abs() > 0.2);
+    }
+
+    #[test]
+    fn only_a_surround_stream_on_a_bare_two_channel_device_folds() {
+        let two_way = TwoWayOutputs::parse("").unwrap();
+        let map = OutputMap::from_args(Some("2"), &["0=FL".to_string(), "1=FR".to_string()])
+            .unwrap()
+            .unwrap();
+        assert!(stereo_fold(None, None, 6, 2));
+        assert!(stereo_fold(None, None, 3, 2));
+        // A stereo or mono stream: today's client, byte for byte.
+        assert!(!stereo_fold(None, None, 2, 2));
+        assert!(!stereo_fold(None, None, 1, 2));
+        // A device with room for the stream, a map, or a two-way: not a
+        // stereo speaker.
+        assert!(!stereo_fold(None, None, 6, 6));
+        assert!(!stereo_fold(Some(&map), None, 6, 2));
+        assert!(!stereo_fold(None, Some(&two_way), 6, 2));
+        // And a stereo stream on a stereo device stays out of the chain until
+        // a `sound` (nothing engaged, bytes passed as they are).
+        let mut sink = DspSink::new(
+            StereoDevice { tape: Vec::new() },
+            None,
+            None,
+            &[ChannelPosition::FrontLeft, ChannelPosition::FrontRight],
+            SampleFormat::PcmS16Le,
+            Arc::new(ZoneWatch::new()),
+        )
+        .unwrap();
+        assert!(sink.chain().is_none());
+        let pcm: Vec<u8> = (0..400u16).flat_map(|v| v.to_le_bytes()).collect();
+        sink.write(&pcm).unwrap();
+        assert_eq!(sink.inner().tape, pcm);
+    }
 
     #[test]
     fn two_way_flags_parse_with_defaults_and_refuse_by_name() {

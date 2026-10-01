@@ -295,7 +295,9 @@ bench_finish() {
         local fixture_hashes
         fixture_hashes="$(cd "$REPO_ROOT" && git ls-files -z fixtures | xargs -0 sha256sum | cut -d' ' -f1)"
         for f in "${rawfiles[@]}"; do
-            if printf '%s\n' "$fixture_hashes" | grep -qx "$(sha256sum "$BENCH_RUN_DIR/raw/$f" | cut -d' ' -f1)"; then
+            # A here-string: `printf | grep -q` under pipefail can lose a
+            # match to SIGPIPE (validate-report.sh says how).
+            if grep -qxF -- "$(sha256sum "$BENCH_RUN_DIR/raw/$f" | cut -d' ' -f1)" <<< "$fixture_hashes"; then
                 bench_refuse "raw file '$f' is byte-identical to a committed fixture; a fixture is not a hardware capture"
             fi
         done

@@ -1007,20 +1007,112 @@ fn line_in_autoplay_a_persons_command_on_a_target_room_detaches_it() {
     h.signal("turntable/line1", true);
     assert_eq!(h.group("kitchen"), "downstairs");
     assert_eq!(h.group("lounge"), "downstairs");
+    // A level is not a source change (goal 13): the kitchen turned up and
+    // the lounge muted are still the autoplay's.
     h.command(Command::Volume {
         zone: "kitchen".into(),
         volume: vol(700),
     });
+    h.command(Command::Mute {
+        zone: "lounge".into(),
+        muted: true,
+    });
+    assert!(h.rt.is_held("kitchen") && h.rt.is_held("lounge"));
+    assert_eq!(h.logged("detached"), 0);
+    // The kitchen taken out of the group is a person choosing something
+    // else: it is let go.
+    h.command(Command::Ungroup {
+        zone: "kitchen".into(),
+    });
     assert!(!h.rt.is_held("kitchen") && h.rt.is_held("lounge"));
     h.signal("turntable/line1", false);
     h.run(AUTOPLAY_HOLD_MS + 1_000, 500);
-    // The lounge is put back; the kitchen stays as the person left it.
+    // The lounge is put back, its mute too; the kitchen stays as the person
+    // left it.
     assert_eq!(h.group("lounge"), "lounge");
     assert_eq!(h.source_of("lounge"), Source::Stream);
     assert_eq!(h.volume("lounge"), 400);
-    assert_eq!(h.group("kitchen"), "downstairs");
+    assert!(!h.zones.zone("lounge").unwrap().muted);
+    assert_eq!(h.group("kitchen"), "kitchen");
     assert_eq!(h.volume("kitchen"), 700);
     assert_eq!(h.logged("zone=kitchen detached"), 1);
+}
+
+#[test]
+fn tv_volume_keys_and_mute_while_the_tv_plays_keep_the_autoplay_and_standby_restores() {
+    // The hub's CEC keys reach the server as `volume_step` and `mute` on the
+    // lounge (ADR 0087); a group volume on the autoplay's own group is a
+    // level too.
+    let mut h = tv_house(true);
+    h.signal("hub/tv", true);
+    for _ in 0..3 {
+        h.command(Command::VolumeStep {
+            zone: "lounge".into(),
+            step: 20,
+        });
+    }
+    assert_eq!(h.volume("lounge"), 460);
+    h.command(Command::Mute {
+        zone: "lounge".into(),
+        muted: true,
+    });
+    h.command(Command::GroupVolumeStep {
+        group: "lounge".into(),
+        step: -20,
+    });
+    assert_eq!(h.volume("lounge"), 440);
+    assert!(h.rt.is_held("lounge"));
+    assert!(h.rt.is_autoplaying(&input("hub/tv")));
+    assert_eq!(h.logged("detached"), 0);
+    // The standby still stops it at once and puts the lounge back as it was
+    // before the TV: in "downstairs", the stream, 0.400, not muted.
+    let off = h.standby("hub/tv");
+    assert!(off.contains(&control("hub/tv", InputAction::Stop)));
+    assert!(!h.rt.is_held("lounge"));
+    assert_eq!(h.group("lounge"), "downstairs");
+    assert_eq!(h.source_of("lounge"), Source::Stream);
+    assert_eq!(h.volume("lounge"), 400);
+    assert!(!h.zones.zone("lounge").unwrap().muted);
+    assert_eq!(h.logged("stopped reason=standby restored=lounge"), 1);
+}
+
+#[test]
+fn tv_a_person_choosing_another_source_still_detaches_the_room() {
+    let mut h = tv_house(true);
+    h.signal("hub/tv", true);
+    h.command(Command::Join {
+        zone: "lounge".into(),
+        target: "downstairs".into(),
+    });
+    assert!(!h.rt.is_held("lounge"));
+    assert_eq!(h.logged("zone=lounge detached"), 1);
+    // The standby then has nothing of the lounge's to restore.
+    h.standby("hub/tv");
+    assert_eq!(h.group("lounge"), "downstairs");
+    assert_eq!(h.source_of("lounge"), Source::Stream);
+}
+
+#[test]
+fn alarm_still_ends_on_a_persons_mute_naming_its_room() {
+    // ADR 0076's rule is unchanged by goal 13's autoplay exemption: any
+    // person's command naming a ringing alarm's room ends the alarm.
+    let mut h = House::new(Zone::utc(), thursday(6, 59, 0), &[("bedroom", 300)]);
+    h.command(Command::AlarmSet(alarm(
+        "wake",
+        "bedroom",
+        "07:00",
+        "chime:bell",
+        600,
+        30,
+    )));
+    h.run(65_000, 100);
+    assert!(h.zones.is_ringing("wake"));
+    h.command(Command::Mute {
+        zone: "bedroom".into(),
+        muted: true,
+    });
+    assert!(!h.zones.is_ringing("wake"));
+    assert_eq!(h.logged("reason=person"), 1);
 }
 
 #[test]

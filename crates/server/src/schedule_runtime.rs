@@ -25,7 +25,9 @@
 //! - [`Runtime::on_command_applied`]: a PERSON's command was applied to the
 //!   zones (the control plane's or a controller's, never one this runtime
 //!   applied itself). It is how `alarm_stop`, `sleep`, and "a person touched a
-//!   room this runtime is holding" reach it.
+//!   room this runtime is holding" reach it. A volume or a mute on a room an
+//!   autoplay holds keeps the hold (it is not a source change; goal 13), and
+//!   ends an alarm holding it, as any command naming the room does.
 //! - [`Runtime::on_input_signal`] and [`Runtime::on_input_gone`]: a line-in's
 //!   `source_offer` changed, or its endpoint's session ended.
 //! - [`Runtime::on_input_standby`] (goal 13, K81): a TV input's signal ended
@@ -425,7 +427,13 @@ impl Runtime {
         }
         let touched = self.rooms_touched(command, zones);
         if !touched.is_empty() {
-            self.touched(&touched, is_volume_change(command), now_mono_ns, zones);
+            self.touched(
+                &touched,
+                is_volume_change(command),
+                is_level_change(command),
+                now_mono_ns,
+                zones,
+            );
         }
         self.finish(now_mono_ns, zones)
     }
@@ -1303,9 +1311,28 @@ impl Runtime {
     }
 
     /// A person touched `rooms`: a ringing alarm holding one ends (that room
-    /// detached, the rest faded and restored), an autoplay lets the room go,
-    /// and a volume change cancels a sleep fade covering one.
-    fn touched(&mut self, rooms: &[String], volume: bool, now: u64, zones: &mut Zones) {
+    /// detached, the rest faded and restored), an autoplay lets the room go
+    /// unless the command only set a level (`level`: a volume or a mute,
+    /// which is not a source change; goal 13), and a volume change cancels a
+    /// sleep fade covering one.
+    ///
+    /// Why a level keeps an autoplay but ends an alarm (ADR 0076's rule is
+    /// kept as it was): an alarm is the runtime deciding the room's volume
+    /// (its ramp), so a person setting one takes the room back from it; an
+    /// autoplay decides only what the room plays, so a person who turns the
+    /// TV down (its remote's keys reach the server as `volume_step` and
+    /// `mute_set` from the hub, ADR 0087) or the turntable up is still
+    /// listening to it, and the TV's standby (or the input's hold) must
+    /// still stop it and restore the room. The restore puts back the volume
+    /// and mute the room had before the autoplay took it, as for an alarm.
+    fn touched(
+        &mut self,
+        rooms: &[String],
+        volume: bool,
+        level: bool,
+        now: u64,
+        zones: &mut Zones,
+    ) {
         let mut alarms: Vec<String> = Vec::new();
         for room in rooms {
             match self.holds.get(room).map(|h| h.owner.clone()) {
@@ -1321,6 +1348,7 @@ impl Runtime {
                         alarms.push(id);
                     }
                 }
+                Some(Owner::Autoplay(_)) if level => {}
                 Some(Owner::Autoplay(input)) => {
                     self.holds.remove(room);
                     self.log(format!(
@@ -1535,6 +1563,14 @@ fn is_volume_change(command: &Command) -> bool {
             | Command::GroupVolume { .. }
             | Command::GroupVolumeStep { .. }
     )
+}
+
+/// Whether a command only sets a level (a volume or a mute): what does not
+/// detach a room from an autoplay (goal 13). A sleep fade is cancelled by a
+/// volume change alone ([`is_volume_change`]): a mute leaves the fade's
+/// volumes as they were.
+fn is_level_change(command: &Command) -> bool {
+    is_volume_change(command) || matches!(command, Command::Mute { .. })
 }
 
 #[cfg(test)]

@@ -838,13 +838,37 @@ fn play(
         config.two_way.as_ref(),
         hand.shape.channels,
     );
-    let alsa = match AlsaSink::open(
-        &config.device,
-        hand.shape.sample_format,
-        device_channels,
-        hand.shape.sample_rate_hz,
-        config.device_buffer_us() as u32,
-    ) {
+    let open = |channels: u16| {
+        AlsaSink::open(
+            &config.device,
+            hand.shape.sample_format,
+            channels,
+            hand.shape.sample_rate_hz,
+            config.device_buffer_us() as u32,
+        )
+    };
+    let alsa = match open(device_channels).or_else(|e| {
+        // A surround stream on a device that refuses its channel count, with
+        // no map and no two-way: try it as one stereo speaker, which the
+        // endpoint's chain feeds BS.775-4's 2/0 downmix (`dsp::stereo_fold`,
+        // goal 13). The first refusal is the one reported if this fails too.
+        if dsp::stereo_fold(
+            config.output_map.as_ref(),
+            config.two_way.as_ref(),
+            usize::from(device_channels),
+            2,
+        ) {
+            let stereo = open(2).map_err(|_| e)?;
+            status(&format!(
+                "device-channels device={} stream_channels={} device_channels=2 \
+                 reason=stream-count-refused",
+                config.device, device_channels
+            ));
+            Ok(stereo)
+        } else {
+            Err(e)
+        }
+    }) {
         Ok(s) => s,
         Err(e) => {
             report(

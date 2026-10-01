@@ -133,7 +133,11 @@ while IFS= read -r row; do
     kept="$(printf '%s' "$row" | awk -F' [|] ' '{print $4}' | tr -d ' |')"
     case "$path" in "$RAWDIR"/*) ;; *) bad "raw file '$path' is not under $RAWDIR/" ;; esac
     LISTED="$LISTED$path"$'\n'
-    if [ -n "$FIXTURE_HASHES" ] && printf '%s\n' "$FIXTURE_HASHES" | grep -qx "$sha"; then
+    # A here-string, not `printf | grep -q`: under pipefail, grep -q leaving at
+    # its first match can kill the printf still writing the ~39 KB list with
+    # SIGPIPE, the pipeline then reports 141 and a fixture passed as a capture
+    # (the intermittent e2e `verify` failure of goals 12 and 13).
+    if [ -n "$FIXTURE_HASHES" ] && grep -qxF -- "$sha" <<< "$FIXTURE_HASHES"; then
         bad "raw file '$path' is byte-identical to a committed fixture; a fixture is not a hardware capture"
     fi
     if [ "$kept" = owner ] && [ "$size" -le "$FILE_LIMIT" ]; then

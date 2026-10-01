@@ -158,9 +158,14 @@ What step 6 plays when the stream and the room's set do not match: a stereo TV i
 - **Where the facts come from.** `fold_centre`, `fold_surround` and `tv_upmix` arrive in the
   `sound` message's theater block (`docs/protocol.md`, 0x39): the server tells a front member
   what its set lacks. `stereo_downmix` is the endpoint's own (`EndpointDsp`,
-  `chorus_dsp_endpoint_t`): whether it is one stereo speaker. Nothing sets it yet on either
-  endpoint (a follow-up: the firmware is 2-channel and is refused a 5.1 stream at negotiation
-  today; the Linux client would set it for a 2-channel device without an output map).
+  `chorus_dsp_endpoint_t`): whether it is one stereo speaker. The Linux client sets it for a
+  device of two channels with no output map and no two-way when the stream has more than two
+  (`crates/client-linux/src/dsp.rs`, `stereo_fold`; ADR 0092): the chain then engages from the
+  first frame, `sound` or not, and says `dsp stereo-downmix stream_channels=<n>
+  device_channels=2 ...`. A device that refuses a surround stream's channel count is opened
+  with two (`device-channels ... reason=stream-count-refused`); one that accepts it (ALSA's
+  plug layer) is fed the stream's channels as before. The firmware is 2-channel and is refused
+  a 5.1 stream at negotiation today, so nothing sets it there yet.
 - **Positions past 5.1** (FLC, FRC, BC, the tops) are not folded: they are silent on an endpoint
   that does not play them, as before.
 
