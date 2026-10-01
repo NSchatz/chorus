@@ -201,6 +201,11 @@ pub struct ClientConfig {
     /// default, declares nothing (a front panel whose light follows the
     /// visualizer declares the role on its own, asking for no bands).
     pub visualizer_bands: u8,
+    /// `--cec <device>`: this endpoint is the TV's Audio System over the
+    /// kernel's CEC adapter `/dev/cecN` (goal 13, `crate::cec`,
+    /// `docs/cec.md`), with `--cec-arc`, `--cec-autoplay-on-power` and
+    /// `--cec-osd-name`. `None`: no CEC.
+    pub cec: Option<crate::cec::CecConfig>,
 }
 
 /// The source number a configured line-in is offered under. One input per
@@ -294,6 +299,7 @@ impl Default for ClientConfig {
             two_way: None,
             max_volume: Volume::FULL,
             visualizer_bands: 0,
+            cec: None,
         }
     }
 }
@@ -402,6 +408,13 @@ pub enum ConfigError {
         /// The argument as it was given.
         argument: String,
     },
+    /// A CEC flag that cannot be honoured.
+    CecRefused {
+        /// The argument as it was given.
+        argument: String,
+        /// Why.
+        detail: String,
+    },
     /// A line-in flag that cannot be honoured.
     LineInRefused {
         /// The argument as it was given.
@@ -437,7 +450,8 @@ pub enum ConfigError {
 impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ConfigError::LineInRefused { argument, detail } => {
+            ConfigError::LineInRefused { argument, detail }
+            | ConfigError::CecRefused { argument, detail } => {
                 write!(f, "argument '{}' refused: {}", argument, detail)
             }
             ConfigError::FreeRunWithoutSeries => write!(
@@ -697,6 +711,8 @@ impl ClientConfig {
         let mut given_playout_latency = false;
         let mut line_in: Option<LineInConfig> = None;
         let mut line_in_flags: Vec<(String, String)> = Vec::new();
+        let mut cec: Option<crate::cec::CecConfig> = None;
+        let mut cec_flags: Vec<(String, String)> = Vec::new();
         let mut output_channels: Option<String> = None;
         let mut outputs: Vec<String> = Vec::new();
         let mut it = args.into_iter().peekable();
@@ -801,6 +817,11 @@ impl ClientConfig {
                 | "--line-in-channels" | "--line-in-format" => {
                     line_in_flags.push((arg.clone(), value()?))
                 }
+                "--cec" => cec = Some(crate::cec::CecConfig::new(&value()?)),
+                "--cec-arc" => cec_flags.push((arg.clone(), String::new())),
+                "--cec-autoplay-on-power" | "--cec-osd-name" => {
+                    cec_flags.push((arg.clone(), value()?))
+                }
                 "--output-channels" => output_channels = Some(value()?),
                 "--output" => outputs.push(value()?),
                 "--two-way" => {
@@ -835,6 +856,18 @@ impl ClientConfig {
                 detail: "it describes a line-in and no --line-in <alsa capture device> was given"
                     .to_string(),
             });
+        }
+        if let Some((argument, _)) = cec_flags.first().filter(|_| cec.is_none()) {
+            return Err(ConfigError::CecRefused {
+                argument: argument.clone(),
+                detail: "it describes the CEC role and no --cec <device> was given".to_string(),
+            });
+        }
+        if let Some(mut c) = cec {
+            for (argument, value) in &cec_flags {
+                apply_cec_flag(&mut c, argument, value)?;
+            }
+            config.cec = Some(c);
         }
         if mode == ClientMode::ProbeLineIn && line_in.is_none() {
             return Err(ConfigError::LineInRefused {
@@ -895,6 +928,35 @@ impl ClientConfig {
         }
         Ok((config, mode))
     }
+}
+
+fn apply_cec_flag(
+    cec: &mut crate::cec::CecConfig,
+    argument: &str,
+    value: &str,
+) -> Result<(), ConfigError> {
+    let refused = |detail: String| ConfigError::CecRefused {
+        argument: argument.to_string(),
+        detail,
+    };
+    match argument {
+        "--cec-arc" => cec.arc = true,
+        "--cec-autoplay-on-power" => {
+            cec.autoplay_on_power = match value {
+                "on" => true,
+                "off" => false,
+                other => return Err(refused(format!("'{}' is not on or off", other))),
+            }
+        }
+        "--cec-osd-name" => {
+            let mut role = cec.role();
+            role.osd_name = value.to_string();
+            role.check().map_err(refused)?;
+            cec.osd_name = value.to_string();
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn apply_line_in_flag(
@@ -1200,6 +1262,39 @@ mod tests {
         // A bound with no policy asked for is no request at all, and is not refused.
         let (c, _) = ClientConfig::from_args(args(&["--rttime-us", "0"])).unwrap();
         c.validate().expect("no real-time request");
+    }
+
+    #[test]
+    fn cec_flags_need_a_device_and_default_to_no_arc_autoplay_on_and_chorus() {
+        let (c, _) = ClientConfig::from_args(args(&[])).unwrap();
+        assert_eq!(c.cec, None);
+        let (c, _) = ClientConfig::from_args(args(&["--cec", "/dev/cec0"])).unwrap();
+        let cec = c.cec.unwrap();
+        assert_eq!(cec.device, "/dev/cec0");
+        assert!(!cec.arc, "ARC off by default (ASSUMED)");
+        assert!(cec.autoplay_on_power, "autoplay on power by default");
+        assert_eq!(cec.osd_name, "chorus");
+        let (c, _) = ClientConfig::from_args(args(&[
+            "--cec-arc",
+            "--cec-autoplay-on-power",
+            "off",
+            "--cec-osd-name",
+            "Living room",
+            "--cec",
+            "/dev/cec1",
+        ]))
+        .unwrap();
+        let cec = c.cec.unwrap();
+        assert!(cec.arc && !cec.autoplay_on_power);
+        assert_eq!(cec.osd_name, "Living room");
+        let e = ClientConfig::from_args(args(&["--cec-arc"])).unwrap_err();
+        assert!(e.to_string().contains("no --cec"), "{e}");
+        let e = ClientConfig::from_args(args(&["--cec", "x", "--cec-autoplay-on-power", "yes"]))
+            .unwrap_err();
+        assert!(e.to_string().contains("not on or off"), "{e}");
+        let e = ClientConfig::from_args(args(&["--cec", "x", "--cec-osd-name", "fifteen chars!!"]))
+            .unwrap_err();
+        assert!(e.to_string().contains("1 to 14"), "{e}");
     }
 
     #[test]

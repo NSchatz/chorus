@@ -103,6 +103,7 @@ version = "0.1.0"
 dependencies = [
  "chorus-alsa",
  "chorus-audio",
+ "chorus-cec",
  "chorus-control",
  "chorus-controls",
  "chorus-discovery",
