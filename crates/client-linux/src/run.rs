@@ -874,7 +874,7 @@ fn play<S: PcmSink>(
                     // modelled sink accepts IS what the zone commanded.
                     // With the room's volume from the audio wire, the
                     // control plane's gain and this endpoint's ceiling: the
-                    // least of them, frame by frame (zone.rs, ADR 0070).
+                    // least of them, frame by frame (zone.rs, ADR 0074).
                     let now_gain = watch.gain();
                     if let Some(m) = watch.apply(&gain, channels, rate_hz, &mut shaped) {
                         log_room_volume(log, timeline, &m, watch)?;

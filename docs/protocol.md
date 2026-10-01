@@ -545,7 +545,7 @@ The firmware version is in the endpoint's `hello`.
 
 ### 0x38 room volume
 
-Server to player (goal 11, `docs/decisions/0070-room-volume-on-the-audio-wire.md`).
+Server to player (goal 11, `docs/decisions/0074-room-volume-on-the-audio-wire.md`).
 The room's (the zone's, on the wire) gain and limit, carried on the audio
 session so that the endpoint playing the audio is the one that enforces them
 (K81, I10, brief section 4.8): a server bug or a hostile control path cannot
@@ -585,7 +585,7 @@ What a player plays at, at every frame, is
 
 The server sends it after `stream_format`, whenever the room's volume, mute
 or effective limit changes, and at the start of every session before the
-first audio (ADR 0070 says what for the server side).
+first audio (ADR 0074 says what for the server side).
 
 ## The four roles
 

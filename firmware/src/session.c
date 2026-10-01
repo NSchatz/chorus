@@ -973,7 +973,7 @@ static int handle_inner(session_state_t *state, stream_state_t *stream,
         return 0;
     case CHORUS_V2_ROOM_VOLUME:
         /* The room's gain and limit, enforced where the frames are written
-         * (chorus/volume.h, ADR 0070): the decoder has already rejected a
+         * (chorus/volume.h, ADR 0074): the decoder has already rejected a
          * value out of range, and the playout path clamps a gain above the
          * limit or the ceiling. It travels only inside a record, like every
          * frame here. */

@@ -1,5 +1,5 @@
 /* The room's volume, enforced on the endpoint (goal 11, K81, I10, brief
- * section 4.8; docs/decisions/0070-room-volume-on-the-audio-wire.md).
+ * section 4.8; docs/decisions/0074-room-volume-on-the-audio-wire.md).
  *
  * The server sends `room_volume` (docs/protocol.md, "0x38 room volume"): a
  * gain, the room's effective limit and a ramp. What this endpoint plays at,
@@ -45,7 +45,7 @@
 
 /* The endpoint's own ceiling when its configuration names none: full scale,
  * so an endpoint behaves as it did before this unit existed. ASSUMED: a
- * policy default, not a measurement (ADR 0070); an owner who wants a speaker
+ * policy default, not a measurement (ADR 0074); an owner who wants a speaker
  * never to play above some level sets `max_volume` below it. */
 #define CHORUS_VOLUME_DEFAULT_CEILING CHORUS_VOLUME_FULL
 
@@ -76,7 +76,7 @@ typedef struct {
 uint32_t chorus_volume_q16_from_thousandths(uint32_t thousandths);
 
 /* Start at the ceiling, with no limit received yet. The startup gain is the
- * ceiling (ADR 0070): an endpoint whose server never sends room_volume plays
+ * ceiling (ADR 0074): an endpoint whose server never sends room_volume plays
  * as it did before goal 11, bounded by its own ceiling. A ceiling above 1000
  * is taken as 1000. */
 void chorus_volume_init(chorus_volume_t *v, uint32_t ceiling_thousandths);

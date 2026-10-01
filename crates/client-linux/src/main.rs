@@ -126,7 +126,7 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
     let timeline = MonotonicTimeline::new();
     let keep = Arc::new(AtomicBool::new(true));
     // The zone's state from the control plane and the room's volume from the
-    // audio wire, under this endpoint's own ceiling (`--max-volume`, ADR 0070).
+    // audio wire, under this endpoint's own ceiling (`--max-volume`, ADR 0074).
     let watch = Arc::new(ZoneWatch::with_max_volume(config.max_volume));
 
     // The front panel, when one is configured: its buttons and light as the

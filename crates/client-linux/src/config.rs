@@ -186,7 +186,7 @@ pub struct ClientConfig {
     /// amplitude written as the control catalog writes a volume (`0.000` to
     /// `1.000`). What plays is never above it, whatever the server's
     /// `room_volume` or the control plane's state says (`crate::zone`, ADR
-    /// 0070), and until the first `room_volume` the endpoint plays at it.
+    /// 0074), and until the first `room_volume` the endpoint plays at it.
     /// Default 1.000, ASSUMED: a policy default, not a measurement.
     pub max_volume: Volume,
 }

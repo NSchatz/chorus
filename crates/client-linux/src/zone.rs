@@ -33,7 +33,7 @@
 //! # The room's volume from the audio wire (goal 11)
 //!
 //! [`RoomGain`] is the same enforcement the C endpoint makes
-//! (`firmware/include/chorus/volume.h`, ADR 0070): the server's `room_volume`
+//! (`firmware/include/chorus/volume.h`, ADR 0074): the server's `room_volume`
 //! (`docs/protocol.md`, "0x38 room volume") gives a gain, the room's limit and
 //! a ramp, and what is written at every frame is the least of the ramped gain,
 //! that limit, this endpoint's own ceiling (`--max-volume`) and the gain the
@@ -197,7 +197,7 @@ pub struct RoomGain {
 
 impl RoomGain {
     /// Start at the ceiling with no limit received: the startup gain is the
-    /// ceiling (ADR 0070), so an endpoint whose server never sends
+    /// ceiling (ADR 0074), so an endpoint whose server never sends
     /// `room_volume` plays as it did before goal 11.
     pub fn new(ceiling: Volume) -> RoomGain {
         let q = q16_from_thousandths(ceiling.thousandths());

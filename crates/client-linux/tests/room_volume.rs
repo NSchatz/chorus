@@ -1,5 +1,5 @@
 //! The room's volume on the audio wire, enforced by the Linux client (goal 11,
-//! K81, I10; `docs/decisions/0070-room-volume-on-the-audio-wire.md`).
+//! K81, I10; `docs/decisions/0074-room-volume-on-the-audio-wire.md`).
 //!
 //! Read off the samples a modelled sink ACCEPTED, as `zone_apply.rs` reads the
 //! zone gain: what is written at every frame is the least of the ramped
@@ -494,7 +494,7 @@ fn scripted_server(message: RoomVolume) -> u16 {
                 codec_config: Vec::new(),
             }),
         );
-        // Before the first audio, as ADR 0070 asks of the server.
+        // Before the first audio, as ADR 0074 asks of the server.
         let _ = send(&mut writer, Message::RoomVolume(message));
         let start = Instant::now();
         for sequence in 0..CHUNKS {

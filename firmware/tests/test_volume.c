@@ -1,5 +1,5 @@
 /* The room's volume on the endpoint, graded on a host (goal 11, K81, I10;
- * docs/decisions/0070-room-volume-on-the-audio-wire.md).
+ * docs/decisions/0074-room-volume-on-the-audio-wire.md).
  *
  * firmware/src/volume.c alone first: the conversion, the clamp to the limit
  * and to the ceiling, the ramp's two endpoints and its monotonicity (checked

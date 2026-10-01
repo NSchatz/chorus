@@ -301,7 +301,7 @@ console: $(BUILD)/test_console
 playout: $(BUILD)/test_playout
 	$(BUILD)/test_playout
 
-# Goal 11: the room's volume on the endpoint (K81, I10; docs/decisions/0070-*):
+# Goal 11: the room's volume on the endpoint (K81, I10; docs/decisions/0074-*):
 # min(ramped gain, the limit received, max_volume) at every frame, integer,
 # the ramp's endpoints and monotonicity, mute, and frames in == frames out,
 # alone and through the playout path and a decoded room_volume.

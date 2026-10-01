@@ -22,7 +22,7 @@ void chorus_volume_init(chorus_volume_t *v, uint32_t ceiling_thousandths)
     memset(v, 0, sizeof(*v));
     v->ceiling_q16 = chorus_volume_q16_from_thousandths(ceiling_thousandths);
     v->limit_q16 = CHORUS_VOLUME_UNITY;
-    /* The startup gain is the ceiling (ADR 0070), and no ramp is moving. */
+    /* The startup gain is the ceiling (ADR 0074), and no ramp is moving. */
     v->from_q16 = v->ceiling_q16;
     v->to_q16 = v->ceiling_q16;
     v->ramp_q16 = v->ceiling_q16;

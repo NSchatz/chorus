@@ -1,4 +1,4 @@
-# 0070: the room's gain and limit travel on the audio wire as room_volume, and both endpoint kinds enforce min(ramped gain, limit, own ceiling) at every frame
+# 0074: the room's gain and limit travel on the audio wire as room_volume, and both endpoint kinds enforce min(ramped gain, limit, own ceiling) at every frame
 
 - Status: accepted (goal 11, 2026-10-01)
 - Decided by: the goal (K81, I10, brief section 4.8; the goal 11 design envelope, "Room volume on
