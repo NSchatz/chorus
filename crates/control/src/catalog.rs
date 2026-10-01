@@ -48,6 +48,7 @@ use crate::rooms::{
 use crate::sound::{
     EqFilter, FixedPoint, Polarity, CROSSOVER_HZ, ROOM_EQ_MAX_FILTERS, SUB_LEVEL_CDB, TONE_DB,
 };
+use crate::theater::{TvUpmix, AV_TRIM_MS};
 
 /// The catalog version this build speaks: the highest it implements, and the
 /// version its state message and its session refusal carry.
@@ -317,6 +318,9 @@ pub enum Command {
         night: Option<bool>,
         /// Speech enhancement.
         speech: Option<bool>,
+        /// (goal 13) What a theater set's surrounds play from a stream with
+        /// no surround channel.
+        tv_upmix: Option<TvUpmix>,
     },
     /// (v2, goal 12) Change a room's bass management (used when its bonded
     /// set has an `LFE` member). Partial, as `sound`.
@@ -340,6 +344,14 @@ pub enum Command {
         filters: Option<Vec<EqFilter>>,
         /// Whether they are applied.
         enabled: Option<bool>,
+    },
+    /// (v2, goal 13) Set a room's A/V trim: how much later (positive) or
+    /// earlier its TV audio plays, ms, [`AV_TRIM_MS`].
+    AvTrim {
+        /// The room.
+        zone: String,
+        /// The trim, ms.
+        av_trim_ms: i16,
     },
 }
 
@@ -373,6 +385,7 @@ impl Command {
             Command::Sound { .. } => "sound",
             Command::BassManagement { .. } => "bass_management",
             Command::RoomEq { .. } => "room_eq",
+            Command::AvTrim { .. } => "av_trim",
         }
     }
 
@@ -412,7 +425,8 @@ impl Command {
             | Command::QuietHours { zone, .. }
             | Command::Sound { zone, .. }
             | Command::BassManagement { zone, .. }
-            | Command::RoomEq { zone, .. } => Some(zone),
+            | Command::RoomEq { zone, .. }
+            | Command::AvTrim { zone, .. } => Some(zone),
             _ => None,
         }
     }
@@ -520,6 +534,7 @@ impl Command {
                 loudness,
                 night,
                 speech,
+                tv_upmix,
             } => {
                 text("zone", zone);
                 if let Some(b) = bass {
@@ -532,6 +547,9 @@ impl Command {
                     if let Some(flag) = flag {
                         m.push((key.to_string(), Value::Bool(*flag)));
                     }
+                }
+                if let Some(u) = tv_upmix {
+                    m.push(("tv_upmix".to_string(), Value::text(u.name())));
                 }
             }
             Command::BassManagement {
@@ -563,6 +581,10 @@ impl Command {
                 if let Some(enabled) = enabled {
                     m.push(("enabled".to_string(), Value::Bool(*enabled)));
                 }
+            }
+            Command::AvTrim { zone, av_trim_ms } => {
+                text("zone", zone);
+                m.push(("av_trim_ms".to_string(), Value::int(i64::from(*av_trim_ms))));
             }
         }
         Value::Obj(m)
@@ -655,13 +677,23 @@ pub fn filters_value(filters: &[EqFilter]) -> Value {
     )
 }
 
-/// An autoplay rule's fields, in the declared order.
+/// An autoplay rule's fields, in the declared order. Goal 13's
+/// `stop_on_standby` and `low_latency` are written only when false (their
+/// default is true), so a goal-11 rule keeps its bytes in a command and in
+/// the state message.
 pub fn autoplay_value(rule: &Autoplay) -> Value {
-    Value::Obj(vec![
+    let mut fields = vec![
         ("input".to_string(), Value::text(&rule.input.literal())),
         ("target".to_string(), Value::text(&rule.target)),
         ("enabled".to_string(), Value::Bool(rule.enabled)),
-    ])
+    ];
+    if !rule.stop_on_standby {
+        fields.push(("stop_on_standby".to_string(), Value::Bool(false)));
+    }
+    if !rule.low_latency {
+        fields.push(("low_latency".to_string(), Value::Bool(false)));
+    }
+    Value::Obj(fields)
 }
 
 /// Why a message was not applied.
@@ -1128,7 +1160,10 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
             }
         }
         "autoplay" => {
-            fields(&["v", "t", "input", "target", "enabled"], &[])?;
+            fields(
+                &["v", "t", "input", "target", "enabled"],
+                &["stop_on_standby", "low_latency"],
+            )?;
             let input = match value.get("input").and_then(Value::as_str) {
                 Some(text) => InputId::parse(text).ok_or_else(|| {
                     at(Refusal::rejected(
@@ -1147,16 +1182,24 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
                     )))
                 }
             };
+            let defaulted = |field: &str| -> Result<bool, Refusal> {
+                match value.get(field) {
+                    None => Ok(true),
+                    Some(_) => boolean(value, field).map_err(at),
+                }
+            };
             Command::Autoplay(Autoplay {
                 input,
                 target: id("target")?,
                 enabled: boolean(value, "enabled").map_err(at)?,
+                stop_on_standby: defaulted("stop_on_standby")?,
+                low_latency: defaulted("low_latency")?,
             })
         }
         "sound" => {
             fields(
                 &["v", "t", "zone"],
-                &["bass", "treble", "loudness", "night", "speech"],
+                &["bass", "treble", "loudness", "night", "speech", "tv_upmix"],
             )?;
             let zone = id("zone")?;
             let tone = |field: &str| -> Result<Option<i8>, Refusal> {
@@ -1173,6 +1216,22 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
                     Some(_) => boolean(value, field).map(Some).map_err(at),
                 }
             };
+            let tv_upmix = match value.get("tv_upmix") {
+                None => None,
+                Some(v) => {
+                    let word = v.as_str().unwrap_or("");
+                    Some(TvUpmix::parse(word).ok_or_else(|| {
+                        at(Refusal::rejected(
+                            "tv_upmix",
+                            format!(
+                                "'{}' is not a TV upmix; the catalog declares \"off\" or \
+                                 \"ambient\"",
+                                word
+                            ),
+                        ))
+                    })?)
+                }
+            };
             Command::Sound {
                 zone,
                 bass: tone("bass")?,
@@ -1180,6 +1239,20 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
                 loudness: flag("loudness")?,
                 night: flag("night")?,
                 speech: flag("speech")?,
+                tv_upmix,
+            }
+        }
+        "av_trim" => {
+            fields(&["v", "t", "zone", "av_trim_ms"], &[])?;
+            Command::AvTrim {
+                zone: id("zone")?,
+                av_trim_ms: whole(
+                    value,
+                    "av_trim_ms",
+                    i64::from(AV_TRIM_MS.0),
+                    i64::from(AV_TRIM_MS.1),
+                )
+                .map_err(at)? as i16,
             }
         }
         "bass_management" => {

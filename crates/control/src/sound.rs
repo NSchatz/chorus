@@ -30,6 +30,8 @@
 
 use std::fmt;
 
+use crate::theater::TvUpmix;
+
 /// Most room-correction filters a room holds. ASSUMED: the envelope's bound,
 /// enough for the handful of modes below 1 kHz a fit finds in a living room.
 pub const ROOM_EQ_MAX_FILTERS: usize = 8;
@@ -143,6 +145,9 @@ pub struct SoundSettings {
     pub night: bool,
     /// Speech enhancement.
     pub speech: bool,
+    /// (goal 13) What a theater set's surround members play from a stream
+    /// with no surround channel ([`crate::theater`]).
+    pub tv_upmix: TvUpmix,
 }
 
 impl Default for SoundSettings {
@@ -160,6 +165,7 @@ impl Default for SoundSettings {
             loudness: true,
             night: false,
             speech: false,
+            tv_upmix: TvUpmix::Off,
         }
     }
 }

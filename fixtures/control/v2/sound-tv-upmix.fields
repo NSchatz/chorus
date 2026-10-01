@@ -1,0 +1,14 @@
+# Canonical input for the catalog v2 sound-tv-upmix vector.
+#
+# Encoding these field values must produce exactly sound-tv-upmix.json, and decoding
+# sound-tv-upmix.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# Goal 13: a partial sound that turns the ambient TV upmix on; every other
+# field keeps what the room had.
+
+message_type = sound
+zone = living
+tv_upmix = ambient

@@ -205,10 +205,17 @@ fn a_rooms_sound_reaches_its_endpoints_with_their_roles_and_a_bad_room_eq_is_ref
     );
     let fl_last = sounds(&p_fl).last().cloned().unwrap();
     assert_eq!(fl_last.role, 1);
+    // Goal 13: a front member of a set with no centre and no surrounds is
+    // also told to fold them (sound_fold, ITU-R BS.775-4); the sub is not.
+    assert_eq!(fl_last.fold, 3);
     assert_eq!(
-        Sound { role: 4, ..fl_last },
+        Sound {
+            role: 4,
+            fold: 0,
+            ..fl_last
+        },
         sounds(&p_sub).last().cloned().unwrap(),
-        "the members differ only in their role"
+        "the members differ only in their role and the front member's fold"
     );
 
     // A room_eq outside the room-correction bounds: refused by field, and

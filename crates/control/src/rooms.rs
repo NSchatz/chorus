@@ -550,6 +550,14 @@ pub struct Autoplay {
     pub target: String,
     /// Whether the rule is in force.
     pub enabled: bool,
+    /// (goal 13, K81) For a TV input (`optical` or `hdmi_arc`): the TV's
+    /// standby stops it at once, without the hold, and restores what the
+    /// target played. Default true; a non-TV input ignores it.
+    pub stop_on_standby: bool,
+    /// (goal 13) For a TV input: play it in low-latency mode when the target
+    /// is one wired room (the integration track's relay), else the slot path.
+    /// Default true; false keeps the TV on the slot path always.
+    pub low_latency: bool,
 }
 
 /// A sleep timer as asked for. The countdown is the runtime's, on the

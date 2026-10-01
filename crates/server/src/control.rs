@@ -58,14 +58,14 @@ use std::time::{Duration, Instant};
 use chorus_control::catalog::{decode_message, Refusal};
 use chorus_control::fanout::ControlFanout;
 use chorus_control::persist;
-use chorus_control::rooms::{CivilTime, Source};
+use chorus_control::rooms::{CivilTime, Role, Source};
 use chorus_control::sound::Polarity;
 use chorus_control::zones::{Zone, Zones};
 use chorus_control::Command;
 use chorus_hostctl::ThreadRegistry;
 use chorus_protocol::v2::{
-    roles, sound_flags, ControllerCommand, ControllerState, Playback, RoomVolume, Sound,
-    SoundFilter,
+    roles, sound_flags, sound_fold, ControllerCommand, ControllerState, Playback, RoomVolume,
+    Sound, SoundFilter,
 };
 
 use crate::controller::{translate, ControllerAction, THOUSANDTHS_PER_POINT};
@@ -687,6 +687,13 @@ pub fn room_volume_of(zone: &Zone) -> RoomVolume {
 /// set (0 when it is in none) and whether the set has a sub. Every member of
 /// a set gets the room's whole stream and does its own bass management from
 /// these two.
+///
+/// Goal 13 adds the theater block: the room's `tv_upmix`, and `fold`, what
+/// the room's bonded set lacks (no centre member, no surround pair), so a
+/// front member folds those channels of a 5.1 stream into its own (ITU-R
+/// BS.775-4 Table 2, `docs/dsp.md` "The theater maps"). Only the FL and FR
+/// members are told a fold (no other role folds); a room with no set folds
+/// nothing: its endpoint plays the stream as it is.
 pub fn sound_of(zone: &Zone, endpoint: &str) -> Sound {
     let s = &zone.sound;
     let mut flags = 0u8;
@@ -722,7 +729,35 @@ pub fn sound_of(zone: &Zone, endpoint: &str) -> Sound {
                 q_milli: f.q_milli,
             })
             .collect(),
+        tv_upmix: s.tv_upmix.wire(),
+        // Only a front member folds; every other member is told 0, so what
+        // it is sent is what goal 12 sent it.
+        fold: match zone.role_of(endpoint) {
+            Some(Role::Fl | Role::Fr) => {
+                fold_of(&zone.bond.iter().map(|m| m.role).collect::<Vec<_>>())
+            }
+            _ => 0,
+        },
     }
+}
+
+/// `sound`'s `fold` bits for a bonded set of `roles`: what it lacks. No set,
+/// no fold.
+pub fn fold_of(roles: &[Role]) -> u8 {
+    if roles.is_empty() {
+        return 0;
+    }
+    let mut fold = 0;
+    if !roles.contains(&Role::Fc) {
+        fold |= sound_fold::CENTRE;
+    }
+    if !roles
+        .iter()
+        .any(|r| matches!(r, Role::Bl | Role::Br | Role::Sl | Role::Sr))
+    {
+        fold |= sound_fold::SURROUND;
+    }
+    fold
 }
 
 /// What a room's controllers are shown (docs/protocol.md, "0x33 controller
@@ -1523,6 +1558,47 @@ pub fn initial_state(
 mod tests {
     use super::*;
     use chorus_control::zones::Zone;
+
+    #[test]
+    fn a_front_member_is_told_what_its_set_lacks_and_the_rooms_tv_upmix() {
+        use chorus_control::rooms::{BondMember, Role};
+        use chorus_control::theater::TvUpmix;
+        // Every layout validate_layout allows, and what a front member folds.
+        assert_eq!(fold_of(&[]), 0, "no set, no fold");
+        assert_eq!(
+            fold_of(&[Role::Fl, Role::Fr]),
+            sound_fold::CENTRE | sound_fold::SURROUND
+        );
+        assert_eq!(
+            fold_of(&[Role::Fl, Role::Fr, Role::Lfe]),
+            sound_fold::CENTRE | sound_fold::SURROUND
+        );
+        assert_eq!(
+            fold_of(&[Role::Fl, Role::Fr, Role::Fc]),
+            sound_fold::SURROUND
+        );
+        assert_eq!(
+            fold_of(&[Role::Fl, Role::Fr, Role::Fc, Role::Lfe, Role::Sl, Role::Sr]),
+            0
+        );
+        assert_eq!(
+            fold_of(&[Role::Fl, Role::Fr, Role::Fc, Role::Bl, Role::Br]),
+            0
+        );
+        let mut z = Zone::new("lounge");
+        z.sound.tv_upmix = TvUpmix::Ambient;
+        z.bond = [("a", Role::Fl), ("b", Role::Fr), ("c", Role::Lfe)]
+            .into_iter()
+            .map(|(e, role)| BondMember {
+                endpoint: e.to_string(),
+                role,
+            })
+            .collect();
+        let fl = sound_of(&z, "a");
+        assert_eq!((fl.role, fl.fold, fl.tv_upmix), (1, 3, 1));
+        let sub = sound_of(&z, "c");
+        assert_eq!((sub.role, sub.fold, sub.tv_upmix), (4, 0, 1));
+    }
 
     #[test]
     fn a_command_that_is_applied_reaches_every_subscriber() {
