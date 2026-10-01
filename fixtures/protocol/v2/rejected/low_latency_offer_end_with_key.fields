@@ -1,0 +1,23 @@
+# Canonical input for the low_latency_offer_end_with_key rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# low_latency_offer_end_with_key.hex as that field, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# An end that still carries a key: an end carries only its stream_tag.
+
+message_type = low_latency_offer
+direction = end
+stream_tag = 305419897
+key = 202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f
+udp_port = 0
+chunk_frames = 0
+fec_k = 0
+fec_depth = 0
+latency_ns = 0
+rejected_field = direction
+problem = inconsistent

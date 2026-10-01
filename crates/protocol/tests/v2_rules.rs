@@ -46,6 +46,7 @@ fn the_stated_value_rules_are_refused_by_the_encoder() {
             intrinsic_latency_ns: 0,
             led_count: 0,
             visualizer_bands: 0,
+            features: 0,
         })
     };
     refused_both_ways(caps(Codec::Flac.bit()), "codecs");
@@ -150,10 +151,13 @@ fn the_committed_rejection_vectors_are_refused_both_ways_as_their_field() {
     );
     for v in &vectors {
         // Out of range for a number; undefined for a bit or a role no
-        // version defines (sound's `flags` and `role`).
+        // version defines (sound's `flags` and `role`); inconsistent for
+        // fields that contradict each other (low_latency_offer's end with a
+        // key, low_latency_accept's refusal with a port; goal 13).
         let kind_ok = |p: &Problem| match v.problem.as_str() {
             "out_of_range" => matches!(p, Problem::OutOfRange(_)),
             "undefined" => matches!(p, Problem::Undefined(_)),
+            "inconsistent" => matches!(p, Problem::Inconsistent(_)),
             other => panic!("{}: a problem these do not name: {}", v.stem, other),
         };
         // The encoder refuses the fields by name and emits nothing.

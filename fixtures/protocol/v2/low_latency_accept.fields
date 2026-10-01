@@ -1,0 +1,15 @@
+# Canonical input for the low_latency_accept golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly low_latency_accept.hex, and decoding low_latency_accept.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+#
+# The player accepts stream 305419897 and receives on UDP port 40002.
+
+message_type = low_latency_accept
+stream_tag = 305419897
+status = accepted
+udp_port = 40002

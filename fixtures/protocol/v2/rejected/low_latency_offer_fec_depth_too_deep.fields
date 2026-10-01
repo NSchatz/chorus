@@ -1,0 +1,23 @@
+# Canonical input for the low_latency_offer_fec_depth_too_deep rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# low_latency_offer_fec_depth_too_deep.hex as that field, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# fec_depth 9, past the 8 a decoder holds blocks for.
+
+message_type = low_latency_offer
+direction = to_endpoint
+stream_tag = 305419897
+key = 202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f
+udp_port = 0
+chunk_frames = 120
+fec_k = 4
+fec_depth = 9
+latency_ns = 20000000
+rejected_field = fec_depth
+problem = out_of_range

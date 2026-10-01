@@ -1,0 +1,18 @@
+# Canonical input for the low_latency_accept_refusal_with_port rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# low_latency_accept_refusal_with_port.hex as that field, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# A refusal that names a port.
+
+message_type = low_latency_accept
+stream_tag = 305419897
+status = refused_no_socket
+udp_port = 40002
+rejected_field = udp_port
+problem = inconsistent

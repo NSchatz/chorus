@@ -166,6 +166,7 @@ mod tests {
             intrinsic_latency_ns: 0,
             led_count: 0,
             visualizer_bands: 0,
+            features: 0,
         }
     }
 

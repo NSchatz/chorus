@@ -1,0 +1,23 @@
+# chorus low-latency vector: the case case_k3_d2_burst.
+#
+# Committed, and never written by a test. Open the datagrams of stream_k3_d2.fields
+# listed in `deliver`, in that order (an index twice is a repeat), each with the
+# stream's key and the receiver's stream_tag (the stream's unless named here), XOR
+# `tamper` (datagram, byte offset, mask) into one first, push what opens through the
+# FEC decoder, then finish the stream after its `chunks`. The chunks handed on, the
+# ones rebuilt and every count below must be exactly these.
+#
+# A burst of two: chunks 2 and 3 back to back. Chunk 2 is in the even group and
+# chunk 3 in the odd one, so each group lost one and both are rebuilt.
+
+stream = stream_k3_d2
+deliver = 0 1 4 5 6 7 8 9 10 11 12 13 14 15
+expect_delivered = 0 1 2 3 4 5 6 7 8 9 10 11
+expect_recovered = 2 3
+expect_opened = 14
+expect_malformed = 0
+expect_wrong_stream_tag = 0
+expect_replayed = 0
+expect_auth_failed = 0
+expect_unrecoverable = 0
+expect_duplicate = 0

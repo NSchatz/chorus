@@ -431,6 +431,9 @@ pub fn capabilities(config: &ClientConfig) -> Capabilities {
         // One status light when the front panel declared the visualizer role.
         led_count: u16::from(config.extra_roles & roles::VISUALIZER != 0),
         visualizer_bands: config.visualizer_bands,
+        // No low-latency path in this client yet: the integration track (goal
+        // 13, tv-path) sets `features::LOW_LATENCY` when it can take one.
+        features: 0,
     }
 }
 
