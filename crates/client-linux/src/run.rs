@@ -775,6 +775,9 @@ fn play<S: PcmSink>(
                 }
             }
             let telemetry = sync.telemetry(now_ns);
+            // The offset in use, for the source role's upstream timestamps
+            // (`crate::source`): one clock mapping per endpoint, not two.
+            counters.offset.publish(telemetry.offset_ns);
             let stale_age_ns = telemetry.age_ns.filter(|_| telemetry.stale);
             if let Some(age_ns) = stale_age_ns {
                 if !was_stale {

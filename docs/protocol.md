@@ -681,6 +681,23 @@ On `start` the endpoint sends a `stream_format`, then `audio_chunk` or
 `coded_chunk` frames timestamped on the server timeline (through its sync
 offset), and `stream_end` on `stop`, all upstream on the same session.
 
+Clarified in goal 10 (ADR 0066, the Linux client's line-in):
+
+- A chunk's `timestamp_ns` is the instant its first frame was digitized (the
+  read's return time less the capture device's reported delay and the chunk's
+  own length), mapped onto the server timeline through the endpoint's sync
+  offset. An endpoint with no offset yet holds what it captured and stamps it
+  once it has one; it never sends a guessed timestamp.
+- The codec a `start` names has to be one the endpoint listed in
+  `capabilities` and one it can send an input in. `capabilities` lists what an
+  endpoint plays; an endpoint that decodes FLAC and Opus but encodes nothing
+  sends its inputs in PCM only. A `start` it cannot honour (an unknown
+  `source_id`, a codec not listed, a codec it cannot send) is refused on the
+  endpoint by name, no `stream_format` follows, and the input stays offered;
+  the catalog has no message for the refusal, so the server sees none.
+- Sequences start at 0 for each started stream. Frames an overrun lost on the
+  capture device show as a gap between two timestamps, not in the sequence.
+
 ## The session, in order
 
 1. The endpoint connects and sends `handshake_init`.

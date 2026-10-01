@@ -1,6 +1,6 @@
 [package]
 name = "chorus-alsa"
-description = "ALSA PCM playback for the Linux client, bound at run time so nothing is added to the build"
+description = "ALSA PCM playback and capture for the Linux client, bound at run time so nothing is added to the build"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

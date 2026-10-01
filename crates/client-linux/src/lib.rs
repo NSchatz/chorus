@@ -43,6 +43,7 @@
 //!   the server's control channel and reduced to one atomic the audio path
 //!   reads.
 //! - [`zone`]: applying that to the PCM, at the last point before the sink.
+//! - [`source`]: the source role, a line-in captured and sent upstream.
 //! - [`front_panel`]: the endpoint's buttons and status LED as the controller
 //!   role, read through evdev and the LED class, decided by `chorus-controls`.
 //! - [`outmap`]: the output map, N device channels fed from stream positions
@@ -64,6 +65,7 @@ pub mod receive;
 pub mod run;
 pub mod session;
 pub mod sink;
+pub mod source;
 pub mod sync;
 pub mod zone;
 
