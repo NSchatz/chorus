@@ -4,12 +4,15 @@
 //! in-band deviation, and leaves the nulls alone; every degenerate recording is refused by
 //! name; and the sweep method itself is held to two properties Farina's paper states.
 
+use chorus_dsp::biquad::{Coefficients, Kind};
 use chorus_dsp::roomfit::synthetic::{parse_wav, wav_bytes, Params, Room};
 use chorus_dsp::roomfit::{
-    fit_recording, fit_response, impulse_response, log_grid, room_eq_command_json, smooth,
-    FitConfig, PeakFilter, RoomFitError, Spectrum, Sweep, Target, ROOM_EQ_FREQ_HZ,
-    ROOM_EQ_GAIN_CDB, ROOM_EQ_MAX_FILTERS, ROOM_EQ_Q_MILLI,
+    filter_json, fit_recording, fit_response, gain_db, impulse_response, in_bounds, log_grid, q,
+    room_eq_command_json, smooth, FitConfig, RoomEqFilter, RoomFitError, Spectrum, Sweep, Target,
+    ROOM_EQ_FREQ_MAX_HZ, ROOM_EQ_FREQ_MIN_HZ, ROOM_EQ_GAIN_MAX_CDB, ROOM_EQ_GAIN_MIN_CDB,
+    ROOM_EQ_MAX_FILTERS, ROOM_EQ_Q_MAX_MILLI, ROOM_EQ_Q_MIN_MILLI,
 };
+use chorus_dsp::Biquad;
 use std::path::{Path, PathBuf};
 
 fn fixtures() -> PathBuf {
@@ -77,7 +80,7 @@ fn fitted() -> Vec<(Fixture, chorus_dsp::roomfit::Fit)> {
                 fit.rms_after_db(),
                 fit.filters
                     .iter()
-                    .map(|p| (p.freq_hz, p.gain_db(), p.q()))
+                    .map(|p| (p.freq_hz, gain_db(p), q(p)))
                     .collect::<Vec<_>>()
             );
             (f, fit)
@@ -88,7 +91,7 @@ fn fitted() -> Vec<(Fixture, chorus_dsp::roomfit::Fit)> {
 #[test]
 fn every_recording_regenerates_byte_for_byte_from_its_params() {
     for f in all() {
-        let made = wav_bytes(f.room.sweep.rate_hz, &f.room.render());
+        let made = wav_bytes(f.room.sweep.rate_hz, &f.room.render().unwrap());
         assert!(
             made == f.bytes,
             "{}: regenerating does not reproduce the committed recording (make roomfit-fixtures)",
@@ -117,16 +120,16 @@ fn every_fit_is_at_most_eight_filters_inside_the_bounds() {
             fit.filters.len()
         );
         for p in &fit.filters {
-            assert!(p.in_bounds(), "{}: {p:?} is outside the bounds", f.name);
-            assert!((ROOM_EQ_FREQ_HZ.0..=ROOM_EQ_FREQ_HZ.1).contains(&p.freq_hz));
-            assert!((ROOM_EQ_GAIN_CDB.0..=ROOM_EQ_GAIN_CDB.1).contains(&p.gain_cdb));
-            assert!((ROOM_EQ_Q_MILLI.0..=ROOM_EQ_Q_MILLI.1).contains(&p.q_milli));
+            assert!(in_bounds(p), "{}: {p:?} is outside the bounds", f.name);
+            assert!((ROOM_EQ_FREQ_MIN_HZ..=ROOM_EQ_FREQ_MAX_HZ).contains(&p.freq_hz));
+            assert!((ROOM_EQ_GAIN_MIN_CDB..=ROOM_EQ_GAIN_MAX_CDB).contains(&p.gain_cdb));
+            assert!((ROOM_EQ_Q_MIN_MILLI..=ROOM_EQ_Q_MAX_MILLI).contains(&p.q_milli));
         }
         // The boost rules: no boost below 100 Hz, and every boost rings out within 0.5 s.
         for p in fit.filters.iter().filter(|p| p.gain_cdb > 0) {
             assert!(p.freq_hz >= 100, "{}: a boost at {} Hz", f.name, p.freq_hz);
-            let a = 10f64.powf(p.gain_db() / 40.0);
-            let t60 = 1000f64.ln() * p.q() * a / (std::f64::consts::PI * f64::from(p.freq_hz));
+            let a = 10f64.powf(gain_db(p) / 40.0);
+            let t60 = 1000f64.ln() * q(p) * a / (std::f64::consts::PI * f64::from(p.freq_hz));
             assert!(t60 <= 0.5, "{}: {p:?} rings for {t60:.3} s", f.name);
         }
         let json = room_eq_command_json("living", &fit.filters);
@@ -144,7 +147,7 @@ fn the_fit_finds_every_synthetic_resonance() {
     let tol = 2f64.powf(1.0 / 12.0);
     for (f, fit) in fitted() {
         for m in &f.room.modes {
-            let near: Vec<&PeakFilter> = fit
+            let near: Vec<&RoomEqFilter> = fit
                 .filters
                 .iter()
                 .filter(|p| {
@@ -217,7 +220,7 @@ fn the_fit_reduces_the_in_band_deviation() {
                 .filter(|(_, n)| !**n)
                 .map(|(x, _)| x)
                 .map(|x| {
-                    f.room.response_db(*x)
+                    f.room.response_db(*x).unwrap()
                         + if with {
                             fit.correction_db(48_000.0, *x)
                         } else {
@@ -523,26 +526,111 @@ fn refusals_name_themselves() {
 /// The catalog spelling of a filter: whole Hz, gain to 0.01 dB, Q to 0.001, shortest decimal.
 #[test]
 fn a_filter_is_spelled_as_the_catalog_takes_it() {
-    let p = PeakFilter {
+    let p = RoomEqFilter {
         freq_hz: 45,
         gain_cdb: -950,
         q_milli: 4250,
     };
-    assert_eq!(p.to_json(), "{\"freq_hz\":45,\"gain_db\":-9.5,\"q\":4.25}");
-    let p = PeakFilter {
+    assert_eq!(
+        filter_json(&p),
+        "{\"freq_hz\":45,\"gain_db\":-9.5,\"q\":4.25}"
+    );
+    let p = RoomEqFilter {
         freq_hz: 1000,
         gain_cdb: 300,
         q_milli: 500,
     };
-    assert_eq!(p.to_json(), "{\"freq_hz\":1000,\"gain_db\":3,\"q\":0.5}");
-    let p = PeakFilter {
+    assert_eq!(
+        filter_json(&p),
+        "{\"freq_hz\":1000,\"gain_db\":3,\"q\":0.5}"
+    );
+    let p = RoomEqFilter {
         freq_hz: 20,
         gain_cdb: -5,
         q_milli: 10_000,
     };
-    assert_eq!(p.to_json(), "{\"freq_hz\":20,\"gain_db\":-0.05,\"q\":10}");
+    assert_eq!(
+        filter_json(&p),
+        "{\"freq_hz\":20,\"gain_db\":-0.05,\"q\":10}"
+    );
     assert_eq!(
         room_eq_command_json("a\"b", &[]),
         "{\"type\":\"room_eq\",\"zone\":\"a\\\"b\",\"filters\":[],\"enabled\":true}"
     );
+}
+
+/// The fit's model is what the endpoints run: each room's recording, played through the fitted
+/// filters as the chain runs them (the RBJ design rounded once to f32, Transposed Direct Form II
+/// in f32), measures as the fit predicted. Re-measured with the same analysis, outside the points
+/// left alone, the corrected recording's deviation matches the fit's predicted residual with an
+/// RMS difference under 0.25 dB and no point more than 1.25 dB apart (ASSUMED tolerances: the
+/// prediction adds the correction to the smoothed response in dB, while the measurement smooths
+/// the corrected power, and the two differ most at a sharp mode's centre; the fixtures hold an
+/// RMS of 0.12 to 0.13 dB and a worst point of 0.53 to 0.99 dB), and the corrected recording's own
+/// deviation is down at least 4 times from the uncorrected one.
+#[test]
+fn the_filters_as_the_endpoints_run_them_correct_the_recording_as_predicted() {
+    let cfg = FitConfig::default();
+    for (f, fit) in fitted() {
+        let (_, samples) = parse_wav(&f.bytes).unwrap();
+        let mut sections: Vec<Biquad> = fit
+            .filters
+            .iter()
+            .map(|p| {
+                Biquad::new(
+                    &Coefficients::design(
+                        Kind::Peaking,
+                        cfg.model_rate_hz,
+                        f64::from(p.freq_hz),
+                        q(p),
+                        gain_db(p),
+                    )
+                    .unwrap(),
+                )
+            })
+            .collect();
+        let corrected: Vec<f32> = samples
+            .iter()
+            .map(|x| sections.iter_mut().fold(*x, |v, s| s.process(v)))
+            .collect();
+        let again = fit_recording(&corrected, &f.room.sweep, &Target::flat(), &cfg).unwrap();
+        // Compare on the first fit's grid and band; the second fit's own band edge may differ.
+        let measured = |x: f64| -> f64 {
+            let i = again.grid_hz.iter().position(|g| (g - x).abs() < 1e-9);
+            i.map(|i| again.deviation_db[i] + again.level_db - fit.level_db)
+                .unwrap_or(f64::NAN)
+        };
+        let mut compared = 0;
+        let (mut worst, mut sq) = (0.0f64, 0.0f64);
+        for (i, x) in fit.grid_hz.iter().enumerate() {
+            let m = measured(*x);
+            if fit.left_alone[i] || m.is_nan() {
+                continue;
+            }
+            compared += 1;
+            let predicted = fit.residual_db[i];
+            worst = worst.max((m - predicted).abs());
+            sq += (m - predicted).powi(2);
+            assert!(
+                (m - predicted).abs() < 1.25,
+                "{}: at {x:.1} Hz the corrected recording measures {m:.2} dB, the fit predicted \
+                 {predicted:.2} dB",
+                f.name
+            );
+        }
+        eprintln!(
+            "{}: corrected vs predicted over {compared} points: worst {worst:.2} dB, rms {:.2} dB",
+            f.name,
+            (sq / f64::from(compared)).sqrt()
+        );
+        assert!(compared > 100, "{}: {compared} points compared", f.name);
+        assert!((sq / f64::from(compared)).sqrt() < 0.25, "{}", f.name);
+        assert!(
+            again.rms_before_db() * 4.0 <= fit.rms_before_db(),
+            "{}: corrected {:.2} dB, uncorrected {:.2} dB",
+            f.name,
+            again.rms_before_db(),
+            fit.rms_before_db()
+        );
+    }
 }

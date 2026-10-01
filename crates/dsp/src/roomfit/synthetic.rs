@@ -16,7 +16,7 @@
 //! write the files.
 
 use super::Sweep;
-use crate::biquad;
+use crate::biquad::{Coefficients, Kind};
 
 /// A `.params` file: `key = value` lines, `#` comments, arrays space-separated.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -159,31 +159,41 @@ impl Room {
     }
 
     /// The room's chain as biquad coefficient sets, in order.
-    fn chain(&self) -> Vec<biquad::Coeffs> {
+    fn chain(&self) -> Result<Vec<Coefficients>, String> {
         let rate = f64::from(self.sweep.rate_hz);
-        let mut out = vec![biquad::highpass(rate, self.highpass_hz, self.highpass_q)];
+        let design = |kind, f0, q, gain| {
+            Coefficients::design(kind, rate, f0, q, gain)
+                .map_err(|e| format!("a {kind:?} at {f0} Hz, Q {q}, {gain} dB: {e:?}"))
+        };
+        let mut out = vec![design(
+            Kind::Highpass,
+            self.highpass_hz,
+            self.highpass_q,
+            0.0,
+        )?];
         for p in self.modes.iter().chain(self.nulls.iter()) {
-            out.push(biquad::peaking(rate, p.freq_hz, p.q, p.gain_db));
+            out.push(design(Kind::Peaking, p.freq_hz, p.q, p.gain_db)?);
         }
-        out
+        Ok(out)
     }
 
     /// The room's true magnitude at `f` Hz, dB, without the level offset: the ground truth a
     /// fit is checked against.
-    pub fn response_db(&self, f: f64) -> f64 {
+    pub fn response_db(&self, f: f64) -> Result<f64, String> {
         let rate = f64::from(self.sweep.rate_hz);
-        self.chain().iter().map(|c| c.magnitude_db(rate, f)).sum()
+        Ok(self.chain()?.iter().map(|c| c.magnitude_db(f, rate)).sum())
     }
 
-    /// The recording, as the 16-bit samples the WAV holds.
-    pub fn render(&self) -> Vec<i16> {
+    /// The recording, as the 16-bit samples the WAV holds. Refused: a filter the biquad design
+    /// refuses (a corner at or above half the rate, a Q that is not positive).
+    pub fn render(&self) -> Result<Vec<i16>, String> {
         let mut x = vec![0.0f64; self.total_samples];
         for (i, v) in self.sweep.signal().into_iter().enumerate() {
             if let Some(slot) = x.get_mut(self.lead_in_samples + i) {
                 *slot = v;
             }
         }
-        for c in self.chain() {
+        for c in self.chain()? {
             // Direct Form I in f64.
             let (mut x1, mut x2, mut y1, mut y2) = (0.0, 0.0, 0.0, 0.0);
             for v in x.iter_mut() {
@@ -201,13 +211,13 @@ impl Room {
         // for background noise, without a logarithm whose last bit could differ by platform.
         let noise_scale = 10f64.powf(self.noise_rms_dbfs / 20.0) / (4.0f64 / 3.0).sqrt();
         let mut rng = SplitMix64(self.seed);
-        x.iter()
+        Ok(x.iter()
             .map(|v| {
                 let n: f64 = (0..4).map(|_| rng.symmetric()).sum();
                 let s = v * gain + n * noise_scale;
                 (s * 32767.0).round().clamp(-32768.0, 32767.0) as i16
             })
-            .collect()
+            .collect())
     }
 }
 

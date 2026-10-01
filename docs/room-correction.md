@@ -150,7 +150,10 @@ mode beyond it); (c) the RMS deviation outside the points left alone falls by at
 (the fixtures hold about 10), both on the fit's own smoothed estimate and against the room's true
 response, no point ends more than 3 dB above the target, and no peak ends more than 0.5 dB above
 where it was; (d) at every null, and everywhere from 10 Hz to 20 kHz, the combined correction is
-at most +3.00 dB; (e) each degenerate recording is refused by its name. Two worked examples hold
+at most +3.00 dB; (e) each degenerate recording is refused by its name. And the model is what the
+endpoints run: each recording played through the fitted filters as the chain runs them (the
+RBJ design rounded once to f32, Transposed Direct Form II in f32) and measured again matches the
+fit's prediction (an RMS difference of 0.12 to 0.13 dB on the fixtures; under 0.25 dB asserted). Two worked examples hold
 the method to Farina's paper: the sweep's measured instantaneous frequency equals
 f1 e^((t/T) ln(f2/f1)) within 0.5%, and the sweep through its inverse filter is a single impulse
 one sweep length late, peaking at the band's share of the spectrum ((f2 - f1) / (fs/2), within

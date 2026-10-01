@@ -32,7 +32,7 @@ fn main() -> ExitCode {
             .and_then(|p| {
                 let room = Room::from_params(&p)?;
                 let out = dir.join(p.text("output")?);
-                std::fs::write(&out, wav_bytes(room.sweep.rate_hz, &room.render()))
+                std::fs::write(&out, wav_bytes(room.sweep.rate_hz, &room.render()?))
                     .map_err(|e| e.to_string())?;
                 Ok(out)
             });

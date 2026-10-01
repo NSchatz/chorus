@@ -31,6 +31,7 @@ pub mod synthetic;
 
 mod fft;
 
+use crate::biquad::{Coefficients, Kind};
 use std::f64::consts::PI;
 use std::fmt;
 
@@ -38,70 +39,50 @@ use std::fmt;
 // The bounds
 // ---------------------------------------------------------------------------------------------
 
-/// At most this many filters (the `room_eq` catalog bound; `crates/control` exports the same
-/// value as `ROOM_EQ_MAX_FILTERS`, the C mirror as `CHORUS_DSP_ROOM_EQ_MAX_FILTERS`).
-pub const ROOM_EQ_MAX_FILTERS: usize = 8;
-/// Centre frequency, whole Hz, inclusive (the catalog's `ROOM_EQ_FREQ_HZ`).
-pub const ROOM_EQ_FREQ_HZ: (u16, u16) = (20, 1_000);
-/// Gain, hundredths of a dB, inclusive (the catalog's `ROOM_EQ_GAIN_CDB`): at most 12 dB of
-/// cut and 3 dB of boost.
-pub const ROOM_EQ_GAIN_CDB: (i16, i16) = (-1_200, 300);
-/// Q, thousandths, inclusive (the catalog's `ROOM_EQ_Q_MILLI`).
-pub const ROOM_EQ_Q_MILLI: (u16, u16) = (500, 10_000);
+/// A fitted correction filter is the chain's own [`RoomEqFilter`]: a peaking EQ in the integer
+/// quanta the catalog's `room_eq` filter and the wire's `sound` message carry (whole Hz,
+/// hundredths of a dB, thousandths of Q), so the fit's output needs no rounding on its way to
+/// an endpoint. Its bounds are the `ROOM_EQ_*` constants of [`crate::settings`], the catalog's
+/// own numbers (`crates/control` exports the same as `ROOM_EQ_*`, the C mirror as
+/// `CHORUS_DSP_ROOM_EQ_*`).
+pub use crate::settings::RoomEqFilter;
+pub use crate::settings::{
+    ROOM_EQ_FREQ_MAX_HZ, ROOM_EQ_FREQ_MIN_HZ, ROOM_EQ_GAIN_MAX_CDB, ROOM_EQ_GAIN_MIN_CDB,
+    ROOM_EQ_MAX_FILTERS, ROOM_EQ_Q_MAX_MILLI, ROOM_EQ_Q_MIN_MILLI,
+};
 
-/// One fitted correction filter: a peaking EQ, in the integer quanta the catalog's `room_eq`
-/// filter and the wire's `sound` message carry, so the fit's output needs no rounding on the
-/// way to an endpoint.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PeakFilter {
-    /// Centre frequency, Hz, inside [`ROOM_EQ_FREQ_HZ`].
-    pub freq_hz: u16,
-    /// Gain, hundredths of a dB, inside [`ROOM_EQ_GAIN_CDB`].
-    pub gain_cdb: i16,
-    /// Q, thousandths, inside [`ROOM_EQ_Q_MILLI`].
-    pub q_milli: u16,
+/// The filter's gain in dB.
+pub fn gain_db(p: &RoomEqFilter) -> f64 {
+    f64::from(p.gain_cdb) / 100.0
 }
 
-impl PeakFilter {
-    /// The gain in dB.
-    pub fn gain_db(&self) -> f64 {
-        f64::from(self.gain_cdb) / 100.0
-    }
+/// The filter's Q.
+pub fn q(p: &RoomEqFilter) -> f64 {
+    f64::from(p.q_milli) / 1000.0
+}
 
-    /// The Q.
-    pub fn q(&self) -> f64 {
-        f64::from(self.q_milli) / 1000.0
-    }
+/// True when every field of `p` is inside the `room_eq` bounds.
+pub fn in_bounds(p: &RoomEqFilter) -> bool {
+    (ROOM_EQ_FREQ_MIN_HZ..=ROOM_EQ_FREQ_MAX_HZ).contains(&p.freq_hz)
+        && (ROOM_EQ_GAIN_MIN_CDB..=ROOM_EQ_GAIN_MAX_CDB).contains(&p.gain_cdb)
+        && (ROOM_EQ_Q_MIN_MILLI..=ROOM_EQ_Q_MAX_MILLI).contains(&p.q_milli)
+}
 
-    /// True when every field is inside the `room_eq` bounds.
-    pub fn in_bounds(&self) -> bool {
-        (ROOM_EQ_FREQ_HZ.0..=ROOM_EQ_FREQ_HZ.1).contains(&self.freq_hz)
-            && (ROOM_EQ_GAIN_CDB.0..=ROOM_EQ_GAIN_CDB.1).contains(&self.gain_cdb)
-            && (ROOM_EQ_Q_MILLI.0..=ROOM_EQ_Q_MILLI.1).contains(&self.q_milli)
-    }
+/// The filter's magnitude at `f` Hz, in dB, designed at `rate_hz` exactly as an endpoint
+/// designs it.
+pub fn filter_db(p: &RoomEqFilter, rate_hz: f64, f: f64) -> f64 {
+    peaking_db(rate_hz, f64::from(p.freq_hz), gain_db(p), q(p), f)
+}
 
-    /// This filter's magnitude at `f` Hz, in dB, designed at `rate_hz` exactly as an endpoint
-    /// designs it.
-    pub fn magnitude_db(&self, rate_hz: f64, f: f64) -> f64 {
-        peaking_db(
-            rate_hz,
-            f64::from(self.freq_hz),
-            self.gain_db(),
-            self.q(),
-            f,
-        )
-    }
-
-    /// The catalog's JSON spelling of one filter, `{"freq_hz":120,"gain_db":-3.5,"q":4.2}`:
-    /// gain to its 0.01 dB quantum and Q to its 0.001 quantum, trailing zeros dropped.
-    pub fn to_json(&self) -> String {
-        format!(
-            "{{\"freq_hz\":{},\"gain_db\":{},\"q\":{}}}",
-            self.freq_hz,
-            fixed(i64::from(self.gain_cdb), 2),
-            fixed(i64::from(self.q_milli), 3)
-        )
-    }
+/// The catalog's JSON spelling of one filter, `{"freq_hz":120,"gain_db":-3.5,"q":4.2}`: gain to
+/// its 0.01 dB quantum and Q to its 0.001 quantum, trailing zeros dropped.
+pub fn filter_json(p: &RoomEqFilter) -> String {
+    format!(
+        "{{\"freq_hz\":{},\"gain_db\":{},\"q\":{}}}",
+        p.freq_hz,
+        fixed(i64::from(p.gain_cdb), 2),
+        fixed(i64::from(p.q_milli), 3)
+    )
 }
 
 /// A fixed-point integer as the shortest decimal: `fixed(-350, 2)` is `-3.5`, `fixed(4000, 3)`
@@ -121,7 +102,7 @@ fn fixed(value: i64, places: u32) -> String {
 /// The `room_eq` catalog command carrying `filters` for `zone`, enabled:
 /// `{"type":"room_eq","zone":"...","filters":[...],"enabled":true}`. The zone is written as a
 /// JSON string with `"` and `\` escaped; the catalog itself validates it.
-pub fn room_eq_command_json(zone: &str, filters: &[PeakFilter]) -> String {
+pub fn room_eq_command_json(zone: &str, filters: &[RoomEqFilter]) -> String {
     let mut z = String::with_capacity(zone.len());
     for c in zone.chars() {
         match c {
@@ -131,7 +112,7 @@ pub fn room_eq_command_json(zone: &str, filters: &[PeakFilter]) -> String {
             c => z.push(c),
         }
     }
-    let list: Vec<String> = filters.iter().map(PeakFilter::to_json).collect();
+    let list: Vec<String> = filters.iter().map(filter_json).collect();
     format!(
         "{{\"type\":\"room_eq\",\"zone\":\"{z}\",\"filters\":[{}],\"enabled\":true}}",
         list.join(",")
@@ -141,7 +122,11 @@ pub fn room_eq_command_json(zone: &str, filters: &[PeakFilter]) -> String {
 /// The RBJ peaking filter's magnitude at `f`, through the crate's own biquad design: the one
 /// place the fit models a filter, so it can only ever model the one the endpoints run.
 fn peaking_db(rate_hz: f64, f0: f64, gain_db: f64, q: f64, f: f64) -> f64 {
-    crate::biquad::peaking(rate_hz, f0, q, gain_db).magnitude_db(rate_hz, f)
+    // The design refuses only an f0 outside (0, rate/2), a Q that is not positive or a gain that
+    // is not finite; the fit's quanta are never any of those, so the 0 dB fallback is never
+    // taken.
+    Coefficients::design(Kind::Peaking, rate_hz, f0, q, gain_db)
+        .map_or(0.0, |c| c.magnitude_db(f, rate_hz))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -466,7 +451,10 @@ impl Default for FitConfig {
 impl FitConfig {
     fn validate(&self) -> Result<(), RoomFitError> {
         let bad = |s: String| Err(RoomFitError::BadConfig(s));
-        let (flo, fhi) = (f64::from(ROOM_EQ_FREQ_HZ.0), f64::from(ROOM_EQ_FREQ_HZ.1));
+        let (flo, fhi) = (
+            f64::from(ROOM_EQ_FREQ_MIN_HZ),
+            f64::from(ROOM_EQ_FREQ_MAX_HZ),
+        );
         if !(self.band_lo_hz >= flo && self.band_hi_hz <= fhi && self.band_lo_hz < self.band_hi_hz)
         {
             return bad(format!(
@@ -474,7 +462,7 @@ impl FitConfig {
                 self.band_lo_hz, self.band_hi_hz
             ));
         }
-        let boost_max = f64::from(ROOM_EQ_GAIN_CDB.1) / 100.0;
+        let boost_max = f64::from(ROOM_EQ_GAIN_MAX_CDB) / 100.0;
         if !(0.0..=boost_max).contains(&self.max_boost_db) {
             return bad(format!(
                 "max_boost_db {} is outside 0..{boost_max}",
@@ -766,7 +754,7 @@ impl Target {
 pub struct Fit {
     /// The filters, at most [`ROOM_EQ_MAX_FILTERS`], each inside the bounds, sorted by
     /// frequency.
-    pub filters: Vec<PeakFilter>,
+    pub filters: Vec<RoomEqFilter>,
     /// The response's level in the level band (the median of the smoothed response), dB.
     pub level_db: f64,
     /// The band the fit worked in, Hz, after the low edge followed the speaker's extension.
@@ -807,10 +795,7 @@ impl Fit {
 
     /// The combined correction at `f` Hz, dB, modelled at `rate_hz`.
     pub fn correction_db(&self, rate_hz: f64, f: f64) -> f64 {
-        self.filters
-            .iter()
-            .map(|p| p.magnitude_db(rate_hz, f))
-            .sum()
+        self.filters.iter().map(|p| filter_db(p, rate_hz, f)).sum()
     }
 }
 
@@ -901,7 +886,7 @@ pub fn fit_response(
         .map(|(f, d)| {
             d + filters
                 .iter()
-                .map(|p| p.magnitude_db(cfg.model_rate_hz, *f))
+                .map(|p| filter_db(p, cfg.model_rate_hz, *f))
                 .sum::<f64>()
         })
         .collect();
@@ -984,11 +969,11 @@ impl<'a> Fitter<'a> {
         }
     }
 
-    fn filters(&self) -> Vec<PeakFilter> {
+    fn filters(&self) -> Vec<RoomEqFilter> {
         self.cands
             .iter()
             .filter(|c| c.g != 0)
-            .map(|c| PeakFilter {
+            .map(|c| RoomEqFilter {
                 freq_hz: c.f as u16,
                 gain_cdb: c.g as i16,
                 q_milli: c.q as u16,
@@ -1014,16 +999,19 @@ impl<'a> Fitter<'a> {
     /// depend on more than one quantum are in `allowed`.
     fn limits(&self) -> [(i32, i32); 3] {
         let lo = (self.grid.first().copied().unwrap_or(20.0).ceil() as i32)
-            .max(i32::from(ROOM_EQ_FREQ_HZ.0));
+            .max(i32::from(ROOM_EQ_FREQ_MIN_HZ));
         let hi = (self.grid.last().copied().unwrap_or(1000.0).floor() as i32)
-            .min(i32::from(ROOM_EQ_FREQ_HZ.1))
+            .min(i32::from(ROOM_EQ_FREQ_MAX_HZ))
             .max(lo);
         let gmax =
-            ((self.cfg.max_boost_db * 100.0).floor() as i32).min(i32::from(ROOM_EQ_GAIN_CDB.1));
+            ((self.cfg.max_boost_db * 100.0).floor() as i32).min(i32::from(ROOM_EQ_GAIN_MAX_CDB));
         [
             (lo, hi),
-            (i32::from(ROOM_EQ_GAIN_CDB.0), gmax),
-            (i32::from(ROOM_EQ_Q_MILLI.0), i32::from(ROOM_EQ_Q_MILLI.1)),
+            (i32::from(ROOM_EQ_GAIN_MIN_CDB), gmax),
+            (
+                i32::from(ROOM_EQ_Q_MIN_MILLI),
+                i32::from(ROOM_EQ_Q_MAX_MILLI),
+            ),
         ]
     }
 
@@ -1202,8 +1190,10 @@ impl<'a> Fitter<'a> {
             .log2()
             .max(1.0 / self.cfg.points_per_octave);
         let q = 2f64.powf(n / 2.0) / (2f64.powf(n) - 1.0);
-        ((q * 1000.0).round() as i32)
-            .clamp(i32::from(ROOM_EQ_Q_MILLI.0), i32::from(ROOM_EQ_Q_MILLI.1))
+        ((q * 1000.0).round() as i32).clamp(
+            i32::from(ROOM_EQ_Q_MIN_MILLI),
+            i32::from(ROOM_EQ_Q_MAX_MILLI),
+        )
     }
 
     fn run(&mut self) {
