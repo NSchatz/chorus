@@ -343,10 +343,48 @@ pub struct ChunkPlan {
     /// Its play-at stamp minus the capture instant of `source_start`, in ns:
     /// the latency it is played at.
     pub offset_ns: f64,
-    segment: Segment,
+    positions: Positions,
+}
+
+/// How a [`ChunkPlan`] maps its output frames to source positions.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Positions {
+    /// A latency plan's offset over the chunk (`LatencyPlan::next_chunk`).
+    Segment(Segment),
+    /// A constant step per output frame from the chunk's first source
+    /// position ([`ChunkPlan::constant_rate`]).
+    Linear {
+        /// Source frames per output frame.
+        step: f64,
+    },
 }
 
 impl ChunkPlan {
+    /// A chunk of `frames` output frames that plays the source at a constant
+    /// `step` source frames per output frame from `source_start`: output frame
+    /// `i` plays source position `source_start + i * step`.
+    ///
+    /// This is the TV capture's rate matching (`crates/client-linux`'s
+    /// `ratematch`), which converts a source on its own clock to exactly the
+    /// nominal rate on the timeline, a step that the ratio loop retunes
+    /// between chunks. Nothing here is a latency plan: `index`, `first_frame`,
+    /// `play_at_ns` and `offset_ns` are zero (the caller stamps), and
+    /// `rate_start` is the deviation `1 - step` in the sign convention above
+    /// (positive: the source is played slower).
+    pub fn constant_rate(source_start: f64, step: f64, frames: u32) -> ChunkPlan {
+        ChunkPlan {
+            index: 0,
+            frames,
+            first_frame: 0,
+            play_at_ns: 0,
+            source_start,
+            source_end: source_start + f64::from(frames) * step,
+            rate_start: 1.0 - step,
+            offset_ns: 0.0,
+            positions: Positions::Linear { step },
+        }
+    }
+
     /// Source frames it consumes (fractional).
     pub fn source_frames(&self) -> f64 {
         self.source_end - self.source_start
@@ -355,13 +393,21 @@ impl ChunkPlan {
     /// The source position output frame `i` of this chunk plays, for `i` in
     /// `0..=frames` (`frames` is the next chunk's first).
     pub fn source_position(&self, i: u32) -> f64 {
-        let j = self.first_frame + u64::from(i);
-        j as f64 - self.segment.offset_frames(j)
+        match self.positions {
+            Positions::Segment(segment) => {
+                let j = self.first_frame + u64::from(i);
+                j as f64 - segment.offset_frames(j)
+            }
+            Positions::Linear { step } => self.source_start + f64::from(i) * step,
+        }
     }
 
     /// The rate deviation at output frame `i` of this chunk.
     pub fn rate(&self, i: u32) -> f64 {
-        self.segment.rate(self.first_frame + u64::from(i))
+        match self.positions {
+            Positions::Segment(segment) => segment.rate(self.first_frame + u64::from(i)),
+            Positions::Linear { step } => 1.0 - step,
+        }
     }
 
     /// Exclusive end of the source frames rendering this chunk reads: the
@@ -494,7 +540,7 @@ impl LatencyPlan {
             source_end,
             rate_start: segment.rate(j0),
             offset_ns: play_at_ns as f64 - capture_ns,
-            segment,
+            positions: Positions::Segment(segment),
         }
     }
 }
@@ -634,7 +680,9 @@ pub fn catmull_rom(p0: f64, p1: f64, p2: f64, p3: f64, t: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{catmull_rom, CubicResampler, GrowthConfig, LatencyPlan, PlanError, RateProfile};
+    use super::{
+        catmull_rom, ChunkPlan, CubicResampler, GrowthConfig, LatencyPlan, PlanError, RateProfile,
+    };
 
     fn config() -> GrowthConfig {
         GrowthConfig {
@@ -714,6 +762,40 @@ mod tests {
             "the first target is reached first"
         );
         assert!((rates.last().expect("ran").offset_ns - 29e6).abs() < 1.0);
+    }
+
+    #[test]
+    fn a_constant_rate_chunk_plays_a_line_of_positions_and_chains_without_a_seam() {
+        // 1500 ppm fast source: 1.0015 source frames per output frame, started
+        // at a fractional position, rendered in 240-frame chunks.
+        let step = 1.0015;
+        let mut rs = CubicResampler::with_capacity(1, 4_096);
+        let mut out = Vec::new();
+        let mut start = 7.25;
+        let mut fed = 0u64;
+        for _ in 0..50 {
+            let chunk = ChunkPlan::constant_rate(start, step, 240);
+            assert_eq!(chunk.frames, 240);
+            assert!((chunk.rate(0) + 0.0015).abs() < 1e-12);
+            assert!((chunk.source_frames() - 240.0 * step).abs() < 1e-9);
+            if chunk.source_frames_needed() > fed {
+                assert!(matches!(
+                    rs.render(&chunk, &mut out),
+                    Err(PlanError::NeedSource { .. })
+                ));
+            }
+            while fed < chunk.source_frames_needed() {
+                let block: Vec<f64> = (fed..fed + 240).map(|i| i as f64).collect();
+                rs.push(&block);
+                fed += 240;
+            }
+            rs.render(&chunk, &mut out).expect("enough source");
+            for (i, v) in out.iter().enumerate() {
+                let want = start + i as f64 * step;
+                assert!((v - want).abs() < 1e-6, "{} != {}", v, want);
+            }
+            start = chunk.source_end;
+        }
     }
 
     #[test]

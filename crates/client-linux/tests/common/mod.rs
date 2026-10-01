@@ -54,6 +54,9 @@ use chorus_protocol::{
 };
 use chorus_sync::{JitterModel, Rng};
 
+/// The modelled TV on a TV capture (goal 13).
+pub mod tv;
+
 /// A device modelled closely enough to drive the client's decisions.
 pub struct ModelledDevice {
     device: String,
