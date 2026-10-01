@@ -1,0 +1,14 @@
+# chorus CEC golden vector: only AC-3/E-AC-3/DTS asked: Feature Abort [Request Short Audio Descriptor][Invalid operand] (CTS 11.2.15-14).
+#
+# Committed, never written by a test. Rust-only by declaration (CEC runs on the Linux hub
+# alone): crates/cec/tests/fixtures.rs decodes these bytes to feature_abort_sad_invalid_operand.fields and encodes the
+# fields back to these bytes. Format: whitespace separated hex bytes, '#' starts a comment.
+
+# header: initiator 5, destination 0
+50
+
+# opcode: feature_abort
+00
+
+# operands
+A4 03

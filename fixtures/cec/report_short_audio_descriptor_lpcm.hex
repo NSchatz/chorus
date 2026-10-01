@@ -1,0 +1,14 @@
+# chorus CEC golden vector: LPCM, 2 channels, 48 kHz, 16 bit: the only descriptor the hub reports.
+#
+# Committed, never written by a test. Rust-only by declaration (CEC runs on the Linux hub
+# alone): crates/cec/tests/fixtures.rs decodes these bytes to report_short_audio_descriptor_lpcm.fields and encodes the
+# fields back to these bytes. Format: whitespace separated hex bytes, '#' starts a comment.
+
+# header: initiator 5, destination 0
+50
+
+# opcode: report_short_audio_descriptor
+A3
+
+# operands
+09 04 01

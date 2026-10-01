@@ -1,0 +1,11 @@
+# Canonical input for the report_audio_status_100_muted CEC vector: volume 100 with the mute bit (bit 7) set.
+#
+# Format: one "key = value" per line, '#' starts a comment. opcode is the name
+# crates/cec/src/codec.rs gives it (empty for a poll); operands are hex with no separators;
+# validity is what crates/cec/src/validate.rs must say of the message.
+
+initiator = 5
+destination = 0
+opcode = report_audio_status
+operands = e4
+validity = ok

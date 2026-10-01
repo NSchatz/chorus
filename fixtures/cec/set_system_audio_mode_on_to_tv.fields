@@ -1,0 +1,11 @@
+# Canonical input for the set_system_audio_mode_on_to_tv CEC vector: the hub asks the TV directly (CTS 11.2.15-2).
+#
+# Format: one "key = value" per line, '#' starts a comment. opcode is the name
+# crates/cec/src/codec.rs gives it (empty for a poll); operands are hex with no separators;
+# validity is what crates/cec/src/validate.rs must say of the message.
+
+initiator = 5
+destination = 0
+opcode = set_system_audio_mode
+operands = 01
+validity = ok

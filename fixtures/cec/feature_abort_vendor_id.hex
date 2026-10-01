@@ -1,0 +1,14 @@
+# chorus CEC golden vector: no vendor ID: Feature Abort [Give Device Vendor ID][Unrecognized opcode].
+#
+# Committed, never written by a test. Rust-only by declaration (CEC runs on the Linux hub
+# alone): crates/cec/tests/fixtures.rs decodes these bytes to feature_abort_vendor_id.fields and encodes the
+# fields back to these bytes. Format: whitespace separated hex bytes, '#' starts a comment.
+
+# header: initiator 5, destination 0
+50
+
+# opcode: feature_abort
+00
+
+# operands
+8C 00

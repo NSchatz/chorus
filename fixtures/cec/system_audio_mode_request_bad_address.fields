@@ -1,0 +1,11 @@
+# Canonical input for the system_audio_mode_request_bad_address CEC vector: 0.1.1.0 has a zero nibble before a nonzero one: Feature Abort [Invalid operand].
+#
+# Format: one "key = value" per line, '#' starts a comment. opcode is the name
+# crates/cec/src/codec.rs gives it (empty for a poll); operands are hex with no separators;
+# validity is what crates/cec/src/validate.rs must say of the message.
+
+initiator = 0
+destination = 5
+opcode = system_audio_mode_request
+operands = 0110
+validity = parameter

@@ -94,6 +94,10 @@ name = "chorus-audio-path"
 version = "0.1.0"
 
 [[package]]
+name = "chorus-cec"
+version = "0.1.0"
+
+[[package]]
 name = "chorus-client-linux"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,11 @@
+# Canonical input for the give_audio_status CEC vector: the TV asks the level it shows.
+#
+# Format: one "key = value" per line, '#' starts a comment. opcode is the name
+# crates/cec/src/codec.rs gives it (empty for a poll); operands are hex with no separators;
+# validity is what crates/cec/src/validate.rs must say of the message.
+
+initiator = 0
+destination = 5
+opcode = give_audio_status
+operands = 
+validity = ok

@@ -1,0 +1,14 @@
+# chorus CEC golden vector: the TV's own input (0.0.0.0) is active: the TV is on.
+#
+# Committed, never written by a test. Rust-only by declaration (CEC runs on the Linux hub
+# alone): crates/cec/tests/fixtures.rs decodes these bytes to active_source_tv.fields and encodes the
+# fields back to these bytes. Format: whitespace separated hex bytes, '#' starts a comment.
+
+# header: initiator 0, destination 15
+0F
+
+# opcode: active_source
+82
+
+# operands
+00 00
