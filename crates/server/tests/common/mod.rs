@@ -171,6 +171,13 @@ impl RunningServer {
         );
     }
 
+    /// Take in everything said so far without waiting.
+    pub fn drain(&mut self) {
+        while let Ok(line) = self.lines.try_recv() {
+            self.seen.push(line);
+        }
+    }
+
     /// Wait for a line containing every one of `what`, and give it back.
     pub fn wait_for_all(&mut self, what: &[&str]) -> String {
         let all = |l: &String| what.iter().all(|w| l.contains(w));

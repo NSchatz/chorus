@@ -60,6 +60,9 @@ struct Offered {
     source_id: u8,
     signal: bool,
     upstream: Upstream,
+    /// What the endpoint said the input is (goal 13: a TV's `optical` or
+    /// `hdmi_arc` may play on the low-latency path).
+    kind: SourceKind,
 }
 
 /// Where an input's upstream is.
@@ -196,6 +199,7 @@ impl LineIns {
                 known.signal = offer.signal;
                 known.session = session;
                 known.source_id = offer.source_id;
+                known.kind = offer.kind;
                 changed
             }
             None => {
@@ -205,6 +209,7 @@ impl LineIns {
                     source_id: offer.source_id,
                     signal: offer.signal,
                     upstream: Upstream::Idle,
+                    kind: offer.kind,
                 });
                 true
             }
@@ -298,6 +303,22 @@ impl LineIns {
     }
 
     // --- the conductor's side --------------------------------------------
+
+    /// (goal 13) A started TV input's session and kind, for the TV relay:
+    /// `None` when `input` is not offered, not started, or not a TV's
+    /// (`optical` or `hdmi_arc`).
+    pub fn tv_source(&self, input: &InputId) -> Option<(u64, SourceKind)> {
+        let inner = lock(&self.inner);
+        inner
+            .inputs
+            .iter()
+            .find(|i| {
+                i.id == *input
+                    && matches!(i.kind, SourceKind::Optical | SourceKind::HdmiArc)
+                    && matches!(i.upstream, Upstream::Streaming { .. })
+            })
+            .map(|i| (i.session, i.kind))
+    }
 
     /// Everything that happened since the last call, in order.
     pub fn take_events(&self) -> Vec<InputEvent> {

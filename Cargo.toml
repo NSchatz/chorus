@@ -38,3 +38,11 @@ unsafe_code = "deny"
 undocumented_unsafe_blocks = "warn"
 dbg_macro = "warn"
 todo = "warn"
+
+# Third-party dependencies (the vendored-by-pin crypto crates, ADR 0039) are
+# optimised in debug and test builds too (goal 13, the tv-path ADR): the TV
+# relay's end-to-end tests seal and open about 3000 ChaCha20-Poly1305
+# datagrams a second, which an unoptimised build cannot keep up with on a
+# shared host. chorus's own crates stay at the debug level.
+[profile.dev.package."*"]
+opt-level = 2

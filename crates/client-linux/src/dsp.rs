@@ -716,6 +716,14 @@ impl<S: PcmSink> PcmSink for DspSink<S> {
         Ok(self.inner.delay_frames()? + latency)
     }
 
+    fn fixed_latency_frames(&self) -> i64 {
+        self.chain
+            .as_ref()
+            .map(|c| c.latency_frames() as i64)
+            .unwrap_or(0)
+            + self.inner.fixed_latency_frames()
+    }
+
     fn in_xrun(&mut self) -> Result<bool, SinkError> {
         self.inner.in_xrun()
     }

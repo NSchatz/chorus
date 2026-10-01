@@ -312,6 +312,7 @@ fn play_the_tv(kind: SourceKind) -> Measured {
                 controls: source_control,
                 thresholds: SignalThresholds::default(),
                 tv_power: None,
+                low_latency: None,
                 log: Box::new(move |l| lines.lock().unwrap().push(l.to_string())),
             },
         )

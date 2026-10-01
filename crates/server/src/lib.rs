@@ -74,6 +74,7 @@ pub mod slot_table;
 pub mod slots;
 pub mod source;
 pub mod stream;
+pub mod tvrelay;
 
 pub use clients::ClientPool;
 pub use config::{ServerConfig, ServerConfigError};

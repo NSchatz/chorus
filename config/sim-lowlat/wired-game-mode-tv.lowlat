@@ -20,7 +20,7 @@ chunk_frames = 120
 fec_k = 4
 fec_depth = 1
 # From the capture stamp to the speaker.
-l_tv_us = 20000
+l_tv_us = 25000
 # The TV's own audio output against its picture. ASSUMED: game picture mode on the one set measured (avlatency.com, LEAD: 67 ms ARC and S/PDIF against a 1 ms picture); the Needs
 # item "The three TVs: model, eARC port, optical out and audio menu" replaces it.
 tv_audio_lag_us = 66000

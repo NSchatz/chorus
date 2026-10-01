@@ -35,12 +35,13 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use chorus_control::transport::Transport;
 use chorus_protocol::v2::adoption::{KeyChange, PinStore, Verdict};
 use chorus_protocol::v2::noise::{fingerprint, Keypair};
 use chorus_protocol::v2::session::{connect, Identity, SecureReader, SecureWriter, SessionError};
 use chorus_protocol::v2::{
-    roles, Capabilities, Codec, Hello, Message, RefusalReason, Sound, SourceControl, SourceOffer,
-    StreamFormat, PROTOCOL_VERSION,
+    features, roles, Capabilities, Codec, Hello, LowLatencyDirection, LowLatencyOffer, Message,
+    RefusalReason, Sound, SourceControl, SourceOffer, StreamFormat, PROTOCOL_VERSION,
 };
 use chorus_protocol::{SampleFormat, MAX_CHANNELS, MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ};
 
@@ -249,7 +250,31 @@ pub struct Announced {
     pub sounds: u64,
     /// Where they also go ([`deliver_sound_to`]).
     pub sound_inbox: SoundTap,
+    /// (goal 13) Where `low_latency_offer`s go: a `to_endpoint` one to the
+    /// player's low-latency path (`crate::lowlat`), a `from_endpoint` one to
+    /// the source role, an `end` to both (each ignores a tag it does not
+    /// hold).
+    pub low_latency: LowLatencyTaps,
+    /// `low_latency_offer`s received.
+    pub low_latency_offers: u64,
 }
+
+/// The sending ends of the two low-latency offer channels (the player's and
+/// the source role's). Plumbing, like [`SourceControls`]: it compares equal
+/// to any other.
+#[derive(Debug, Clone, Default)]
+pub struct LowLatencyTaps {
+    player: Option<mpsc::Sender<LowLatencyOffer>>,
+    source: Option<mpsc::Sender<LowLatencyOffer>>,
+}
+
+impl PartialEq for LowLatencyTaps {
+    fn eq(&self, _: &LowLatencyTaps) -> bool {
+        true
+    }
+}
+
+impl Eq for LowLatencyTaps {}
 
 /// Where the session hands `sound` (the watch's inbox). Plumbing, like
 /// [`RoomVolumeTap`]: it compares equal to any other.
@@ -310,6 +335,12 @@ pub struct Session {
     /// The server's `source_control` messages, in order, for the source role
     /// (`crate::source`). Nothing reads it on an endpoint with no line-in.
     pub source_control: Receiver<SourceControl>,
+    /// (goal 13) The server's `low_latency_offer`s for this endpoint as a
+    /// player (`to_endpoint`, and every `end`), for `crate::lowlat`.
+    pub low_latency_player: Receiver<LowLatencyOffer>,
+    /// (goal 13) The server's `low_latency_offer`s for this endpoint's TV
+    /// input (`from_endpoint`, and every `end`), for the source role.
+    pub low_latency_source: Receiver<LowLatencyOffer>,
 }
 
 /// Why a session did not open.
@@ -431,9 +462,14 @@ pub fn capabilities(config: &ClientConfig) -> Capabilities {
         // One status light when the front panel declared the visualizer role.
         led_count: u16::from(config.extra_roles & roles::VISUALIZER != 0),
         visualizer_bands: config.visualizer_bands,
-        // No low-latency path in this client yet: the integration track (goal
-        // 13, tv-path) sets `features::LOW_LATENCY` when it can take one.
-        features: 0,
+        // The TV path's low-latency stream (goal 13, `crate::lowlat`): only
+        // on a wired endpoint that has not switched it off. A wireless one is
+        // never offered, so the server never has to be refused.
+        features: if config.transport == Transport::Wired && config.low_latency {
+            features::LOW_LATENCY
+        } else {
+            0
+        },
     }
 }
 
@@ -525,8 +561,14 @@ pub fn open(
     // `not_adopted`) arrives instead, in the clear, and is surfaced here by
     // name rather than on the first read of audio.
     let (controls_tx, source_control) = mpsc::channel::<SourceControl>();
+    let (ll_player_tx, low_latency_player) = mpsc::channel::<LowLatencyOffer>();
+    let (ll_source_tx, low_latency_source) = mpsc::channel::<LowLatencyOffer>();
     let announced = Arc::new(Mutex::new(Announced {
         source_controls: SourceControls(Some(controls_tx)),
+        low_latency: LowLatencyTaps {
+            player: Some(ll_player_tx),
+            source: Some(ll_source_tx),
+        },
         ..Announced::default()
     }));
     let mut reader = SecureReader::new(stream, established.opener);
@@ -572,6 +614,8 @@ pub fn open(
         server_key: fingerprint(&established.peer_key),
         pinned_now: established.verdict == Verdict::Adopted,
         source_control,
+        low_latency_player,
+        low_latency_source,
     })
 }
 
@@ -671,6 +715,25 @@ fn record(announced: &Arc<Mutex<Announced>>, m: Message) {
             a.sound = Some(s);
             a.sounds += 1;
         }
+        Message::LowLatencyOffer(o) => {
+            // Validated by the decoder (every field rule). A send fails only
+            // when nothing holds that end; the offer is then unanswered and
+            // the server falls back to the slot path after its wait.
+            let taps = &a.low_latency;
+            let to_player = o.direction != LowLatencyDirection::FromEndpoint;
+            let to_source = o.direction != LowLatencyDirection::ToEndpoint;
+            if to_player {
+                if let Some(tx) = &taps.player {
+                    let _ = tx.send(o.clone());
+                }
+            }
+            if to_source {
+                if let Some(tx) = &taps.source {
+                    let _ = tx.send(o);
+                }
+            }
+            a.low_latency_offers += 1;
+        }
         _ => a.other += 1,
     }
 }
@@ -737,6 +800,22 @@ mod tests {
         assert_eq!(c.max_channels, 8);
         assert!(c.sample_rates_hz.contains(&48_000) && c.sample_rates_hz.contains(&44_100));
         assert!(c.sample_rates_hz.len() <= 16);
+    }
+
+    #[test]
+    fn low_latency_is_advertised_only_by_a_wired_endpoint_that_left_it_on() {
+        let wired = ClientConfig::default();
+        assert_eq!(capabilities(&wired).features, features::LOW_LATENCY);
+        let off = ClientConfig {
+            low_latency: false,
+            ..ClientConfig::default()
+        };
+        assert_eq!(capabilities(&off).features, 0);
+        let wireless = ClientConfig {
+            transport: Transport::Wireless,
+            ..ClientConfig::default()
+        };
+        assert_eq!(capabilities(&wireless).features, 0);
     }
 
     #[test]

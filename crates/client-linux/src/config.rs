@@ -142,6 +142,19 @@ pub struct ClientConfig {
     /// different authority; a Linux endpoint in a wireless zone gets the deeper
     /// buffer and reports that its own power-save mode is unknown.
     pub transport: Transport,
+    /// (goal 13, the TV path) Whether this endpoint offers to take a TV's
+    /// low-latency stream (`docs/protocol.md` "Low-latency path"): it sets
+    /// `capabilities.features` `low_latency` only when this is on AND the
+    /// endpoint is wired (`--transport wired`), since the path is wired only
+    /// (BRIEF.md 5.7). `--low-latency on|off`, default on.
+    pub low_latency: bool,
+    /// (goal 13) The device delay the low-latency stream is paced to, above
+    /// the sink's own fixed latency, us: `--low-latency-target-us`, default
+    /// `crate::lowlat::LL_DEVICE_TARGET_US` (4 ms, ASSUMED). A host that
+    /// cannot wake every millisecond (a loaded test host, a DAC with large
+    /// ALSA periods) needs more, and a room's `L_tv` must then leave room
+    /// for it.
+    pub low_latency_target_us: u64,
     /// Where this endpoint's long-term key (`endpoint.key`) and its pinned
     /// servers (`server-pins`) live. With neither this nor
     /// `ephemeral_identity`, a playing run is refused.
@@ -286,6 +299,8 @@ impl Default for ClientConfig {
             rejoin: false,
             rejoin_max_ms: 2_000,
             transport: DEFAULT_TRANSPORT,
+            low_latency: true,
+            low_latency_target_us: crate::lowlat::LL_DEVICE_TARGET_US,
             identity_dir: None,
             ephemeral_identity: false,
             endpoint_id: None,
@@ -321,6 +336,13 @@ pub enum ConfigError {
     },
     /// `--free-run` was given without `--offsets-out`.
     FreeRunWithoutSeries,
+    /// A flag that takes `on` or `off` got something else.
+    NotOnOff {
+        /// The argument.
+        argument: String,
+        /// The value as written.
+        value: String,
+    },
     /// The minimum bound is zero.
     MinimumIsZero,
     /// The bounds are the wrong way round, or equal.
@@ -561,6 +583,11 @@ impl fmt::Display for ConfigError {
                  0.001 (for example 1.000 or 0.5)",
                 argument, value
             ),
+            ConfigError::NotOnOff { argument, value } => write!(
+                f,
+                "argument '{}' got '{}', which is not on or off",
+                argument, value
+            ),
             ConfigError::NotANumber { argument, value } => {
                 write!(
                     f,
@@ -759,6 +786,22 @@ impl ClientConfig {
                 "--delay-log" => config.delay_log = value()?,
                 "--offsets-out" => config.offsets_out = Some(value()?),
                 "--free-run" => config.free_run = true,
+                "--low-latency-target-us" => {
+                    config.low_latency_target_us = number(&arg, &value()?)?
+                }
+                "--low-latency" => {
+                    let word = value()?;
+                    config.low_latency = match word.as_str() {
+                        "on" => true,
+                        "off" => false,
+                        _ => {
+                            return Err(ConfigError::NotOnOff {
+                                argument: arg.clone(),
+                                value: word,
+                            })
+                        }
+                    }
+                }
                 "--transport" => {
                     let word = value()?;
                     config.transport =

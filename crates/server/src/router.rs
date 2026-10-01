@@ -75,6 +75,10 @@ struct Entry {
     visualizer_bands: u8,
     heard_latency_ns: u64,
     colour: Option<Color>,
+    /// Its `capabilities.features` (goal 13: `low_latency`).
+    features: u8,
+    /// Its TCP peer's address: where a low-latency stream's datagrams go.
+    peer: Option<std::net::IpAddr>,
 }
 
 impl Entry {
@@ -111,6 +115,11 @@ pub struct SessionView {
     pub roles: u16,
     /// The fanout it is on.
     pub route: usize,
+    /// Its `capabilities.features` (goal 13: `low_latency`); 0 until
+    /// [`Router::set_link`].
+    pub features: u8,
+    /// Its TCP peer's address, once [`Router::set_link`] said it.
+    pub peer: Option<std::net::IpAddr>,
 }
 
 /// Where a session starts: computed from the room model by the caller when
@@ -227,6 +236,8 @@ impl Router {
             visualizer_bands: start.visualizer_bands,
             heard_latency_ns: DEFAULT_HEARD_LATENCY_NS,
             colour: None,
+            features: 0,
+            peer: None,
         };
         if entry.watches() {
             self.watchers[route].fetch_add(1, Ordering::Relaxed);
@@ -256,8 +267,20 @@ impl Router {
                 endpoint: e.endpoint.clone(),
                 roles: e.roles,
                 route: e.route,
+                features: e.features,
+                peer: e.peer,
             })
             .collect()
+    }
+
+    /// (goal 13) What the TV relay needs of a registered session: its
+    /// `capabilities.features` and its TCP peer's address.
+    pub fn set_link(&self, id: u64, features: u8, peer: std::net::IpAddr) {
+        let mut sessions = lock(&self.sessions);
+        if let Some(e) = sessions.iter_mut().find(|e| e.id == id) {
+            e.features = features;
+            e.peer = Some(peer);
+        }
     }
 
     /// How many sessions the router carries.

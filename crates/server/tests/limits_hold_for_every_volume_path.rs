@@ -459,6 +459,15 @@ fn every_volume_path_reaches_every_affected_player_clamped_on_server_and_linux_c
 
     // The Linux client's written samples: never above the source scaled by
     // the highest limit the kitchen had.
+    // At least half a second of audio before the hang-up: the steps above
+    // take wall time that depends on the host and the build (with the
+    // optimised crypto of the tv-path ADR 0094 they finish in about 1.2 s),
+    // and the count below is graded on what was played, not on how long the
+    // steps took.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while tape.lock().unwrap().len() <= 2 * 48_000 && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(20));
+    }
     let _ = hang_up.shutdown(Shutdown::Both);
     let _ = player.join();
     let written = tape.lock().unwrap().clone();

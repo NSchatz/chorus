@@ -80,6 +80,15 @@ pub const SAMPLE_INTERVAL_US: u64 = 100_000;
 /// How long the playout loop sleeps when it has nothing to do.
 const IDLE_SLEEP: Duration = Duration::from_millis(2);
 
+/// How long the playout loop sleeps between top-ups while the TV path's
+/// low-latency stream plays: a quarter of the device target, at least 1 ms
+/// (under half of a 2.5 ms chunk, so the default 4 ms target never runs dry
+/// between two looks) and at most 5 ms (ASSUMED on a modelled device; a real
+/// ALSA period size is bench session S8's question).
+fn ll_idle_sleep(target_us: u64) -> Duration {
+    Duration::from_micros((target_us / 4).clamp(1_000, 5_000))
+}
+
 /// Why the run ended.
 ///
 /// The end-of-stream case renders `end_timestamp_ns` into its report line and
@@ -247,6 +256,7 @@ pub fn run_session<R: Read + Send + 'static, S: PcmSink>(
 ) -> Result<RunOutcome, std::io::Error> {
     let rate_hz = sink.rate_hz();
     let gain = ZoneGain::new(handshake.shape.sample_format);
+    let sample_format = handshake.shape.sample_format;
     let channels = usize::from(handshake.shape.channels);
     let buffer = Arc::new(Buffer::new(config.min_us, config.max_us, rate_hz));
     let keep_going = Arc::new(AtomicBool::new(true));
@@ -327,6 +337,7 @@ pub fn run_session<R: Read + Send + 'static, S: PcmSink>(
         &stop_slot,
         gain,
         channels,
+        sample_format,
         &watch,
     );
 
@@ -448,6 +459,7 @@ fn play<S: PcmSink>(
     stop_slot: &StopSlot,
     gain: ZoneGain,
     channels: usize,
+    sample_format: chorus_protocol::SampleFormat,
     watch: &Arc<ZoneWatch>,
 ) -> Result<RunOutcome, std::io::Error> {
     let rate_hz = sink.rate_hz();
@@ -501,6 +513,12 @@ fn play<S: PcmSink>(
     // What the zone last commanded, so a change is one log line and not one per
     // chunk.
     let mut last_gain = watch.gain();
+    // The TV path's low-latency stream (goal 13, `crate::lowlat`): whether
+    // it plays now, and whether the device is still draining the slot
+    // path's deeper buffer before its first frame is written.
+    let mut ll_on = false;
+    let mut ll_draining = false;
+    let ll_target_frames = us_to_frames(config.low_latency_target_us, rate_hz) as i64;
 
     macro_rules! read_delay {
         () => {
@@ -699,6 +717,31 @@ fn play<S: PcmSink>(
             }
         }
 
+        // The low-latency stream: its offers are answered here, and while
+        // one plays it is what is written (below). Entering waits for the
+        // device to drain to the stream's small target; leaving goes back to
+        // the TCP stream, which the servo then brings back into line.
+        let ll = watch.low_latency();
+        if let Some(ll) = &ll {
+            ll.set_shape(rate_hz, channels as u16, sample_format);
+            ll.service();
+        }
+        let ll_now = ll.as_ref().is_some_and(|l| l.active());
+        if ll_now != ll_on {
+            ll_on = ll_now;
+            ll_draining = ll_on;
+            let detail = match &ll {
+                Some(l) if ll_on => format!(
+                    "enter reason=offer-accepted target_us={} {}",
+                    config.low_latency_target_us,
+                    l.status_line()
+                ),
+                Some(l) => format!("leave reason=stream-ended {}", l.status_line()),
+                None => "leave reason=session-path-gone".to_string(),
+            };
+            log.event(timeline.now_us(), "low-latency", &detail)?;
+        }
+
         // One tick of the sync loop: take in whatever replies arrived, ask for
         // another exchange, form the error from the delay the DEVICE reports,
         // and apply whatever the servo decided.
@@ -733,7 +776,15 @@ fn play<S: PcmSink>(
             }
 
             let ts_now = buffer.front_timestamp_ns().unwrap_or(next_write_ts_ns);
-            match sync.observe(sink, now_ns, ts_now, rate_hz) {
+            // While the low-latency stream plays, the servo neither observes
+            // nor corrects: that stream is placed by its own stamps
+            // (`crate::lowlat`), and only the offset is needed from here.
+            let observed = if ll_on {
+                Ok(Correction::NoOffset)
+            } else {
+                sync.observe(sink, now_ns, ts_now, rate_hz)
+            };
+            match observed {
                 Err(refused) => {
                     delay_refused = Some(refused);
                     break;
@@ -834,6 +885,9 @@ fn play<S: PcmSink>(
             log.event(now_us, "sync", &telemetry.line())?;
         }
 
+        // When the delay was read: the instant `delay` describes (the low-
+        // latency path reckons what is heard from it, not from a later now).
+        let delay_read_ns = timeline.now_ns();
         let delay = match read_delay!() {
             Some(d) => d,
             None => break,
@@ -857,7 +911,77 @@ fn play<S: PcmSink>(
             }
         }
 
-        if delay + chunk_frames.max(1) as i64 <= target_frames {
+        if let (true, Some(ll)) = (ll_on, ll.as_ref()) {
+            // The slot path's chunks are not played while the stream does.
+            let mut superseded = 0u64;
+            while buffer.pop().is_some() {
+                superseded += 1;
+            }
+            ll.note_superseded(superseded);
+            // The target is the queue above the sink's own fixed latency
+            // (the DSP chain's), which no amount of draining removes.
+            let ll_target_frames = ll_target_frames + sink.fixed_latency_frames();
+            if ll_draining && delay <= ll_target_frames {
+                ll_draining = false;
+                log.event(
+                    timeline.now_us(),
+                    "low-latency",
+                    &format!(
+                        "output delay_frames={} target_frames={}",
+                        delay, ll_target_frames
+                    ),
+                )?;
+            }
+            if !ll_draining {
+                let ll_chunk = i64::from(ll.chunk_frames().max(1));
+                let offset = sync.telemetry(timeline.now_ns()).offset_ns;
+                let mut d = delay;
+                while d + ll_chunk <= ll_target_frames {
+                    // The instant the next written frame is heard, on the
+                    // server timeline: plus what the device holds.
+                    // `d` is the delay read at `delay_read_ns` plus what was
+                    // written since, so the instant it is reckoned from is
+                    // that read, not now: the device has drained since.
+                    let heard = offset.map(|o| {
+                        let server_now = i128::from(delay_read_ns) + i128::from(o);
+                        let ahead = i128::from(d.max(0)) * 1_000_000_000 / i128::from(rate_hz);
+                        (server_now + ahead).clamp(0, i128::from(u64::MAX)) as u64
+                    });
+                    let mut pcm = ll.render_next(heard);
+                    if pcm.is_empty() {
+                        break;
+                    }
+                    if let Some(m) = watch.apply(&gain, channels, rate_hz, &mut pcm) {
+                        log_room_volume(log, timeline, &m, watch)?;
+                    }
+                    if let Some(s) = watch.take_sound() {
+                        log.event(timeline.now_us(), "sound", &sound_line(&s))?;
+                    }
+                    match sink.write(&pcm) {
+                        Ok(report) => {
+                            counters
+                                .frames_written
+                                .fetch_add(report.frames_written, Ordering::Relaxed);
+                            played_anything = true;
+                            if report.underran {
+                                let n = counters.underruns.fetch_add(1, Ordering::Relaxed) + 1;
+                                log.event(
+                                    timeline.now_us(),
+                                    "underrun",
+                                    &format!("source=low-latency-write underruns={}", n),
+                                )?;
+                            }
+                            d += report.frames_written as i64;
+                        }
+                        Err(e) => {
+                            device_error = Some(e);
+                            break;
+                        }
+                    }
+                }
+            }
+            thread::sleep(ll_idle_sleep(config.low_latency_target_us));
+        } else if delay + chunk_frames.max(1) as i64 <= target_frames {
             match buffer.pop() {
                 Some(queued) => {
                     if chunk_frames == 0 {
@@ -945,7 +1069,10 @@ fn play<S: PcmSink>(
             thread::sleep(IDLE_SLEEP);
         }
 
-        sample_if_due!(delay_us, graded);
+        // The delay assertion is the slot path's (its bounds are 60 to 300
+        // ms); the low-latency stream's device delay is a few ms by design,
+        // so its samples are written ungraded.
+        sample_if_due!(delay_us, graded && !ll_on);
     }
 
     // Phase 4: the deliberate drain. The graded interval is closed, so what

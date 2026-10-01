@@ -910,6 +910,10 @@ impl<S: PcmSink> PcmSink for MappedSink<S> {
         self.inner.delay_frames()
     }
 
+    fn fixed_latency_frames(&self) -> i64 {
+        self.inner.fixed_latency_frames()
+    }
+
     fn in_xrun(&mut self) -> Result<bool, SinkError> {
         self.inner.in_xrun()
     }
