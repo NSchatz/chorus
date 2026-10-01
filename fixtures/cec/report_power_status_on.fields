@@ -1,0 +1,11 @@
+# Canonical input for the report_power_status_on CEC vector: the hub is always on.
+#
+# Format: one "key = value" per line, '#' starts a comment. opcode is the name
+# crates/cec/src/codec.rs gives it (empty for a poll); operands are hex with no separators;
+# validity is what crates/cec/src/validate.rs must say of the message.
+
+initiator = 5
+destination = 0
+opcode = report_power_status
+operands = 00
+validity = ok

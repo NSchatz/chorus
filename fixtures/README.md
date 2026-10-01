@@ -379,3 +379,17 @@ second of silence. `crates/dsp/tests/visualizer_fixtures.rs` asserts that regene
 reproduces every WAV byte for byte (`CHORUS_WRITE_FIXTURES=1` rewrites them, for changing a
 recipe and never for making a red assertion green) and that the analysis meets each
 expectation; `crates/server/tests/visualizer_stream.rs` plays 01 through the real server.
+
+## `cec/`
+
+HDMI-CEC golden vectors (goal 13, `docs/cec.md`), Rust-only by declaration
+(`check-shared-fixtures.sh`: CEC runs on the Linux hub alone, there is no C implementation). In
+the `protocol/` shape: `<name>.hex` is one CEC message as it is on the bus (the header byte, the
+opcode, the operands), `<name>.fields` its canonical input (`initiator`, `destination`, the
+`opcode` by the name `crates/cec/src/codec.rs` gives it, `operands` as unseparated hex) and
+`validity`, what the validator must say of it (`ok`, `source`, `destination`, `parameter`,
+`parameter_short`, `parameter_long`; Android's validator rules, cited in
+`crates/cec/src/validate.rs`). `crates/cec/tests/fixtures.rs` asserts both round trips and the
+validity of every vector, and drives the Audio System role to produce each vector the hub sends.
+The vectors were written from the message tables in goal 13's research (`cec.md`) by a script
+independent of the Rust codec, not by a test run.

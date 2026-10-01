@@ -1,0 +1,14 @@
+# chorus CEC golden vector: LPCM (1) and AC-3 (2) asked.
+#
+# Committed, never written by a test. Rust-only by declaration (CEC runs on the Linux hub
+# alone): crates/cec/tests/fixtures.rs decodes these bytes to request_short_audio_descriptor_lpcm_ac3.fields and encodes the
+# fields back to these bytes. Format: whitespace separated hex bytes, '#' starts a comment.
+
+# header: initiator 0, destination 5
+05
+
+# opcode: request_short_audio_descriptor
+A4
+
+# operands
+01 02

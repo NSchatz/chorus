@@ -1,0 +1,14 @@
+# chorus CEC golden vector: volume 100 with the mute bit (bit 7) set.
+#
+# Committed, never written by a test. Rust-only by declaration (CEC runs on the Linux hub
+# alone): crates/cec/tests/fixtures.rs decodes these bytes to report_audio_status_100_muted.fields and encodes the
+# fields back to these bytes. Format: whitespace separated hex bytes, '#' starts a comment.
+
+# header: initiator 5, destination 0
+50
+
+# opcode: report_audio_status
+7A
+
+# operands
+E4
