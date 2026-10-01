@@ -169,6 +169,15 @@ sim-house:
 discovery-vectors:
 	cargo run --quiet -p chorus-discovery --bin chorus-discovery-vectors
 
+# Regenerate the committed time zone fixtures from the host's tz database
+# (fixtures/README.md, schedule/). A different tzdata is a reviewed diff:
+# `cargo test -p chorus-schedule` must still agree with the zdump listing the
+# same run writes, and a changed expectation is a changed rule, never drift.
+schedule-fixtures: tools-executable
+	bash tools/schedule-fixtures.sh
+
+.PHONY: schedule-fixtures
+
 # --- the ESP32-S3 endpoint ---------------------------------------------------
 #
 # The endpoint's host build and every verification of it that needs no device.
