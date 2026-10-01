@@ -919,6 +919,7 @@ mod tests {
             intrinsic_latency_ns: 0,
             led_count: 0,
             visualizer_bands: 0,
+            features: 0,
         };
         assert!(offer.negotiate(&caps).is_ok());
         let no_rate = Capabilities {
@@ -959,6 +960,7 @@ mod tests {
             intrinsic_latency_ns: 0,
             led_count: 0,
             visualizer_bands: 0,
+            features: 0,
         };
         assert_eq!(offer.negotiate(&caps), Ok(Codec::Pcm));
     }

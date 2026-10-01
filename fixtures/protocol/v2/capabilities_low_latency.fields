@@ -1,0 +1,23 @@
+# Canonical input for the capabilities_low_latency golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly capabilities_low_latency.hex, and decoding capabilities_low_latency.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+#
+# A wired Linux player that takes the low-latency path: the trailing `features` byte with
+# bit 0 set. capabilities.hex, which has no such byte, is unchanged and still reads as no
+# features.
+
+message_type = capabilities
+codecs = pcm flac opus
+sample_formats = pcm_s16le pcm_s24le
+max_channels = 2
+sample_rates_hz = 48000
+buffer_ms = 300
+intrinsic_latency_ns = 0
+led_count = 0
+visualizer_bands = 0
+features = low_latency

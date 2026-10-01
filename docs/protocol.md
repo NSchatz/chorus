@@ -69,6 +69,8 @@ What a decoder does when it cannot accept a frame:
 | 0x13 | `coded_chunk` | v2 | in a record | one FLAC frame or Opus packet on the server timeline |
 | 0x14 | `output_delay` | v2 | in a record | 8 bytes, fixed |
 | 0x15 | `telemetry` | v2 | in a record | 36 bytes, fixed |
+| 0x16 | `low_latency_offer` | v2 (goal 13) | in a record | 53 bytes, fixed: direction, stream tag, key, UDP port, chunk, FEC, lead |
+| 0x17 | `low_latency_accept` | v2 (goal 13) | in a record | 7 bytes, fixed: stream tag, status, UDP port |
 | 0x20 | `handshake_init` | v2 | in the clear | magic, version, suite, Noise message 1 |
 | 0x21 | `handshake_response` | v2 | in the clear | Noise message 2 |
 | 0x22 | `handshake_finish` | v2 | in the clear | Noise message 3 |
@@ -142,7 +144,7 @@ chunk with no samples is not representable.
 | 12 | 4 | `sample_rate_hz` | 8000 to 384000 |
 | 16 | 1 | `channels` | 1 to 8 |
 | 17 | 1 | `sample_format` | 1 `pcm_s16le`, 2 `pcm_s24le`, 3 `pcm_f32le` |
-| 18 | 14 | reserved | opaque, no semantics; see below |
+| 18 | 14 | reserved | opaque on TCP; assigned on the low-latency path; see below |
 | 32 | rest | PCM | in the announced format's byte order |
 
 The PCM byte count must be a nonzero whole number of frames, where a frame is
@@ -167,6 +169,12 @@ worth anything:
   reject a frame because they are not zero.
 - A decoder makes the raw bytes available to its caller rather than dropping
   them.
+
+Goal 13 assigned the block for the low-latency path only (ADR 0089): a chunk
+inside a UDP datagram carries `ll_marker`, its FEC shape and its group there
+("Low-latency path", below). On the TCP path nothing changed: an encoder
+still writes zeros and a decoder still ignores the block, so every
+`audio_chunk` vector and every deployed decoder is as it was.
 
 ### 0x03 stream end
 
@@ -370,6 +378,16 @@ Sent by an endpoint after its `hello`; what it can accept.
 | .. | 4 | `intrinsic_latency_ns` | its own delay from playout point to sound (a measured value, or `ASSUMED` where not yet measured) |
 | .. | 2 | `led_count` | addressable lights for the colour role; 0 for none |
 | .. | 1 | `visualizer_bands` | most bands it wants per visualizer frame, 0 to 64 |
+| .. | 1 | `features` | optional, goal 13: bit 0 `low_latency` (takes a `low_latency_offer`); absent reads as 0 |
+
+`features` is a trailing byte under the rule that a payload longer than the
+fields a decoder knows is accepted ("Decoder behaviour"): an encoder writes it
+only when a bit is set, so a `capabilities` without features is byte for byte
+what it was before the field existed (`v2/capabilities.hex` is unchanged), and
+an older server ignores it. A bit no version defines is kept and accepted, not
+rejected as `sound`'s flags are: a feature is something an endpoint can do,
+and a server that does not know one simply never uses it. An endpoint without
+`low_latency` is never offered a low-latency stream.
 
 ## The stream format and the channel map
 
@@ -840,6 +858,156 @@ Clarified in goal 11 (ADR 0079, the server accepting a line-in):
   the server holds (one second, ASSUMED) are dropped whole and counted.
 - The input's session ending is the input going: whatever plays it stops.
 
+## Low-latency path
+
+Goal 13 (the TV path, BRIEF.md 5.7: "UDP + simple XOR parity FEC, wired
+only, stereo first"). Why each choice, and where every number comes from:
+`docs/decisions/0089-the-low-latency-wire.md`. The datagram layer is
+`crates/protocol/src/v2/lowlat.rs` and, for the endpoint,
+`firmware/src/lowlat.c`; the shared vectors `fixtures/protocol/lowlat/` hold
+both to the same bytes.
+
+The control stays on the session: the server offers a stream inside it, the
+endpoint answers inside it, and the audio then flows as UDP datagrams between
+the two hosts (the peer's address is the session's TCP peer). A stream is one
+way: `to_endpoint` (the server relays a TV input to a player of a room) or
+`from_endpoint` (the hub sends its TV input to the server).
+
+### 0x16 low latency offer
+
+Server to endpoint. Sent only to an endpoint whose `capabilities.features`
+has `low_latency`.
+
+| offset | size | field | notes |
+|---|---|---|---|
+| 0 | 1 | `direction` | 0 `end`, 1 `to_endpoint`, 2 `from_endpoint`; others rejected (`undefined`) |
+| 1 | 4 | `stream_tag` | names the stream in every datagram; nonzero, unique per server process |
+| 5 | 32 | `key` | the stream's ChaCha20-Poly1305 key, fresh random per offer, never all zero |
+| 37 | 2 | `udp_port` | the server's receive port for `from_endpoint`; 0 for `to_endpoint` |
+| 39 | 4 | `chunk_frames` | PCM frames per chunk, 1 to 700 |
+| 43 | 1 | `fec_k` | data chunks per parity: 0 (no FEC) or 2 to 16 |
+| 44 | 1 | `fec_depth` | column interleave depth, 1 (none) to 8; 1 when `fec_k` is 0 |
+| 45 | 8 | `latency_ns` | informational: the stamp lead the sender uses, at most 5 s |
+
+- An offer whose `stream_tag` is already in use replaces that stream (a new
+  key, a new counter space).
+- `direction` 0 ends the stream named by `stream_tag`; every other field is
+  then zero, and an end with anything else is rejected as `direction`
+  (`inconsistent`).
+- The key is only as secret as the session that carried it; it is never
+  logged and never reused for another offer. Its counter space (below) starts
+  at 0.
+- A chunk that would not fit one datagram is refused when the offer is
+  built, never split: the 32-byte chunk header and the PCM must be at most
+  1432 bytes (stereo s24 at 120 frames is 752; 5.1 at s24 needs 60 frames or
+  fewer).
+- Value rules, each rejected as its field, never clamped (`v2/rejected/`):
+  `stream_tag` 0, `chunk_frames` 0 or past 700, `fec_k` 1 or past 16,
+  `fec_depth` 0 or past 8 (`out_of_range`); `key` all zero, a `udp_port` on
+  the wrong direction, an interleave without FEC (`inconsistent`).
+
+### 0x17 low latency accept
+
+Endpoint to server, once per offer that is not an end.
+
+| offset | size | field | notes |
+|---|---|---|---|
+| 0 | 4 | `stream_tag` | the offer's; nonzero |
+| 4 | 1 | `status` | 0 `accepted`, 1 `refused_wireless`, 2 `refused_no_socket`, 3 `refused_fec` |
+| 5 | 2 | `udp_port` | the endpoint's receive port for `to_endpoint`; 0 for `from_endpoint`, and 0 in every refusal |
+
+An endpoint on Wi-Fi refuses (the path is wired only); the server then plays
+that room on the ordinary path. A refusal with a port is rejected as
+`udp_port` (`inconsistent`).
+
+### The datagram
+
+One UDP payload, at most 1472 bytes (a 1500-byte Ethernet MTU less the IPv4
+and UDP headers), so it is one frame and never an IP fragment.
+
+```
+ 0     2   3    4            8                   16                   len-16    len
+ +-----+---+----+------------+-------------------+--------------------+---------+
+ | CL  | 1 |kind| stream_tag | counter           | ciphertext         | tag     |
+ +-----+---+----+------------+-------------------+--------------------+---------+
+   header, 16 bytes, in the clear and authenticated (AEAD associated data)
+```
+
+- `magic` `0x43 0x4C` (`CL`), `version` 1, `kind` 1 data or 2 parity,
+  `stream_tag` u32, `counter` u64, all big-endian. `counter` starts at 0 and
+  strictly increases per sender per stream; it is never reused under a key.
+- The body is ChaCha20-Poly1305 (RFC 8439, the session's AEAD) of the
+  plaintext under the offer's `key`, with the 16 header bytes as associated
+  data and the 96-bit nonce `stream_tag` (4 bytes) followed by `counter` (8
+  bytes), both big-endian; the 16-byte tag follows.
+- A receiver drops, in this order and counting each: a datagram shorter than
+  32 bytes or longer than 1472, a wrong magic, version or kind (malformed); a
+  `stream_tag` other than its offer's; a counter already seen or older than
+  its replay window (RFC 4303 section 3.4.3's sliding window, 1024 counters
+  wide); and one whose tag does not verify. The window moves only after a tag
+  verified. A UDP receiver never closes anything on a bad datagram.
+
+### Data, parity and the FEC
+
+A **data** plaintext is an `audio_chunk` payload exactly as on TCP (the
+32-byte header, then PCM), with the reserved block assigned:
+
+| offset | size | field | notes |
+|---|---|---|---|
+| 18 | 1 | `ll_marker` | 1 |
+| 19 | 1 | `fec_k` | the stream's |
+| 20 | 1 | `fec_depth` | the stream's |
+| 21 | 1 | `group_index` | this chunk's position in its group, 0 to k - 1 (0 without FEC) |
+| 22 | 4 | `group` | u32: its group (its chunk number without FEC) |
+| 26 | 6 | zero | |
+
+Chunks are numbered from 0 per stream. With `k` and depth `D`, chunks form
+blocks of `k x D`; within a block, chunk offset `o` is in column `o mod D` at
+position `o div D`, and group `block x D + column`. With `D` 1 a group is `k`
+consecutive chunks; with `D` 2 the even and the odd chunks of a block are two
+groups, so a burst of up to `D` consecutive losses costs each group at most
+one chunk.
+
+A **parity** plaintext, sent right after the data that completes its group:
+
+| offset | size | field | notes |
+|---|---|---|---|
+| 0 | 4 | `group` | the group it protects |
+| 4 | 1 | `fec_k` | |
+| 5 | 1 | `fec_depth` | |
+| 6 | 2 | `length_xor` | XOR of the group's `k` data plaintext lengths |
+| 8 | rest | | XOR of the group's `k` data plaintexts, each zero-padded to the longest |
+
+This is RFC 5109's XOR parity with its length recovery. Any one lost data
+chunk of a group is the XOR of the parity and the other `k - 1`, at the
+length `length_xor` XOR the other lengths; its header (sequence, stamp) comes
+back with it. A receiver hands each data chunk on as it arrives and a rebuilt
+one the moment the group's last needed datagram arrives; a rebuild whose
+reserved block is not its own group's is rejected, never played. Two losses
+in one group are not recoverable and are counted. A receiver closes a group
+(counting what it still misses as lost, and anything after as late) once a
+datagram two blocks newer arrives, or when its playout point passes it; a
+chunk whose stamp is past the playout point is never played. Counts a
+receiver keeps: opened, malformed, wrong stream tag, replayed, auth failed;
+data, parity, delivered, recovered, unrecoverable, late, duplicate, rejected.
+
+The server's relay keeps the hub's groups: a chunk it rebuilt late is
+restamped and sent on with its own `group` and `group_index`, and the
+downstream parity of a group leaves when the group's last chunk does, so the
+FEC wait is paid once from capture to speaker, not once per leg.
+
+### Defaults and the budget
+
+`crates/protocol/src/v2/lowlat.rs`, `DEFAULTS` (the server, the hub and the
+client use them unless a flag overrides): 120-frame chunks (2.5 ms at
+48 kHz), `fec_k` 4, `fec_depth` 1, `L_tv` 20 ms from the capture stamp to the
+speaker (configurable 10 to 40 ms). The floor rule: an `L_tv` below capture
+buffering + one chunk + the FEC wait `(k - 1) x D` chunks + both UDP legs +
+the relay + the jitter margin + the endpoint's output path is refused, never
+raised (19.417 ms at the defaults; each term and its source is in the ADR and
+in `docs/measurements/low-latency-budget-sim.md`, a simulation that is not
+timing evidence).
+
 ## The session, in order
 
 1. The endpoint connects and sends `handshake_init`.
@@ -922,6 +1090,12 @@ encoder refuses exactly what the decoder rejects.
   role no version defines (`sound`'s `flags` and `role`).
 - `fixtures/protocol/v2/noise/cacophony_xx.fields`: the published Noise test
   vector the key exchange is held to.
+- `fixtures/protocol/lowlat/*.fields` (goal 13): the low-latency datagrams.
+  Each `stream_*` is chunks, the FEC encoder's plaintexts and the sealed
+  datagrams under a public test key; each `case_*` drops, reorders, repeats or
+  alters a stream's datagrams and names the chunks a receiver hands on, the
+  ones it rebuilds and every count. `crates/protocol/tests/lowlat.rs` and
+  `firmware/tests/test_lowlat.c` both walk them.
 
 Both implementations read every one of them: the Rust tests under
 `crates/protocol/tests/`, and the C endpoint's `firmware/tests/test_protocol_v2.c`

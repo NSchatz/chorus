@@ -1,0 +1,40 @@
+# chorus low-latency vector: the stream stream_nofec.
+#
+# Committed, and never written by a test (crates/protocol/examples/lowlat_vectors.rs
+# wrote it). Pushing chunk.0 onward through the FEC encoder (fec_k, fec_depth) and
+# sealing what it emits with `key` and `stream_tag`, counters from first_counter,
+# must give plaintext.N and datagram.N byte for byte, in that order
+# (docs/protocol.md, "Low-latency path"). The cases (case_*.fields) drop, reorder,
+# repeat and alter these datagrams.
+#
+# Format: one "key = value" per line, '#' starts a comment; bytes are hex.
+#
+# No FEC (fec_k 0): data only, each chunk its own group, nothing to rebuild.
+
+key = 404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f
+stream_tag = 195939070
+first_counter = 7
+fec_k = 0
+fec_depth = 1
+chunks = 4
+# chunk 0: sequence 100, 4 frames
+chunk.0 = 00000064000000003b9aca000000bb8002010000000000000000000000000000000b16212c37424d58636e79848f9aa5
+# chunk 1: sequence 101, 4 frames
+chunk.1 = 00000065000000003b9c0f850000bb800201000000000000000000000000000025303b46515c67727d88939ea9b4bfca
+# chunk 2: sequence 102, 4 frames
+chunk.2 = 00000066000000003b9d550a0000bb80020100000000000000000000000000004a55606b76818c97a2adb8c3ced9e4ef
+# chunk 3: sequence 103, 4 frames
+chunk.3 = 00000067000000003b9e9a8f0000bb80020100000000000000000000000000006f7a85909ba6b1bcc7d2dde8f3fe0914
+datagrams = 4
+# datagram 0: data, chunk 0, counter 7
+plaintext.0 = 00000064000000003b9aca000000bb8002010100010000000000000000000000000b16212c37424d58636e79848f9aa5
+datagram.0 = 434c01010badcafe0000000000000007591988a5128cca30f36007d10a57bbadfca139b10d524a82190f31fc66a6b896ddb9112f5af250f09c709c5becac744974b695fc1caeb12d1a42e8cb888a3085
+# datagram 1: data, chunk 1, counter 8
+plaintext.1 = 00000065000000003b9c0f850000bb800201010001000000000100000000000025303b46515c67727d88939ea9b4bfca
+datagram.1 = 434c01010badcafe00000000000000085c2ca910885bd722bbeffc71627bddedd3cf08598398236dcd928af49da6f09b9634b20393058dff7c81edd45db552bcaca7242db01d0116e93269e05efd4c8d
+# datagram 2: data, chunk 2, counter 9
+plaintext.2 = 00000066000000003b9d550a0000bb80020101000100000000020000000000004a55606b76818c97a2adb8c3ced9e4ef
+datagram.2 = 434c01010badcafe0000000000000009e18a631f38752d9aec1b87ad2de447b8f9545476ce22f04c3a0438c5c7727fb2f87b2269458067c3c5e21c4eda0cde99f5aedb48371f2fdd6aa7411a39a23bd0
+# datagram 3: data, chunk 3, counter 10
+plaintext.3 = 00000067000000003b9e9a8f0000bb80020101000100000000030000000000006f7a85909ba6b1bcc7d2dde8f3fe0914
+datagram.3 = 434c01010badcafe000000000000000a4bfd16f9e1f06d852dbc01da66dcee475c0d7fc0a90d2ca827c8415a69ee076af351c588f71d78b081dea6dd7b401f8caa97079d1a32e7bb5b32ff6f8f2d094a

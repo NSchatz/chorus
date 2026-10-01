@@ -217,6 +217,18 @@ static int build(const char *stem, const char *fields_text, chorus_v2_message_t 
         c->intrinsic_latency_ns = (uint32_t)number(&f, "intrinsic_latency_ns");
         c->led_count = (uint16_t)number(&f, "led_count");
         c->visualizer_bands = (uint8_t)number(&f, "visualizer_bands");
+        /* Optional (goal 13): a vector made before the field has none. */
+        char feature_list[256];
+        if (fixture_field(fields_text, "features", feature_list, sizeof(feature_list)) != NULL) {
+            n = words(feature_list, list, 8);
+            for (size_t i = 0; i < n; i++) {
+                uint8_t bit = 0;
+                if (chorus_v2_enum_from_name(CHORUS_V2_ENUM_FEATURE_BIT, list[i], &bit) != 0) {
+                    f.ok = 0;
+                }
+                c->features |= (uint8_t)(1u << bit);
+            }
+        }
         break;
     }
     case CHORUS_V2_STREAM_FORMAT: {
@@ -258,6 +270,31 @@ static int build(const char *stem, const char *fields_text, chorus_v2_message_t 
         t->temperature_centi_c = (int16_t)number(&f, "temperature_centi_c");
         break;
     }
+    case CHORUS_V2_LOW_LATENCY_OFFER: {
+        chorus_v2_low_latency_offer_t *o = &m->as.low_latency_offer;
+        o->direction = named(&f, "direction", CHORUS_V2_ENUM_LOW_LATENCY_DIRECTION);
+        o->stream_tag = (uint32_t)number(&f, "stream_tag");
+        chorus_v2_bytes_t key = hex_bytes(&f, "key");
+        if (key.len != CHORUS_V2_KEY_LEN) {
+            chorus_check(0, "%s.fields key is 32 bytes", stem);
+            f.ok = 0;
+        } else {
+            memcpy(o->key, key.data, CHORUS_V2_KEY_LEN);
+        }
+        o->udp_port = (uint16_t)number(&f, "udp_port");
+        o->chunk_frames = (uint32_t)number(&f, "chunk_frames");
+        /* Read wide and narrowed on purpose: a rejection vector's 17 has to
+         * reach the encoder as 17. */
+        o->fec_k = (uint8_t)number(&f, "fec_k");
+        o->fec_depth = (uint8_t)number(&f, "fec_depth");
+        o->latency_ns = unsigned_number(&f, "latency_ns");
+        break;
+    }
+    case CHORUS_V2_LOW_LATENCY_ACCEPT:
+        m->as.low_latency_accept.stream_tag = (uint32_t)number(&f, "stream_tag");
+        m->as.low_latency_accept.status = named(&f, "status", CHORUS_V2_ENUM_LOW_LATENCY_STATUS);
+        m->as.low_latency_accept.udp_port = (uint16_t)number(&f, "udp_port");
+        break;
     case CHORUS_V2_HANDSHAKE_INIT:
         m->as.handshake_init.protocol_version = (uint16_t)number(&f, "protocol_version");
         m->as.handshake_init.suite = named(&f, "suite", CHORUS_V2_ENUM_SUITE);
@@ -506,8 +543,8 @@ static int the_committed_vectors_round_trip(void)
 
     /* Every type v2 added has at least one vector, and this endpoint has a
      * type for every vector (the directory and the catalog agree). */
-    static const uint8_t ADDED[] = {0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x20,
-                                    0x21, 0x22, 0x23, 0x24, 0x30, 0x31, 0x32,
+    static const uint8_t ADDED[] = {0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+                                    0x20, 0x21, 0x22, 0x23, 0x24, 0x30, 0x31, 0x32,
                                     0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39};
     for (size_t t = 0; t < sizeof(ADDED); t++) {
         int found = 0;
@@ -732,12 +769,16 @@ static void the_committed_rejection_vectors_are_refused_both_ways(void)
         }
         v->frame_len = (size_t)len;
         /* Out of range for a number; undefined for a bit or a role no version
-         * defines (sound's flags and role). */
+         * defines (sound's flags and role); inconsistent for fields that
+         * contradict each other (low_latency_offer's end with a key,
+         * low_latency_accept's refusal with a port; goal 13). */
         chorus_v2_problem_t expected = CHORUS_V2_PROBLEM_NONE;
         if (strcmp(problem, "out_of_range") == 0) {
             expected = CHORUS_V2_PROBLEM_OUT_OF_RANGE;
         } else if (strcmp(problem, "undefined") == 0) {
             expected = CHORUS_V2_PROBLEM_UNDEFINED;
+        } else if (strcmp(problem, "inconsistent") == 0) {
+            expected = CHORUS_V2_PROBLEM_INCONSISTENT;
         }
         chorus_check(expected != CHORUS_V2_PROBLEM_NONE, "%s: problem = %s", v->stem, problem);
         chorus_v2_message_t built;

@@ -1,0 +1,24 @@
+# chorus low-latency vector: the case case_tampered_tag.
+#
+# Committed, and never written by a test. Open the datagrams of stream_k4_d1.fields
+# listed in `deliver`, in that order (an index twice is a repeat), each with the
+# stream's key and the receiver's stream_tag (the stream's unless named here), XOR
+# `tamper` (datagram, byte offset, mask) into one first, push what opens through the
+# FEC decoder, then finish the stream after its `chunks`. The chunks handed on, the
+# ones rebuilt and every count below must be exactly these.
+#
+# The last byte of datagram 2 (chunk 2's tag) altered: it fails authentication
+# and is dropped, and the FEC rebuilds chunk 2 from the rest.
+
+stream = stream_k4_d1
+deliver = 0 1 2 3 4 5 6 7 8 9
+tamper = 2 79 1
+expect_delivered = 0 1 2 3 4 5 6 7
+expect_recovered = 2
+expect_opened = 9
+expect_malformed = 0
+expect_wrong_stream_tag = 0
+expect_replayed = 0
+expect_auth_failed = 1
+expect_unrecoverable = 0
+expect_duplicate = 0

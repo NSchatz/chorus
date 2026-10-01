@@ -1,0 +1,18 @@
+# chorus rejection vector: low_latency_accept, protocol v2 message type 0x17, udp_port inconsistent.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# reject this frame naming udp_port (see low_latency_accept_refusal_with_port.fields).
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x17, payload length 7 (0x0007), big-endian
+17 00 07
+
+# stream_tag = 305419897
+12 34 56 79
+
+# status = 2 (refused_no_socket)
+02
+
+# udp_port = 40002
+9C 42

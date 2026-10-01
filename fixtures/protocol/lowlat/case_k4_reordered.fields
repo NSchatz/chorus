@@ -1,0 +1,24 @@
+# chorus low-latency vector: the case case_k4_reordered.
+#
+# Committed, and never written by a test. Open the datagrams of stream_k4_d1.fields
+# listed in `deliver`, in that order (an index twice is a repeat), each with the
+# stream's key and the receiver's stream_tag (the stream's unless named here), XOR
+# `tamper` (datagram, byte offset, mask) into one first, push what opens through the
+# FEC decoder, then finish the stream after its `chunks`. The chunks handed on, the
+# ones rebuilt and every count below must be exactly these.
+#
+# Every datagram, each group's parity first and the groups interleaved: a group is
+# rebuilt as soon as its parity and three of its chunks are in (chunks 1 and 5),
+# and the real chunk, arriving after, is a duplicate. None is counted lost.
+
+stream = stream_k4_d1
+deliver = 4 3 0 9 2 1 5 8 7 6
+expect_delivered = 0 1 2 3 4 5 6 7
+expect_recovered = 1 5
+expect_opened = 10
+expect_malformed = 0
+expect_wrong_stream_tag = 0
+expect_replayed = 0
+expect_auth_failed = 0
+expect_unrecoverable = 0
+expect_duplicate = 2

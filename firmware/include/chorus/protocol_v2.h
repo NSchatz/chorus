@@ -71,6 +71,30 @@ extern const uint8_t CHORUS_V2_MAGIC[CHORUS_V2_MAGIC_LEN];
 #define CHORUS_V2_SOUND_FLAG_ROOM_EQ 0x08u
 #define CHORUS_V2_SOUND_FLAG_SUB_INVERTED 0x10u
 #define CHORUS_V2_SOUND_FLAGS_DEFINED 0x1Fu
+/* low_latency_offer (0x16, goal 13): fec_k is 0 (no FEC) or 2 to 16; the
+ * interleave depth 1 (none) to 8, an ASSUMED bound (a decoder holds three
+ * blocks of k x depth chunks); a chunk at most 700 frames, so a data plaintext
+ * (32-byte header and PCM) fits a 1472-byte datagram beside the parity's
+ * 8-byte header (chorus/lowlat.h); latency_ns at most output_delay's 5 s. */
+#define CHORUS_V2_LOW_LATENCY_FEC_K_MIN 2u
+#define CHORUS_V2_LOW_LATENCY_FEC_K_MAX 16u
+#define CHORUS_V2_LOW_LATENCY_FEC_DEPTH_MIN 1u
+#define CHORUS_V2_LOW_LATENCY_FEC_DEPTH_MAX 8u
+#define CHORUS_V2_LOW_LATENCY_MAX_CHUNK_FRAMES 700u
+#define CHORUS_V2_LOW_LATENCY_MAX_LATENCY_NS CHORUS_V2_MAX_OUTPUT_DELAY_NS
+/* low_latency_offer.direction and low_latency_accept.status. */
+#define CHORUS_V2_LOW_LATENCY_END 0u
+#define CHORUS_V2_LOW_LATENCY_TO_ENDPOINT 1u
+#define CHORUS_V2_LOW_LATENCY_FROM_ENDPOINT 2u
+#define CHORUS_V2_LOW_LATENCY_ACCEPTED 0u
+#define CHORUS_V2_LOW_LATENCY_REFUSED_WIRELESS 1u
+#define CHORUS_V2_LOW_LATENCY_REFUSED_NO_SOCKET 2u
+#define CHORUS_V2_LOW_LATENCY_REFUSED_FEC 3u
+/* capabilities' trailing features byte (goal 13). A bit no version defines is
+ * kept, not rejected: a feature is something an endpoint can do, and a server
+ * that does not know one never uses it. Absent on the wire reads as 0, and an
+ * encoder writes the byte only when a bit is set. */
+#define CHORUS_V2_FEATURE_LOW_LATENCY 0x01u
 
 /* The Noise and record sizes the frame layer knows about. */
 #define CHORUS_V2_KEY_LEN 32u
@@ -91,6 +115,8 @@ typedef enum {
     CHORUS_V2_CODED_CHUNK = 0x13,
     CHORUS_V2_OUTPUT_DELAY = 0x14,
     CHORUS_V2_TELEMETRY = 0x15,
+    CHORUS_V2_LOW_LATENCY_OFFER = 0x16,
+    CHORUS_V2_LOW_LATENCY_ACCEPT = 0x17,
     CHORUS_V2_HANDSHAKE_INIT = 0x20,
     CHORUS_V2_HANDSHAKE_RESPONSE = 0x21,
     CHORUS_V2_HANDSHAKE_FINISH = 0x22,
@@ -133,11 +159,14 @@ typedef enum {
     CHORUS_V2_ENUM_SOURCE_KIND,
     CHORUS_V2_ENUM_SOURCE_ACTION,
     CHORUS_V2_ENUM_LINK,
-    CHORUS_V2_ENUM_ROLE_BIT
+    CHORUS_V2_ENUM_ROLE_BIT,
+    CHORUS_V2_ENUM_LOW_LATENCY_DIRECTION,
+    CHORUS_V2_ENUM_LOW_LATENCY_STATUS,
+    CHORUS_V2_ENUM_FEATURE_BIT
 } chorus_v2_enum_t;
 
 /* The name of a value, or NULL when the value is not defined. For ROLE_BIT
- * the value is a bit index, 0 to 4. */
+ * the value is a bit index, 0 to 4; for FEATURE_BIT, 0. */
 const char *chorus_v2_enum_name(chorus_v2_enum_t which, uint8_t value);
 
 /* The value with this name. Returns 0 and sets *out, or -1. */
@@ -200,6 +229,8 @@ typedef struct {
     uint32_t intrinsic_latency_ns;
     uint16_t led_count;
     uint8_t visualizer_bands;
+    /* CHORUS_V2_FEATURE_* bits; 0 when the trailing byte is absent. */
+    uint8_t features;
 } chorus_v2_capabilities_t;
 
 typedef struct {
@@ -236,6 +267,27 @@ typedef struct {
     int8_t rssi_dbm;
     int16_t temperature_centi_c;
 } chorus_v2_telemetry_t;
+
+/* The server offering a low-latency stream, or ending one (direction 0, and
+ * then every field but stream_tag is zero). The key is as secret as the
+ * session that carried it. docs/protocol.md, "Low-latency path". */
+typedef struct {
+    uint8_t direction;
+    uint32_t stream_tag;
+    uint8_t key[CHORUS_V2_KEY_LEN];
+    uint16_t udp_port;
+    uint32_t chunk_frames;
+    uint8_t fec_k;
+    uint8_t fec_depth;
+    uint64_t latency_ns;
+} chorus_v2_low_latency_offer_t;
+
+/* An endpoint's answer to an offer; a refusal names no port. */
+typedef struct {
+    uint32_t stream_tag;
+    uint8_t status;
+    uint16_t udp_port;
+} chorus_v2_low_latency_accept_t;
 
 typedef struct {
     uint16_t protocol_version;
@@ -367,6 +419,8 @@ typedef struct {
         chorus_v2_coded_chunk_t coded_chunk;
         chorus_v2_output_delay_t output_delay;
         chorus_v2_telemetry_t telemetry;
+        chorus_v2_low_latency_offer_t low_latency_offer;
+        chorus_v2_low_latency_accept_t low_latency_accept;
         chorus_v2_handshake_init_t handshake_init;
         chorus_v2_handshake_message_t handshake_response;
         chorus_v2_handshake_message_t handshake_finish;

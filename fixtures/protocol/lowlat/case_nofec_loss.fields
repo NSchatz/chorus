@@ -1,0 +1,22 @@
+# chorus low-latency vector: the case case_nofec_loss.
+#
+# Committed, and never written by a test. Open the datagrams of stream_nofec.fields
+# listed in `deliver`, in that order (an index twice is a repeat), each with the
+# stream's key and the receiver's stream_tag (the stream's unless named here), XOR
+# `tamper` (datagram, byte offset, mask) into one first, push what opens through the
+# FEC decoder, then finish the stream after its `chunks`. The chunks handed on, the
+# ones rebuilt and every count below must be exactly these.
+#
+# No FEC: chunk 1 lost is lost, and counted.
+
+stream = stream_nofec
+deliver = 0 2 3
+expect_delivered = 0 2 3
+expect_recovered = 
+expect_opened = 3
+expect_malformed = 0
+expect_wrong_stream_tag = 0
+expect_replayed = 0
+expect_auth_failed = 0
+expect_unrecoverable = 1
+expect_duplicate = 0

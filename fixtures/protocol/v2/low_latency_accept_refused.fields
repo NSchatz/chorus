@@ -1,0 +1,16 @@
+# Canonical input for the low_latency_accept_refused golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly low_latency_accept_refused.hex, and decoding low_latency_accept_refused.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+#
+# A player on Wi-Fi refuses (BRIEF.md 5.7: the low-latency path is wired only); a refusal
+# names no port.
+
+message_type = low_latency_accept
+stream_tag = 305419897
+status = refused_wireless
+udp_port = 0
