@@ -167,6 +167,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "chorus-schedule"
+version = "0.1.0"
+dependencies = [
+ "chorus-audio-path",
+]
+
+[[package]]
 name = "chorus-server"
 version = "0.1.0"
 dependencies = [
