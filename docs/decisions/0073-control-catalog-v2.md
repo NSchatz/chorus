@@ -1,4 +1,4 @@
-# 0000: control catalog v2 adds rooms, bonded sets, saved and live groups, take-the-room, Sonos-style group volume, clamped limits and quiet hours, and the alarm, sleep and autoplay configuration, beside v1 and byte-compatible with it
+# 0073: control catalog v2 adds rooms, bonded sets, saved and live groups, take-the-room, Sonos-style group volume, clamped limits and quiet hours, and the alarm, sleep and autoplay configuration, beside v1 and byte-compatible with it
 
 - Status: accepted (goal 11, 2026-10-01)
 - Decided by: the goal (brief section 15 items 1 and 2; K54, K59, K77, K78, K81, K91, I10, I19)
