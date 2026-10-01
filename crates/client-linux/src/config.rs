@@ -19,6 +19,8 @@
 use std::fmt;
 
 use chorus_control::transport::{Transport, DEFAULT_TRANSPORT, WIRELESS_POLICY};
+use chorus_protocol::v2::SourceKind;
+use chorus_protocol::{SampleFormat, MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ};
 
 use crate::outmap::{MapError, OutputMap};
 use crate::sync::SyncConfig;
@@ -150,11 +152,89 @@ pub struct ClientConfig {
     /// The id the server pins this endpoint's key to, or `None` to use
     /// `endpoint`. It must be stable across restarts.
     pub endpoint_id: Option<String>,
+    /// `--rt-priority`: run the playout thread under `SCHED_FIFO` at this
+    /// priority, clamped to the host's rtprio ceiling, with the CPU-time bound
+    /// applied first (`crate::realtime`, ADR 0022). `None`, the default, keeps
+    /// every thread `SCHED_OTHER`.
+    pub rt_priority: Option<u32>,
+    /// `--rttime-us`: the `RLIMIT_RTTIME` bound applied before the policy is
+    /// taken. The default is the server's, from `config/verification.conf`
+    /// (`rttime_us = 200000`); it is not measured on an endpoint (ASSUMED).
+    pub rttime_us: u64,
+    /// `--no-delay-log`: write no delay log. For an installed endpoint running
+    /// for weeks, where a sample every 100 ms is a file that only grows; the
+    /// status lines still go to standard output (the journal, under systemd).
+    pub no_delay_log: bool,
+    /// The input this endpoint offers as a source (`--line-in <device>`), or
+    /// `None` for an endpoint that only plays. See [`LineInConfig`] and
+    /// `crate::source`.
+    pub line_in: Option<LineInConfig>,
+    /// The front panel's configuration file (`--front-panel`), or `None` for
+    /// an endpoint with no buttons or light (`crates/client-linux/src/front_panel.rs`).
+    pub front_panel: Option<String>,
+    /// Roles this endpoint declares beyond `player`. Never read from the
+    /// command line: the front panel sets it once its configuration has
+    /// loaded, so `hello` claims only what this process can do.
+    pub extra_roles: u16,
     /// The output map (`--output-channels`, `--output`): N device channels,
     /// each fed from stream positions with its own gain and delay
     /// (`crate::outmap`). `None` opens the device with the stream's own
     /// channels in the stream's own order, as the client always has.
     pub output_map: Option<OutputMap>,
+}
+
+/// The source number a configured line-in is offered under. One input per
+/// endpoint for now; the protocol's `source_id` leaves room for more.
+pub const LINE_IN_SOURCE_ID: u8 = 1;
+
+/// Frames per captured chunk: 20 ms at 48 kHz, the same chunk the server
+/// sends a player (`crates/server`'s default). `ASSUMED`: a starting point,
+/// not measured against a line-in's latency budget.
+pub const LINE_IN_CHUNK_MS: u32 = 20;
+
+/// A configured input: which ALSA capture device, what the server is told it
+/// is, and the shape it is captured in.
+///
+/// There is no microphone kind, and none can be configured: a speaker
+/// microphone feeds only the voice path and is never a shareable source
+/// (brief section 4.8, I4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineInConfig {
+    /// The ALSA capture device (`--line-in`).
+    pub device: String,
+    /// The name offered to the server (`--line-in-name`); may be empty.
+    pub name: String,
+    /// What kind of input it is (`--line-in-kind`: `line_in`, `optical`,
+    /// `hdmi_arc`).
+    pub kind: SourceKind,
+    /// The endpoint's own number for it, [`LINE_IN_SOURCE_ID`].
+    pub source_id: u8,
+    /// Capture rate (`--line-in-rate-hz`, default 48000).
+    pub rate_hz: u32,
+    /// Capture channels (`--line-in-channels`, 1 or 2, default 2).
+    pub channels: u16,
+    /// Capture layout (`--line-in-format`, default `pcm_s16le`).
+    pub sample_format: SampleFormat,
+}
+
+impl LineInConfig {
+    /// A line-in on `device` with the defaults above.
+    pub fn new(device: &str) -> LineInConfig {
+        LineInConfig {
+            device: device.to_string(),
+            name: String::new(),
+            kind: SourceKind::LineIn,
+            source_id: LINE_IN_SOURCE_ID,
+            rate_hz: 48_000,
+            channels: 2,
+            sample_format: SampleFormat::PcmS16Le,
+        }
+    }
+
+    /// Frames in one captured chunk, [`LINE_IN_CHUNK_MS`] at the capture rate.
+    pub fn frames_per_chunk(&self) -> u32 {
+        (self.rate_hz / 1_000 * LINE_IN_CHUNK_MS).max(1)
+    }
 }
 
 impl Default for ClientConfig {
@@ -184,6 +264,12 @@ impl Default for ClientConfig {
             identity_dir: None,
             ephemeral_identity: false,
             endpoint_id: None,
+            rt_priority: None,
+            rttime_us: 200_000,
+            no_delay_log: false,
+            line_in: None,
+            front_panel: None,
+            extra_roles: 0,
             output_map: None,
         }
     }
@@ -281,6 +367,13 @@ pub enum ConfigError {
         /// The argument as it was given.
         argument: String,
     },
+    /// A line-in flag that cannot be honoured.
+    LineInRefused {
+        /// The argument as it was given.
+        argument: String,
+        /// Why.
+        detail: String,
+    },
     /// The output map was refused (`--output-channels`, `--output`).
     OutputMap(MapError),
     /// A value that is not a number.
@@ -290,11 +383,21 @@ pub enum ConfigError {
         /// The value as it was given.
         value: String,
     },
+    /// `--rt-priority 0` or `--rttime-us 0`: neither is a real-time request
+    /// (`SCHED_FIFO`'s lowest priority is 1, and a zero bound kills the first
+    /// real-time slice).
+    RealTimeZero {
+        /// The argument that was zero.
+        argument: &'static str,
+    },
 }
 
 impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ConfigError::LineInRefused { argument, detail } => {
+                write!(f, "argument '{}' refused: {}", argument, detail)
+            }
             ConfigError::FreeRunWithoutSeries => write!(
                 f,
                 "--free-run disables correction and needs --offsets-out <file>: a free run that \
@@ -391,6 +494,13 @@ impl fmt::Display for ConfigError {
                     argument, value
                 )
             }
+            ConfigError::RealTimeZero { argument } => write!(
+                f,
+                "{} is zero; SCHED_FIFO's lowest priority is 1 and a zero CPU-time bound ends the \
+                 first real-time slice, so leave --rt-priority out to run without a real-time \
+                 policy",
+                argument
+            ),
         }
     }
 }
@@ -456,6 +566,16 @@ impl ClientConfig {
         if self.overflow_skew_ppm == 0 {
             return Err(ConfigError::SkewIsZero);
         }
+        if self.rt_priority == Some(0) {
+            return Err(ConfigError::RealTimeZero {
+                argument: "--rt-priority",
+            });
+        }
+        if self.rt_priority.is_some() && self.rttime_us == 0 {
+            return Err(ConfigError::RealTimeZero {
+                argument: "--rttime-us",
+            });
+        }
         let seconds = self.seconds_to_cross();
         if seconds >= MAX_SECONDS_TO_CROSS {
             return Err(ConfigError::SpanNotCrossableInTenMinutes {
@@ -515,6 +635,8 @@ impl ClientConfig {
         let mut given_start_fill = false;
         let mut given_device_target = false;
         let mut given_playout_latency = false;
+        let mut line_in: Option<LineInConfig> = None;
+        let mut line_in_flags: Vec<(String, String)> = Vec::new();
         let mut output_channels: Option<String> = None;
         let mut outputs: Vec<String> = Vec::new();
         let mut it = args.into_iter().peekable();
@@ -526,6 +648,7 @@ impl ClientConfig {
             };
             match arg.as_str() {
                 "--probe-device" => mode = ClientMode::ProbeDevice,
+                "--probe-line-in" => mode = ClientMode::ProbeLineIn,
                 "--require-pacing" => config.require_pacing = true,
                 "--server" => {
                     config.server = value()?;
@@ -544,6 +667,7 @@ impl ClientConfig {
                 "--zone" => config.zone = value()?,
                 "--endpoint" => config.endpoint = value()?,
                 "--endpoint-id" => config.endpoint_id = Some(value()?),
+                "--front-panel" => config.front_panel = Some(value()?),
                 "--identity-dir" => config.identity_dir = Some(value()?),
                 "--ephemeral-identity" => config.ephemeral_identity = true,
                 "--rejoin" => config.rejoin = true,
@@ -596,6 +720,20 @@ impl ClientConfig {
                     given_playout_latency = true;
                 }
                 "--mute-us" => config.sync.mute_ns = number(&arg, &value()?)? * 1_000,
+                "--rt-priority" => {
+                    // Clamped to the host's ceiling when taken, so a value past
+                    // u32 means "as much as the host allows", like any other
+                    // value above the ceiling.
+                    let wanted = number(&arg, &value()?)?;
+                    config.rt_priority = Some(u32::try_from(wanted).unwrap_or(u32::MAX));
+                }
+                "--rttime-us" => config.rttime_us = number(&arg, &value()?)?,
+                "--no-delay-log" => config.no_delay_log = true,
+                "--line-in" => line_in = Some(LineInConfig::new(&value()?)),
+                "--line-in-name" | "--line-in-kind" | "--line-in-rate-hz"
+                | "--line-in-channels" | "--line-in-format" => {
+                    line_in_flags.push((arg.clone(), value()?))
+                }
                 "--output-channels" => output_channels = Some(value()?),
                 "--output" => outputs.push(value()?),
                 other => {
@@ -604,6 +742,27 @@ impl ClientConfig {
                     })
                 }
             }
+        }
+
+        if let Some((argument, _)) = line_in_flags.first().filter(|_| line_in.is_none()) {
+            return Err(ConfigError::LineInRefused {
+                argument: argument.clone(),
+                detail: "it describes a line-in and no --line-in <alsa capture device> was given"
+                    .to_string(),
+            });
+        }
+        if mode == ClientMode::ProbeLineIn && line_in.is_none() {
+            return Err(ConfigError::LineInRefused {
+                argument: "--probe-line-in".to_string(),
+                detail: "there is no line-in to probe: pass --line-in <alsa capture device>"
+                    .to_string(),
+            });
+        }
+        if let Some(mut input) = line_in {
+            for (argument, value) in &line_in_flags {
+                apply_line_in_flag(&mut input, argument, value)?;
+            }
+            config.line_in = Some(input);
         }
 
         // The wireless buffer policy, applied to an endpoint in a group held to
@@ -640,6 +799,80 @@ impl ClientConfig {
     }
 }
 
+fn apply_line_in_flag(
+    input: &mut LineInConfig,
+    argument: &str,
+    value: &str,
+) -> Result<(), ConfigError> {
+    let refused = |detail: String| ConfigError::LineInRefused {
+        argument: argument.to_string(),
+        detail,
+    };
+    match argument {
+        "--line-in-name" => {
+            if value.len() > 255 {
+                return Err(refused(format!(
+                    "a source name is at most 255 bytes, not {}",
+                    value.len()
+                )));
+            }
+            input.name = value.to_string();
+        }
+        "--line-in-kind" => {
+            input.kind = SourceKind::from_name(value).ok_or_else(|| {
+                refused(format!(
+                    "'{}' is not a source kind; the kinds are line_in, optical and hdmi_arc, and \
+                     there is no microphone kind: a speaker microphone is never a source (brief \
+                     section 4.8, I4)",
+                    value
+                ))
+            })?;
+        }
+        "--line-in-rate-hz" => {
+            let rate = number(argument, value)?;
+            if !(u64::from(MIN_SAMPLE_RATE_HZ)..=u64::from(MAX_SAMPLE_RATE_HZ)).contains(&rate) {
+                return Err(refused(format!(
+                    "{} Hz is outside the protocol's {} to {} Hz",
+                    rate, MIN_SAMPLE_RATE_HZ, MAX_SAMPLE_RATE_HZ
+                )));
+            }
+            input.rate_hz = rate as u32;
+        }
+        "--line-in-channels" => {
+            let channels = number(argument, value)?;
+            if !(1..=2).contains(&channels) {
+                return Err(refused(format!(
+                    "a line-in is captured as 1 or 2 channels, not {} (a wider input has no \
+                     channel map here yet)",
+                    channels
+                )));
+            }
+            input.channels = channels as u16;
+        }
+        "--line-in-format" => {
+            input.sample_format = [
+                SampleFormat::PcmS16Le,
+                SampleFormat::PcmS24Le,
+                SampleFormat::PcmF32Le,
+            ]
+            .into_iter()
+            .find(|f| f.name() == value)
+            .ok_or_else(|| {
+                refused(format!(
+                    "'{}' is not a sample format; pcm_s16le, pcm_s24le or pcm_f32le",
+                    value
+                ))
+            })?;
+        }
+        _ => {
+            return Err(ConfigError::UnknownArgument {
+                argument: argument.to_string(),
+            })
+        }
+    }
+    Ok(())
+}
+
 fn number(argument: &str, value: &str) -> Result<u64, ConfigError> {
     value.parse().map_err(|_| ConfigError::NotANumber {
         argument: argument.to_string(),
@@ -671,6 +904,9 @@ pub enum ClientMode {
     Play,
     /// Open the configured device, report, close, exit.
     ProbeDevice,
+    /// Open the configured line-in, capture a moment of it, report, exit
+    /// (`--probe-line-in`, which needs `--line-in`).
+    ProbeLineIn,
 }
 
 #[cfg(test)]
@@ -773,9 +1009,98 @@ mod tests {
         }
     }
 
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_line_in_is_configured_by_its_capture_device_and_described_by_its_flags() {
+        let (c, _) = ClientConfig::from_args(args(&[
+            "--line-in",
+            "hw:1,0",
+            "--line-in-name",
+            "Turntable",
+            "--line-in-kind",
+            "optical",
+            "--line-in-rate-hz",
+            "44100",
+            "--line-in-channels",
+            "1",
+            "--line-in-format",
+            "pcm_s24le",
+        ]))
+        .unwrap();
+        let input = c.line_in.expect("a line-in");
+        assert_eq!(input.device, "hw:1,0");
+        assert_eq!(input.name, "Turntable");
+        assert_eq!(input.kind, SourceKind::Optical);
+        assert_eq!(input.rate_hz, 44_100);
+        assert_eq!(input.channels, 1);
+        assert_eq!(input.sample_format, SampleFormat::PcmS24Le);
+        assert_eq!(input.source_id, LINE_IN_SOURCE_ID);
+        assert_eq!(input.frames_per_chunk(), 880);
+        let (plain, _) = ClientConfig::from_args(args(&[])).unwrap();
+        assert_eq!(plain.line_in, None, "no line-in unless one is configured");
+    }
+
+    #[test]
+    fn a_line_in_flag_without_a_line_in_and_a_microphone_kind_are_refused_by_name() {
+        let e = ClientConfig::from_args(args(&["--line-in-name", "x"])).unwrap_err();
+        assert!(e.to_string().contains("no --line-in"), "{}", e);
+        let e = ClientConfig::from_args(args(&["--line-in", "hw:1", "--line-in-kind", "mic"]))
+            .unwrap_err();
+        assert!(e.to_string().contains("never a source"), "{}", e);
+        let e = ClientConfig::from_args(args(&["--line-in", "hw:1", "--line-in-channels", "6"]))
+            .unwrap_err();
+        assert!(e.to_string().contains("1 or 2 channels"), "{}", e);
+    }
+
     #[test]
     fn the_device_ring_asked_for_is_above_the_configured_maximum() {
         let c = ClientConfig::default();
         assert!(c.device_buffer_us() > c.max_us);
+    }
+
+    #[test]
+    fn real_time_is_off_unless_asked_for() {
+        let (c, _) = ClientConfig::from_args(Vec::<String>::new()).unwrap();
+        assert_eq!(c.rt_priority, None);
+        assert_eq!(c.rttime_us, 200_000);
+        assert!(!c.no_delay_log);
+        let (c, _) = ClientConfig::from_args(args(&[
+            "--rt-priority",
+            "20",
+            "--rttime-us",
+            "150000",
+            "--no-delay-log",
+        ]))
+        .unwrap();
+        c.validate()
+            .expect("a real-time request with a bound is valid");
+        assert_eq!(c.rt_priority, Some(20));
+        assert_eq!(c.rttime_us, 150_000);
+        assert!(c.no_delay_log);
+    }
+
+    #[test]
+    fn a_zero_priority_or_a_zero_bound_is_refused() {
+        let (c, _) = ClientConfig::from_args(args(&["--rt-priority", "0"])).unwrap();
+        assert_eq!(
+            c.validate().unwrap_err(),
+            ConfigError::RealTimeZero {
+                argument: "--rt-priority"
+            }
+        );
+        let (c, _) =
+            ClientConfig::from_args(args(&["--rt-priority", "5", "--rttime-us", "0"])).unwrap();
+        assert_eq!(
+            c.validate().unwrap_err(),
+            ConfigError::RealTimeZero {
+                argument: "--rttime-us"
+            }
+        );
+        // A bound with no policy asked for is no request at all, and is not refused.
+        let (c, _) = ClientConfig::from_args(args(&["--rttime-us", "0"])).unwrap();
+        c.validate().expect("no real-time request");
     }
 }

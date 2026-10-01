@@ -53,11 +53,15 @@ use chorus_audio::MonotonicTimeline;
 use chorus_client_linux::config::{ClientConfig, ClientMode};
 use chorus_client_linux::control::{ControlLink, ZoneWatch};
 use chorus_client_linux::delaylog::DelayLog;
+use chorus_client_linux::front_panel::{FrontPanel, LedWriter, PanelConfig};
 use chorus_client_linux::outmap::{self, MappedSink};
 use chorus_client_linux::receive::{handshake, HandshakeError};
 use chorus_client_linux::run::{counter_lines, header_for, run_session, StopReason};
 use chorus_client_linux::session::{self, EndpointIdentity};
 use chorus_client_linux::sink::{AlsaSink, PcmSink};
+use chorus_client_linux::source::{
+    self, AlsaCapture, SharedWriter, SignalThresholds, SourceHandle, Upstream,
+};
 use chorus_client_linux::Counters;
 use chorus_control::transport::Transport;
 use chorus_discovery::dnssd::AUDIO_SERVICE;
@@ -96,6 +100,7 @@ fn main() -> ExitCode {
 
     match mode {
         ClientMode::ProbeDevice => probe_device(&config),
+        ClientMode::ProbeLineIn => probe_line_in(&config),
         ClientMode::Play => endpoint(&config),
     }
 }
@@ -107,9 +112,36 @@ fn main() -> ExitCode {
 /// again. Without it there is exactly one session and the exit code is that
 /// session's, which is what every verification written before this phase reads.
 fn endpoint(config: &ClientConfig) -> ExitCode {
+    // A real-time policy asked for on a host that grants none is refused here,
+    // before anything connects (crate::realtime).
+    match chorus_client_linux::realtime::check_host(config) {
+        Ok(Some(line)) => status(&line),
+        Ok(None) => {}
+        Err(e) => {
+            report("configuration refused", &e);
+            status("stopped reason=real-time-refused played=0");
+            return ExitCode::from(EXIT_CONFIG);
+        }
+    }
     let timeline = MonotonicTimeline::new();
     let keep = Arc::new(AtomicBool::new(true));
     let watch = Arc::new(ZoneWatch::new());
+
+    // The front panel, when one is configured: its buttons and light as the
+    // controller role (front_panel.rs). A panel that cannot start is a
+    // configuration refused, never a panel silently absent.
+    let (panel, panel_config) = match config.front_panel.as_deref() {
+        None => (None, config.clone()),
+        Some(path) => match start_panel(config, path, timeline) {
+            Ok(v) => v,
+            Err(e) => {
+                report("configuration refused", &e);
+                status("stopped reason=front-panel-refused played=0");
+                return ExitCode::from(EXIT_CONFIG);
+            }
+        },
+    };
+    let config = &panel_config;
 
     // The control channel first, so that the first session already knows its
     // zone's volume, its mute and which group's stream it is meant to be on.
@@ -186,7 +218,15 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
                 break ExitCode::from(EXIT_NO_SERVER);
             }
         };
-        let outcome = play(config, &address, session, timeline, &watch, &mut identity);
+        let outcome = play(
+            config,
+            &address,
+            session,
+            timeline,
+            &watch,
+            &mut identity,
+            panel.as_ref(),
+        );
         played_ever |= outcome.played;
         total_frames += outcome.frames_played;
         status(&format!(
@@ -235,6 +275,9 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
     };
 
     keep.store(false, Ordering::SeqCst);
+    if let Some(panel) = panel {
+        panel.stop();
+    }
     if let Some(link) = &link {
         let _ = link.leaving();
     }
@@ -242,6 +285,54 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
         let _ = handle.join();
     }
     code
+}
+
+/// Load the panel configuration at `path`, open its input device and its
+/// light, and start it. Hands back the panel and the configuration with the
+/// roles it adds, so `hello` declares exactly what this process runs.
+fn start_panel(
+    config: &ClientConfig,
+    path: &str,
+    timeline: MonotonicTimeline,
+) -> Result<(Option<FrontPanel>, ClientConfig), String> {
+    let panel = PanelConfig::load(std::path::Path::new(path)).map_err(|e| e.to_string())?;
+    let mut keys = Vec::new();
+    for input in &panel.inputs {
+        keys.push(
+            std::fs::File::open(input)
+                .map_err(|e| format!("front panel input {}: {}", input.display(), e))?,
+        );
+    }
+    let led = match &panel.led {
+        Some(dir) => Some(
+            LedWriter::open(dir)
+                .map_err(|e| format!("front panel light {}: {}", dir.display(), e))?,
+        ),
+        None => None,
+    };
+    let mut with_roles = config.clone();
+    with_roles.extra_roles = panel.roles();
+    // Every key event is stamped on the monotonic timeline when it is read.
+    // The LED is shown against the same timeline until the sync offset is
+    // published to it (a follow-up for goal 12, when the server sends a
+    // visualizer stream at all).
+    let now: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(move || timeline.now_ns());
+    let log: Arc<dyn Fn(&str) + Send + Sync> = Arc::new(status);
+    let running = FrontPanel::start(&panel, &config.zone, keys, led, Arc::clone(&now), now, log)
+        .map_err(|e| e.to_string())?;
+    status(&format!(
+        "front-panel class={} inputs={} keys={} led={} roles={}",
+        panel.speaker_class.name(),
+        panel.inputs.len(),
+        panel.keys.len(),
+        panel
+            .led
+            .as_ref()
+            .map(|d| d.display().to_string())
+            .unwrap_or_else(|| "none".to_string()),
+        with_roles.extra_roles | chorus_protocol::v2::roles::PLAYER
+    ));
+    Ok((Some(running), with_roles))
 }
 
 /// This endpoint's protocol v2 identity, from `--identity-dir`, or made for
@@ -372,6 +463,56 @@ fn probe_device(config: &ClientConfig) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Open the configured line-in, capture 200 ms of it, say what the device
+/// reported, exit. Plays nothing and sends nothing; it is how an operator (and
+/// `make verify-alsa-null`, on ALSA's `null` capture device) checks a capture
+/// device opens, delivers frames and reports its delay, without a server.
+fn probe_line_in(config: &ClientConfig) -> ExitCode {
+    use chorus_client_linux::source::{CaptureSource, SignalDetector};
+    let Some(input) = config.line_in.as_ref() else {
+        report("configuration refused", "--probe-line-in needs --line-in");
+        return ExitCode::from(EXIT_CONFIG);
+    };
+    let unusable = |detail: &str| {
+        report("no usable line-in", detail);
+        status(&format!("line-in-probe device={} usable=0", input.device));
+        ExitCode::from(EXIT_DEVICE)
+    };
+    let mut capture = match AlsaCapture::open(input) {
+        Ok(c) => c,
+        Err(e) => return unusable(&e.to_string()),
+    };
+    let frames = (input.rate_hz / 5) as usize; // 200 ms
+    let mut pcm = vec![0u8; frames * capture.frame_len()];
+    let read = match capture.read(&mut pcm) {
+        Ok(r) => r,
+        Err(e) => return unusable(&e.to_string()),
+    };
+    let delay = match capture.delay_frames() {
+        Ok(Some(d)) => d.to_string(),
+        Ok(None) => "overrun".to_string(),
+        Err(e) => return unusable(&e.to_string()),
+    };
+    let mut detector = SignalDetector::new(
+        SignalThresholds::default(),
+        input.rate_hz,
+        input.channels,
+        input.sample_format,
+    );
+    detector.push(&pcm);
+    status(&format!(
+        "line-in-probe device={} usable=1 frames_read={} overran={} delay_frames={} signal={} \
+         frame_len={}",
+        input.device,
+        read.frames,
+        u8::from(read.overran),
+        delay,
+        u8::from(detector.present()),
+        capture.frame_len()
+    ));
+    ExitCode::SUCCESS
+}
+
 fn refused(code: u8, reason: &str) -> SessionOutcome {
     SessionOutcome {
         code: ExitCode::from(code),
@@ -388,11 +529,14 @@ fn play(
     timeline: MonotonicTimeline,
     watch: &Arc<ZoneWatch>,
     identity: &mut EndpointIdentity,
+    panel: Option<&FrontPanel>,
 ) -> SessionOutcome {
     // The first session writes the configured log; a rejoin writes its own
     // beside it, so a run that rejoined leaves one record per session rather
     // than one record with the earlier ones written over.
-    let delay_log = if session <= 1 {
+    let delay_log = if config.no_delay_log {
+        "off".to_string()
+    } else if session <= 1 {
         config.delay_log.clone()
     } else {
         format!("{}.session{}", config.delay_log, session)
@@ -473,8 +617,35 @@ fn play(
         reader: mut stream,
         writer,
         announced,
+        source_control,
         ..
     } = secure;
+    // One writer for the session, shared by the time-sync exchange, the
+    // source role and the front panel's commands; records never interleave
+    // inside a frame.
+    let writer = SharedWriter::new(writer);
+    let counters = Arc::new(Counters::new());
+    if let Some(panel) = panel {
+        session::also_hand(&mut stream, &announced, panel.server_messages());
+        let mut uplink = writer.clone();
+        panel.connect(Box::new(move |m| uplink.send(m)));
+    }
+    // The panel is told when this session ends, whichever way it ends.
+    struct Disconnect<'a>(Option<&'a FrontPanel>);
+    impl Drop for Disconnect<'_> {
+        fn drop(&mut self) {
+            if let Some(panel) = self.0 {
+                panel.disconnect();
+            }
+        }
+    }
+    let _disconnect = Disconnect(panel);
+    // The source role runs for the whole session, beside the playout, and is
+    // stopped (with `stream_end` for a started input) whichever way the
+    // session ends.
+    let _source = SourceGuard(config.line_in.as_ref().and_then(|input| {
+        start_source(config, input, &writer, &counters, timeline, source_control)
+    }));
 
     // The device cannot be opened until the stream says what it is, so the
     // first chunk is read first and carried forward.
@@ -580,7 +751,12 @@ fn play(
     };
 
     let header = header_for(config, &config.device, &hand.shape);
-    let mut log = match DelayLog::open(&delay_log, &header) {
+    let opened = if config.no_delay_log {
+        Ok(DelayLog::discard())
+    } else {
+        DelayLog::open(&delay_log, &header)
+    };
+    let mut log = match opened {
         Ok(l) => l,
         Err(e) => {
             report(
@@ -595,9 +771,11 @@ fn play(
     // the criterion's own wording and is also the only way the round trip it
     // measures is the round trip the audio takes. It is sealed like
     // everything else in the session, and nothing else writes on it.
-    let sync_out: Option<Box<dyn std::io::Write>> = Some(Box::new(writer));
+    let sync_out: Option<Box<dyn std::io::Write>> = Some(Box::new(writer.clone()));
+    if let Some(panel) = panel {
+        panel.set_playing(true);
+    }
 
-    let counters = Arc::new(Counters::new());
     let outcome = match run_session(
         config,
         stream,
@@ -668,4 +846,69 @@ fn play(
         frames_played: outcome.summary.frames_played,
         reason: outcome.stop.name().to_string(),
     }
+}
+
+/// Stops the source role when a session ends, however it ends, and says what
+/// it did.
+struct SourceGuard(Option<SourceHandle>);
+
+impl Drop for SourceGuard {
+    fn drop(&mut self) {
+        if let Some(handle) = self.0.take() {
+            let (stop, stats) = handle.stop();
+            status(&stats.line());
+            status(&format!("source stopped reason={}", stop.name()));
+        }
+    }
+}
+
+/// Open the configured line-in and run the source role on it. A capture
+/// device that cannot be opened is reported by name and the endpoint goes on
+/// playing: its first offer already said there is no signal, which stays true.
+fn start_source(
+    config: &ClientConfig,
+    input: &chorus_client_linux::config::LineInConfig,
+    writer: &SharedWriter<TcpStream>,
+    counters: &Arc<Counters>,
+    timeline: MonotonicTimeline,
+    controls: std::sync::mpsc::Receiver<chorus_protocol::v2::SourceControl>,
+) -> Option<SourceHandle> {
+    let capture = match AlsaCapture::open(input) {
+        Ok(c) => c,
+        Err(e) => {
+            report(
+                "the configured line-in could not be opened",
+                &format!("{}: {}", input.device, e),
+            );
+            status(&format!(
+                "source unusable device={} source_id={}",
+                input.device, input.source_id
+            ));
+            return None;
+        }
+    };
+    status(&format!(
+        "source offered source_id={} kind={} name=\"{}\" device={} rate_hz={} channels={} \
+         sample_format={}",
+        input.source_id,
+        input.kind.name(),
+        input.name,
+        input.device,
+        input.rate_hz,
+        input.channels,
+        input.sample_format.name()
+    ));
+    Some(source::spawn(
+        capture,
+        writer.clone(),
+        source::SourceSetup {
+            input: input.clone(),
+            listed_codecs: session::capabilities(config).codecs,
+            clock: Box::new(move || timeline.now_ns()),
+            counters: Arc::clone(counters),
+            controls,
+            thresholds: SignalThresholds::default(),
+            log: Box::new(status),
+        },
+    ))
 }

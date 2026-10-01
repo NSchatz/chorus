@@ -137,6 +137,9 @@ if [ "$MODE" = full ]; then
             sed "s/^/gate: firmware-esp32s3-$p /" | tee -a "$LOG/summary.txt"
     done
     step image            make --no-print-directory image
+    # Both architectures: the two cross builds and their checks take about 45 s
+    # cold and 9 s warm here (measured 2026-09-30), inside the gate's budget.
+    step endpoint-packages make --no-print-directory endpoint-packages
 fi
 
 T1=$(date +%s.%N)

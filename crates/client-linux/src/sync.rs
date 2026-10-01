@@ -57,11 +57,46 @@
 //! same code.
 
 use std::fmt;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 
 use chorus_protocol::TimeSync;
 use chorus_sync::{OffsetFilter, Servo, ServoAction, ServoConfig};
 
 use crate::sink::{PcmSink, SinkError};
+
+/// The offset in use, shared from the playout loop with whatever else runs in
+/// the session (the source role's upstream timestamps).
+///
+/// `server_ns = client_ns + offset_ns`, the RFC 5905 offset
+/// `((t1 - t0) + (t2 - t3)) / 2` this module's filter selects. `None` until
+/// an exchange has been accepted, and never a zero standing in for one.
+#[derive(Debug, Default)]
+pub struct PublishedOffset {
+    known: AtomicBool,
+    offset_ns: AtomicI64,
+}
+
+impl PublishedOffset {
+    /// Publish the offset in use (or that there is none).
+    pub fn publish(&self, offset_ns: Option<i64>) {
+        match offset_ns {
+            Some(o) => {
+                self.offset_ns.store(o, Ordering::Release);
+                self.known.store(true, Ordering::Release);
+            }
+            None => self.known.store(false, Ordering::Release),
+        }
+    }
+
+    /// The offset in use, or `None` if no exchange has been accepted.
+    pub fn get(&self) -> Option<i64> {
+        if self.known.load(Ordering::Acquire) {
+            Some(self.offset_ns.load(Ordering::Acquire))
+        } else {
+            None
+        }
+    }
+}
 
 /// Exchanges in the minimum-round-trip window.
 ///

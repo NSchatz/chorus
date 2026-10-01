@@ -59,6 +59,12 @@ pub struct Counters {
     pub max_crossings: AtomicU64,
     /// Times occupancy crossed into the at-or-below-minimum state.
     pub min_crossings: AtomicU64,
+    /// The sync offset in use (server timeline minus this endpoint's), as the
+    /// playout loop last published it. Not a counter: it rides here because
+    /// this is the one thing a session shares with everything that runs
+    /// beside its playout, and the source role stamps its upstream audio
+    /// with it (`crate::source`).
+    pub offset: crate::sync::PublishedOffset,
 }
 
 impl Counters {

@@ -124,9 +124,9 @@ pub fn record_once_open<F: FnOnce()>(
     }
     Ok(RecordedCapture {
         wav: wav::write_wav(&samples, 2, rate_hz, 16, WAVE_FORMAT_PCM),
-        frames: report.frames_written as usize,
+        frames: report.frames_read as usize,
         elapsed_us,
-        overran: report.underran,
+        overran: report.overran,
     })
 }
 

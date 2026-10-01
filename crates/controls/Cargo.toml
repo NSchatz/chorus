@@ -1,0 +1,14 @@
+[package]
+name = "chorus-controls"
+description = "chorus's one controller model: a speaker's controls, status LED and microphone gate, the Rust twin of firmware/src/controls.c"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+chorus-protocol = { path = "../protocol" }
+
+[lints]
+workspace = true

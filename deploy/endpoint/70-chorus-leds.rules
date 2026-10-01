@@ -1,0 +1,16 @@
+# /usr/lib/udev/rules.d/70-chorus-leds.rules (chorus-endpoint package)
+#
+# Lets chorus-client.service, which runs in group `audio`, set a front-panel status
+# light: an LED class device whose name starts with `chorus-` (the label the board's
+# overlay gives it, e.g. `dtoverlay=gpio-led,gpio=20,label=chorus-status`) gets its
+# `brightness`, and `multi_intensity` where the LED has one, made group `audio` and
+# group-writable when the device appears. Any other LED is untouched, and on a machine
+# with no `chorus-*` LED this rule matches nothing.
+#
+# Keys per udev(7) (https://www.freedesktop.org/software/systemd/man/latest/udev.html,
+# read 2026-09-30): SUBSYSTEM and KERNEL match the event device, TEST tests a file's
+# existence (relative to the device), %p is its devpath, RUN programs run after all
+# rules. After installing, `sudo udevadm trigger --subsystem-match=leds` or a reboot
+# applies it. ASSUMED until run on a board (the front-panel track's Needs).
+ACTION=="add", SUBSYSTEM=="leds", KERNEL=="chorus-*", RUN+="/bin/chgrp audio /sys%p/brightness", RUN+="/bin/chmod g+w /sys%p/brightness"
+ACTION=="add", SUBSYSTEM=="leds", KERNEL=="chorus-*", TEST=="multi_intensity", RUN+="/bin/chgrp audio /sys%p/multi_intensity", RUN+="/bin/chmod g+w /sys%p/multi_intensity"

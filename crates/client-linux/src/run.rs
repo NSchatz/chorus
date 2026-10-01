@@ -304,6 +304,11 @@ pub fn run_session<R: Read + Send + 'static, S: PcmSink>(
         })
     };
 
+    // The playout loop runs on this thread. With `--rt-priority` it runs under
+    // SCHED_FIFO, taken here, after the receiving thread was spawned so that
+    // one stays SCHED_OTHER, and left when `_playout_rt` drops at the end of
+    // the session (crate::realtime).
+    let _playout_rt = crate::realtime::enter_playout(config);
     let outcome = play(
         config,
         sink,
@@ -775,6 +780,9 @@ fn play<S: PcmSink>(
                 }
             }
             let telemetry = sync.telemetry(now_ns);
+            // The offset in use, for the source role's upstream timestamps
+            // (`crate::source`): one clock mapping per endpoint, not two.
+            counters.offset.publish(telemetry.offset_ns);
             let stale_age_ns = telemetry.age_ns.filter(|_| telemetry.stale);
             if let Some(age_ns) = stale_age_ns {
                 if !was_stale {

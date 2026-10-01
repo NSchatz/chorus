@@ -13,10 +13,11 @@ program: that is the owner's step (below).
 | `chorus-server-v<ver>-oci.tar` | the server as an OCI image layout tarball on a digest-pinned distroless base, tested unpacked (`--help`, `GET /api/state`) | `tools/image.sh` |
 | `chorus-endpoint-esp32s3-v<ver>.bin` | the ESP32-S3 endpoint application image | `tools/firmware-image.sh` (ESP-IDF at the pin in `firmware/config/endpoint.conf`, then the eFuse and image guard) |
 | `chorus-endpoint-esp32s3-v<ver>.tar.gz` | the bootloader, partition table, application and `flasher_args.json` (offsets and flash flags) | the same build |
+| `chorus-endpoint_<ver>_arm64.deb`, `chorus-endpoint_<ver>_amd64.deb` | the Linux endpoint package: `chorus-client`, its systemd unit, `/etc/chorus/client.conf`, real-time limits and `chorus-verify-host`, for glibc 2.36 and later (goal 10; `docs/linux-endpoint.md`) | `tools/endpoint-package.sh` (cross-built rootless with zig and cargo-zigbuild; readelf, dpkg-deb and `systemd-analyze verify` checks) |
+| `<crate>-<ver>.crate` | the source of each MPL-2.0 crate a shipped binary links (the four Symphonia crates in `chorus-client`), checked against `Cargo.lock`'s checksum | `tools/release.sh` (below) |
 | `SHA256SUMS` | sha256 of every artifact | `tools/release.sh` |
 
-Later releases add the Linux endpoint package (goal 10) and more firmware targets as the
-program builds them.
+Later releases add more firmware targets as the program builds them.
 
 ## Cutting one
 
@@ -39,7 +40,8 @@ program builds them.
    ```
    git tag -a v<ver> -m "chorus v<ver>" <sha> && git push origin v<ver>
    gh release create v<ver> --verify-tag --title "chorus v<ver>" \
-       --notes-file dist/v<ver>/NOTES.md dist/v<ver>/chorus-* dist/v<ver>/SHA256SUMS
+       --notes-file dist/v<ver>/NOTES.md dist/v<ver>/chorus-* dist/v<ver>/*.crate \
+       dist/v<ver>/SHA256SUMS
    ```
 
 5. `gh release view v<ver>` lists the assets; the goal's ledger records the tag's SHA.
@@ -53,7 +55,16 @@ per such crate, its name, version and the exact source location (the crate's
 `https://crates.io/crates/<name>/<version>` download, whose checksum is in `Cargo.lock`),
 and attaches the crate's source tarball as `<name>-<version>.crate` beside the binaries,
 so the release is complete on its own. `tools/release.sh` counts the external crates in
-`Cargo.lock` and says so in the notes; v0.1.0 has none, so it carries no MPL source.
+`Cargo.lock` and says so in the notes. v0.1.0 carried no MPL source. From the first release
+with the Linux endpoint packages (goal 10), `chorus-client` links Symphonia's FLAC crates
+(ADR 0044), so `tools/release.sh` finds every MPL-2.0 crate in the shipped binaries with
+`cargo tree`, copies each `.crate` from the local registry cache (or fetches it from
+`https://static.crates.io/crates/<name>/<name>-<ver>.crate`), refuses unless its sha256 is
+the checksum `Cargo.lock` pins, and lists each in the notes.
+
+The endpoint packages also say it on the device: `/usr/share/doc/chorus-endpoint/copyright`
+lists every crate linked into the packaged binaries with its licence and reproduces the
+libopus, MIT and Apache-2.0 texts.
 
 ## Pushing the image to a registry (the owner's step)
 

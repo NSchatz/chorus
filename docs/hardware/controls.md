@@ -59,3 +59,41 @@ Frames carry server-timeline timestamps and are shown when heard. A `color` mess
   before the switch has been read at all (the gate starts closed). The LED shows mute over
   every state but a fault or pairing. A speaker microphone is never a shareable source (I4); it
   feeds only the voice path (goal 20).
+
+## The Linux front panel (the rack amp and other Linux endpoints)
+
+A Linux endpoint (K96; first the 2U rack amp, K74, which is the streaming-amp class in a rack
+case) runs the same controller model as the firmware: `crates/controls` is the Rust twin of
+`firmware/src/controls.c`, held to the same `fixtures/controls/*` (`docs/decisions/0067-*`). The
+Linux binding is `crates/client-linux/src/front_panel.rs`, started by
+`chorus-client --front-panel <file>`.
+
+- **Buttons:** each GPIO line becomes a key of an input device through the kernel's gpio-keys
+  driver, set up by a device-tree overlay (on a Raspberry Pi, one `dtoverlay=gpio-key,...` line per
+  button: `gpio`, `active_low`, `gpio_pull`, `label`, `keycode`; overlays README,
+  https://github.com/raspberrypi/firmware/blob/master/boot/overlays/README, read 2026-09-30).
+  The client reads `/dev/input/...` as whole 24-byte `input_event` records (arm64 and x86_64),
+  takes `EV_KEY` presses (1) and releases (0), ignores the kernel's autorepeat (2), and stamps
+  each with the monotonic clock when the read returned, never the record's own time
+  (https://docs.kernel.org/input/input.html, read 2026-09-30). gpio-keys debounces for 5 ms by
+  default (its binding, read 2026-09-30); the model's own 20 ms (ASSUMED) runs on top.
+- **The status LED:** the kernel's LED class, `/sys/class/leds/<name>/`. A single-colour LED
+  (`dtoverlay=gpio-led,gpio=<n>,label=<name>`, `max_brightness` 1) is on while the model's
+  brightness is not zero; a multicolour LED gets `multi_intensity` in its `multi_index` order and
+  `brightness` scaled to `max_brightness`, which the kernel combines as "brightness *
+  multi_intensity/max_brightness" (https://docs.kernel.org/leds/leds-class-multicolor.html, read
+  2026-09-30). An RGB status light needs a board overlay for a multicolour LED (none of the Pi's
+  stock overlays makes one; ASSUMED until the rack amp's board is designed, goal 26).
+- **Permissions (ASSUMED, the package's to set):** the service reads one input device (group
+  `input` or a udev rule) and writes one LED directory (a udev rule on its `brightness` and
+  `multi_intensity`); it needs no other privilege.
+- **The configuration:** `class`, `room` (the zone the buttons control; default `--zone`),
+  `join-target`, one or more `input <device>` lines, `key <code> <control>` lines and
+  `led <dir>`. A key mapped to a control the class does not have is refused at start.
+  `config/front-panel/rack-amp.conf` is the ASSUMED example with the overlay lines that would
+  produce it; the board, pins and paths are unanswered owner inputs.
+- **What leaves the endpoint:** the model's `controller_command` frames, on the endpoint's v2
+  session (its `hello` declares `controller`, and `visualizer` when a light follows it). The
+  server applies each through its control plane to the zone the endpoint is attached to, with
+  the same checks as any other change, and answers with `controller_state`; the panel uses it to
+  decide whether a long press joins or leaves. Pairing stays a local event (the light shows it).

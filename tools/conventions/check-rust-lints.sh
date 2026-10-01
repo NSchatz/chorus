@@ -6,7 +6,7 @@
 # file | count of allow(unsafe_code) or expect(unsafe_code) attributes, alone or combined | why
 allowed=(
     "crates/alsa/src/lib.rs|1|the crate is the dlopen binding to libasound; every function crosses FFI"
-    "crates/hostctl/src/lib.rs|6|libc wrappers for getrlimit, setrlimit, sched_*, mlockall and gettid, one function each"
+    "crates/hostctl/src/lib.rs|7|libc wrappers for getrlimit, setrlimit, sched_* (taking and leaving a policy), mlockall and gettid, one function each"
     "crates/server/tests/regress_0031_f6.rs|1|a test sets SCHED_BATCH through raw libc to show a spawned thread inherits it"
     "crates/hostprobe/src/sys.rs|1|the wakeup probe's libc FFI: clock_gettime, clock_nanosleep and prctl timer slack (docs/decisions/0047-host-probes.md)"
     "crates/hostprobe/src/net.rs|1|the receive-stamp check's socket FFI: setsockopt, recvmsg and a ping socket (docs/decisions/0047-host-probes.md)"
