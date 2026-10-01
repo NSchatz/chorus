@@ -37,6 +37,9 @@
 //! And one analysis that runs on the server, not in the chain: [`roomfit`], room-correction
 //! fitting from a sweep recording (`docs/room-correction.md`).
 //!
+//! And another the server runs: [`visualizer`], the levels, bands, beat and
+//! colour of the visualizer stream (`docs/visualizer.md`).
+//!
 //! What each block does, every citation and every ASSUMED default:
 //! `docs/dsp.md`. The decisions: `docs/decisions/` ("the DSP library").
 
@@ -53,6 +56,7 @@ pub mod loudness;
 pub mod roomfit;
 pub mod settings;
 pub mod speech;
+pub mod visualizer;
 
 pub use biquad::{Biquad, Coefficients, Kind};
 pub use chain::Chain;

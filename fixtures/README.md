@@ -340,3 +340,14 @@ make roomfit-fixtures     # regenerate every recording from its parameters
 `crates/dsp/tests/roomfit.rs` asserts that regenerating reproduces every committed recording
 byte for byte, so that target is for changing a fixture's parameters and never for making a red
 assertion green. Adding a room is adding a `.params` file and running the target.
+
+## `visualizer/`
+
+The visualizer analysis's inputs (Rust-only by declaration: the server computes the stream, no
+endpoint does; `docs/visualizer.md`), in the `measure/` shape: a `.params` file holding the
+recipe and the expectation, and the mono 16-bit WAV it generates. 01 is four kicks at 120 BPM
+(48 kHz), 02 a 1 kHz tone at -6.02 dBFS and 03 a 50 Hz to 6 kHz sweep (both 16 kHz), 04 half a
+second of silence. `crates/dsp/tests/visualizer_fixtures.rs` asserts that regenerating
+reproduces every WAV byte for byte (`CHORUS_WRITE_FIXTURES=1` rewrites them, for changing a
+recipe and never for making a red assertion green) and that the analysis meets each
+expectation; `crates/server/tests/visualizer_stream.rs` plays 01 through the real server.
