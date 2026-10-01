@@ -71,6 +71,9 @@ A **zone** is a room (catalog v2's documents say "room"; the wire keeps the key
 | `limit` (v2) | the room's maximum volume, `1.000` unless set |
 | `quiet` (v2) | the room's quiet-hours windows, each with its own cap |
 | `bond` (v2) | the room's bonded set: endpoints each playing a channel role, or none |
+| `sound` (v2, goal 12) | tone, loudness, night mode and speech enhancement |
+| `bass_management` (v2, goal 12) | crossover, sub level and sub polarity, in force when the set has an `LFE` member |
+| `room_eq` (v2, goal 12) | up to 8 room-correction filters and whether they are applied |
 
 **The clamp rule (v2).** A room's **effective limit** is
 `min(limit, the cap of every quiet-hours window active now)`. Every volume path
@@ -320,6 +323,9 @@ give them.
 | `alarm_stop` | `alarm` | stops it ringing; one not ringing is not an error |
 | `sleep` | `target` (a room or a formed group), `minutes` (0 to 720) | asks for a sleep timer; `0` cancels |
 | `autoplay` | `input` (`<endpoint>/<input>`), `target` (a room or a saved group), `enabled` | creates or replaces the rule for that input |
+| `sound` | `zone`, optional `bass`, `treble` (whole dB, -10 to 10), `loudness`, `night`, `speech` (booleans) | changes the fields it carries; an absent one keeps what the room had |
+| `bass_management` | `zone`, optional `crossover_hz` (40 to 200), `sub_level_db` (-12.00 to 6.00, two places), `sub_polarity` (`"normal"` or `"inverted"`) | the same, partial |
+| `room_eq` | `zone`, optional `filters`: `[{"freq_hz","gain_db","q"}]` at most 8, optional `enabled` | `filters` replaces the room's (`[]` clears them); `enabled` turns them on or off and keeps them |
 
 ```json
 {"v":2,"t":"bond","zone":"living","members":[{"endpoint":"endpoint-a","role":"FL"},{"endpoint":"endpoint-b","role":"FR"}]}
@@ -340,6 +346,42 @@ and starting a line-in are the server runtime's, which tells the room model
 what it did through the model's hooks (`crates/control/src/zones.rs`, "What the
 runtime drives"), and every volume it sets is clamped like any other. What the
 server's runtime does is "The schedule runtime" below.
+
+### Per-room sound (goal 12)
+
+`sound`, `bass_management` and `room_eq` are a room's sound, carried to every
+endpoint of the room on the audio wire as `sound` (`docs/protocol.md`, "0x39
+sound"), where the endpoint's DSP realises it. None of them is a volume path:
+none moves `volume`, `limit` or `effective_limit`, and the clamp rule is
+untouched (an endpoint's limiter keeps a DSP boost under the room's limit).
+Each is a partial update: only the fields it carries change, and a command with
+only `zone` changes nothing and still answers with the state.
+
+| setting | range | default |
+|---|---|---|
+| `bass`, `treble` | whole dB, -10 to 10 (ASSUMED 1 dB a step) | 0 |
+| `loudness` | boolean | `true` (ASSUMED as Sonos's default; not printed in Sonos's own documentation) |
+| `night`, `speech` | boolean | `false` |
+| `crossover_hz` | 40 to 200 | 80 (THX) |
+| `sub_level_db` | -12.00 to 6.00, two places | `0.00` |
+| `sub_polarity` | `"normal"`, `"inverted"` | `"normal"` |
+| `room_eq.filters` | at most 8; `freq_hz` 20 to 1000, `gain_db` -12.00 to 3.00 (two places), `q` 0.500 to 10.000 (three places) | none |
+| `room_eq.enabled` | boolean | `true` |
+
+The `room_eq` bounds are THE room-correction bounds (`ROOM_EQ_*` in
+`crates/control/src/sound.rs`, `SOUND_EQ_*` on the wire): the room-correction
+fitter emits only filters inside them and the catalog refuses anything outside
+them, naming `filters` with the filter and its field in the detail. A decibel
+is written with exactly two places and a Q with three, and read back with at
+most that many: `0.7071` is refused, not rounded. Bass management is held
+whatever the room's set; the state's `active` says whether the set has an
+`LFE` member, which is what turns it on.
+
+```json
+{"v":2,"t":"sound","zone":"living","bass":3,"treble":-2,"loudness":false,"night":true,"speech":true}
+{"v":2,"t":"bass_management","zone":"living","crossover_hz":100,"sub_level_db":-3.50,"sub_polarity":"inverted"}
+{"v":2,"t":"room_eq","zone":"living","filters":[{"freq_hz":42,"gain_db":-6.00,"q":4.500},{"freq_hz":120,"gain_db":-3.25,"q":2.000}],"enabled":true}
+```
 
 ### Take the room (K78)
 
@@ -403,7 +445,7 @@ of each, `fixtures/control/v2/state-empty.json` the empty house):
 
 | field | notes |
 |---|---|
-| `zones[]` | v1's fields, then `transport` (`wired` or `wireless`, as declared), `limit`, `effective_limit`, `quiet` (`[{"days","start","end","limit","active"}]`), `bond` (`[{"endpoint","role"}]`, `[]` for none) and `ramp` (a running ramp's target, or `null`) |
+| `zones[]` | v1's fields, then `transport` (`wired` or `wireless`, as declared), `limit`, `effective_limit`, `quiet` (`[{"days","start","end","limit","active"}]`), `bond` (`[{"endpoint","role"}]`, `[]` for none), `ramp` (a running ramp's target, or `null`), and (goal 12) `sound` (`{"bass","treble","loudness","night","speech"}`), `bass_management` (`{"crossover_hz","sub_level_db","sub_polarity","active"}`) and `room_eq` (`{"enabled","filters"}`) |
 | `groups[]` | every formed group, in the order its first room was configured: `id`, `kind`, `zones`, `volume` (the group volume), `source`, `audio` |
 | `saved_groups[]` | every saved definition, sorted by id, active or not: `id`, `name`, `zones`, `active` |
 | `endpoints[]` | every endpoint any room has or that has reported a link, sorted: `id`, `link` |
@@ -728,15 +770,16 @@ and anything about what is playing rather than where. Catalog v2 names a
 group's source and the inputs offered; choosing what a stream URL or a service
 plays is not here.
 
-## What survives a restart (state-file format 2)
+## What survives a restart (state-file format 3)
 
 The server persists, in `--state-file`, everything a person configured: each
-room's name, group, volume, mute, endpoints, `limit`, quiet-hours windows and
-bonded set; each endpoint's link; saved groups; alarms; autoplay rules. It does
+room's name, group, volume, mute, endpoints, `limit`, quiet-hours windows,
+bonded set, and (format 3, goal 12) its sound, bass management and correction
+filters; each endpoint's link; saved groups; alarms; autoplay rules. It does
 not persist what is a fact about now: which endpoints are present, which quiet
 window is active, which alarm is ringing, a running ramp, what a group is
 playing, a sleep timer, or which inputs are offered. A format 1 file (every build
-before catalog v2) loads unchanged with the v2 defaults; the next write is format
-2. A write goes to a temporary that is `fsync`ed, renamed over the file, and the
+before catalog v2) loads unchanged with the v2 defaults, and a format 2 file
+(goal 11's builds) with the sound defaults; the next write is format 3. A write goes to a temporary that is `fsync`ed, renamed over the file, and the
 directory is `fsync`ed, and a render that would not read back as the same state
 is never installed (`crates/control/src/persist.rs`).

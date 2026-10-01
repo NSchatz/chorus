@@ -83,6 +83,7 @@ What a decoder does when it cannot accept a frame:
 | 0x36 | `source_offer` | v2 | in a record | an input an endpoint can share |
 | 0x37 | `source_control` | v2 | in a record | start or stop sending an input |
 | 0x38 | `room_volume` | v2 (goal 11) | in a record | 6 bytes, fixed: gain, limit, ramp |
+| 0x39 | `sound` | v2 (goal 12) | in a record | tone, flags, bonded role, bass management, up to 8 correction filters |
 | all others | unassigned | | | skipped by a decoder that meets one |
 
 Common field encodings:
@@ -599,6 +600,57 @@ clamp is the second line, not the first. `fixtures/volume/` holds the sequence
 the real server sent one player over every volume path, and both endpoint
 kinds are tested on it.
 
+### 0x39 sound
+
+Server to player (goal 12; the per-room sound ADR in `docs/decisions/`). The
+room's sound settings, from the control catalog's `sound`, `bass_management`
+and `room_eq` (`docs/control-plane.md`), plus where THIS player sits in the
+room's bonded set. Every member of a set receives the room's whole stream, so
+bass management is each player's own work, from `role` and `sub_present`; the
+server renders nothing per endpoint. The units are the catalog's own (whole
+dB, Hz, hundredths of a dB, thousandths), so nothing is converted on the way.
+
+| offset | size | field | notes |
+|---|---|---|---|
+| 0 | 1 | `bass_db` | i8, -10 to 10: the low shelf, whole dB |
+| 1 | 1 | `treble_db` | i8, -10 to 10: the high shelf, whole dB |
+| 2 | 1 | `flags` | bit 0 loudness, bit 1 night, bit 2 speech, bit 3 room EQ enabled, bit 4 sub polarity inverted; any other bit set is rejected (undefined) |
+| 3 | 1 | `role` | this player's channel position in the room's bonded set ("The channel map": 1 FL, 2 FR, 3 FC, 4 LFE, 5 BL, 6 BR, 10 SL, 11 SR), 0 when it is in no set; a number that is no channel position is rejected (undefined) |
+| 4 | 1 | `sub_present` | bool: the set has an LFE member, which turns bass management on |
+| 5 | 2 | `crossover_hz` | u16, 40 to 200: mains above, sub below |
+| 7 | 2 | `sub_level_cdb` | i16, -1200 to 600: the sub's level trim, hundredths of a dB |
+| 9 | 1 | `eq_count` | 0 to 8: how many filters follow |
+| 10 | 6 x `eq_count` | filters | each: u16 `freq_hz` 20 to 1000, i16 `gain_cdb` -1200 to 300, u16 `q_milli` 500 to 10000 (a peaking filter) |
+
+The minimum payload is 10 bytes (no filter). Every field is checked on its own
+and in wire order, and a value outside its range is rejected (decoder step 5),
+never clamped; an `eq_count` above 8 is rejected before any filter is read,
+naming `eq_count`. The filter bounds are THE room-correction bounds: the
+catalog refuses a `room_eq` outside them, and the room-correction fitter emits
+only filters inside them (cut-heavy on purpose, +3 dB at most: a correction
+cuts a room's peaks and does not fill its nulls). The ranges are ASSUMED (the
+goal-12 design envelope), except the 80 Hz crossover default, THX's.
+
+The server (with a control plane) sends it:
+
+- at the start of every session of an endpoint a room names, in the greeting
+  right after `room_volume` and before the first chunk;
+- whenever what that player would be told changes: the room's `sound`,
+  `bass_management` or `room_eq`, or its bonded set (a `bond` or `unbond`
+  changes each member's `role` and `sub_present`), to every player session of
+  the room, and only when it differs from what that session was last sent.
+
+A player that has never received one plays flat (the endpoint's DSP chain
+bypassed). The last one received is kept across a new stream and a new
+session. In goal 12's first phase the endpoints decode and keep it (the C
+session's `chorus_session_last_sound`, the Linux client's
+`ZoneWatch::last_sound` and `Announced::sound`); the endpoint DSP chain
+(`crates/dsp`, `firmware/src/dsp.c`) is configured from it in the next.
+`fixtures/protocol/v2/sound_*.hex` are the vectors (a room at the defaults, a
+2.1 set's sub with its polarity inverted, eight filters at the corners of the
+bounds) and `fixtures/protocol/v2/rejected/sound_*.hex` one rejection per
+field and bound.
+
 ## The four roles
 
 Decision K65. A peer declares its roles in `hello`; the server sends a role's
@@ -790,8 +842,8 @@ Clarified in goal 11 (ADR 0079, the server accepting a line-in):
 5. From here every frame on the connection is a `secure_record`. The endpoint
    sends `hello` and `capabilities`; the server sends `hello`, negotiates, and
    sends `stream_format`, `output_delay` (with a control plane, the room's
-   `room_volume` for a player and its `controller_state` for a controller) and
-   the audio. With stream slots (`docs/control-plane.md`) the audio is the
+   `room_volume` and `sound` for a player and its `controller_state` for a
+   controller) and the audio. With stream slots (`docs/control-plane.md`) the audio is the
    stream of the group the endpoint's room is in, routed inside this session:
    a move between groups changes the content, never the sequence or the
    timestamps, because every slot is cut on one grid. `time_sync` requests
@@ -815,7 +867,7 @@ is the same for v1 and v2; only the catalog in step 3 differs.
    on. In v2 this includes a length-prefixed field (a text, a list, the codec
    setup) that runs past the end of the payload, text that is not UTF-8, and
    the value rules each message's section states (for example
-   `room_volume`'s ranges, held by the rejection vectors).
+   `room_volume`'s and `sound`'s ranges, held by the rejection vectors).
 
 A payload longer than the fields a decoder knows about is accepted and the
 excess ignored, so that a field added later is not fatal to a decoder built
@@ -856,7 +908,9 @@ encoder refuses exactly what the decoder rejects.
   `problem`: an encoder must refuse the fields naming that field and emit
   nothing, and a decoder must reject the frame as that field, consume it
   whole and decode the frame after it (goal 11: `room_volume` with each of
-  its fields out of range).
+  its fields out of range; goal 12: `sound` with each field and bound broken).
+  `problem` is `out_of_range` for a number and `undefined` for a bit or a
+  role no version defines (`sound`'s `flags` and `role`).
 - `fixtures/protocol/v2/noise/cacophony_xx.fields`: the published Noise test
   vector the key exchange is held to.
 
