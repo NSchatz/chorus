@@ -20,7 +20,9 @@
 //!   it, and the change the keys caused was pushed to the TV unprompted;
 //! - the TV turning on raises the TV input's signal with no audio at all
 //!   (autoplay on power), the den's autoplay rule plays the hub's input,
-//!   and the TV's standby ends the signal at once and the den is restored.
+//!   the TV's keys while it plays turn the den down and mute it without
+//!   detaching it from the autoplay (ADR 0094), and the TV's standby ends
+//!   the signal at once and the den is restored, volume and mute too.
 //!
 //! Nothing here is timing evidence: the bus is in memory and what is graded
 //! is values, orders and counts.
@@ -90,6 +92,19 @@ fn den(state: &str) -> (u32, u32, String) {
         .unwrap_or("-")
         .to_string();
     (th("volume"), th("effective_limit"), source)
+}
+
+/// Whether the den is muted, off a state message.
+fn den_muted(state: &str) -> bool {
+    let value = json::parse(state).unwrap_or_else(|e| panic!("{}: {:?}", state, e));
+    let Some(Value::Arr(zones)) = value.get("zones") else {
+        panic!("no zones in {}", state)
+    };
+    zones
+        .iter()
+        .find(|z| z.get("id").and_then(Value::as_str) == Some("den"))
+        .and_then(|z| z.get("muted").and_then(Value::as_bool))
+        .unwrap()
 }
 
 fn wait_for(what: &str, limit: Duration, mut done: impl FnMut() -> bool) {
@@ -338,11 +353,9 @@ fn tv_keys_move_the_rooms_volume_within_its_limit_and_tv_power_plays_and_stops_t
     });
     lines.lock().unwrap().clear();
 
-    // The den's autoplay rule for the TV input. The volume keys came first
-    // on purpose: a person's command on an autoplayed room detaches it from
-    // the autoplay (schedule runtime, goal 11), so keys pressed while the TV
-    // plays would leave the standby nothing to stop (a follow-up for the
-    // integration track, ADR "Follow-ups").
+    // The den's autoplay rule for the TV input. The keys above came before
+    // it; the keys below come while the autoplay plays, which must not
+    // detach the den from it (a level is not a source change, ADR 0094).
     server.applied(&format!(
         r#"{{"v":2,"t":"autoplay","input":"{}/line-1","target":"den","enabled":true}}"#,
         hub
@@ -363,8 +376,40 @@ fn tv_keys_move_the_rooms_volume_within_its_limit_and_tv_power_plays_and_stops_t
         den(&server.state()).2 == format!("line-in:{}/line-1", hub)
     });
 
+    assert_eq!(den(&server.state()).0, 560);
+    assert!(!den_muted(&server.state()));
+
+    // While the TV plays: Volume Down twice and Mute, from the TV's remote
+    // through the hub. The den follows (0.520, muted) and stays the
+    // autoplay's.
+    let sent = cec.counters().commands_sent.load(Ordering::Relaxed);
+    for key in [ui::VOLUME_DOWN, ui::VOLUME_DOWN] {
+        tv.press(key);
+        thread::sleep(Duration::from_millis(150));
+    }
+    tv.send(build::user_control_released(TV, AUDIO_SYSTEM));
+    wait_for("the den turned down", Duration::from_secs(5), || {
+        den(&server.state()).0 == 520
+    });
+    tv.press(ui::MUTE);
+    tv.send(build::user_control_released(TV, AUDIO_SYSTEM));
+    wait_for("the den muted", Duration::from_secs(5), || {
+        den_muted(&server.state())
+    });
+    assert_eq!(
+        cec.counters().commands_sent.load(Ordering::Relaxed),
+        sent + 3,
+        "two volume steps and a mute"
+    );
+    assert_eq!(
+        den(&server.state()).2,
+        format!("line-in:{}/line-1", hub),
+        "the den still plays the TV"
+    );
+
     // Standby: the signal ends at once, the den's autoplay stops the TV and
-    // restores the stream.
+    // restores the stream, at the volume and mute the den had before the TV
+    // took it (0.560, not muted): it was still the autoplay's to restore.
     tv.standby();
     wait_for(
         "the signal ends with the standby",
@@ -378,6 +423,18 @@ fn tv_keys_move_the_rooms_volume_within_its_limit_and_tv_power_plays_and_stops_t
     wait_for("the den is restored", Duration::from_secs(5), || {
         den(&server.state()).2 == "stream"
     });
+    assert_eq!(den(&server.state()).0, 560, "the volume before the TV");
+    assert!(!den_muted(&server.state()), "the mute before the TV");
+    // The server's log, read in order up to the autoplay's stop: nothing
+    // detached the den on the way.
+    server.wait_for(&format!(
+        "schedule autoplay input={}/line-1 stopped reason=",
+        hub
+    ));
+    assert!(
+        !server.seen.iter().any(|l| l.contains("detached")),
+        "the TV's keys did not detach the den from its autoplay"
+    );
     assert!(!said("cec transmit"), "every CEC transmit was acknowledged");
 
     let (stop, stats) = source.stop();
