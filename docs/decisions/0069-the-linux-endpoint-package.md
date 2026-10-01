@@ -126,10 +126,24 @@ Directive semantics from systemd.exec(5), systemd.service(5) and systemd.resourc
 - **Who.** `DynamicUser=yes` ("a UNIX user and group pair is allocated dynamically when the
   unit is started"), so no sysusers.d entry or maintainer script; `SupplementaryGroups=audio`
   for `/dev/snd`; `StateDirectory=chorus-client` holds the protocol v2 identity (key and server
-  pins) across restarts; `RuntimeDirectory=` for a bench run's delay log. The front-panel hook
-  (input and GPIO groups, `DeviceAllow=char-input r`, `char-gpiochip rw`, and `ReadWritePaths=`
-  for an LED under the read-only `/sys`) is documented in the unit as a drop-in, ASSUMED until
-  the front-panel track runs it.
+  pins) across restarts; `RuntimeDirectory=` for a bench run's delay log.
+- **The front panel (ADR 0067, `--front-panel`).** Its buttons are a gpio-keys evdev device
+  under `/dev/input`, group `input` on Debian: the package ships a drop-in example
+  (`SupplementaryGroups=input`, `DeviceAllow=char-input r`) that the owner installs on an
+  endpoint with a panel, rather than putting it in the unit, because it lets the service read
+  every input device, keyboards included. Its light is an LED class directory under `/sys`: a
+  shipped udev rule, `/usr/lib/udev/rules.d/70-chorus-leds.rules`, runs `chgrp audio` and
+  `chmod g+w` on `brightness` and `multi_intensity` of an LED whose name starts with
+  `chorus-` (udev(7): `KERNEL` matches the device name, `TEST` a file's existence, `%p` the
+  devpath, `RUN` after all rules; https://www.freedesktop.org/software/systemd/man/latest/udev.html,
+  read 2026-10-01), so it matches nothing on a machine without such an LED, and touches no other
+  LED. Group `audio` is reused rather than a new group made, so the package still needs no
+  maintainer script or sysusers entry. For the write to reach `/sys`, `ProtectKernelTunables=`
+  is not set (it makes `/sys` read-only); `ProtectSystem=strict` leaves `/sys` to file
+  permissions ("except for the API file system subtrees /dev/, /proc/ and /sys/"). The check
+  verifies the unit with the drop-in installed too, and holds the rule's shape lexically
+  (`udevadm` is not installed here, so the rule's syntax is checked by reading only; ASSUMED
+  until a board runs it).
 - **Real-time limits.** `LimitRTPRIO=20`, `LimitRTTIME=200ms`, `LimitMEMLOCK=64M`, the
   server's contract values (`config/verification.conf`), not measured on an endpoint
   (ASSUMED). `RestrictRealtime=` is left off on purpose ("any attempts to enable realtime
@@ -141,9 +155,9 @@ Directive semantics from systemd.exec(5), systemd.service(5) and systemd.resourc
   `auto`. `SystemCallFilter=@system-service` includes `@resources` (`setrlimit`,
   `sched_setscheduler`) and `@memlock` (`systemd-analyze syscall-filter` on systemd 257 here;
   on bookworm's 252, ASSUMED to be the same). The rest (`ProtectSystem=strict`,
-  `ProtectHome`, `PrivateTmp`, kernel and cgroup protections, `RestrictAddressFamilies=AF_UNIX
+  `ProtectHome`, `PrivateTmp`, kernel module, log and cgroup protections, `RestrictAddressFamilies=AF_UNIX
   AF_INET AF_INET6 AF_NETLINK`, `MemoryDenyWriteExecute`, an empty capability set) gives an
-  offline `systemd-analyze security` exposure of 1.8 ("OK"). None of it has run on a device
+  offline `systemd-analyze security` exposure in the "OK" band (the check prints it). None of it has run on a device
   with a sound card: that the hardening leaves playback working is ASSUMED until the owner's
   first install (a follow-up below).
 - **Restart.** `Restart=always`, `RestartSec=2s`, `StartLimitIntervalSec=0` (a speaker keeps

@@ -92,11 +92,17 @@ expected_contents() {
 ./usr/lib/systemd/
 ./usr/lib/systemd/system/
 ./usr/lib/systemd/system/chorus-client.service
+./usr/lib/udev/
+./usr/lib/udev/rules.d/
+./usr/lib/udev/rules.d/70-chorus-leds.rules
 ./usr/share/
 ./usr/share/doc/
 ./usr/share/doc/chorus-endpoint/
 ./usr/share/doc/chorus-endpoint/README
 ./usr/share/doc/chorus-endpoint/copyright
+./usr/share/doc/chorus-endpoint/examples/
+./usr/share/doc/chorus-endpoint/examples/front-panel-rack-amp.conf
+./usr/share/doc/chorus-endpoint/examples/front-panel.conf
 EOF
 }
 
@@ -186,7 +192,7 @@ stage_tree() {
     rm -rf "$stage"
     mkdir -p "$stage/DEBIAN" "$stage/etc/chorus" "$stage/usr/bin" "$stage/usr/lib/chorus/probe" \
         "$stage/usr/lib/chorus/verify-host/tools" "$stage/usr/lib/chorus/verify-host/config" \
-        "$stage/usr/lib/systemd/system" "$stage/usr/share/doc/$PACKAGE"
+        "$stage/usr/lib/systemd/system" "$stage/usr/lib/udev/rules.d" "$stage/usr/share/doc/$PACKAGE/examples"
     for b in "${BINS[@]}"; do
         install -m 0755 "$TD/$triple/release/$b" "$stage/${DEST[$b]}/$b"
     done
@@ -196,6 +202,9 @@ stage_tree() {
     install -m 0644 deploy/endpoint/chorus-client.service "$stage/usr/lib/systemd/system/"
     install -m 0644 deploy/endpoint/client.conf "$stage/etc/chorus/client.conf"
     install -m 0644 deploy/endpoint/README "$stage/usr/share/doc/$PACKAGE/README"
+    install -m 0644 deploy/endpoint/70-chorus-leds.rules "$stage/usr/lib/udev/rules.d/"
+    install -m 0644 deploy/endpoint/front-panel.conf "$stage/usr/share/doc/$PACKAGE/examples/front-panel.conf"
+    install -m 0644 config/front-panel/rack-amp.conf "$stage/usr/share/doc/$PACKAGE/examples/front-panel-rack-amp.conf"
     write_copyright "$triple" "$stage/usr/share/doc/$PACKAGE/copyright"
     chmod 0644 "$stage/usr/share/doc/$PACKAGE/copyright"
 
@@ -274,6 +283,30 @@ check_deb() {
     systemd-analyze verify --man=no --root="$vroot" "$vroot/usr/lib/systemd/system/chorus-selftest.service" 2>&1 |
         command grep -q "Unknown key 'LimitRTTYME'" || fail "systemd-analyze verify did not flag a misspelt directive"
     echo "  self-test: a misspelt directive in a copy of the unit is flagged"
+    # The front-panel drop-in, installed where the owner installs it, verified with the unit.
+    install -D -m 0644 "$unpacked/usr/share/doc/$PACKAGE/examples/front-panel.conf" \
+        "$vroot/etc/systemd/system/chorus-client.service.d/front-panel.conf"
+    if ! verify="$(systemd-analyze verify --man=no --root="$vroot" "$vroot/$unit" 2>&1)" || [ -n "$verify" ]; then
+        echo "$verify"
+        fail "systemd-analyze verify refused the unit with the front-panel drop-in"
+    fi
+    echo "  systemd-analyze verify with the front-panel drop-in: exit 0, no findings"
+    # udevadm is not installed here, so the LED rule is held to its shape: every
+    # rule matches only `chorus-*` LEDs on add and runs only chgrp audio or chmod g+w.
+    local rules="$unpacked/usr/lib/udev/rules.d/70-chorus-leds.rules" n
+    n="$(command grep -c -v -E '^(#|$)' "$rules")"
+    [ "$n" -ge 1 ] || fail "70-chorus-leds.rules holds no rule"
+    command grep -v -E '^(#|$)' "$rules" | while IFS= read -r rule; do
+        case "$rule" in
+            'ACTION=="add", SUBSYSTEM=="leds", KERNEL=="chorus-*", '*) ;;
+            *) fail "a rule in 70-chorus-leds.rules is not scoped to chorus-* LEDs on add: $rule" ;;
+        esac
+        if printf '%s\n' "$rule" | command grep -o 'RUN+="[^"]*"' |
+            command grep -v -q -E '^RUN\+="/bin/(chgrp audio|chmod g\+w) /sys%p/(brightness|multi_intensity)"$'; then
+            fail "a rule in 70-chorus-leds.rules runs something other than chgrp audio or chmod g+w: $rule"
+        fi
+    done
+    echo "  70-chorus-leds.rules: $n rules, all scoped to chorus-* LEDs, chgrp audio and chmod g+w only"
     echo "endpoint-package: systemd-analyze security --offline=true (exposure, informational)"
     systemd-analyze security --offline=true --root="$vroot" --no-pager "$vroot/$unit" 2>&1 |
         tail -n 1 | tr -cd '[:print:]' | sed 's/^/  /'

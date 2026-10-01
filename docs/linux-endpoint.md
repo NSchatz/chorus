@@ -43,7 +43,8 @@ What it installs:
 | `/usr/bin/chorus-verify-host` | the host contract and the spin test (below) |
 | `/usr/lib/chorus/probe/`, `/usr/lib/chorus/verify-host/` | what `chorus-verify-host` runs |
 | `/usr/bin/chorus-wakeup-probe` | the wakeup-jitter probe (ADR 0047) |
-| `/usr/share/doc/chorus-endpoint/` | a README and the licences of everything linked in |
+| `/usr/lib/udev/rules.d/70-chorus-leds.rules` | makes a front-panel LED named `chorus-*` writable by the service |
+| `/usr/share/doc/chorus-endpoint/` | a README, the licences of everything linked in, and `examples/` (the front-panel drop-in and an example panel) |
 
 ## Configure
 
@@ -112,6 +113,34 @@ grants no priority the client refuses at start (`stopped reason=real-time-refuse
 The values are the server's contract (`config/verification.conf`); what an endpoint needs is
 not measured yet (ASSUMED).
 
+## A front panel
+
+An endpoint with buttons and a status light (the rack amp, ADR 0067) runs them as the controller
+role with `--front-panel <file>`. The board's device-tree overlays turn the buttons into a
+gpio-keys input device and the light into an LED class device (the example file names the
+overlay lines; all of it ASSUMED until the rack amp's board is designed). Then:
+
+1. Copy the example and edit it for the board:
+   `sudo cp /usr/share/doc/chorus-endpoint/examples/front-panel-rack-amp.conf /etc/chorus/front-panel.conf`
+2. Give the light a name starting with `chorus-` (the overlay's `label=`, e.g.
+   `label=chorus-status`). The package's udev rule makes that LED's `brightness` (and
+   `multi_intensity`, if it has one) group `audio` and group-writable, which the service is in;
+   no other LED is touched. Apply it once with `sudo udevadm trigger --subsystem-match=leds`
+   or a reboot.
+3. Let the service read the buttons, by installing the drop-in the package ships (it adds group
+   `input` and opens the input device class read-only; not in the unit by default because it
+   lets the service read every input device, keyboards included):
+
+   ```
+   sudo install -D -m 0644 /usr/share/doc/chorus-endpoint/examples/front-panel.conf \
+       /etc/systemd/system/chorus-client.service.d/front-panel.conf
+   sudo systemctl daemon-reload
+   ```
+
+4. Add `--front-panel /etc/chorus/front-panel.conf` to `CHORUS_CLIENT_ARGS` and restart. A panel
+   that cannot start (a device it cannot open, a key the class does not have) stops the client
+   with `stopped reason=front-panel-refused` (exit 2), and the unit stays stopped.
+
 ## Changing the unit
 
 Never edit `/usr/lib/systemd/system/chorus-client.service` (an upgrade replaces it). A drop-in
@@ -121,10 +150,7 @@ survives upgrades:
 sudo systemctl edit chorus-client
 ```
 
-The unit's comments carry the one hook known to be coming: the front panel (buttons on
-`/dev/input`, GPIO lines, an LED under `/sys/class/leds`) needs `SupplementaryGroups=`,
-`DeviceAllow=char-input r`, `DeviceAllow=char-gpiochip rw` and a `ReadWritePaths=` for the LED
-in a drop-in; that drop-in is ASSUMED until the front-panel work runs it on a board.
+The front-panel drop-in above is the pattern for any other device a later feature needs.
 
 ## Remove
 

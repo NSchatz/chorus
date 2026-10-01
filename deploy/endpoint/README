@@ -10,6 +10,10 @@ What is installed:
   /usr/lib/chorus/verify-host, /usr/lib/chorus/probe
                                                   what chorus-verify-host runs
   /usr/bin/chorus-wakeup-probe                    the wakeup-jitter probe
+  /usr/lib/udev/rules.d/70-chorus-leds.rules      a front-panel LED named chorus-*
+                                                  writable by the service (group audio)
+  /usr/share/doc/chorus-endpoint/examples/        the front-panel drop-in and an
+                                                  example panel configuration
 
 To start it:
 

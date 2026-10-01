@@ -39,15 +39,13 @@ RestartPreventExitStatus=2
 # are group `audio` on Debian and Raspberry Pi OS.
 DynamicUser=yes
 SupplementaryGroups=audio
-# The front-panel hook (goal 10 phase 3, the controller role): buttons read
-# from /dev/input and GPIO lines need their groups and device classes added in
-# a drop-in, for example
-#   SupplementaryGroups=audio input gpio
-#   DeviceAllow=char-input r
-#   DeviceAllow=char-gpiochip rw
-# and an LED under /sys/class/leds needs ReadWritePaths= for its brightness
-# file, because ProtectKernelTunables= below makes /sys read-only. ASSUMED
-# until that track runs it on a board.
+# The front panel (`--front-panel`, the controller role): its buttons are an
+# evdev device under /dev/input, read with the drop-in the package ships as
+# /usr/share/doc/chorus-endpoint/examples/front-panel.conf (group `input`,
+# DeviceAllow=char-input r), off unless installed; its status light is an LED
+# class directory under /sys, which /usr/lib/udev/rules.d/70-chorus-leds.rules
+# makes writable by group `audio` for an LED named `chorus-*`. ASSUMED until
+# run on a board.
 StateDirectory=chorus-client
 StateDirectoryMode=0700
 RuntimeDirectory=chorus-client
@@ -73,7 +71,10 @@ DeviceAllow=char-alsa rw
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-ProtectKernelTunables=yes
+# ProtectKernelTunables= is NOT set: it makes /sys read-only, and the front
+# panel's LED is written under /sys/class/leds. ProtectSystem=strict leaves /sys
+# to file permissions ("except for the API file system subtrees /dev/, /proc/
+# and /sys/"), and only a `chorus-*` LED is group-writable (the udev rule).
 ProtectKernelModules=yes
 ProtectKernelLogs=yes
 ProtectControlGroups=yes
