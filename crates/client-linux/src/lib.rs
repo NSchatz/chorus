@@ -55,6 +55,7 @@
 #![warn(missing_docs)]
 
 pub mod buffer;
+pub mod cec;
 pub mod coded;
 pub mod config;
 pub mod control;

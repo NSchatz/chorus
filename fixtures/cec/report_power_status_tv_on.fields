@@ -1,0 +1,11 @@
+# Canonical input for the report_power_status_tv_on CEC vector: the TV answers the poll: on.
+#
+# Format: one "key = value" per line, '#' starts a comment. opcode is the name
+# crates/cec/src/codec.rs gives it (empty for a poll); operands are hex with no separators;
+# validity is what crates/cec/src/validate.rs must say of the message.
+
+initiator = 0
+destination = 5
+opcode = report_power_status
+operands = 00
+validity = ok

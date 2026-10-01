@@ -70,6 +70,13 @@ file's own comments list every argument worth setting. At least:
   opened with enough channels to reach both drivers. It names the device outputs itself, so it
   is refused beside `--output-channels`/`--output`.
 
+- `--cec <device>` (a hub only): be the TV's Audio System over HDMI-CEC on `/dev/cecN`, so the
+  TV's remote drives the room's volume and the TV's power starts and stops the TV input
+  (`docs/cec.md`, which also gives the drop-in the service needs for the device). With it:
+  `--cec-arc` (off, ASSUMED), `--cec-autoplay-on-power on|off` (on) and `--cec-osd-name <name>`
+  (`chorus`, ASSUMED; 1 to 14 printable ASCII bytes). An adapter that cannot be opened or
+  claimed is logged (`cec unusable`) and retried; the endpoint plays on.
+
 ### A TV input (optical, HDMI ARC)
 
 `--line-in <device> --line-in-kind optical` (or `hdmi_arc`) makes this endpoint the TV's hub: it

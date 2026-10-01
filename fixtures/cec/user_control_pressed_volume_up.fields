@@ -1,0 +1,11 @@
+# Canonical input for the user_control_pressed_volume_up CEC vector: the TV forwards Volume Up.
+#
+# Format: one "key = value" per line, '#' starts a comment. opcode is the name
+# crates/cec/src/codec.rs gives it (empty for a poll); operands are hex with no separators;
+# validity is what crates/cec/src/validate.rs must say of the message.
+
+initiator = 0
+destination = 5
+opcode = user_control_pressed
+operands = 41
+validity = ok

@@ -311,6 +311,7 @@ fn play_the_tv(kind: SourceKind) -> Measured {
                 counters,
                 controls: source_control,
                 thresholds: SignalThresholds::default(),
+                tv_power: None,
                 log: Box::new(move |l| lines.lock().unwrap().push(l.to_string())),
             },
         )

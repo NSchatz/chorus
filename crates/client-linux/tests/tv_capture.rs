@@ -105,6 +105,7 @@ fn run(mut tv: ModelledTv, seconds: f64, on_chunk: OnChunk) -> Outcome {
         counters,
         controls,
         thresholds: SignalThresholds::default(),
+        tv_power: None,
         log: {
             let lines = Arc::clone(&lines);
             let clock = Arc::clone(&clock);

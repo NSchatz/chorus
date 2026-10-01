@@ -83,8 +83,10 @@ envelope, `crates/sync/src/latency_grow.rs`, `crates/server/src/{linein,slots,co
      as ADR 0066's does); lifted when the matcher runs again after its warm-up.
    - `rate-out-of-range`: the ratio loop at its clamp for 2 s; the matcher then measures afresh
      and the refusal lifts at the first warm-up whose estimate is inside the clamp.
-8. **The offered signal** is `tv_signal(level_present, refusal)`: the level detector's verdict
-   (ADR 0066) and no refusal. One function, so the CEC track's TV-power input joins in one place.
+8. **The offered signal** is `tv_signal(wanted, refusal)`: wanted is the level detector's verdict
+   (ADR 0066), or on a hub with CEC what ADR 0087's `chorus_cec::TvSignal` makes of it and the
+   TV's power (the TV on offers the input before any audio, a standby ends it at once); a
+   refusal withholds it either way, since nothing would be forwarded to play.
 9. **The seam for the low-latency path** (envelope direction 2, built by the integration track):
    `TvFrontEnd::set_chunk_frames` switches the chunk size from the next chunk (120 frames,
    2.5 ms, when `0x16` direction 2 is offered), and every chunk leaves `run_tv` through

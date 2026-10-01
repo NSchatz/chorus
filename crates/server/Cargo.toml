@@ -44,6 +44,9 @@ chorus-audio-path = { path = "../audio-path" }
 # tests/dsp_end_to_end.rs predicts what the endpoints play with the DSP
 # library's own responses and chain (goal 12).
 chorus-dsp = { path = "../dsp" }
+# tests/cec_tv.rs drives the hub's CEC role on the fake bus with a scripted
+# TV (goal 13).
+chorus-cec = { path = "../cec" }
 
 [[bin]]
 name = "chorus-server"

@@ -1,0 +1,11 @@
+# Canonical input for the cec_version_1_4 CEC vector: CEC 1.4.
+#
+# Format: one "key = value" per line, '#' starts a comment. opcode is the name
+# crates/cec/src/codec.rs gives it (empty for a poll); operands are hex with no separators;
+# validity is what crates/cec/src/validate.rs must say of the message.
+
+initiator = 5
+destination = 0
+opcode = cec_version
+operands = 05
+validity = ok

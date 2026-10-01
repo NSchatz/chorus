@@ -1,0 +1,15 @@
+[package]
+name = "chorus-cec"
+description = "HDMI-CEC for the Linux hub: the message codec, the Audio System role, the kernel CEC adapter and a fake bus with a scripted TV"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# No dependencies: the kernel's CEC API is reached through libc's own ioctl,
+# which the std-linked binary already has (src/kernel.rs).
+[dependencies]
+
+[lints]
+workspace = true

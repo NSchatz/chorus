@@ -1,0 +1,11 @@
+# Canonical input for the set_system_audio_mode_off CEC vector: System Audio Mode off, broadcast (CTS 11.2.15-5, -6).
+#
+# Format: one "key = value" per line, '#' starts a comment. opcode is the name
+# crates/cec/src/codec.rs gives it (empty for a poll); operands are hex with no separators;
+# validity is what crates/cec/src/validate.rs must say of the message.
+
+initiator = 5
+destination = 15
+opcode = set_system_audio_mode
+operands = 00
+validity = ok

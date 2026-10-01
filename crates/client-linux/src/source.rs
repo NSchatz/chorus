@@ -708,6 +708,10 @@ pub struct SourceSetup {
     pub thresholds: SignalThresholds,
     /// Where status lines go.
     pub log: Box<dyn FnMut(&str) + Send>,
+    /// For a TV input on a hub with CEC (goal 13, `crate::cec`): the TV's
+    /// power and the autoplay-on-power rule, which make the offered signal
+    /// (`chorus_cec::TvSignal`). `None`: the signal is the audio alone.
+    pub tv_power: Option<chorus_cec::TvSignal<Arc<chorus_cec::TvPower>>>,
 }
 
 /// A running source role.
@@ -871,15 +875,24 @@ pub fn run<C: CaptureSource, U: Upstream>(
             ));
         }
 
-        if let Some(present) = detector.push(&pcm) {
+        // The audio's edge, or with CEC the TV's power beside it (a
+        // standby ends the signal at once, `chorus_cec::TvSignal`).
+        let edge = detector.push(&pcm);
+        let change = match setup.tv_power.as_mut() {
+            Some(tv) => tv.update(edge).map(|(p, why)| (p, Some(why))),
+            None => edge.map(|p| (p, None)),
+        };
+        if let Some((present, why)) = change {
             stats.signal.store(present, Ordering::Relaxed);
             if let Err(e) = offer(upstream, &input, present, stats) {
                 return lost(e);
             }
             log(&format!(
-                "source-offer source_id={} signal={}",
+                "source-offer source_id={} signal={}{}",
                 input.source_id,
-                u8::from(present)
+                u8::from(present),
+                why.map(|w| format!(" reason={}", w.name()))
+                    .unwrap_or_default()
             ));
         }
 
@@ -965,11 +978,11 @@ fn apply_control<U: Upstream>(
     Ok(())
 }
 
-/// The signal a TV input offers: audio present (the level detector) and the
-/// input not refused. One function so a further input to it (the TV's power
-/// over CEC) joins in one place.
-pub fn tv_signal(level_present: bool, refusal: Option<Refusal>) -> bool {
-    level_present && refusal.is_none()
+/// The signal a TV input offers: wanted (audio present by the level
+/// detector, or with CEC what `chorus_cec::TvSignal` makes of it and the
+/// TV's power) and the input not refused.
+pub fn tv_signal(wanted: bool, refusal: Option<Refusal>) -> bool {
+    wanted && refusal.is_none()
 }
 
 /// The TV input's loop (see the module documentation): [`run`] hands an
@@ -1001,6 +1014,8 @@ pub fn run_tv<C: CaptureSource, U: Upstream>(
     let mut pcm = vec![0u8; PERIOD_FRAMES as usize * capture.frame_len()];
     let mut streaming: Option<Streaming> = None;
     let mut offered = false;
+    let mut cec_wanted = false;
+    let mut cec_reason = "quiet";
     let mut failing = false;
     let log = &mut setup.log;
     let wait_ns = TV_READ_WAIT_MS * 1_000_000;
@@ -1036,6 +1051,7 @@ pub fn run_tv<C: CaptureSource, U: Upstream>(
             }
         }
 
+        let mut audio_edge = None;
         let read = capture.read_within(&mut pcm, wait_ns);
         let now_ns = (setup.clock)();
         let changed = match read {
@@ -1095,7 +1111,7 @@ pub fn run_tv<C: CaptureSource, U: Upstream>(
                 let status = capture.channel_status();
                 let offset = setup.counters.offset.get();
                 let c = tv.period(&pcm, now_ns, delay, offset, status);
-                detector.push(&pcm);
+                audio_edge = detector.push(&pcm);
                 c
             }
         };
@@ -1119,7 +1135,20 @@ pub fn run_tv<C: CaptureSource, U: Upstream>(
         }
         publish_tv(&tv, stats);
 
-        let signal = tv_signal(detector.present(), tv.refusal());
+        // With CEC the TV's power joins the audio (`chorus_cec::TvSignal`:
+        // the TV on offers the input before any audio, a standby ends it at
+        // once); a refusal still withholds it, since nothing would play.
+        let wanted = match setup.tv_power.as_mut() {
+            Some(power) => {
+                if let Some((w, why)) = power.update(audio_edge) {
+                    cec_wanted = w;
+                    cec_reason = why.name();
+                }
+                cec_wanted
+            }
+            None => detector.present(),
+        };
+        let signal = tv_signal(wanted, tv.refusal());
         if signal != offered {
             offered = signal;
             stats.signal.store(signal, Ordering::Relaxed);
@@ -1127,8 +1156,10 @@ pub fn run_tv<C: CaptureSource, U: Upstream>(
                 return lost(e);
             }
             let reason = match (signal, tv.refusal()) {
+                (true, _) if setup.tv_power.is_some() => format!(" reason={}", cec_reason),
                 (true, _) => String::new(),
                 (false, Some(r)) => format!(" reason={}", r.name()),
+                (false, None) if setup.tv_power.is_some() => format!(" reason={}", cec_reason),
                 (false, None) => " reason=silent".to_string(),
             };
             log(&format!(

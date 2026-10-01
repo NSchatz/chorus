@@ -510,6 +510,7 @@ fn a_line_in_is_offered_started_streamed_bit_for_bit_on_the_server_timeline_and_
                 controls: source_control,
                 thresholds: SignalThresholds::default(),
                 log: Box::new(move |l| lines.lock().unwrap().push(l.to_string())),
+                tv_power: None,
             },
         )
     };

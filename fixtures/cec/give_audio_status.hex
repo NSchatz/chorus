@@ -1,0 +1,11 @@
+# chorus CEC golden vector: the TV asks the level it shows.
+#
+# Committed, never written by a test. Rust-only by declaration (CEC runs on the Linux hub
+# alone): crates/cec/tests/fixtures.rs decodes these bytes to give_audio_status.fields and encodes the
+# fields back to these bytes. Format: whitespace separated hex bytes, '#' starts a comment.
+
+# header: initiator 0, destination 5
+05
+
+# opcode: give_audio_status
+71
