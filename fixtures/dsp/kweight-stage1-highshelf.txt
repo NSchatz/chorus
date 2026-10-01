@@ -1,0 +1,17 @@
+# ITU-R BS.1770-5 (11/2023) Annex 1 Table 1 prints the K-weighting's stage 1
+# (the head's shelving pre-filter) at 48 kHz. pyloudnorm (MIT) reproduces it with
+# the cookbook high shelf at fc = 1500 Hz, G = 4.0 dB, Q = 1/sqrt 2 (meter.py,
+# "high_shelf", read 2026-10-01). The cookbook design at those parameters lands
+# within 1.08e-04 of every printed coefficient; the tolerance is 2e-4.
+
+kind = biquad_coefficients
+source = https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.1770-5-202311-I!!PDF-E.pdf https://github.com/csteinmetz1/pyloudnorm/blob/master/pyloudnorm/meter.py
+read = 2026-10-01
+type = highshelf
+rate_hz = 48000
+f0_hz = 1500
+q = 0.7071067811865475
+gain_db = 4
+expect_b = 1.53512485958697 -2.69169618940638 1.19839281085285
+expect_a = -1.69065929318241 0.73248077421585
+tolerance = 2e-4

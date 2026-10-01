@@ -1,0 +1,15 @@
+# The RBJ cookbook as the W3C note gives it. LPF, H(s) = 1/(s^2 + s/Q + 1): |H| = Q at f0 (here Q = 2, +6.0206 dB), 1 at DC, and a
+# double zero at Nyquist (the cookbook's b0 + b2 = b1 there).
+# -inf: the magnitude must be below -100 dB.
+
+kind = biquad_magnitude
+source = https://www.w3.org/TR/audio-eq-cookbook/
+read = 2026-10-01
+type = lowpass
+rate_hz = 48000
+f0_hz = 1000
+q = 2.0
+gain_db = 0
+freqs_hz = 0 1000 24000
+expect_db = 0 6.020599913279624 -inf
+tolerance_db = 1e-6

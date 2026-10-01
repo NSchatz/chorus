@@ -16,6 +16,9 @@
 # fixtures/volume (goal 11) is the room_volume sequence the real server sent one player over every
 # volume path: crates/server/tests captures and re-checks it, firmware/tests/test_volume.c feeds it
 # through the C endpoint's volume path, so both endpoint kinds are held to one sequence.
+# fixtures/dsp (goal 12) is the DSP library's contract: crates/dsp/tests/shared_fixtures.rs and
+# firmware/tests/test_dsp.c both walk it and fail on a kind they do not know, so every file name
+# is read (`*`).
 . "$(dirname "$0")/lib.sh"
 # directory | extensions both sides read | where Rust reads it | where C reads it
 shared=(

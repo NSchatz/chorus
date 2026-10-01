@@ -1,0 +1,17 @@
+# Speech enhancement on stereo, a side-only signal (L = -R): the mid is exactly 0,
+# the boost of 0 is 0, and l = 0 + s, r = 0 - s give the input back, bit for bit.
+
+kind = chain
+source = docs/dsp.md
+read = 2026-10-01
+rate_hz = 48000
+room_gain = 1
+limit_gain = 1
+channel_map = 1 2
+frames = 4800
+speech = 1
+input.0 = sine 2000 0.25 + noise 4 0.2
+input.1 = sine 2000 -0.25 + noise 4 -0.2
+out_channels = 2
+exact.0 = 0
+exact.1 = 1

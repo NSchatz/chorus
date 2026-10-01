@@ -1,0 +1,20 @@
+# ITU-R BS.1770-5 Annex 1 Table 2: the K-weighting's stage 2 high-pass at 48 kHz,
+# printed as b = 1, -2, 1 (not normalised) and a1, a2. pyloudnorm (MIT) reproduces
+# it with the cookbook high-pass at fc = 38 Hz, Q = 0.5. The denominator lands
+# within 2.88e-05 of the printed one (tolerance 5e-5); the numerator, divided by
+# its b0, must be the printed 1, -2, 1 (tolerance 1e-12): the cookbook's
+# normalisation scales it by (1 + cos w0)/(2 a0), a passband gain of 1 rather
+# than the printed filter's 1.0050.
+
+kind = biquad_coefficients
+source = https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.1770-5-202311-I!!PDF-E.pdf https://github.com/csteinmetz1/pyloudnorm/blob/master/pyloudnorm/meter.py
+read = 2026-10-01
+type = highpass
+rate_hz = 48000
+f0_hz = 38
+q = 0.5
+gain_db = 0
+expect_b_ratio = 1 -2 1
+expect_a = -1.99004745483398 0.99007225036621
+tolerance = 5e-5
+tolerance_ratio = 1e-12

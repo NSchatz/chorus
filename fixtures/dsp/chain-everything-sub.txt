@@ -1,0 +1,38 @@
+# Every stage at once on the LFE member of a 5.1 set (FL FR FC LFE BL BR):
+# room EQ, tone, loudness, speech on FC, night (linked over all six channels),
+# the LFE feed (low branch of the five mains plus LFE at +10 dB) at +2 dB,
+# inverted, 100 Hz crossover. Samples from the Rust chain (a drift fixture).
+
+kind = chain
+source = docs/dsp.md
+read = 2026-10-01
+rate_hz = 48000
+channel_map = 1 2 3 4 5 6
+frames = 9600
+room_gain = 0.5
+limit_gain = 1
+bass_db = -2
+treble_db = 5
+loudness = 1
+night = 1
+speech = 1
+room_eq_enabled = 1
+room_eq = 45 -900 2500
+role = 4
+sub_present = 1
+crossover_hz = 100
+sub_level_cdb = 200
+sub_polarity_inverted = 1
+input.0 = noise 40 0.3 + sine 30 0.1
+input.1 = noise 41 0.3 + sine 37 0.1
+input.2 = noise 42 0.3 + sine 44 0.1
+input.3 = noise 43 0.3 + sine 51 0.1
+input.4 = noise 44 0.3 + sine 58 0.1
+input.5 = noise 45 0.3 + sine 65 0.1
+out_channels = 1
+ceiling_holds = 1
+golden = 1
+# The Rust chain's output (the chain_samples example): a drift check.
+samples_from = 9536
+samples_tolerance = 1e-6
+samples.0 = 0.14085841 0.016172148 -0.19199637 -0.08644222 0.14058271 -0.06532551 0.09632919 0.023789603 0.24573094 -0.032036316 -0.23530574 -0.27235138 -0.2634297 -0.26535323 0.09262306 -0.06006738 -0.28218523 0.16614541 -0.10388129 -0.055600908 -0.2040762 -0.14913525 -0.07721219 0.20266342 -0.19952817 -0.013166797 0.13007629 0.10745312 0.062464904 -0.15304765 -0.15855104 0.17378065 0.1181314 0.073121935 -0.13319542 0.08473382 -0.17973386 -0.15943956 -0.086594164 0.021458933 -0.22772563 0.1420981 0.20787378 0.17298159 0.2366116 -0.044948827 0.060918245 0.049791086 -0.23058084 -0.2800733 0.057803877 0.20472467 0.10251072 0.22957398 0.040789865 0.106443934 -0.018398963 -0.047162678 0.2274356 -0.15084074 0.23406622 -0.20329435 -0.28552416 0.21775672
