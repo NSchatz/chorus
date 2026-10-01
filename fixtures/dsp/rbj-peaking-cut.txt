@@ -1,0 +1,14 @@
+# The RBJ cookbook as the W3C note gives it. peakingEQ, a cut (the room-correction case): -12 dB at f0, 0 dB at DC and Nyquist.
+# -inf: the magnitude must be below -100 dB.
+
+kind = biquad_magnitude
+source = https://www.w3.org/TR/audio-eq-cookbook/
+read = 2026-10-01
+type = peaking
+rate_hz = 48000
+f0_hz = 250
+q = 4.0
+gain_db = -12
+freqs_hz = 0 250 24000
+expect_db = 0 -12 0
+tolerance_db = 1e-6

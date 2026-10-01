@@ -1,0 +1,21 @@
+# Speech enhancement on stereo: mid/side, the voice-band boost (2 kHz and Q 0.667
+# ASSUMED; +4 dB, Geiger et al. EUSIPCO 2015's 3.8 dB centre gain rounded) on the mid. A centred 2 kHz tone (L = R) is all mid, so both
+# outputs settle at amplitude 0.25 x |H(2 kHz)| = 0.396223298 (the cookbook
+# peaking gain at f0: dBgain).
+
+kind = chain
+source = https://www.eurasip.org/Proceedings/Eusipco/Eusipco2015/papers/1570096395.pdf https://www.w3.org/TR/audio-eq-cookbook/ docs/dsp.md
+read = 2026-10-01
+rate_hz = 48000
+room_gain = 1
+limit_gain = 1
+channel_map = 1 2
+frames = 9600
+speech = 1
+input.0 = sine 2000 0.25
+input.1 = sine 2000 0.25
+out_channels = 2
+amplitude.0 = 0.3962232981152785
+amplitude.1 = 0.3962232981152785
+amplitude_from = 4800
+amplitude_tolerance = 2e-5

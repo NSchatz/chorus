@@ -1,0 +1,25 @@
+# A flat chain on 5.1 (FL FR FC LFE BL BR) at 44.1 kHz: six outputs, each its input
+# times the room gain, delayed by the look-ahead (88 frames: 2 ms rounded), bit for bit.
+
+kind = chain
+source = docs/dsp.md
+read = 2026-10-01
+rate_hz = 44100
+channel_map = 1 2 3 4 5 6
+frames = 2000
+room_gain = 0.8125
+limit_gain = 0.9
+input.0 = noise 11 0.95
+input.1 = noise 12 0.95
+input.2 = noise 13 0.95
+input.3 = noise 14 0.95
+input.4 = noise 15 0.95
+input.5 = noise 16 0.95
+out_channels = 6
+latency_frames = 88
+exact.0 = 0
+exact.1 = 1
+exact.2 = 2
+exact.3 = 3
+exact.4 = 4
+exact.5 = 5

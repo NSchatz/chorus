@@ -1,0 +1,18 @@
+# A flat chain (every setting at its default, not in a set, no two-way, no delays)
+# runs no filter: each output is its input channel times the room gain, delayed by
+# the limiter's look-ahead (96 frames at 48 kHz), bit for bit.
+
+kind = chain
+source = docs/dsp.md
+read = 2026-10-01
+rate_hz = 48000
+channel_map = 1 2
+frames = 4800
+room_gain = 0.5
+limit_gain = 1
+input.0 = noise 1 0.9
+input.1 = noise 2 0.9 + sine 1000 0.05
+out_channels = 2
+latency_frames = 96
+exact.0 = 0
+exact.1 = 1

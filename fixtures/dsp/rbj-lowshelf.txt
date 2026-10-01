@@ -1,0 +1,15 @@
+# The RBJ cookbook as the W3C note gives it. lowShelf: dBgain towards DC, and f0 is the "shelf midpoint frequency" with
+# "midpoint (dBgain/2)" gain; 0 dB at Nyquist.
+# -inf: the magnitude must be below -100 dB.
+
+kind = biquad_magnitude
+source = https://www.w3.org/TR/audio-eq-cookbook/
+read = 2026-10-01
+type = lowshelf
+rate_hz = 48000
+f0_hz = 200
+q = 0.7071067811865475
+gain_db = 12
+freqs_hz = 0 200 24000
+expect_db = 12 6 0
+tolerance_db = 1e-6

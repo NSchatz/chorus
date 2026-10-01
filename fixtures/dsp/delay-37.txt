@@ -1,0 +1,13 @@
+# A delay line of M samples: y(n) = x(n - M), starting from zeros (J. O. Smith
+# III, Physical Audio Signal Processing, Delay Lines). Exact. The fixed maximum
+# is 4800 frames (50 ms at 96 kHz): 4800 is taken, 4801 refused.
+
+kind = delay
+source = https://ccrma.stanford.edu/~jos/pasp/Delay_Lines.html
+read = 2026-10-01
+delay_frames = 37
+frames = 400
+input = ramp 0.001 + noise 5 0.25
+rate_hz = 48000
+max_frames = 4800
+refuse_frames = 4801

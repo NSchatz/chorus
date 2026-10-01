@@ -1,0 +1,22 @@
+# The two-way split sums flat: woofer + tweeter (no trims, no delays) is the LR4
+# all-pass of the input, so a 3 kHz tone of 0.5 on a mono stream comes back out
+# of the sum at amplitude 0.5 (RaneNote 160: "The summed response is perfectly
+# flat").
+
+kind = chain
+source = https://www.ranecommercial.com/legacy/note160.html
+read = 2026-10-01
+rate_hz = 48000
+room_gain = 1
+limit_gain = 1
+channel_map = 0
+frames = 9600
+two_way = 1
+two_way_hz = 2000
+woofer = 0 0 0
+tweeter = 0 0 0
+input.0 = sine 3000 0.5
+out_channels = 2
+sum_amplitude = 0.5
+amplitude_from = 4800
+amplitude_tolerance = 1e-4

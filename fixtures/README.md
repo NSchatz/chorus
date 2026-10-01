@@ -295,3 +295,30 @@ drove every volume path: the greeting, `volume` above the limit, `volume_step`, 
 `controller_command`. That test asserts a run reproduces it byte for byte;
 `firmware/tests/test_volume.c` feeds it through the C endpoint's decoder and volume path and
 asserts the clamp at every message. Regenerated only by `make volume-sequence`.
+
+## `dsp/`
+
+Shared (Rust and C, `check-shared-fixtures.sh`): the DSP library's contract (goal 12,
+`docs/dsp.md`). Every file is read by `crates/dsp/tests/shared_fixtures.rs` and by
+`firmware/tests/test_dsp.c`; both walk the directory, and a `kind` either reader does not know is
+a failure. The format is `key = value`, `#` starts a comment, lists are space-separated; every
+file names its `kind`, its `source` (the cited worked example's URL, or `docs/dsp.md` for
+chorus's own chain) and the date it was `read`, and its tolerances. A signal recipe
+(`input.<c> = sine 1000 0.5 + noise 7 0.1`) is defined in `crates/dsp/src/fixture.rs`.
+
+| kind | what it holds the blocks to |
+|---|---|
+| `biquad_coefficients` | a design's coefficients against numbers printed in the source (ITU-R BS.1770-5's K-weighting at 48 kHz, with pyloudnorm's parameters) |
+| `biquad_reference` | a design's magnitude, and the running f32 section's impulse response, against the printed filter |
+| `biquad_magnitude` | the RBJ cookbook's stated magnitudes at f0, DC and Nyquist (`-inf` means below -100 dB) |
+| `lr4` | Linkwitz-Riley: -6.02 dB at the crossover, in phase, a flat sum, and the running split |
+| `delay` | `y(n) = x(n - M)`, bit for bit; the maximum taken and one more refused |
+| `limiter` | never above the ceiling; input under it comes out delayed, bit for bit |
+| `compressor_static`, `compressor_timing` | the Giannoulis et al. static curve; 10-90 % times equal attack and release |
+| `iso226`, `loudness` | the ISO 226:2003 table rows and formula; chorus's shelf gains from them |
+| `chain` | the whole chain: `exact.<o>` (an input times the gain, delayed, bit for bit), `amplitude.<o>` and `sum_amplitude` (computed from the cited responses), `ceiling_holds`, and `samples.<o>` |
+
+The `samples.<o>` lines are the Rust chain's own output (a drift check that holds the C chain to
+the Rust one, not a worked example); every other expected value is printed in, or computed from,
+the cited source by `tools/dsp-fixtures/generate.py` (standard-library Python, independent of
+both implementations). Regenerated only by running that script by hand.
