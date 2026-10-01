@@ -1,0 +1,11 @@
+# Canonical input for the system_audio_mode_request_on CEC vector: the TV asks for System Audio Mode on, its own path 0.0.0.0 active.
+#
+# Format: one "key = value" per line, '#' starts a comment. opcode is the name
+# crates/cec/src/codec.rs gives it (empty for a poll); operands are hex with no separators;
+# validity is what crates/cec/src/validate.rs must say of the message.
+
+initiator = 0
+destination = 5
+opcode = system_audio_mode_request
+operands = 0000
+validity = ok

@@ -1196,6 +1196,7 @@ fn the_real_linux_clients_line_in_is_autoplayed_to_its_target_and_stopped_when_i
                 controls: source_control,
                 thresholds: SignalThresholds::default(),
                 log: Box::new(move |l| lines.lock().unwrap().push(l.to_string())),
+                tv_power: None,
             },
         )
     };

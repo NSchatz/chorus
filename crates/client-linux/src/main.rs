@@ -50,6 +50,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chorus_audio::MonotonicTimeline;
+use chorus_client_linux::cec::CecRole;
 use chorus_client_linux::config::{ClientConfig, ClientMode};
 use chorus_client_linux::control::{ControlLink, ZoneWatch};
 use chorus_client_linux::delaylog::DelayLog;
@@ -144,6 +145,17 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
             }
         },
     };
+    // HDMI-CEC, when configured: the hub as the TV's Audio System (goal 13,
+    // crate::cec). It runs and reopens its adapter on its own thread, so a
+    // TV that is off or a dongle not yet plugged in never stops the
+    // endpoint playing; the controller role it adds is declared either way.
+    let mut panel_config = panel_config;
+    let cec = config.cec.as_ref().map(|c| {
+        panel_config.extra_roles |= chorus_protocol::v2::roles::CONTROLLER;
+        let now_ms: Arc<dyn Fn() -> u64 + Send + Sync> =
+            Arc::new(move || timeline.now_ns() / 1_000_000);
+        CecRole::open(c, now_ms, Arc::new(status))
+    });
     let config = &panel_config;
 
     // The control channel first, so that the first session already knows its
@@ -229,6 +241,7 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
             &watch,
             &mut identity,
             panel.as_ref(),
+            cec.as_ref(),
         );
         played_ever |= outcome.played;
         total_frames += outcome.frames_played;
@@ -280,6 +293,9 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
     keep.store(false, Ordering::SeqCst);
     if let Some(panel) = panel {
         panel.stop();
+    }
+    if let Some(cec) = cec {
+        cec.stop();
     }
     if let Some(link) = &link {
         let _ = link.leaving();
@@ -547,6 +563,9 @@ fn refused(code: u8, reason: &str) -> SessionOutcome {
     }
 }
 
+// The session's inputs are each their own thing (the panel and CEC are both optional
+// controllers); a struct of them would only rename the list.
+#[allow(clippy::too_many_arguments)]
 fn play(
     config: &ClientConfig,
     server: &str,
@@ -555,6 +574,7 @@ fn play(
     watch: &Arc<ZoneWatch>,
     identity: &mut EndpointIdentity,
     panel: Option<&FrontPanel>,
+    cec: Option<&CecRole>,
 ) -> SessionOutcome {
     // The first session writes the configured log; a rejoin writes its own
     // beside it, so a run that rejoined leaves one record per session rather
@@ -658,14 +678,19 @@ fn play(
     session::deliver_sound_to(&announced, watch.sound_inbox());
     // The front panel takes the server's controller and visualizer messages;
     // `--visualizer-bands` logs each beat and colour (goal 12).
-    if panel.is_some() || config.visualizer_bands > 0 {
+    // The CEC role takes the room's controller_state (Report Audio Status).
+    if panel.is_some() || cec.is_some() || config.visualizer_bands > 0 {
         let mut offer = panel.map(|p| p.server_messages());
+        let mut offer_cec = cec.map(|c| c.server_messages());
         let log_visualizer = config.visualizer_bands > 0;
         session::also_hand(
             &mut stream,
             &announced,
             Box::new(move |m| {
                 if let Some(offer) = offer.as_mut() {
+                    offer(m);
+                }
+                if let Some(offer) = offer_cec.as_mut() {
                     offer(m);
                 }
                 if log_visualizer {
@@ -680,24 +705,39 @@ fn play(
         let mut uplink = writer.clone();
         panel.connect(Box::new(move |m| uplink.send(m)));
     }
+    if let Some(cec) = cec {
+        let mut uplink = writer.clone();
+        cec.connect(Box::new(move |m| uplink.send(m)));
+    }
     *lock_session_counters() = Some(Arc::clone(&counters));
     // The panel is told when this session ends, whichever way it ends, and
     // its LED stops following this session's offset.
-    struct Disconnect<'a>(Option<&'a FrontPanel>);
+    struct Disconnect<'a>(Option<&'a FrontPanel>, Option<&'a CecRole>);
     impl Drop for Disconnect<'_> {
         fn drop(&mut self) {
             *lock_session_counters() = None;
             if let Some(panel) = self.0 {
                 panel.disconnect();
             }
+            if let Some(cec) = self.1 {
+                cec.disconnect();
+            }
         }
     }
-    let _disconnect = Disconnect(panel);
+    let _disconnect = Disconnect(panel, cec);
     // The source role runs for the whole session, beside the playout, and is
     // stopped (with `stream_end` for a started input) whichever way the
     // session ends.
     let _source = SourceGuard(config.line_in.as_ref().and_then(|input| {
-        start_source(config, input, &writer, &counters, timeline, source_control)
+        start_source(
+            config,
+            input,
+            &writer,
+            &counters,
+            timeline,
+            source_control,
+            cec.map(|c| c.tv_power()),
+        )
     }));
 
     // The device cannot be opened until the stream says what it is, so the
@@ -935,6 +975,7 @@ fn start_source(
     counters: &Arc<Counters>,
     timeline: MonotonicTimeline,
     controls: std::sync::mpsc::Receiver<chorus_protocol::v2::SourceControl>,
+    tv_power: Option<Arc<chorus_cec::TvPower>>,
 ) -> Option<SourceHandle> {
     let capture = match AlsaCapture::open(input) {
         Ok(c) => c,
@@ -972,6 +1013,22 @@ fn start_source(
             controls,
             thresholds: SignalThresholds::default(),
             log: Box::new(status),
+            // CEC's TV power drives a TV input only: an optical or HDMI ARC
+            // input is the TV's sound; an analogue line-in is not.
+            tv_power: tv_power
+                .filter(|_| {
+                    matches!(
+                        input.kind,
+                        chorus_protocol::v2::SourceKind::Optical
+                            | chorus_protocol::v2::SourceKind::HdmiArc
+                    )
+                })
+                .map(|p| {
+                    chorus_cec::TvSignal::new(
+                        p,
+                        config.cec.as_ref().is_some_and(|c| c.autoplay_on_power),
+                    )
+                }),
         },
     ))
 }

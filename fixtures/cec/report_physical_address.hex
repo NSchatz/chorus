@@ -1,0 +1,14 @@
+# chorus CEC golden vector: the hub at 1.0.0.0 announces itself: physical address, primary device type 5 (Audio System).
+#
+# Committed, never written by a test. Rust-only by declaration (CEC runs on the Linux hub
+# alone): crates/cec/tests/fixtures.rs decodes these bytes to report_physical_address.fields and encodes the
+# fields back to these bytes. Format: whitespace separated hex bytes, '#' starts a comment.
+
+# header: initiator 5, destination 15
+5F
+
+# opcode: report_physical_address
+84
+
+# operands
+10 00 05

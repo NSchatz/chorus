@@ -588,6 +588,10 @@ pub struct SourceSetup {
     pub thresholds: SignalThresholds,
     /// Where status lines go.
     pub log: Box<dyn FnMut(&str) + Send>,
+    /// For a TV input on a hub with CEC (goal 13, `crate::cec`): the TV's
+    /// power and the autoplay-on-power rule, which make the offered signal
+    /// (`chorus_cec::TvSignal`). `None`: the signal is the audio alone.
+    pub tv_power: Option<chorus_cec::TvSignal<Arc<chorus_cec::TvPower>>>,
 }
 
 /// A running source role.
@@ -789,15 +793,24 @@ pub fn run<C: CaptureSource, U: Upstream>(
             ));
         }
 
-        if let Some(present) = detector.push(&pcm) {
+        // The audio's edge, or with CEC the TV's power beside it (a
+        // standby ends the signal at once, `chorus_cec::TvSignal`).
+        let edge = detector.push(&pcm);
+        let change = match setup.tv_power.as_mut() {
+            Some(tv) => tv.update(edge).map(|(p, why)| (p, Some(why))),
+            None => edge.map(|p| (p, None)),
+        };
+        if let Some((present, why)) = change {
             stats.signal.store(present, Ordering::Relaxed);
             if let Err(e) = offer(upstream, &input, present, stats) {
                 return lost(e);
             }
             log(&format!(
-                "source-offer source_id={} signal={}",
+                "source-offer source_id={} signal={}{}",
                 input.source_id,
-                u8::from(present)
+                u8::from(present),
+                why.map(|w| format!(" reason={}", w.name()))
+                    .unwrap_or_default()
             ));
         }
 

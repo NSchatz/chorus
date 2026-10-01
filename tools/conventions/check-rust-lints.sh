@@ -11,6 +11,7 @@ allowed=(
     "crates/hostprobe/src/sys.rs|1|the wakeup probe's libc FFI: clock_gettime, clock_nanosleep and prctl timer slack (docs/decisions/0047-host-probes.md)"
     "crates/hostprobe/src/net.rs|1|the receive-stamp check's socket FFI: setsockopt, recvmsg and a ping socket (docs/decisions/0047-host-probes.md)"
     "crates/opus-sys/src/lib.rs|1|the crate is the FFI binding to the vendored libopus (docs/decisions/0044-the-vendored-decoders.md)"
+    "crates/cec/src/kernel.rs|1|the ioctl binding to /dev/cecN: CEC_TRANSMIT, CEC_RECEIVE, CEC_DQEVENT, the log-address ioctls and poll (docs/cec.md)"
 )
 rc=0
 bad() { fail "Rust lints and unsafe" "$1"; rc=1; }

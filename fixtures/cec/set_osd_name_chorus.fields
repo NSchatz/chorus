@@ -1,0 +1,11 @@
+# Canonical input for the set_osd_name_chorus CEC vector: OSD name 'chorus' (ASCII).
+#
+# Format: one "key = value" per line, '#' starts a comment. opcode is the name
+# crates/cec/src/codec.rs gives it (empty for a poll); operands are hex with no separators;
+# validity is what crates/cec/src/validate.rs must say of the message.
+
+initiator = 5
+destination = 0
+opcode = set_osd_name
+operands = 63686f727573
+validity = ok

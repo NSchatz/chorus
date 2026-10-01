@@ -1,0 +1,14 @@
+# chorus CEC golden vector: the hub asks the TV directly (CTS 11.2.15-2).
+#
+# Committed, never written by a test. Rust-only by declaration (CEC runs on the Linux hub
+# alone): crates/cec/tests/fixtures.rs decodes these bytes to set_system_audio_mode_on_to_tv.fields and encodes the
+# fields back to these bytes. Format: whitespace separated hex bytes, '#' starts a comment.
+
+# header: initiator 5, destination 0
+50
+
+# opcode: set_system_audio_mode
+72
+
+# operands
+01

@@ -1,0 +1,14 @@
+# chorus CEC golden vector: an unhandled directed message (Vendor Command): Feature Abort [Unrecognized opcode].
+#
+# Committed, never written by a test. Rust-only by declaration (CEC runs on the Linux hub
+# alone): crates/cec/tests/fixtures.rs decodes these bytes to feature_abort_unrecognized.fields and encodes the
+# fields back to these bytes. Format: whitespace separated hex bytes, '#' starts a comment.
+
+# header: initiator 5, destination 0
+50
+
+# opcode: feature_abort
+00
+
+# operands
+89 00

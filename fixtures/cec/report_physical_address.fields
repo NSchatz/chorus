@@ -1,0 +1,11 @@
+# Canonical input for the report_physical_address CEC vector: the hub at 1.0.0.0 announces itself: physical address, primary device type 5 (Audio System).
+#
+# Format: one "key = value" per line, '#' starts a comment. opcode is the name
+# crates/cec/src/codec.rs gives it (empty for a poll); operands are hex with no separators;
+# validity is what crates/cec/src/validate.rs must say of the message.
+
+initiator = 5
+destination = 15
+opcode = report_physical_address
+operands = 100005
+validity = ok

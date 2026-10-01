@@ -1,0 +1,14 @@
+# chorus CEC golden vector: CEC 1.4.
+#
+# Committed, never written by a test. Rust-only by declaration (CEC runs on the Linux hub
+# alone): crates/cec/tests/fixtures.rs decodes these bytes to cec_version_1_4.fields and encodes the
+# fields back to these bytes. Format: whitespace separated hex bytes, '#' starts a comment.
+
+# header: initiator 5, destination 0
+50
+
+# opcode: cec_version
+9E
+
+# operands
+05

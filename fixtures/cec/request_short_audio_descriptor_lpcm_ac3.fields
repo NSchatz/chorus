@@ -1,0 +1,11 @@
+# Canonical input for the request_short_audio_descriptor_lpcm_ac3 CEC vector: LPCM (1) and AC-3 (2) asked.
+#
+# Format: one "key = value" per line, '#' starts a comment. opcode is the name
+# crates/cec/src/codec.rs gives it (empty for a poll); operands are hex with no separators;
+# validity is what crates/cec/src/validate.rs must say of the message.
+
+initiator = 0
+destination = 5
+opcode = request_short_audio_descriptor
+operands = 0102
+validity = ok
