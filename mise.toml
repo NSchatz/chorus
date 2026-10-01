@@ -19,6 +19,13 @@
 #     (https://github.com/cppcheck-opensource/cppcheck/releases/tag/2.22.0, 2026-09-19), not
 #     packaged as a wheel; 2.17.1 is what installs rootless here
 #     wheel cppcheck-1.5.1-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl sha256 ca87f5ed64386a40aaf156f295eac4efa6a7a819dd0415eb2d11577572e89405
+#   zig 0.16.0          MIT         https://ziglang.org/download/index.json ("0.16.0", date 2026-04-13,
+#     zig-x86_64-linux-0.16.0.tar.xz sha256 70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00,
+#     the digest mise.lock carries); licence https://codeberg.org/ziglang/zig/src/tag/0.16.0/LICENSE (the project moved to Codeberg; the
+#     LICENSE in the release tarball reads the same)
+#   cargo-zigbuild 0.23.4 MIT     https://github.com/rust-cross/cargo-zigbuild/releases/tag/v0.23.4 (2026-09-02)
+#   zig and cargo-zigbuild are the C compiler and linker of the Linux endpoint package's cross
+#   builds at a glibc floor (tools/endpoint-package.sh; the package's ADR says why them).
 # The GPL-3.0 tools run as unmodified binaries; their source is never read (brief section 0.9).
 
 [tools]
@@ -29,6 +36,8 @@
 "pipx:yamllint" = "1.38.0"
 "pipx:clang-format" = "23.1.1"
 "pipx:cppcheck" = "1.5.1"
+"core:zig" = "0.16.0"
+"aqua:rust-cross/cargo-zigbuild" = "0.23.4"
 
 [settings]
 lockfile = true

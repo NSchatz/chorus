@@ -112,6 +112,17 @@ fn main() -> ExitCode {
 /// again. Without it there is exactly one session and the exit code is that
 /// session's, which is what every verification written before this phase reads.
 fn endpoint(config: &ClientConfig) -> ExitCode {
+    // A real-time policy asked for on a host that grants none is refused here,
+    // before anything connects (crate::realtime).
+    match chorus_client_linux::realtime::check_host(config) {
+        Ok(Some(line)) => status(&line),
+        Ok(None) => {}
+        Err(e) => {
+            report("configuration refused", &e);
+            status("stopped reason=real-time-refused played=0");
+            return ExitCode::from(EXIT_CONFIG);
+        }
+    }
     let timeline = MonotonicTimeline::new();
     let keep = Arc::new(AtomicBool::new(true));
     let watch = Arc::new(ZoneWatch::new());
@@ -523,7 +534,9 @@ fn play(
     // The first session writes the configured log; a rejoin writes its own
     // beside it, so a run that rejoined leaves one record per session rather
     // than one record with the earlier ones written over.
-    let delay_log = if session <= 1 {
+    let delay_log = if config.no_delay_log {
+        "off".to_string()
+    } else if session <= 1 {
         config.delay_log.clone()
     } else {
         format!("{}.session{}", config.delay_log, session)
@@ -738,7 +751,12 @@ fn play(
     };
 
     let header = header_for(config, &config.device, &hand.shape);
-    let mut log = match DelayLog::open(&delay_log, &header) {
+    let opened = if config.no_delay_log {
+        Ok(DelayLog::discard())
+    } else {
+        DelayLog::open(&delay_log, &header)
+    };
+    let mut log = match opened {
         Ok(l) => l,
         Err(e) => {
             report(

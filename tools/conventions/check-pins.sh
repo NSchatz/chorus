@@ -41,8 +41,13 @@ while IFS= read -r l; do
             w="$(printf '%s' "${t#pipx:}" | tr - _)"
             command grep -E -q "^#[[:space:]]+wheel $w-$v-[^ ]+\.whl sha256 [0-9a-f]{64}$" mise.toml ||
                 bad "$t has no 'wheel $w-$v-...whl sha256 <digest>' comment in mise.toml" ;;
-        *) command grep -A3 -F "[tools.\"$t\".\"platforms.linux-x64\"]" mise.lock | command grep -q '^checksum = "sha256:' ||
-            bad "mise.lock has no linux-x64 sha256 for $t (run \`mise lock\`)" ;;
+        *)
+            # mise writes a core backend's tool under its bare name, unquoted
+            # (`[tools.zig."platforms.linux-x64"]`); every other one quoted.
+            k="\"$t\""
+            case "$t" in core:*) k="${t#core:}" ;; esac
+            command grep -A3 -F "[tools.$k.\"platforms.linux-x64\"]" mise.lock | command grep -q '^checksum = "sha256:' ||
+                bad "mise.lock has no linux-x64 sha256 for $t (run \`mise lock\`)" ;;
     esac
 done < <(sed -n '/^\[tools\]/,/^\[/p' mise.toml | command grep -E '^"')
 echo "mise.toml tools: $tools"

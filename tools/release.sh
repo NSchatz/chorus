@@ -8,6 +8,12 @@
 #   chorus-endpoint-esp32s3-v<ver>.bin               the endpoint application image
 #   chorus-endpoint-esp32s3-v<ver>.tar.gz            bootloader, partition table, application
 #                                                    and flasher_args.json (offsets and flags)
+#   chorus-endpoint_<ver>_arm64.deb, _amd64.deb      the Linux endpoint package, one per
+#                                                    architecture (tools/endpoint-package.sh,
+#                                                    checked there; docs/linux-endpoint.md)
+#   <crate>-<ver>.crate                              the source of every MPL-2.0 crate linked
+#                                                    into a shipped binary (P9; docs/release.md),
+#                                                    checked against Cargo.lock's checksum
 #   SHA256SUMS, NOTES.md                             digests; the release notes body
 #
 # Nothing is published, flashed or pushed here: `gh release create` is a separate,
@@ -62,8 +68,39 @@ tar -C "$FW" --sort=name --mtime="@$(git log -1 --format=%ct)" --owner=0 --group
     bootloader/bootloader.bin partition_table/partition-table.bin chorus-endpoint.bin flasher_args.json
 IDF_VER="$(sed -n 's/^espidf_version *= *//p' firmware/config/endpoint.conf | head -n 1)"
 
-# 4. Digests and notes.
-(cd "$OUT" && sha256sum chorus-* > SHA256SUMS)
+# 4. The Linux endpoint packages, built and checked by tools/endpoint-package.sh.
+CHORUS_PACKAGE_OUT="$OUT" bash tools/endpoint-package.sh arm64 amd64
+
+# 5. The source of every MPL-2.0 crate in a shipped binary (P9): chorus-client links the
+# Symphonia FLAC crates (ADR 0044). Each .crate is the crates.io download, taken from the
+# local registry cache or fetched, and must match the checksum Cargo.lock pins.
+MPL_CRATES="$(cargo tree --locked -e normal -p chorus-client-linux -p chorus-hostprobe -p chorus-server \
+    --prefix none --format '{p}|{l}' --target x86_64-unknown-linux-gnu |
+    awk -F'|' '$2 ~ /MPL-2.0/ {split($1, a, " "); print a[1] " " substr(a[2], 2)}' | LC_ALL=C sort -u)"
+MPL_NOTES=""
+while read -r name ver; do
+    [ -n "$name" ] || continue
+    want="$(awk -v n="$name" -v v="$ver" '$0 == "name = \"" n "\"" {f = 1; next}
+        f && $0 == "version = \"" v "\"" {g = 1; next} f && g && /^checksum = / {gsub(/"/, "", $3); print $3; exit}
+        /^\[\[package\]\]/ {f = 0; g = 0}' Cargo.lock)"
+    [ -n "$want" ] || { echo "release: REFUSED: Cargo.lock has no checksum for $name $ver"; exit 2; }
+    crate="$OUT/$name-$ver.crate"
+    cached="$(command find "${CARGO_HOME:-$HOME/.cargo}/registry/cache" -name "$name-$ver.crate" 2>/dev/null | head -n 1 || true)"
+    if [ -n "$cached" ]; then
+        cp "$cached" "$crate"
+    else
+        curl -fsSL -o "$crate" "https://static.crates.io/crates/$name/$name-$ver.crate"
+    fi
+    [ "$(sha256sum "$crate" | cut -d' ' -f1)" = "$want" ] ||
+        { echo "release: REFUSED: $name-$ver.crate does not match Cargo.lock's checksum $want"; exit 2; }
+    MPL_NOTES="$MPL_NOTES
+- \`$name\` $ver: https://crates.io/crates/$name/$ver, attached as \`$name-$ver.crate\`
+  (sha256 \`$want\`, the checksum Cargo.lock pins)."
+done <<< "$MPL_CRATES"
+[ -n "$MPL_NOTES" ] || { echo "release: REFUSED: no MPL-2.0 crate found, but chorus-client links Symphonia (ADR 0044)"; exit 2; }
+
+# 6. Digests and notes.
+(cd "$OUT" && sha256sum chorus-* ./*.crate | sed 's| \./| |' > SHA256SUMS)
 EXTERNAL="$(command grep -c '^source = ' Cargo.lock || true)"
 cat > "$OUT/NOTES.md" <<EOF
 chorus v$VER, built from \`$SHA\` by \`tools/release.sh\` (docs/release.md says how).
@@ -83,15 +120,26 @@ Artifacts:
   firmware safety scans (no eFuse writes, Secure Boot, Flash Encryption or anti-rollback)
   passed on this build. It is not yet a working speaker (no I2S playout path; goals 8-9),
   and flashing is the owner's act at the bench.
+- \`chorus-endpoint_${VER}_arm64.deb\` and \`chorus-endpoint_${VER}_amd64.deb\`: the Linux
+  endpoint package (chorus-client, its systemd unit \`chorus-client.service\`, the config
+  \`/etc/chorus/client.conf\`, real-time limits, and \`chorus-verify-host\`), cross-built
+  for glibc 2.36 and later (Debian 12 and 13, Raspberry Pi OS and its Legacy release) and
+  checked by \`tools/endpoint-package.sh\`. docs/linux-endpoint.md installs it; installing
+  it on a speaker is the owner's act.
 
 Licences: chorus is MIT OR Apache-2.0 (LICENSE-MIT, LICENSE-APACHE). Dependencies: the
 Rust workspace has $EXTERNAL external crates (Cargo.lock \`source =\` lines), each under a
-licence on the allowlist in \`deny.toml\` (checked by cargo-deny in \`make gate\`), so no
-MPL-2.0 source is in the server; the firmware links ESP-IDF components (ESP-IDF is
-Apache-2.0; its bundled third-party components carry their own licences, listed in ESP-IDF's
+licence on the allowlist in \`deny.toml\` (checked by cargo-deny in \`make gate\`), or an
+exception its ADR names. The server links no MPL-2.0 crate; chorus-client, in the Linux
+endpoint packages, links these MPL-2.0 crates unmodified (ADR 0044), whose source is:
+$MPL_NOTES
+
+The endpoint packages also carry libopus 1.6.1 (BSD-3-Clause) inside chorus-client; each
+package's /usr/share/doc/chorus-endpoint/copyright lists every crate and reproduces the
+licences. The firmware links ESP-IDF components (ESP-IDF is Apache-2.0; its bundled
+third-party components carry their own licences, listed in ESP-IDF's
 \`docs/en/COPYRIGHT.rst\`), whose source is ESP-IDF $IDF_VER at the commit pinned in
-\`firmware/config/endpoint.conf\`. When an MPL-licensed dependency arrives, its source
-location is listed here (docs/release.md).
+\`firmware/config/endpoint.conf\`.
 
 SHA256SUMS:
 \`\`\`

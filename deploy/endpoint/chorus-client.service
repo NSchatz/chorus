@@ -1,0 +1,100 @@
+# chorus-client as a system service: the Linux endpoint (chorus-endpoint package).
+#
+# Edit /etc/chorus/client.conf, not this file; a local override of a directive
+# goes in a drop-in (`systemctl edit chorus-client`), which survives upgrades.
+# docs/linux-endpoint.md says how to install, configure and check it; the
+# decisions and their sources are in the package's ADR (docs/decisions/).
+#
+# Directive semantics: systemd.exec(5), systemd.service(5), systemd.unit(5) and
+# systemd.resource-control(5) at https://www.freedesktop.org/software/systemd/man/
+# (read 2026-09-30). The oldest systemd this unit targets is Debian 12's 252
+# (Raspberry Pi OS Legacy); `systemd-analyze verify` checks it on 257 in the gate.
+
+[Unit]
+Description=chorus endpoint (chorus-client)
+Documentation=file:///usr/share/doc/chorus-endpoint/README
+After=network-online.target sound.target
+Wants=network-online.target
+# A speaker keeps trying: with no start limit a server that is away for an
+# hour is rejoined when it comes back (Restart= below paces the attempts).
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+EnvironmentFile=/etc/chorus/client.conf
+# --rejoin: a session that ends is started again (the client's own loop); the
+# identity (key and server pins) lives in the state directory so the server's
+# pin on this endpoint survives restarts and upgrades. Everything else comes
+# from CHORUS_CLIENT_ARGS in /etc/chorus/client.conf, split at whitespace.
+ExecStart=/usr/bin/chorus-client --rejoin --identity-dir /var/lib/chorus-client $CHORUS_CLIENT_ARGS
+Restart=always
+RestartSec=2s
+# Exit 2 is a refused configuration (chorus-client's exit codes): restarting
+# cannot fix it, so the unit stops and says so in the journal.
+RestartPreventExitStatus=2
+
+# --- who it runs as -----------------------------------------------------------
+# A transient unprivileged user allocated per start, no account to create and
+# no maintainer script (systemd.exec(5), DynamicUser=). The ALSA device nodes
+# are group `audio` on Debian and Raspberry Pi OS.
+DynamicUser=yes
+SupplementaryGroups=audio
+# The front panel (`--front-panel`, the controller role): its buttons are an
+# evdev device under /dev/input, read with the drop-in the package ships as
+# /usr/share/doc/chorus-endpoint/examples/front-panel.conf (group `input`,
+# DeviceAllow=char-input r), off unless installed; its status light is an LED
+# class directory under /sys, which /usr/lib/udev/rules.d/70-chorus-leds.rules
+# makes writable by group `audio` for an LED named `chorus-*`. ASSUMED until
+# run on a board.
+StateDirectory=chorus-client
+StateDirectoryMode=0700
+RuntimeDirectory=chorus-client
+UMask=0077
+
+# --- real-time limits ---------------------------------------------------------
+# The ceilings the client's opt-in `--rt-priority` (off in the shipped config)
+# is clamped to: RLIMIT_RTPRIO, the CPU-time bound RLIMIT_RTTIME (the client
+# sets its own bound, at or below this, before it takes SCHED_FIFO; ADR 0022),
+# and RLIMIT_MEMLOCK. The values are the server's contract
+# (config/verification.conf: rt_priority 20, rttime_us 200000,
+# memlock_wanted_bytes 64 MiB); none is measured on an endpoint (ASSUMED).
+LimitRTPRIO=20
+LimitRTTIME=200ms
+LimitMEMLOCK=64M
+# RestrictRealtime= is deliberately NOT set: it would refuse SCHED_FIFO.
+
+# --- hardening that leaves ALSA working ----------------------------------------
+# Devices: closed, then the ALSA class (major 116, /dev/snd/*) opened again.
+# PrivateDevices= is not used: it hides /dev/snd.
+DevicePolicy=closed
+DeviceAllow=char-alsa rw
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+# ProtectKernelTunables= is NOT set: it makes /sys read-only, and the front
+# panel's LED is written under /sys/class/leds. ProtectSystem=strict leaves /sys
+# to file permissions ("except for the API file system subtrees /dev/, /proc/
+# and /sys/"), and only a `chorus-*` LED is group-writable (the udev rule).
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+# AF_UNIX for alsa-lib's plugins and the journal, AF_INET/AF_INET6 for the
+# audio, control and multicast DNS sockets, AF_NETLINK for interface lookup.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+# @system-service includes @resources (setrlimit, sched_setscheduler) and
+# @memlock, which the real-time path needs (systemd-analyze syscall-filter).
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target
