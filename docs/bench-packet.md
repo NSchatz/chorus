@@ -444,8 +444,9 @@ Needs items.
 ## 6. Not in this packet
 
 - A reader for the GPIO marker's capture (S7.5 records it as a CSV only) and a marker on the
-  Linux client: the Linux tier (chorus goal 10) adds the Linux marker, and the goal that has a
-  capture to read writes its report.
+  Linux client: chorus goal 10 decided not to build the Linux marker before a Linux board and pin
+  exist and assigned it to goal 26 (ADR 0067), and the goal that has a capture to read writes its
+  report.
 - WIFI-7 (`tools/wireless-characterization-run.sh`, the compact speakers' Wi-Fi tier): it needs a
   wireless network the repository declares unknown and a provisioning path (chorus goal 14).
 - The production host's SCHED_FIFO wakeup-jitter run: a homelab-side Needs item, not a bench
@@ -454,5 +455,6 @@ Needs items.
   `bench/<date>-production-wakeup` branch with a pull request, from which a chorus goal writes the
   report (there is no bench script for it yet).
 - `make verify-host` (the host contract and the spin test): they need a real-time priority grant,
-  a host setting rather than bench hardware; chorus goal 10 (the Linux endpoint tier) runs them on
-  the Linux endpoint it packages.
+  a host setting rather than bench hardware. Since chorus goal 10 the Linux endpoint package
+  carries them as `chorus-verify-host` (ADR 0069); running it on an endpoint, under the service's
+  own limits, is the owner's (`docs/linux-endpoint.md`, "The host probes").
