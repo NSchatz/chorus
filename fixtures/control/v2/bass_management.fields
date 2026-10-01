@@ -1,0 +1,16 @@
+# Canonical input for the catalog v2 bass_management vector.
+#
+# Encoding these field values must produce exactly bass_management.json, and decoding
+# bass_management.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# Every field: the crossover in Hz (40 to 200), the sub's level in dB with
+# two places (-12.00 to 6.00) and its polarity.
+
+message_type = bass_management
+zone = living
+crossover_hz = 100
+sub_level_db = -3.50
+sub_polarity = inverted

@@ -55,6 +55,8 @@ use std::time::Duration;
 
 use chorus_audio::MonotonicTimeline;
 use chorus_protocol::v2::RoomVolume;
+
+use crate::zone::sound_line;
 use chorus_protocol::{encode, Message, StreamEnd, TimeSync};
 
 use crate::buffer::{frames_to_us, us_to_frames, Accepted, Buffer, Counters, Zone};
@@ -878,6 +880,11 @@ fn play<S: PcmSink>(
                     let now_gain = watch.gain();
                     if let Some(m) = watch.apply(&gain, channels, rate_hz, &mut shaped) {
                         log_room_volume(log, timeline, &m, watch)?;
+                    }
+                    // The room's sound (goal 12): logged here, kept by the
+                    // watch; phase A applies nothing of it.
+                    if let Some(s) = watch.take_sound() {
+                        log.event(timeline.now_us(), "sound", &sound_line(&s))?;
                     }
                     if now_gain != last_gain {
                         last_gain = now_gain;

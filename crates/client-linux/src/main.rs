@@ -653,6 +653,8 @@ fn play(
     // The room's volume on the audio wire reaches the playout loop through the
     // watch, before the stream is read (goal 11).
     session::deliver_room_volume_to(&announced, watch.room_inbox());
+    // And the room's sound (goal 12), kept for the endpoint's DSP.
+    session::deliver_sound_to(&announced, watch.sound_inbox());
     // The front panel takes the server's controller and visualizer messages;
     // `--visualizer-bands` logs each beat and colour (goal 12).
     if panel.is_some() || config.visualizer_bands > 0 {

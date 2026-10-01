@@ -105,6 +105,11 @@ impl Fields {
             .as_str()
     }
 
+    /// Whether a key is present.
+    pub fn has(&self, key: &str) -> bool {
+        self.values.contains_key(key)
+    }
+
     /// A key parsed as an unsigned integer.
     pub fn u64(&self, key: &str) -> u64 {
         let raw = self.str(key);

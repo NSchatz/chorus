@@ -277,6 +277,46 @@ pub fn v2_message_from_fields(f: &Fields) -> Message {
             limit: f.u64("limit") as u16,
             ramp_ms: f.u64("ramp_ms") as u16,
         }),
+        Type::Sound => {
+            let flags = words(f, "flags").iter().fold(0u8, |acc, name| {
+                acc | named(
+                    name,
+                    sound_flags::NAMES
+                        .iter()
+                        .find(|(_, n)| n == name)
+                        .map(|(b, _)| *b),
+                )
+            });
+            let reserved = if f.has("flags_reserved") {
+                f.u64("flags_reserved") as u8
+            } else {
+                0
+            };
+            let mut filters = Vec::new();
+            while f.has(&format!("filter.{}", filters.len())) {
+                let key = format!("filter.{}", filters.len());
+                let v: Vec<i64> = words(f, &key)
+                    .iter()
+                    .map(|w| w.parse().unwrap_or_else(|_| panic!("{}: {}", key, w)))
+                    .collect();
+                assert_eq!(v.len(), 3, "{} is freq_hz gain_cdb q_milli", key);
+                filters.push(SoundFilter {
+                    freq_hz: v[0] as u16,
+                    gain_cdb: v[1] as i16,
+                    q_milli: v[2] as u16,
+                });
+            }
+            Message::Sound(Sound {
+                bass_db: int(f, "bass_db") as i8,
+                treble_db: int(f, "treble_db") as i8,
+                flags: flags | reserved,
+                role: f.u64("role") as u8,
+                sub_present: f.u64("sub_present") == 1,
+                crossover_hz: f.u64("crossover_hz") as u16,
+                sub_level_cdb: int(f, "sub_level_cdb") as i16,
+                filters,
+            })
+        }
         Type::TimeSync | Type::AudioChunk | Type::StreamEnd => {
             panic!("v1 messages are vectored at the top of fixtures/protocol/")
         }

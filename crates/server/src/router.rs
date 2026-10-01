@@ -56,7 +56,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use chorus_dsp::visualizer::Frame;
 use chorus_protocol::v2::{
-    encode, roles, Color, ControllerState, Message, RoomVolume, VisualizerFrame,
+    encode, roles, Color, ControllerState, Message, RoomVolume, Sound, VisualizerFrame,
 };
 
 use crate::stream::{Fanout, Outbound};
@@ -70,6 +70,7 @@ struct Entry {
     out: SyncSender<Outbound>,
     route: usize,
     room_volume: Option<RoomVolume>,
+    sound: Option<Sound>,
     controller_state: Option<ControllerState>,
     visualizer_bands: u8,
     heard_latency_ns: u64,
@@ -122,6 +123,9 @@ pub struct SessionStart {
     /// The `room_volume` the greeting carries, if the session is a player in
     /// a room.
     pub room_volume: Option<RoomVolume>,
+    /// The `sound` the greeting carries after `room_volume`, if the session
+    /// is a player in a room (goal 12).
+    pub sound: Option<Sound>,
     /// The `controller_state` the greeting carries, if the session declared
     /// the controller role and its endpoint is in a room.
     pub controller_state: Option<ControllerState>,
@@ -218,6 +222,7 @@ impl Router {
             out,
             route,
             room_volume: start.room_volume,
+            sound: start.sound.clone(),
             controller_state: start.controller_state.clone(),
             visualizer_bands: start.visualizer_bands,
             heard_latency_ns: DEFAULT_HEARD_LATENCY_NS,
@@ -317,6 +322,21 @@ impl Router {
         }
         send(&entry.out, &Message::RoomVolume(message))?;
         entry.room_volume = Some(message);
+        Some(true)
+    }
+
+    /// Send a session `sound` unless it is exactly what the session was last
+    /// sent (goal 12): a change to the room's sound, bass management, room EQ
+    /// or bonded set reaches a player once, and a change elsewhere not at
+    /// all. Same return as [`Router::push_room_volume`].
+    pub fn push_sound(&self, id: u64, message: &Sound) -> Option<bool> {
+        let mut sessions = lock(&self.sessions);
+        let entry = sessions.iter_mut().find(|e| e.id == id)?;
+        if entry.sound.as_ref() == Some(message) {
+            return Some(false);
+        }
+        send(&entry.out, &Message::Sound(message.clone()))?;
+        entry.sound = Some(message.clone());
         Some(true)
     }
 

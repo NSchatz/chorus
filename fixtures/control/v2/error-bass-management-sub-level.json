@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"sub_level_db","detail":"the field 'sub_level_db' is 6.01 and the catalog declares a number of dB from -12.00 to 6.00 in steps of 0.01"}

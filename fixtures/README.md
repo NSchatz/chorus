@@ -323,6 +323,24 @@ the Rust one, not a worked example); every other expected value is printed in, o
 the cited source by `tools/dsp-fixtures/generate.py` (standard-library Python, independent of
 both implementations). Regenerated only by running that script by hand.
 
+## `roomfit/`
+
+Room-correction fitting's inputs (goal 12, `docs/room-correction.md`), Rust-only by declaration
+(`check-shared-fixtures.sh`: the fitting runs on the server). In the `measure/` shape: a
+`.params` file holding every value a recording was made from, the room's ground truth included,
+and the recording it generates, a 48 kHz mono 16-bit WAV of a 1 s exponential sine sweep played
+through a synthetic room (a speaker roll-off, modes and nulls as peaking filters, a level offset,
+seeded noise). `expect` names what the fit must make of it: `fit`, or the refusal it must give
+(`too_quiet`, `clipped`, `too_short`, `too_noisy`).
+
+```
+make roomfit-fixtures     # regenerate every recording from its parameters
+```
+
+`crates/dsp/tests/roomfit.rs` asserts that regenerating reproduces every committed recording
+byte for byte, so that target is for changing a fixture's parameters and never for making a red
+assertion green. Adding a room is adding a `.params` file and running the target.
+
 ## `visualizer/`
 
 The visualizer analysis's inputs (Rust-only by declaration: the server computes the stream, no

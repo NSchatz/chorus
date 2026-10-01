@@ -16,11 +16,14 @@ use crate::codec::{
 };
 use crate::message::{Message as V1Message, SampleFormat, MAX_CHANNELS};
 use crate::message::{MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ};
+use crate::v2::catalog::sound_flags;
 use crate::v2::catalog::{
     roles, ChannelPosition, Codec, Command, Link, Playback, RefusalReason, SourceAction,
     SourceKind, Suite, Type, FLAC_STREAMINFO_LEN, MAGIC, MAX_ARTWORK_LEN, MAX_LONG_TEXT,
     MAX_OUTPUT_DELAY_NS, MAX_RATES, MAX_ROOM_VOLUME_RAMP_MS, MAX_SHORT_TEXT, MAX_VISUALIZER_BANDS,
-    OPUS_FRAME_COUNTS_48K, OPUS_HEAD_MIN_LEN, ROOM_VOLUME_FULL,
+    OPUS_FRAME_COUNTS_48K, OPUS_HEAD_MIN_LEN, ROOM_VOLUME_FULL, SOUND_CROSSOVER_HZ,
+    SOUND_EQ_FREQ_HZ, SOUND_EQ_GAIN_CDB, SOUND_EQ_MAX_FILTERS, SOUND_EQ_Q_MILLI,
+    SOUND_SUB_LEVEL_CDB, SOUND_TONE_DB,
 };
 use crate::v2::messages::*;
 
@@ -366,6 +369,21 @@ pub fn encode_payload(message: &Message) -> Result<Vec<u8>, EncodeError> {
             w.u16(m.gain);
             w.u16(m.limit);
             w.u16(m.ramp_ms);
+        }
+        Message::Sound(m) => {
+            w.u8(m.bass_db as u8);
+            w.u8(m.treble_db as u8);
+            w.u8(m.flags);
+            w.u8(m.role);
+            w.u8(m.sub_present as u8);
+            w.u16(m.crossover_hz);
+            w.u16(m.sub_level_cdb as u16);
+            w.u8(m.filters.len() as u8);
+            for f in &m.filters {
+                w.u16(f.freq_hz);
+                w.u16(f.gain_cdb as u16);
+                w.u16(f.q_milli);
+            }
         }
     }
     Ok(w.out)
@@ -730,6 +748,40 @@ fn decode_payload(message_type: Type, payload: &[u8]) -> Result<Message, FieldEr
             limit: r.u16("limit")?,
             ramp_ms: r.u16("ramp_ms")?,
         }),
+        Type::Sound => {
+            let bass_db = r.u8("bass_db")? as i8;
+            let treble_db = r.u8("treble_db")? as i8;
+            let flags = r.u8("flags")?;
+            let role = r.u8("role")?;
+            let sub_present = r.bool("sub_present")?;
+            let crossover_hz = r.u16("crossover_hz")?;
+            let sub_level_cdb = r.u16("sub_level_cdb")? as i16;
+            let count = r.u8("eq_count")?;
+            // Checked before the filters are read, so a count past the
+            // bound is that field out of range (as the C decoder, which has
+            // room for eight, says it) and never a read of nine.
+            if usize::from(count) > SOUND_EQ_MAX_FILTERS {
+                return err("eq_count", Problem::OutOfRange(count as i128));
+            }
+            let mut filters = Vec::with_capacity(usize::from(count));
+            for _ in 0..count {
+                filters.push(SoundFilter {
+                    freq_hz: r.u16("freq_hz")?,
+                    gain_cdb: r.u16("gain_cdb")? as i16,
+                    q_milli: r.u16("q_milli")?,
+                });
+            }
+            Message::Sound(Sound {
+                bass_db,
+                treble_db,
+                flags,
+                role,
+                sub_present,
+                crossover_hz,
+                sub_level_cdb,
+                filters,
+            })
+        }
     };
     // Bytes past the last known field are a later version's fields: ignored.
     Ok(m)
@@ -999,7 +1051,60 @@ pub fn validate(message: &Message) -> Result<(), FieldError> {
             }
             Ok(())
         }
+        Message::Sound(m) => validate_sound(m),
     }
+}
+
+/// `sound`'s rules, field by field in wire order (`docs/protocol.md`, "0x39
+/// sound"). Rejected, never clamped, as `room_volume`'s are.
+fn validate_sound(m: &Sound) -> Result<(), FieldError> {
+    let within = |field: &'static str, v: i128, (lo, hi): (i128, i128)| {
+        if v < lo || v > hi {
+            err(field, Problem::OutOfRange(v))
+        } else {
+            Ok(())
+        }
+    };
+    let tone = (SOUND_TONE_DB.0 as i128, SOUND_TONE_DB.1 as i128);
+    within("bass_db", m.bass_db as i128, tone)?;
+    within("treble_db", m.treble_db as i128, tone)?;
+    if m.flags & !sound_flags::DEFINED != 0 {
+        return err("flags", Problem::Undefined(m.flags as u64));
+    }
+    if ChannelPosition::from_wire(m.role).is_none() {
+        return err("role", Problem::Undefined(m.role as u64));
+    }
+    within(
+        "crossover_hz",
+        m.crossover_hz as i128,
+        (SOUND_CROSSOVER_HZ.0 as i128, SOUND_CROSSOVER_HZ.1 as i128),
+    )?;
+    within(
+        "sub_level_cdb",
+        m.sub_level_cdb as i128,
+        (SOUND_SUB_LEVEL_CDB.0 as i128, SOUND_SUB_LEVEL_CDB.1 as i128),
+    )?;
+    if m.filters.len() > SOUND_EQ_MAX_FILTERS {
+        return err("eq_count", Problem::OutOfRange(m.filters.len() as i128));
+    }
+    for f in &m.filters {
+        within(
+            "freq_hz",
+            f.freq_hz as i128,
+            (SOUND_EQ_FREQ_HZ.0 as i128, SOUND_EQ_FREQ_HZ.1 as i128),
+        )?;
+        within(
+            "gain_cdb",
+            f.gain_cdb as i128,
+            (SOUND_EQ_GAIN_CDB.0 as i128, SOUND_EQ_GAIN_CDB.1 as i128),
+        )?;
+        within(
+            "q_milli",
+            f.q_milli as i128,
+            (SOUND_EQ_Q_MILLI.0 as i128, SOUND_EQ_Q_MILLI.1 as i128),
+        )?;
+    }
+    Ok(())
 }
 
 fn rate_ok(field: &'static str, rate: u32) -> Result<(), FieldError> {
