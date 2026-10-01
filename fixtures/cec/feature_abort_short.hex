@@ -1,0 +1,14 @@
+# chorus CEC golden vector: one operand of two: ignored.
+#
+# Committed, never written by a test. Rust-only by declaration (CEC runs on the Linux hub
+# alone): crates/cec/tests/fixtures.rs decodes these bytes to feature_abort_short.fields and encodes the
+# fields back to these bytes. Format: whitespace separated hex bytes, '#' starts a comment.
+
+# header: initiator 0, destination 5
+05
+
+# opcode: feature_abort
+00
+
+# operands
+72

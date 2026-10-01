@@ -1,0 +1,11 @@
+# chorus CEC golden vector: the hub polls the TV's power.
+#
+# Committed, never written by a test. Rust-only by declaration (CEC runs on the Linux hub
+# alone): crates/cec/tests/fixtures.rs decodes these bytes to give_device_power_status_to_tv.fields and encodes the
+# fields back to these bytes. Format: whitespace separated hex bytes, '#' starts a comment.
+
+# header: initiator 5, destination 0
+50
+
+# opcode: give_device_power_status
+8F

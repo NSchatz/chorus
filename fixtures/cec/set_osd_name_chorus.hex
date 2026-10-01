@@ -1,0 +1,14 @@
+# chorus CEC golden vector: OSD name 'chorus' (ASCII).
+#
+# Committed, never written by a test. Rust-only by declaration (CEC runs on the Linux hub
+# alone): crates/cec/tests/fixtures.rs decodes these bytes to set_osd_name_chorus.fields and encodes the
+# fields back to these bytes. Format: whitespace separated hex bytes, '#' starts a comment.
+
+# header: initiator 5, destination 0
+50
+
+# opcode: set_osd_name
+47
+
+# operands
+63 68 6F 72 75 73

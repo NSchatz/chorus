@@ -1,0 +1,11 @@
+# chorus CEC golden vector: no operand: System Audio Mode off.
+#
+# Committed, never written by a test. Rust-only by declaration (CEC runs on the Linux hub
+# alone): crates/cec/tests/fixtures.rs decodes these bytes to system_audio_mode_request_off.fields and encodes the
+# fields back to these bytes. Format: whitespace separated hex bytes, '#' starts a comment.
+
+# header: initiator 0, destination 5
+05
+
+# opcode: system_audio_mode_request
+70

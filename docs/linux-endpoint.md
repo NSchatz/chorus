@@ -70,6 +70,13 @@ file's own comments list every argument worth setting. At least:
   opened with enough channels to reach both drivers. It names the device outputs itself, so it
   is refused beside `--output-channels`/`--output`.
 
+- `--cec <device>` (a hub only): be the TV's Audio System over HDMI-CEC on `/dev/cecN`, so the
+  TV's remote drives the room's volume and the TV's power starts and stops the TV input
+  (`docs/cec.md`, which also gives the drop-in the service needs for the device). With it:
+  `--cec-arc` (off, ASSUMED), `--cec-autoplay-on-power on|off` (on) and `--cec-osd-name <name>`
+  (`chorus`, ASSUMED; 1 to 14 printable ASCII bytes). An adapter that cannot be opened or
+  claimed is logged (`cec unusable`) and retried; the endpoint plays on.
+
 The room's sound (bass, treble, loudness, night, speech, room correction) and, in a bonded set,
 bass management come from the server's `sound` message and need no setting here: the client runs
 the sound chain from the first `sound` it receives (`dsp engaged ...` on its output) and prints

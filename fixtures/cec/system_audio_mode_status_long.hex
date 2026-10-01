@@ -1,0 +1,14 @@
+# chorus CEC golden vector: one byte expected, two given: Feature Abort [Invalid operand].
+#
+# Committed, never written by a test. Rust-only by declaration (CEC runs on the Linux hub
+# alone): crates/cec/tests/fixtures.rs decodes these bytes to system_audio_mode_status_long.fields and encodes the
+# fields back to these bytes. Format: whitespace separated hex bytes, '#' starts a comment.
+
+# header: initiator 0, destination 5
+05
+
+# opcode: system_audio_mode_status
+7E
+
+# operands
+01 00

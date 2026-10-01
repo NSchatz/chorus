@@ -1,0 +1,11 @@
+# chorus CEC golden vector: with --cec-arc only (CTS 11.2.17-1).
+#
+# Committed, never written by a test. Rust-only by declaration (CEC runs on the Linux hub
+# alone): crates/cec/tests/fixtures.rs decodes these bytes to initiate_arc.fields and encodes the
+# fields back to these bytes. Format: whitespace separated hex bytes, '#' starts a comment.
+
+# header: initiator 5, destination 0
+50
+
+# opcode: initiate_arc
+C0
