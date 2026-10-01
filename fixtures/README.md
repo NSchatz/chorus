@@ -59,6 +59,14 @@ Rust server and endpoint sides reproduces them byte for byte.
 directory and asserts both round trips, that every v2 type has a vector, and
 the session vectors on the wire.
 
+`protocol/v2/rejected/` holds REJECTION vectors (goal 11): frames the format
+does not accept, in the same two-file shape, whose `.fields` add
+`rejected_field` (the field both directions must name) and `problem`
+(`out_of_range`). An encoder must refuse the fields naming that field and emit
+nothing; a decoder must reject the frame as that field, consume the whole
+frame, and decode the frame after it. `crates/protocol/tests/v2_rules.rs` and
+`firmware/tests/test_protocol_v2.c` both walk the directory.
+
 `protocol/v2/noise/cacophony_xx.fields` is the published Noise test vector for
 `Noise_XX_25519_ChaChaPoly_SHA256`, converted from cacophony's JSON with its
 source, date read and licence (Unlicense) in its header;

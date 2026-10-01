@@ -58,6 +58,9 @@ file's own comments list every argument worth setting. At least:
   endpoint looks for the server by multicast DNS first and falls back to the static address.
 - `--control <host:4020>`: the server's control plane (volume, mute, grouping).
 - `--device <name>`: the ALSA device; `aplay -L` (package `alsa-utils`) lists them.
+- `--max-volume <0.000-1.000>`: this speaker's own volume ceiling (default 1.000). Nothing the
+  server or the control plane sends plays above it, and until the server's first `room_volume`
+  the speaker plays at it (`docs/decisions/0074-room-volume-on-the-audio-wire.md`).
 
 The unit adds `--rejoin --identity-dir /var/lib/chorus-client` itself: the endpoint's key and
 its server pins live in `/var/lib/chorus-client` and survive restarts and upgrades.

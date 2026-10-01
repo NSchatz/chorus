@@ -1,0 +1,18 @@
+# Canonical input for the room_volume_gain_above_full rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# room_volume_gain_above_full.hex as that field out of range, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# A gain one thousandth above full scale: never clamped by a decoder, rejected.
+
+message_type = room_volume
+gain = 1001
+limit = 1000
+ramp_ms = 0
+rejected_field = gain
+problem = out_of_range

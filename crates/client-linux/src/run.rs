@@ -54,6 +54,7 @@ use std::thread;
 use std::time::Duration;
 
 use chorus_audio::MonotonicTimeline;
+use chorus_protocol::v2::RoomVolume;
 use chorus_protocol::{encode, Message, StreamEnd, TimeSync};
 
 use crate::buffer::{frames_to_us, us_to_frames, Accepted, Buffer, Counters, Zone};
@@ -244,6 +245,7 @@ pub fn run_session<R: Read + Send + 'static, S: PcmSink>(
 ) -> Result<RunOutcome, std::io::Error> {
     let rate_hz = sink.rate_hz();
     let gain = ZoneGain::new(handshake.shape.sample_format);
+    let channels = usize::from(handshake.shape.channels);
     let buffer = Arc::new(Buffer::new(config.min_us, config.max_us, rate_hz));
     let keep_going = Arc::new(AtomicBool::new(true));
     let (events_tx, events_rx) = mpsc::channel::<PendingEvent>();
@@ -322,12 +324,37 @@ pub fn run_session<R: Read + Send + 'static, S: PcmSink>(
         sync_out,
         &stop_slot,
         gain,
+        channels,
         &watch,
     );
 
     keep_going.store(false, Ordering::SeqCst);
     let _ = receiver_handle.join();
     outcome
+}
+
+/// One line for a `room_volume` the playout loop took: what it asked for and
+/// what the endpoint now applies under its own ceiling and the zone's gain.
+fn log_room_volume(
+    log: &mut DelayLog,
+    timeline: MonotonicTimeline,
+    m: &RoomVolume,
+    watch: &ZoneWatch,
+) -> Result<(), std::io::Error> {
+    let room = watch.room();
+    log.event(
+        timeline.now_us(),
+        "room-volume",
+        &format!(
+            "gain={} limit={} ramp_ms={} max_volume={} zone_gain={} settles_at={}",
+            m.gain,
+            m.limit,
+            m.ramp_ms,
+            room.ceiling().literal(),
+            watch.gain().literal(),
+            room.settled(watch.gain()).literal()
+        ),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -418,6 +445,7 @@ fn play<S: PcmSink>(
     mut sync_out: Option<Box<dyn Write>>,
     stop_slot: &StopSlot,
     gain: ZoneGain,
+    channels: usize,
     watch: &Arc<ZoneWatch>,
 ) -> Result<RunOutcome, std::io::Error> {
     let rate_hz = sink.rate_hz();
@@ -565,7 +593,9 @@ fn play<S: PcmSink>(
         // The zone's gain is applied here too. The priming write is audio like
         // any other, and an endpoint whose zone is muted must not begin with
         // 120 ms of sound before the first state message reaches it.
-        gain.apply(watch.gain(), &mut primed);
+        if let Some(m) = watch.apply(&gain, channels, rate_hz, &mut primed) {
+            log_room_volume(log, timeline, &m, watch)?;
+        }
         match sink.write(&primed) {
             Ok(report) => {
                 counters
@@ -842,8 +872,13 @@ fn play<S: PcmSink>(
                     // to be written and to nothing else. This is the last thing
                     // that touches the PCM before the device sees it, so what a
                     // modelled sink accepts IS what the zone commanded.
+                    // With the room's volume from the audio wire, the
+                    // control plane's gain and this endpoint's ceiling: the
+                    // least of them, frame by frame (zone.rs, ADR 0074).
                     let now_gain = watch.gain();
-                    gain.apply(now_gain, &mut shaped);
+                    if let Some(m) = watch.apply(&gain, channels, rate_hz, &mut shaped) {
+                        log_room_volume(log, timeline, &m, watch)?;
+                    }
                     if now_gain != last_gain {
                         last_gain = now_gain;
                         log.event(
@@ -921,7 +956,7 @@ fn play<S: PcmSink>(
             corrector.advance(now_ns.saturating_sub(last_advance_ns));
             last_advance_ns = now_ns;
             let mut shaped = corrector.shape(&queued.chunk.audio_data);
-            gain.apply(watch.gain(), &mut shaped);
+            let _ = watch.apply(&gain, channels, rate_hz, &mut shaped);
             match sink.write(&shaped) {
                 Ok(report) => {
                     counters

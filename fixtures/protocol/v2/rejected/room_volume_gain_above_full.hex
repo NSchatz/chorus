@@ -1,0 +1,18 @@
+# chorus rejection vector: room volume, protocol v2 message type 0x38, gain out of range.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# reject this frame naming gain (see room_volume_gain_above_full.fields).
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x38, payload length 6 (0x0006), big-endian
+38 00 06
+
+# gain = 1001 thousandths
+03 E9
+
+# limit = 1000 thousandths
+03 E8
+
+# ramp_ms = 0
+00 00

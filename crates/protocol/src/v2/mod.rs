@@ -17,7 +17,7 @@ pub mod session;
 
 pub use catalog::{
     roles, ChannelPosition, Codec, Command, Link, Playback, RefusalReason, SourceAction,
-    SourceKind, Suite, Type, MAGIC, PROTOCOL_VERSION,
+    SourceKind, Suite, Type, MAGIC, MAX_ROOM_VOLUME_RAMP_MS, PROTOCOL_VERSION, ROOM_VOLUME_FULL,
 };
 pub use codec::{
     decode_all, decode_frame, encode, encode_payload, validate, DecodeError, Decoded, EncodeError,

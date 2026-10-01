@@ -41,7 +41,9 @@
 //! `sync-resume` (a mute ran out); and, from the control plane,
 //! `zone-gain` (the zone's volume or mute changed what this endpoint is
 //! multiplying its samples by, with the new gain and the state message it came
-//! from). A reader that does
+//! from); and, from the audio wire, `room-volume` (a `room_volume` the
+//! playout loop took: the gain, limit and ramp it asked for, this endpoint's
+//! `max_volume`, and what the endpoint settles at; goal 11). A reader that does
 //! not know a kind can ignore it: the grader keys on the ones it needs and
 //! passes the rest through, which is why a new kind is not a format version.
 //!

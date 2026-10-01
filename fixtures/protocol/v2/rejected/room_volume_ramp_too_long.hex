@@ -1,0 +1,18 @@
+# chorus rejection vector: room volume, protocol v2 message type 0x38, ramp_ms out of range.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# reject this frame naming ramp_ms (see room_volume_ramp_too_long.fields).
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x38, payload length 6 (0x0006), big-endian
+38 00 06
+
+# gain = 500 thousandths
+01 F4
+
+# limit = 1000 thousandths
+03 E8
+
+# ramp_ms = 60001
+EA 61
