@@ -6,8 +6,8 @@ the partial tables in that file, with no recording, sample or third-party sound 
 The rendered audio is chorus's own work under the repository's licence, **MIT OR Apache-2.0**
 (`LICENSE-MIT`, `LICENSE-APACHE`). There is nothing to attribute.
 
-A group plays one as the source `chime:<name>`. The decision record is the schedule library's ADR
-in `docs/decisions/` (indexed as "the schedule library").
+A group plays one as the source `chime:<name>`. The decision record
+is `docs/decisions/0072-the-schedule-library.md`.
 
 | Name | Length | What it is | Built from |
 |---|---|---|---|

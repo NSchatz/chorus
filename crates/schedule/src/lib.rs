@@ -36,7 +36,7 @@
 //! - [`chime`]: chorus's own generated chimes, rendered to PCM.
 //!
 //! The decisions behind all of it, every ASSUMED default among them, are
-//! `docs/decisions/` "the schedule library" record; the chimes are listed in
+//! `docs/decisions/0072-the-schedule-library.md`; the chimes are listed in
 //! `docs/chimes.md`.
 
 #![forbid(unsafe_code)]

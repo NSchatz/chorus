@@ -1,4 +1,4 @@
-# 0000: the schedule library is a pure crate that reads no clock: civil time from TZif with a gap and a fold rule, weekly windows, alarms, sleep fades, integer ramps and generated chimes
+# 0072: the schedule library is a pure crate that reads no clock: civil time from TZif with a gap and a fold rule, weekly windows, alarms, sleep fades, integer ramps and generated chimes
 
 - Status: accepted (goal 11, 2026-10-01)
 - Decided by: the goal (section 15 items 2 and 3: quiet hours, alarms and sleep, "chimes
