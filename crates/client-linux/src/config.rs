@@ -1061,10 +1061,6 @@ mod tests {
         assert!(c.device_buffer_us() > c.max_us);
     }
 
-    fn args(list: &[&str]) -> Vec<String> {
-        list.iter().map(|s| s.to_string()).collect()
-    }
-
     #[test]
     fn real_time_is_off_unless_asked_for() {
         let (c, _) = ClientConfig::from_args(Vec::<String>::new()).unwrap();
