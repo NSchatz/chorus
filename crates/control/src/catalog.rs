@@ -28,7 +28,7 @@
 //! # Two versions, and a message is written at the lowest that has it
 //!
 //! Catalog version 2 (rooms, bonds, saved and live groups, limits, quiet
-//! hours, alarms; `docs/decisions/0073-control-catalog-v2.md` records it, as
+//! hours, alarms; `docs/decisions/0075-control-catalog-v2.md` records it, as
 //! 0016 records v1) is a superset of version 1. A build implementing both accepts a v1
 //! command at `"v":1` or `"v":2`, refuses a v2-only command at `"v":1` as not
 //! a command of that version, and WRITES every command at the lowest version
