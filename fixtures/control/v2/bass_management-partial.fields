@@ -1,0 +1,13 @@
+# Canonical input for the catalog v2 bass_management-partial vector.
+#
+# Encoding these field values must produce exactly bass_management-partial.json, and decoding
+# bass_management-partial.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# A partial update: only the crossover changes.
+
+message_type = bass_management
+zone = living
+crossover_hz = 80

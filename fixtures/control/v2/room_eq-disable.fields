@@ -1,0 +1,13 @@
+# Canonical input for the catalog v2 room_eq-disable vector.
+#
+# Encoding these field values must produce exactly room_eq-disable.json, and decoding
+# room_eq-disable.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# Disabling keeps the filters; only `enabled` changes.
+
+message_type = room_eq
+zone = living
+enabled = 0

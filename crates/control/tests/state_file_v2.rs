@@ -118,7 +118,7 @@ muted = 1\n\
 endpoints =\n";
 
 #[test]
-fn a_format_1_file_loads_unchanged_and_is_written_back_as_format_2() {
+fn a_format_1_file_loads_unchanged_and_is_written_back_as_the_current_format() {
     let zones = load(FORMAT_1, "127.0.0.1:4010").expect("format 1 still loads");
     assert_eq!(zones.serial(), 9);
     let kitchen = zones.zone("kitchen").unwrap();
@@ -135,7 +135,9 @@ fn a_format_1_file_loads_unchanged_and_is_written_back_as_format_2() {
         r#"{"v":1,"t":"state","serial":9,"zones":[{"id":"kitchen","name":"Kitchen #1","group":"downstairs","volume":0.375,"muted":false,"endpoints":["endpoint-a","endpoint-b"],"present":[],"audio":"127.0.0.1:4010"},{"id":"study","name":"Study","group":"downstairs","volume":1.000,"muted":true,"endpoints":[],"present":[],"audio":"127.0.0.1:4010"}]}"#
     );
     let again = render(&zones);
-    assert!(again.contains("format = 2\n"));
+    // Format 2 when catalog v2 wrote this test; format 3 since goal 12
+    // (per-room sound), whose own test is tests/sound_v2.rs.
+    assert!(again.contains(&format!("format = {}\n", STATE_FORMAT)));
     assert_eq!(
         render(&load(&again, "x").unwrap()),
         again,

@@ -279,6 +279,11 @@ impl ClientPool {
                             if let Some(volume) = start.room_volume {
                                 hello.messages.push(Message::RoomVolume(volume));
                             }
+                            // Then the room's sound (goal 12), before any
+                            // audio too.
+                            if let Some(sound) = &start.sound {
+                                hello.messages.push(Message::Sound(sound.clone()));
+                            }
                             if let Some(state) = &start.controller_state {
                                 hello.messages.push(Message::ControllerState(state.clone()));
                             }

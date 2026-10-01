@@ -1,0 +1,31 @@
+# Canonical input for the sound_eq_8 golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly sound_eq_8.hex, and decoding sound_eq_8.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+# `role` is a channel position number (0 = in no bonded set); `flags_reserved` is a
+# number ORed into `flags` (rejection vectors only); each `filter.<n>` is
+# `freq_hz gain_cdb q_milli`, numbered from 0, and eq_count is how many there are.
+#
+# The front left (role 1) of a set with a sub, night and speech on, loudness off,
+# eight filters including both corners of the room-correction bounds.
+
+message_type = sound
+bass_db = -10
+treble_db = 10
+flags = night speech room_eq
+role = 1
+sub_present = 1
+crossover_hz = 80
+sub_level_cdb = 600
+filter.0 = 20 -1200 500
+filter.1 = 42 -600 4500
+filter.2 = 63 -325 2000
+filter.3 = 88 -150 7070
+filter.4 = 120 -900 3000
+filter.5 = 250 100 1000
+filter.6 = 500 -50 1414
+filter.7 = 1000 300 10000

@@ -1,0 +1,18 @@
+# Canonical input for the catalog v2 sound vector.
+#
+# Encoding these field values must produce exactly sound.json, and decoding
+# sound.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# Every field: bass and treble in whole dB (-10 to 10, ASSUMED 1 dB a step),
+# loudness, night mode and speech enhancement.
+
+message_type = sound
+zone = living
+bass = 3
+treble = -2
+loudness = 0
+night = 1
+speech = 1

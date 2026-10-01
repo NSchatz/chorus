@@ -1,0 +1,60 @@
+# chorus rejection vector: sound, protocol v2 message type 0x39, eq_count out of range.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# reject this frame naming eq_count (see sound_eq_count_9.fields).
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x39, payload length 64 (0x0040), big-endian
+39 00 40
+
+# bass_db = -10 dB
+F6
+
+# treble_db = 10 dB
+0A
+
+# flags = 0x0E (night speech room_eq)
+0E
+
+# role = 1 (FL)
+01
+
+# sub_present = 1
+01
+
+# crossover_hz = 80
+00 50
+
+# sub_level_cdb = 600 (6.00 dB)
+02 58
+
+# eq_count = 9
+09
+
+# filter 0: freq_hz = 20, gain_cdb = -1200 (-12.00 dB), q_milli = 500 (Q 0.500)
+00 14 FB 50 01 F4
+
+# filter 1: freq_hz = 42, gain_cdb = -600 (-6.00 dB), q_milli = 4500 (Q 4.500)
+00 2A FD A8 11 94
+
+# filter 2: freq_hz = 63, gain_cdb = -325 (-3.25 dB), q_milli = 2000 (Q 2.000)
+00 3F FE BB 07 D0
+
+# filter 3: freq_hz = 88, gain_cdb = -150 (-1.50 dB), q_milli = 7070 (Q 7.070)
+00 58 FF 6A 1B 9E
+
+# filter 4: freq_hz = 120, gain_cdb = -900 (-9.00 dB), q_milli = 3000 (Q 3.000)
+00 78 FC 7C 0B B8
+
+# filter 5: freq_hz = 250, gain_cdb = 100 (1.00 dB), q_milli = 1000 (Q 1.000)
+00 FA 00 64 03 E8
+
+# filter 6: freq_hz = 500, gain_cdb = -50 (-0.50 dB), q_milli = 1414 (Q 1.414)
+01 F4 FF CE 05 86
+
+# filter 7: freq_hz = 1000, gain_cdb = 300 (3.00 dB), q_milli = 10000 (Q 10.000)
+03 E8 01 2C 27 10
+
+# filter 8: freq_hz = 1000, gain_cdb = 0 (0.00 dB), q_milli = 1000 (Q 1.000)
+03 E8 00 00 03 E8

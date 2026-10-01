@@ -39,7 +39,7 @@ use chorus_protocol::v2::adoption::{KeyChange, PinStore, Verdict};
 use chorus_protocol::v2::noise::{fingerprint, Keypair};
 use chorus_protocol::v2::session::{connect, Identity, SecureReader, SecureWriter, SessionError};
 use chorus_protocol::v2::{
-    roles, Capabilities, Codec, Hello, Message, RefusalReason, SourceControl, SourceOffer,
+    roles, Capabilities, Codec, Hello, Message, RefusalReason, Sound, SourceControl, SourceOffer,
     StreamFormat, PROTOCOL_VERSION,
 };
 use chorus_protocol::{SampleFormat, MAX_CHANNELS, MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ};
@@ -47,7 +47,7 @@ use chorus_protocol::{SampleFormat, MAX_CHANNELS, MAX_SAMPLE_RATE_HZ, MIN_SAMPLE
 use crate::coded::CodedStream;
 use crate::config::ClientConfig;
 use crate::receive::StreamShape;
-use crate::zone::RoomVolumeInbox;
+use crate::zone::{RoomVolumeInbox, SoundInbox};
 
 /// The file holding the endpoint's long-term secret key.
 pub const KEY_FILE: &str = "endpoint.key";
@@ -243,7 +243,26 @@ pub struct Announced {
     /// Where they go: the playout loop's inbox
     /// ([`deliver_room_volume_to`]).
     pub room_volume_inbox: RoomVolumeTap,
+    /// The last `sound` (0x39, goal 12) received this session.
+    pub sound: Option<Sound>,
+    /// `sound`s received.
+    pub sounds: u64,
+    /// Where they also go ([`deliver_sound_to`]).
+    pub sound_inbox: SoundTap,
 }
+
+/// Where the session hands `sound` (the watch's inbox). Plumbing, like
+/// [`RoomVolumeTap`]: it compares equal to any other.
+#[derive(Debug, Clone, Default)]
+pub struct SoundTap(Option<Arc<SoundInbox>>);
+
+impl PartialEq for SoundTap {
+    fn eq(&self, _: &SoundTap) -> bool {
+        true
+    }
+}
+
+impl Eq for SoundTap {}
 
 /// Where the session hands `room_volume` (the playout loop's inbox, held by
 /// `crate::control::ZoneWatch`). Plumbing, like [`SourceControls`]: it
@@ -558,6 +577,19 @@ pub fn deliver_room_volume_to(announced: &Arc<Mutex<Announced>>, inbox: Arc<Room
     a.room_volume_inbox = RoomVolumeTap(Some(inbox));
 }
 
+/// From now on, hand every `sound` this session receives to `inbox`, where
+/// the playout loop logs it and the endpoint's DSP reads the last one
+/// (`crate::control::ZoneWatch::last_sound`). Called right after [`open`],
+/// as [`deliver_room_volume_to`] is: the server sends `sound` after
+/// `room_volume`.
+pub fn deliver_sound_to(announced: &Arc<Mutex<Announced>>, inbox: Arc<SoundInbox>) {
+    let mut a = match announced.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    a.sound_inbox = SoundTap(Some(inbox));
+}
+
 /// From now on, also show every v2 message the session receives to `also`
 /// (the front panel takes `controller_state`, `visualizer_frame` and
 /// `color`); what [`open`] records is recorded as before.
@@ -597,6 +629,15 @@ fn record(announced: &Arc<Mutex<Announced>>, m: Message) {
                 inbox.deliver(v);
             }
             a.room_volumes += 1;
+        }
+        Message::Sound(s) => {
+            // Validated by the decoder (every range, every flag bit); kept,
+            // and handed on for the log and the DSP.
+            if let Some(inbox) = &a.sound_inbox.0 {
+                inbox.deliver(s.clone());
+            }
+            a.sound = Some(s);
+            a.sounds += 1;
         }
         _ => a.other += 1,
     }

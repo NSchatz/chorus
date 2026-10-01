@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"crossover_hz","detail":"the field 'crossover_hz' is 30 and the catalog declares a whole number from 40 to 200"}

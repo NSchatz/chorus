@@ -1,0 +1,23 @@
+# Canonical input for the sound_crossover_too_high rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# sound_crossover_too_high.hex as that field, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# A crossover 1 Hz above the 200 Hz the format allows.
+
+message_type = sound
+bass_db = 3
+treble_db = -2
+flags = loudness room_eq sub_inverted
+role = 4
+sub_present = 1
+crossover_hz = 201
+sub_level_cdb = -350
+filter.0 = 42 -600 4500
+rejected_field = crossover_hz
+problem = out_of_range

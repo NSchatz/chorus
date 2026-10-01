@@ -22,6 +22,7 @@
 //! - [`json`] reads and writes the one canonical spelling of a message.
 //! - [`catalog`] is the message types, their fields and their ranges.
 //! - [`zones`] is the server-authoritative state a command changes.
+//! - [`sound`] is a room's tone, bass management and correction EQ.
 //! - [`persist`] is what survives a restart.
 //! - [`fanout`] is how a change reaches every subscriber, bounded.
 //! - [`transport`] is the tier a zone is DECLARED in, beside the catalog and
@@ -40,10 +41,12 @@ pub mod fanout;
 pub mod json;
 pub mod persist;
 pub mod rooms;
+pub mod sound;
 pub mod transport;
 pub mod zones;
 
 pub use catalog::{decode_command, Command, Refusal, RefusalKind, Volume, CATALOG_VERSION};
 pub use fanout::{ControlFanout, CONTROL_QUEUE_LIMIT};
+pub use sound::{ROOM_EQ_FREQ_HZ, ROOM_EQ_GAIN_CDB, ROOM_EQ_MAX_FILTERS, ROOM_EQ_Q_MILLI};
 pub use transport::{GroupTier, Transport, WirelessPolicy, ZoneTransports, WIRELESS_POLICY};
 pub use zones::{Zone, Zones};
