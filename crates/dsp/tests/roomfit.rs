@@ -433,9 +433,10 @@ fn the_sweep_follows_farinas_instantaneous_frequency() {
 }
 
 /// Worked example, Farina 2000 section 3: the sweep convolved with its inverse filter is a
-/// delayed Dirac delta. Here: the peak lands at exactly the sweep's length less one, its
-/// magnitude response is flat within 1 dB (1/3-octave smoothed) over the band an octave inside the sweep's ends,
-/// and nothing more than 30 ms from the peak rises above -60 dB of it.
+/// delayed Dirac delta. Here: the peak lands at exactly the sweep's length less one, at the
+/// height a unit impulse band-limited to the sweep has, its magnitude response (1/3-octave
+/// smoothed) is flat within 1 dB over the band an octave inside the sweep's ends, and nothing
+/// more than 30 ms from the peak rises above -60 dB of it.
 #[test]
 fn the_sweep_through_its_inverse_is_a_delayed_impulse() {
     let s = fixture_sweep();

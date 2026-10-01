@@ -4,12 +4,13 @@
 //!
 //! The pipeline, each stage a public function so a test can hold it on its own:
 //!
-//! 1. [`Sweep`]: the excitation, an exponential sine sweep, and its inverse filter (Farina, "Simultaneous
-//!    measurement of impulse response and distortion with a swept-sine technique", AES 108th
-//!    Convention, Paris, 2000, preprint 5093,
+//! 1. [`Sweep`]: the excitation, an exponential sine sweep, and its inverse filter (Farina,
+//!    "Simultaneous measurement of impulse response and distortion with a swept-sine
+//!    technique", AES 108th Convention, Paris, 2000, preprint 5093,
 //!    https://angelofarina.it/Public/Papers/134-AES00.PDF, read 2026-10-01).
 //! 2. [`check_recording`]: a recording that is too short, clipped or too quiet is refused by
-//!    name before anything is fitted to it ([`RoomFitError`]).
+//!    name before anything is fitted to it, and one too noisy after deconvolution
+//!    ([`RoomFitError`]).
 //! 3. [`impulse_response`]: the recording convolved with the inverse filter is the room's
 //!    impulse response, with the harmonic distortion pushed to earlier times where the window
 //!    leaves it out (Farina 2000, section 3).
