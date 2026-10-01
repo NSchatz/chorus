@@ -110,6 +110,14 @@ verify-restart-storm: tools-executable
 verify-soak: tools-executable
 	bash tools/soak-run.sh
 
+# Goal 11's house soak: one --slots 8 server, eight rooms, ten endpoints on ALSA
+# `null`, a seeded command load for CHORUS_HOUSE_SOAK_SECONDS (default 3600), graded
+# and written to docs/measurements/house-soak-8-rooms.md. A host software soak, not a
+# hardware measurement and not timing evidence; not in `make gate` (an hour). Callers
+# take the heavy lock. See docs/house-soak.md and tools/house-soak-run.sh.
+verify-house-soak: tools-executable
+	bash tools/house-soak-run.sh
+
 # The live multicast half of AC-2. Whether multicast reaches a container and
 # crosses this network's VLANs is an open question, which is why the endpoint
 # has a static fallback; this runs the live exchange where it can and refuses
@@ -289,5 +297,5 @@ verify-null-device: tools-executable
 	probe sim-house sync-vectors ten-minute-run ten-minute-run-null test tools-executable verify verify-alsa-null verify-control  \
 	verify-control-determinism verify-device verify-discovery-fallback  \
 	verify-endpoint-rig verify-host verify-mdns verify-measure-device  \
-	verify-null-device verify-restart-storm verify-soak verify-sync-hour  \
+	verify-house-soak verify-null-device verify-restart-storm verify-soak verify-sync-hour  \
 	verify-wireless 

@@ -29,7 +29,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chorus_control::catalog::{Volume, VOLUME_SCALE};
 use chorus_control::json::{self, Value};
@@ -348,8 +348,16 @@ impl ControlLink {
                 // fact about now and is never read from a file. This is how
                 // it learns it again, and it is the endpoint saying so
                 // rather than anything being said to the endpoint.
-                let _ = self.attach();
-                self.read_events(stream, watch, keep_going)
+                //
+                // An attach that is turned away (every control worker busy,
+                // `503`, when a whole house starts at once) is tried again
+                // while the stream is held, every RETRY_INTERVAL, until one is
+                // applied: an endpoint the server never heard attach is in no
+                // room, so in the slot shape it hears silence, and it is never
+                // sent its room's `room_volume`. Found by the house soak
+                // (docs/decisions/0078-the-house-soak.md).
+                let attached = self.attach().is_ok();
+                self.read_events(stream, watch, keep_going, attached)
             }
             let mut waited = Duration::ZERO;
             while keep_going() && waited < RETRY_INTERVAL {
@@ -425,9 +433,15 @@ impl ControlLink {
         mut stream: BufReader<TcpStream>,
         watch: &Arc<ZoneWatch>,
         keep_going: &dyn Fn() -> bool,
+        mut attached: bool,
     ) {
         let mut line = String::new();
+        let mut last_attach = Instant::now();
         while keep_going() {
+            if !attached && last_attach.elapsed() >= RETRY_INTERVAL {
+                attached = self.attach().is_ok();
+                last_attach = Instant::now();
+            }
             line.clear();
             match stream.read_line(&mut line) {
                 Ok(0) => return,
@@ -450,6 +464,86 @@ impl ControlLink {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A control channel that turns the first attach away with `503`, as a
+    /// server whose workers are all busy does, and applies the next one; its
+    /// event stream stays open and quiet. The endpoint must try again while it
+    /// holds the stream (the house soak's finding, ADR 0078).
+    #[test]
+    fn an_attach_turned_away_is_tried_again_while_the_stream_is_held() {
+        use std::net::TcpListener;
+        use std::sync::atomic::AtomicBool;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let attaches = Arc::new(AtomicU32::new(0));
+        let applied = Arc::new(AtomicBool::new(false));
+        {
+            let attaches = Arc::clone(&attaches);
+            let applied = Arc::clone(&applied);
+            std::thread::spawn(move || {
+                let mut held = Vec::new();
+                for connection in listener.incoming() {
+                    let mut connection = connection.unwrap();
+                    // Read until the request is whole: the client writes its
+                    // headers and its body in more than one segment.
+                    let mut request = String::new();
+                    let mut buf = [0u8; 4096];
+                    while !(request.starts_with("GET") && request.contains("\r\n\r\n"))
+                        && !request.ends_with('}')
+                    {
+                        match connection.read(&mut buf) {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => request.push_str(&String::from_utf8_lossy(&buf[..n])),
+                        }
+                    }
+                    if request.starts_with("GET /api/events") {
+                        let _ = connection.write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n",
+                        );
+                        held.push(connection);
+                    } else if request.contains(r#""t":"attach""#) {
+                        if attaches.fetch_add(1, Ordering::SeqCst) == 0 {
+                            let _ = connection.write_all(
+                                b"HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n",
+                            );
+                        } else {
+                            let _ = connection
+                                .write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n{}");
+                            applied.store(true, Ordering::SeqCst);
+                        }
+                    }
+                }
+            });
+        }
+        let link = ControlLink {
+            address,
+            zone: "kitchen".to_string(),
+            endpoint: "endpoint-a".to_string(),
+        };
+        let watch = Arc::new(ZoneWatch::new());
+        let stop = Arc::new(AtomicBool::new(false));
+        let follower = {
+            let stop = Arc::clone(&stop);
+            std::thread::spawn(move || link.follow(&watch, &|| !stop.load(Ordering::SeqCst)))
+        };
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !applied.load(Ordering::SeqCst) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        stop.store(true, Ordering::SeqCst);
+        follower.join().unwrap();
+        assert!(
+            applied.load(Ordering::SeqCst),
+            "the attach was tried again and applied ({} attempts)",
+            attaches.load(Ordering::SeqCst)
+        );
+        assert_eq!(
+            attaches.load(Ordering::SeqCst),
+            2,
+            "and not again once it was applied, on the one stream"
+        );
+    }
 
     const STATE: &str = r#"{"v":1,"t":"state","serial":7,"zones":[{"id":"kitchen","name":"Kitchen","group":"downstairs","volume":0.375,"muted":false,"endpoints":["a"],"present":["a"],"audio":"127.0.0.1:4011"}]}"#;
 
