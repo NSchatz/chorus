@@ -460,8 +460,7 @@ static int the_committed_vectors_round_trip(void)
     /* Every type v2 added has at least one vector, and this endpoint has a
      * type for every vector (the directory and the catalog agree). */
     static const uint8_t ADDED[] = {0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x20, 0x21, 0x22, 0x23,
-                                    0x24, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
-                                    0x38};
+                                    0x24, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38};
     for (size_t t = 0; t < sizeof(ADDED); t++) {
         int found = 0;
         for (size_t i = 0; i < vector_count; i++) {
@@ -627,7 +626,8 @@ static const vector_t *vector(const char *stem);
  * the counts line says how many of how many were refused both ways. */
 static void the_committed_rejection_vectors_are_refused_both_ways(void)
 {
-    chorus_section("fixtures/protocol/v2/rejected: refused by the encoder, rejected by the decoder");
+    chorus_section(
+        "fixtures/protocol/v2/rejected: refused by the encoder, rejected by the decoder");
     char dir_path[512];
     chorus_repo_path(dir_path, sizeof(dir_path), "fixtures/protocol/v2/rejected");
     DIR *dir = opendir(dir_path);
@@ -666,7 +666,8 @@ static void the_committed_rejection_vectors_are_refused_both_ways(void)
         snprintf(relative, sizeof(relative), "fixtures/protocol/v2/rejected/%.127s.hex", v->stem);
         chorus_repo_path(path, sizeof(path), relative);
         long hex_ok = fixture_read(path, hex_text, sizeof(hex_text));
-        snprintf(relative, sizeof(relative), "fixtures/protocol/v2/rejected/%.127s.fields", v->stem);
+        snprintf(relative, sizeof(relative), "fixtures/protocol/v2/rejected/%.127s.fields",
+                 v->stem);
         chorus_repo_path(path, sizeof(path), relative);
         long fields_ok = fixture_read(path, fields_text, sizeof(fields_text));
         long len = (hex_ok < 0) ? -1 : fixture_parse_hex(hex_text, v->frame, sizeof(v->frame));
@@ -675,8 +676,9 @@ static void the_committed_rejection_vectors_are_refused_both_ways(void)
         if (len < 0 || fields_ok < 0 ||
             fixture_field(fields_text, "rejected_field", field, sizeof(field)) == NULL ||
             fixture_field(fields_text, "problem", problem, sizeof(problem)) == NULL) {
-            chorus_check(0, "%s: both files are readable, the .hex parses, and the .fields "
-                            "names rejected_field and problem",
+            chorus_check(0,
+                         "%s: both files are readable, the .hex parses, and the .fields "
+                         "names rejected_field and problem",
                          v->stem);
             continue;
         }
@@ -712,9 +714,8 @@ static void the_committed_rejection_vectors_are_refused_both_ways(void)
             static uint8_t stream[FRAME_CAP];
             memcpy(stream, v->frame, v->frame_len);
             memcpy(stream + v->frame_len, good->frame, good->frame_len);
-            chorus_v2_frame_t next =
-                chorus_v2_decode_frame(stream + d.consumed, v->frame_len + good->frame_len -
-                                                                d.consumed);
+            chorus_v2_frame_t next = chorus_v2_decode_frame(
+                stream + d.consumed, v->frame_len + good->frame_len - d.consumed);
             next_ok = next.outcome == CHORUS_FRAME_DECODED &&
                       next.message.type == CHORUS_V2_ROOM_VOLUME &&
                       next.consumed == good->frame_len;

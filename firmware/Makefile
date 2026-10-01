@@ -82,6 +82,7 @@ LIB_SRC := \
 	$(FW)/src/decode_cost.c \
 	$(FW)/src/sync_conf.c \
 	$(FW)/src/playout.c \
+	$(FW)/src/volume.c \
 	$(FW)/src/controls.c
 
 # The four units the configuration checker itself needs. It is built without
@@ -89,7 +90,7 @@ LIB_SRC := \
 # turns the link section's words into the enums that section declares, and a
 # checker that could not read the link could not refuse a bad one.
 GATE_SRC := $(FW)/src/conf.c $(FW)/src/i2s.c $(FW)/src/wifi.c $(FW)/src/link.c \
-	$(FW)/src/endpoint_config.c $(FW)/src/amp.c
+	$(FW)/src/endpoint_config.c $(FW)/src/amp.c $(FW)/src/volume.c
 
 # The board profiles (firmware/boards/, docs/decisions/0057-*): each is laid over
 # endpoint.conf and checked the way the image reads it, and the default one,
@@ -135,7 +136,7 @@ LIB_SRC += $(CODEC_SRC)
 CFLAGS += $(DRFLAC_DEFS) $(CODEC_INC)
 
 .PHONY: all check config-check golden-vectors sync-scenarios safety-scans amplifier clocking \
-        telemetry wireless link console session-outage noise-vectors psa-tree codec codec-fixtures playout controls clean
+        telemetry wireless link console session-outage noise-vectors psa-tree codec codec-fixtures playout volume controls clean
 
 # Every binary this makefile builds, enumerated. There is no wildcard over
 # firmware/tests on purpose, and the cost of that is a test has to be named in
@@ -145,7 +146,7 @@ CFLAGS += $(DRFLAC_DEFS) $(CODEC_INC)
 all: $(BUILD)/chorus-endpoint-config-check $(BUILD)/chorus-endpoint-scan \
      $(BUILD)/chorus-endpoint-session $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 \
      $(BUILD)/test_noise $(BUILD)/test_sync $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_scan $(BUILD)/test_telemetry \
-     $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_codec $(BUILD)/test_playout $(BUILD)/test_controls $(BUILD)/opus_compare
+     $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_codec $(BUILD)/test_playout $(BUILD)/test_volume $(BUILD)/test_controls $(BUILD)/opus_compare
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -216,7 +217,7 @@ $(BUILD)/test_scan: $(SCAN_SRC) $(FW)/tests/test_scan.c | $(BUILD)
 $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 $(BUILD)/test_noise $(BUILD)/test_sync \
 $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_telemetry \
 $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_playout \
-$(BUILD)/test_controls: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
+$(BUILD)/test_volume $(BUILD)/test_controls: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
                          $(FW)/tests/test_%.c $(STAMP) $(PSA_LIB) $(VENDOR_OBJ) | $(BUILD)
 	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(TEST_SUPPORT) $(FW)/tests/test_$*.c \
 		$(PSA_LIB) $(VENDOR_OBJ) $(LDLIBS)
@@ -300,6 +301,13 @@ console: $(BUILD)/test_console
 playout: $(BUILD)/test_playout
 	$(BUILD)/test_playout
 
+# Goal 11: the room's volume on the endpoint (K81, I10; docs/decisions/0070-*):
+# min(ramped gain, the limit received, max_volume) at every frame, integer,
+# the ramp's endpoints and monotonicity, mute, and frames in == frames out,
+# alone and through the playout path and a decoded room_volume.
+volume: $(BUILD)/test_volume
+	$(BUILD)/test_volume
+
 # Goal 9: the controls per class (K67-K70) as the controller role, held to
 # fixtures/controls/<class>.hex, the microphone gate, and the status LED held
 # to the visualizer fixture (docs/decisions/0063-*).
@@ -323,7 +331,7 @@ codec-fixtures:
 		--vectors "$(OPUS_VECTORS)" --out $(REPO_ROOT)/fixtures/codec
 
 check: config-check golden-vectors sync-scenarios safety-scans clocking amplifier telemetry \
-       wireless link console playout controls session-outage codec
+       wireless link console playout volume controls session-outage codec
 
 clean:
 	rm -rf $(BUILD)

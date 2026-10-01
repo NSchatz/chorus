@@ -35,6 +35,7 @@
 
 #include "chorus/sync.h"
 #include "chorus/sync_conf.h"
+#include "chorus/volume.h"
 
 /* The jitter buffer the board allocates, and the `buffer` this endpoint's
  * capabilities advertise (session.c): the playout latency (180 ms in
@@ -81,6 +82,10 @@ typedef struct {
     /* The GPIO marker's period on the server timeline, in ns; 0 turns the
      * marker off. See chorus_playout_marker_due. */
     uint64_t marker_period_ns;
+    /* The endpoint's own volume ceiling, in thousandths (`max_volume` in
+     * endpoint.conf; chorus/volume.h). chorus_playout_config_from sets the
+     * default, CHORUS_VOLUME_DEFAULT_CEILING; above 1000 is not playable. */
+    uint32_t max_volume_thousandths;
 } chorus_playout_config_t;
 
 /* The playout configuration config/sync.conf and the I2S clock imply. */
@@ -173,6 +178,10 @@ typedef struct {
     uint64_t marker_edges;
     uint64_t marker_missed;
     uint64_t marker_last_boundary_ns;
+    /* The room's volume (goal 11): room_volume messages taken, and the gain
+     * the next frame plays at, in thousandths. */
+    uint32_t room_volume_messages;
+    uint32_t applied_volume_thousandths;
 } chorus_playout_stats_t;
 
 typedef struct {
@@ -256,6 +265,10 @@ typedef struct {
     /* ns per frame in 16.16 fixed point, so the interrupt needs no division. */
     uint32_t frame_ns_q16;
 
+    /* The room's gain, limit and this endpoint's ceiling, applied to every
+     * audio frame the writer hands over (chorus/volume.h). */
+    chorus_volume_t volume;
+
     chorus_playout_stats_t stats;
     chorus_playout_report_t last;
 } chorus_playout_t;
@@ -304,6 +317,14 @@ void chorus_playout_reset_stream(chorus_playout_t *p);
  * count them as written. Returns how many of them are audio (the rest is
  * silence: an insertion, an underrun, or nothing to play yet). */
 uint32_t chorus_playout_fill(chorus_playout_t *p, uint8_t *out, uint32_t frames);
+
+/* A room_volume from the session task (docs/protocol.md, "0x38 room
+ * volume"), already validated by the decoder. It takes effect at the next
+ * frame the writer hands over: the limit at once, the gain ramped over
+ * `ramp_ms` counted in frames at the stream's rate. Kept across
+ * chorus_playout_reset_stream: a new stream is not a reason to play louder. */
+void chorus_playout_set_room_volume(chorus_playout_t *p, uint16_t gain, uint16_t limit,
+                                    uint16_t ramp_ms);
 
 /* One tick of the loop, from the writer task every interval_ms: snapshot the
  * DMA side, form the error, feed the servo and set the corrector. */
