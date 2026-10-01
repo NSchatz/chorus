@@ -53,13 +53,14 @@ use chorus_audio::MonotonicTimeline;
 use chorus_client_linux::config::{ClientConfig, ClientMode};
 use chorus_client_linux::control::{ControlLink, ZoneWatch};
 use chorus_client_linux::delaylog::DelayLog;
+use chorus_client_linux::front_panel::{FrontPanel, LedWriter, PanelConfig};
 use chorus_client_linux::outmap::{self, MappedSink};
 use chorus_client_linux::receive::{handshake, HandshakeError};
 use chorus_client_linux::run::{counter_lines, header_for, run_session, StopReason};
 use chorus_client_linux::session::{self, EndpointIdentity};
 use chorus_client_linux::sink::{AlsaSink, PcmSink};
 use chorus_client_linux::source::{
-    self, AlsaCapture, SharedWriter, SignalThresholds, SourceHandle,
+    self, AlsaCapture, SharedWriter, SignalThresholds, SourceHandle, Upstream,
 };
 use chorus_client_linux::Counters;
 use chorus_control::transport::Transport;
@@ -114,6 +115,22 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
     let timeline = MonotonicTimeline::new();
     let keep = Arc::new(AtomicBool::new(true));
     let watch = Arc::new(ZoneWatch::new());
+
+    // The front panel, when one is configured: its buttons and light as the
+    // controller role (front_panel.rs). A panel that cannot start is a
+    // configuration refused, never a panel silently absent.
+    let (panel, panel_config) = match config.front_panel.as_deref() {
+        None => (None, config.clone()),
+        Some(path) => match start_panel(config, path, timeline) {
+            Ok(v) => v,
+            Err(e) => {
+                report("configuration refused", &e);
+                status("stopped reason=front-panel-refused played=0");
+                return ExitCode::from(EXIT_CONFIG);
+            }
+        },
+    };
+    let config = &panel_config;
 
     // The control channel first, so that the first session already knows its
     // zone's volume, its mute and which group's stream it is meant to be on.
@@ -190,7 +207,15 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
                 break ExitCode::from(EXIT_NO_SERVER);
             }
         };
-        let outcome = play(config, &address, session, timeline, &watch, &mut identity);
+        let outcome = play(
+            config,
+            &address,
+            session,
+            timeline,
+            &watch,
+            &mut identity,
+            panel.as_ref(),
+        );
         played_ever |= outcome.played;
         total_frames += outcome.frames_played;
         status(&format!(
@@ -239,6 +264,9 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
     };
 
     keep.store(false, Ordering::SeqCst);
+    if let Some(panel) = panel {
+        panel.stop();
+    }
     if let Some(link) = &link {
         let _ = link.leaving();
     }
@@ -246,6 +274,54 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
         let _ = handle.join();
     }
     code
+}
+
+/// Load the panel configuration at `path`, open its input device and its
+/// light, and start it. Hands back the panel and the configuration with the
+/// roles it adds, so `hello` declares exactly what this process runs.
+fn start_panel(
+    config: &ClientConfig,
+    path: &str,
+    timeline: MonotonicTimeline,
+) -> Result<(Option<FrontPanel>, ClientConfig), String> {
+    let panel = PanelConfig::load(std::path::Path::new(path)).map_err(|e| e.to_string())?;
+    let mut keys = Vec::new();
+    for input in &panel.inputs {
+        keys.push(
+            std::fs::File::open(input)
+                .map_err(|e| format!("front panel input {}: {}", input.display(), e))?,
+        );
+    }
+    let led = match &panel.led {
+        Some(dir) => Some(
+            LedWriter::open(dir)
+                .map_err(|e| format!("front panel light {}: {}", dir.display(), e))?,
+        ),
+        None => None,
+    };
+    let mut with_roles = config.clone();
+    with_roles.extra_roles = panel.roles();
+    // Every key event is stamped on the monotonic timeline when it is read.
+    // The LED is shown against the same timeline until the sync offset is
+    // published to it (a follow-up for goal 12, when the server sends a
+    // visualizer stream at all).
+    let now: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(move || timeline.now_ns());
+    let log: Arc<dyn Fn(&str) + Send + Sync> = Arc::new(status);
+    let running = FrontPanel::start(&panel, &config.zone, keys, led, Arc::clone(&now), now, log)
+        .map_err(|e| e.to_string())?;
+    status(&format!(
+        "front-panel class={} inputs={} keys={} led={} roles={}",
+        panel.speaker_class.name(),
+        panel.inputs.len(),
+        panel.keys.len(),
+        panel
+            .led
+            .as_ref()
+            .map(|d| d.display().to_string())
+            .unwrap_or_else(|| "none".to_string()),
+        with_roles.extra_roles | chorus_protocol::v2::roles::PLAYER
+    ));
+    Ok((Some(running), with_roles))
 }
 
 /// This endpoint's protocol v2 identity, from `--identity-dir`, or made for
@@ -442,6 +518,7 @@ fn play(
     timeline: MonotonicTimeline,
     watch: &Arc<ZoneWatch>,
     identity: &mut EndpointIdentity,
+    panel: Option<&FrontPanel>,
 ) -> SessionOutcome {
     // The first session writes the configured log; a rejoin writes its own
     // beside it, so a run that rejoined leaves one record per session rather
@@ -530,10 +607,26 @@ fn play(
         source_control,
         ..
     } = secure;
-    // One writer for the session, shared by the time-sync exchange and the
-    // source role; records never interleave inside a frame.
+    // One writer for the session, shared by the time-sync exchange, the
+    // source role and the front panel's commands; records never interleave
+    // inside a frame.
     let writer = SharedWriter::new(writer);
     let counters = Arc::new(Counters::new());
+    if let Some(panel) = panel {
+        session::also_hand(&mut stream, &announced, panel.server_messages());
+        let mut uplink = writer.clone();
+        panel.connect(Box::new(move |m| uplink.send(m)));
+    }
+    // The panel is told when this session ends, whichever way it ends.
+    struct Disconnect<'a>(Option<&'a FrontPanel>);
+    impl Drop for Disconnect<'_> {
+        fn drop(&mut self) {
+            if let Some(panel) = self.0 {
+                panel.disconnect();
+            }
+        }
+    }
+    let _disconnect = Disconnect(panel);
     // The source role runs for the whole session, beside the playout, and is
     // stopped (with `stream_end` for a started input) whichever way the
     // session ends.
@@ -661,6 +754,9 @@ fn play(
     // measures is the round trip the audio takes. It is sealed like
     // everything else in the session, and nothing else writes on it.
     let sync_out: Option<Box<dyn std::io::Write>> = Some(Box::new(writer.clone()));
+    if let Some(panel) = panel {
+        panel.set_playing(true);
+    }
 
     let outcome = match run_session(
         config,

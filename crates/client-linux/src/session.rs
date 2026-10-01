@@ -235,7 +235,24 @@ pub struct Announced {
     pub other: u64,
     /// `coded_chunk`s decoded into the receive path (`coded.rs`).
     pub decoded_chunks: u64,
+    /// Where the server's `source_control`s go (the source role's channel).
+    pub source_controls: SourceControls,
 }
+
+/// The sending end of the source role's control channel, kept with what the
+/// server announced so that every handler the session's reader is given
+/// (`record`) forwards `source_control` to it. It compares equal to any other:
+/// it is plumbing, not something the server announced.
+#[derive(Debug, Clone, Default)]
+pub struct SourceControls(Option<mpsc::Sender<SourceControl>>);
+
+impl PartialEq for SourceControls {
+    fn eq(&self, _: &SourceControls) -> bool {
+        true
+    }
+}
+
+impl Eq for SourceControls {}
 
 /// An open session.
 pub struct Session {
@@ -319,8 +336,9 @@ impl fmt::Display for SessionRefusal {
 
 impl std::error::Error for SessionRefusal {}
 
-/// The `hello` this endpoint sends: the player role always, and the source
-/// role when a line-in is configured (K65).
+/// The `hello` this endpoint sends: `player`, the roles a configured front
+/// panel adds (`controller`, and `visualizer` for a light that follows it;
+/// `front_panel.rs`), and `source` when a line-in is configured (K65).
 pub fn hello(config: &ClientConfig) -> Hello {
     let source = if config.line_in.is_some() {
         roles::SOURCE
@@ -329,7 +347,7 @@ pub fn hello(config: &ClientConfig) -> Hello {
     };
     Hello {
         protocol_version: PROTOCOL_VERSION,
-        roles: roles::PLAYER | source,
+        roles: roles::PLAYER | source | (config.extra_roles & roles::DEFINED),
         name: config.endpoint.clone(),
         software: format!("chorus-client {}", env!("CARGO_PKG_VERSION")),
     }
@@ -365,7 +383,8 @@ pub fn capabilities(config: &ClientConfig) -> Capabilities {
         sample_rates_hz: rates,
         buffer_ms: (config.max_us / 1_000).min(u64::from(u16::MAX)) as u16,
         intrinsic_latency_ns: 0,
-        led_count: 0,
+        // One status light when the front panel declared the visualizer role.
+        led_count: u16::from(config.extra_roles & roles::VISUALIZER != 0),
         visualizer_bands: 0,
     }
 }
@@ -456,16 +475,16 @@ pub fn open(
     // once the server's own `hello` has arrived: a refusal (`key_changed`,
     // `not_adopted`) arrives instead, in the clear, and is surfaced here by
     // name rather than on the first read of audio.
-    let announced = Arc::new(Mutex::new(Announced::default()));
     let (controls_tx, source_control) = mpsc::channel::<SourceControl>();
+    let announced = Arc::new(Mutex::new(Announced {
+        source_controls: SourceControls(Some(controls_tx)),
+        ..Announced::default()
+    }));
     let mut reader = SecureReader::new(stream, established.opener);
     loop {
         match reader.next_message() {
             Ok(m) => {
                 let is_hello = matches!(m, Message::Hello(_));
-                if let Message::SourceControl(c) = &m {
-                    let _ = controls_tx.send(*c);
-                }
                 record(&announced, m);
                 if is_hello {
                     break;
@@ -491,14 +510,7 @@ pub fn open(
     }
     {
         let recorder = Arc::clone(&announced);
-        reader.set_handler(Box::new(move |m| {
-            if let Message::SourceControl(c) = &m {
-                // A send fails only when nothing runs the source role, which
-                // is an endpoint with no line-in; it is still counted below.
-                let _ = controls_tx.send(*c);
-            }
-            record(&recorder, m)
-        }));
+        reader.set_handler(Box::new(move |m| record(&recorder, m)));
         reader.set_translator(CodedStream::new(Arc::clone(&announced)).into_translator());
     }
     let stream_timeout = writer_timeout_handle.set_read_timeout(before);
@@ -514,6 +526,21 @@ pub fn open(
     })
 }
 
+/// From now on, also show every v2 message the session receives to `also`
+/// (the front panel takes `controller_state`, `visualizer_frame` and
+/// `color`); what [`open`] records is recorded as before.
+pub fn also_hand(
+    reader: &mut SecureReader<TcpStream>,
+    announced: &Arc<Mutex<Announced>>,
+    mut also: Box<dyn FnMut(&Message) + Send>,
+) {
+    let recorder = Arc::clone(announced);
+    reader.set_handler(Box::new(move |m| {
+        also(&m);
+        record(&recorder, m);
+    }));
+}
+
 fn record(announced: &Arc<Mutex<Announced>>, m: Message) {
     let mut a = match announced.lock() {
         Ok(g) => g,
@@ -523,6 +550,14 @@ fn record(announced: &Arc<Mutex<Announced>>, m: Message) {
         Message::Hello(h) => a.server_hello = Some(h),
         Message::StreamFormat(f) => a.stream_format = Some(f),
         Message::OutputDelay(d) => a.output_delay_ns = Some(d.delay_ns),
+        Message::SourceControl(c) => {
+            // A send fails only when nothing runs the source role (an
+            // endpoint with no line-in); it is still counted.
+            if let Some(tx) = &a.source_controls.0 {
+                let _ = tx.send(c);
+            }
+            a.other += 1;
+        }
         _ => a.other += 1,
     }
 }

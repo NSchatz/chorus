@@ -37,10 +37,16 @@ use chorus_protocol::v2::noise::{fingerprint, Keypair};
 use chorus_protocol::v2::session::{
     accept, Identity, RecordSealer, SecureReader, SessionError, MAX_RECORD_PLAINTEXT,
 };
+use std::sync::mpsc::SyncSender;
+
 use chorus_protocol::v2::{
-    Capabilities, ChannelPosition, Codec, Hello, Link, Message, OutputDelay, StreamFormat,
-    PROTOCOL_VERSION,
+    encode, roles, Capabilities, ChannelPosition, Codec, Hello, Link, Message, OutputDelay,
+    StreamFormat, PROTOCOL_VERSION,
 };
+
+use crate::control::ControlState;
+use crate::controller::ControllerAction;
+use crate::stream::Outbound;
 use chorus_protocol::{CHUNK_HEADER_LEN, HEADER_LEN};
 
 /// The file holding the server's long-term secret key.
@@ -392,6 +398,10 @@ pub struct SessionContext {
     pub hellos: AtomicU64,
     /// `telemetry` messages received from endpoints inside sessions.
     pub telemetry: AtomicU64,
+    /// The control plane an endpoint's `controller_command` is applied
+    /// through, or `None` when this server runs without one (the command is
+    /// then refused by name).
+    pub control: Option<Arc<ControlState>>,
 }
 
 impl fmt::Debug for SessionContext {
@@ -414,6 +424,7 @@ impl SessionContext {
             on_session: Box::new(|| {}),
             hellos: AtomicU64::new(0),
             telemetry: AtomicU64::new(0),
+            control: None,
         }
     }
 
@@ -428,6 +439,10 @@ pub struct Greeting {
     pub sealer: RecordSealer,
     /// The first messages inside the session.
     pub messages: Vec<Message>,
+    /// The endpoint's authenticated id.
+    pub endpoint_id: String,
+    /// The roles its `hello` declared.
+    pub roles: u16,
 }
 
 /// The session the reader runs its requests over.
@@ -584,22 +599,110 @@ pub fn establish<'a>(
     // What the endpoint says from now on (its telemetry, a later hello) is
     // counted; none of it reaches the v1 request reader.
     let counting = Arc::clone(ctx);
-    reader.set_handler(Box::new(move |m| match m {
-        Message::Telemetry(_) => {
-            counting.telemetry.fetch_add(1, Ordering::Relaxed);
-        }
-        Message::Hello(_) => {
-            counting.hellos.fetch_add(1, Ordering::Relaxed);
-        }
-        _ => {}
-    }));
+    reader.set_handler(Box::new(move |m| count(&counting, &m)));
     Some((
         reader,
         Greeting {
             sealer: established.sealer,
             messages: ctx.offer.greeting(),
+            endpoint_id: established.peer_id,
+            roles: hello.roles,
         },
     ))
+}
+
+fn count(ctx: &SessionContext, m: &Message) {
+    match m {
+        Message::Telemetry(_) => {
+            ctx.telemetry.fetch_add(1, Ordering::Relaxed);
+        }
+        Message::Hello(_) => {
+            ctx.hellos.fetch_add(1, Ordering::Relaxed);
+        }
+        _ => {}
+    }
+}
+
+/// From now on, route what the endpoint of `greeting` says: counted as
+/// [`establish`] counts it, and each `controller_command` applied through
+/// the control plane ([`ControlState::controller`], which translates it with
+/// `crate::controller::translate` and applies it with the zones' own checks)
+/// and answered with a `controller_state` on `reply`, the endpoint's own
+/// outbound queue (docs/protocol.md "The four roles": only to a peer that
+/// declared the controller role). A command from a peer that did not declare
+/// the role, or with no control plane to apply it, is refused by name in the
+/// log and changes nothing.
+pub fn route_controller(
+    reader: &mut SessionReader<'_>,
+    ctx: &Arc<SessionContext>,
+    greeting: &Greeting,
+    reply: SyncSender<Outbound>,
+) {
+    let ctx = Arc::clone(ctx);
+    let endpoint = greeting.endpoint_id.clone();
+    let is_controller = greeting.roles & roles::CONTROLLER != 0;
+    reader.set_handler(Box::new(move |m| {
+        count(&ctx, &m);
+        let Message::ControllerCommand(command) = m else {
+            return;
+        };
+        let refused = |reason: &str, detail: &str| {
+            ctx.say(&format!(
+                "controller refused id={} command={} reason={} detail=\"{}\"",
+                endpoint,
+                command.command.name(),
+                reason,
+                detail
+            ))
+        };
+        if !is_controller {
+            refused(
+                "no-controller-role",
+                "the endpoint's hello did not declare the controller role",
+            );
+            return;
+        }
+        let Some(control) = ctx.control.as_ref() else {
+            refused(
+                "no-control-plane",
+                "this server runs without --control-listen, so it holds no zone to change",
+            );
+            return;
+        };
+        match control.controller(&endpoint, &command) {
+            Ok(applied) => {
+                let did = match &applied.action {
+                    ControllerAction::Apply(_) => "applied".to_string(),
+                    ControllerAction::Transport(request) => {
+                        format!("transport-{:?}-waits-for-an-input", request).to_lowercase()
+                    }
+                };
+                ctx.say(&format!(
+                    "controller id={} zone={} command={} value={} target={} {} volume={} \
+                     muted={} group={}",
+                    endpoint,
+                    applied.zone,
+                    command.command.name(),
+                    command.value,
+                    if command.target.is_empty() {
+                        "-"
+                    } else {
+                        &command.target
+                    },
+                    did,
+                    applied.state.volume,
+                    u8::from(applied.state.muted),
+                    applied.state.group
+                ));
+                if let Ok(frame) = encode(&Message::ControllerState(applied.state)) {
+                    // Never block the reader on an endpoint that is not
+                    // reading; a state it misses is superseded by the next.
+                    let _ = reply.try_send(Outbound::Frame(Arc::new(frame)));
+                }
+            }
+            Err(refusal) => refused(&refusal.field, &refusal.detail),
+        }
+    }));
 }
 
 /// Resolve the identity source from the flags: `--ephemeral-identity`, else
