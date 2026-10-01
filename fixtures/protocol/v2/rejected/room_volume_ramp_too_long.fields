@@ -1,0 +1,18 @@
+# Canonical input for the room_volume_ramp_too_long rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# room_volume_ramp_too_long.hex as that field out of range, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# A ramp one millisecond past the 60 s the format allows.
+
+message_type = room_volume
+gain = 500
+limit = 1000
+ramp_ms = 60001
+rejected_field = ramp_ms
+problem = out_of_range

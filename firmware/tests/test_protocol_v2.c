@@ -339,6 +339,13 @@ static int build(const char *stem, const char *fields_text, chorus_v2_message_t 
         m->as.source_control.action = named(&f, "action", CHORUS_V2_ENUM_SOURCE_ACTION);
         m->as.source_control.codec = named(&f, "codec", CHORUS_V2_ENUM_CODEC);
         break;
+    case CHORUS_V2_ROOM_VOLUME:
+        /* Read wide and narrowed on purpose: a rejection vector's 1001 has to
+         * reach the encoder as 1001, and every value here fits a u16. */
+        m->as.room_volume.gain = (uint16_t)number(&f, "gain");
+        m->as.room_volume.limit = (uint16_t)number(&f, "limit");
+        m->as.room_volume.ramp_ms = (uint16_t)number(&f, "ramp_ms");
+        break;
     default:
         chorus_check(0, "%s.fields message_type = %s is a v2 type this test builds", stem,
                      type_name);
@@ -453,7 +460,8 @@ static int the_committed_vectors_round_trip(void)
     /* Every type v2 added has at least one vector, and this endpoint has a
      * type for every vector (the directory and the catalog agree). */
     static const uint8_t ADDED[] = {0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x20, 0x21, 0x22, 0x23,
-                                    0x24, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37};
+                                    0x24, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+                                    0x38};
     for (size_t t = 0; t < sizeof(ADDED); t++) {
         int found = 0;
         for (size_t i = 0; i < vector_count; i++) {
@@ -591,6 +599,132 @@ static void the_stated_value_rules_are_refused_by_the_encoder(void)
     m.as.session_refused.detail.data = long_text;
     m.as.session_refused.detail.len = sizeof(long_text);
     refused_both_ways(&m, "detail");
+
+    /* room_volume: each field on its own range, and a gain above the limit is
+     * a message the format accepts (the player clamps it, chorus/volume.h). */
+    memset(&m, 0, sizeof(m));
+    m.type = CHORUS_V2_ROOM_VOLUME;
+    m.as.room_volume.gain = 1001;
+    m.as.room_volume.limit = 1000;
+    refused_both_ways(&m, "gain");
+    m.as.room_volume.gain = 0;
+    m.as.room_volume.limit = 1001;
+    refused_both_ways(&m, "limit");
+    m.as.room_volume.limit = 0;
+    m.as.room_volume.ramp_ms = 60001;
+    refused_both_ways(&m, "ramp_ms");
+    m.as.room_volume.gain = 900;
+    m.as.room_volume.limit = 600;
+    m.as.room_volume.ramp_ms = 60000;
+    chorus_check(chorus_v2_validate(&m, NULL) == 0,
+                 "room_volume: gain 900 above limit 600, ramp 60000 ms, is accepted");
+}
+
+static const vector_t *vector(const char *stem);
+
+/* fixtures/protocol/v2/rejected: frames the format does not accept, each
+ * with the field both directions must name. Walked like the directory above;
+ * the counts line says how many of how many were refused both ways. */
+static void the_committed_rejection_vectors_are_refused_both_ways(void)
+{
+    chorus_section("fixtures/protocol/v2/rejected: refused by the encoder, rejected by the decoder");
+    char dir_path[512];
+    chorus_repo_path(dir_path, sizeof(dir_path), "fixtures/protocol/v2/rejected");
+    DIR *dir = opendir(dir_path);
+    chorus_check(dir != NULL, "fixtures/protocol/v2/rejected/ is readable");
+    if (dir == NULL) {
+        return;
+    }
+    static vector_t rejected[16];
+    size_t count = 0;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        const char *dot = strrchr(entry->d_name, '.');
+        if (dot == NULL || strcmp(dot, ".hex") != 0) {
+            continue;
+        }
+        size_t stem_len = (size_t)(dot - entry->d_name);
+        if (count >= sizeof(rejected) / sizeof(rejected[0]) ||
+            stem_len >= sizeof(rejected[0].stem)) {
+            chorus_check(0, "more rejection vectors than this suite has room for");
+            break;
+        }
+        memcpy(rejected[count].stem, entry->d_name, stem_len);
+        rejected[count].stem[stem_len] = '\0';
+        count++;
+    }
+    closedir(dir);
+    qsort(rejected, count, sizeof(rejected[0]), compare_stems);
+
+    static char hex_text[TEXT_CAP];
+    static char fields_text[TEXT_CAP];
+    int passed = 0;
+    for (size_t i = 0; i < count; i++) {
+        vector_t *v = &rejected[i];
+        char path[512];
+        char relative[256];
+        snprintf(relative, sizeof(relative), "fixtures/protocol/v2/rejected/%.127s.hex", v->stem);
+        chorus_repo_path(path, sizeof(path), relative);
+        long hex_ok = fixture_read(path, hex_text, sizeof(hex_text));
+        snprintf(relative, sizeof(relative), "fixtures/protocol/v2/rejected/%.127s.fields", v->stem);
+        chorus_repo_path(path, sizeof(path), relative);
+        long fields_ok = fixture_read(path, fields_text, sizeof(fields_text));
+        long len = (hex_ok < 0) ? -1 : fixture_parse_hex(hex_text, v->frame, sizeof(v->frame));
+        char field[64];
+        char problem[64];
+        if (len < 0 || fields_ok < 0 ||
+            fixture_field(fields_text, "rejected_field", field, sizeof(field)) == NULL ||
+            fixture_field(fields_text, "problem", problem, sizeof(problem)) == NULL) {
+            chorus_check(0, "%s: both files are readable, the .hex parses, and the .fields "
+                            "names rejected_field and problem",
+                         v->stem);
+            continue;
+        }
+        v->frame_len = (size_t)len;
+        chorus_check(strcmp(problem, "out_of_range") == 0, "%s: problem = %s", v->stem, problem);
+        chorus_v2_message_t built;
+        if (!build(v->stem, fields_text, &built)) {
+            continue;
+        }
+        static uint8_t produced[FRAME_CAP];
+        size_t written = 12345;
+        chorus_v2_field_error_t error = {NULL, CHORUS_V2_PROBLEM_NONE, NULL};
+        chorus_encode_status_t status =
+            chorus_v2_encode(&built, produced, sizeof(produced), &written, &error);
+        int refused = status == CHORUS_ENCODE_INVALID_FIELD && written == 12345 &&
+                      error.field != NULL && strcmp(error.field, field) == 0 &&
+                      error.problem == CHORUS_V2_PROBLEM_OUT_OF_RANGE;
+        chorus_check(refused, "%s: the encoder refuses %s out of range and writes nothing (%s)",
+                     v->stem, field, chorus_encode_status_name(status));
+        chorus_v2_frame_t d = chorus_v2_decode_frame(v->frame, v->frame_len);
+        int rejected_ok = d.outcome == CHORUS_FRAME_INVALID_FIELD && d.consumed == v->frame_len &&
+                          d.error.field != NULL && strcmp(d.error.field, field) == 0 &&
+                          d.error.problem == CHORUS_V2_PROBLEM_OUT_OF_RANGE;
+        chorus_check(rejected_ok,
+                     "%s: the decoder rejects %s out of range and consumes the whole frame "
+                     "(%s, consumed %zu of %zu)",
+                     v->stem, field, chorus_frame_outcome_name(d.outcome), d.consumed,
+                     v->frame_len);
+        /* The next frame after a rejected one is still found and decoded. */
+        const vector_t *good = vector("room_volume");
+        int next_ok = 0;
+        if (good != NULL && v->frame_len + good->frame_len <= FRAME_CAP) {
+            static uint8_t stream[FRAME_CAP];
+            memcpy(stream, v->frame, v->frame_len);
+            memcpy(stream + v->frame_len, good->frame, good->frame_len);
+            chorus_v2_frame_t next =
+                chorus_v2_decode_frame(stream + d.consumed, v->frame_len + good->frame_len -
+                                                                d.consumed);
+            next_ok = next.outcome == CHORUS_FRAME_DECODED &&
+                      next.message.type == CHORUS_V2_ROOM_VOLUME &&
+                      next.consumed == good->frame_len;
+        }
+        chorus_check(next_ok, "%s: the frame after it still decodes", v->stem);
+        passed += refused && rejected_ok && next_ok;
+    }
+    printf("\nv2 rejection vectors: %d of %zu refused both ways\n", passed, count);
+    chorus_check(passed == (int)count && count > 0,
+                 "every committed rejection vector is refused both ways");
 }
 
 static const vector_t *vector(const char *stem)
@@ -851,6 +985,7 @@ int main(void)
 {
     the_committed_vectors_round_trip();
     the_stated_value_rules_are_refused_by_the_encoder();
+    the_committed_rejection_vectors_are_refused_both_ways();
     a_rule_broken_on_the_wire_is_rejected_as_that_field();
     the_decoder_checks_happen_in_the_committed_order();
     every_single_byte_corruption_is_handled();

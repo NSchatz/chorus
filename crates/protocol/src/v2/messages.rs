@@ -268,6 +268,24 @@ pub struct SourceControl {
     pub codec: Codec,
 }
 
+/// A room's gain and limit, from the server to a player.
+///
+/// The player enforces it: what it plays at every frame is the least of the
+/// ramped `gain`, the last `limit` received and its own configured ceiling
+/// (`docs/protocol.md`, "0x38 room volume"; brief section 4.8, I10), so a
+/// gain above the limit plays at the limit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RoomVolume {
+    /// What to play at, in thousandths of full amplitude, 0 to 1000; already
+    /// 0 when the room is muted.
+    pub gain: u16,
+    /// The room's effective limit, in thousandths, 0 to 1000.
+    pub limit: u16,
+    /// How long to move from the gain being applied to `gain`, linear in
+    /// amplitude, in ms, 0 to 60000; 0 is at once.
+    pub ramp_ms: u16,
+}
+
 /// Any message in the v2 catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Message {
@@ -315,6 +333,8 @@ pub enum Message {
     SourceOffer(SourceOffer),
     /// 0x37.
     SourceControl(SourceControl),
+    /// 0x38.
+    RoomVolume(RoomVolume),
 }
 
 impl Message {
@@ -343,6 +363,7 @@ impl Message {
             Message::Color(_) => Type::Color,
             Message::SourceOffer(_) => Type::SourceOffer,
             Message::SourceControl(_) => Type::SourceControl,
+            Message::RoomVolume(_) => Type::RoomVolume,
         }
     }
 }

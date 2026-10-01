@@ -42,6 +42,10 @@ extern const uint8_t CHORUS_V2_MAGIC[CHORUS_V2_MAGIC_LEN];
 #define CHORUS_V2_MAX_RATES 16u
 #define CHORUS_V2_FLAC_STREAMINFO_LEN 34u
 #define CHORUS_V2_OPUS_HEAD_MIN_LEN 19u
+/* room_volume: gain and limit in thousandths of full amplitude (the control
+ * catalog's volume unit), and the longest ramp, in ms. */
+#define CHORUS_V2_ROOM_VOLUME_FULL 1000u
+#define CHORUS_V2_MAX_ROOM_VOLUME_RAMP_MS 60000u
 
 /* The Noise and record sizes the frame layer knows about. */
 #define CHORUS_V2_KEY_LEN 32u
@@ -74,7 +78,8 @@ typedef enum {
     CHORUS_V2_VISUALIZER_FRAME = 0x34,
     CHORUS_V2_COLOR = 0x35,
     CHORUS_V2_SOURCE_OFFER = 0x36,
-    CHORUS_V2_SOURCE_CONTROL = 0x37
+    CHORUS_V2_SOURCE_CONTROL = 0x37,
+    CHORUS_V2_ROOM_VOLUME = 0x38
 } chorus_v2_type_t;
 
 /* Short stable name of a catalogued type, or NULL for an unassigned byte. */
@@ -288,6 +293,15 @@ typedef struct {
     uint8_t codec;
 } chorus_v2_source_control_t;
 
+/* The room's gain and limit, server to player. Each field is checked on its
+ * own: a gain above the limit is a valid message, which the player plays at
+ * the limit (chorus/volume.h). */
+typedef struct {
+    uint16_t gain;
+    uint16_t limit;
+    uint16_t ramp_ms;
+} chorus_v2_room_volume_t;
+
 /* Any message in the v2 catalog. `type` is the wire byte and selects the
  * member of `as`. */
 typedef struct {
@@ -315,6 +329,7 @@ typedef struct {
         chorus_v2_color_t color;
         chorus_v2_source_offer_t source_offer;
         chorus_v2_source_control_t source_control;
+        chorus_v2_room_volume_t room_volume;
     } as;
 } chorus_v2_message_t;
 

@@ -82,6 +82,7 @@ What a decoder does when it cannot accept a frame:
 | 0x35 | `color` | v2 | in a record | timestamp, RGB, brightness, fade |
 | 0x36 | `source_offer` | v2 | in a record | an input an endpoint can share |
 | 0x37 | `source_control` | v2 | in a record | start or stop sending an input |
+| 0x38 | `room_volume` | v2 (goal 11) | in a record | 6 bytes, fixed: gain, limit, ramp |
 | all others | unassigned | | | skipped by a decoder that meets one |
 
 Common field encodings:
@@ -540,6 +541,52 @@ second is the intent). It carries the diagnostics decision K83 surfaces.
 
 The firmware version is in the endpoint's `hello`.
 
+## Room volume
+
+### 0x38 room volume
+
+Server to player (goal 11, `docs/decisions/0070-room-volume-on-the-audio-wire.md`).
+The room's (the zone's, on the wire) gain and limit, carried on the audio
+session so that the endpoint playing the audio is the one that enforces them
+(K81, I10, brief section 4.8): a server bug or a hostile control path cannot
+make an endpoint play above its room's limit or its own ceiling.
+
+| offset | size | field | notes |
+|---|---|---|---|
+| 0 | 2 | `gain` | thousandths of full amplitude, 0 to 1000: what to play at; already 0 when the room is muted |
+| 2 | 2 | `limit` | thousandths, 0 to 1000: the room's effective limit (its limit, less any quiet-hours cap in force) |
+| 4 | 2 | `ramp_ms` | 0 to 60000: how long to move from the gain being applied to `gain`, linear in amplitude; 0 is at once |
+
+A value outside its range is rejected (decoder step 5), never clamped: a
+decoder that clamped an out-of-range limit would be choosing a limit nobody
+sent. Each field is checked on its own, so a `gain` above `limit` is a valid
+message, and it plays at the limit.
+
+What a player plays at, at every frame, is
+
+    applied = min(ramped gain, last limit received, the endpoint's own ceiling)
+
+- **The ramp** starts from the gain being applied when the message arrives
+  (after the clamp, so what is heard never jumps) and reaches `gain` exactly
+  after `ramp_ms`, counted in frames at the stream's rate (`ramp_ms` times the
+  rate over 1000), which is the endpoint's monotonic clock by construction.
+  A new message starts a new ramp from wherever the old one had got to.
+- **The limit** applies at once, at the next frame, and is never ramped: a
+  lowered limit pulls the sound down immediately. A server that wants a
+  lowered limit to be gentle ramps the gain down first.
+- **The ceiling** is the endpoint's own configuration (`max_volume`), default
+  1.000, and nothing on the wire raises it.
+- Before the first `room_volume` of its life, an endpoint plays at its
+  ceiling, so a server that does not send this message is heard as before.
+  The gain and limit last received are kept across a new stream and a new
+  session, never reset upward.
+- A gain or a limit never changes how many frames are written: a muted room
+  writes as many frames as an unmuted one, at the same instants, as zeros.
+
+The server sends it after `stream_format`, whenever the room's volume, mute
+or effective limit changes, and at the start of every session before the
+first audio (ADR 0070 says what for the server side).
+
 ## The four roles
 
 Decision K65. A peer declares its roles in `hello`; the server sends a role's
@@ -728,7 +775,8 @@ is the same for v1 and v2; only the catalog in step 3 differs.
 5. A field value is not one the format accepts: reject that frame, then carry
    on. In v2 this includes a length-prefixed field (a text, a list, the codec
    setup) that runs past the end of the payload, text that is not UTF-8, and
-   the value rules each message's section states.
+   the value rules each message's section states (for example
+   `room_volume`'s ranges, held by the rejection vectors).
 
 A payload longer than the fields a decoder knows about is accepted and the
 excess ignored, so that a field added later is not fatal to a decoder built
@@ -764,12 +812,18 @@ encoder refuses exactly what the decoder rejects.
   with the public test keys their `.fields` files list. The handshake vectors
   are reproduced byte for byte by a real handshake between the Rust server and
   endpoint sides (`crates/protocol/tests/v2_vectors.rs`).
+- `fixtures/protocol/v2/rejected/*.hex|fields`: REJECTION vectors, frames
+  the format does not accept. Their `.fields` add `rejected_field` and
+  `problem`: an encoder must refuse the fields naming that field and emit
+  nothing, and a decoder must reject the frame as that field, consume it
+  whole and decode the frame after it (goal 11: `room_volume` with each of
+  its fields out of range).
 - `fixtures/protocol/v2/noise/cacophony_xx.fields`: the published Noise test
   vector the key exchange is held to.
 
 Both implementations read every one of them: the Rust tests under
 `crates/protocol/tests/`, and the C endpoint's `firmware/tests/test_protocol_v2.c`
-(every v2 vector, both directions) and `firmware/tests/test_noise.c` (the
+(every v2 vector, both directions, and every rejection vector) and `firmware/tests/test_noise.c` (the
 Noise vector in both roles, and the four session vectors from their keys).
 
 `fixtures/README.md` gives the file format and who reads what.
