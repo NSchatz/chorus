@@ -37,16 +37,15 @@ use chorus_protocol::v2::noise::{fingerprint, Keypair};
 use chorus_protocol::v2::session::{
     accept, Identity, RecordSealer, SecureReader, SessionError, MAX_RECORD_PLAINTEXT,
 };
-use std::sync::mpsc::SyncSender;
-
 use chorus_protocol::v2::{
-    encode, roles, Capabilities, ChannelPosition, Codec, Hello, Link, Message, OutputDelay,
-    StreamFormat, PROTOCOL_VERSION,
+    roles, Capabilities, ChannelPosition, Codec, Hello, Link, Message, OutputDelay, StreamFormat,
+    PROTOCOL_VERSION,
 };
 
 use crate::control::ControlState;
 use crate::controller::ControllerAction;
-use crate::stream::Outbound;
+use crate::router::{Router, SessionStart};
+use crate::stream::Fanout;
 use chorus_protocol::{CHUNK_HEADER_LEN, HEADER_LEN};
 
 /// The file holding the server's long-term secret key.
@@ -402,6 +401,9 @@ pub struct SessionContext {
     /// through, or `None` when this server runs without one (the command is
     /// then refused by name).
     pub control: Option<Arc<ControlState>>,
+    /// Which stream each session hears (`crate::router`): every session is
+    /// registered with it once it is up, and leaves it when it ends.
+    pub router: Arc<Router>,
 }
 
 impl fmt::Debug for SessionContext {
@@ -425,6 +427,22 @@ impl SessionContext {
             hellos: AtomicU64::new(0),
             telemetry: AtomicU64::new(0),
             control: None,
+            router: Arc::new(Router::single(Arc::new(Fanout::new()))),
+        }
+    }
+
+    /// Where a session that just came up starts, and what its greeting tells
+    /// it: from the room model when this server runs a control plane, else
+    /// the one stream and nothing more (there is no room to have a volume).
+    pub fn start_for(&self, greeting: &Greeting) -> SessionStart {
+        match &self.control {
+            Some(control) => {
+                control.session_start(&greeting.endpoint_id, greeting.roles, self.router.idle())
+            }
+            None => SessionStart {
+                route: self.router.idle(),
+                ..SessionStart::default()
+            },
         }
     }
 
@@ -437,7 +455,10 @@ impl SessionContext {
 pub struct Greeting {
     /// Seals everything the writer sends.
     pub sealer: RecordSealer,
-    /// The first messages inside the session.
+    /// The first messages inside the session: the offer's, then (with a
+    /// control plane) the room's `room_volume` for a player and its
+    /// `controller_state` for a controller, before the first audio
+    /// (docs/decisions/0074-*).
     pub messages: Vec<Message>,
     /// The endpoint's authenticated id.
     pub endpoint_id: String,
@@ -627,16 +648,17 @@ fn count(ctx: &SessionContext, m: &Message) {
 /// [`establish`] counts it, and each `controller_command` applied through
 /// the control plane ([`ControlState::controller`], which translates it with
 /// `crate::controller::translate` and applies it with the zones' own checks)
-/// and answered with a `controller_state` on `reply`, the endpoint's own
-/// outbound queue (docs/protocol.md "The four roles": only to a peer that
-/// declared the controller role). A command from a peer that did not declare
-/// the role, or with no control plane to apply it, is refused by name in the
-/// log and changes nothing.
+/// and answered with a `controller_state` on the endpoint's own outbound
+/// queue, through the router so the conductor's pushes are deduped against
+/// it (`session` is the router's id for this session; docs/protocol.md "The
+/// four roles": only to a peer that declared the controller role). A command
+/// from a peer that did not declare the role, or with no control plane to
+/// apply it, is refused by name in the log and changes nothing.
 pub fn route_controller(
     reader: &mut SessionReader<'_>,
     ctx: &Arc<SessionContext>,
     greeting: &Greeting,
-    reply: SyncSender<Outbound>,
+    session: u64,
 ) {
     let ctx = Arc::clone(ctx);
     let endpoint = greeting.endpoint_id.clone();
@@ -694,11 +716,11 @@ pub fn route_controller(
                     u8::from(applied.state.muted),
                     applied.state.group
                 ));
-                if let Ok(frame) = encode(&Message::ControllerState(applied.state)) {
-                    // Never block the reader on an endpoint that is not
-                    // reading; a state it misses is superseded by the next.
-                    let _ = reply.try_send(Outbound::Frame(Arc::new(frame)));
-                }
+                // Never blocks the reader on an endpoint that is not
+                // reading; a state it misses is superseded by the next.
+                let _ = ctx
+                    .router
+                    .push_controller_state(session, &applied.state, true);
             }
             Err(refusal) => refused(&refusal.field, &refusal.detail),
         }

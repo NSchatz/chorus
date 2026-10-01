@@ -8,7 +8,13 @@
 use std::fmt;
 
 use chorus_audio::UnsupportedFormat;
+use chorus_control::rooms::{CivilTime, ClockTime, DAY_NAMES};
 use chorus_control::transport::{Transport, DEFAULT_TRANSPORT};
+
+/// The most stream slots one server serves. ASSUMED: a large house's rooms
+/// with room to spare (a slot costs one broadcast per chunk on the audio
+/// thread, never a thread); not a measured bound.
+pub const MAX_SLOTS: usize = 32;
 
 /// How a server run is configured.
 #[derive(Debug, Clone, PartialEq)]
@@ -112,6 +118,20 @@ pub struct ServerConfig {
     /// Use a key made for this process alone and keep adoptions in memory:
     /// for tests and throwaway runs, never for a house.
     pub ephemeral_identity: bool,
+    /// Stream slots (goal 11): how many groups' streams this one process
+    /// cuts at once on its one audio thread, each session routed to its
+    /// group's inside its own session. `0` is the one-stream shape every run
+    /// before goal 11 had, byte for byte. Needs the control plane (the room
+    /// model is what routes), and is not combined with `--group-audio`.
+    pub slots: usize,
+    /// How many `GET /api/events` streams the event writer holds at once.
+    pub event_streams: usize,
+    /// A civil time the room model's quiet hours are evaluated at, held fixed
+    /// for the run (`--civil-time mon-23:30`). For tests and a server with no
+    /// time source: this server reads no clock for scheduling yet (the
+    /// schedule runtime, the next goal 11 track, supplies it). `None` makes
+    /// every quiet-hours window inactive.
+    pub civil_time: Option<CivilTime>,
 }
 
 impl Default for ServerConfig {
@@ -146,6 +166,9 @@ impl Default for ServerConfig {
             identity_dir: None,
             server_id: crate::session::DEFAULT_SERVER_ID.to_string(),
             ephemeral_identity: false,
+            slots: 0,
+            event_streams: crate::events::DEFAULT_EVENT_STREAMS,
+            civil_time: None,
         }
     }
 }
@@ -178,6 +201,22 @@ pub enum ServerConfigError {
     NoClientsAllowed,
     /// A control channel with no worker would refuse every connection.
     NoControlWorkersAllowed,
+    /// Stream slots without the room model that routes them.
+    SlotsNeedTheControlPlane,
+    /// Stream slots and the legacy one-process-per-group shape together.
+    SlotsWithGroupAudio,
+    /// More stream slots than this server serves.
+    TooManySlots {
+        /// What was asked for.
+        slots: usize,
+    },
+    /// An event-stream ceiling of zero would refuse every stream.
+    NoEventStreamsAllowed,
+    /// A `--civil-time` that is not `<day>-<HH:MM>`.
+    NotACivilTime {
+        /// The value as it was given.
+        value: String,
+    },
     /// A `--group-audio` argument that is not `group=address`.
     NotAGroupAddress {
         /// The value as it was given.
@@ -229,6 +268,34 @@ impl fmt::Display for ServerConfigError {
                 f,
                 "a control channel with 0 workers would bind a socket and refuse every \
                  connection that arrived on it"
+            ),
+            ServerConfigError::SlotsNeedTheControlPlane => write!(
+                f,
+                "--slots needs --control-listen: the room model is what routes each session to \
+                 its group's stream, and a server with no control plane has none"
+            ),
+            ServerConfigError::SlotsWithGroupAudio => write!(
+                f,
+                "--slots and --group-audio are two ways to serve groups and are not combined: \
+                 --slots serves every group from this process on its one audio port, \
+                 --group-audio points a group at another process (the legacy shape, for Linux \
+                 clients only)"
+            ),
+            ServerConfigError::TooManySlots { slots } => write!(
+                f,
+                "--slots {} is more than the {} stream slots one server serves",
+                slots, MAX_SLOTS
+            ),
+            ServerConfigError::NoEventStreamsAllowed => write!(
+                f,
+                "an event-stream ceiling of 0 would refuse every GET /api/events"
+            ),
+            ServerConfigError::NotACivilTime { value } => write!(
+                f,
+                "'{}' is not a civil time; --civil-time takes <day>-<HH:MM>, the day one of {}, \
+                 for example mon-23:30",
+                value,
+                DAY_NAMES.join(" ")
             ),
             ServerConfigError::NotAGroupAddress { value } => write!(
                 f,
@@ -357,6 +424,15 @@ impl ServerConfig {
                         .group_audio
                         .push((group.to_string(), address.to_string()));
                 }
+                "--slots" => config.slots = number(&arg, &value()?)? as usize,
+                "--event-streams" => config.event_streams = number(&arg, &value()?)? as usize,
+                "--civil-time" => {
+                    let text = value()?;
+                    config.civil_time =
+                        Some(civil_time(&text).ok_or(ServerConfigError::NotACivilTime {
+                            value: text.clone(),
+                        })?);
+                }
                 "--advertise" => config.advertise = true,
                 "--instance" => config.instance = value()?,
                 other => {
@@ -375,8 +451,32 @@ impl ServerConfig {
         if config.control_listen.is_some() && config.control_workers == 0 {
             return Err(ServerConfigError::NoControlWorkersAllowed);
         }
+        if config.slots > MAX_SLOTS {
+            return Err(ServerConfigError::TooManySlots {
+                slots: config.slots,
+            });
+        }
+        if config.slots > 0 && config.control_listen.is_none() {
+            return Err(ServerConfigError::SlotsNeedTheControlPlane);
+        }
+        if config.slots > 0 && !config.group_audio.is_empty() {
+            return Err(ServerConfigError::SlotsWithGroupAudio);
+        }
+        if config.event_streams == 0 {
+            return Err(ServerConfigError::NoEventStreamsAllowed);
+        }
         Ok(config)
     }
+}
+
+/// `<day>-<HH:MM>`: a weekday as the catalog spells it and a time of day.
+fn civil_time(text: &str) -> Option<CivilTime> {
+    let (day, time) = text.split_once('-')?;
+    let weekday = DAY_NAMES.iter().position(|d| *d == day)? as u8;
+    Some(CivilTime {
+        weekday,
+        time: ClockTime::parse(time)?,
+    })
 }
 
 fn number(argument: &str, value: &str) -> Result<u64, ServerConfigError> {
@@ -547,6 +647,58 @@ mod tests {
             "{:?}",
             err
         );
+    }
+
+    #[test]
+    fn slots_need_the_control_plane_and_are_not_combined_with_group_audio() {
+        let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            ServerConfig::default().slots,
+            0,
+            "the one-stream shape is the default"
+        );
+        assert_eq!(
+            ServerConfig::from_args(args(&["--slots", "2"])).unwrap_err(),
+            ServerConfigError::SlotsNeedTheControlPlane
+        );
+        assert_eq!(
+            ServerConfig::from_args(args(&[
+                "--slots",
+                "2",
+                "--control-listen",
+                "127.0.0.1:0",
+                "--group-audio",
+                "g=127.0.0.1:4011"
+            ]))
+            .unwrap_err(),
+            ServerConfigError::SlotsWithGroupAudio
+        );
+        assert_eq!(
+            ServerConfig::from_args(args(&["--slots", "33", "--control-listen", "127.0.0.1:0"]))
+                .unwrap_err(),
+            ServerConfigError::TooManySlots { slots: 33 }
+        );
+        let c = ServerConfig::from_args(args(&["--slots", "8", "--control-listen", "127.0.0.1:0"]))
+            .unwrap();
+        assert_eq!(c.slots, 8);
+        assert_eq!(c.event_streams, 64);
+        assert_eq!(
+            ServerConfig::from_args(args(&["--event-streams", "0"])).unwrap_err(),
+            ServerConfigError::NoEventStreamsAllowed
+        );
+        let c = ServerConfig::from_args(args(&["--civil-time", "sun-07:05"])).unwrap();
+        let t = c.civil_time.unwrap();
+        assert_eq!((t.weekday, t.time.literal()), (6, "07:05".to_string()));
+        for bad in ["sunday-07:05", "sun 07:05", "sun-25:00"] {
+            assert!(
+                matches!(
+                    ServerConfig::from_args(args(&["--civil-time", bad])),
+                    Err(ServerConfigError::NotACivilTime { .. })
+                ),
+                "{}",
+                bad
+            );
+        }
     }
 
     #[test]
