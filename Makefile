@@ -186,6 +186,15 @@ schedule-fixtures: tools-executable
 
 .PHONY: schedule-fixtures
 
+# Regenerate the room-correction fixture recordings from their parameters
+# (fixtures/README.md, roomfit/). `cargo test -p chorus-dsp --test roomfit`
+# asserts the result is byte-identical to what is committed, so this target is
+# for changing a fixture's parameters and never for making a red assertion green.
+roomfit-fixtures:
+	cargo run --quiet -p chorus-dsp --example roomfit_fixtures -- fixtures/roomfit
+
+.PHONY: roomfit-fixtures
+
 # Regenerate the room_volume sequence the real server sends over every volume
 # path (fixtures/README.md, volume/), from a run of the test that captures it.
 # The same test, run without this, asserts the run reproduces the committed

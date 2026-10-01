@@ -1,0 +1,34 @@
+# Two modes and a null: the room the fit is first held to. A strong low mode, a milder upper
+# one, and a deep, narrow null between them that a correction must not try to fill.
+kind = synthetic-room
+output = 01-two-modes-one-null.wav
+expect = fit
+
+# The recording: 48 kHz, mono, 16-bit.
+rate_hz = 48000
+total_samples = 76800
+lead_in_samples = 1200
+
+# The sweep (Farina's exponential sine sweep, crates/dsp/src/roomfit.rs): 1 s from 10 Hz to
+# 20 kHz at half full scale, stopped at its last zero crossing; no fade-in (the phase starts at
+# zero, and a fade-in on a 1 s sweep would reach into the fit band).
+sweep_f1_hz = 10
+sweep_f2_hz = 20000
+sweep_samples = 48000
+sweep_amplitude = 0.5
+sweep_fade_in_samples = 0
+
+# The room: the speaker's roll-off, then the modes and the null (peaking filters: freq, gain, Q).
+highpass_hz = 22
+highpass_q = 0.707
+mode_freq_hz = 45 118
+mode_gain_db = 10 7
+mode_q = 5 4
+null_freq_hz = 72
+null_gain_db = -18
+null_q = 6
+
+# The level offset (volume and microphone sensitivity) and the background noise.
+level_db = -12
+noise_rms_dbfs = -70
+seed = 120001
