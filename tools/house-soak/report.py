@@ -270,8 +270,9 @@ def main():
     for ident in endpoints:
         path = os.path.join(run, f"endpoint-{ident}.out")
         text = open(path).read() if os.path.exists(path) else ""
-        m = re.search(r"chorus-client: underruns=(\d+)", text)
-        summaries[ident] = int(m.group(1)) if m else None
+        # One summary per session; a rejoined endpoint printed more than one.
+        found = re.findall(r"chorus-client: underruns=(\d+)", text)
+        summaries[ident] = sum(int(n) for n in found) if found else None
     g.add("underruns and resyncs", not unexplained,
           f"underruns: {counts['underrun'][1]} at a logged source switch, "
           f"{counts['underrun'][2]} not ({counts['underrun'][0]} before the window); "
@@ -384,8 +385,8 @@ def write(out, run, P, g, tally, rss_rows, raw, duration, endpoints, report_line
           "fanout, limits and sessions. The three-day hardware soak (AC-4, `tools/soak-run.sh`) "
           "is a different run on real endpoints and is not this.", ""]
     if short:
-        L += [f"**This is the harness's {P['label']} ({int(P['soak_seconds'])} s), the test the "
-              "harness landed with. It is NOT the one-hour soak goal 11's line E asks for**; that "
+        L += [f"**This run is labelled \"{P['label']}\" ({int(P['soak_seconds'])} s): a test of "
+              "the harness. It is NOT the one-hour soak goal 11's line E asks for**; that "
               "run is `CHORUS_HOUSE_SOAK_SECONDS=3600 make verify-house-soak`, written to "
               "`docs/measurements/house-soak-8-rooms.md`.", ""]
     L += ["## Result", "", "| criterion | result | bound | verdict |", "|---|---|---|---|"]
