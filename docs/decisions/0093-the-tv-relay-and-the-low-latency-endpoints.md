@@ -125,7 +125,9 @@ evidence (BRIEF.md 3.1 rule 3): every process shares one clock, the TV and the D
   players played 9824 chunks, rebuilt 10, lost none; joining the den's group put it back on the
   slot (`reason=grouped`) and the players back on TCP. The three tests run one at a time: run
   together on the shared host (load average above 30 at the time) the hub's capture thread was
-  starved into ring underflows and nothing reached the relay in time.
+  starved into ring underflows and nothing reached the relay in time. The maps are graded on the
+  first half-second window all six devices played without a concealed chunk (a late wakeup on
+  the loaded host conceals one now and then, counted), retried for up to 30 s.
 - The same, two players, 6 s each: 1e-3 with FEC: 12 datagrams dropped, 3 rebuilt at the relay and 9 at the players, 0 lost;
   1e-2 with FEC: 100 dropped, 24 rebuilt at the relay and 58 at the players, 2 lost (two
   losses in one group); 1e-2 without
