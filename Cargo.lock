@@ -178,12 +178,14 @@ name = "chorus-server"
 version = "0.1.0"
 dependencies = [
  "chorus-audio",
+ "chorus-audio-path",
  "chorus-client-linux",
  "chorus-control",
  "chorus-discovery",
  "chorus-hostctl",
  "chorus-measure",
  "chorus-protocol",
+ "chorus-schedule",
 ]
 
 [[package]]

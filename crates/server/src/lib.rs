@@ -61,6 +61,7 @@ pub mod events;
 pub mod health;
 pub mod hostreport;
 pub mod router;
+pub mod schedule_runtime;
 pub mod serve;
 pub mod session;
 pub mod slot_table;

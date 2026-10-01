@@ -13,6 +13,11 @@ chorus-audio = { path = "../audio" }
 chorus-hostctl = { path = "../hostctl" }
 chorus-control = { path = "../control" }
 chorus-discovery = { path = "../discovery" }
+# The schedule runtime (src/schedule_runtime.rs) fires alarms, counts sleep
+# timers down and follows quiet hours with the schedule library: civil time
+# from TZif, the due query, ramps and the chime names. A pure crate with no
+# dependency of its own.
+chorus-schedule = { path = "../schedule" }
 # The rig's chirp, for `--source chirp`: the waveform and the amplitude ceiling
 # come from the one place that defines them, so what the endpoints play is what
 # the lag analyser looks for. A pure library with no third-party dependency; its
@@ -24,6 +29,10 @@ chorus-measure = { path = "../measure" }
 # same receiver the client uses, so a framing decision is tested once rather
 # than modelled twice.
 chorus-client-linux = { path = "../client-linux" }
+# tests/schedule_runtime.rs holds the schedule runtime to reading no clock with
+# the audio-path check's own settable-clock vocabulary, as the schedule crate's
+# no-clock test does, rather than a second word list that could drift.
+chorus-audio-path = { path = "../audio-path" }
 
 [[bin]]
 name = "chorus-server"
