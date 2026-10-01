@@ -8,6 +8,8 @@ publish.workspace = true
 license.workspace = true
 
 [dependencies]
+# The low-latency simulator runs the real FEC (crates/sync/src/lowlat_sim.rs).
+chorus-protocol = { path = "../protocol" }
 
 [lints]
 workspace = true

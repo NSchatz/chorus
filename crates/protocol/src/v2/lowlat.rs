@@ -828,6 +828,92 @@ impl FecEncoder {
     }
 }
 
+/// The server relay's FEC (the TV relay, goal 13): it re-sends chunks that
+/// already carry their [`ChunkInfo`] (the hub's encoder numbered them) after
+/// restamping them, in whatever order the upstream decoder handed them on,
+/// and emits a group's parity once all `k` of its chunks passed through.
+///
+/// Keeping the downstream groups the upstream groups is what makes the FEC
+/// wait one wait end to end rather than two: a chunk the relay rebuilt late
+/// completes its downstream group at the same moment, so the downstream
+/// parity is not held back a second time. A group the relay never completes
+/// (an upstream loss it could not rebuild) sends no parity; it is forgotten
+/// [`OPEN_BLOCKS`] blocks later, as the decoder forgets one.
+#[derive(Debug, Clone)]
+pub struct FecRelay {
+    params: FecParams,
+    groups: std::collections::BTreeMap<u32, Column>,
+    newest_block: u32,
+}
+
+impl FecRelay {
+    /// A relay for the FEC shape both legs use.
+    pub fn new(params: FecParams) -> FecRelay {
+        FecRelay {
+            params,
+            groups: std::collections::BTreeMap::new(),
+            newest_block: 0,
+        }
+    }
+
+    /// Re-send one chunk (an `audio_chunk` payload whose reserved block this
+    /// stream's encoder assigned, its stamp already rewritten): the data
+    /// datagram, then its group's parity when this chunk completed the group.
+    /// A payload whose [`ChunkInfo`] is not this stream's shape is refused.
+    pub fn push(&mut self, payload: &[u8]) -> Result<Vec<Datagram>, LowLatError> {
+        if payload.len() < MIN_DATA_PLAINTEXT_LEN {
+            return Err(LowLatError::TooShort { len: payload.len() });
+        }
+        if payload.len() > MAX_DATA_PLAINTEXT_LEN {
+            return Err(LowLatError::TooLong {
+                len: payload.len(),
+                max: MAX_DATA_PLAINTEXT_LEN,
+            });
+        }
+        let info = ChunkInfo::from_payload(payload)
+            .filter(|i| {
+                i.fec_k == self.params.k
+                    && i.fec_depth == self.params.depth
+                    && u32::from(i.group_index) < self.params.group_len()
+            })
+            .ok_or(LowLatError::BadParams(
+                "the chunk's FEC fields are not this stream's",
+            ))?;
+        let mut out = vec![Datagram {
+            kind: Kind::Data,
+            plaintext: payload.to_vec(),
+        }];
+        if self.params.k == 0 {
+            return Ok(out);
+        }
+        let depth = u32::from(self.params.depth);
+        let block = info.group / depth;
+        if block > self.newest_block {
+            self.newest_block = block;
+            let first_open = block.saturating_sub(OPEN_BLOCKS - 1).saturating_mul(depth);
+            self.groups = self.groups.split_off(&first_open);
+        }
+        let col = self.groups.entry(info.group).or_default();
+        xor_into(&mut col.xor, payload);
+        col.len_xor ^= payload.len() as u16;
+        col.count += 1;
+        if col.count == u32::from(self.params.k) {
+            let col = self.groups.remove(&info.group).unwrap_or_default();
+            let mut parity = Vec::with_capacity(PARITY_HEADER_LEN + col.xor.len());
+            parity.extend_from_slice(&info.group.to_be_bytes());
+            parity.push(self.params.k);
+            parity.push(self.params.depth);
+            parity.extend_from_slice(&col.len_xor.to_be_bytes());
+            parity.extend_from_slice(&col.xor);
+            out.push(Datagram {
+                kind: Kind::Parity,
+                plaintext: parity,
+            });
+        }
+        Ok(out)
+    }
+}
+
 /// One chunk a decoder hands on: received, or rebuilt from its group.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Delivered {
@@ -1480,6 +1566,28 @@ mod tests {
         dec.finish(20);
         assert_eq!(dec.stats().unrecoverable, 2);
         assert_eq!(dec.stats().late, 1);
+    }
+
+    #[test]
+    fn a_relay_in_any_order_gives_the_parity_the_encoder_gives() {
+        let params = FecParams::new(4, 2).unwrap();
+        let (_, dgrams) = stream(params, 16);
+        let data: Vec<&Datagram> = dgrams.iter().filter(|d| d.kind == Kind::Data).collect();
+        let parity: Vec<&Datagram> = dgrams.iter().filter(|d| d.kind == Kind::Parity).collect();
+        let mut relay = FecRelay::new(params);
+        let mut out = Vec::new();
+        for i in [1usize, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14] {
+            out.extend(relay.push(&data[i].plaintext).unwrap());
+        }
+        let mut relayed: Vec<Vec<u8>> = out
+            .iter()
+            .filter(|d| d.kind == Kind::Parity)
+            .map(|d| d.plaintext.clone())
+            .collect();
+        let mut sent: Vec<Vec<u8>> = parity.iter().map(|d| d.plaintext.clone()).collect();
+        relayed.sort();
+        sent.sort();
+        assert_eq!(relayed, sent);
     }
 
     #[test]

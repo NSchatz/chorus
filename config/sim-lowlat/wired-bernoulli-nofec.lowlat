@@ -1,0 +1,36 @@
+# The low-latency TV path in the simulator (goal 13), scenario: the negative control: no FEC
+# A simulation input: nothing here is measured, and the report made from it is
+# not timing evidence (BRIEF.md section 3.1 rule 3). Read by
+# crates/sync/src/lowlat_sim.rs; the budget figures not named here are
+# chorus_protocol::v2::lowlat::DEFAULTS, each with its source there and in the
+# decision record that adds this file.
+#
+# Format: key = value, '#' starts a comment.
+
+name = wired-bernoulli-nofec
+purpose = wired-bernoulli's seed and loss without FEC: the residual loss FEC removes.
+seed = 20261001
+duration_ms = 600000
+
+# 2.5 ms chunks at 48 kHz; fec_k 0: no parity, the negative control
+sample_rate_hz = 48000
+chunk_frames = 120
+fec_k = 0
+fec_depth = 1
+# From the capture stamp to the speaker.
+# The default's, so only the FEC differs from wired-bernoulli.
+l_tv_us = 20000
+# The TV's own audio output against its picture. ASSUMED: standard picture mode on the one set measured (avlatency.com, LEAD); the Needs
+# item "The three TVs: model, eARC port, optical out and audio menu" replaces it.
+tv_audio_lag_us = 1000
+
+# Both legs: a quiet switched wired LAN, ASSUMED (no chorus measurement yet):
+# 80 us of send, two switch hops and receive, plus exponential jitter of mean
+# 20 us, first in first out (one path: a datagram never overtakes the one
+# sent before it).
+up_base_us = 80
+up_jitter = exponential 20
+up_loss = bernoulli 0.001
+down_base_us = 80
+down_jitter = exponential 20
+down_loss = bernoulli 0.001

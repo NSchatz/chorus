@@ -33,6 +33,7 @@ pub mod jitter;
 pub mod latency_grow;
 pub mod latency_report;
 pub mod latency_sim;
+pub mod lowlat_sim;
 pub mod rng;
 pub mod scenario;
 pub mod servo;
