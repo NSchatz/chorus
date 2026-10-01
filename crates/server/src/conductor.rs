@@ -29,6 +29,10 @@
 //!    effective limit changed (docs/decisions/0074-*), at once.
 //! 4. **`controller_state`** to every controller session of a room whose
 //!    volume, mute or group changed, wherever the change was made.
+//! 5. **The heard latency** of every visualizer session (goal 12): the
+//!    playout latency of its room's tier ([`heard_latency_ns`]), which the
+//!    audio thread adds to a visualizer frame's stamp for that session
+//!    (`crate::router`, `docs/visualizer.md`).
 //!
 //! Each push is deduped against what the session was last sent
 //! (`crate::router`), so a change concerning another room sends nothing, and a
@@ -197,6 +201,20 @@ pub struct Conductor {
     /// The latency each slot's line-in was last told to grow to.
     targets: Vec<Option<i64>>,
     schedule: Option<Schedule>,
+    /// Each room's declared tier, for the visualizer's heard latency.
+    transports: ZoneTransports,
+}
+
+/// When an endpoint of a room on `transport` plays audio stamped `t` on the
+/// server timeline: `t` plus this, ns. The wired tier's is the endpoints'
+/// fixed playout latency ([`WIRED_GROUP_LATENCY_NS`], `config/sync.conf`);
+/// the wireless tier's is its policy's (`WIRELESS_POLICY`, which the Linux
+/// client applies in a wireless zone).
+pub fn heard_latency_ns(transport: Transport) -> u64 {
+    match transport {
+        Transport::Wireless => WIRELESS_POLICY.playout_latency_us * 1_000,
+        Transport::Wired => WIRED_GROUP_LATENCY_NS as u64,
+    }
 }
 
 impl Conductor {
@@ -217,7 +235,15 @@ impl Conductor {
             inputs,
             targets,
             schedule: None,
+            transports: ZoneTransports::default(),
         }
+    }
+
+    /// Each room's declared tier (`--zone-transport`), for the visualizer's
+    /// heard latency; a room not declared is wired.
+    pub fn with_transports(mut self, transports: ZoneTransports) -> Conductor {
+        self.transports = transports;
+        self
     }
 
     /// Run the schedule runtime as part of every pass.
@@ -276,6 +302,10 @@ impl Conductor {
             let Some(room) = room else {
                 continue;
             };
+            if session.roles & roles::VISUALIZER != 0 {
+                self.router
+                    .set_heard_latency(session.id, heard_latency_ns(self.transports.of(&room.id)));
+            }
             if session.roles & roles::CONTROLLER != 0 {
                 match self
                     .router
@@ -593,6 +623,15 @@ mod tests {
             .parse()
             .unwrap();
         assert_eq!(WIRED_GROUP_LATENCY_NS, us * 1_000);
+    }
+
+    #[test]
+    fn a_visualizer_frame_is_heard_after_its_rooms_tier_latency() {
+        assert_eq!(heard_latency_ns(Transport::Wired), 180_000_000);
+        assert_eq!(
+            heard_latency_ns(Transport::Wireless),
+            WIRELESS_POLICY.playout_latency_us * 1_000
+        );
     }
 
     #[test]

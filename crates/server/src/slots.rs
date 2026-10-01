@@ -43,6 +43,20 @@
 //! one. There is no `stream_end` in this shape: a slot does not end, its
 //! input changes.
 //!
+//! # The visualizer
+//!
+//! After each tick's broadcast, every slot a visualizer session is on
+//! ([`Router::watched`]) has the chunk it just played analysed by its own
+//! `chorus_dsp::visualizer::Analyzer` (its spectrum from the channels'
+//! mean, its peak from every channel), and each frame that completes goes to those sessions
+//! through [`Router::push_visualizer`], stamped where the analysis says on
+//! the grid's timeline (`origin + sample * 1e9 / rate`) plus each session's
+//! heard latency. The analysers are allocated before the first tick and a
+//! slot nobody watches costs nothing; a slot watched again after a gap is
+//! analysed from scratch (the analyser is reset at the new position). A run
+//! of silent frames sends its first and then nothing until there is
+//! something to show (`docs/visualizer.md`).
+//!
 //! No clock but the monotonic timeline is read here, and nothing here waits
 //! on anything but the pace of the grid.
 
@@ -54,12 +68,13 @@ use std::thread;
 use std::time::Duration;
 
 use chorus_audio::MonotonicTimeline;
+use chorus_dsp::visualizer::{Analyzer, Frame};
 use chorus_protocol::{encode, AudioChunk, Message, SampleFormat, RESERVED_LEN};
 use chorus_sync::latency_grow::{
     CubicResampler, GrowthConfig, LatencyPlan, MAX_RATE_DEVIATION, RAMP_MS,
 };
 
-use crate::linein::{encode_sample, Port};
+use crate::linein::{decode_sample, encode_sample, Port};
 use crate::router::Router;
 use crate::serve::{ServeError, ServeParams};
 use crate::source::PcmSource;
@@ -196,6 +211,30 @@ pub struct SlotsReport {
     pub final_sequence: u32,
     /// The line-ins.
     pub line_in: LineInCounts,
+    /// The visualizer stream.
+    pub visualizer: VisualizerCounts,
+}
+
+/// What the audio thread counts about the visualizer stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct VisualizerCounts {
+    /// `visualizer_frame` messages queued, over every session.
+    pub frames: u64,
+    /// `color` messages queued.
+    pub colours: u64,
+    /// Messages a full session queue refused.
+    pub dropped: u64,
+    /// Frames analysed and not sent: silence after silence already sent.
+    pub quiet: u64,
+}
+
+/// One slot's visualizer, on the audio thread: allocated at start.
+struct SlotVisualizer {
+    analyzer: Analyzer,
+    samples: Vec<f32>,
+    frames: Vec<Frame>,
+    bands: Vec<u8>,
+    quiet_sent: bool,
 }
 
 /// Serve every slot until `keep` says stop or the configured stream fails.
@@ -252,6 +291,19 @@ pub fn serve_slots(
         })
         .collect();
     let mut port_pcm = vec![vec![0u8; bytes_per_chunk]; ports];
+    // One analyser per slot, at this server's rate (`None` for a rate the
+    // analysis does not take, which the wire never carries).
+    let mut visualizers: Vec<Option<SlotVisualizer>> = (0..slots)
+        .map(|_| {
+            Analyzer::new(params.format.sample_rate_hz).map(|analyzer| SlotVisualizer {
+                analyzer,
+                samples: Vec::with_capacity(frames * channels),
+                frames: Vec::with_capacity(frames / 100 + 8),
+                bands: Vec::with_capacity(chorus_dsp::visualizer::BANDS),
+                quiet_sent: false,
+            })
+        })
+        .collect();
     let mut port_played = vec![false; ports];
     let chunk_ns = params.chunk_us * 1_000;
     let interval_ns = params.emit_interval_ns();
@@ -384,6 +436,56 @@ pub fn serve_slots(
                 router.fanouts()[slot].broadcast(frame);
             }
             router.fanouts()[router.idle()].broadcast(quiet);
+        }
+        // The visualizer, outside the grid guard: what each watched slot
+        // just played, analysed and sent to its visualizer sessions.
+        for (slot, input) in inputs.iter().enumerate() {
+            if !router.watched(slot) {
+                continue;
+            }
+            let Some(v) = visualizers[slot].as_mut() else {
+                continue;
+            };
+            let played: &[u8] = match input {
+                SlotInput::Stream if have_stream => &pcm,
+                SlotInput::Chime(_) => &slot_pcm[slot],
+                SlotInput::LineIn(p) if port_played.get(usize::from(*p)) == Some(&true) => {
+                    &port_pcm[usize::from(*p)]
+                }
+                _ => &silence,
+            };
+            let start = report.ticks * frames as u64;
+            if v.analyzer.position() != start {
+                v.analyzer.reset_at(start);
+                v.quiet_sent = false;
+            }
+            let width = params.format.sample_format.bytes_per_sample();
+            v.samples.clear();
+            v.samples.extend(
+                played
+                    .chunks_exact(width)
+                    .map(|b| decode_sample(b, params.format.sample_format) as f32),
+            );
+            v.frames.clear();
+            v.analyzer.push(&v.samples, channels, &mut v.frames);
+            for f in &v.frames {
+                if f.is_silent() {
+                    if v.quiet_sent {
+                        report.visualizer.quiet += 1;
+                        continue;
+                    }
+                    v.quiet_sent = true;
+                } else {
+                    v.quiet_sent = false;
+                }
+                let at_ns = origin_ns.saturating_add(
+                    (u128::from(f.at_sample) * 1_000_000_000 / u128::from(rate)) as u64,
+                );
+                let pushed = router.push_visualizer(slot, at_ns, f, &mut v.bands);
+                report.visualizer.frames += pushed.frames;
+                report.visualizer.colours += pushed.colours;
+                report.visualizer.dropped += pushed.dropped;
+            }
         }
         report.ticks += 1;
         report.final_sequence = sequence;

@@ -61,6 +61,9 @@ file's own comments list every argument worth setting. At least:
 - `--max-volume <0.000-1.000>`: this speaker's own volume ceiling (default 1.000). Nothing the
   server or the control plane sends plays above it, and until the server's first `room_volume`
   the speaker plays at it (`docs/decisions/0074-room-volume-on-the-audio-wire.md`).
+- `--visualizer-bands <1-64>`: declare the visualizer role and ask the server for that many
+  bands per frame; every beat and colour received is logged (`docs/visualizer.md`). A front
+  panel whose light follows the visualizer needs no flag.
 
 The unit adds `--rejoin --identity-dir /var/lib/chorus-client` itself: the endpoint's key and
 its server pins live in `/var/lib/chorus-client` and survive restarts and upgrades.

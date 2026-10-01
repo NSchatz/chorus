@@ -1,0 +1,19 @@
+# An exponential sine sweep from 50 Hz to 6 kHz over 1.5 s at -12 dBFS
+# (amplitude 0.25), at 16 kHz.
+#
+# Expected: the loudest band climbs with the sweep (never more than one band
+# back from the highest it has reached), it ends in a higher band than it
+# starts, and the colour's hue moves with it from blue towards red (the
+# spectral centroid's mapping): the last colour sent has a hue at least 60
+# degrees below the first's.
+
+kind = sweep
+output = 03-sweep.wav
+sample_rate_hz = 16000
+duration_ms = 1500
+
+sweep_start_hz = 50
+sweep_end_hz = 6000
+amplitude = 0.25
+
+expect = rising

@@ -1,0 +1,29 @@
+# A kick drum on every beat at 120 BPM: four kicks, 500 ms apart, the first at
+# sample 0 (so a test that carries this audio through the server can find where
+# it starts by its first non-zero sample: a kick starts at its peak, cosine
+# phase). Each kick is a sine whose pitch falls exponentially from
+# kick_start_hz to kick_end_hz under an exponential decay, the usual synthetic
+# kick, and it rings for the whole period (kick_ms), so no kick ends in a
+# click a detector would rightly call an onset; the beats are the onsets, so
+# they are known exactly.
+#
+# Expected: one beat per kick, within beat_tolerance_ms of its onset, at least
+# beat_min strong (the status LED flashes at 128), and no other beat.
+
+kind = kick
+output = 01-kick-120bpm.wav
+sample_rate_hz = 48000
+duration_ms = 2000
+
+bpm = 120
+amplitude = 0.8
+kick_start_hz = 150
+kick_end_hz = 50
+pitch_tau_ms = 30
+decay_tau_ms = 80
+kick_ms = 500
+
+expect = beats
+expect_beats_ms = 0 500 1000 1500
+beat_tolerance_ms = 20
+beat_min = 128

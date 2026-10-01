@@ -358,16 +358,22 @@ impl std::error::Error for SessionRefusal {}
 
 /// The `hello` this endpoint sends: `player`, the roles a configured front
 /// panel adds (`controller`, and `visualizer` for a light that follows it;
-/// `front_panel.rs`), and `source` when a line-in is configured (K65).
+/// `front_panel.rs`), `visualizer` when `--visualizer-bands` asks for
+/// bands, and `source` when a line-in is configured (K65).
 pub fn hello(config: &ClientConfig) -> Hello {
     let source = if config.line_in.is_some() {
         roles::SOURCE
     } else {
         0
     };
+    let visualizer = if config.visualizer_bands > 0 {
+        roles::VISUALIZER
+    } else {
+        0
+    };
     Hello {
         protocol_version: PROTOCOL_VERSION,
-        roles: roles::PLAYER | source | (config.extra_roles & roles::DEFINED),
+        roles: roles::PLAYER | source | visualizer | (config.extra_roles & roles::DEFINED),
         name: config.endpoint.clone(),
         software: format!("chorus-client {}", env!("CARGO_PKG_VERSION")),
     }
@@ -405,7 +411,7 @@ pub fn capabilities(config: &ClientConfig) -> Capabilities {
         intrinsic_latency_ns: 0,
         // One status light when the front panel declared the visualizer role.
         led_count: u16::from(config.extra_roles & roles::VISUALIZER != 0),
-        visualizer_bands: 0,
+        visualizer_bands: config.visualizer_bands,
     }
 }
 
@@ -573,6 +579,28 @@ pub fn also_hand(
     }));
 }
 
+/// The status line `--visualizer-bands` logs for a server message: one per
+/// `visualizer_frame` that carries a beat, one per `color`; `None` for
+/// anything else (a frame without a beat comes 25 times a second and says
+/// nothing a log reader needs).
+pub fn visualizer_line(m: &Message) -> Option<String> {
+    match m {
+        Message::VisualizerFrame(v) if v.beat > 0 => Some(format!(
+            "visualizer beat timestamp_ns={} strength={} peak={} bands={}",
+            v.timestamp_ns,
+            v.beat,
+            v.peak,
+            v.bands.len()
+        )),
+        Message::Color(c) => Some(format!(
+            "visualizer color timestamp_ns={} red={} green={} blue={} brightness={} \
+             transition_ms={}",
+            c.timestamp_ns, c.red, c.green, c.blue, c.brightness, c.transition_ms
+        )),
+        _ => None,
+    }
+}
+
 fn record(announced: &Arc<Mutex<Announced>>, m: Message) {
     let mut a = match announced.lock() {
         Ok(g) => g,
@@ -664,6 +692,44 @@ mod tests {
         assert_eq!(c.max_channels, 8);
         assert!(c.sample_rates_hz.contains(&48_000) && c.sample_rates_hz.contains(&44_100));
         assert!(c.sample_rates_hz.len() <= 16);
+    }
+
+    #[test]
+    fn asking_for_visualizer_bands_declares_the_role_and_logs_beats_and_colours() {
+        let plain = ClientConfig::default();
+        assert_eq!(hello(&plain).roles & roles::VISUALIZER, 0);
+        assert_eq!(capabilities(&plain).visualizer_bands, 0);
+        let asks = ClientConfig {
+            visualizer_bands: 16,
+            ..ClientConfig::default()
+        };
+        assert_eq!(hello(&asks).roles, roles::PLAYER | roles::VISUALIZER);
+        assert_eq!(capabilities(&asks).visualizer_bands, 16);
+        let frame = |beat| {
+            Message::VisualizerFrame(chorus_protocol::v2::VisualizerFrame {
+                timestamp_ns: 7,
+                beat,
+                peak: 9,
+                bands: vec![1, 2],
+            })
+        };
+        assert_eq!(visualizer_line(&frame(0)), None, "no beat, no line");
+        assert_eq!(
+            visualizer_line(&frame(200)).unwrap(),
+            "visualizer beat timestamp_ns=7 strength=200 peak=9 bands=2"
+        );
+        let colour = Message::Color(chorus_protocol::v2::Color {
+            timestamp_ns: 8,
+            red: 1,
+            green: 2,
+            blue: 3,
+            brightness: 4,
+            transition_ms: 500,
+        });
+        assert_eq!(
+            visualizer_line(&colour).unwrap(),
+            "visualizer color timestamp_ns=8 red=1 green=2 blue=3 brightness=4 transition_ms=500"
+        );
     }
 
     #[test]

@@ -755,6 +755,7 @@ impl Snapshot {
             room_volume: (session_roles & roles::PLAYER != 0).then_some(room.room_volume),
             controller_state: (session_roles & roles::CONTROLLER != 0)
                 .then(|| room.controller_state.clone()),
+            ..SessionStart::default()
         }
     }
 }

@@ -46,7 +46,7 @@ use std::io::Write;
 use std::net::TcpStream;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chorus_audio::MonotonicTimeline;
@@ -289,6 +289,18 @@ fn endpoint(config: &ClientConfig) -> ExitCode {
     code
 }
 
+/// The counters of the session running now, for the front panel's LED,
+/// which shows visualizer frames on the server timeline through the sync
+/// offset they carry. One endpoint process runs one session at a time.
+static SESSION_COUNTERS: Mutex<Option<Arc<Counters>>> = Mutex::new(None);
+
+fn lock_session_counters() -> std::sync::MutexGuard<'static, Option<Arc<Counters>>> {
+    match SESSION_COUNTERS.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
 /// Load the panel configuration at `path`, open its input device and its
 /// light, and start it. Hands back the panel and the configuration with the
 /// roles it adds, so `hello` declares exactly what this process runs.
@@ -315,12 +327,22 @@ fn start_panel(
     let mut with_roles = config.clone();
     with_roles.extra_roles = panel.roles();
     // Every key event is stamped on the monotonic timeline when it is read.
-    // The LED is shown against the same timeline until the sync offset is
-    // published to it (a follow-up for goal 12, when the server sends a
-    // visualizer stream at all).
+    // The LED follows visualizer frames on the SERVER timeline (goal 12):
+    // this endpoint's monotonic now plus the sync offset the current
+    // session's playout loop publishes, or the local timeline alone before
+    // the first exchange is accepted (frames are then shown up to the offset
+    // early or late, and only until it is known).
     let now: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(move || timeline.now_ns());
+    let server_now: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(move || {
+        let local = timeline.now_ns();
+        let offset = lock_session_counters()
+            .as_ref()
+            .and_then(|c| c.offset.get())
+            .unwrap_or(0);
+        local.saturating_add_signed(offset)
+    });
     let log: Arc<dyn Fn(&str) + Send + Sync> = Arc::new(status);
-    let running = FrontPanel::start(&panel, &config.zone, keys, led, Arc::clone(&now), now, log)
+    let running = FrontPanel::start(&panel, &config.zone, keys, led, now, server_now, log)
         .map_err(|e| e.to_string())?;
     status(&format!(
         "front-panel class={} inputs={} keys={} led={} roles={}",
@@ -631,15 +653,37 @@ fn play(
     // The room's volume on the audio wire reaches the playout loop through the
     // watch, before the stream is read (goal 11).
     session::deliver_room_volume_to(&announced, watch.room_inbox());
+    // The front panel takes the server's controller and visualizer messages;
+    // `--visualizer-bands` logs each beat and colour (goal 12).
+    if panel.is_some() || config.visualizer_bands > 0 {
+        let mut offer = panel.map(|p| p.server_messages());
+        let log_visualizer = config.visualizer_bands > 0;
+        session::also_hand(
+            &mut stream,
+            &announced,
+            Box::new(move |m| {
+                if let Some(offer) = offer.as_mut() {
+                    offer(m);
+                }
+                if log_visualizer {
+                    if let Some(line) = session::visualizer_line(m) {
+                        status(&line);
+                    }
+                }
+            }),
+        );
+    }
     if let Some(panel) = panel {
-        session::also_hand(&mut stream, &announced, panel.server_messages());
         let mut uplink = writer.clone();
         panel.connect(Box::new(move |m| uplink.send(m)));
     }
-    // The panel is told when this session ends, whichever way it ends.
+    *lock_session_counters() = Some(Arc::clone(&counters));
+    // The panel is told when this session ends, whichever way it ends, and
+    // its LED stops following this session's offset.
     struct Disconnect<'a>(Option<&'a FrontPanel>);
     impl Drop for Disconnect<'_> {
         fn drop(&mut self) {
+            *lock_session_counters() = None;
             if let Some(panel) = self.0 {
                 panel.disconnect();
             }

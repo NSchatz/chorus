@@ -4,7 +4,8 @@
 # drift apart. Each shared directory below is read by a Rust test and by a C test (both walk the
 # directory), and every file in it has an extension those tests read: a file of any other kind
 # would be read by neither. fixtures/control, fixtures/discovery and fixtures/measure are
-# Rust-only by declaration (the endpoint does not speak them yet; goal 6 moves control here).
+# Rust-only by declaration (the endpoint does not speak them yet; goal 6 moves control here), and
+# so is fixtures/visualizer (goal 12: the server computes the visualizer stream, no endpoint does).
 # fixtures/protocol/v2 is read by firmware/tests/test_protocol_v2.c (every vector, both
 # assertions) and its noise/ directory by firmware/tests/test_noise.c (the published vector in
 # both roles), since the endpoint moved to protocol v2 (goal 6), and its rejected/ directory
