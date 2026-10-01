@@ -64,7 +64,7 @@
 //! after a command when it moved.
 //!
 //! The decisions, and every ASSUMED value below, are recorded in
-//! `docs/decisions/0080-the-schedule-runtime.md`.
+//! `docs/decisions/0076-the-schedule-runtime.md`.
 
 use std::collections::BTreeMap;
 

@@ -61,3 +61,4 @@ the number of the pull request that added it.
 | 0072 | [the schedule library is a pure crate that reads no clock: civil time from TZif with a gap and a fold rule, weekly windows, alarms, sleep fades, integer ramps and generated chimes](0072-the-schedule-library.md) |
 | 0075 | [control catalog v2: rooms, bonded sets with a wired-only rule, saved and live groups, take-the-room, Sonos-style group volume, clamped limits and quiet hours, alarm, sleep and autoplay configuration, state-file format 2](0075-control-catalog-v2.md) |
 | 0074 | [the room's gain and limit travel on the audio wire as room_volume, and both endpoint kinds enforce min(ramped gain, limit, own ceiling) at every frame](0074-room-volume-on-the-audio-wire.md) |
+| 0076 | [the schedule runtime is a pure server module that fires alarms, counts sleep timers down, follows quiet hours and runs line-in autoplay on time it is handed, and returns effects for the conductor](0076-the-schedule-runtime.md) |
