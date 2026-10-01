@@ -239,7 +239,7 @@ impl Conductor {
         }
     }
 
-    /// Each room's declared tier (`--zone-transport`), for the visualizer's
+    /// Each room's declared tier (`--zone <id>=<transport>`), for the visualizer's
     /// heard latency; a room not declared is wired.
     pub fn with_transports(mut self, transports: ZoneTransports) -> Conductor {
         self.transports = transports;

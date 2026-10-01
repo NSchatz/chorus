@@ -113,8 +113,9 @@ the four kicks beat at +10, 0, 0, 0 ms of their onsets (tolerance 20 ms).
 `crates/server/tests/visualizer_stream.rs` writes the kick fixture into a named pipe the real
 server plays and checks the frames a visualizer endpoint receives: one beat per kick, within the
 fixture's tolerance plus one hop (30 ms) of the kick on the server timeline as the den hears it,
-16 bands each, a colour, and nothing at all for a player without the role or an endpoint in no
-room.
+16 bands each, a colour; the same beats 500 ms after their kicks for a visualizer endpoint in a
+wireless room playing the same stream on the other slot; and nothing at all for a player without
+the role or an endpoint in no room.
 
 ## Follow-ups
 

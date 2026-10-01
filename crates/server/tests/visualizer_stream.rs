@@ -2,13 +2,13 @@
 //! `docs/visualizer.md`).
 //!
 //! The real `chorus-server` (`--slots 2`) plays a real named pipe
-//! (`fifo:<path>`, the development input of `crate::source`). Three
+//! (`fifo:<path>`, the development input of `crate::source`). Four
 //! endpoints speak protocol v2 through the Linux client's own session code
 //! (`chorus_client_linux::session::open`): in the den, one that asks for 16
 //! visualizer bands (`ClientConfig::visualizer_bands`, the client's
 //! `--visualizer-bands`, which declares the `visualizer` role) and one plain
-//! player; and one more that asks for bands but is in no room. Once all three
-//! are up, the committed fixture `fixtures/visualizer/01-kick-120bpm.wav`
+//! player; in the study (declared wireless) one more that asks for bands;
+//! and one that asks for bands but is in no room. Once all four are up, the committed fixture `fixtures/visualizer/01-kick-120bpm.wav`
 //! (four kicks 500 ms apart, mono, duplicated into the server's two
 //! channels) is written into the pipe.
 //!
@@ -22,6 +22,9 @@
 //!   beat stamped within the stated tolerance of that kick's onset on the
 //!   server timeline plus the wired playout latency (when the den hears it),
 //!   each carrying the 16 bands asked for, and at least one `color`;
+//! - a visualizer endpoint in the study, a wireless room playing the same
+//!   stream on the other slot, receives the same beats stamped after the
+//!   wireless tier's playout latency instead;
 //! - the plain player received audio and not one `visualizer_frame` or
 //!   `color`, and neither did the endpoint in no room.
 //!
@@ -44,10 +47,11 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use chorus_client_linux::config::ClientConfig;
+use chorus_control::transport::Transport;
 use chorus_dsp::visualizer::HOP_MS;
 use chorus_protocol::v2::Message as V2Message;
 use chorus_protocol::{decode_frame, AudioChunk, FrameOutcome, Message};
-use chorus_server::conductor::WIRED_GROUP_LATENCY_NS;
+use chorus_server::conductor::{heard_latency_ns, WIRED_GROUP_LATENCY_NS};
 use common::{fresh_id, Player, RunningServer};
 
 const RATE_HZ: u64 = 48_000;
@@ -171,14 +175,17 @@ fn beats_from_fixture_audio_reach_a_visualizer_endpoint_on_the_server_timeline()
         "4",
         "--zone",
         "den",
+        "--zone",
+        "study=wireless",
     ]);
     let watcher = fresh_id("visualizer-watcher");
     let plain = fresh_id("visualizer-plain");
     let roomless = fresh_id("visualizer-roomless");
-    for endpoint in [&watcher, &plain] {
+    let far = fresh_id("visualizer-far");
+    for (zone, endpoint) in [("den", &watcher), ("den", &plain), ("study", &far)] {
         server.applied(&format!(
-            r#"{{"v":1,"t":"attach","zone":"den","endpoint":"{}"}}"#,
-            endpoint
+            r#"{{"v":1,"t":"attach","zone":"{}","endpoint":"{}"}}"#,
+            zone, endpoint
         ));
     }
     let asks = ClientConfig {
@@ -195,6 +202,8 @@ fn beats_from_fixture_audio_reach_a_visualizer_endpoint_on_the_server_timeline()
     server.wait_for_all(&["client session", &format!("id={} ", plain)]);
     let nowhere = Recorder::start(Player::connect_with(&server.audio, &roomless, &asks));
     server.wait_for_all(&["client session", &format!("id={} ", roomless)]);
+    let farther = Recorder::start(Player::connect_with(&server.audio, &far, &asks));
+    server.wait_for_all(&["client session", &format!("id={} ", far)]);
     // Let the conductor route all three and the slot play silence a while.
     thread::sleep(Duration::from_millis(600));
 
@@ -216,6 +225,7 @@ fn beats_from_fixture_audio_reach_a_visualizer_endpoint_on_the_server_timeline()
     let (chunks, messages) = watching.finish();
     let (plain_chunks, plain_messages) = playing.finish();
     let (_, nowhere_messages) = nowhere.finish();
+    let (_, far_messages) = farther.finish();
 
     // Where the fixture is on the server timeline: its first non-zero
     // sample, then every sample after it in order.
@@ -258,17 +268,20 @@ fn beats_from_fixture_audio_reach_a_visualizer_endpoint_on_the_server_timeline()
         .map(|v| v.parse().unwrap())
         .collect();
     let latency = WIRED_GROUP_LATENCY_NS as u64;
-    let beats: Vec<(f64, u8, usize)> = messages
-        .iter()
-        .filter_map(|m| match m {
-            V2Message::VisualizerFrame(v) if v.beat > 0 => Some((
-                (v.timestamp_ns as i64 - (anchor_ns + latency) as i64) as f64 / 1e6,
-                v.beat,
-                v.bands.len(),
-            )),
-            _ => None,
-        })
-        .collect();
+    let beats_heard_after = |messages: &[V2Message], latency: u64| -> Vec<(f64, u8, usize)> {
+        messages
+            .iter()
+            .filter_map(|m| match m {
+                V2Message::VisualizerFrame(v) if v.beat > 0 => Some((
+                    (v.timestamp_ns as i64 - (anchor_ns + latency) as i64) as f64 / 1e6,
+                    v.beat,
+                    v.bands.len(),
+                )),
+                _ => None,
+            })
+            .collect()
+    };
+    let beats = beats_heard_after(&messages, latency);
     let frames = messages
         .iter()
         .filter(|m| matches!(m, V2Message::VisualizerFrame(_)))
@@ -296,6 +309,18 @@ fn beats_from_fixture_audio_reach_a_visualizer_endpoint_on_the_server_timeline()
         assert_eq!(*bands, usize::from(BANDS), "the bands asked for");
     }
     assert!(colours >= 1, "a colour was sent");
+    // The wireless study plays the same stream on the other slot, and hears
+    // it after the wireless tier's latency: so are its frames stamped.
+    let wireless = heard_latency_ns(Transport::Wireless);
+    let far_beats = beats_heard_after(&far_messages, wireless);
+    assert_eq!(far_beats.len(), kicks.len(), "the study: {far_beats:?}");
+    for ((at, _, _), kick) in far_beats.iter().zip(&kicks) {
+        assert!(
+            (at - kick).abs() <= tolerance_ms,
+            "the study's beat at {at:.1} ms (after {} ms) is not near the kick at {kick} ms",
+            wireless / 1_000_000
+        );
+    }
     assert!(
         !plain_chunks.is_empty(),
         "the plain player was served audio"
@@ -313,14 +338,17 @@ fn beats_from_fixture_audio_reach_a_visualizer_endpoint_on_the_server_timeline()
     println!(
         "visualizer e2e: {} kicks, {} beats within {} ms on the server timeline (wired latency \
          {} ms); {} frames and {} colours to the visualizer endpoint; 0 to the plain player \
-         ({} chunks) and 0 to the endpoint in no room",
+         ({} chunks) and 0 to the endpoint in no room; the wireless study's {} beats within \
+         the same tolerance after {} ms",
         kicks.len(),
         beats.len(),
         tolerance_ms,
         latency / 1_000_000,
         frames,
         colours,
-        plain_chunks.len()
+        plain_chunks.len(),
+        far_beats.len(),
+        wireless / 1_000_000
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
