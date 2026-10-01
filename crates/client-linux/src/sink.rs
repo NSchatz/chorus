@@ -87,12 +87,23 @@ pub trait PcmSink: Send {
     /// the device's nominal rate, which it cannot if anything resampled or
     /// retimed the stream.
     fn frames_played(&mut self) -> Result<u64, SinkError>;
+
+    /// Frames of [`PcmSink::delay_frames`] that are a fixed latency of this
+    /// sink's own processing (the endpoint DSP chain's), not audio queued in
+    /// the device: the low-latency path (goal 13, `crate::lowlat`) paces
+    /// the queue above this. 0 for a plain device.
+    fn fixed_latency_frames(&self) -> i64 {
+        0
+    }
 }
 
 /// A boxed sink is a sink, so the client can choose at run time between the
 /// device as it is and the device behind an output map
 /// (`crate::outmap::MappedSink`) without a second copy of the session.
 impl<T: PcmSink + ?Sized> PcmSink for Box<T> {
+    fn fixed_latency_frames(&self) -> i64 {
+        (**self).fixed_latency_frames()
+    }
     fn device(&self) -> &str {
         (**self).device()
     }

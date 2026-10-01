@@ -36,6 +36,10 @@
 //!    playout latency of its room's tier ([`heard_latency_ns`]), which the
 //!    audio thread adds to a visualizer frame's stamp for that session
 //!    (`crate::router`, `docs/visualizer.md`).
+//! 6. **The TV path** (goal 13, `crate::tvrelay`): which TV inputs play in
+//!    low-latency mode, handed to the relay as a list of [`TvPlay`]s; every
+//!    other TV input stays on its slot (ADR 0079). A change of mode is one
+//!    line, `tv-path mode=low-latency` or `tv-path mode=slot reason=<why>`.
 //!
 //! Each push is deduped against what the session was last sent
 //! (`crate::router`), so a change concerning another room sends nothing, and a
@@ -65,7 +69,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chorus_control::rooms::Source;
 use chorus_control::transport::{Transport, ZoneTransports, WIRELESS_POLICY};
-use chorus_protocol::v2::{roles, Codec, Message, RoomVolume, SourceAction, SourceControl};
+use chorus_protocol::v2::{
+    features, roles, Codec, Message, RoomVolume, SourceAction, SourceControl,
+};
 use chorus_schedule::chime::CHIMES;
 
 use crate::control::{ControlState, Snapshot};
@@ -73,6 +79,7 @@ use crate::linein::{InputEvent, LineIns};
 use crate::router::Router;
 use crate::schedule_runtime::{Effect, InputAction, Runtime};
 use crate::slots::{SlotCommand, SlotInput, LOCAL_LATENCY_NS};
+use crate::tvrelay::{TvPlay, TvRelay};
 
 /// How long the conductor waits for a poke before it looks up to see whether
 /// it is still wanted.
@@ -208,6 +215,10 @@ pub struct Conductor {
     schedule: Option<Schedule>,
     /// Each room's declared tier, for the visualizer's heard latency.
     transports: ZoneTransports,
+    /// (goal 13) The TV relay, and the mode each TV input was last said to
+    /// play in (its log word), so a change is one line.
+    tv_relay: Option<Arc<TvRelay>>,
+    tv_modes: Vec<(chorus_control::rooms::InputId, String)>,
 }
 
 /// When an endpoint of a room on `transport` plays audio stamped `t` on the
@@ -241,7 +252,16 @@ impl Conductor {
             targets,
             schedule: None,
             transports: ZoneTransports::default(),
+            tv_relay: None,
+            tv_modes: Vec::new(),
         }
+    }
+
+    /// Play TV inputs in low-latency mode through `relay` where they can
+    /// (goal 13, `crate::tvrelay`).
+    pub fn with_tv_relay(mut self, relay: Arc<TvRelay>) -> Conductor {
+        self.tv_relay = Some(relay);
+        self
     }
 
     /// Each room's declared tier (`--zone <id>=<transport>`), for the visualizer's
@@ -331,7 +351,121 @@ impl Conductor {
             }
         }
         self.route_inputs(&snapshot, &mut report, false);
+        self.tv_path(&snapshot);
         report
+    }
+
+    /// (goal 13) Which TV inputs play in low-latency mode: a TV's input
+    /// (`optical` or `hdmi_arc`) streaming from its hub, whose group is one
+    /// room, the room wired, the input's autoplay rule (if any) saying
+    /// `low_latency`, a chunk that fits one datagram, and the hub and every
+    /// player of the room advertising `low_latency`. Everything else plays on
+    /// its slot, unchanged; the relay is told the list and does the rest.
+    fn tv_path(&mut self, snapshot: &Snapshot) {
+        let Some(relay) = self.tv_relay.clone() else {
+            return;
+        };
+        let Some(line_ins) = self.schedule.as_ref().and_then(|s| s.line_ins.clone()) else {
+            return;
+        };
+        let sessions = self.router.sessions();
+        let capable = |id: u64| {
+            sessions
+                .iter()
+                .find(|s| s.id == id)
+                .filter(|s| s.features & features::LOW_LATENCY != 0)
+                .and_then(|s| s.peer)
+        };
+        let mut wanted = Vec::new();
+        let mut modes = Vec::new();
+        for group in snapshot.slots.iter().flatten() {
+            let Source::LineIn(input) = &group.source else {
+                continue;
+            };
+            let Some((hub, _)) = line_ins.tv_source(input) else {
+                continue;
+            };
+            let room = group.rooms.first().cloned().unwrap_or_default();
+            let players: Vec<u64> = sessions
+                .iter()
+                .filter(|s| {
+                    s.roles & roles::PLAYER != 0
+                        && snapshot.room_of(&s.endpoint).map(|r| r.id.as_str())
+                            == Some(room.as_str())
+                })
+                .map(|s| s.id)
+                .collect();
+            let addressed: Vec<(u64, std::net::IpAddr)> = players
+                .iter()
+                .filter_map(|&id| capable(id).map(|ip| (id, ip)))
+                .collect();
+            let trim_ms = snapshot
+                .rooms
+                .iter()
+                .find(|r| r.id == room)
+                .map_or(0, |r| r.av_trim_ms);
+            let why = if !group.low_latency {
+                Some("rule")
+            } else if group.rooms.len() != 1 {
+                Some("grouped")
+            } else if self.transports.of(&room) == Transport::Wireless {
+                Some("wireless")
+            } else if !relay.fits() {
+                Some("chunk-does-not-fit")
+            } else if players.is_empty() {
+                Some("no-player")
+            } else if addressed.len() != players.len() {
+                Some("player-not-capable")
+            } else {
+                match capable(hub) {
+                    None => Some("hub-not-capable"),
+                    Some(hub_ip) => {
+                        let mut players = addressed;
+                        players.sort();
+                        let play = TvPlay {
+                            input: input.clone(),
+                            room: room.clone(),
+                            hub: (hub, hub_ip),
+                            players,
+                            trim_ms,
+                        };
+                        // Wanted even when it was refused: the relay keeps
+                        // a refusal only while it is wanted, and offers it
+                        // again once what it is made of changes.
+                        wanted.push(play);
+                        None
+                    }
+                }
+            };
+            modes.push((input.clone(), group.group.clone(), room, why));
+        }
+        relay.reconcile(&wanted);
+        let modes: Vec<(chorus_control::rooms::InputId, String)> = modes
+            .into_iter()
+            .map(|(input, group, room, why)| {
+                let refused =
+                    why.is_none() && wanted.iter().any(|p| p.input == input && relay.refused(p));
+                let mode = match (why, refused) {
+                    (None, false) => {
+                        format!("mode=low-latency input={} room={}", input.literal(), room)
+                    }
+                    (why, _) => format!(
+                        "mode=slot input={} group={} reason={}",
+                        input.literal(),
+                        group,
+                        why.unwrap_or("refused")
+                    ),
+                };
+                (input, mode)
+            })
+            .collect();
+        for (input, mode) in &modes {
+            let known = self.tv_modes.iter().find(|(i, _)| i == input);
+            if known.map(|(_, m)| m) != Some(mode) {
+                println!("chorus-server: tv-path {}", mode);
+            }
+        }
+        self.tv_modes = modes;
     }
 
     /// The schedule runtime's entry points, in order: what the line-ins said,

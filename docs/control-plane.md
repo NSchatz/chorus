@@ -426,6 +426,55 @@ choices and the citations.
 The state message carries both per room: `"av_trim_ms":0` beside `sound`, and
 `"tv_upmix":"off"` inside it.
 
+### The TV relay: when a TV plays in low-latency mode (goal 13)
+
+The server's TV relay (`crates/server/src/tvrelay.rs`; the wire is
+`docs/protocol.md` "Low-latency path", the integration's choices the tv-path
+ADR under `docs/decisions/`) plays a TV input in low-latency mode when, at the
+conductor's pass, all of these hold, and otherwise leaves it on its stream slot
+(ADR 0079), unchanged:
+
+- the input is a TV's (`optical` or `hdmi_arc`) and streaming from its hub;
+- its autoplay rule, if it has one, says `low_latency` (a TV input played by a
+  command and no rule is wanted in low-latency mode too: the rule's default,
+  ASSUMED for a command, which has no field of its own);
+- the group playing it is one room (autoplay's `take` makes it so; K81), and
+  that room is wired (`--zone <id>=wireless` is not);
+- the server's chunk fits one datagram (`chunk_fits`: stereo at 120 frames
+  does; 5.1 at s24 needs 60 frames);
+- the hub and every player session of the room advertise
+  `capabilities.features` `low_latency` (a Linux endpoint does when wired).
+
+A change of mode is one line: `tv-path mode=low-latency input=<id> room=<id>`,
+or `tv-path mode=slot input=<id> group=<id> reason=<why>`, `<why>` one of
+`rule`, `grouped`, `wireless`, `chunk-does-not-fit`, `no-player`,
+`player-not-capable`, `hub-not-capable`, `refused`. The relay offers the
+players first and the hub only when every player accepted, so the hub never
+switches to datagrams with nobody listening; a refusal or an offer unanswered
+for 2 s (ASSUMED) ends every stream of that play (`tv-path refused ...`) and
+keeps it on the slot until what it is made of (its room's sessions, its hub,
+its group) changes. While a TV plays in low-latency mode the slot that still
+carries its group hears nothing from the hub (its port underruns and counts
+it), and the players play the datagrams instead. The relay's lines:
+`tv-relay offer`, `tv-relay active`, `tv-relay first-chunk` (the first
+chunk's sequence, capture stamp and play-at), `tv-relay lead` (a trim moved
+the lead), `av-trim-clamped`, and `tv-relay end ... reason=<why>` with its
+counts (received, recovered, unrecoverable, relayed, late, sent, and the
+test-only drops). Volume and sound are the endpoints' as on every path: the
+room's `room_volume` and `sound` reach them on their sessions.
+
+The server's flags for it:
+
+| flag | default | what |
+|---|---|---|
+| `--low-latency-port <port>` | the audio port + 1 (ASSUMED); with an ephemeral audio port, ephemeral | the relay's UDP port, on the audio listener's address; 0 asks for an ephemeral one |
+| `--tv-latency-ms <ms>` | 20 (`lowlat::DEFAULTS`) | `L_tv`; refused outside 10..40 or below the plan's floor (19.417 ms at the defaults) |
+| `--fec-k <k>`, `--fec-depth <d>` | 4, 1 | the streams' FEC; `--fec-k 0` is no FEC (the tests' negative control) |
+| `--udp-loss <ppm>,<seed>` | off | **tests only**: drop that many datagrams per million, seeded, on both legs (each received from a hub, each sent to a player); never set in a deployment |
+
+With `--slots` the relay is one more thread (`tv-relay`), created with the
+rest before the scheduling report: the population is `6 + 2N + M + 1`.
+
 ### Take the room (K78)
 
 `take` moves every room of the target out of whatever group it is in and into

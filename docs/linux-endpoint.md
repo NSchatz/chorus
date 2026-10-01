@@ -109,6 +109,45 @@ hub does not send it as captured (ADR 0090):
 
 A `line_in` (analogue) input is captured and stamped as before, without rate matching.
 
+### The TV path's low-latency stream (`--low-latency on|off`)
+
+A TV played into one wired room is not played at the slot path's 180 ms: the server relays it
+over UDP, each 2.5 ms chunk stamped to be heard `L_tv` (20 ms by default) after the TV made it
+(`docs/protocol.md` "Low-latency path", ADR 0091). A wired endpoint takes part by default;
+`--low-latency off` keeps it on the slot path (it then never advertises the feature). An endpoint
+with `--transport wireless` never advertises it either (the path is wired only).
+
+- **As a player** (any wired endpoint): the server's `low_latency_offer` (0x16) is answered with
+  `low_latency_accept` (0x17) carrying a fresh UDP port, or refused by status (`refused_wireless`,
+  `refused_fec` for an FEC shape or chunk this stream cannot take, `refused_no_socket`).
+  Datagrams are taken from the server's address only, opened, repaired from their group's parity,
+  and held in a small jitter buffer by stamp. The device is then paced to a 4 ms delay (ASSUMED:
+  the budget's endpoint output path), after letting the slot path's deeper buffer play out, and
+  the chunk stamped at the instant the next written frame is heard is written. A chunk that
+  arrives after its instant is dropped (`late`); a missing one is concealed (the last frame held
+  and faded to silence over one chunk, the next chunk faded in over the same; ASSUMED one chunk,
+  2.5 ms), never a hard cut. If the play position drifts more than 0.5 ms (ASSUMED) from the
+  heard instant it is moved back (`resnaps`). The room's volume and sound apply as on the slot
+  path. Journal lines: `low-latency start stream_tag=... udp_port=...`, `low-latency end
+  reason=...`, and at the end of a session `low-latency stream_tag=... opened=... auth_failed=...
+  replayed=... delivered=... recovered=... unrecoverable=... late=... played=... concealed=...
+  rejected=... no_offset=... resnaps=... superseded=...` (`superseded`: slot-path chunks not
+  played while the stream played; the delay log's events `low-latency enter`/`output`/`leave`
+  mark the switch, and its samples during the stream are ungraded).
+- **As a TV hub** (a TV input, direction `from_endpoint`): after accepting, the rate-matched
+  output is cut in the offer's chunk size (120 frames) and every chunk leaves as datagrams to the
+  server's port (XOR parity per the offer's `fec_k`) instead of up the session, with the same
+  sequence and stamp; an `end` goes back to the session and 20 ms chunks. Journal lines:
+  `source-low-latency start stream_tag=... chunk_frames=... fec_k=...`, `source-low-latency end
+  ...`, and at the end of a session `source-low-latency streams=... chunks_sent=...
+  datagrams_sent=... send_failures=...`. A `line_in` refuses the offer.
+
+The 4 ms device target and the 1 ms top-up interval are for a modelled device; the ALSA period
+size a real DAC needs to hold 4 ms without underruns is a bench question (session S8).
+`--low-latency-target-us <us>` sets the target (above the sound chain's own fixed latency, its
+limiter's 2 ms look-ahead); a larger one needs a room `L_tv` that leaves room for it (the
+server's `--tv-latency-ms`), or every chunk arrives late.
+
 The room's sound (bass, treble, loudness, night, speech, room correction) and, in a bonded set,
 bass management come from the server's `sound` message and need no setting here: the client runs
 the sound chain from the first `sound` it receives (`dsp engaged ...` on its output) and prints

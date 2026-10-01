@@ -56,6 +56,22 @@
 //! loop above, unchanged: an analogue input is digitized by this endpoint's
 //! own converter on this endpoint's own clock (ADR 0090).
 //!
+//! # The low-latency uplink (goal 13, a TV input only)
+//!
+//! When the server plays a TV input in one wired room it offers this hub a
+//! `from_endpoint` low-latency stream (`low_latency_offer`, 0x16,
+//! `docs/protocol.md` "Low-latency path"). [`run_tv`] answers it with
+//! `low_latency_accept` (0x17), switches the rate-matched output to the
+//! offer's chunk size (`TvFrontEnd::set_chunk_frames`, 120 frames by
+//! default) and from the next chunk sends every chunk as UDP datagrams to
+//! the server (`FecEncoder` for the parity, `Sealer` under the offer's key)
+//! instead of up the TCP session; its sequence and stamp are what they would
+//! have been on TCP. An `end` for the stream goes back to TCP and the input's
+//! own chunk size. An offer this hub cannot take (an FEC shape it refuses, a
+//! chunk that does not fit one datagram, no UDP socket) is refused by status
+//! and the input stays on TCP. A `line_in` refuses every offer (it has no
+//! low-latency path).
+//!
 //! # What is modelled and what is not
 //!
 //! The shipped client reads exactly one implementation of [`CaptureSource`],
@@ -67,6 +83,7 @@
 use std::collections::VecDeque;
 use std::fmt;
 use std::io::{self, Write};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex, TryLockError};
@@ -74,10 +91,12 @@ use std::thread::{self, JoinHandle};
 
 use chorus_alsa::{AlsaError, Format, Pcm};
 use chorus_protocol::v2::catalog::signal_reason;
+use chorus_protocol::v2::lowlat::{chunk_fits, FecEncoder, FecParams, Sealer};
 use chorus_protocol::v2::session::SecureWriter;
 use chorus_protocol::v2::SourceKind;
 use chorus_protocol::v2::{
-    ChannelPosition, Codec, Message, SourceAction, SourceControl, SourceOffer, StreamFormat,
+    ChannelPosition, Codec, LowLatencyAccept, LowLatencyDirection, LowLatencyOffer,
+    LowLatencyStatus, Message, SourceAction, SourceControl, SourceOffer, StreamFormat,
 };
 use chorus_protocol::{AudioChunk, SampleFormat, StreamEnd, RESERVED_LEN};
 
@@ -551,6 +570,14 @@ pub struct SourceStats {
     pub tv_frames_dropped: AtomicU64,
     /// A TV input: the DLL's rate estimate, in ppm times 1000.
     pub tv_ppm_milli: std::sync::atomic::AtomicI64,
+    /// (goal 13) Chunks sent on the low-latency uplink.
+    pub ll_chunks_sent: AtomicU64,
+    /// (goal 13) Datagrams (data and parity) sent on it.
+    pub ll_datagrams_sent: AtomicU64,
+    /// (goal 13) Datagrams whose send failed (counted, never retried).
+    pub ll_send_failures: AtomicU64,
+    /// (goal 13) Low-latency streams this hub accepted.
+    pub ll_streams: AtomicU64,
 }
 
 impl SourceStats {
@@ -569,6 +596,18 @@ impl SourceStats {
             g(&self.chunks_sent),
             g(&self.dropped_no_offset),
             u8::from(self.signal.load(Ordering::Relaxed))
+        )
+    }
+
+    /// The low-latency uplink's status line (goal 13).
+    pub fn ll_line(&self) -> String {
+        let g = |a: &AtomicU64| a.load(Ordering::Relaxed);
+        format!(
+            "source-low-latency streams={} chunks_sent={} datagrams_sent={} send_failures={}",
+            g(&self.ll_streams),
+            g(&self.ll_chunks_sent),
+            g(&self.ll_datagrams_sent),
+            g(&self.ll_send_failures)
         )
     }
 
@@ -713,6 +752,146 @@ pub struct SourceSetup {
     /// power and the autoplay-on-power rule, which make the offered signal
     /// (`chorus_cec::TvSignal`). `None`: the signal is the audio alone.
     pub tv_power: Option<chorus_cec::TvSignal<Arc<chorus_cec::TvPower>>>,
+    /// (goal 13) The server's `from_endpoint` low-latency offers and where
+    /// to send the datagrams. `None`: every chunk goes up the session.
+    pub low_latency: Option<LowLatUplink>,
+}
+
+/// What the source role needs for the low-latency uplink (goal 13).
+pub struct LowLatUplink {
+    /// The session's `low_latency_source` (`crate::session::Session`).
+    pub offers: Receiver<LowLatencyOffer>,
+    /// The server's address (the session's TCP peer); the offer names the
+    /// port.
+    pub server_ip: IpAddr,
+}
+
+/// A running uplink: the stream's socket, its FEC and its sealer.
+struct Uplink {
+    tag: u32,
+    socket: UdpSocket,
+    to: SocketAddr,
+    encoder: FecEncoder,
+    sealer: Sealer,
+    failing: bool,
+}
+
+/// Answer one offer on the uplink: `Ok(Some)` a stream to send on, `Ok(None)`
+/// refused (and answered), `Err` the session failed.
+fn take_uplink<U: Upstream>(
+    offer: &LowLatencyOffer,
+    input: &LineInConfig,
+    server_ip: IpAddr,
+    upstream: &mut U,
+    log: &mut dyn FnMut(&str),
+) -> io::Result<Option<Uplink>> {
+    let answer = |upstream: &mut U, status: LowLatencyStatus| {
+        upstream.send(&Message::LowLatencyAccept(LowLatencyAccept {
+            stream_tag: offer.stream_tag,
+            status,
+            udp_port: 0,
+        }))
+    };
+    let refuse =
+        |upstream: &mut U, log: &mut dyn FnMut(&str), status: LowLatencyStatus, why: &str| {
+            log(&format!(
+                "source-low-latency refused stream_tag={} status={} detail={}",
+                offer.stream_tag,
+                status.name(),
+                why
+            ));
+            answer(upstream, status).map(|_| None)
+        };
+    let params = match FecParams::new(offer.fec_k, offer.fec_depth) {
+        Ok(p) => p,
+        Err(e) => return refuse(upstream, log, LowLatencyStatus::RefusedFec, &e.to_string()),
+    };
+    if !chunk_fits(offer.chunk_frames, input.channels, input.sample_format) {
+        return refuse(
+            upstream,
+            log,
+            LowLatencyStatus::RefusedFec,
+            "the offered chunk does not fit one datagram at this input's shape",
+        );
+    }
+    let sealer = match Sealer::new(offer.key, offer.stream_tag) {
+        Ok(s) => s,
+        Err(e) => return refuse(upstream, log, LowLatencyStatus::RefusedFec, &e.to_string()),
+    };
+    let bind: SocketAddr = match server_ip {
+        IpAddr::V4(_) => (Ipv4Addr::UNSPECIFIED, 0).into(),
+        IpAddr::V6(_) => (Ipv6Addr::UNSPECIFIED, 0).into(),
+    };
+    let socket = match UdpSocket::bind(bind) {
+        Ok(s) => s,
+        Err(e) => {
+            return refuse(
+                upstream,
+                log,
+                LowLatencyStatus::RefusedNoSocket,
+                &e.to_string(),
+            )
+        }
+    };
+    answer(upstream, LowLatencyStatus::Accepted)?;
+    log(&format!(
+        "source-low-latency start stream_tag={} chunk_frames={} fec_k={} fec_depth={} \
+         server_port={}",
+        offer.stream_tag, offer.chunk_frames, offer.fec_k, offer.fec_depth, offer.udp_port
+    ));
+    Ok(Some(Uplink {
+        tag: offer.stream_tag,
+        socket,
+        to: SocketAddr::new(server_ip, offer.udp_port),
+        encoder: FecEncoder::new(params),
+        sealer,
+        failing: false,
+    }))
+}
+
+/// Send one chunk on the uplink: its datagrams, each sealed. A failed send
+/// is counted and logged once per run of failures; UDP never ends the role.
+fn send_uplink(
+    up: &mut Uplink,
+    chunk: &AudioChunk,
+    stats: &SourceStats,
+    log: &mut dyn FnMut(&str),
+) {
+    let datagrams = match up.encoder.push(chunk) {
+        Ok(d) => d,
+        Err(e) => {
+            stats.ll_send_failures.fetch_add(1, Ordering::Relaxed);
+            log(&format!(
+                "source-low-latency send-failed stream_tag={} detail={}",
+                up.tag, e
+            ));
+            return;
+        }
+    };
+    stats.ll_chunks_sent.fetch_add(1, Ordering::Relaxed);
+    for d in datagrams {
+        let sent = up
+            .sealer
+            .seal(&d)
+            .map_err(|e| io::Error::other(e.to_string()))
+            .and_then(|bytes| up.socket.send_to(&bytes, up.to));
+        match sent {
+            Ok(_) => {
+                stats.ll_datagrams_sent.fetch_add(1, Ordering::Relaxed);
+                up.failing = false;
+            }
+            Err(e) => {
+                stats.ll_send_failures.fetch_add(1, Ordering::Relaxed);
+                if !up.failing {
+                    log(&format!(
+                        "source-low-latency send-failed stream_tag={} detail={}",
+                        up.tag, e
+                    ));
+                }
+                up.failing = true;
+            }
+        }
+    }
 }
 
 /// A running source role.
@@ -799,6 +978,23 @@ pub fn run<C: CaptureSource, U: Upstream>(
                 let _ = end_stream(upstream, s, chunk_ns, &setup.counters, stats, &input);
             }
             return SourceStop::Stopped;
+        }
+
+        // A line-in has no low-latency path: an offer for it is refused, so
+        // the server goes on with the slot path at once.
+        if let Some(ll) = setup.low_latency.as_ref() {
+            while let Ok(offer) = ll.offers.try_recv() {
+                if offer.direction == LowLatencyDirection::FromEndpoint {
+                    let refused = upstream.send(&Message::LowLatencyAccept(LowLatencyAccept {
+                        stream_tag: offer.stream_tag,
+                        status: LowLatencyStatus::RefusedNoSocket,
+                        udp_port: 0,
+                    }));
+                    if let Err(e) = refused {
+                        return lost(e);
+                    }
+                }
+            }
         }
 
         // The server's requests, in order, between chunks.
@@ -1018,6 +1214,7 @@ pub fn run_tv<C: CaptureSource, U: Upstream>(
     let mut cec_wanted = false;
     let mut cec_reason = "quiet";
     let mut failing = false;
+    let mut uplink: Option<Uplink> = None;
     let log = &mut setup.log;
     let wait_ns = TV_READ_WAIT_MS * 1_000_000;
 
@@ -1049,6 +1246,37 @@ pub fn run_tv<C: CaptureSource, U: Upstream>(
             if !was && streaming.is_some() {
                 // A new stream starts at the next chunk cut, never mid-way.
                 tv.clear_output();
+            }
+        }
+
+        // The low-latency uplink's offers (see the module documentation).
+        if let Some(ll) = setup.low_latency.as_ref() {
+            while let Ok(offer) = ll.offers.try_recv() {
+                match offer.direction {
+                    LowLatencyDirection::FromEndpoint => {
+                        match take_uplink(&offer, &input, ll.server_ip, upstream, &mut *log) {
+                            Ok(Some(up)) => {
+                                stats.ll_streams.fetch_add(1, Ordering::Relaxed);
+                                tv.set_chunk_frames(offer.chunk_frames);
+                                uplink = Some(up);
+                            }
+                            Ok(None) => {}
+                            Err(e) => return lost(e),
+                        }
+                    }
+                    LowLatencyDirection::End => {
+                        if uplink.as_ref().is_some_and(|u| u.tag == offer.stream_tag) {
+                            uplink = None;
+                            tv.set_chunk_frames(chunk_frames);
+                            log(&format!(
+                                "source-low-latency end stream_tag={} {}",
+                                offer.stream_tag,
+                                stats.ll_line()
+                            ));
+                        }
+                    }
+                    LowLatencyDirection::ToEndpoint => {}
+                }
             }
         }
 
@@ -1181,7 +1409,7 @@ pub fn run_tv<C: CaptureSource, U: Upstream>(
             let Some(s) = streaming.as_mut() else {
                 continue;
             };
-            let sent = upstream.send(&Message::AudioChunk(AudioChunk {
+            let chunk = AudioChunk {
                 sequence: s.next_sequence,
                 timestamp_ns,
                 sample_rate_hz: input.rate_hz,
@@ -1189,9 +1417,14 @@ pub fn run_tv<C: CaptureSource, U: Upstream>(
                 sample_format: input.sample_format,
                 reserved: [0u8; RESERVED_LEN],
                 audio_data: audio,
-            }));
-            if let Err(e) = sent {
-                return lost(e);
+            };
+            match uplink.as_mut() {
+                Some(up) => send_uplink(up, &chunk, stats, &mut *log),
+                None => {
+                    if let Err(e) = upstream.send(&Message::AudioChunk(chunk)) {
+                        return lost(e);
+                    }
+                }
             }
             s.next_sequence = s.next_sequence.wrapping_add(1);
             s.sent_any = true;

@@ -260,6 +260,7 @@ fn tv_keys_move_the_rooms_volume_within_its_limit_and_tv_power_plays_and_stops_t
                 thresholds: SignalThresholds::default(),
                 log: Box::new(move |l| lines.lock().unwrap().push(l.to_string())),
                 tv_power: Some(TvSignal::new(cec.tv_power(), true)),
+                low_latency: None,
             },
         )
     };

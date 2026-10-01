@@ -21,7 +21,8 @@
 //! (`crate::conductor`), which carries every change to the sessions it
 //! concerns (`room_volume`, `controller_state`, which stream slot a session
 //! hears). The whole process is `6 + 2N + M` threads with the control plane
-//! on, against `3 + 2N` with it off, whatever `--slots` says, and
+//! on, against `3 + 2N` with it off, plus the TV relay's one with any
+//! `--slots` (goal 13, `crate::tvrelay`) whatever their number, and
 //! `crates/server/tests/control_thread_population.rs` grades that against
 //! `/proc`.
 //!
@@ -459,6 +460,7 @@ impl ControlState {
                     None => Some(0),
                     Some(table) => table.slot_of(&z.group),
                 },
+                av_trim_ms: z.av_trim_ms,
             })
             .collect();
         let slots = match &held.slots {
@@ -476,6 +478,14 @@ impl ControlState {
                             .filter(|z| &z.group == group)
                             .map(|z| z.id.clone())
                             .collect(),
+                        low_latency: match zones.source(group) {
+                            Source::LineIn(input) => zones
+                                .autoplay_rules()
+                                .iter()
+                                .find(|r| r.input == input)
+                                .is_none_or(|r| r.low_latency),
+                            _ => false,
+                        },
                     })
                 })
                 .collect(),
@@ -784,6 +794,10 @@ pub struct SlotGroup {
     pub source: Source,
     /// Its rooms, in configured order.
     pub rooms: Vec<String>,
+    /// (goal 13) For a line-in source: whether it may play in low-latency
+    /// mode. An input with an autoplay rule follows the rule's `low_latency`;
+    /// one without a rule may (the rule's default, ASSUMED for a command).
+    pub low_latency: bool,
 }
 
 /// One room as the conductor routes it.
@@ -806,6 +820,9 @@ pub struct RoomView {
     /// one-stream shape, its group's slot in the slot shape, `None` when its
     /// group has no slot (source `none`).
     pub route: Option<usize>,
+    /// (goal 13) Its A/V trim, ms: positive delays the audio; the TV relay
+    /// moves its stamps by it (`crate::tvrelay`).
+    pub av_trim_ms: i16,
 }
 
 /// The room model, read once, as the conductor plans over it.

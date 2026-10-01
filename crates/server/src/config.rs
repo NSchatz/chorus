@@ -145,6 +145,32 @@ pub struct ServerConfig {
     /// For tests only; the audio thread's pace is never scaled. 1 is real
     /// time.
     pub schedule_time_scale: u32,
+    /// (goal 13) The TV relay's UDP port (`crate::tvrelay`), bound on the
+    /// audio listener's address. `None`: the audio port plus one (ASSUMED),
+    /// so an ephemeral audio port (`--listen <addr>:0`, the tests') gives an
+    /// ephemeral UDP port too; `Some(0)` asks for an ephemeral one.
+    pub low_latency_port: Option<u16>,
+    /// (goal 13) `L_tv`, the TV relay's stamp lead before the room's A/V trim,
+    /// in ns; `None` is `chorus_protocol::v2::lowlat::DEFAULTS.l_tv_ns`. A
+    /// value outside the plan's range or below its floor is refused.
+    pub tv_latency_ns: Option<u64>,
+    /// (goal 13) For tests only (`--test-tv-latency-ms`): `tv_latency_ns`
+    /// may leave the plan's 10..40 ms range (up to the offer's 5 s), still
+    /// never below the floor. A shared, loaded test host does not keep a
+    /// 20 ms deadline; the end-to-end tests grade stamps, maps and counts,
+    /// which this does not change.
+    pub tv_latency_test: bool,
+    /// (goal 13) The low-latency streams' FEC: data chunks per parity (0 for
+    /// none, the tests' negative control) and the interleave depth.
+    pub fec_k: u8,
+    /// See [`ServerConfig::fec_k`].
+    pub fec_depth: u8,
+    /// (goal 13) For tests only: drop this many datagrams per million, drawn
+    /// from a generator seeded with the second value, on BOTH UDP legs (each
+    /// datagram the relay receives from a hub and each it sends to a player).
+    /// Never set in a deployment; the flag says so in its name's
+    /// documentation and in `docs/control-plane.md`.
+    pub udp_loss: Option<(u32, u64)>,
 }
 
 impl Default for ServerConfig {
@@ -185,6 +211,12 @@ impl Default for ServerConfig {
             tz: None,
             civil_time_from: None,
             schedule_time_scale: 1,
+            low_latency_port: None,
+            tv_latency_ns: None,
+            tv_latency_test: false,
+            fec_k: chorus_protocol::v2::lowlat::DEFAULTS.fec_k,
+            fec_depth: chorus_protocol::v2::lowlat::DEFAULTS.fec_depth,
+            udp_loss: None,
         }
     }
 }
@@ -265,12 +297,24 @@ pub enum ServerConfigError {
         /// Every transport the committed configuration names.
         permitted: String,
     },
+    /// (goal 13) A low-latency flag the plan refuses: an `L_tv` out of range
+    /// or below the floor, an FEC shape the offer cannot carry, a loss
+    /// specification that is not `<ppm>,<seed>`.
+    LowLatency {
+        /// The argument as it was given.
+        argument: String,
+        /// Why.
+        detail: String,
+    },
 }
 
 impl fmt::Display for ServerConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ServerConfigError::Format(e) => write!(f, "{}", e),
+            ServerConfigError::LowLatency { argument, detail } => {
+                write!(f, "argument '{}' refused: {}", argument, detail)
+            }
             ServerConfigError::UnknownArgument { argument } => {
                 write!(f, "unknown argument '{}'", argument)
             }
@@ -492,6 +536,47 @@ impl ServerConfig {
                     }
                     config.schedule_time_scale = n as u32;
                 }
+                "--low-latency-port" => {
+                    let n = number(&arg, &value()?)?;
+                    config.low_latency_port =
+                        Some(u16::try_from(n).map_err(|_| ServerConfigError::LowLatency {
+                            argument: arg.clone(),
+                            detail: format!("{} is not a UDP port", n),
+                        })?);
+                }
+                "--tv-latency-ms" => {
+                    config.tv_latency_ns = Some(number(&arg, &value()?)?.saturating_mul(1_000_000))
+                }
+                "--test-tv-latency-ms" => {
+                    config.tv_latency_ns = Some(number(&arg, &value()?)?.saturating_mul(1_000_000));
+                    config.tv_latency_test = true;
+                }
+                "--fec-k" => {
+                    config.fec_k = u8::try_from(number(&arg, &value()?)?).unwrap_or(u8::MAX)
+                }
+                "--fec-depth" => {
+                    config.fec_depth = u8::try_from(number(&arg, &value()?)?).unwrap_or(u8::MAX)
+                }
+                "--udp-loss" => {
+                    let text = value()?;
+                    let parsed = text.split_once(',').and_then(|(ppm, seed)| {
+                        Some((ppm.parse::<u32>().ok()?, seed.parse::<u64>().ok()?))
+                    });
+                    match parsed {
+                        Some((ppm, seed)) if ppm <= 1_000_000 => {
+                            config.udp_loss = Some((ppm, seed))
+                        }
+                        _ => {
+                            return Err(ServerConfigError::LowLatency {
+                                argument: arg.clone(),
+                                detail: format!(
+                                    "'{}' is not <ppm>,<seed> with ppm at most 1000000",
+                                    text
+                                ),
+                            })
+                        }
+                    }
+                }
                 "--advertise" => config.advertise = true,
                 "--instance" => config.instance = value()?,
                 other => {
@@ -527,7 +612,40 @@ impl ServerConfig {
         if config.event_streams == 0 {
             return Err(ServerConfigError::NoEventStreamsAllowed);
         }
+        // The low-latency plan these flags make must be one the offer can
+        // carry and the floor rule allows (ADR 0091): refused, never raised.
+        let plan = config.low_latency_plan();
+        if let Err(e) = plan.fec() {
+            return Err(ServerConfigError::LowLatency {
+                argument: "--fec-k/--fec-depth".to_string(),
+                detail: e.to_string(),
+            });
+        }
+        if let Err(e) = plan.check_latency(plan.l_tv_ns) {
+            return Err(ServerConfigError::LowLatency {
+                argument: "--tv-latency-ms".to_string(),
+                detail: e.to_string(),
+            });
+        }
         Ok(config)
+    }
+}
+
+impl ServerConfig {
+    /// The low-latency plan this configuration runs (goal 13): the protocol's
+    /// defaults with this server's rate, `L_tv` and FEC shape.
+    pub fn low_latency_plan(&self) -> chorus_protocol::v2::lowlat::Plan {
+        let mut plan = chorus_protocol::v2::lowlat::DEFAULTS;
+        plan.sample_rate_hz = self.sample_rate_hz;
+        plan.fec_k = self.fec_k;
+        plan.fec_depth = self.fec_depth;
+        if let Some(l) = self.tv_latency_ns {
+            plan.l_tv_ns = l;
+        }
+        if self.tv_latency_test {
+            plan.l_tv_range_ns = (0, chorus_protocol::v2::LOW_LATENCY_MAX_LATENCY_NS);
+        }
+        plan
     }
 }
 

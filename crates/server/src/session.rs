@@ -47,6 +47,7 @@ use crate::controller::ControllerAction;
 use crate::linein::LineIns;
 use crate::router::{Router, SessionStart};
 use crate::stream::Fanout;
+use crate::tvrelay::TvRelay;
 use chorus_protocol::{CHUNK_HEADER_LEN, HEADER_LEN};
 
 /// The file holding the server's long-term secret key.
@@ -409,6 +410,10 @@ pub struct SessionContext {
     /// `None` when this server plays no line-in (no control plane, or the
     /// one-stream shape): its source messages are then ignored, as before.
     pub line_ins: Option<Arc<LineIns>>,
+    /// (goal 13) The TV relay a `low_latency_accept` (0x17) goes to
+    /// (`crate::tvrelay`), or `None` when this server relays no TV (no
+    /// line-ins): an accept is then ignored.
+    pub tv_relay: Option<Arc<TvRelay>>,
 }
 
 impl fmt::Debug for SessionContext {
@@ -434,6 +439,7 @@ impl SessionContext {
             control: None,
             router: Arc::new(Router::single(Arc::new(Fanout::new()))),
             line_ins: None,
+            tv_relay: None,
         }
     }
 
@@ -477,6 +483,8 @@ pub struct Greeting {
     /// The most visualizer bands its `capabilities` asked for (0 to 64,
     /// validated by the decoder); what its `visualizer_frame`s carry.
     pub visualizer_bands: u8,
+    /// Its `capabilities.features` (goal 13: `low_latency`).
+    pub features: u8,
 }
 
 /// The session the reader runs its requests over.
@@ -643,6 +651,7 @@ pub fn establish<'a>(
             endpoint_id: established.peer_id,
             roles: hello.roles,
             visualizer_bands: caps.visualizer_bands,
+            features: caps.features,
         },
     ))
 }
@@ -696,6 +705,13 @@ pub fn route_controller(
                 }
                 _ => {}
             }
+        }
+        // A player's or a hub's answer to a low-latency offer (goal 13).
+        if let Message::LowLatencyAccept(accept) = &m {
+            if let Some(relay) = ctx.tv_relay.as_ref() {
+                relay.accept(session, accept);
+            }
+            return;
         }
         let Message::ControllerCommand(command) = m else {
             return;

@@ -64,6 +64,7 @@ pub mod delaylog;
 pub mod dsp;
 pub mod front_panel;
 pub mod logcheck;
+pub mod lowlat;
 pub mod offsets;
 pub mod outmap;
 pub mod ratematch;

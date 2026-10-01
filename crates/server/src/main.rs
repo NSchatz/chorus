@@ -58,10 +58,14 @@
 //!   subscriber has connected, the **event writer** that holds every event
 //!   stream (`chorus_server::events`) and the **conductor** that carries
 //!   every change to the audio sessions (`chorus_server::conductor`), and
-//!   with `--advertise` one **advertiser**.
+//!   with `--advertise` one **advertiser**;
+//! - with `--slots` (the line-ins) and the control plane, the **tv-relay**
+//!   (goal 13, `chorus_server::tvrelay`), which receives, restamps and sends
+//!   on the TV path's datagrams.
 //!
 //! So the population is `3 + 2N` without the control plane and
-//! `6 + 2N + M` with it, plus one for the advertiser, and NOT ONE of those
+//! `6 + 2N + M` with it, plus one for the advertiser and one for the TV
+//! relay with `--slots`, and NOT ONE of those
 //! numbers is a function of how many endpoints or browsers are switched on,
 //! nor of `--slots`: every stream slot is cut by the one audio thread
 //! (`chorus_server::slots`).
@@ -112,6 +116,7 @@ use chorus_server::session::{
 use chorus_server::slots::{serve_slots, SlotCommand, SlotEvent, SlotMedia};
 use chorus_server::source::{self, PcmSource};
 use chorus_server::stream::FanoutSink;
+use chorus_server::tvrelay::{RelaySetup, TvRelay};
 
 const EXIT_CONFIG: u8 = 2;
 const EXIT_CONTRACT: u8 = 3;
@@ -182,6 +187,21 @@ fn report(what: &str, detail: &str) {
 /// A listen address with no port in it cannot be advertised, and zero is what
 /// says so: an SRV record naming port 0 is one nothing can connect to, which is
 /// the honest answer where the port is unknown.
+/// The TV relay's UDP address: the audio listener's address, on
+/// `--low-latency-port` or, by default, the audio port plus one (ASSUMED; an
+/// ephemeral audio port gives an ephemeral UDP port).
+fn udp_address(listen: &str, port: Option<u16>) -> Option<std::net::SocketAddr> {
+    use std::net::ToSocketAddrs;
+    let mut audio = listen.to_socket_addrs().ok()?.next()?;
+    let port = match (port, audio.port()) {
+        (Some(p), _) => p,
+        (None, 0) => 0,
+        (None, p) => p.checked_add(1)?,
+    };
+    audio.set_port(port);
+    Some(audio)
+}
+
 fn port_of(address: &str) -> u16 {
     address
         .rsplit_once(':')
@@ -815,6 +835,92 @@ fn main() -> ExitCode {
     // negotiation succeed, so a refused peer (a v1 client, a changed key, a
     // port probe) never starts a stream.
     let (arrived, arrivals) = mpsc::channel::<()>();
+
+    // The TV relay (goal 13, `chorus_server::tvrelay`): with line-ins (the
+    // slot shape and a control plane), one UDP socket beside the audio
+    // listener and one thread, created here with the rest of the
+    // population. Without line-ins there is no TV to relay and neither
+    // exists.
+    let mut relay_threads = 0usize;
+    let tv_relay = match (&line_ins, &control) {
+        (Some(_), Some((_, state))) => {
+            let address = match udp_address(&config.listen, config.low_latency_port) {
+                Some(a) => a,
+                None => {
+                    report(
+                        "the low-latency socket could not be bound",
+                        &format!("{} names no address", config.listen),
+                    );
+                    println!("chorus-server: stopped reason=bind-failed chunks_sent=0 played=0");
+                    return ExitCode::from(EXIT_TRANSPORT);
+                }
+            };
+            let socket = match std::net::UdpSocket::bind(address) {
+                Ok(s) => s,
+                Err(e) => {
+                    report(
+                        "the low-latency socket could not be bound",
+                        &format!("{}: {}", address, e),
+                    );
+                    println!("chorus-server: stopped reason=bind-failed chunks_sent=0 played=0");
+                    return ExitCode::from(EXIT_TRANSPORT);
+                }
+            };
+            let relay = {
+                let router = Arc::clone(&router);
+                let wake = Arc::clone(state);
+                let say = status.clone();
+                TvRelay::new(RelaySetup {
+                    socket,
+                    plan: config.low_latency_plan(),
+                    shape: (format.sample_rate_hz, format.channels, format.sample_format),
+                    timeline,
+                    send: Box::new(move |id, m| router.push_message(id, m)),
+                    wake: Box::new(move || wake.wake_conductor()),
+                    say: Box::new(move |line| say.say(line)),
+                    key: Box::new(|| chorus_server::session::random_32().ok()),
+                    loss: config.udp_loss,
+                })
+            };
+            match relay {
+                Ok(r) => Some(Arc::new(r)),
+                Err(e) => {
+                    report("the low-latency relay could not start", &e.to_string());
+                    println!("chorus-server: stopped reason=bind-failed chunks_sent=0 played=0");
+                    return ExitCode::from(EXIT_TRANSPORT);
+                }
+            }
+        }
+        _ => None,
+    };
+    if let Some(relay) = &tv_relay {
+        relay_threads = 1;
+        let plan = relay.plan();
+        status.say(&format!(
+            "low-latency listening port={} chunk_frames={} fec_k={} fec_depth={} l_tv_ns={} \
+             floor_ns={} udp_loss_ppm={}",
+            relay.port(),
+            plan.chunk_frames,
+            plan.fec_k,
+            plan.fec_depth,
+            plan.l_tv_ns,
+            plan.floor_ns(),
+            config.udp_loss.map_or(0, |(ppm, _)| ppm)
+        ));
+        let relay = Arc::clone(relay);
+        let keep = Arc::clone(&keep);
+        let registry = Arc::clone(&registry);
+        let ready = ready.clone();
+        thread::spawn(move || {
+            register_ordinary_thread("tv-relay", &registry);
+            if ready.send(()).is_err() {
+                return;
+            }
+            drop(ready);
+            relay.run(&keep);
+        });
+    }
+
     let session = Arc::new(SessionContext {
         identity,
         adoptions,
@@ -836,6 +942,7 @@ fn main() -> ExitCode {
         control: control.as_ref().map(|(_, state)| Arc::clone(state)),
         router: Arc::clone(&router),
         line_ins: line_ins.clone(),
+        tv_relay: tv_relay.clone(),
     });
     drop(arrived);
 
@@ -917,6 +1024,9 @@ fn main() -> ExitCode {
                 (config.slots > 0).then(|| slot_commands.clone()),
             )
             .with_transports(transports.clone());
+            if let Some(relay) = &tv_relay {
+                conductor = conductor.with_tv_relay(Arc::clone(relay));
+            }
             if let Some(zone) = schedule_zone.take() {
                 let civil = match (config.civil_time, config.civil_time_from) {
                     (Some(at), _) => CivilClock::Fixed(fixed_civil_instant(&zone, at)),
@@ -978,7 +1088,7 @@ fn main() -> ExitCode {
     drop(ready);
 
     // The report is taken over the whole population or not at all.
-    let expected = 1 + client_threads + control_threads + advertiser_threads;
+    let expected = 1 + client_threads + control_threads + advertiser_threads + relay_threads;
     let mut up = 0usize;
     while came_up.recv().is_ok() {
         up += 1;

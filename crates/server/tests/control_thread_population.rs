@@ -876,9 +876,17 @@ fn the_population_does_not_depend_on_the_number_of_stream_slots() {
         let threads = kernel_threads(pid);
         let declared: BTreeSet<u32> = rows.iter().map(|r| r.tid).collect();
         assert_eq!(declared, threads, "--slots {}: {:?}", slots, rows);
+        // With slots the line-ins exist, and with them the TV relay's one
+        // thread (goal 13, `chorus_server::tvrelay`): still not a function
+        // of S.
+        assert!(
+            rows.iter().any(|r| r.role == "tv-relay"),
+            "no tv-relay row in {:?}",
+            rows
+        );
         assert_eq!(
             threads.len(),
-            population(MAX_CLIENTS, 2),
+            population(MAX_CLIENTS, 2) + 1,
             "--slots {} runs {} threads: {:?}",
             slots,
             threads.len(),
@@ -900,7 +908,7 @@ fn the_population_does_not_depend_on_the_number_of_stream_slots() {
     }
     assert_eq!(counts[0], counts[1], "S = 1 and S = 8 run the same threads");
     println!(
-        "population with --slots 1 and --slots 8: {} threads each (6 + 2N + M, N={}, M=2)",
+        "population with --slots 1 and --slots 8: {} threads each (6 + 2N + M + 1, N={}, M=2)",
         counts[0], MAX_CLIENTS
     );
 }

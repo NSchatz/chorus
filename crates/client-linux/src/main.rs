@@ -56,6 +56,7 @@ use chorus_client_linux::control::{ControlLink, ZoneWatch};
 use chorus_client_linux::delaylog::DelayLog;
 use chorus_client_linux::dsp::{self, DspSink};
 use chorus_client_linux::front_panel::{FrontPanel, LedWriter, PanelConfig};
+use chorus_client_linux::lowlat::LowLatPlayer;
 use chorus_client_linux::outmap;
 use chorus_client_linux::receive::{handshake, HandshakeError};
 use chorus_client_linux::run::{counter_lines, header_for, run_session, StopReason};
@@ -641,6 +642,9 @@ fn play(
         return refused(EXIT_SERVER, "connection-unconfigurable");
     }
     let _ = stream.set_nodelay(true);
+    // The server's address: the only one the low-latency path (goal 13)
+    // sends to or takes datagrams from.
+    let server_ip = stream.peer_addr().ok().map(|a| a.ip());
 
     // Protocol v2: the encrypted session, this endpoint's hello and
     // capabilities, and the server's key checked against its pin. Nothing is
@@ -664,6 +668,8 @@ fn play(
         writer,
         announced,
         source_control,
+        low_latency_player,
+        low_latency_source,
         ..
     } = secure;
     // One writer for the session, shared by the time-sync exchange, the
@@ -709,6 +715,30 @@ fn play(
         let mut uplink = writer.clone();
         cec.connect(Box::new(move |m| uplink.send(m)));
     }
+    // The TV path's low-latency stream to this player (goal 13): offers are
+    // answered by the playout loop, through the watch, for this session only.
+    let low_latency = server_ip.map(|ip| {
+        let player = LowLatPlayer::new(
+            low_latency_player,
+            Box::new(writer.clone()),
+            ip,
+            config,
+            Box::new(status),
+        );
+        watch.set_low_latency(Arc::clone(&player));
+        player
+    });
+    struct EndLowLatency<'a>(Option<Arc<LowLatPlayer>>, &'a ZoneWatch);
+    impl Drop for EndLowLatency<'_> {
+        fn drop(&mut self) {
+            self.1.clear_low_latency();
+            if let Some(player) = self.0.take() {
+                player.stop_all();
+                status(&player.status_line());
+            }
+        }
+    }
+    let _end_low_latency = EndLowLatency(low_latency, watch);
     *lock_session_counters() = Some(Arc::clone(&counters));
     // The panel is told when this session ends, whichever way it ends, and
     // its LED stops following this session's offset.
@@ -743,6 +773,10 @@ fn play(
                 timeline,
                 source_control,
                 cec.map(|c| c.tv_power()),
+                server_ip.map(|server_ip| source::LowLatUplink {
+                    offers: low_latency_source,
+                    server_ip,
+                }),
             )
         }),
     );
@@ -969,6 +1003,7 @@ impl Drop for SourceGuard {
             status(&stats.line());
             if self.0 {
                 status(&stats.tv_line());
+                status(&stats.ll_line());
             }
             status(&format!("source stopped reason={}", stop.name()));
         }
@@ -978,6 +1013,7 @@ impl Drop for SourceGuard {
 /// Open the configured line-in and run the source role on it. A capture
 /// device that cannot be opened is reported by name and the endpoint goes on
 /// playing: its first offer already said there is no signal, which stays true.
+#[allow(clippy::too_many_arguments)]
 fn start_source(
     config: &ClientConfig,
     input: &chorus_client_linux::config::LineInConfig,
@@ -986,6 +1022,7 @@ fn start_source(
     timeline: MonotonicTimeline,
     controls: std::sync::mpsc::Receiver<chorus_protocol::v2::SourceControl>,
     tv_power: Option<Arc<chorus_cec::TvPower>>,
+    low_latency: Option<source::LowLatUplink>,
 ) -> Option<SourceHandle> {
     let capture = match AlsaCapture::open(input) {
         Ok(c) => c,
@@ -1023,6 +1060,9 @@ fn start_source(
             controls,
             thresholds: SignalThresholds::default(),
             log: Box::new(status),
+            // The TV path's low-latency uplink (goal 13): a TV input sends
+            // its chunks as datagrams while the server has offered one.
+            low_latency,
             // CEC's TV power drives a TV input only: an optical or HDMI ARC
             // input is the TV's sound; an analogue line-in is not.
             tv_power: tv_power

@@ -90,6 +90,9 @@ pub struct ZoneWatch {
     /// same frames at its next write. `None`: the gain is applied here, as
     /// it always was.
     dsp_gains: Mutex<Option<Vec<u32>>>,
+    /// (goal 13) The session's low-latency path (`crate::lowlat`), which the
+    /// play loop serves and plays from while a stream runs. Set per session.
+    low_latency: Mutex<Option<Arc<crate::lowlat::LowLatPlayer>>>,
 }
 
 impl Default for ZoneWatch {
@@ -116,7 +119,24 @@ impl ZoneWatch {
             room: Mutex::new(RoomGain::new(ceiling)),
             sound_inbox: Arc::new(SoundInbox::default()),
             dsp_gains: Mutex::new(None),
+            low_latency: Mutex::new(None),
         }
+    }
+
+    /// The session's low-latency path, from now on (the play loop answers
+    /// its offers and plays its stream while one runs).
+    pub fn set_low_latency(&self, player: Arc<crate::lowlat::LowLatPlayer>) {
+        *lock_or_recover(&self.low_latency) = Some(player);
+    }
+
+    /// Forget the session's low-latency path (the session ended).
+    pub fn clear_low_latency(&self) {
+        *lock_or_recover(&self.low_latency) = None;
+    }
+
+    /// The session's low-latency path, if one was set.
+    pub fn low_latency(&self) -> Option<Arc<crate::lowlat::LowLatPlayer>> {
+        lock_or_recover(&self.low_latency).clone()
     }
 
     /// Hand the gain to the endpoint DSP (`on`), or take it back. While it is
@@ -528,6 +548,13 @@ impl ControlLink {
                 watch.absorb(payload, &self.zone);
             }
         }
+    }
+}
+
+fn lock_or_recover<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    match m.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
     }
 }
 

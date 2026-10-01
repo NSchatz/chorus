@@ -1034,6 +1034,47 @@ restamped and sent on with its own `group` and `group_index`, and the
 downstream parity of a group leaves when the group's last chunk does, so the
 FEC wait is paid once from capture to speaker, not once per leg.
 
+### What the server and a Linux endpoint do (goal 13 integration)
+
+The server (`crates/server/src/tvrelay.rs`, the policy in
+`docs/control-plane.md` "The TV relay"):
+
+1. When a TV input should play in low-latency mode, it sends each player
+   session of the room a `0x16` `to_endpoint` (a fresh key and tag each,
+   `latency_ns` the plan's `L_tv`), and only once every one of them answered
+   `0x17` accepted, the hub a `0x16` `from_endpoint` with its UDP port. A
+   refusal, or an offer unanswered for 2 s (ASSUMED), ends every stream of
+   that play with `0x16` `end`; the TV stays on its slot.
+2. Its relay thread opens each datagram from the hub's address (form, tag,
+   replay window, AEAD), decodes the FEC, and restamps every chunk handed on:
+   `play_at = capture_stamp + lead`, `lead = max(floor, L_tv + av_trim_ms)`
+   (`chorus_control::theater::tv_play_at_lead_ns`; `av-trim-clamped` when
+   the floor holds it). A chunk whose `play_at` has passed is never sent.
+   Each chunk goes through each player's `FecRelay` (the hub's groups,
+   kept) and `Sealer` to the port the player accepted with. It closes FEC
+   groups (`expire_before`) as their play-at passes, counting what they still
+   miss as unrecoverable.
+3. It ends a stream (`0x16` `end`) when its play is no longer wanted (the
+   room grouped, the autoplay stopped, a session gone).
+
+A Linux endpoint (`crates/client-linux/src/lowlat.rs`, `source.rs`; flags in
+`docs/linux-endpoint.md`):
+
+- advertises `low_latency` only when it is wired and `--low-latency` is on;
+- as a player, answers `to_endpoint` with a UDP socket's port (or a refusal
+  naming why), receives, opens, decodes the FEC, and plays each chunk when
+  its stamp is due on its device (its own output path counted), dropping a
+  late one and fading over a missing one rather than cutting; the room's
+  volume and sound apply as on the TCP path; `end` returns it to the TCP
+  stream;
+- as the hub, answers `from_endpoint`, cuts its TV input into the offer's
+  `chunk_frames` and sends each chunk as datagrams (its `FecEncoder` and
+  `Sealer`) to the server's port instead of up the session; `end` returns
+  it to 20 ms chunks on the session.
+
+The C endpoint has the datagram layer and its vectors but not the socket, the
+session wiring or a per-stream key: it never advertises `low_latency` yet.
+
 ### Defaults and the budget
 
 `crates/protocol/src/v2/lowlat.rs`, `DEFAULTS` (the server, the hub and the

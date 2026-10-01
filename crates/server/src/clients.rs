@@ -293,6 +293,7 @@ impl ClientPool {
                                 out.clone(),
                                 &start,
                             );
+                            session.router.set_link(id, hello.features, peer.ip());
                             if let Some(control) = &session.control {
                                 // Anything committed between the start and
                                 // the registration reaches it this way.
@@ -324,6 +325,11 @@ impl ClientPool {
                                 line_ins.session_ended(id);
                             }
                             session.router.unregister(id);
+                            // The TV relay's streams of this session end on
+                            // the conductor's next pass (`crate::tvrelay`).
+                            if let Some(control) = &session.control {
+                                control.wake_conductor();
+                            }
                         }
                         drop(greeting);
                         drop(out);
