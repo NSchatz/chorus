@@ -1,0 +1,1 @@
+{"v":2,"t":"alarm_set","alarm":"wake","target":"bedroom","time":"06:45","days":["mon","tue","wed","thu","fri"],"source":"chime:bell","volume":0.300,"ramp_s":30,"duration_min":60,"enabled":true}

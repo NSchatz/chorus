@@ -1,0 +1,14 @@
+# Canonical input for the catalog v2 error-alarm-time vector.
+#
+# `input` is refused, by the decoder or by the room state the commands below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-alarm-time.json. Nothing of it is applied.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+zones = bedroom
+input = {"v":2,"t":"alarm_set","alarm":"wake","target":"bedroom","time":"6:45","days":[],"source":"chime:bell","volume":0.300,"ramp_s":30,"duration_min":60,"enabled":true}
+field = time
+ends_the_session = 0

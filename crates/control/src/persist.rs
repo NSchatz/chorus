@@ -40,16 +40,38 @@
 //! so a process killed mid-write leaves either the old state or the new one and
 //! never half of either. That matters here more than usual: the criterion this
 //! serves is about a server killed with SIGKILL.
+//!
+//! And a rename is only as durable as what the disk was told (goal 2's audit,
+//! B-9): the temporary is `fsync`ed BEFORE it is renamed, so the name never
+//! points at data still in a page cache, and the directory is `fsync`ed AFTER,
+//! so the rename itself survives a power cut and not only a killed process.
+//!
+//! # Format 2 (catalog v2)
+//!
+//! Format 2 adds a room's `limit`, `quiet` hours and `bond`, and four section
+//! kinds: `[endpoint <id>]` (its link), `[saved-group <id>]`, `[alarm <id>]`
+//! and `[autoplay <endpoint>/<input>]`. A format 1 file still loads, unchanged,
+//! with every format 2 field at its default; the next write is format 2. What
+//! is a fact about NOW stays out, as in format 1: which endpoints are present,
+//! which quiet window is active, which alarm is ringing, what a group is
+//! playing, a sleep timer's countdown, and which inputs are offered.
 
 use std::fmt;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use crate::catalog::{is_display_name, is_identifier, Volume};
+use crate::catalog::{is_display_name, is_identifier, Command, Volume};
+use crate::rooms::{
+    validate_layout, Alarm, Autoplay, BondMember, ClockTime, Days, InputId, Link, QuietWindow,
+    Role, SavedGroup, Source, MAX_DURATION_MIN, MAX_QUIET_WINDOWS, MAX_RAMP_S,
+};
 use crate::zones::{Zone, Zones};
 
-/// The version of this file format.
-pub const STATE_FORMAT: u32 = 1;
+/// The version of this file format, which is what every write produces.
+pub const STATE_FORMAT: u32 = 2;
+
+/// Every format this build reads.
+pub const READ_FORMATS: &[u32] = &[1, 2];
 
 /// Why persisted state could not be read.
 #[derive(Debug)]
@@ -150,7 +172,8 @@ fn code(raw: &str) -> &str {
 /// Render the persisted form of `zones`.
 ///
 /// Deterministic: the same state renders the same bytes, so a state file is
-/// reviewable in a diff and a test can assert on it.
+/// reviewable in a diff and a test can assert on it. Always the current
+/// format, [`STATE_FORMAT`].
 pub fn render(zones: &Zones) -> String {
     let mut out = String::new();
     out.push_str("# chorus zone state, written by chorus-server.\n");
@@ -163,6 +186,8 @@ pub fn render(zones: &Zones) -> String {
         "# deliberately is not. Editing this file by hand is supported; the server reads\n",
     );
     out.push_str("# it once at start and refuses to start on a file it cannot parse.\n");
+    out.push_str("# Format 2 adds [endpoint], [saved-group], [alarm] and [autoplay] sections\n");
+    out.push_str("# and a room's limit, quiet hours and bonded set (docs/control-plane.md).\n");
     out.push('\n');
     out.push_str(&format!("format = {}\n", STATE_FORMAT));
     out.push_str(&format!("serial = {}\n", zones.serial()));
@@ -181,8 +206,116 @@ pub fn render(zones: &Zones) -> String {
                 .collect::<Vec<_>>()
                 .join(",")
         ));
+        out.push_str(&format!("limit = {}\n", zone.limit.literal()));
+        out.push_str(&format!(
+            "quiet = {}\n",
+            zone.quiet
+                .iter()
+                .map(|w| w.persisted())
+                .collect::<Vec<_>>()
+                .join("; ")
+        ));
+        out.push_str(&format!(
+            "bond = {}\n",
+            zone.bond
+                .iter()
+                .map(|b| format!("{}:{}", b.role, escape(&b.endpoint)))
+                .collect::<Vec<_>>()
+                .join(",")
+        ));
+    }
+    for (endpoint, link) in zones.links() {
+        out.push('\n');
+        out.push_str(&format!("[endpoint {}]\n", escape(endpoint)));
+        out.push_str(&format!("link = {}\n", link));
+    }
+    for group in zones.saved_groups() {
+        out.push('\n');
+        out.push_str(&format!("[saved-group {}]\n", escape(&group.id)));
+        out.push_str(&format!("name = {}\n", escape(&group.name)));
+        out.push_str(&format!("zones = {}\n", group.zones.join(",")));
+    }
+    for alarm in zones.alarms() {
+        out.push('\n');
+        out.push_str(&format!("[alarm {}]\n", escape(&alarm.id)));
+        out.push_str(&format!("target = {}\n", alarm.target));
+        out.push_str(&format!("time = {}\n", alarm.time));
+        out.push_str(&format!("days = {}\n", alarm.days.names().join(",")));
+        out.push_str(&format!("source = {}\n", alarm.source.literal()));
+        out.push_str(&format!("volume = {}\n", alarm.volume.literal()));
+        out.push_str(&format!("ramp_s = {}\n", alarm.ramp_s));
+        out.push_str(&format!("duration_min = {}\n", alarm.duration_min));
+        out.push_str(&format!("enabled = {}\n", u8::from(alarm.enabled)));
+    }
+    for rule in zones.autoplay_rules() {
+        out.push('\n');
+        out.push_str(&format!("[autoplay {}]\n", rule.input.literal()));
+        out.push_str(&format!("target = {}\n", rule.target));
+        out.push_str(&format!("enabled = {}\n", u8::from(rule.enabled)));
     }
     out
+}
+
+/// One section of the file: its kind, its id, its fields and the line its
+/// header is on.
+struct Section {
+    kind: String,
+    id: String,
+    fields: Vec<(String, String)>,
+    line: usize,
+}
+
+impl Section {
+    fn get(&self, key: &str) -> Result<String, StateError> {
+        self.fields
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.clone())
+            .ok_or(StateError::Malformed {
+                line: 0,
+                detail: format!("{} '{}' has no '{}'", self.kind, self.id, key),
+            })
+    }
+
+    fn fail(&self, detail: String) -> StateError {
+        StateError::Malformed {
+            line: self.line,
+            detail: format!("{} '{}': {}", self.kind, self.id, detail),
+        }
+    }
+
+    fn flag(&self, key: &str) -> Result<bool, StateError> {
+        match self.get(key)?.as_str() {
+            "0" => Ok(false),
+            "1" => Ok(true),
+            other => Err(self.fail(format!("{} = '{}', which is not 0 or 1", key, other))),
+        }
+    }
+
+    fn number(&self, key: &str, max: u32) -> Result<u32, StateError> {
+        let text = self.get(key)?;
+        match text.parse::<u32>() {
+            Ok(n) if n <= max && n.to_string() == text => Ok(n),
+            _ => Err(self.fail(format!("{} = '{}', which is not 0 to {}", key, text, max))),
+        }
+    }
+}
+
+/// The section kinds each format has.
+fn kinds_of(format: u32) -> &'static [&'static str] {
+    if format == 1 {
+        &["zone"]
+    } else {
+        &["zone", "endpoint", "saved-group", "alarm", "autoplay"]
+    }
+}
+
+fn list(text: &str) -> Vec<String> {
+    text.split(',')
+        .map(|e| e.trim())
+        .filter(|e| !e.is_empty())
+        .map(|e| e.to_string())
+        .collect()
 }
 
 /// Read the persisted form back.
@@ -190,12 +323,16 @@ pub fn render(zones: &Zones) -> String {
 /// Every field is required and nothing is defaulted. A state file with a
 /// missing field is a state file somebody edited wrongly, and inventing the
 /// missing value is how a zone comes back at a volume nobody set.
+///
+/// A format 1 file (what every build before catalog v2 wrote) loads
+/// unchanged: it has none of format 2's fields, and every room comes back with
+/// the v2 defaults (no limit below full scale, no quiet hours, no bonded set),
+/// which is exactly the state that build had. The next write is format 2.
 pub fn load(text: &str, default_audio: &str) -> Result<Zones, StateError> {
     let mut zones = Zones::new(default_audio);
     let mut serial: Option<u64> = None;
     let mut format: Option<u32> = None;
-    let mut current: Option<(String, Vec<(String, String)>)> = None;
-    let mut pending: Vec<(String, Vec<(String, String)>)> = Vec::new();
+    let mut sections: Vec<Section> = Vec::new();
 
     for (index, raw) in text.lines().enumerate() {
         let line = index + 1;
@@ -208,27 +345,44 @@ pub fn load(text: &str, default_audio: &str) -> Result<Zones, StateError> {
                 line,
                 detail: "a section header is not closed with ']'".to_string(),
             })?;
-            let id = header
-                .strip_prefix("zone ")
-                .ok_or(StateError::Malformed {
+            let (kind, id) = header.split_once(' ').ok_or(StateError::Malformed {
+                line,
+                detail: format!("'[{}]' is not a section this format has", header),
+            })?;
+            if !kinds_of(STATE_FORMAT).contains(&kind) {
+                return Err(StateError::Malformed {
                     line,
                     detail: format!("'[{}]' is not a section this format has", header),
-                })?
-                .trim();
+                });
+            }
             // Unescaped like any other value. An identifier can hold neither a
             // backslash nor a hash, so this is a no-op on every valid header
             // and a named refusal on one somebody hand-edited wrongly.
-            let id = unescape(id).map_err(|detail| StateError::Malformed { line, detail })?;
-            if !is_identifier(&id) {
+            let id =
+                unescape(id.trim()).map_err(|detail| StateError::Malformed { line, detail })?;
+            let valid = if kind == "autoplay" {
+                InputId::parse(&id).is_some()
+            } else {
+                is_identifier(&id)
+            };
+            if !valid {
                 return Err(StateError::Malformed {
                     line,
-                    detail: format!("'{}' is not a zone identifier", id),
+                    detail: format!("'{}' is not a {} identifier", id, kind),
                 });
             }
-            if let Some(section) = current.take() {
-                pending.push(section);
+            if sections.iter().any(|s| s.kind == kind && s.id == id) {
+                return Err(StateError::Malformed {
+                    line,
+                    detail: format!("[{} {}] is given twice", kind, id),
+                });
             }
-            current = Some((id, Vec::new()));
+            sections.push(Section {
+                kind: kind.to_string(),
+                id,
+                fields: Vec::new(),
+                line,
+            });
             continue;
         }
         let (key, value) = body.split_once('=').ok_or(StateError::Malformed {
@@ -238,15 +392,15 @@ pub fn load(text: &str, default_audio: &str) -> Result<Zones, StateError> {
         let key = key.trim().to_string();
         let value =
             unescape(value.trim()).map_err(|detail| StateError::Malformed { line, detail })?;
-        match current.as_mut() {
-            Some((_, fields)) => {
-                if fields.iter().any(|(k, _)| *k == key) {
+        match sections.last_mut() {
+            Some(section) => {
+                if section.fields.iter().any(|(k, _)| *k == key) {
                     return Err(StateError::Malformed {
                         line,
-                        detail: format!("'{}' is given twice in this zone", key),
+                        detail: format!("'{}' is given twice in this {}", key, section.kind),
                     });
                 }
-                fields.push((key, value));
+                section.fields.push((key, value));
             }
             None => match key.as_str() {
                 "format" => {
@@ -270,18 +424,22 @@ pub fn load(text: &str, default_audio: &str) -> Result<Zones, StateError> {
             },
         }
     }
-    if let Some(section) = current.take() {
-        pending.push(section);
-    }
 
-    match format {
-        Some(STATE_FORMAT) => {}
+    let format = match format {
+        Some(f) if READ_FORMATS.contains(&f) => f,
         Some(other) => {
             return Err(StateError::Malformed {
                 line: 0,
                 detail: format!(
-                    "this state file declares format {} and this build writes and reads format {}",
-                    other, STATE_FORMAT
+                    "this state file declares format {} and this build writes format {} and \
+                     reads formats {}",
+                    other,
+                    STATE_FORMAT,
+                    READ_FORMATS
+                        .iter()
+                        .map(|f| f.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" and ")
                 ),
             })
         }
@@ -291,92 +449,231 @@ pub fn load(text: &str, default_audio: &str) -> Result<Zones, StateError> {
                 detail: "this state file declares no format version".to_string(),
             })
         }
+    };
+    if let Some(section) = sections
+        .iter()
+        .find(|s| !kinds_of(format).contains(&s.kind.as_str()))
+    {
+        return Err(StateError::Malformed {
+            line: section.line,
+            detail: format!(
+                "a format {} file has no [{}] section; it was added in format 2",
+                format, section.kind
+            ),
+        });
     }
 
-    for (id, fields) in pending {
-        let get = |key: &str| -> Result<String, StateError> {
-            fields
-                .iter()
-                .find(|(k, _)| k == key)
-                .map(|(_, v)| v.clone())
-                .ok_or(StateError::Malformed {
-                    line: 0,
-                    detail: format!("zone '{}' has no '{}'", id, key),
-                })
-        };
-        let name = get("name")?;
-        let group = get("group")?;
-        let volume = get("volume")?;
-        let muted = get("muted")?;
-        let endpoints = get("endpoints")?;
-        if !is_display_name(&name) {
-            return Err(StateError::Malformed {
-                line: 0,
-                detail: format!("zone '{}' has a name that is not a name: '{}'", id, name),
-            });
-        }
-        if !is_identifier(&group) {
-            return Err(StateError::Malformed {
-                line: 0,
-                detail: format!(
-                    "zone '{}' is in a group that is not an identifier: '{}'",
-                    id, group
-                ),
-            });
-        }
-        let volume = Volume::parse(&volume).ok_or(StateError::Malformed {
+    // Rooms first, because everything else names them.
+    let mut bonds: Vec<(String, Vec<BondMember>)> = Vec::new();
+    for section in sections.iter().filter(|s| s.kind == "zone") {
+        let zone = load_zone(section, format, &mut bonds)?;
+        zones.add(zone).map_err(|e| StateError::Malformed {
             line: 0,
-            detail: format!(
-                "zone '{}' has a volume of '{}', outside the declared 0.000 to 1.000",
-                id, volume
-            ),
+            detail: e.to_string(),
         })?;
-        let muted = match muted.as_str() {
-            "0" => false,
-            "1" => true,
-            other => {
-                return Err(StateError::Malformed {
-                    line: 0,
-                    detail: format!("zone '{}' has muted = '{}', which is not 0 or 1", id, other),
-                })
-            }
-        };
-        let endpoints: Vec<String> = endpoints
-            .split(',')
-            .map(|e| e.trim())
-            .filter(|e| !e.is_empty())
-            .map(|e| e.to_string())
-            .collect();
-        for endpoint in &endpoints {
-            if !is_identifier(endpoint) {
-                return Err(StateError::Malformed {
-                    line: 0,
-                    detail: format!(
-                        "zone '{}' names an endpoint '{}' that is not an identifier",
-                        id, endpoint
-                    ),
-                });
+    }
+    for section in sections.iter().filter(|s| s.kind == "endpoint") {
+        let word = section.get("link")?;
+        let link =
+            Link::parse(&word).ok_or_else(|| section.fail(format!("'{}' is not a link", word)))?;
+        zones.set_link(&section.id, link);
+    }
+    for section in sections.iter().filter(|s| s.kind == "saved-group") {
+        let name = section.get("name")?;
+        if !is_display_name(&name) {
+            return Err(section.fail(format!("'{}' is not a name", name)));
+        }
+        let members = list(&section.get("zones")?);
+        if members.len() < 2 {
+            return Err(section.fail("a saved group holds two or more rooms".to_string()));
+        }
+        if zones.zone(&section.id).is_some() {
+            return Err(section.fail("a saved group cannot take a room's identifier".to_string()));
+        }
+        for member in &members {
+            if zones.zone(member).is_none() {
+                return Err(section.fail(format!("names a zone '{}' this file does not", member)));
             }
         }
+        zones.restore_saved_group(SavedGroup {
+            id: section.id.clone(),
+            name,
+            zones: members,
+        });
+    }
+    let target_exists = |zones: &Zones, target: &str| {
+        zones.zone(target).is_some() || zones.saved_groups().iter().any(|g| g.id == target)
+    };
+    for section in sections.iter().filter(|s| s.kind == "alarm") {
+        let target = section.get("target")?;
+        if !target_exists(&zones, &target) {
+            return Err(section.fail(format!(
+                "targets '{}', which is neither a zone nor a saved group in this file",
+                target
+            )));
+        }
+        let time = section.get("time")?;
+        let days = section.get("days")?;
+        let source = section.get("source")?;
+        let volume = section.get("volume")?;
+        let alarm = Alarm {
+            id: section.id.clone(),
+            target,
+            time: ClockTime::parse(&time)
+                .ok_or_else(|| section.fail(format!("'{}' is not HH:MM", time)))?,
+            days: Days::from_names(days.split(',').map(str::trim).filter(|d| !d.is_empty()))
+                .map_err(|e| section.fail(e))?,
+            source: Source::parse(&source)
+                .ok_or_else(|| section.fail(format!("'{}' is not a source", source)))?,
+            volume: Volume::parse(&volume)
+                .ok_or_else(|| section.fail(format!("'{}' is not a volume", volume)))?,
+            ramp_s: section.number("ramp_s", MAX_RAMP_S)?,
+            duration_min: section.number("duration_min", MAX_DURATION_MIN)?,
+            enabled: section.flag("enabled")?,
+        };
+        zones.restore_alarm(alarm);
+    }
+    for section in sections.iter().filter(|s| s.kind == "autoplay") {
+        let target = section.get("target")?;
+        if !target_exists(&zones, &target) {
+            return Err(section.fail(format!(
+                "targets '{}', which is neither a zone nor a saved group in this file",
+                target
+            )));
+        }
+        zones.restore_autoplay(Autoplay {
+            input: InputId::parse(&section.id).expect("checked at the header"),
+            target,
+            enabled: section.flag("enabled")?,
+        });
+    }
+    // Bonds last, through the same rule a `bond` command is held to, against
+    // the links this file just gave back: a hand-edited bond holding an
+    // endpoint that is not wired is refused here exactly as it would be on
+    // the wire (K91).
+    for (zone, members) in bonds {
         zones
-            .add(Zone {
-                id: id.clone(),
-                name,
-                group,
-                volume,
-                muted,
-                endpoints,
-                // Nothing is present at load: which endpoints are switched on
-                // is a fact about now and is never read out of a file.
-                present: Vec::new(),
+            .apply(&Command::Bond {
+                zone: zone.clone(),
+                members,
             })
             .map_err(|e| StateError::Malformed {
                 line: 0,
-                detail: e.to_string(),
+                detail: format!("zone '{}' has a bonded set this build refuses: {}", zone, e),
             })?;
     }
     zones.set_serial(serial.unwrap_or(0));
     Ok(zones)
+}
+
+fn load_zone(
+    section: &Section,
+    format: u32,
+    bonds: &mut Vec<(String, Vec<BondMember>)>,
+) -> Result<Zone, StateError> {
+    let id = &section.id;
+    let name = section.get("name")?;
+    let group = section.get("group")?;
+    let volume = section.get("volume")?;
+    let muted = section.get("muted")?;
+    let endpoints = section.get("endpoints")?;
+    if !is_display_name(&name) {
+        return Err(StateError::Malformed {
+            line: 0,
+            detail: format!("zone '{}' has a name that is not a name: '{}'", id, name),
+        });
+    }
+    if !is_identifier(&group) {
+        return Err(StateError::Malformed {
+            line: 0,
+            detail: format!(
+                "zone '{}' is in a group that is not an identifier: '{}'",
+                id, group
+            ),
+        });
+    }
+    let volume = Volume::parse(&volume).ok_or(StateError::Malformed {
+        line: 0,
+        detail: format!(
+            "zone '{}' has a volume of '{}', outside the declared 0.000 to 1.000",
+            id, volume
+        ),
+    })?;
+    let muted = match muted.as_str() {
+        "0" => false,
+        "1" => true,
+        other => {
+            return Err(StateError::Malformed {
+                line: 0,
+                detail: format!("zone '{}' has muted = '{}', which is not 0 or 1", id, other),
+            })
+        }
+    };
+    let endpoints = list(&endpoints);
+    for endpoint in &endpoints {
+        if !is_identifier(endpoint) {
+            return Err(StateError::Malformed {
+                line: 0,
+                detail: format!(
+                    "zone '{}' names an endpoint '{}' that is not an identifier",
+                    id, endpoint
+                ),
+            });
+        }
+    }
+    let mut zone = Zone::new(id);
+    zone.name = name;
+    zone.group = group;
+    zone.volume = volume;
+    zone.muted = muted;
+    zone.endpoints = endpoints;
+    // Nothing is present at load: which endpoints are switched on is a fact
+    // about now and is never read out of a file.
+    zone.present = Vec::new();
+    if format >= 2 {
+        let limit = section.get("limit")?;
+        zone.limit = Volume::parse(&limit)
+            .ok_or_else(|| section.fail(format!("'{}' is not a limit", limit)))?;
+        let quiet = section.get("quiet")?;
+        for window in quiet.split(';').map(str::trim).filter(|w| !w.is_empty()) {
+            zone.quiet
+                .push(QuietWindow::from_persisted(window).map_err(|e| section.fail(e))?);
+        }
+        if zone.quiet.len() > MAX_QUIET_WINDOWS {
+            return Err(section.fail(format!(
+                "has more than {} quiet-hours windows",
+                MAX_QUIET_WINDOWS
+            )));
+        }
+        let mut members = Vec::new();
+        for item in list(&section.get("bond")?) {
+            let (role, endpoint) = item
+                .split_once(':')
+                .ok_or_else(|| section.fail(format!("'{}' is not 'ROLE:endpoint'", item)))?;
+            let role = Role::parse(role)
+                .ok_or_else(|| section.fail(format!("'{}' is not a bond role", role)))?;
+            members.push(BondMember {
+                endpoint: endpoint.to_string(),
+                role,
+            });
+        }
+        if !members.is_empty() {
+            // Held to the decoder's own rules on the members' shape (one role
+            // each, a valid layout), by building the command it would accept.
+            let roles: Vec<Role> = members.iter().map(|m| m.role).collect();
+            if let Some(problem) = validate_layout(&roles) {
+                return Err(section.fail(problem));
+            }
+            let mut seen = roles.clone();
+            seen.sort();
+            seen.dedup();
+            if seen.len() != roles.len() {
+                return Err(section.fail("plays one role twice in its bonded set".to_string()));
+            }
+            bonds.push((id.clone(), members));
+        }
+    }
+    Ok(zone)
 }
 
 /// Read the state file at `path`, or `None` where there is none yet.
@@ -406,8 +703,20 @@ pub fn write_file(path: &Path, zones: &Zones) -> Result<(), StateError> {
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "zone-state".to_string());
     temporary.set_file_name(format!(".{}.writing", name));
-    std::fs::write(&temporary, &text)?;
+    {
+        let mut file = std::fs::File::create(&temporary)?;
+        file.write_all(text.as_bytes())?;
+        // B-9: the data is on the disk before any name points at it.
+        file.sync_all()?;
+    }
     std::fs::rename(&temporary, path)?;
+    // B-9: and the rename is on the disk too. A directory is opened read-only
+    // to be synced; on a platform that cannot, the rename has still happened.
+    let directory = match path.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+        _ => PathBuf::from("."),
+    };
+    std::fs::File::open(&directory)?.sync_all()?;
     Ok(())
 }
 
@@ -475,6 +784,7 @@ mod tests {
             .apply(&Command::Attach {
                 zone: "kitchen".to_string(),
                 endpoint: "endpoint-a".to_string(),
+                link: None,
             })
             .unwrap();
         zones
@@ -504,8 +814,9 @@ mod tests {
 
     #[test]
     fn a_state_file_this_build_does_not_understand_is_refused_rather_than_guessed() {
-        let err = load("format = 2\nserial = 1\n", "x").unwrap_err();
-        assert!(err.to_string().contains("declares format 2"), "{}", err);
+        // Format 2 is this build's own since catalog v2; the next one is not.
+        let err = load("format = 3\nserial = 1\n", "x").unwrap_err();
+        assert!(err.to_string().contains("declares format 3"), "{}", err);
         let err = load("serial = 1\n", "x").unwrap_err();
         assert!(err.to_string().contains("no format version"), "{}", err);
     }

@@ -1,0 +1,38 @@
+# Canonical input for the catalog v2 state-rich vector.
+#
+# Applying the commands below, in order, to a server configured with these
+# zones (each declared with the transport named, wired where none is named),
+# then the runtime hooks below, must produce exactly state-rich.json. The state is
+# what a v2 subscriber is sent; `GET /api/state?v=1` serves the v1 shape of
+# the same state (fixtures/control/state.json is that renderer's vector).
+# `time` is the civil time the quiet-hours windows are judged at (weekday
+# HH:MM); the model reads no clock.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = state
+default_audio = 127.0.0.1:4010
+group_audio.downstairs = 127.0.0.1:4011
+zones = living,kitchen,study,bedroom
+transport.bedroom = wireless
+command.0 = {"v":2,"t":"attach","zone":"living","endpoint":"endpoint-a","link":"wired"}
+command.1 = {"v":2,"t":"attach","zone":"living","endpoint":"endpoint-b","link":"wired"}
+command.2 = {"v":2,"t":"attach","zone":"living","endpoint":"endpoint-c","link":"wired"}
+command.3 = {"v":2,"t":"attach","zone":"bedroom","endpoint":"endpoint-d","link":"wireless"}
+command.4 = {"v":1,"t":"attach","zone":"study","endpoint":"endpoint-e"}
+command.5 = {"v":2,"t":"bond","zone":"living","members":[{"endpoint":"endpoint-a","role":"FL"},{"endpoint":"endpoint-b","role":"FR"},{"endpoint":"endpoint-c","role":"LFE"}]}
+command.6 = {"v":1,"t":"name","zone":"living","name":"Living Room"}
+command.7 = {"v":2,"t":"group_save","group":"downstairs","name":"Downstairs","zones":["living","kitchen"]}
+command.8 = {"v":2,"t":"take","target":"downstairs","source":"line-in:endpoint-c/line-1"}
+command.9 = {"v":2,"t":"join","zone":"bedroom","target":"study"}
+command.10 = {"v":1,"t":"volume","zone":"kitchen","volume":0.500}
+command.11 = {"v":2,"t":"limit","zone":"kitchen","limit":0.400}
+command.12 = {"v":2,"t":"quiet_hours","zone":"bedroom","windows":[{"days":["fri"],"start":"22:00","end":"07:00","limit":0.200}]}
+command.13 = {"v":2,"t":"group_volume","group":"downstairs","volume":0.600}
+command.14 = {"v":2,"t":"alarm_set","alarm":"wake","target":"bedroom","time":"06:45","days":["mon","tue","wed","thu","fri"],"source":"chime:bell","volume":0.300,"ramp_s":30,"duration_min":60,"enabled":true}
+command.15 = {"v":2,"t":"sleep","target":"live-1","minutes":45}
+command.16 = {"v":2,"t":"autoplay","input":"endpoint-c/line-1","target":"living","enabled":true}
+time = fri 23:30
+offer_input = endpoint-c/line-1
+ringing = wake

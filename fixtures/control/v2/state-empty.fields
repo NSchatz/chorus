@@ -1,0 +1,10 @@
+# Canonical input for the catalog v2 state-empty vector.
+#
+# A server with no zone configured: the v2 shape of an empty house.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = state
+default_audio = 127.0.0.1:4010
+zones =

@@ -21,11 +21,21 @@ pub fn fixture_dir() -> PathBuf {
     repository_root().join("fixtures/control")
 }
 
+/// Where the committed catalog version 2 vectors are.
+pub fn v2_dir() -> PathBuf {
+    repository_root().join("fixtures/control/v2")
+}
+
 /// Every vector's name, discovered from the directory and sorted, so that
 /// adding a vector is adding two files and registering nothing.
 pub fn vector_names() -> Vec<String> {
-    let mut names: Vec<String> = std::fs::read_dir(fixture_dir())
-        .expect("fixtures/control is committed")
+    vector_names_in(&fixture_dir())
+}
+
+/// [`vector_names`], for any vector directory.
+pub fn vector_names_in(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .expect("the vector directory is committed")
         .flatten()
         .filter_map(|entry| {
             let path = entry.path();
@@ -45,7 +55,12 @@ pub fn vector_names() -> Vec<String> {
 /// The bytes of one vector's message, which is its file with the one trailing
 /// newline removed.
 pub fn read_json(name: &str) -> String {
-    let path = fixture_dir().join(format!("{}.json", name));
+    read_json_in(&fixture_dir(), name)
+}
+
+/// [`read_json`], for any vector directory.
+pub fn read_json_in(dir: &Path, name: &str) -> String {
+    let path = dir.join(format!("{}.json", name));
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("{} is committed and readable: {}", path.display(), e));
     let stripped = text.strip_suffix('\n').unwrap_or_else(|| {
@@ -96,7 +111,12 @@ impl Fields {
 /// a refusal vector may contain one, and cutting the line there would change
 /// the value the vector declares.
 pub fn read_fields(name: &str) -> Fields {
-    let path = fixture_dir().join(format!("{}.fields", name));
+    read_fields_in(&fixture_dir(), name)
+}
+
+/// [`read_fields`], for any vector directory.
+pub fn read_fields_in(dir: &Path, name: &str) -> Fields {
+    let path = dir.join(format!("{}.fields", name));
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("{} is committed and readable: {}", path.display(), e));
     let mut pairs = Vec::new();

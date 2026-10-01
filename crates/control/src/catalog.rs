@@ -24,16 +24,38 @@
 //! exactly three fractional digits. Nothing in the catalog, the vectors or the
 //! persisted state ever holds a binary floating-point value, so there is no
 //! spelling of `0.1` to disagree about between two languages.
+//!
+//! # Two versions, and a message is written at the lowest that has it
+//!
+//! Catalog version 2 (rooms, bonds, saved and live groups, limits, quiet
+//! hours, alarms; `docs/decisions/` records it beside this module's v1 record,
+//! 0016) is a superset of version 1. A build implementing both accepts a v1
+//! command at `"v":1` or `"v":2`, refuses a v2-only command at `"v":1` as not
+//! a command of that version, and WRITES every command at the lowest version
+//! that declares it ([`Command::min_version`]). That last rule is what keeps
+//! every committed v1 vector byte-identical under a v2 build, and it is also
+//! the useful one on a network: a v1 command a v2 build writes is one a v1
+//! server still reads.
 
 use std::fmt;
 
 use crate::json::{self, Value};
+use crate::rooms::{
+    validate_layout, Alarm, Autoplay, BondMember, ClockTime, Days, InputId, Link, QuietWindow,
+    Role, Source, MAX_DEFINITIONS, MAX_DURATION_MIN, MAX_QUIET_WINDOWS, MAX_RAMP_S, MAX_SLEEP_MIN,
+    SOURCE_SPELLINGS,
+};
 
-/// The catalog version this build speaks.
-pub const CATALOG_VERSION: i64 = 1;
+/// The catalog version this build speaks: the highest it implements, and the
+/// version its state message and its session refusal carry.
+pub const CATALOG_VERSION: i64 = 2;
 
 /// Every catalog version this build implements.
-pub const IMPLEMENTED_VERSIONS: &[i64] = &[1];
+pub const IMPLEMENTED_VERSIONS: &[i64] = &[1, 2];
+
+/// The oldest catalog version, which an `error` answering a message whose own
+/// version could not be read is written at: every peer reads it.
+pub const LOWEST_VERSION: i64 = 1;
 
 /// Full scale, in the thousandths [`Volume`] counts.
 pub const VOLUME_SCALE: u32 = 1_000;
@@ -135,6 +157,10 @@ pub enum Command {
         zone: String,
         /// The endpoint's identifier.
         endpoint: String,
+        /// How the endpoint reaches the server, where it says (catalog v2).
+        /// Absent leaves what was known before, `unknown` for an endpoint never
+        /// heard from.
+        link: Option<Link>,
     },
     /// Give a zone a human-set name.
     Name {
@@ -159,7 +185,7 @@ pub enum Command {
         /// The zone.
         zone: String,
     },
-    /// Set a zone's volume.
+    /// Set a zone's volume, clamped to its effective limit.
     Volume {
         /// The zone.
         zone: String,
@@ -173,6 +199,105 @@ pub enum Command {
         /// Whether it is muted.
         muted: bool,
     },
+    /// (v2) Put a room into the group another room or a group is in. Joining a
+    /// room that is alone forms a live group with an id the server assigns.
+    Join {
+        /// The room that moves.
+        zone: String,
+        /// A room, or a group that exists now.
+        target: String,
+    },
+    /// (v2) Make a room's endpoints a bonded set, replacing any set it had.
+    Bond {
+        /// The room.
+        zone: String,
+        /// Each endpoint and the channel it plays.
+        members: Vec<BondMember>,
+    },
+    /// (v2) Dissolve a room's bonded set. A room with none is not an error.
+    Unbond {
+        /// The room.
+        zone: String,
+    },
+    /// (v2) Save, or replace, a named group definition.
+    GroupSave {
+        /// The group identifier.
+        group: String,
+        /// The human-set name.
+        name: String,
+        /// Its rooms, two or more.
+        zones: Vec<String>,
+    },
+    /// (v2) Forget a saved group definition. Its rooms stay where they are.
+    GroupDelete {
+        /// The saved group.
+        group: String,
+    },
+    /// (v2) Take the room (K78): every room of the target leaves whatever group
+    /// it is in and plays in the target.
+    Take {
+        /// A room, a saved group, or a group that exists now.
+        target: String,
+        /// What the target plays from now, where the command says.
+        source: Option<Source>,
+    },
+    /// (v2) Set a group's volume, Sonos-style: every room scaled by the same
+    /// ratio, each clamped to its own effective limit.
+    GroupVolume {
+        /// A group that exists now.
+        group: String,
+        /// The group volume asked for.
+        volume: Volume,
+    },
+    /// (v2) Move a group's volume by a signed step, in thousandths.
+    GroupVolumeStep {
+        /// A group that exists now.
+        group: String,
+        /// The step, -1000 to 1000.
+        step: i32,
+    },
+    /// (v2) Move a room's volume by a signed step, in thousandths.
+    VolumeStep {
+        /// The room.
+        zone: String,
+        /// The step, -1000 to 1000.
+        step: i32,
+    },
+    /// (v2) Set a room's maximum volume.
+    Limit {
+        /// The room.
+        zone: String,
+        /// The ceiling every volume path is clamped to.
+        limit: Volume,
+    },
+    /// (v2) Replace a room's quiet-hours windows. An empty list removes them.
+    QuietHours {
+        /// The room.
+        zone: String,
+        /// The windows, at most [`MAX_QUIET_WINDOWS`].
+        windows: Vec<QuietWindow>,
+    },
+    /// (v2) Create or replace an alarm.
+    AlarmSet(Alarm),
+    /// (v2) Forget an alarm.
+    AlarmDelete {
+        /// The alarm.
+        alarm: String,
+    },
+    /// (v2) Stop an alarm that is ringing. One that is not is not an error.
+    AlarmStop {
+        /// The alarm.
+        alarm: String,
+    },
+    /// (v2) Ask for a sleep timer on a room or a group; 0 minutes cancels.
+    Sleep {
+        /// A room or a group that exists now.
+        target: String,
+        /// Minutes, 0 to [`MAX_SLEEP_MIN`].
+        minutes: u32,
+    },
+    /// (v2) Create or replace the autoplay rule for one input.
+    Autoplay(Autoplay),
 }
 
 impl Command {
@@ -186,62 +311,232 @@ impl Command {
             Command::Ungroup { .. } => "ungroup",
             Command::Volume { .. } => "volume",
             Command::Mute { .. } => "mute",
+            Command::Join { .. } => "join",
+            Command::Bond { .. } => "bond",
+            Command::Unbond { .. } => "unbond",
+            Command::GroupSave { .. } => "group_save",
+            Command::GroupDelete { .. } => "group_delete",
+            Command::Take { .. } => "take",
+            Command::GroupVolume { .. } => "group_volume",
+            Command::GroupVolumeStep { .. } => "group_volume_step",
+            Command::VolumeStep { .. } => "volume_step",
+            Command::Limit { .. } => "limit",
+            Command::QuietHours { .. } => "quiet_hours",
+            Command::AlarmSet(_) => "alarm_set",
+            Command::AlarmDelete { .. } => "alarm_delete",
+            Command::AlarmStop { .. } => "alarm_stop",
+            Command::Sleep { .. } => "sleep",
+            Command::Autoplay(_) => "autoplay",
         }
     }
 
-    /// The zone this command is about, if it is about one.
+    /// The lowest catalog version that declares this command with these
+    /// fields, which is the version it is written at.
+    pub fn min_version(&self) -> i64 {
+        match self {
+            Command::Hello
+            | Command::Attach { link: None, .. }
+            | Command::Name { .. }
+            | Command::Group { .. }
+            | Command::Ungroup { .. }
+            | Command::Volume { .. }
+            | Command::Mute { .. } => 1,
+            _ => 2,
+        }
+    }
+
+    /// The room this command is about, if it names one in a `zone` field.
+    ///
+    /// Commands that name a TARGET (a room or a group) are resolved by
+    /// [`crate::zones::Zones::apply`] itself, because a target is not
+    /// necessarily a room.
     pub fn zone(&self) -> Option<&str> {
         match self {
-            Command::Hello => None,
             Command::Attach { zone, .. }
             | Command::Name { zone, .. }
             | Command::Group { zone, .. }
             | Command::Ungroup { zone }
             | Command::Volume { zone, .. }
-            | Command::Mute { zone, .. } => Some(zone),
+            | Command::Mute { zone, .. }
+            | Command::Join { zone, .. }
+            | Command::Bond { zone, .. }
+            | Command::Unbond { zone }
+            | Command::VolumeStep { zone, .. }
+            | Command::Limit { zone, .. }
+            | Command::QuietHours { zone, .. } => Some(zone),
+            _ => None,
         }
     }
 
     /// This command as the object the catalog declares, in the declared field
-    /// order.
+    /// order, at [`Command::min_version`].
     pub fn value(&self) -> Value {
-        let mut members = vec![
-            ("v".to_string(), Value::int(CATALOG_VERSION)),
+        let mut m = vec![
+            ("v".to_string(), Value::int(self.min_version())),
             ("t".to_string(), Value::text(self.type_name())),
         ];
+        let mut text = |k: &str, v: &str| m.push((k.to_string(), Value::text(v)));
         match self {
             Command::Hello => {}
-            Command::Attach { zone, endpoint } => {
-                members.push(("zone".to_string(), Value::text(zone)));
-                members.push(("endpoint".to_string(), Value::text(endpoint)));
+            Command::Attach {
+                zone,
+                endpoint,
+                link,
+            } => {
+                text("zone", zone);
+                text("endpoint", endpoint);
+                if let Some(link) = link {
+                    text("link", link.name());
+                }
             }
             Command::Name { zone, name } => {
-                members.push(("zone".to_string(), Value::text(zone)));
-                members.push(("name".to_string(), Value::text(name)));
+                text("zone", zone);
+                text("name", name);
             }
             Command::Group { zone, group } => {
-                members.push(("zone".to_string(), Value::text(zone)));
-                members.push(("group".to_string(), Value::text(group)));
+                text("zone", zone);
+                text("group", group);
             }
-            Command::Ungroup { zone } => {
-                members.push(("zone".to_string(), Value::text(zone)));
-            }
+            Command::Ungroup { zone } | Command::Unbond { zone } => text("zone", zone),
             Command::Volume { zone, volume } => {
-                members.push(("zone".to_string(), Value::text(zone)));
-                members.push(("volume".to_string(), Value::Num(volume.literal())));
+                text("zone", zone);
+                m.push(("volume".to_string(), Value::Num(volume.literal())));
             }
             Command::Mute { zone, muted } => {
-                members.push(("zone".to_string(), Value::text(zone)));
-                members.push(("muted".to_string(), Value::Bool(*muted)));
+                text("zone", zone);
+                m.push(("muted".to_string(), Value::Bool(*muted)));
+            }
+            Command::Join { zone, target } => {
+                text("zone", zone);
+                text("target", target);
+            }
+            Command::Bond { zone, members } => {
+                text("zone", zone);
+                m.push(("members".to_string(), members_value(members)));
+            }
+            Command::GroupSave { group, name, zones } => {
+                text("group", group);
+                text("name", name);
+                m.push(("zones".to_string(), texts(zones)));
+            }
+            Command::GroupDelete { group } => text("group", group),
+            Command::Take { target, source } => {
+                text("target", target);
+                if let Some(source) = source {
+                    text("source", &source.literal());
+                }
+            }
+            Command::GroupVolume { group, volume } => {
+                text("group", group);
+                m.push(("volume".to_string(), Value::Num(volume.literal())));
+            }
+            Command::GroupVolumeStep { group, step } => {
+                text("group", group);
+                m.push(("step".to_string(), Value::int(i64::from(*step))));
+            }
+            Command::VolumeStep { zone, step } => {
+                text("zone", zone);
+                m.push(("step".to_string(), Value::int(i64::from(*step))));
+            }
+            Command::Limit { zone, limit } => {
+                text("zone", zone);
+                m.push(("limit".to_string(), Value::Num(limit.literal())));
+            }
+            Command::QuietHours { zone, windows } => {
+                text("zone", zone);
+                m.push((
+                    "windows".to_string(),
+                    Value::Arr(windows.iter().map(window_value).collect()),
+                ));
+            }
+            Command::AlarmSet(alarm) => {
+                if let Value::Obj(fields) = alarm_value(alarm) {
+                    m.extend(fields);
+                }
+            }
+            Command::AlarmDelete { alarm } | Command::AlarmStop { alarm } => text("alarm", alarm),
+            Command::Sleep { target, minutes } => {
+                text("target", target);
+                m.push(("minutes".to_string(), Value::int(i64::from(*minutes))));
+            }
+            Command::Autoplay(rule) => {
+                if let Value::Obj(fields) = autoplay_value(rule) {
+                    m.extend(fields);
+                }
             }
         }
-        Value::Obj(members)
+        Value::Obj(m)
     }
 
     /// The bytes this command is on the wire.
     pub fn encode(&self) -> String {
         json::write(&self.value())
     }
+}
+
+/// A list of strings as a JSON array.
+pub fn texts(items: &[String]) -> Value {
+    Value::Arr(items.iter().map(|s| Value::text(s)).collect())
+}
+
+/// A bonded set's members, in the declared order: `endpoint`, then `role`.
+pub fn members_value(members: &[BondMember]) -> Value {
+    Value::Arr(
+        members
+            .iter()
+            .map(|b| {
+                Value::Obj(vec![
+                    ("endpoint".to_string(), Value::text(&b.endpoint)),
+                    ("role".to_string(), Value::text(b.role.name())),
+                ])
+            })
+            .collect(),
+    )
+}
+
+/// One quiet-hours window, in the declared order: `days`, `start`, `end`,
+/// `limit`.
+pub fn window_value(w: &QuietWindow) -> Value {
+    Value::Obj(vec![
+        (
+            "days".to_string(),
+            Value::Arr(w.days.names().into_iter().map(Value::text).collect()),
+        ),
+        ("start".to_string(), Value::text(&w.start.literal())),
+        ("end".to_string(), Value::text(&w.end.literal())),
+        ("limit".to_string(), Value::Num(w.limit.literal())),
+    ])
+}
+
+/// An alarm's fields, in the declared order, as `alarm_set` and the state
+/// message both carry them.
+pub fn alarm_value(a: &Alarm) -> Value {
+    Value::Obj(vec![
+        ("alarm".to_string(), Value::text(&a.id)),
+        ("target".to_string(), Value::text(&a.target)),
+        ("time".to_string(), Value::text(&a.time.literal())),
+        (
+            "days".to_string(),
+            Value::Arr(a.days.names().into_iter().map(Value::text).collect()),
+        ),
+        ("source".to_string(), Value::text(&a.source.literal())),
+        ("volume".to_string(), Value::Num(a.volume.literal())),
+        ("ramp_s".to_string(), Value::int(i64::from(a.ramp_s))),
+        (
+            "duration_min".to_string(),
+            Value::int(i64::from(a.duration_min)),
+        ),
+        ("enabled".to_string(), Value::Bool(a.enabled)),
+    ])
+}
+
+/// An autoplay rule's fields, in the declared order.
+pub fn autoplay_value(rule: &Autoplay) -> Value {
+    Value::Obj(vec![
+        ("input".to_string(), Value::text(&rule.input.literal())),
+        ("target".to_string(), Value::text(&rule.target)),
+        ("enabled".to_string(), Value::Bool(rule.enabled)),
+    ])
 }
 
 /// Why a message was not applied.
@@ -253,6 +548,10 @@ pub struct Refusal {
     pub detail: String,
     /// Whether this refusal ends the session.
     pub kind: RefusalKind,
+    /// The catalog version the refusal is written at: the version of the
+    /// message it answers where that was read, [`LOWEST_VERSION`] where it was
+    /// not, and the build's own version for a session refusal.
+    pub version: i64,
 }
 
 /// The kind of refusal, which is what decides whether the session survives it.
@@ -269,6 +568,8 @@ pub enum RefusalKind {
     UnknownVersion {
         /// What the peer offered, where it offered a number at all.
         offered: Option<i64>,
+        /// Every version the refusing build implements.
+        implemented: Vec<i64>,
     },
 }
 
@@ -279,6 +580,7 @@ impl Refusal {
             field: field.to_string(),
             detail,
             kind: RefusalKind::Rejected,
+            version: LOWEST_VERSION,
         }
     }
 
@@ -288,7 +590,18 @@ impl Refusal {
             field: field.to_string(),
             detail,
             kind: RefusalKind::Malformed,
+            version: LOWEST_VERSION,
         }
+    }
+
+    /// The same refusal, written at catalog version `version`: what a server
+    /// does with a refusal its room model made of a message whose version it
+    /// read. A session refusal keeps its own version.
+    pub fn at(mut self, version: i64) -> Refusal {
+        if !self.ends_the_session() {
+            self.version = version;
+        }
+        self
     }
 
     /// Whether this refusal ends the session.
@@ -299,8 +612,11 @@ impl Refusal {
     /// The message the server sends back, in the declared field order.
     pub fn value(&self) -> Value {
         match &self.kind {
-            RefusalKind::UnknownVersion { offered } => Value::Obj(vec![
-                ("v".to_string(), Value::int(CATALOG_VERSION)),
+            RefusalKind::UnknownVersion {
+                offered,
+                implemented,
+            } => Value::Obj(vec![
+                ("v".to_string(), Value::int(self.version)),
                 ("t".to_string(), Value::text("refused")),
                 ("field".to_string(), Value::text(&self.field)),
                 ("detail".to_string(), Value::text(&self.detail)),
@@ -313,16 +629,11 @@ impl Refusal {
                 ),
                 (
                     "implemented".to_string(),
-                    Value::Arr(
-                        IMPLEMENTED_VERSIONS
-                            .iter()
-                            .map(|v| Value::int(*v))
-                            .collect(),
-                    ),
+                    Value::Arr(implemented.iter().map(|v| Value::int(*v)).collect()),
                 ),
             ]),
             _ => Value::Obj(vec![
-                ("v".to_string(), Value::int(CATALOG_VERSION)),
+                ("v".to_string(), Value::int(self.version)),
                 ("t".to_string(), Value::text("error")),
                 ("field".to_string(), Value::text(&self.field)),
                 ("detail".to_string(), Value::text(&self.detail)),
@@ -348,21 +659,42 @@ impl fmt::Display for Refusal {
 
 impl std::error::Error for Refusal {}
 
-/// Read one command off the wire.
+/// Read one command off the wire, by this build.
 ///
 /// In this order, and the order is the contract:
 ///
 /// 1. the text is JSON this reader accepts, or the message is malformed;
 /// 2. `v` is present, is a whole number, and is a version this build
 ///    implements, or the SESSION is refused;
-/// 3. `t` names a command in this catalog;
+/// 3. `t` names a command in that version of the catalog;
 /// 4. the fields that command declares are present, of the declared type and
 ///    inside the declared range;
-/// 5. no field is present that the command does not declare.
+/// 5. no field is present that the command does not declare at that version.
 ///
 /// Step 5 is deliberate and it is the opposite of what the audio wire does with
 /// a longer-than-expected payload. See `docs/control-plane.md`.
 pub fn decode_command(text: &str) -> Result<Command, Refusal> {
+    decode_message(text).map(|(_, command)| command)
+}
+
+/// [`decode_command`], also saying which catalog version the message was
+/// written at, so that what answers it can answer at the same version.
+pub fn decode_message(text: &str) -> Result<(i64, Command), Refusal> {
+    decode_message_with(text, IMPLEMENTED_VERSIONS)
+}
+
+/// [`decode_command`] as a build implementing exactly `implemented` would
+/// read it.
+///
+/// The shipped build is [`IMPLEMENTED_VERSIONS`]. A smaller set is what lets a
+/// test reproduce a refusal an older build wrote, byte for byte: the committed
+/// v1 vector `refused-unknown-version` was written by a build implementing
+/// `[1]`, and its own `.fields` says so (`implemented = 1`).
+pub fn decode_command_with(text: &str, implemented: &[i64]) -> Result<Command, Refusal> {
+    decode_message_with(text, implemented).map(|(_, command)| command)
+}
+
+fn decode_message_with(text: &str, implemented: &[i64]) -> Result<(i64, Command), Refusal> {
     let value = json::parse(text).map_err(|e| {
         Refusal::malformed("", format!("the message is not well-formed JSON: {}", e))
     })?;
@@ -378,155 +710,619 @@ pub fn decode_command(text: &str) -> Result<Command, Refusal> {
             ))
         }
     };
+    let highest = implemented.iter().copied().max().unwrap_or(LOWEST_VERSION);
+    let unknown = |offered: Option<i64>, detail: String| Refusal {
+        field: "v".to_string(),
+        detail,
+        kind: RefusalKind::UnknownVersion {
+            offered,
+            implemented: implemented.to_vec(),
+        },
+        version: highest,
+    };
 
     let version = match value.get("v") {
         None => {
-            return Err(Refusal {
-                field: "v".to_string(),
-                detail: format!(
+            return Err(unknown(
+                None,
+                format!(
                     "the message carries no catalog version; this build implements {}",
-                    version_list()
+                    version_list(implemented)
                 ),
-                kind: RefusalKind::UnknownVersion { offered: None },
-            })
+            ))
         }
         Some(v) => v,
     };
     let offered = version
         .as_num()
         .and_then(|digits| digits.parse::<i64>().ok());
-    match offered {
-        Some(v) if IMPLEMENTED_VERSIONS.contains(&v) => {}
+    let v = match offered {
+        Some(v) if implemented.contains(&v) => v,
         offered => {
-            return Err(Refusal {
-                field: "v".to_string(),
-                detail: format!(
+            return Err(unknown(
+                offered,
+                format!(
                     "catalog version {} was offered and this build implements {}; nothing from \
                      this peer has been applied",
                     match offered {
                         Some(v) => v.to_string(),
                         None => format!("'{}'", json::write(version)),
                     },
-                    version_list()
+                    version_list(implemented)
                 ),
-                kind: RefusalKind::UnknownVersion { offered },
-            })
-        }
-    }
-
-    let type_name = match value.get("t").and_then(Value::as_str) {
-        Some(t) => t.to_string(),
-        None => {
-            return Err(Refusal::rejected(
-                "t",
-                "the message carries no type, or its type is not a string".to_string(),
             ))
         }
     };
+    decode_body(&value, members, v).map(|command| (v, command))
+}
+
+/// Steps 3 to 5, for a message whose version `v` has been accepted.
+fn decode_body(value: &Value, members: &[(String, Value)], v: i64) -> Result<Command, Refusal> {
+    let at = |r: Refusal| r.at(v);
+    let type_name = match value.get("t").and_then(Value::as_str) {
+        Some(t) => t.to_string(),
+        None => {
+            return Err(at(Refusal::rejected(
+                "t",
+                "the message carries no type, or its type is not a string".to_string(),
+            )))
+        }
+    };
+    let v2 = v >= 2;
+    let fields = |required: &[&str], optional: &[&str]| -> Result<(), Refusal> {
+        expect_fields_with(members, required, optional).map_err(|r| r.at(v))
+    };
+    let id = |field: &str| identifier(value, field).map_err(|r| r.at(v));
 
     let command = match type_name.as_str() {
         "hello" => {
-            expect_fields(members, &["v", "t"])?;
+            fields(&["v", "t"], &[])?;
             Command::Hello
         }
         "attach" => {
-            expect_fields(members, &["v", "t", "zone", "endpoint"])?;
+            fields(
+                &["v", "t", "zone", "endpoint"],
+                if v2 { &["link"] } else { &[] },
+            )?;
+            let link = match value.get("link") {
+                None => None,
+                Some(Value::Str(word)) => Some(Link::parse(word).ok_or_else(|| {
+                    at(Refusal::rejected(
+                        "link",
+                        format!(
+                            "'{}' is not a link; the catalog declares wired, wireless or unknown",
+                            word
+                        ),
+                    ))
+                })?),
+                Some(other) => {
+                    return Err(at(Refusal::rejected(
+                        "link",
+                        format!(
+                            "the link is {} and the catalog declares a string",
+                            other.kind()
+                        ),
+                    )))
+                }
+            };
             Command::Attach {
-                zone: identifier(&value, "zone")?,
-                endpoint: identifier(&value, "endpoint")?,
+                zone: id("zone")?,
+                endpoint: id("endpoint")?,
+                link,
             }
         }
         "name" => {
-            expect_fields(members, &["v", "t", "zone", "name"])?;
+            fields(&["v", "t", "zone", "name"], &[])?;
             Command::Name {
-                zone: identifier(&value, "zone")?,
-                name: display_name(&value, "name")?,
+                zone: id("zone")?,
+                name: display_name(value, "name").map_err(at)?,
             }
         }
         "group" => {
-            expect_fields(members, &["v", "t", "zone", "group"])?;
+            fields(&["v", "t", "zone", "group"], &[])?;
             Command::Group {
-                zone: identifier(&value, "zone")?,
-                group: identifier(&value, "group")?,
+                zone: id("zone")?,
+                group: id("group")?,
             }
         }
         "ungroup" => {
-            expect_fields(members, &["v", "t", "zone"])?;
-            Command::Ungroup {
-                zone: identifier(&value, "zone")?,
-            }
+            fields(&["v", "t", "zone"], &[])?;
+            Command::Ungroup { zone: id("zone")? }
         }
         "volume" => {
-            expect_fields(members, &["v", "t", "zone", "volume"])?;
-            let zone = identifier(&value, "zone")?;
-            let digits = match value.get("volume") {
-                Some(Value::Num(digits)) => digits.clone(),
-                Some(other) => {
-                    return Err(Refusal::rejected(
-                        "volume",
-                        format!(
-                            "the volume is {} and the catalog declares a number from 0.000 to \
-                             1.000",
-                            other.kind()
-                        ),
-                    ))
-                }
-                None => unreachable!("expect_fields required it"),
-            };
-            let volume = Volume::parse(&digits).ok_or_else(|| {
-                Refusal::rejected(
-                    "volume",
-                    format!(
-                        "the volume {} is outside the range the catalog declares, which is 0.000 \
-                         to 1.000 in steps of 0.001",
-                        digits
-                    ),
-                )
-            })?;
+            fields(&["v", "t", "zone", "volume"], &[])?;
+            let zone = id("zone")?;
+            let volume = volume_field(value, "volume").map_err(at)?;
             Command::Volume { zone, volume }
         }
         "mute" => {
-            expect_fields(members, &["v", "t", "zone", "muted"])?;
-            let zone = identifier(&value, "zone")?;
-            let muted = match value.get("muted").and_then(Value::as_bool) {
-                Some(m) => m,
-                None => {
-                    return Err(Refusal::rejected(
-                        "muted",
-                        "the muted field is not true or false".to_string(),
-                    ))
-                }
-            };
+            fields(&["v", "t", "zone", "muted"], &[])?;
+            let zone = id("zone")?;
+            let muted = boolean(value, "muted").map_err(at)?;
             Command::Mute { zone, muted }
         }
         "transport" => {
-            return Err(Refusal::rejected(
+            return Err(at(Refusal::rejected(
                 "t",
                 format!(
                     "'transport' is not a command in catalog version {}. {}",
-                    CATALOG_VERSION, TRANSPORT_IS_CONFIGURED
+                    v, TRANSPORT_IS_CONFIGURED
                 ),
-            ))
+            )))
         }
+        other if v2 => decode_v2(value, other, &fields)?,
         other => {
-            return Err(Refusal::rejected(
+            return Err(at(Refusal::rejected(
                 "t",
-                format!(
-                    "'{}' is not a command in catalog version {}",
-                    other, CATALOG_VERSION
-                ),
-            ))
+                format!("'{}' is not a command in catalog version {}", other, v),
+            )))
         }
     };
     Ok(command)
 }
 
-fn version_list() -> String {
-    IMPLEMENTED_VERSIONS
+/// Holds a message to its required and optional fields.
+type FieldCheck<'a> = dyn Fn(&[&str], &[&str]) -> Result<(), Refusal> + 'a;
+
+/// The commands only catalog version 2 declares.
+fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<Command, Refusal> {
+    let at = |r: Refusal| r.at(2);
+    let id = |field: &str| identifier(value, field).map_err(at);
+    let command = match type_name {
+        "join" => {
+            fields(&["v", "t", "zone", "target"], &[])?;
+            Command::Join {
+                zone: id("zone")?,
+                target: id("target")?,
+            }
+        }
+        "bond" => {
+            fields(&["v", "t", "zone", "members"], &[])?;
+            let zone = id("zone")?;
+            Command::Bond {
+                zone,
+                members: bond_members(value).map_err(at)?,
+            }
+        }
+        "unbond" => {
+            fields(&["v", "t", "zone"], &[])?;
+            Command::Unbond { zone: id("zone")? }
+        }
+        "group_save" => {
+            fields(&["v", "t", "group", "name", "zones"], &[])?;
+            let group = id("group")?;
+            let name = display_name(value, "name").map_err(at)?;
+            let zones = identifier_list(value, "zones").map_err(at)?;
+            if zones.len() < 2 {
+                return Err(at(Refusal::rejected(
+                    "zones",
+                    "a saved group holds two or more rooms; a single room is already its own group"
+                        .to_string(),
+                )));
+            }
+            Command::GroupSave { group, name, zones }
+        }
+        "group_delete" => {
+            fields(&["v", "t", "group"], &[])?;
+            Command::GroupDelete {
+                group: id("group")?,
+            }
+        }
+        "take" => {
+            fields(&["v", "t", "target"], &["source"])?;
+            let target = id("target")?;
+            let source = match value.get("source") {
+                None => None,
+                Some(_) => Some(source_field(value, "source").map_err(at)?),
+            };
+            Command::Take { target, source }
+        }
+        "group_volume" => {
+            fields(&["v", "t", "group", "volume"], &[])?;
+            Command::GroupVolume {
+                group: id("group")?,
+                volume: volume_field(value, "volume").map_err(at)?,
+            }
+        }
+        "group_volume_step" => {
+            fields(&["v", "t", "group", "step"], &[])?;
+            Command::GroupVolumeStep {
+                group: id("group")?,
+                step: step_field(value).map_err(at)?,
+            }
+        }
+        "volume_step" => {
+            fields(&["v", "t", "zone", "step"], &[])?;
+            Command::VolumeStep {
+                zone: id("zone")?,
+                step: step_field(value).map_err(at)?,
+            }
+        }
+        "limit" => {
+            fields(&["v", "t", "zone", "limit"], &[])?;
+            Command::Limit {
+                zone: id("zone")?,
+                limit: volume_field(value, "limit").map_err(at)?,
+            }
+        }
+        "quiet_hours" => {
+            fields(&["v", "t", "zone", "windows"], &[])?;
+            let zone = id("zone")?;
+            Command::QuietHours {
+                zone,
+                windows: quiet_windows(value).map_err(at)?,
+            }
+        }
+        "alarm_set" => {
+            fields(
+                &[
+                    "v",
+                    "t",
+                    "alarm",
+                    "target",
+                    "time",
+                    "days",
+                    "source",
+                    "volume",
+                    "ramp_s",
+                    "duration_min",
+                    "enabled",
+                ],
+                &[],
+            )?;
+            Command::AlarmSet(Alarm {
+                id: id("alarm")?,
+                target: id("target")?,
+                time: clock_field(value, "time").map_err(at)?,
+                days: days_field(value, "days").map_err(at)?,
+                source: source_field(value, "source").map_err(at)?,
+                volume: volume_field(value, "volume").map_err(at)?,
+                ramp_s: whole(value, "ramp_s", 0, i64::from(MAX_RAMP_S)).map_err(at)? as u32,
+                duration_min: whole(value, "duration_min", 0, i64::from(MAX_DURATION_MIN))
+                    .map_err(at)? as u32,
+                enabled: boolean(value, "enabled").map_err(at)?,
+            })
+        }
+        "alarm_delete" => {
+            fields(&["v", "t", "alarm"], &[])?;
+            Command::AlarmDelete {
+                alarm: id("alarm")?,
+            }
+        }
+        "alarm_stop" => {
+            fields(&["v", "t", "alarm"], &[])?;
+            Command::AlarmStop {
+                alarm: id("alarm")?,
+            }
+        }
+        "sleep" => {
+            fields(&["v", "t", "target", "minutes"], &[])?;
+            Command::Sleep {
+                target: id("target")?,
+                minutes: whole(value, "minutes", 0, i64::from(MAX_SLEEP_MIN)).map_err(at)? as u32,
+            }
+        }
+        "autoplay" => {
+            fields(&["v", "t", "input", "target", "enabled"], &[])?;
+            let input = match value.get("input").and_then(Value::as_str) {
+                Some(text) => InputId::parse(text).ok_or_else(|| {
+                    at(Refusal::rejected(
+                        "input",
+                        format!(
+                            "'{}' is not an input: the catalog declares '<endpoint>/<input>', \
+                             both identifiers",
+                            text
+                        ),
+                    ))
+                })?,
+                None => {
+                    return Err(at(Refusal::rejected(
+                        "input",
+                        "the field 'input' is not a string".to_string(),
+                    )))
+                }
+            };
+            Command::Autoplay(Autoplay {
+                input,
+                target: id("target")?,
+                enabled: boolean(value, "enabled").map_err(at)?,
+            })
+        }
+        other => {
+            return Err(at(Refusal::rejected(
+                "t",
+                format!("'{}' is not a command in catalog version 2", other),
+            )))
+        }
+    };
+    Ok(command)
+}
+
+fn version_list(implemented: &[i64]) -> String {
+    implemented
         .iter()
         .map(|v| v.to_string())
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn volume_field(value: &Value, field: &str) -> Result<Volume, Refusal> {
+    let digits = match value.get(field) {
+        Some(Value::Num(digits)) => digits.clone(),
+        Some(other) => {
+            return Err(Refusal::rejected(
+                field,
+                format!(
+                    "the {} is {} and the catalog declares a number from 0.000 to 1.000",
+                    field,
+                    other.kind()
+                ),
+            ))
+        }
+        None => {
+            return Err(Refusal::rejected(
+                field,
+                format!(
+                    "this command requires the field '{}' and it is absent",
+                    field
+                ),
+            ))
+        }
+    };
+    Volume::parse(&digits).ok_or_else(|| {
+        Refusal::rejected(
+            field,
+            format!(
+                "the {} {} is outside the range the catalog declares, which is 0.000 to 1.000 in \
+                 steps of 0.001",
+                field, digits
+            ),
+        )
+    })
+}
+
+fn boolean(value: &Value, field: &str) -> Result<bool, Refusal> {
+    value.get(field).and_then(Value::as_bool).ok_or_else(|| {
+        Refusal::rejected(field, format!("the {} field is not true or false", field))
+    })
+}
+
+/// A whole number from `min` to `max`, written with no fraction or exponent.
+fn whole(value: &Value, field: &str, min: i64, max: i64) -> Result<i64, Refusal> {
+    let refuse = |what: String| {
+        Refusal::rejected(
+            field,
+            format!(
+                "the field '{}' is {} and the catalog declares a whole number from {} to {}",
+                field, what, min, max
+            ),
+        )
+    };
+    let digits = match value.get(field) {
+        Some(Value::Num(digits)) => digits,
+        Some(other) => return Err(refuse(other.kind().to_string())),
+        None => return Err(refuse("absent".to_string())),
+    };
+    let body = digits.strip_prefix('-').unwrap_or(digits);
+    if body.is_empty() || !body.bytes().all(|b| b.is_ascii_digit()) || digits == "-0" {
+        return Err(refuse(digits.clone()));
+    }
+    match digits.parse::<i64>() {
+        Ok(n) if (min..=max).contains(&n) => Ok(n),
+        _ => Err(refuse(digits.clone())),
+    }
+}
+
+fn step_field(value: &Value) -> Result<i32, Refusal> {
+    let scale = i64::from(VOLUME_SCALE);
+    whole(value, "step", -scale, scale).map(|n| n as i32)
+}
+
+fn clock_field(value: &Value, field: &str) -> Result<ClockTime, Refusal> {
+    let text = value.get(field).and_then(Value::as_str).unwrap_or("");
+    ClockTime::parse(text).ok_or_else(|| {
+        Refusal::rejected(
+            field,
+            format!(
+                "'{}' is not a time: the catalog declares \"HH:MM\", 00:00 to 23:59",
+                text
+            ),
+        )
+    })
+}
+
+fn days_field(value: &Value, field: &str) -> Result<Days, Refusal> {
+    let items = match value.get(field) {
+        Some(Value::Arr(items)) => items,
+        _ => {
+            return Err(Refusal::rejected(
+                field,
+                format!("the field '{}' is not an array of day names", field),
+            ))
+        }
+    };
+    let mut names = Vec::new();
+    for item in items {
+        match item.as_str() {
+            Some(name) => names.push(name),
+            None => {
+                return Err(Refusal::rejected(
+                    field,
+                    format!(
+                        "the field '{}' holds something that is not a day name",
+                        field
+                    ),
+                ))
+            }
+        }
+    }
+    Days::from_names(names).map_err(|detail| Refusal::rejected(field, detail))
+}
+
+fn source_field(value: &Value, field: &str) -> Result<Source, Refusal> {
+    let text = value.get(field).and_then(Value::as_str).unwrap_or("");
+    Source::parse(text).ok_or_else(|| {
+        Refusal::rejected(
+            field,
+            format!(
+                "'{}' is not a source: the catalog declares {}",
+                text, SOURCE_SPELLINGS
+            ),
+        )
+    })
+}
+
+fn identifier_list(value: &Value, field: &str) -> Result<Vec<String>, Refusal> {
+    let items = match value.get(field) {
+        Some(Value::Arr(items)) => items,
+        _ => {
+            return Err(Refusal::rejected(
+                field,
+                format!("the field '{}' is not an array of identifiers", field),
+            ))
+        }
+    };
+    let mut out: Vec<String> = Vec::new();
+    for item in items {
+        let text = item.as_str().unwrap_or("");
+        if !is_identifier(text) {
+            return Err(Refusal::rejected(
+                field,
+                format!(
+                    "'{}' is not an identifier: the catalog declares 1 to {} characters of \
+                     lower-case letters, digits and hyphens",
+                    text, MAX_IDENTIFIER_LEN
+                ),
+            ));
+        }
+        if out.iter().any(|o| o == text) {
+            return Err(Refusal::rejected(
+                field,
+                format!("'{}' is listed twice", text),
+            ));
+        }
+        out.push(text.to_string());
+    }
+    if out.len() > MAX_DEFINITIONS {
+        return Err(Refusal::rejected(
+            field,
+            format!("at most {} are listed", MAX_DEFINITIONS),
+        ));
+    }
+    Ok(out)
+}
+
+/// The objects of an array field, each held to its own declared fields.
+fn objects<'a>(
+    value: &'a Value,
+    field: &str,
+    declared: &[&str],
+) -> Result<Vec<&'a Value>, Refusal> {
+    let items = match value.get(field) {
+        Some(Value::Arr(items)) => items,
+        _ => {
+            return Err(Refusal::rejected(
+                field,
+                format!("the field '{}' is not an array", field),
+            ))
+        }
+    };
+    let mut out = Vec::new();
+    for item in items {
+        match item {
+            Value::Obj(members) => {
+                expect_fields_with(members, declared, &[]).map_err(|r| {
+                    Refusal::rejected(field, format!("in '{}': {}", field, r.detail))
+                })?;
+                out.push(item);
+            }
+            other => {
+                return Err(Refusal::rejected(
+                    field,
+                    format!(
+                        "every member of '{}' is an object and one is {}",
+                        field,
+                        other.kind()
+                    ),
+                ))
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn bond_members(value: &Value) -> Result<Vec<BondMember>, Refusal> {
+    let mut members: Vec<BondMember> = Vec::new();
+    for item in objects(value, "members", &["endpoint", "role"])? {
+        let endpoint = identifier(item, "endpoint")
+            .map_err(|r| Refusal::rejected("members", format!("in 'members': {}", r.detail)))?;
+        let word = item.get("role").and_then(Value::as_str).unwrap_or("");
+        let role = Role::parse(word).ok_or_else(|| {
+            Refusal::rejected(
+                "members",
+                format!(
+                    "endpoint '{}' has the role '{}', which is not a channel position a bonded \
+                     set uses ({}; docs/protocol.md, the channel map)",
+                    endpoint,
+                    word,
+                    Role::ALL.map(|r| r.name()).join(", ")
+                ),
+            )
+        })?;
+        if members.iter().any(|m| m.endpoint == endpoint) {
+            return Err(Refusal::rejected(
+                "members",
+                format!(
+                    "endpoint '{}' is listed twice; an endpoint plays one role",
+                    endpoint
+                ),
+            ));
+        }
+        if let Some(other) = members.iter().find(|m| m.role == role) {
+            return Err(Refusal::rejected(
+                "members",
+                format!(
+                    "endpoints '{}' and '{}' both play {}; a role is played by one endpoint",
+                    other.endpoint, endpoint, role
+                ),
+            ));
+        }
+        members.push(BondMember { endpoint, role });
+    }
+    let roles: Vec<Role> = members.iter().map(|m| m.role).collect();
+    if let Some(problem) = validate_layout(&roles) {
+        return Err(Refusal::rejected("members", problem));
+    }
+    Ok(members)
+}
+
+fn quiet_windows(value: &Value) -> Result<Vec<QuietWindow>, Refusal> {
+    let items = objects(value, "windows", &["days", "start", "end", "limit"])?;
+    if items.len() > MAX_QUIET_WINDOWS {
+        return Err(Refusal::rejected(
+            "windows",
+            format!(
+                "a room has at most {} quiet-hours windows",
+                MAX_QUIET_WINDOWS
+            ),
+        ));
+    }
+    let mut out = Vec::new();
+    for item in items {
+        let inner =
+            |r: Refusal| Refusal::rejected("windows", format!("in 'windows': {}", r.detail));
+        let window = QuietWindow {
+            days: days_field(item, "days").map_err(inner)?,
+            start: clock_field(item, "start").map_err(inner)?,
+            end: clock_field(item, "end").map_err(inner)?,
+            limit: volume_field(item, "limit").map_err(inner)?,
+        };
+        if let Some(problem) = window.problem() {
+            return Err(Refusal::rejected("windows", problem));
+        }
+        out.push(window);
+    }
+    Ok(out)
 }
 
 /// What a refusal says when a message tries to change a zone's transport.
@@ -543,10 +1339,15 @@ pub const TRANSPORT_IS_CONFIGURED: &str =
      what each is held to are committed in config/transport.conf. No message in this catalog \
      changes it, and nothing in this message has been applied";
 
-/// Refuse a message carrying a field the command does not declare.
-fn expect_fields(members: &[(String, Value)], declared: &[&str]) -> Result<(), Refusal> {
+/// Refuse a message carrying a field the command does not declare, or
+/// missing one it requires. `optional` fields may be absent.
+fn expect_fields_with(
+    members: &[(String, Value)],
+    declared: &[&str],
+    optional: &[&str],
+) -> Result<(), Refusal> {
     for (key, _) in members {
-        if !declared.contains(&key.as_str()) {
+        if !declared.contains(&key.as_str()) && !optional.contains(&key.as_str()) {
             if key == "transport" {
                 return Err(Refusal::rejected(
                     "transport",
@@ -557,7 +1358,12 @@ fn expect_fields(members: &[(String, Value)], declared: &[&str]) -> Result<(), R
                 key,
                 format!(
                     "this command declares the fields {} and carries no '{}'",
-                    declared.join(", "),
+                    declared
+                        .iter()
+                        .chain(optional.iter())
+                        .copied()
+                        .collect::<Vec<_>>()
+                        .join(", "),
                     key
                 ),
             ));
@@ -682,6 +1488,12 @@ mod tests {
             Command::Attach {
                 zone: "kitchen".to_string(),
                 endpoint: "endpoint-a".to_string(),
+                link: None,
+            },
+            Command::Attach {
+                zone: "kitchen".to_string(),
+                endpoint: "endpoint-a".to_string(),
+                link: Some(Link::Wired),
             },
             Command::Name {
                 zone: "kitchen".to_string(),
@@ -725,7 +1537,7 @@ mod tests {
             refusal.encode()
         );
         assert!(
-            refusal.encode().contains(r#""implemented":[1]"#),
+            refusal.encode().contains(r#""implemented":[1,2]"#),
             "{}",
             refusal.encode()
         );

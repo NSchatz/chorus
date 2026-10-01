@@ -1,0 +1,14 @@
+# Canonical input for the catalog v2 bond vector.
+#
+# Encoding these field values must produce exactly bond.json, and decoding
+# bond.json must recover exactly these field values.
+#
+# `members` is endpoint:ROLE pairs in the order the message lists them. Roles
+# are docs/protocol.md's channel positions; this is a theater layout.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = bond
+zone = living
+members = endpoint-a:FL,endpoint-b:FR,endpoint-c:FC,endpoint-d:LFE,endpoint-e:SL,endpoint-f:SR

@@ -1,0 +1,1 @@
+{"v":2,"t":"bond","zone":"living","members":[{"endpoint":"endpoint-a","role":"FL"},{"endpoint":"endpoint-b","role":"FR"},{"endpoint":"endpoint-c","role":"FC"},{"endpoint":"endpoint-d","role":"LFE"},{"endpoint":"endpoint-e","role":"SL"},{"endpoint":"endpoint-f","role":"SR"}]}

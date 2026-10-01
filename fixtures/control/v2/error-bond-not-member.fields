@@ -1,0 +1,18 @@
+# Canonical input for the catalog v2 error-bond-not-member vector.
+#
+# `input` is refused, by the decoder or by the room state the commands below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-bond-not-member.json. Nothing of it is applied.
+#
+# A bonded set is made of the room's own endpoints.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+zones = living,study
+command.0 = {"v":2,"t":"attach","zone":"living","endpoint":"endpoint-a","link":"wired"}
+command.1 = {"v":2,"t":"attach","zone":"study","endpoint":"endpoint-b","link":"wired"}
+input = {"v":2,"t":"bond","zone":"living","members":[{"endpoint":"endpoint-a","role":"FL"},{"endpoint":"endpoint-b","role":"FR"}]}
+field = members
+ends_the_session = 0
