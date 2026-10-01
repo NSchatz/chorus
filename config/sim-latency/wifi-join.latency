@@ -1,0 +1,53 @@
+# K94 in the simulator, scenario 2: a Wi-Fi room joins a line-in played in its
+# own room and stays. A simulation input: nothing here is measured,
+# and the report made from it is not timing evidence (BRIEF.md section 3.1
+# rule 3). Read by crates/sync/src/latency_sim.rs; what each value was chosen
+# from is in the decision record that adds this file (docs/decisions/, "latency
+# growth"), and crates/sync/tests/latency_growth.rs asserts the ones that have
+# a single committed copy elsewhere equal it.
+#
+# Format: key = value, '#' starts a comment.
+
+name = wifi-join
+# The endpoints come from the goal 7 house: their links, crystals and the
+# servo they run are that file's (every value there ASSUMED).
+house = 8-rooms-switched.house
+# The line-in endpoint (ADR 0066), playing in its own room.
+source = kitchen-l
+# A Wi-Fi room that joins (K91: a compact speaker alone in its room).
+joiner = bathroom
+seed = 20261001
+duration_ms = 1100000
+
+# The line-in's capture: 48 kHz (the --line-in-rate-hz default) in 20 ms
+# chunks (LINE_IN_CHUNK_MS, ASSUMED in ADR 0066).
+sample_rate_hz = 48000
+chunk_ms = 20
+
+# After the house's 60 s acquisition settle, so both endpoints are on the
+# timeline when the pair is graded.
+join_at_ms = 90000
+leave_at_ms = never
+
+# The local latency: a wired capture endpoint playing in its own room.
+# ASSUMED (30 ms: one 20 ms chunk to fill, the wired path, the server and an
+# endpoint guard, with a few ms to spare; not measured).
+l_local_us = 30000
+# The group latency: a Wi-Fi room puts the group on the wireless tier,
+# config/transport.conf wireless_playout_latency_us (a test asserts it).
+l_group_us = 500000
+# The least latency a Wi-Fi room starts at: config/transport.conf
+# wireless_min_us, the floor of the band a wireless buffer is graded against
+# (a test asserts it). Reading that floor as the start condition is ASSUMED.
+join_min_latency_us = 120000
+
+# The stretch bound and the ramp: chosen in the decision record (500 ppm from
+# a cited pitch-discrimination threshold; the 10 s ramp ASSUMED).
+max_rate_ppm = 500
+ramp_ms = 10000
+
+# The server's time from the last source frame arriving to the chunk leaving.
+# ASSUMED.
+server_processing_us = 1000
+# How far ahead of its play-at stamp an endpoint must hold a chunk. ASSUMED.
+endpoint_guard_us = 4000
