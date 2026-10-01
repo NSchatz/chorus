@@ -1,4 +1,4 @@
-# 0089: the TV path's low-latency wire is UDP datagrams under a per-offer ChaCha20-Poly1305 key with a 1024-wide replay window, one XOR parity per 4 chunks of 2.5 ms with an optional column interleave, offered and accepted inside the session, and L_tv 20 ms over a cited 19.4 ms floor
+# 0091: the TV path's low-latency wire is UDP datagrams under a per-offer ChaCha20-Poly1305 key with a 1024-wide replay window, one XOR parity per 4 chunks of 2.5 ms with an optional column interleave, offered and accepted inside the session, and L_tv 20 ms over a cited 19.4 ms floor
 
 - Status: accepted (goal 13, 2026-10-01)
 - Decided by: BRIEF.md 5.7 ("UDP + simple XOR parity FEC, wired only, stereo first") and 5.2;

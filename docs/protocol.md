@@ -170,7 +170,7 @@ worth anything:
 - A decoder makes the raw bytes available to its caller rather than dropping
   them.
 
-Goal 13 assigned the block for the low-latency path only (ADR 0089): a chunk
+Goal 13 assigned the block for the low-latency path only (ADR 0091): a chunk
 inside a UDP datagram carries `ll_marker`, its FEC shape and its group there
 ("Low-latency path", below). On the TCP path nothing changed: an encoder
 still writes zeros and a decoder still ignores the block, so every
@@ -862,7 +862,7 @@ Clarified in goal 11 (ADR 0079, the server accepting a line-in):
 
 Goal 13 (the TV path, BRIEF.md 5.7: "UDP + simple XOR parity FEC, wired
 only, stereo first"). Why each choice, and where every number comes from:
-`docs/decisions/0089-the-low-latency-wire.md`. The datagram layer is
+`docs/decisions/0091-the-low-latency-wire.md`. The datagram layer is
 `crates/protocol/src/v2/lowlat.rs` and, for the endpoint,
 `firmware/src/lowlat.c`; the shared vectors `fixtures/protocol/lowlat/` hold
 both to the same bytes.

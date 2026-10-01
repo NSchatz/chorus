@@ -98,7 +98,7 @@ it.
 
 ## Revisited (goal 13, 2026-10-01)
 
-ADR 0089 is that entry. It assigns the block on the low-latency UDP path only
+ADR 0091 is that entry. It assigns the block on the low-latency UDP path only
 (`ll_marker`, `fec_k`, `fec_depth`, `group_index`, `group`, six zero bytes).
 The rules above stand for the TCP path: an encoder there writes zeros, every
 decoder ignores the block, and no golden vector moved.
