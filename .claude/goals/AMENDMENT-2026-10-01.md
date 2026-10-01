@@ -50,3 +50,37 @@ The owner's answers that bind chorus (the question, then the answer verbatim):
    acceptance check shown); "landed" means the acoustic design as a devices PR.
 4. **3d.** 3d has finished, so chorus may serve its own rows to 3d by PR in 3d, under 3d's rules and
    gate, holding `flock /cache/locks/3d-merge.lock`; prints stay the owner's.
+
+## Addendum: the devices 2026-10 program (devices J9, J20; the owner, 2026-10-01)
+
+The owner's answer on the seam, verbatim: "chorus may PR anytime (Recommended)", the option that
+read "chorus PRs `builds/chorus-*` (and their part records) into devices whenever it's ready, under
+devices' gate and devices-merge.lock, whether or not devices has finished". Declined: "chorus waits
+for finished". The devices side is `NSchatz/devices` `.claude/goals/2026-10-devices.md` §0.13.
+
+5. **devices has open agent goals again.** Its 2026-10 program (`.claude/goals/2026-10-devices.md`)
+   leaves item 1's check printing "not finished" until its goals 1, 2, 7, 11 and 17 are COMPLETE.
+   Nothing in chorus waits on that any more (item 6).
+6. **P14 is approved (devices J20).** chorus opens PRs in devices at any time, whether or not devices
+   has finished, adding only `builds/chorus-<build>/acoustics.md` and its shopkit-acoustics export
+   (and, in inventory, new part records for the drivers that file names, under
+   `inventory-merge.lock`, landed first). Hold `flock -o -w 1800 /cache/locks/devices-merge.lock`
+   from the final `git pull --rebase` to `gh pr merge`; lock order `shopkit-release`, then one of
+   `shopkit-merge`, `inventory-merge` or `devices-merge`, then `chorus-heavy`. Gate: devices
+   `SHOPKIT_WORKERS=8 make check` under `chorus-heavy`; `make invariants` only when the diff touches
+   devices brief §4.2's paths. Enclosure models, `bom.csv`, `log.md`, renders, boards and every other
+   part record are devices' Audio lane's (its goals 14-16), by row. A draft branch is only the
+   fallback when devices' gate stays red after three fix rounds. Every "devices has finished or P14
+   was approved" in the brief reads true.
+7. **The file devices waits on.** Each build's acoustic design record lands at exactly
+   `builds/chorus-<build>/acoustics.md` for `chorus-compact-v1`, `chorus-twoway-v1`,
+   `chorus-sub-v1`, `chorus-rackamp-v1`, `chorus-soundbar-v1` and `chorus-lcr-v1`, with its
+   shopkit-acoustics export beside it under the name goal 23 gives it. devices' goals 14-16 start
+   when these paths are on devices `origin/main`. The file lands once, complete: a `version:` line;
+   the drivers (make, model, vendor, URL, price, date, ship-from); the endpoint module chorus's
+   firmware targets (P1); net volume, port, baffle step, crossover, DSP EQ and the tolerances an
+   enclosure must hold; P12's path. A later change bumps `version` and files a new row. Goal 26 lands
+   the rack amp's, soundbar's and LCR's files in one devices PR.
+8. **Rows.** `chorus-1` is `ACCEPTED (2026-10 devices goals 14-16)` (devices sets it); the per-build
+   rows of goals 24-26 are served by devices goals 14-16; devices' row naming item 7's paths
+   (`dev-14`, filed by devices goal 1) is accepted for goals 24-26.
