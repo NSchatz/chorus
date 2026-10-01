@@ -169,11 +169,17 @@ def main():
           f"after a {RSS_WARMUP_S:.0f} s warm-up (ASSUMED) to its last")
 
     # --- 4. the control fanout --------------------------------------------------
+    # The counters are cumulative from the server's start; the window's are the
+    # difference between the snapshots at its two ends. Start-up (ten endpoints
+    # arriving at once) is reported beside them, not graded as the soak.
+    with open(os.path.join(run, "report-start")) as f:
+        rep0 = fields(f.read().strip())
     with open(os.path.join(run, "report-end")) as f:
         report_line = f.read().strip()
     rep = fields(report_line)
-    drops = {k: int(rep.get(k, -1)) for k in
-             ("dropped_subscribers", "dropped_messages", "stalled_dropped", "turned_away")}
+    counters = ("dropped_subscribers", "dropped_messages", "stalled_dropped", "turned_away")
+    drops = {k: int(rep.get(k, -1)) - int(rep0.get(k, 0)) for k in counters}
+    before = {k: int(rep0.get(k, -1)) for k in counters}
     states = []
     closed_early = False
     with open(os.path.join(run, "states.log")) as f:
@@ -187,10 +193,13 @@ def main():
             except ValueError:
                 pass
     g.add("control fanout drops", all(v == 0 for v in drops.values()) and not closed_early,
-          ", ".join(f"{k}={v}" for k, v in drops.items())
+          "in the window " + ", ".join(f"{k}={v}" for k, v in drops.items())
           + f"; the soak's own subscriber received {len(states)} states and "
-          + ("was cut off before the end" if closed_early else "held its stream to the end"),
-          "all zero (GET /api/report at the end of the window), the subscriber never dropped")
+          + ("was cut off before the end" if closed_early else "held its stream to the end")
+          + "; at start-up, before the window: "
+          + ", ".join(f"{k}={v}" for k, v in before.items()),
+          "all zero over the window (GET /api/report at its two ends), the subscriber never "
+          "dropped")
 
     # --- 5. volume never above its effective limit -------------------------------
     state_bad = []
@@ -208,9 +217,12 @@ def main():
     delay = {}
     for ident, e in endpoints.items():
         events = []
-        path = os.path.join(run, f"endpoint-{ident}.log")
-        if os.path.exists(path):
-            with open(path) as f:
+        # A rejoined session writes `<log>.session<n>`; the timeline is the
+        # process's, so every session's events share one clock.
+        logs = sorted(n for n in os.listdir(run)
+                      if n == f"endpoint-{ident}.log" or n.startswith(f"endpoint-{ident}.log.session"))
+        for name in logs:
+            with open(os.path.join(run, name)) as f:
                 for line in f:
                     if not line.startswith("event "):
                         continue
@@ -273,25 +285,42 @@ def main():
 
     # --- 7. sessions -------------------------------------------------------------
     with open(os.path.join(run, "server.log")) as f:
-        server_log = f.read()
-    with open(os.path.join(run, "state-end.json")) as f:
-        body = f.read()
-    final = json.loads(body.split("\r\n\r\n", 1)[-1])
-    present = {z["id"]: z.get("present", []) for z in final.get("zones", [])}
+        server_lines = f.read().splitlines()
+    first, last = int(P["server_log_lines_start"]), int(P["server_log_lines_end"])
+
+    def present_in(name):
+        with open(os.path.join(run, name)) as f:
+            body = json.loads(f.read().split("\r\n\r\n", 1)[-1])
+        return {z["id"]: z.get("present", []) for z in body.get("zones", [])}
+
+    present0, present1 = present_in("state-start.json"), present_in("state-end.json")
+    pattern = re.compile(r"client session peer=\S+ id=(\S+) ")
+    opened_before, opened_in = {}, {}
+    for n, line in enumerate(server_lines[:last]):
+        m = pattern.search(line)
+        if m:
+            bucket = opened_before if n < first else opened_in
+            bucket[m.group(1)] = bucket.get(m.group(1), 0) + 1
     session_bad = []
     for ident, e in endpoints.items():
-        n = len(re.findall(rf"client session peer=\S+ id={re.escape(ident)} ", server_log))
         text = open(os.path.join(run, f"endpoint-{ident}.out")).read()
-        clean = re.search(r"stopped reason=run-length-reached sessions=1 ", text) is not None
-        if n != 1 or ident not in present.get(e["room"], []) or not clean:
-            session_bad.append(f"{ident}: {n} sessions, present={ident in present.get(e['room'], [])}, "
-                               f"clean stop={clean}")
+        clean = re.search(r"stopped reason=run-length-reached sessions=\d+ ", text) is not None
+        up0 = ident in present0.get(e["room"], [])
+        up1 = ident in present1.get(e["room"], [])
+        if opened_in.get(ident) or not (up0 and up1 and clean):
+            session_bad.append(f"{ident}: {opened_in.get(ident, 0)} sessions opened in the window, "
+                               f"present at start {up0}, at end {up1}, clean stop {clean}")
+    retried = {k: v for k, v in opened_before.items() if v > 1}
     g.add("sessions", not session_bad,
-          f"all {len(endpoints)} endpoints present in their rooms at the end of the window, "
-          "each on the one session it opened, each stopped by its run length"
-          if not session_bad else "; ".join(session_bad),
-          "every endpoint up at the end: one session for the whole run, present in its room, "
-          "a clean stop")
+          (f"all {len(endpoints)} endpoints present in their rooms at both ends of the window, "
+           "none opening a session in it (none lost one), each stopped by its run length"
+           if not session_bad else "; ".join(session_bad))
+          + "; at start-up, before the window: " + (
+              ", ".join(f"{k} took {v} sessions" for k, v in sorted(retried.items()))
+              + " (a first session failed and was rejoined)" if retried
+              else "every endpoint's first session held"),
+          "every endpoint up for the whole window: present in its room at both ends, no session "
+          "opened in it, a clean stop")
 
     # --- 8. the command load ------------------------------------------------------
     cmds = [c for c in load if "kind" in c]

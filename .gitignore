@@ -13,3 +13,6 @@
 
 # Release artifacts (tools/release.sh); attached to GitHub releases, never committed.
 /dist
+
+# Python byte code, should a tool script be imported or compiled.
+__pycache__/

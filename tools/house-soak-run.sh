@@ -274,18 +274,40 @@ for E in "${ENDPOINTS[@]}"; do
     printf 'endpoint %s pid=%s\n' "$ID" "$!" >> "$RUN_DIR/pids"
 done
 
-# Every endpoint has a session before the clock starts.
+# Every endpoint has a session before the clock starts. Ten endpoints starting
+# in the same instant is a small restart storm (AC-3's subject, not this
+# soak's): a control connection can be turned away while every worker is busy
+# and a first session can fail and be rejoined. Whatever happens before the
+# window is reported apart from what happens in it.
+sessions_up() {
+    sed -n 's/.*client session peer=[^ ]* id=\([^ ]*\) .*/\1/p' "$RUN_DIR/server.log" | sort -u | wc -l | tr -d ' '
+}
 waited=0
-until [ "$(grep -c 'client session ' "$RUN_DIR/server.log" || true)" -ge "${#ENDPOINTS[@]}" ]; do
+until [ "$(sessions_up)" -ge "${#ENDPOINTS[@]}" ]; do
     waited=$(( waited + 1 ))
-    if [ "$waited" -gt 150 ]; then
-        say "FAIL not every endpoint opened a session within 30 s; the server has $(grep -c 'client session ' "$RUN_DIR/server.log" || true) of ${#ENDPOINTS[@]}"
+    if [ "$waited" -gt 300 ]; then
+        say "FAIL not every endpoint opened a session within 60 s; the server has $(sessions_up) of ${#ENDPOINTS[@]}"
         exit 1
     fi
     sleep 0.2
 done
 # A settle, so the first population and RSS samples are of a house that is up.
 sleep 10
+
+# The control plane's counters and the state at an instant, and how far the
+# server's log had got, so the grade can tell the window from the start-up.
+snapshot() {
+    python3 - "$CONTROL" "$RUN_DIR" "$1" <<'PY'
+import http.client, sys
+port, run, at = int(sys.argv[1]), sys.argv[2], sys.argv[3]
+for path, name in (("/api/report", f"report-{at}"), ("/api/state", f"state-{at}.json")):
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    c.request("GET", path, headers={"Host": "chorus"})
+    open(f"{run}/{name}", "w").write(c.getresponse().read().decode())
+PY
+    printf 'server_log_lines_%s=%s\n' "$1" "$(wc -l < "$RUN_DIR/server.log" | tr -d ' ')" >> "$RUN_DIR/params"
+}
+snapshot start
 
 proc_sample() {
     local at="$1" kind id pid
@@ -328,14 +350,7 @@ END_MONO="$(mono)"
 END_WALL="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 proc_sample "$END_MONO" > "$RUN_DIR/population-end"
 kill "$SAMPLER_PID" 2>/dev/null || true
-python3 - "$CONTROL" "$RUN_DIR" <<'PY'
-import http.client, sys
-port, run = int(sys.argv[1]), sys.argv[2]
-for path, name in (("/api/report", "report-end"), ("/api/state", "state-end.json")):
-    c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
-    c.request("GET", path, headers={"Host": "chorus"})
-    open(f"{run}/{name}", "w").write(c.getresponse().read().decode())
-PY
+snapshot end
 printf 'end_wall=%s\nend_mono=%s\n' "$END_WALL" "$END_MONO" >> "$RUN_DIR/params"
 say "chorus: the load window closed at $END_WALL; waiting for the endpoints to stop by their run length"
 
