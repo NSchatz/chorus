@@ -57,6 +57,7 @@ the number of the pull request that added it.
 | 0067 | [one controller model in two languages, a Linux front panel read through evdev and the LED class, and the server routes an endpoint's controller commands through the control plane](0067-the-linux-front-panel-and-one-controller-model.md) |
 | 0068 | [chorus-client drives N device channels through an output map at the sink's edge, and multichannel on the Linux tier is a Pi 5 parallel-lane DAC HAT](0068-the-output-map.md) |
 | 0069 | [the Linux endpoint ships as one .deb per architecture, cross-built for glibc 2.36 with zig, run by a hardened systemd unit with real-time limits](0069-the-linux-endpoint-package.md) |
+| 0071 | [a line-in's latency grows from L_local to L_group by a bounded, raised-cosine time stretch planned on the server, proven against a stated glitch criterion in the simulator](0071-latency-growth.md) |
 | 0072 | [the schedule library is a pure crate that reads no clock: civil time from TZif with a gap and a fold rule, weekly windows, alarms, sleep fades, integer ramps and generated chimes](0072-the-schedule-library.md) |
 | 0075 | [control catalog v2: rooms, bonded sets with a wired-only rule, saved and live groups, take-the-room, Sonos-style group volume, clamped limits and quiet hours, alarm, sleep and autoplay configuration, state-file format 2](0075-control-catalog-v2.md) |
 | 0074 | [the room's gain and limit travel on the audio wire as room_volume, and both endpoint kinds enforce min(ramped gain, limit, own ceiling) at every frame](0074-room-volume-on-the-audio-wire.md) |
