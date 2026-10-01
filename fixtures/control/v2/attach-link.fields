@@ -1,0 +1,16 @@
+# Canonical input for the catalog v2 attach-link vector.
+#
+# Encoding these field values must produce exactly attach-link.json, and decoding
+# attach-link.json must recover exactly these field values.
+#
+# Catalog v2 adds an optional `link` to attach: what the endpoint says about
+# how it reaches the server. Without it the command is v1's and is written at
+# v1 (fixtures/control/attach.json).
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = attach
+zone = living
+endpoint = endpoint-a
+link = wired

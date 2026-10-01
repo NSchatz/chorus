@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"windows","detail":"a quiet-hours window starting and ending at 22:00 is ambiguous (empty or all day); give it a different end"}

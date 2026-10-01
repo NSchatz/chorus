@@ -39,6 +39,7 @@ pub mod catalog;
 pub mod fanout;
 pub mod json;
 pub mod persist;
+pub mod rooms;
 pub mod transport;
 pub mod zones;
 

@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"time","detail":"'6:45' is not a time: the catalog declares \"HH:MM\", 00:00 to 23:59"}

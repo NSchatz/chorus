@@ -17,7 +17,7 @@ mod vectors;
 
 use std::collections::BTreeSet;
 
-use chorus_control::catalog::{decode_command, Command, RefusalKind, Volume};
+use chorus_control::catalog::{decode_command, decode_command_with, Command, RefusalKind, Volume};
 use chorus_control::json;
 use chorus_control::zones::{Zone, Zones};
 
@@ -106,15 +106,21 @@ fn decoding_every_committed_command_vector_recovers_its_committed_fields() {
 #[test]
 fn an_unknown_catalog_version_refuses_the_session_and_applies_nothing() {
     let fields = read_fields("refused-unknown-version");
-    let refusal =
-        decode_command(&fields.get("input")).expect_err("this version is not implemented");
+    // This vector was written by a build implementing catalog version 1 only,
+    // and its `implemented` field says so; a build implementing [1, 2] writes
+    // fixtures/control/v2/refused-unknown-version.json instead.
+    let refusal = decode_command_with(&fields.get("input"), &implemented(&fields))
+        .expect_err("this version is not implemented");
     assert!(
         refusal.ends_the_session(),
         "an unknown catalog version refuses the SESSION, not one message"
     );
     assert!(matches!(
         refusal.kind,
-        RefusalKind::UnknownVersion { offered: Some(9) }
+        RefusalKind::UnknownVersion {
+            offered: Some(9),
+            ..
+        }
     ));
     assert_eq!(refusal.encode(), read_json("refused-unknown-version"));
 
@@ -182,11 +188,17 @@ fn encode_from(fields: &Fields) -> String {
                 index += 1;
             }
             zones.set_serial(fields.get("serial").parse().expect("a serial"));
-            zones.encode_state()
+            // The v1 renderer, which `GET /api/state?v=1` serves.
+            zones.encode_state_at(1)
         }
         "error" | "refused" => {
             let input = fields.get("input");
-            let refusal = match decode_command(&input) {
+            let built_for = if fields.has("implemented") {
+                implemented(fields)
+            } else {
+                chorus_control::catalog::IMPLEMENTED_VERSIONS.to_vec()
+            };
+            let refusal = match decode_command_with(&input, &built_for) {
                 Err(refusal) => refusal,
                 Ok(command) => {
                     // A message that decodes but that the state refuses.
@@ -222,6 +234,7 @@ fn command_from(fields: &Fields) -> Command {
         "attach" => Command::Attach {
             zone,
             endpoint: fields.get("endpoint"),
+            link: None,
         },
         "name" => Command::Name {
             zone,
@@ -242,6 +255,14 @@ fn command_from(fields: &Fields) -> Command {
         },
         other => panic!("{} is not a command in this catalog", other),
     }
+}
+
+/// The catalog versions the build that wrote a vector implemented.
+fn implemented(fields: &Fields) -> Vec<i64> {
+    list(&fields.get("implemented"))
+        .iter()
+        .map(|v| v.parse().expect("a version"))
+        .collect()
 }
 
 fn list(text: &str) -> Vec<String> {

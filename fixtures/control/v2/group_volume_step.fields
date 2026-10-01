@@ -1,0 +1,13 @@
+# Canonical input for the catalog v2 group_volume_step vector.
+#
+# Encoding these field values must produce exactly group_volume_step.json, and decoding
+# group_volume_step.json must recover exactly these field values.
+#
+# A step is signed thousandths, -1000 to 1000, written as a whole number.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = group_volume_step
+group = downstairs
+step = -50

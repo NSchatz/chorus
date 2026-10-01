@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"members","detail":"endpoint 'endpoint-b' (FR) is not an endpoint of room 'living', whose endpoints are endpoint-a; a bonded set is made of a room's own endpoints"}

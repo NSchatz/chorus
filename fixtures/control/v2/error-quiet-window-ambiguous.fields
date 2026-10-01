@@ -1,0 +1,14 @@
+# Canonical input for the catalog v2 error-quiet-window-ambiguous vector.
+#
+# `input` is refused, by the decoder or by the room state the commands below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-quiet-window-ambiguous.json. Nothing of it is applied.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+zones = bedroom
+input = {"v":2,"t":"quiet_hours","zone":"bedroom","windows":[{"days":["mon"],"start":"22:00","end":"22:00","limit":0.200}]}
+field = windows
+ends_the_session = 0

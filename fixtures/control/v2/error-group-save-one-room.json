@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"zones","detail":"a saved group holds two or more rooms; a single room is already its own group"}

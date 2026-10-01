@@ -1,0 +1,18 @@
+# Canonical input for the catalog v2 error-alarm-target-live-group vector.
+#
+# `input` is refused, by the decoder or by the room state the commands below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-alarm-target-live-group.json. Nothing of it is applied.
+#
+# An alarm outlives a restart, so its target is a room or a saved group, not
+# a live group whose id names nothing once it dissolves.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+zones = kitchen,study
+command.0 = {"v":2,"t":"join","zone":"kitchen","target":"study"}
+input = {"v":2,"t":"alarm_set","alarm":"wake","target":"live-1","time":"06:45","days":[],"source":"stream","volume":0.300,"ramp_s":30,"duration_min":0,"enabled":true}
+field = target
+ends_the_session = 0

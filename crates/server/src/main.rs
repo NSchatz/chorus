@@ -351,7 +351,7 @@ fn main() -> ExitCode {
     let mut control = None;
     if let Some(address) = config.control_listen.clone() {
         let default_audio = config.listen.clone();
-        let (zones, state_path, from_file) = match initial_state(
+        let (mut zones, state_path, from_file) = match initial_state(
             config.state_file.as_deref(),
             &config.zones,
             &config.group_audio,
@@ -378,6 +378,9 @@ fn main() -> ExitCode {
                 transports.group_tier(zones.zones(), &group).report()
             );
         }
+        // Catalog v2: a room declared wireless cannot hold a bonded set (K91),
+        // so the room model is told each room's declared tier.
+        zones.set_transports(transports.clone());
         let zone_count = zones.zones().len();
         let state = Arc::new(ControlState::new(
             zones,

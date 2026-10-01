@@ -1,0 +1,13 @@
+# Canonical input for the catalog v2 sleep vector.
+#
+# Encoding these field values must produce exactly sleep.json, and decoding
+# sleep.json must recover exactly these field values.
+#
+# Minutes, 0 to 720; 0 cancels the timer.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = sleep
+target = bedroom
+minutes = 30

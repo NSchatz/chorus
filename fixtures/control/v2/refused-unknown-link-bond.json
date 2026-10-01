@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"members","detail":"endpoint 'endpoint-b' (FR) has a link that is unknown, not wired; a bonded set holds wired endpoints only (K91), because a stereo pair or a theater is held to the wired tier's bound and a radio is not"}

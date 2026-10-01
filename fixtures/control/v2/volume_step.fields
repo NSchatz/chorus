@@ -1,0 +1,11 @@
+# Canonical input for the catalog v2 volume_step vector.
+#
+# Encoding these field values must produce exactly volume_step.json, and decoding
+# volume_step.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = volume_step
+zone = kitchen
+step = 25

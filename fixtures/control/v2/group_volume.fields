@@ -1,0 +1,11 @@
+# Canonical input for the catalog v2 group_volume vector.
+#
+# Encoding these field values must produce exactly group_volume.json, and decoding
+# group_volume.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = group_volume
+group = downstairs
+volume = 0.400
