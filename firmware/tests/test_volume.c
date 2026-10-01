@@ -11,6 +11,13 @@
  * decoded by the endpoint's own decoder, plays at its limit. And the
  * committed endpoint.conf carries a max_volume the reader takes.
  *
+ * And the server's own sequence: fixtures/volume/room-volume-sequence.hex is
+ * every room_volume the real chorus-server sent one player while a test drove
+ * every volume path (crates/server/tests/limits_hold_for_every_volume_path.rs
+ * captured it), fed here through this endpoint's decoder and volume path, so
+ * both endpoint kinds are shown on the same sequence: at every message the
+ * applied gain is min(gain, limit, ceiling), never above the limit.
+ *
  * Deterministic: no clock, no sleep. Every number here is arithmetic on
  * committed inputs, not a timing claim (BRIEF section 3.1 rule 3). */
 
@@ -502,6 +509,66 @@ static void test_committed_vector_plays_at_its_limit(void)
                  expect(8000000, q(rv->gain)));
 }
 
+/* The real server's room_volume sequence over every volume path (captured
+ * by the server's test), through this endpoint's decoder and volume path,
+ * at the default ceiling and at a lowered one. */
+static void test_server_sequence_holds_the_clamp(void)
+{
+    chorus_section("fixtures/volume/room-volume-sequence.hex: the server's sequence, clamped");
+    char path[512];
+    static char text[16384];
+    static uint8_t bytes[4096];
+    chorus_repo_path(path, sizeof(path), "fixtures/volume/room-volume-sequence.hex");
+    long len = (fixture_read(path, text, sizeof(text)) < 0)
+                   ? -1
+                   : fixture_parse_hex(text, bytes, sizeof(bytes));
+    chorus_check(len > 0, "the sequence reads (%ld bytes)", len);
+    if (len <= 0) {
+        return;
+    }
+    chorus_volume_t full;
+    chorus_volume_t low;
+    chorus_volume_init(&full, 1000);
+    chorus_volume_init(&low, 250);
+    size_t at = 0;
+    unsigned messages = 0;
+    int clamped = 1;
+    int decoded_all = 1;
+    while (at < (size_t)len) {
+        chorus_v2_frame_t d = chorus_v2_decode_frame(bytes + at, (size_t)len - at);
+        if (d.consumed == 0 || d.outcome != CHORUS_FRAME_DECODED ||
+            d.message.type != CHORUS_V2_ROOM_VOLUME) {
+            decoded_all = 0;
+            break;
+        }
+        at += d.consumed;
+        const chorus_v2_room_volume_t *rv = &d.message.as.room_volume;
+        chorus_volume_set(&full, rv->gain, rv->limit, rv->ramp_ms, RATE);
+        chorus_volume_set(&low, rv->gain, rv->limit, rv->ramp_ms, RATE);
+        /* The server sends every step at once (ramp_ms 0), so each applies
+         * from the next frame. */
+        uint32_t wanted = rv->gain < rv->limit ? rv->gain : rv->limit;
+        uint32_t low_wanted = wanted < 250u ? wanted : 250u;
+        if (rv->ramp_ms != 0 || chorus_volume_applied_q16(&full) != q(wanted) ||
+            chorus_volume_applied_q16(&full) > q(rv->limit) ||
+            chorus_volume_applied_q16(&low) != q(low_wanted)) {
+            clamped = 0;
+            printf("  message %u: gain %u limit %u ramp %u applied %u (ceiling 250: %u)\n",
+                   messages, (unsigned)rv->gain, (unsigned)rv->limit, (unsigned)rv->ramp_ms,
+                   chorus_volume_applied_thousandths(&full),
+                   chorus_volume_applied_thousandths(&low));
+        }
+        messages++;
+    }
+    chorus_check(decoded_all && messages >= 8, "every frame decodes as room_volume (%u messages)",
+                 messages);
+    chorus_check(clamped,
+                 "at every message the applied gain is min(gain, limit), never above the limit, "
+                 "and under a ceiling of 250 never above 250");
+    chorus_check(full.messages == messages && low.messages == messages,
+                 "every message was taken (%u)", (unsigned)full.messages);
+}
+
 static void test_committed_configuration(void)
 {
     chorus_section("firmware/config/endpoint.conf carries max_volume");
@@ -549,6 +616,7 @@ int main(void)
     test_mute();
     test_playout_path();
     test_committed_vector_plays_at_its_limit();
+    test_server_sequence_holds_the_clamp();
     test_committed_configuration();
     return chorus_test_report("test_volume");
 }

@@ -53,13 +53,18 @@
 //!   to a slot;
 //! - two **client** threads per slot, `--max-clients` slots of them, created
 //!   whether or not anybody has connected;
-//! - with `--control-listen`, the **control acceptor** and one **control
+//! - with `--control-listen`, the **control acceptor**, one **control
 //!   worker** per `--control-workers` slot, created whether or not any
-//!   subscriber has connected, and with `--advertise` one **advertiser**.
+//!   subscriber has connected, the **event writer** that holds every event
+//!   stream (`chorus_server::events`) and the **conductor** that carries
+//!   every change to the audio sessions (`chorus_server::conductor`), and
+//!   with `--advertise` one **advertiser**.
 //!
 //! So the population is `3 + 2N` without the control plane and
-//! `4 + 2N + M` with it, plus one for the advertiser, and NOT ONE of those
-//! numbers is a function of how many endpoints or browsers are switched on.
+//! `6 + 2N + M` with it, plus one for the advertiser, and NOT ONE of those
+//! numbers is a function of how many endpoints or browsers are switched on,
+//! nor of `--slots`: every stream slot is cut by the one audio thread
+//! (`chorus_server::slots`).
 //! `crates/server/tests/control_thread_population.rs` grades that against
 //! `/proc` while subscribers come and go.
 //!
@@ -90,18 +95,21 @@ use chorus_discovery::dnssd::{Advertisement, AUDIO_SERVICE, CONTROL_SERVICE};
 use chorus_discovery::net::{advertisable_addresses, Advertiser};
 use chorus_hostctl::ThreadRegistry;
 use chorus_server::clients::ClientPool;
+use chorus_server::conductor::{self, Conductor};
 use chorus_server::config::{ServerConfig, ServerConfigError};
 use chorus_server::control::{initial_state, ControlPlane, ControlState};
 use chorus_server::hostreport::{
     decide_memory_lock, register_ordinary_thread, scheduling_report, take_contract_for_this_thread,
     ContractRefused, RealTimeOutcome, SchedulingVerdict,
 };
+use chorus_server::router::Router;
 use chorus_server::serve::{serve_stream, ServeError, ServeParams, ServeReport};
 use chorus_server::session::{
     identity_source, load_identity, IdentitySource, Offer, OfferRefused, SessionContext,
 };
+use chorus_server::slots::{serve_slots, SlotCommand, SlotEvent};
 use chorus_server::source::{self, PcmSource};
-use chorus_server::stream::{Fanout, FanoutSink};
+use chorus_server::stream::FanoutSink;
 
 const EXIT_CONFIG: u8 = 2;
 const EXIT_CONTRACT: u8 = 3;
@@ -198,6 +206,9 @@ audio:
   --tone-ms <ms> --rate-skew-ppm <ppm>  tone length and a deliberate rate skew, for tests
   --serve-forever             keep serving after a client ends (default: serve once)
   --max-clients <n>           audio clients at once (default 4)
+  --slots <n>                 stream slots: serve every group's stream from this process, each
+                              session routed to its group's (needs --control-listen; default 0,
+                              one stream for everyone; at most 32)
 
 identity (protocol v2; every audio connection is an encrypted session):
   --identity-dir <dir>        server.key and adopted-endpoints live here
@@ -214,7 +225,9 @@ control plane:
   --control-workers <n>         control worker threads (default 8)
   --state-file <path>           persist zone state here
   --zone <id[=transport]>       declare a zone (repeatable)
-  --group-audio <group=addr>    where a group's stream is served (repeatable)
+  --group-audio <group=addr>    where a group's stream is served (repeatable; not with --slots)
+  --event-streams <n>           GET /api/events streams held at once (default 64)
+  --civil-time <day-HH:MM>      evaluate quiet hours at this civil time, held fixed (tests)
   --advertise --instance <label>  advertise by multicast DNS
 
 health:
@@ -382,10 +395,20 @@ fn main() -> ExitCode {
         // so the room model is told each room's declared tier.
         zones.set_transports(transports.clone());
         let zone_count = zones.zones().len();
-        let state = Arc::new(ControlState::new(
-            zones,
-            config.state_file.as_ref().map(|_| state_path),
-        ));
+        let mut state = ControlState::new(zones, config.state_file.as_ref().map(|_| state_path));
+        state.set_event_streams(config.event_streams);
+        // A fixed civil time, when one is configured, before any group is
+        // planned onto a slot: the quiet hours it activates clamp first.
+        state.set_civil_time(config.civil_time);
+        if config.slots > 0 {
+            for group in state.serve_on_slots(config.slots) {
+                println!(
+                    "chorus-server: slots group={} source=none reason=every-slot-in-use slots={}",
+                    group, config.slots
+                );
+            }
+        }
+        let state = Arc::new(state);
         match ControlPlane::bind(&address, Arc::clone(&state)) {
             Ok(plane) => {
                 println!(
@@ -492,7 +515,14 @@ fn main() -> ExitCode {
     // gives the next stream an origin later than the last one's, so nothing is
     // gained by restarting it.
     let timeline = MonotonicTimeline::new();
-    let fanout = Arc::new(Fanout::new());
+    // One stream and its one fanout, or `--slots S` of them and the silent
+    // one; either way the router is what attaches each session to one.
+    let router = Arc::new(if config.slots > 0 {
+        Router::slotted(config.slots)
+    } else {
+        Router::single(Arc::new(chorus_server::stream::Fanout::new()))
+    });
+    let fanout = Arc::clone(&router.fanouts()[0]);
     let keep = Arc::new(AtomicBool::new(true));
     let params = ServeParams {
         format,
@@ -515,13 +545,21 @@ fn main() -> ExitCode {
     let (sources, stream_jobs) = mpsc::channel::<Box<dyn PcmSource>>();
     let (outcomes, stream_outcomes) = mpsc::channel::<Result<ServeReport, ServeError>>();
     let (contract, contract_taken) = mpsc::channel::<Result<RealTimeOutcome, ContractRefused>>();
+    // The slot shape's two channels: what each slot plays, from the
+    // conductor (bounded, drained at every chunk boundary), and what the
+    // audio thread says about the configured stream, to this thread.
+    let (slot_commands, slot_inbox) = mpsc::sync_channel::<SlotCommand>(4 * config.slots.max(1));
+    let (slot_events, slot_outcomes) = mpsc::channel::<SlotEvent>();
+    let (slots_failed, slots_stopped) = mpsc::channel::<ServeError>();
     {
         let registry = Arc::clone(&registry);
         let fanout = Arc::clone(&fanout);
+        let router = Arc::clone(&router);
         let keep = Arc::clone(&keep);
         let rt_priority = config.rt_priority;
         let rttime_us = config.rttime_us;
         let allow_non_realtime = config.allow_non_realtime;
+        let slotted = config.slots > 0;
         thread::spawn(move || {
             let taken = take_contract_for_this_thread(
                 "audio",
@@ -532,6 +570,22 @@ fn main() -> ExitCode {
             );
             let refused = taken.is_err();
             if contract.send(taken).is_err() || refused {
+                return;
+            }
+            if slotted {
+                // Every slot, on one grid, until the run stops. Only a
+                // failed source ends it early.
+                if let Err(e) = serve_slots(
+                    params,
+                    timeline,
+                    &router,
+                    &slot_inbox,
+                    &stream_jobs,
+                    &slot_events,
+                    &keep,
+                ) {
+                    let _ = slots_failed.send(e);
+                }
                 return;
             }
             for mut pcm in stream_jobs {
@@ -658,6 +712,7 @@ fn main() -> ExitCode {
         // An endpoint's buttons change its zone through the control plane,
         // when this server runs one (ADR 0063, docs/decisions/0067-*).
         control: control.as_ref().map(|(_, state)| Arc::clone(state)),
+        router: Arc::clone(&router),
     });
     drop(arrived);
 
@@ -680,7 +735,6 @@ fn main() -> ExitCode {
     let (bound, listening) = mpsc::channel::<TcpListener>();
     {
         let registry = Arc::clone(&registry);
-        let fanout = Arc::clone(&fanout);
         let keep = Arc::clone(&keep);
         let ready = ready.clone();
         let status = status.clone();
@@ -697,7 +751,7 @@ fn main() -> ExitCode {
             while keep.load(Ordering::SeqCst) {
                 match listener.accept() {
                     Ok((stream, peer)) => {
-                        attach(stream, peer, &pool, &fanout, &status);
+                        attach(stream, peer, &pool, &status);
                     }
                     Err(e) => {
                         report("a client connection failed", &e.to_string());
@@ -714,14 +768,43 @@ fn main() -> ExitCode {
     // already exist, and turns one away by name when they are all busy.
     let mut control_threads = 0usize;
     let control_state = control.as_ref().map(|(_, state)| Arc::clone(state));
-    if let Some((mut plane, _)) = control.take() {
-        plane.spawn_workers(
-            config.control_workers,
-            Arc::clone(&keep),
-            Arc::clone(&registry),
-            ready.clone(),
-        );
-        control_threads = plane.threads() + 1;
+    if let Some((mut plane, state)) = control.take() {
+        plane.spawn_workers(config.control_workers, Arc::clone(&registry), ready.clone());
+        // The acceptor, the workers, and the two threads that serve every
+        // subscriber and every session: the event writer and the conductor.
+        control_threads = plane.threads() + 3;
+        {
+            let state = Arc::clone(&state);
+            let keep = Arc::clone(&keep);
+            let registry = Arc::clone(&registry);
+            let ready = ready.clone();
+            thread::spawn(move || {
+                register_ordinary_thread("event-writer", &registry);
+                if ready.send(()).is_err() {
+                    return;
+                }
+                drop(ready);
+                chorus_server::events::run_writer(state, keep);
+            });
+        }
+        {
+            let conductor = Conductor::new(
+                Arc::clone(&state),
+                Arc::clone(&router),
+                (config.slots > 0).then(|| slot_commands.clone()),
+            );
+            let keep = Arc::clone(&keep);
+            let registry = Arc::clone(&registry);
+            let ready = ready.clone();
+            thread::spawn(move || {
+                register_ordinary_thread("conductor", &registry);
+                if ready.send(()).is_err() {
+                    return;
+                }
+                drop(ready);
+                conductor::run(conductor, keep);
+            });
+        }
         let keep_for_acceptor = Arc::clone(&keep);
         let registry = Arc::clone(&registry);
         let ready = ready.clone();
@@ -825,6 +908,9 @@ fn main() -> ExitCode {
     ));
     if let Some(state) = &control_state {
         status.say(&state.report());
+        if let Some(table) = state.slots_report() {
+            status.say(&format!("slots count={} assigned={}", config.slots, table));
+        }
     }
     if memory.is_unlocked() {
         status.say("note this run holds no locked memory");
@@ -855,6 +941,20 @@ fn main() -> ExitCode {
         );
         return ExitCode::from(EXIT_TRANSPORT);
     }
+
+    if config.slots > 0 {
+        return serve_slot_shape(
+            &config,
+            format,
+            chirp.as_ref(),
+            &sources,
+            &slot_outcomes,
+            &slots_stopped,
+            &keep,
+            &status,
+        );
+    }
+    drop(slot_commands);
 
     // One stream, or one stream after another. `--serve-forever` clears
     // `config.once`, and `deploy/run-server.sh` and `deploy/Dockerfile` both
@@ -964,7 +1064,6 @@ fn attach(
     stream: TcpStream,
     peer: std::net::SocketAddr,
     pool: &ClientPool,
-    fanout: &Arc<Fanout>,
     status: &Status,
 ) -> bool {
     let _ = stream.set_nodelay(true);
@@ -982,19 +1081,100 @@ fn attach(
     // rather than sit in a blocking read forever.
     let _ = reader.set_read_timeout(Some(Duration::from_millis(200)));
 
-    if !pool.attach(stream, reader, peer, || fanout.subscribe()) {
+    // `clients=` counts the slots serving a connection, this one included.
+    if !pool.attach(stream, reader, peer) {
         status.say(&format!(
             "client refused peer={} reason=no-free-client-slot max_clients={} clients={}",
             peer,
             pool.max_clients(),
-            fanout.subscribers()
+            pool.busy().count()
         ));
         return false;
     }
     status.say(&format!(
         "client connected peer={} clients={}",
         peer,
-        fanout.subscribers()
+        pool.busy().count()
     ));
     true
+}
+
+/// The slot shape's supervision: the configured stream opened and handed to
+/// the audio thread, and again each time it ends, until the run is stopped or
+/// the source fails. A slot never ends, so there is no `stream_end` and no
+/// "serve once": the process serves until it is stopped.
+#[allow(clippy::too_many_arguments)]
+fn serve_slot_shape(
+    config: &ServerConfig,
+    format: StreamFormat,
+    chirp: Option<&chorus_measure::ChirpSpec>,
+    sources: &mpsc::Sender<Box<dyn PcmSource>>,
+    ended: &mpsc::Receiver<SlotEvent>,
+    failed: &mpsc::Receiver<ServeError>,
+    keep: &Arc<AtomicBool>,
+    status: &Status,
+) -> ExitCode {
+    loop {
+        let pcm = match source::open(
+            &config.source,
+            format,
+            config.chunk_us,
+            config.tone_ms,
+            chirp,
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                keep.store(false, Ordering::SeqCst);
+                report(
+                    "the PCM source could not be opened",
+                    &format!("{}: {}", config.source, e),
+                );
+                return ExitCode::from(EXIT_SOURCE);
+            }
+        };
+        status.say(&format!("source {}", pcm.describe()));
+        if sources.send(pcm).is_err() {
+            keep.store(false, Ordering::SeqCst);
+            report("the stream stopped", "the chunk emitter is gone");
+            status.say("stopped reason=stream-failed");
+            return ExitCode::from(EXIT_TRANSPORT);
+        }
+        // Wait for it to end, or for the audio thread to stop.
+        loop {
+            if let Ok(e) = failed.try_recv() {
+                keep.store(false, Ordering::SeqCst);
+                report("the stream stopped", &e.to_string());
+                status.say("stopped reason=stream-failed");
+                return match e {
+                    ServeError::Source(_) => ExitCode::from(EXIT_SOURCE),
+                    _ => ExitCode::from(EXIT_TRANSPORT),
+                };
+            }
+            match ended.recv_timeout(Duration::from_millis(200)) {
+                Ok(SlotEvent::StreamEnded { chunks }) => {
+                    status.say(&format!(
+                        "stream ended chunks={}; its slots play silence until it is reopened",
+                        chunks
+                    ));
+                    // A source that ends at once (an empty file) is not
+                    // reopened in a tight loop.
+                    thread::sleep(Duration::from_millis(200));
+                    break;
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    if let Ok(e) = failed.try_recv() {
+                        keep.store(false, Ordering::SeqCst);
+                        report("the stream stopped", &e.to_string());
+                        status.say("stopped reason=stream-failed");
+                        return ExitCode::from(EXIT_SOURCE);
+                    }
+                    keep.store(false, Ordering::SeqCst);
+                    report("the stream stopped", "the chunk emitter is gone");
+                    status.say("stopped reason=stream-failed");
+                    return ExitCode::from(EXIT_TRANSPORT);
+                }
+            }
+        }
+    }
 }

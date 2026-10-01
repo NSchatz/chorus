@@ -285,3 +285,13 @@ The zones: America/New_York and Europe/Berlin (one-hour changes either side of t
 Australia/Lord_Howe (half-hour daylight saving, southern hemisphere), Asia/Jerusalem and
 America/Nuuk (version 3 rules), Pacific/Apia (a whole skipped day) and Etc/UTC.
 
+## `volume/`
+
+Shared (Rust and C, `check-shared-fixtures.sh`): `room-volume-sequence.hex` is every
+`room_volume` frame (type `0x38`, one per line, each preceded by a comment naming the step) the
+real `chorus-server` sent one player while `crates/server/tests/limits_hold_for_every_volume_path.rs`
+drove every volume path: the greeting, `volume` above the limit, `volume_step`, `group_volume`,
+`group_volume_step`, `limit`, `mute` and unmute, quiet hours active at a fixed civil time, and a
+`controller_command`. That test asserts a run reproduces it byte for byte;
+`firmware/tests/test_volume.c` feeds it through the C endpoint's decoder and volume path and
+asserts the clamp at every message. Regenerated only by `make volume-sequence`.

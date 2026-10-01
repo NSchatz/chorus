@@ -583,9 +583,21 @@ What a player plays at, at every frame, is
 - A gain or a limit never changes how many frames are written: a muted room
   writes as many frames as an unmuted one, at the same instants, as zeros.
 
-The server sends it after `stream_format`, whenever the room's volume, mute
-or effective limit changes, and at the start of every session before the
-first audio (ADR 0074 says what for the server side).
+The server (with a control plane; one without has no room to send) sends it:
+
+- at the start of every session of an endpoint a room names, in the greeting
+  after `stream_format` and `output_delay` and before the first chunk: the
+  room's gain (its volume, 0 when muted), its effective limit, `ramp_ms` 0;
+- whenever that room's volume, mute or effective limit changes, wherever the
+  change was made, to every player session of the room (a room in a group gets
+  its own room's values), at once (`ramp_ms` 0, ASSUMED: no de-click ramp for a
+  person's change), and only when what it would say differs from what that
+  session was last sent.
+
+The gain is never above the limit in what the server sends; the endpoint's
+clamp is the second line, not the first. `fixtures/volume/` holds the sequence
+the real server sent one player over every volume path, and both endpoint
+kinds are tested on it.
 
 ## The four roles
 
@@ -755,7 +767,12 @@ Clarified in goal 10 (ADR 0066, the Linux client's line-in):
    new id; a changed key is refused.
 5. From here every frame on the connection is a `secure_record`. The endpoint
    sends `hello` and `capabilities`; the server sends `hello`, negotiates, and
-   sends `stream_format`, `output_delay` and the audio. `time_sync` requests
+   sends `stream_format`, `output_delay` (with a control plane, the room's
+   `room_volume` for a player and its `controller_state` for a controller) and
+   the audio. With stream slots (`docs/control-plane.md`) the audio is the
+   stream of the group the endpoint's room is in, routed inside this session:
+   a move between groups changes the content, never the sequence or the
+   timestamps, because every slot is cut on one grid. `time_sync` requests
    and replies, `telemetry`, and the role messages share the connection.
 
 ## Decoder behaviour

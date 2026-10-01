@@ -11,9 +11,10 @@
 #
 # A repeated run that had quietly stopped exercising the pool would be green for
 # the wrong reason, so this also runs the same checks in two configurations
-# where the control plane CANNOT serve every attachment and command they make,
-# and requires each of those to go RED naming the busy-worker refusal, the
-# worker ceiling in force and the attachments that were being held. A build
+# where the control plane CANNOT serve every attachment they make (an
+# event-stream ceiling below what they hold), and requires each of those to go
+# RED naming the refusal, the ceiling in force and the attachments that were
+# being held. A build
 # where a starved control plane stopped being visible to these checks fails
 # here, however green the repetitions were.
 #
@@ -245,13 +246,13 @@ say "pass $PASSED of $REPETITIONS repetitions passed, in ${ELAPSED} s"
 
 FAILURES=0
 starved() {
-    local workers="$1"
+    local streams="$1"
     local what="$2"
     say ""
-    say "--- starved: $workers control workers, which cannot serve $what"
+    say "--- starved: an event-stream ceiling of $streams, which cannot serve $what"
     local started
     started="$(date +%s%3N)"
-    run_repetition CHORUS_DETERMINISM_WORKERS="$workers"
+    run_repetition CHORUS_DETERMINISM_STREAMS="$streams"
     local took
     took="$(elapsed_since "$started")"
     local ok=1
@@ -261,8 +262,8 @@ starved() {
         ok=0
     fi
     local wanted
-    for wanted in '503 Service Unavailable' 'control workers is busy' \
-        "control workers in force: $workers" 'attachments held:'; do
+    for wanted in '503 Service Unavailable' 'event streams is held' \
+        "event streams in force:   $streams" 'attachments held:'; do
         if ! grep -qF -- "$wanted" <<<"$OUT"; then
             say "FAIL the starved run's output never said '$wanted'"
             ok=0
@@ -270,22 +271,20 @@ starved() {
     done
     if [ "$ok" -eq 1 ]; then
         say "pass it went red in ${took} s naming the refusal, the ceiling and the attachments held:"
-        { grep -A6 'refused to serve' <<<"$OUT" || true; } | head -n 12 | sed 's/^/    /'
+        { grep -A7 'refused to serve' <<<"$OUT" || true; } | head -n 14 | sed 's/^/    /'
     else
         printf '%s\n' "$OUT" | sed 's/^/    /'
         FAILURES=$(( FAILURES + 1 ))
     fi
 }
 
-# Fewer workers than the event streams the checks hold open: the third
-# attachment has no worker to be served by, ever.
-starved 2 "the three event streams these checks attach"
-# Three workers, one of them kept for commands (crates/server/src/control.rs,
-# stream_slots), so only two streams can be held and the third attachment is
-# refused by name, however long it waits. Before that worker was kept, this was
-# the shape the reported failures took: three streams held and every request
-# made while holding them starved.
-starved 3 "the third of three event streams while one worker is kept for commands"
+# Event streams are held by the one event writer, not by control workers (audit
+# finding B-5, crates/server/src/events.rs), so it is the event-stream ceiling
+# that starves these checks now: below the three streams they hold, the third
+# attachment is refused by name however long it waits. Two ceilings, so a
+# starved run is not one lucky shape.
+starved 2 "the third of the three event streams these checks attach"
+starved 1 "the second and third of the three event streams these checks attach"
 
 say ""
 if [ "$FAILURES" -eq 0 ]; then

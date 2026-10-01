@@ -17,6 +17,14 @@
 //! population is a declared quantity rather than a function of how many
 //! endpoints are switched on.
 //!
+//! **The slots** ([`slots`], [`router`]) are the same thing for every group at
+//! once (goal 11): with `--slots S`, S streams cut by the one audio thread on
+//! one grid, and each session routed, inside its own session on the one audio
+//! port, to the stream of the group its room is in. [`slot_table`] plans which
+//! group holds which slot before a change commits, and [`conductor`] carries
+//! every change to the sessions it concerns (`room_volume`,
+//! `controller_state`, routing).
+//!
 //! **The control half** ([`control`]) is the second, separate catalog: zones
 //! with names, groups, volume and mute, changed by a versioned JSON message and
 //! fanned out to every subscriber. It is on its own connection, it never
@@ -45,14 +53,19 @@
 #![warn(missing_docs)]
 
 pub mod clients;
+pub mod conductor;
 pub mod config;
 pub mod control;
 pub mod controller;
+pub mod events;
 pub mod health;
 pub mod hostreport;
+pub mod router;
 pub mod schedule_runtime;
 pub mod serve;
 pub mod session;
+pub mod slot_table;
+pub mod slots;
 pub mod source;
 pub mod stream;
 

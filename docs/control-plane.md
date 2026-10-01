@@ -503,15 +503,25 @@ apply:
 Neither refusal changes any state, and both count as refused in
 `GET /api/report`.
 
-### Event streams and the worker kept for commands
+### Event streams and the event writer
 
-An event stream holds its worker for as long as the subscriber stays. So at
-most `--control-workers` minus one workers hold streams at once, and a stream
-asked for past that is answered `503` saying so: the last worker is kept for
-everything else, and a command always has somewhere to go however many
-endpoints and pages are subscribed. (A plane of one worker has nothing to keep
-and lets it stream.) This is a stopgap; serving every stream from one writer
-thread, so that subscribers stop costing workers at all, is later work.
+An event stream costs no worker (audit finding B-5, closed in goal 11). The
+worker that answers `GET /api/events` writes the headers and the opening state,
+under its own write timeout, and hands the socket to the **event writer**, one
+thread that writes every stream on non-blocking sockets; the worker goes back
+to the pool at once. So a command is served however many endpoints and pages
+are subscribed, even by a plane of one worker.
+
+The writer holds at most `--event-streams` streams (default 64, ASSUMED: a
+house of a few dozen endpoints and pages with room to spare, not a measured
+bound); one asked for past that is answered `503`, `every one of this server's
+K event streams is held`, and nothing is held for it. A peer that stops
+draining its socket cannot hold the writer: its next state waits in its own
+buffer (one message; the next is taken off its fanout queue only once that is
+written), the fanout drops it at its queue's ceiling as below, and the writer
+drops its stream once it has made no write progress for 5 s, counted as
+`stalled_dropped` in `GET /api/report`. Every other stream is written on every
+pass regardless (`crates/server/tests/control_stalled_peer.rs`).
 
 ## The bound on a subscriber
 
@@ -528,10 +538,12 @@ two differ.
 
 ## The thread population
 
-With `--control-listen`, the server runs one control acceptor and one worker per
-`--control-workers` slot, all created before the scheduling report is taken and
-none created afterwards however many subscribers come and go. The whole process
-is `4 + 2N + M` threads, plus one for `--advertise`.
+With `--control-listen`, the server runs one control acceptor, one worker per
+`--control-workers` slot, the event writer (above) and the **conductor**
+(below), all created before the scheduling report is taken and none created
+afterwards however many subscribers, sessions or groups come and go. The whole
+process is `6 + 2N + M` threads, plus one for `--advertise`, and it does not
+depend on `--slots`: every stream slot is cut by the one audio thread.
 
 This is a safety property and not a style. `std::thread::spawn` inherits the
 creating thread's scheduling policy, and `deploy/run-server.sh` runs the server
@@ -539,7 +551,51 @@ with `--ulimit rtprio=20`, so a control plane that spawned a thread per
 subscriber would be putting real-time threads on a host that also runs other
 things - and the report the host contract is graded on would never have seen
 them. `crates/server/tests/control_thread_population.rs` grades it against
-`/proc`.
+`/proc`, with `--slots 1` and `--slots 8` among its runs.
+
+## Stream slots: every group served from one process (goal 11)
+
+`--slots S` (at most 32, ASSUMED; needs `--control-listen`; not combined with
+`--group-audio`) makes one server cut S streams at once, one per group that
+plays, on its one audio thread and ONE grid: chunk `k` of every slot carries
+the same sequence and presentation timestamp. Without it (`--slots 0`, the
+default) the server is the one-stream shape it always was.
+
+- **Routing is inside the session, on the one audio port.** The C endpoint has
+  one server address and never reads this control plane, so a room joining a
+  group is not "go and connect elsewhere": each session's queue is attached to
+  the slot of the group its endpoint's room is in (the room whose `present`
+  names it, else whose `endpoints` do) and moved between slots between two
+  chunks. The shared grid is why a move needs no restart: the sequences stay
+  contiguous, only the content changes. A session whose endpoint is in no room,
+  or whose group has no slot, hears silence. Every group's `audio` in the state
+  is the one listen address, so a Linux client never moves either.
+- **A group needs a slot** when it is formed and its source is not `none`.
+  Every change (a command, a button) is applied to a copy of the room model,
+  the slots are planned over the copy (a group keeps its slot; a freed slot
+  goes to a new group, lowest first), and only a plan that fits is installed.
+  One that needs a slot more is refused `400`, field `target`: `every one of
+  this server's S stream slots is in use (groups ...)`, naming the groups and
+  `--slots S+1`, with nothing applied or persisted. At start, groups past the
+  ceiling start with source `none` and the server says so
+  (`slots group=<id> source=none reason=every-slot-in-use`). The deployment's
+  answer is S = the number of rooms, which can never run out.
+- **What a slot plays** follows its group's source: `stream` is the configured
+  `--source` (read once per chunk however many slots play it); a chime or a
+  line-in plays silence until the schedule runtime's inputs exist (the next goal
+  11 track). In this shape a source that ends (a file) is reopened, and no slot
+  sends `stream_end`.
+- **The conductor** is the thread that carries every change to the sessions it
+  concerns: which slot each plays and each session hears, `room_volume` to the
+  players of a room whose gain or effective limit changed (`docs/protocol.md`,
+  "0x38 room volume"), and `controller_state` to its controllers when what they
+  show changed, wherever the change was made. Each is deduped against what that
+  session was last sent, and a session's greeting carries both before its first
+  chunk.
+
+`--civil-time <day>-<HH:MM>` holds the civil time the quiet hours are evaluated
+at fixed for the run: for tests and a server with no time source, since this
+server reads no clock for scheduling yet.
 
 ## Discovery
 

@@ -153,6 +153,9 @@ rest: since the endpoint moved to v2 (goal 6) the check holds them to their Rust
 `fixtures/codec` (goal 6) holds FLAC and Opus streams as the wire carries them with their
 reference decodes, read by `firmware/tests/test_codec.c` and
 `crates/client-linux/tests/codec_fixtures.rs`; `fixtures/README.md` says what each file is.
+`fixtures/volume` (goal 11) is the `room_volume` sequence the real server sends over every volume
+path, captured by `crates/server/tests/limits_hold_for_every_volume_path.rs` and fed through the C
+endpoint's volume path by `firmware/tests/test_volume.c`.
 **Review-only (no check):** fixtures are committed and regenerated only by their `make` targets,
 never by a test run.
 

@@ -70,6 +70,16 @@ if [ "${CHORUS_ADVERTISE:-1}" = 0 ]; then
     ADVERTISE=()
 fi
 
+# Stream slots (goal 11, docs/control-plane.md): CHORUS_SLOTS=<n> serves every
+# group's stream from this one process, each endpoint routed to its room's
+# group inside its own session. Unset, the server is the one-stream shape it
+# was; set it to the number of rooms, which can never run out. Opt-in, because
+# changing what an installed house hears is the owner's deploy (K93).
+SLOTS=()
+if [ -n "${CHORUS_SLOTS:-}" ]; then
+    SLOTS=(--slots "$CHORUS_SLOTS")
+fi
+
 exec docker run \
     --rm \
     --name "$NAME" \
@@ -83,6 +93,7 @@ exec docker run \
     --control-listen "0.0.0.0:$CONTROL_PORT" \
     --state-file /var/lib/chorus/zones.state \
     "${ADVERTISE[@]}" \
+    "${SLOTS[@]}" \
     --source "${CHORUS_SOURCE:-tone}" \
     --rt-priority "$RTPRIO" \
     --rttime-us "$RTTIME_US" \

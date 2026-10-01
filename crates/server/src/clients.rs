@@ -59,9 +59,11 @@ use chorus_protocol::v2::session::SecureWriter;
 use chorus_audio::MonotonicTimeline;
 use chorus_hostctl::ThreadRegistry;
 
+use chorus_protocol::v2::Message;
+
 use crate::hostreport::register_ordinary_thread;
 use crate::session::{establish, route_controller, Greeting, SessionContext};
-use crate::stream::{read_requests, write_outbound, Outbound};
+use crate::stream::{read_requests, write_outbound, Outbound, SUBSCRIBER_QUEUE_LIMIT};
 
 /// How often a writer waiting for its session looks up to see whether it is
 /// still wanted: the same interval the request reader's socket timeout uses.
@@ -267,12 +269,36 @@ impl ClientPool {
                         };
                         // The handshake runs here, on this slot's own thread,
                         // so a slow peer never stalls the acceptor.
-                        if let Some((mut reader, hello)) = establish(&source, peer, &session) {
-                            route_controller(&mut reader, &session, &hello, out.clone());
+                        if let Some((mut reader, mut hello)) = establish(&source, peer, &session) {
+                            // Where it starts and what its greeting says,
+                            // from the room model (crate::router): the
+                            // room_volume is sealed before the first chunk,
+                            // which the router only starts handing this
+                            // session's queue once it is registered.
+                            let start = session.start_for(&hello);
+                            if let Some(volume) = start.room_volume {
+                                hello.messages.push(Message::RoomVolume(volume));
+                            }
+                            if let Some(state) = &start.controller_state {
+                                hello.messages.push(Message::ControllerState(state.clone()));
+                            }
+                            let id = session.router.register(
+                                &hello.endpoint_id,
+                                hello.roles,
+                                out.clone(),
+                                &start,
+                            );
+                            if let Some(control) = &session.control {
+                                // Anything committed between the start and
+                                // the registration reaches it this way.
+                                control.wake_conductor();
+                            }
+                            route_controller(&mut reader, &session, &hello, id);
                             if greeting.send(hello).is_ok() {
                                 (session.on_session)();
                                 read_requests(&mut reader, timeline, &out, &going);
                             }
+                            session.router.unregister(id);
                         }
                         drop(greeting);
                         drop(out);
@@ -325,20 +351,14 @@ impl ClientPool {
 
     /// Hand one connection to a free slot, or refuse it.
     ///
-    /// `subscribe` is called only once a slot has been secured, so a refused
-    /// connection never leaves a subscriber in the fanout with nothing draining
-    /// it. `false` means every slot is busy: the sockets are dropped, which
-    /// closes the connection, and the caller is expected to say so out loud.
-    pub fn attach<F>(
-        &self,
-        sink: TcpStream,
-        source: TcpStream,
-        peer: SocketAddr,
-        subscribe: F,
-    ) -> bool
-    where
-        F: FnOnce() -> (SyncSender<Outbound>, Receiver<Outbound>),
-    {
+    /// The connection's outbound queue is made here, bounded at
+    /// [`SUBSCRIBER_QUEUE_LIMIT`], and attached to a stream only once its
+    /// session is up (`crate::router`, from the slot's reader), so neither a
+    /// refused connection nor a failed handshake ever leaves a subscriber in a
+    /// fanout with nothing draining it. `false` means every slot is busy: the
+    /// sockets are dropped, which closes the connection, and the caller is
+    /// expected to say so out loud.
+    pub fn attach(&self, sink: TcpStream, source: TcpStream, peer: SocketAddr) -> bool {
         let index = match self.free.try_recv() {
             Ok(index) => index,
             Err(_) => return false,
@@ -347,7 +367,7 @@ impl ClientPool {
         self.busy.fetch_add(1, Ordering::SeqCst);
         slot.life.finished.store(0, Ordering::SeqCst);
         slot.life.live.store(true, Ordering::SeqCst);
-        let (out, inbox) = subscribe();
+        let (out, inbox) = mpsc::sync_channel::<Outbound>(SUBSCRIBER_QUEUE_LIMIT);
         let (greeting_tx, greeting_rx) = mpsc::sync_channel::<Greeting>(1);
         let handed_over = slot
             .to_writer
@@ -402,7 +422,6 @@ mod tests {
     use super::*;
     use std::io::{Read, Write};
     use std::net::TcpListener;
-    use std::sync::mpsc::sync_channel;
     use std::time::{Duration, Instant};
 
     use chorus_audio::StreamFormat;
@@ -412,7 +431,6 @@ mod tests {
     use chorus_protocol::{decode_frame, encode, FrameOutcome, Message, TimeSync};
 
     use crate::session::Offer;
-    use crate::stream::SUBSCRIBER_QUEUE_LIMIT;
 
     fn context() -> Arc<SessionContext> {
         let offer = Offer::new(&StreamFormat::new(48_000, 2, "pcm_s16le").unwrap(), 20_000)
@@ -497,13 +515,11 @@ mod tests {
         (pool, registry, count)
     }
 
-    /// Hand a connection to the pool, with a real bounded subscriber queue.
+    /// Hand a connection to the pool.
     fn attach(pool: &ClientPool, server: TcpStream) -> bool {
         let reader = server.try_clone().expect("a connection splits");
         let peer = server.peer_addr().expect("a connected peer");
-        pool.attach(server, reader, peer, || {
-            sync_channel(SUBSCRIBER_QUEUE_LIMIT)
-        })
+        pool.attach(server, reader, peer)
     }
 
     fn wait_until<F: Fn() -> bool>(what: &str, f: F) {

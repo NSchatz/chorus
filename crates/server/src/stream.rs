@@ -102,10 +102,18 @@ pub enum Outbound {
 }
 
 /// Every client currently attached to the stream.
+///
+/// Each subscriber is held under an id, so that a session can be moved from
+/// one stream to another (`crate::router`, stream slots: goal 11) by
+/// detaching it here and attaching the same queue to another fanout, between
+/// two chunks. The queue is the session's own and outlives the move.
 #[derive(Debug, Default)]
 pub struct Fanout {
-    subscribers: Mutex<Vec<SyncSender<Outbound>>>,
+    subscribers: Mutex<Vec<(u64, SyncSender<Outbound>)>>,
     dropped: AtomicU64,
+    /// Ids handed out by [`Fanout::subscribe`], counted down from the top so
+    /// they never meet the router's, which count up from zero.
+    anonymous: AtomicU64,
 }
 
 impl Fanout {
@@ -124,8 +132,27 @@ impl Fanout {
     /// group needs a ceiling even though it must not have back pressure.
     pub fn subscribe(&self) -> (SyncSender<Outbound>, Receiver<Outbound>) {
         let (tx, rx) = mpsc::sync_channel(SUBSCRIBER_QUEUE_LIMIT);
-        self.lock().push(tx.clone());
+        let id = u64::MAX - self.anonymous.fetch_add(1, Ordering::Relaxed);
+        self.attach(id, tx.clone());
         (tx, rx)
+    }
+
+    /// Attach an existing queue under `id`, which receives everything
+    /// broadcast from now on. The caller owns the queue (it was made bounded
+    /// at [`SUBSCRIBER_QUEUE_LIMIT`] by whoever made it), and the id names it
+    /// for [`Fanout::detach`].
+    pub fn attach(&self, id: u64, out: SyncSender<Outbound>) {
+        self.lock().push((id, out));
+    }
+
+    /// Stop broadcasting to the queue attached under `id`. Returns whether it
+    /// was attached. The queue itself is untouched: what was already handed
+    /// to it is still delivered.
+    pub fn detach(&self, id: u64) -> bool {
+        let mut subscribers = self.lock();
+        let before = subscribers.len();
+        subscribers.retain(|(i, _)| *i != id);
+        subscribers.len() != before
     }
 
     /// How many clients are attached.
@@ -156,7 +183,7 @@ impl Fanout {
     pub fn broadcast(&self, item: Outbound) -> usize {
         let mut subscribers = self.lock();
         let mut dropped = 0u64;
-        subscribers.retain(|tx| match tx.try_send(item.clone()) {
+        subscribers.retain(|(_, tx)| match tx.try_send(item.clone()) {
             Ok(()) => true,
             Err(TrySendError::Full(_)) => {
                 dropped += 1;
@@ -170,7 +197,7 @@ impl Fanout {
         subscribers.len()
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<SyncSender<Outbound>>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<(u64, SyncSender<Outbound>)>> {
         match self.subscribers.lock() {
             Ok(g) => g,
             Err(poisoned) => poisoned.into_inner(),

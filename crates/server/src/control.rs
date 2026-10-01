@@ -14,10 +14,16 @@
 //! So the shape here is `crates/server/src/clients.rs`'s shape, for the same
 //! reason: a FIXED pool of worker threads, created before the report is taken,
 //! each registering itself, and a connection arriving with every worker busy is
-//! refused by name rather than served by a thread nobody declared. The whole
-//! process is `4 + 2N + M` threads with the control plane on, against `3 + 2N`
-//! with it off, and `crates/server/tests/control_thread_population.rs` grades
-//! that against `/proc`.
+//! refused by name rather than served by a thread nobody declared. Two more
+//! threads serve it, created with the pool: the **event writer**
+//! (`crate::events`), which holds every `GET /api/events` stream so that a
+//! subscriber costs no worker (audit finding B-5), and the **conductor**
+//! (`crate::conductor`), which carries every change to the sessions it
+//! concerns (`room_volume`, `controller_state`, which stream slot a session
+//! hears). The whole process is `6 + 2N + M` threads with the control plane
+//! on, against `3 + 2N` with it off, whatever `--slots` says, and
+//! `crates/server/tests/control_thread_population.rs` grades that against
+//! `/proc`.
 //!
 //! # It speaks HTTP, and why
 //!
@@ -43,8 +49,8 @@
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -52,12 +58,17 @@ use std::time::{Duration, Instant};
 use chorus_control::catalog::{decode_message, Refusal};
 use chorus_control::fanout::ControlFanout;
 use chorus_control::persist;
-use chorus_control::zones::Zones;
+use chorus_control::rooms::{CivilTime, Source};
+use chorus_control::zones::{Zone, Zones};
 use chorus_hostctl::ThreadRegistry;
-use chorus_protocol::v2::{ControllerCommand, ControllerState, Playback};
+use chorus_protocol::v2::{roles, ControllerCommand, ControllerState, Playback, RoomVolume};
 
 use crate::controller::{translate, ControllerAction, THOUSANDTHS_PER_POINT};
+use crate::events::EventStreams;
 use crate::hostreport::register_ordinary_thread;
+use crate::router::SessionStart;
+use crate::slot_table::SlotTable;
+use crate::slots::SlotInput;
 
 /// Longest request the control channel will read: request line, headers and
 /// body together.
@@ -91,21 +102,14 @@ pub const REQUEST_DEADLINE: Duration = Duration::from_secs(5);
 const LINGER: Duration = Duration::from_millis(250);
 const LINGER_BYTES: usize = 64 * 1024;
 
-/// How long a worker waits on an idle subscriber queue before it looks up to
-/// see whether it is still wanted.
-///
-/// The same interval `crate::stream` uses, for the same reason: a thread served
-/// by a fixed pool has to be able to give its slot back.
-const IDLE_WAKE: Duration = Duration::from_millis(200);
-
 /// How often a held-open event stream sends a comment line.
 ///
 /// A server-sent event stream that says nothing looks identical to one whose
 /// connection has died, to a proxy and to a browser both. A `:` line is a
 /// comment in the event-stream format and is what keeps it visibly alive; it
-/// is also what makes a worker notice a peer that has gone, because writing to
-/// a closed socket is the only way this end learns.
-const KEEPALIVE: Duration = Duration::from_secs(15);
+/// is also what makes the event writer notice a peer that has gone, because
+/// writing to a closed socket is the only way this end learns.
+pub const KEEPALIVE: Duration = Duration::from_secs(15);
 
 /// How long a write to a control peer may block before that peer is dropped.
 ///
@@ -130,7 +134,11 @@ const KEEPALIVE: Duration = Duration::from_secs(15);
 /// bytes and the largest this server can build is tens of kilobytes - so a
 /// merely slow peer is not cut off, and shorter than [`KEEPALIVE`] so a stuck
 /// stream is reclaimed before the next comment line would have been due.
-const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+///
+/// The event writer (`crate::events`) holds every event stream to the same
+/// bound, counted as time without write progress, because it writes them all
+/// and one that could block it would delay every other.
+pub const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Why the control channel could not start.
 #[derive(Debug)]
@@ -179,9 +187,18 @@ impl std::fmt::Display for ControlRefused {
 
 impl std::error::Error for ControlRefused {}
 
+/// The room model and the stream slots it is served on, under one lock so a
+/// change and its slot plan commit together or not at all.
+struct Held {
+    zones: Zones,
+    /// The stream slots (`--slots S`), or `None` in the one-stream shape,
+    /// where every group is served the one stream and nothing needs a slot.
+    slots: Option<SlotTable>,
+}
+
 /// Everything the control plane holds, shared by every worker.
 pub struct ControlState {
-    zones: Mutex<Zones>,
+    held: Mutex<Held>,
     fanout: Arc<ControlFanout>,
     state_file: Option<PathBuf>,
     /// Commands applied since the process started.
@@ -189,10 +206,16 @@ pub struct ControlState {
     /// Commands refused since the process started.
     refused: AtomicU64,
     /// Connections turned away because every worker was busy, and event
-    /// streams turned away because every worker a stream may take was busy.
+    /// streams turned away because every one the event writer may hold was
+    /// held.
     turned_away: AtomicU64,
-    /// Workers holding an event stream right now. See [`stream_slots`].
-    streaming: AtomicUsize,
+    /// The event streams the event writer holds, and how one is handed to it.
+    events: EventStreams,
+    /// Poked after every change, so the conductor carries it to the sessions
+    /// it concerns. Bounded at one: a poke already waiting covers every
+    /// change made before the conductor next looks.
+    conductor_wake: SyncSender<()>,
+    conductor_woken: Mutex<Option<Receiver<()>>>,
     /// What the page is served with, so the UI is one artifact and not three.
     ui: Ui,
 }
@@ -232,14 +255,17 @@ const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self'; st
 impl ControlState {
     /// Build the shared state.
     pub fn new(zones: Zones, state_file: Option<PathBuf>) -> ControlState {
+        let (conductor_wake, woken) = mpsc::sync_channel(1);
         ControlState {
-            zones: Mutex::new(zones),
+            held: Mutex::new(Held { zones, slots: None }),
             fanout: Arc::new(ControlFanout::new()),
             state_file,
             applied: AtomicU64::new(0),
             refused: AtomicU64::new(0),
             turned_away: AtomicU64::new(0),
-            streaming: AtomicUsize::new(0),
+            events: EventStreams::new(crate::events::DEFAULT_EVENT_STREAMS),
+            conductor_wake,
+            conductor_woken: Mutex::new(Some(woken)),
             ui: Ui {
                 html: include_str!("ui/index.html"),
                 tokens: include_str!("ui/tokens.css"),
@@ -257,32 +283,177 @@ impl ControlState {
 
     /// The state message as it stands, at the build's own catalog version.
     pub fn encoded_state(&self) -> String {
-        self.locked().encode_state()
+        self.locked().zones.encode_state()
+    }
+
+    /// The event streams the event writer holds (`crate::events`).
+    pub fn events(&self) -> &EventStreams {
+        &self.events
+    }
+
+    /// Hold at most `ceiling` event streams (`--event-streams`). Called once,
+    /// before the event writer exists.
+    pub fn set_event_streams(&mut self, ceiling: usize) {
+        self.events = EventStreams::new(ceiling);
+    }
+
+    /// The conductor's half of the wake, taken once by the conductor thread.
+    pub fn take_conductor_wake(&self) -> Option<Receiver<()>> {
+        lock(&self.conductor_woken).take()
+    }
+
+    /// Tell the conductor something may have changed. Never blocks: a poke
+    /// already waiting covers this one.
+    pub fn wake_conductor(&self) {
+        let _ = self.conductor_wake.try_send(());
+    }
+
+    /// Fan a new state out: to every subscriber, to the event writer that
+    /// writes their streams, and to the conductor that carries it to the
+    /// audio sessions.
+    fn publish(&self, state: String) {
+        self.fanout.broadcast(Arc::new(state));
+        self.events.wake();
+        self.wake_conductor();
+    }
+
+    /// Serve the room model on `slots` stream slots (`--slots S`, S > 0).
+    ///
+    /// Every group that needs a slot gets one, in the order its first room was
+    /// configured; a group past the ceiling starts with its source set to
+    /// `none` (no slot, its rooms hear silence) rather than the server
+    /// refusing to start, and the groups that did are returned so the caller
+    /// can say so. A person can give one a source again once a slot is free.
+    pub fn serve_on_slots(&self, slots: usize) -> Vec<String> {
+        let mut held = self.locked();
+        let silenced: Vec<String> = SlotTable::needing(&held.zones)
+            .into_iter()
+            .skip(slots)
+            .collect();
+        for group in &silenced {
+            let _ = held.zones.set_group_source(group, Source::None);
+        }
+        // At most `slots` groups need one now, so the plan fits.
+        let table = SlotTable::new(slots)
+            .plan(&held.zones)
+            .unwrap_or_else(|_| SlotTable::new(slots));
+        held.slots = Some(table);
+        silenced
+    }
+
+    /// The slot table, `slot=group` for every slot, for a status line; `None`
+    /// in the one-stream shape.
+    pub fn slots_report(&self) -> Option<String> {
+        self.locked().slots.as_ref().map(SlotTable::report)
+    }
+
+    /// Say what civil time it is, which decides which quiet-hours windows are
+    /// active (`Zones::set_civil_time`), and fan the result out when anything
+    /// changed. The time is the caller's: this reads no clock. Returns whether
+    /// anything changed.
+    pub fn set_civil_time(&self, now: Option<CivilTime>) -> bool {
+        let state = {
+            let mut held = self.locked();
+            if !held.zones.set_civil_time(now) {
+                return false;
+            }
+            self.persist(&held.zones);
+            held.zones.encode_state()
+        };
+        self.publish(state);
+        true
+    }
+
+    /// Everything the conductor and a starting session need to know about the
+    /// room model, read in one go under the lock.
+    pub fn snapshot(&self) -> Snapshot {
+        let held = self.locked();
+        let zones = &held.zones;
+        let rooms = zones
+            .zones()
+            .iter()
+            .map(|z| RoomView {
+                id: z.id.clone(),
+                present: z.present.clone(),
+                endpoints: z.endpoints.clone(),
+                room_volume: room_volume_of(z),
+                controller_state: controller_state_of(z),
+                route: match &held.slots {
+                    None => Some(0),
+                    Some(table) => table.slot_of(&z.group),
+                },
+            })
+            .collect();
+        let inputs = match &held.slots {
+            None => Vec::new(),
+            Some(table) => table
+                .held()
+                .iter()
+                .map(|g| match g {
+                    Some(group) => input_for(&zones.source(group)),
+                    None => SlotInput::Silence,
+                })
+                .collect(),
+        };
+        Snapshot { rooms, inputs }
+    }
+
+    /// Where a session that just came up starts, and what its greeting says
+    /// (docs/decisions/0074-*: `room_volume` before the first audio).
+    pub fn session_start(&self, endpoint: &str, roles: u16, idle: usize) -> SessionStart {
+        self.snapshot().start(endpoint, roles, idle)
+    }
+
+    fn persist(&self, zones: &Zones) {
+        if let Some(path) = &self.state_file {
+            if let Err(e) = persist::write_file(path, zones) {
+                eprintln!(
+                    "chorus-server: the zone state could not be persisted: {}. The change is in \
+                     force in this process and will NOT survive a restart",
+                    e
+                );
+            }
+        }
     }
 
     /// The state message as it stands, at catalog version `version`: the v1
     /// shape for `?v=1` peers (docs/control-plane.md, "How the messages
     /// travel"), the v2 shape otherwise.
     pub fn encoded_state_at(&self, version: i64) -> String {
-        self.locked().encode_state_at(version)
+        self.locked().zones.encode_state_at(version)
     }
 
     /// The line a run prints about what the control plane did.
     pub fn report(&self) -> String {
         format!(
-            "control applied={} refused={} turned_away={} {}",
+            "control applied={} refused={} turned_away={} {} {}",
             self.applied.load(Ordering::Relaxed),
             self.refused.load(Ordering::Relaxed),
             self.turned_away.load(Ordering::Relaxed),
-            self.fanout.report()
+            self.fanout.report(),
+            self.events.report()
         )
     }
 
-    fn locked(&self) -> std::sync::MutexGuard<'_, Zones> {
-        match self.zones.lock() {
-            Ok(g) => g,
-            Err(poisoned) => poisoned.into_inner(),
+    fn locked(&self) -> std::sync::MutexGuard<'_, Held> {
+        lock(&self.held)
+    }
+
+    /// Apply `change` to a copy of the room model, plan the stream slots over
+    /// the copy, and install both only when the plan fits: a change that
+    /// would need a slot more than the server has is refused by name and
+    /// leaves everything as it was (docs: the stream slots' ADR).
+    fn commit(
+        held: &mut Held,
+        change: impl FnOnce(&mut Zones) -> Result<(), Refusal>,
+    ) -> Result<(), Refusal> {
+        let mut next = held.zones.clone();
+        change(&mut next)?;
+        if let Some(table) = &held.slots {
+            held.slots = Some(table.plan(&next)?);
         }
+        held.zones = next;
+        Ok(())
     }
 
     /// Apply one control message, persist the result and fan it out.
@@ -296,32 +467,20 @@ impl ControlState {
     /// state every subscriber is sent, which is the build's own (v2): one
     /// state, the same bytes for everybody. A v2 state's `zones` carry every
     /// field a v1 state's do, under the same names.
-    fn apply(&self, text: &str) -> Result<String, Refusal> {
+    pub fn apply(&self, text: &str) -> Result<String, Refusal> {
         let (version, command) = decode_message(text)?;
-        let (state, persist_error) = {
-            let mut zones = self.locked();
-            zones.apply(&command).map_err(|r| r.at(version))?;
-            let state = zones.encode_state();
-            let mut persist_error = None;
-            if let Some(path) = &self.state_file {
-                if let Err(e) = persist::write_file(path, &zones) {
-                    persist_error = Some(e.to_string());
-                }
-            }
-            (state, persist_error)
+        let state = {
+            let mut held = self.locked();
+            Self::commit(&mut held, |zones| zones.apply(&command)).map_err(|r| r.at(version))?;
+            // A failure to persist is reported and not swallowed, and not a
+            // reason to refuse the command either: the change IS in force in
+            // this process, and saying it was refused would be a lie in the
+            // other direction.
+            self.persist(&held.zones);
+            held.zones.encode_state()
         };
-        if let Some(detail) = persist_error {
-            // Reported and not swallowed, and not a reason to refuse the
-            // command either: the change IS in force in this process, and
-            // saying it was refused would be a lie in the other direction.
-            eprintln!(
-                "chorus-server: the zone state could not be persisted: {}. The change is in \
-                 force in this process and will NOT survive a restart",
-                detail
-            );
-        }
         self.applied.fetch_add(1, Ordering::Relaxed);
-        self.fanout.broadcast(Arc::new(state.clone()));
+        self.publish(state.clone());
         Ok(state)
     }
 
@@ -340,13 +499,14 @@ impl ControlState {
         command: &ControllerCommand,
     ) -> Result<ControllerApplied, Refusal> {
         let result = {
-            let mut zones = self.locked();
-            let zone = zones
+            let mut held = self.locked();
+            let zone = held
+                .zones
                 .zones()
                 .iter()
                 .find(|z| z.present.iter().any(|e| e == endpoint))
                 .or_else(|| {
-                    zones
+                    held.zones
                         .zones()
                         .iter()
                         .find(|z| z.endpoints.iter().any(|e| e == endpoint))
@@ -362,29 +522,15 @@ impl ControlState {
                     )
                 });
             zone.and_then(|zone| {
-                let action = translate(&zones, &zone, command)?;
+                let action = translate(&held.zones, &zone, command)?;
                 let mut changed = None;
                 if let ControllerAction::Apply(change) = &action {
-                    zones.apply(change)?;
-                    let mut persist_error = None;
-                    if let Some(path) = &self.state_file {
-                        if let Err(e) = persist::write_file(path, &zones) {
-                            persist_error = Some(e.to_string());
-                        }
-                    }
-                    changed = Some((zones.encode_state(), persist_error));
+                    Self::commit(&mut held, |zones| zones.apply(change))?;
+                    self.persist(&held.zones);
+                    changed = Some(held.zones.encode_state());
                 }
-                let z = zones.zone(&zone).expect("translate found the zone");
-                let points = (i64::from(z.volume.thousandths()) + THOUSANDTHS_PER_POINT / 2)
-                    / THOUSANDTHS_PER_POINT;
-                let state = ControllerState {
-                    volume: points.clamp(0, 100) as u8,
-                    muted: z.muted,
-                    // The server streams to every attached endpoint; whether an
-                    // input is paused arrives with the inputs (goals 16, 17).
-                    playback: Playback::Playing,
-                    group: z.group.clone(),
-                };
+                let z = held.zones.zone(&zone).expect("translate found the zone");
+                let state = controller_state_of(z);
                 Ok((
                     ControllerApplied {
                         zone,
@@ -402,16 +548,9 @@ impl ControlState {
                 return Err(refusal);
             }
         };
-        if let Some((state, persist_error)) = changed {
-            if let Some(detail) = persist_error {
-                eprintln!(
-                    "chorus-server: the zone state could not be persisted: {}. The change is in \
-                     force in this process and will NOT survive a restart",
-                    detail
-                );
-            }
+        if let Some(state) = changed {
             self.applied.fetch_add(1, Ordering::Relaxed);
-            self.fanout.broadcast(Arc::new(state));
+            self.publish(state);
         }
         Ok(applied)
     }
@@ -419,16 +558,124 @@ impl ControlState {
     /// Mark an endpoint as gone and fan out the result.
     fn endpoint_left(&self, endpoint: &str) {
         let state = {
-            let mut zones = self.locked();
-            if !zones.endpoint_left(endpoint) {
+            let mut held = self.locked();
+            if !held.zones.endpoint_left(endpoint) {
                 return;
             }
             if let Some(path) = &self.state_file {
-                let _ = persist::write_file(path, &zones);
+                let _ = persist::write_file(path, &held.zones);
             }
-            zones.encode_state()
+            held.zones.encode_state()
         };
-        self.fanout.broadcast(Arc::new(state));
+        self.publish(state);
+    }
+}
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    match m.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+/// What a room's players are told on the audio wire: the gain to play at
+/// (the volume, 0 when muted), never above the room's effective limit even
+/// though the model already clamps it (the server's clamp is the first line,
+/// ADR 0074), and that limit; at once (`ramp_ms` 0, ASSUMED: a person's
+/// change is applied as it is made, with no de-click ramp).
+pub fn room_volume_of(zone: &Zone) -> RoomVolume {
+    let limit = zone.effective_limit().thousandths().min(1_000);
+    RoomVolume {
+        gain: zone.gain().thousandths().min(limit) as u16,
+        limit: limit as u16,
+        ramp_ms: 0,
+    }
+}
+
+/// What a room's controllers are shown (docs/protocol.md, "0x33 controller
+/// state"): its volume in points, its mute and its group.
+pub fn controller_state_of(zone: &Zone) -> ControllerState {
+    let points =
+        (i64::from(zone.volume.thousandths()) + THOUSANDTHS_PER_POINT / 2) / THOUSANDTHS_PER_POINT;
+    ControllerState {
+        volume: points.clamp(0, 100) as u8,
+        muted: zone.muted,
+        // The server streams to every attached endpoint; whether an input is
+        // paused arrives with the inputs (goals 16, 17).
+        playback: Playback::Playing,
+        group: zone.group.clone(),
+    }
+}
+
+/// What a slot plays for a group's source. The configured stream is the one
+/// input this server carries today; a chime or a line-in source plays silence
+/// until the inputs that carry them exist (the next goal 11 track).
+fn input_for(source: &Source) -> SlotInput {
+    match source {
+        Source::Stream => SlotInput::Stream,
+        Source::None | Source::Chime(_) | Source::LineIn(_) => SlotInput::Silence,
+    }
+}
+
+/// One room as the conductor routes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoomView {
+    /// The room's id.
+    pub id: String,
+    /// Its endpoints attached now.
+    pub present: Vec<String>,
+    /// Every endpoint it has had.
+    pub endpoints: Vec<String>,
+    /// What its players are told.
+    pub room_volume: RoomVolume,
+    /// What its controllers are shown.
+    pub controller_state: ControllerState,
+    /// The fanout its group is served on: the one stream (0) in the
+    /// one-stream shape, its group's slot in the slot shape, `None` when its
+    /// group has no slot (source `none`).
+    pub route: Option<usize>,
+}
+
+/// The room model, read once, as the conductor plans over it.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Snapshot {
+    /// Every room.
+    pub rooms: Vec<RoomView>,
+    /// What each stream slot plays; empty in the one-stream shape.
+    pub inputs: Vec<SlotInput>,
+}
+
+impl Snapshot {
+    /// The room an endpoint plays in: the one it is attached to now, else the
+    /// one whose membership names it (the rule `ControlState::controller`
+    /// uses, so a button and the audio agree on the room).
+    pub fn room_of(&self, endpoint: &str) -> Option<&RoomView> {
+        self.rooms
+            .iter()
+            .find(|r| r.present.iter().any(|e| e == endpoint))
+            .or_else(|| {
+                self.rooms
+                    .iter()
+                    .find(|r| r.endpoints.iter().any(|e| e == endpoint))
+            })
+    }
+
+    /// Where a session of `endpoint` with `roles` belongs, and what it is
+    /// told. A session in no room is routed to `idle` and told nothing: there
+    /// is no room limit to send it, and in the slot shape it hears silence.
+    pub fn start(&self, endpoint: &str, session_roles: u16, idle: usize) -> SessionStart {
+        let Some(room) = self.room_of(endpoint) else {
+            return SessionStart {
+                route: idle,
+                ..SessionStart::default()
+            };
+        };
+        SessionStart {
+            route: room.route.unwrap_or(idle),
+            room_volume: (session_roles & roles::PLAYER != 0).then_some(room.room_volume),
+            controller_state: (session_roles & roles::CONTROLLER != 0)
+                .then(|| room.controller_state.clone()),
+        }
     }
 }
 
@@ -442,26 +689,6 @@ pub struct ControllerApplied {
     pub action: ControllerAction,
     /// The `controller_state` for the endpoint, after the change.
     pub state: ControllerState,
-}
-
-/// How many of `workers` may hold an event stream at once.
-///
-/// All but one. An event stream holds its worker for as long as the subscriber
-/// stays, and every endpoint and every open page is one, so a pool that let
-/// streams take every worker would answer every command `503` as soon as there
-/// were as many subscribers as workers (audit finding B-5). Keeping one worker
-/// that only a short request can have means a command always has somewhere to
-/// go. A pool of one has nothing to spare and is left as it was: its single
-/// worker may stream.
-///
-/// A stopgap: the whole answer is one writer thread serving every stream, so
-/// that subscribers stop costing workers at all.
-pub fn stream_slots(workers: usize) -> usize {
-    if workers > 1 {
-        workers - 1
-    } else {
-        workers
-    }
 }
 
 /// One control worker's slot.
@@ -521,15 +748,12 @@ impl ControlPlane {
     pub fn spawn_workers(
         &mut self,
         workers: usize,
-        keep: Arc<AtomicBool>,
         registry: Arc<ThreadRegistry>,
         ready: Sender<()>,
     ) {
         let (free_tx, free) = mpsc::channel::<usize>();
-        let streams = stream_slots(workers);
         for index in 0..workers {
             let (to_worker, jobs) = mpsc::sync_channel::<TcpStream>(1);
-            let keep = Arc::clone(&keep);
             let registry = Arc::clone(&registry);
             let state = Arc::clone(&self.state);
             let ready = ready.clone();
@@ -541,7 +765,7 @@ impl ControlPlane {
                 }
                 drop(ready);
                 for connection in jobs {
-                    serve_connection(connection, &state, &keep, streams, workers);
+                    serve_connection(connection, &state);
                     if returning.send(index).is_err() {
                         return;
                     }
@@ -911,13 +1135,7 @@ fn respond_with(
 
 /// Serve one connection, whatever it turns out to be, and return the worker's
 /// thread to the pool.
-fn serve_connection(
-    connection: TcpStream,
-    state: &Arc<ControlState>,
-    keep: &Arc<AtomicBool>,
-    stream_slots: usize,
-    workers: usize,
-) {
+fn serve_connection(connection: TcpStream, state: &Arc<ControlState>) {
     // Both directions are bounded, and for the same reason: this worker's slot
     // in the fixed pool has to come back. The read side is bounded per REQUEST
     // (REQUEST_DEADLINE, through DeadlineReader); see WRITE_TIMEOUT for the
@@ -1009,9 +1227,7 @@ fn serve_connection(
             "text/plain; charset=utf-8",
             &format!("{}\n", state.report()),
         ),
-        ("GET", "/api/events") => {
-            serve_events(connection, state, keep, stream_slots, workers, version)
-        }
+        ("GET", "/api/events") => serve_events(connection, state, version),
         ("POST", "/api/command") => {
             match state.apply(request.body.trim()) {
                 Ok(applied) => respond(&mut connection, "200 OK", "application/json", &applied),
@@ -1047,30 +1263,22 @@ fn serve_connection(
     }
 }
 
-/// Hold one server-sent event stream open, writing a state message per change.
+/// Open one server-sent event stream and hand it to the event writer.
 ///
 /// The first thing written is the state as it stands, so a subscriber is never
-/// waiting for a change to learn what is true now.
-///
-/// Only [`stream_slots`] of the pool's workers may be doing this at once; a
-/// stream asked for past that is answered `503` and the worker goes back, so
-/// the worker kept for commands is never taken by a subscriber.
-fn serve_events(
-    mut connection: TcpStream,
-    state: &Arc<ControlState>,
-    keep: &Arc<AtomicBool>,
-    stream_slots: usize,
-    workers: usize,
-    version: i64,
-) {
-    let Some(_slot) = StreamSlot::take(&state.streaming, stream_slots) else {
+/// waiting for a change to learn what is true now; it is written here, by the
+/// worker, under the worker's write timeout, and from then on the stream is
+/// the event writer's (`crate::events`) and this worker goes back to the pool.
+/// A subscriber therefore costs no worker, however long it stays (audit
+/// finding B-5). Past the event writer's ceiling (`--event-streams`) a stream
+/// is answered `503`, naming the ceiling, and nothing is held.
+fn serve_events(mut connection: TcpStream, state: &Arc<ControlState>, version: i64) {
+    let Some(claim) = state.events.claim() else {
         state.turned_away.fetch_add(1, Ordering::Relaxed);
         let detail = format!(
-            "every one of this server's {} event-stream control workers is busy, and the \
-             other {} of its {} control workers is kept for commands; try again",
-            stream_slots,
-            workers - stream_slots,
-            workers
+            "every one of this server's {} event streams is held; try again, or start the \
+             server with a higher --event-streams",
+            state.events.ceiling()
         );
         respond(
             &mut connection,
@@ -1093,40 +1301,7 @@ fn serve_events(
     {
         return;
     }
-    let mut since_keepalive = Duration::ZERO;
-    while keep.load(Ordering::SeqCst) {
-        match inbox.recv_timeout(IDLE_WAKE) {
-            Ok(message) => {
-                since_keepalive = Duration::ZERO;
-                // The fanout carries the build's own (v2) state. A v1
-                // subscriber is written the v1 rendering of the state as it
-                // stands when the change reaches it: still one complete
-                // snapshot per change, and never an older one than the
-                // change it is told about.
-                let message = if version == chorus_control::CATALOG_VERSION {
-                    message
-                } else {
-                    Arc::new(state.encoded_state_at(version))
-                };
-                if write!(connection, "data: {}\n\n", message).is_err()
-                    || connection.flush().is_err()
-                {
-                    return;
-                }
-            }
-            Err(RecvTimeoutError::Timeout) => {
-                since_keepalive += IDLE_WAKE;
-                if since_keepalive >= KEEPALIVE {
-                    since_keepalive = Duration::ZERO;
-                    if write!(connection, ": keepalive\n\n").is_err() || connection.flush().is_err()
-                    {
-                        return;
-                    }
-                }
-            }
-            Err(RecvTimeoutError::Disconnected) => return,
-        }
-    }
+    claim.hand_over(connection, inbox, version);
 }
 
 /// The catalog version a `GET` asks its state in: `?v=1` is the v1 shape, and
@@ -1138,26 +1313,6 @@ fn requested_version(target: &str) -> i64 {
         1
     } else {
         chorus_control::CATALOG_VERSION
-    }
-}
-
-/// One worker's claim on an event-stream slot, given back when it is dropped.
-struct StreamSlot<'a>(&'a AtomicUsize);
-
-impl<'a> StreamSlot<'a> {
-    fn take(streaming: &'a AtomicUsize, slots: usize) -> Option<StreamSlot<'a>> {
-        streaming
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |held| {
-                (held < slots).then_some(held + 1)
-            })
-            .ok()
-            .map(|_| StreamSlot(streaming))
-    }
-}
-
-impl Drop for StreamSlot<'_> {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -1347,21 +1502,6 @@ mod tests {
         let mut no_host = command_request(json, Some("http://chorus.example:4011"));
         no_host.host = None;
         assert!(post_refusal(&no_host).is_some());
-    }
-
-    #[test]
-    fn streams_may_take_every_worker_but_one() {
-        assert_eq!(stream_slots(1), 1);
-        assert_eq!(stream_slots(2), 1);
-        assert_eq!(stream_slots(8), 7);
-        let streaming = AtomicUsize::new(0);
-        let a = StreamSlot::take(&streaming, 2).expect("one");
-        let b = StreamSlot::take(&streaming, 2).expect("two");
-        assert!(StreamSlot::take(&streaming, 2).is_none());
-        drop(a);
-        assert!(StreamSlot::take(&streaming, 2).is_some());
-        drop(b);
-        assert_eq!(streaming.load(Ordering::SeqCst), 0);
     }
 
     #[test]

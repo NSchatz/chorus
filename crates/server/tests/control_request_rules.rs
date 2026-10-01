@@ -142,8 +142,7 @@ fn exchange(address: &str, request: &str) -> String {
 /// connection it served, so the next connection can arrive a moment early.
 fn pool_was_momentarily_full(answer: &str) -> bool {
     answer.is_empty()
-        || (answer.contains("503 Service Unavailable")
-            && !answer.contains("event-stream control workers"))
+        || (answer.contains("503 Service Unavailable") && !answer.contains("event streams is held"))
 }
 
 /// A request served by a worker, retried past the moment described at
@@ -440,32 +439,39 @@ fn attach(address: &str) -> Result<TcpStream, String> {
     }
 }
 
+/// Audit finding B-5, closed: an event stream is held by the one event writer
+/// (`crates/server/src/events.rs`), not by a worker, so a server with ONE
+/// control worker holds every stream its ceiling allows and still serves a
+/// command beside them; past the ceiling a stream is refused by name.
 #[test]
-fn subscribers_cannot_take_the_worker_a_command_needs() {
-    const WORKERS: usize = 3;
-    let server = start(&["--control-workers", &WORKERS.to_string()]);
-    // Every worker a stream may have.
-    let held: Vec<TcpStream> = (0..WORKERS - 1)
+fn subscribers_cost_no_worker_and_past_their_ceiling_are_refused_by_name() {
+    const WORKERS: usize = 1;
+    const STREAMS: usize = 3;
+    let server = start(&[
+        "--control-workers",
+        &WORKERS.to_string(),
+        "--event-streams",
+        &STREAMS.to_string(),
+    ]);
+    let held: Vec<TcpStream> = (0..STREAMS)
         .map(|n| {
             attach(&server.control)
                 .unwrap_or_else(|e| panic!("subscriber {} was not served: {}", n, e))
         })
         .collect();
-    // One more is refused by name rather than given the last worker.
     let refused = match attach(&server.control) {
         Ok(_) => panic!(
-            "a subscriber was given the last of {} workers, which leaves nothing for a command",
-            WORKERS
+            "a subscriber past the ceiling of {} event streams was served",
+            STREAMS
         ),
         Err(answer) => answer,
     };
     assert!(
         refused.starts_with("HTTP/1.1 503 Service Unavailable")
-            && refused.contains("kept for commands"),
+            && refused.contains("every one of this server's 3 event streams is held"),
         "{}",
         refused
     );
-    // And a command is served while every stream slot is held.
     let answer = post(
         &server.control,
         "Content-Type: application/json\r\n",
@@ -473,8 +479,7 @@ fn subscribers_cannot_take_the_worker_a_command_needs() {
     );
     assert!(
         answer.contains("200 OK"),
-        "with {} subscribers holding {} of {} workers a command was answered: {}",
-        held.len(),
+        "with {} subscribers held and {} control worker a command was answered: {}",
         held.len(),
         WORKERS,
         status_line(&answer)

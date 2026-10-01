@@ -12,6 +12,9 @@
 # controller role's and the status LED's (goal 9): the C controls must produce its .hex bytes and
 # the server decodes and applies them (crates/server/tests/controller_role.rs); the Rust twin
 # (crates/controls, goal 10) must produce the same bytes and LED moments (crates/controls/tests).
+# fixtures/volume (goal 11) is the room_volume sequence the real server sent one player over every
+# volume path: crates/server/tests captures and re-checks it, firmware/tests/test_volume.c feeds it
+# through the C endpoint's volume path, so both endpoint kinds are held to one sequence.
 . "$(dirname "$0")/lib.sh"
 # directory | extensions both sides read | where Rust reads it | where C reads it
 shared=(
@@ -24,6 +27,7 @@ shared=(
     "fixtures/protocol/v2/noise|fields|crates/protocol/tests|firmware/tests/test_noise.c"
     "fixtures/codec|fields chunks pcm|crates/client-linux/tests|firmware/tests/test_codec.c"
     "fixtures/controls|hex led|crates/server/tests crates/controls/tests|firmware/tests/test_controls.c"
+    "fixtures/volume|hex|crates/server/tests|firmware/tests/test_volume.c"
 )
 rc=0
 bad() { fail "Shared fixtures" "$1"; rc=1; }

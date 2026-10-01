@@ -1,0 +1,24 @@
+# Every room_volume the real chorus-server sent the kitchen's player while
+# crates/server/tests/limits_hold_for_every_volume_path.rs drove every volume path, one
+# frame (type 0x38, 6-byte payload: gain, limit, ramp_ms) per line. Read by that test and
+# by firmware/tests/test_volume.c, which feeds it through the C endpoint's volume path.
+# the greeting
+38 00 06 01 f4 03 20 00 00
+# volume above the limit
+38 00 06 03 20 03 20 00 00
+# volume_step
+38 00 06 02 bc 03 20 00 00
+# group_volume
+38 00 06 03 20 03 20 00 00
+# group_volume_step
+38 00 06 02 38 03 20 00 00
+# limit below the volume
+38 00 06 01 2c 01 2c 00 00
+# mute
+38 00 06 00 00 01 2c 00 00
+# unmute
+38 00 06 01 2c 01 2c 00 00
+# quiet hours, active at the civil time
+38 00 06 00 c8 00 c8 00 00
+# controller_command volume_step -5 points
+38 00 06 00 96 00 c8 00 00

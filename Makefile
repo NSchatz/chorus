@@ -178,6 +178,16 @@ schedule-fixtures: tools-executable
 
 .PHONY: schedule-fixtures
 
+# Regenerate the room_volume sequence the real server sends over every volume
+# path (fixtures/README.md, volume/), from a run of the test that captures it.
+# The same test, run without this, asserts the run reproduces the committed
+# file byte for byte, and firmware/tests/test_volume.c holds the C endpoint to
+# it. For changing a step of that test, never for making a red assertion green.
+volume-sequence:
+	CHORUS_WRITE_FIXTURES=1 cargo test --quiet -p chorus-server --test limits_hold_for_every_volume_path
+
+.PHONY: volume-sequence
+
 # --- the ESP32-S3 endpoint ---------------------------------------------------
 #
 # The endpoint's host build and every verification of it that needs no device.
