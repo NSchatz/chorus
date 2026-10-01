@@ -80,6 +80,7 @@ LIB_SRC := \
 	$(FW)/src/endpoint_config.c \
 	$(FW)/src/console.c \
 	$(FW)/src/decode_cost.c \
+	$(FW)/src/dsp_cost.c \
 	$(FW)/src/sync_conf.c \
 	$(FW)/src/playout.c \
 	$(FW)/src/volume.c \

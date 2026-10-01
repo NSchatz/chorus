@@ -70,6 +70,7 @@ idf_component_register(
         "../src/codec_opus.c"
         "../src/console.c"
         "../src/decode_cost.c"
+        "../src/dsp_cost.c"
         "${CHORUS_THIRD_PARTY}/dr_flac/dr_flac.c"
         ${chorus_opus_srcs}
     INCLUDE_DIRS

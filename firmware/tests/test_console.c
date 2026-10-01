@@ -14,13 +14,19 @@
  *   - `decode-cost` decodes the fixtures through the endpoint's codec seam,
  *     times only the decode calls on the clock it is handed, and publishes a
  *     figure only for a decode that hashes to the fixture's decode_fnv1a64;
+ *   - `dsp-cost` runs the DSP chain in four named configurations over a
+ *     generated signal, times only the chain calls, and publishes a figure
+ *     only for a chain whose output sums to the host's reference checksum
+ *     (the reference is recomputed here, so a change to the chain that moves
+ *     it fails this test and prints the lines to commit);
  *   - `resources` prints heap, the named tasks' least free stack, the FIFO
  *     after the writer (from a real playout path on a fake DMA) and the
  *     marker's counts, and says `none`, `absent` or `unknown` for what the
  *     image cannot give rather than a zero.
  *
  * Every figure the real-clock case prints is the HOST's cost and is not
- * recorded anywhere: the S3's is tools/decode-cost-run.sh's, on hardware. */
+ * recorded anywhere: the S3's is tools/decode-cost-run.sh's, on hardware. No
+ * check here asserts a timing. */
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -29,6 +35,7 @@
 #include <unistd.h>
 
 #include "chorus/console.h"
+#include "chorus/dsp_cost.h"
 #include "chorus/session.h"
 #include "chorus/monotonic.h"
 #include "chorus/playout.h"
@@ -310,6 +317,164 @@ static void decode_cost_times_only_the_decode(void)
     free((void *)fx[1].chunks);
 }
 
+/* The allocator dsp-cost is handed: counts what it lends. */
+static int dsp_allocs, dsp_frees;
+static size_t dsp_alloc_bytes;
+static int dsp_alloc_refuses;
+static void *counting_alloc(size_t bytes)
+{
+    if (dsp_alloc_refuses) {
+        return NULL;
+    }
+    dsp_allocs++;
+    dsp_alloc_bytes = bytes;
+    return malloc(bytes);
+}
+static void counting_free(void *p)
+{
+    dsp_frees++;
+    free(p);
+}
+
+static void print_reference(const chorus_dsp_cost_sums_t *s, const char *name)
+{
+    printf("    {0x%016llxull, %.17g, {%.17g, %.17g, %.17g, %.17g}}, /* %s */\n",
+           (unsigned long long)s->fnv1a64, s->energy, s->projection[0], s->projection[1],
+           s->projection[2], s->projection[3], name);
+}
+
+static void dsp_cost_times_only_the_chain(void)
+{
+    chorus_section("dsp-cost runs the chain on a generated signal and times only the chain calls");
+    /* The host reproduces its committed reference: the reference IS this
+     * computation, so a mismatch means the chain, the signal or a
+     * configuration changed, and the lines to commit are printed. Graded at
+     * the tolerance the chip is held to, not bit for bit, so a host whose
+     * libm rounds a last place differently is not a red gate; whether this
+     * host was bit exact is printed. */
+    int all_exact = 1;
+    for (size_t i = 0; i < CHORUS_DSP_COST_CONFIGS; i++) {
+        chorus_dsp_cost_t cost;
+        char detail[256];
+        detail[0] = '\0';
+        fake_now = 0;
+        int rc = chorus_dsp_cost_run(i, fake_clock, counting_alloc, counting_free, &cost, detail,
+                                     sizeof(detail));
+        /* 48000 frames in 32-frame calls is 1500 calls; the fake clock moves
+         * 1 ms per read, two reads a call: 1.5 s timed for 1 s of audio. */
+        chorus_check(rc == 0 && cost.frames == CHORUS_DSP_COST_FRAMES &&
+                         cost.elapsed_ns == 1500ull * 1000000ull && cost.cpu_fraction == 1.5 &&
+                         cost.frames_per_s == 32000.0,
+                     "%s: %llu frames, %llu ns timed (one fake ms per chain call), cpu_fraction "
+                     "%.4f (%s)",
+                     chorus_dsp_cost_names[i], (unsigned long long)cost.frames,
+                     (unsigned long long)cost.elapsed_ns, cost.cpu_fraction, detail);
+        chorus_check(rc == 0 && cost.output_matches,
+                     "%s: the host's output sums to the committed reference (deviation %.1e, "
+                     "bit exact: %s, fnv %016llx, energy %.6g)",
+                     chorus_dsp_cost_names[i], cost.deviation, cost.bit_exact ? "yes" : "no",
+                     (unsigned long long)cost.sums.fnv1a64, cost.sums.energy);
+        if (!cost.bit_exact || cost.deviation != 0.0) {
+            all_exact = 0;
+        }
+    }
+    if (!all_exact) {
+        printf("  the reference for firmware/src/dsp_cost.c, recomputed on this host:\n");
+        for (size_t i = 0; i < CHORUS_DSP_COST_CONFIGS; i++) {
+            chorus_dsp_cost_t cost;
+            char detail[256];
+            chorus_dsp_cost_run(i, fake_clock, NULL, NULL, &cost, detail, sizeof(detail));
+            print_reference(&cost.sums, chorus_dsp_cost_names[i]);
+        }
+    }
+    chorus_check(dsp_allocs == (int)CHORUS_DSP_COST_CONFIGS && dsp_frees == dsp_allocs &&
+                     dsp_alloc_bytes == sizeof(chorus_dsp_chain_t),
+                 "each run borrows one %zu byte chain from the allocator it is handed and gives "
+                 "it back (%d lent, %d returned)",
+                 dsp_alloc_bytes, dsp_allocs, dsp_frees);
+
+    /* The configurations are what their names say. */
+    chorus_dsp_cost_t cost;
+    char detail[256];
+    chorus_dsp_cost_run(2, fake_clock, NULL, NULL, &cost, detail, sizeof(detail));
+    chorus_check(cost.outputs == 1, "`sub` is one output, the LFE member's (%u)", cost.outputs);
+    chorus_dsp_cost_run(3, fake_clock, NULL, NULL, &cost, detail, sizeof(detail));
+    chorus_check(cost.outputs == 2, "`two-way` is two outputs, woofer and tweeter (%u)",
+                 cost.outputs);
+    chorus_check(chorus_dsp_cost_run(CHORUS_DSP_COST_CONFIGS, fake_clock, NULL, NULL, &cost, detail,
+                                     sizeof(detail)) != 0,
+                 "a configuration past the last is refused: %s", detail);
+
+    /* The tolerance catches a stage left out: the all-on chain with its
+     * mildest room-EQ filter dropped, and with night mode off, each against
+     * the all-on reference. */
+    chorus_dsp_sound_t sound;
+    chorus_dsp_endpoint_t endpoint;
+    const char *name;
+    chorus_dsp_cost_configure(1, &sound, &endpoint, &name);
+    size_t mildest = 0;
+    for (size_t k = 1; k < sound.eq_count; k++) {
+        int g = sound.eq[k].gain_cdb < 0 ? -sound.eq[k].gain_cdb : sound.eq[k].gain_cdb;
+        int m = sound.eq[mildest].gain_cdb < 0 ? -sound.eq[mildest].gain_cdb
+                                               : sound.eq[mildest].gain_cdb;
+        if (g < m) {
+            mildest = k;
+        }
+    }
+    chorus_dsp_eq_filter_t dropped = sound.eq[mildest];
+    sound.eq[mildest] = sound.eq[sound.eq_count - 1u];
+    sound.eq_count--;
+    chorus_dsp_cost_measure("all-on", &sound, &endpoint, &chorus_dsp_cost_reference[1], fake_clock,
+                            NULL, NULL, &cost, detail, sizeof(detail));
+    chorus_check(!cost.output_matches && cost.deviation > 10.0 * CHORUS_DSP_COST_TOLERANCE,
+                 "all-on without its mildest filter (%u Hz, %d cdB, Q %u milli) deviates %.1e, "
+                 "refused at %.0e",
+                 (unsigned)dropped.freq_hz, (int)dropped.gain_cdb, (unsigned)dropped.q_milli,
+                 cost.deviation, CHORUS_DSP_COST_TOLERANCE);
+    chorus_dsp_cost_configure(1, &sound, &endpoint, &name);
+    sound.night = false;
+    chorus_dsp_cost_measure("all-on", &sound, &endpoint, &chorus_dsp_cost_reference[1], fake_clock,
+                            NULL, NULL, &cost, detail, sizeof(detail));
+    chorus_check(!cost.output_matches && cost.deviation > 10.0 * CHORUS_DSP_COST_TOLERANCE,
+                 "all-on without night mode deviates %.1e, refused", cost.deviation);
+
+    /* The console: one line, one group per configuration. */
+    chorus_console_t c = a_console(CHORUS_TRANSPORT_WIRED, NULL);
+    c.stack_free_bytes = fixed_stack_free;
+    char out[CHORUS_CONSOLE_REPLY];
+    int rc = chorus_console_execute(&c, "dsp-cost", out, sizeof(out));
+    chorus_check(rc == 0 && strstr(out, "dsp-cost flat:rate=48000,channels=2,outputs=2,") == out &&
+                     strstr(out, " all-on:rate=48000,") && strstr(out, " sub:rate=48000,") &&
+                     strstr(out, " two-way:rate=48000,") &&
+                     strstr(out, "output_matches=no") == NULL &&
+                     strstr(out, "cpu_fraction=1.5000") && strstr(out, "frames_per_s=32000") &&
+                     strstr(out, " stack_free_bytes=5120") != NULL,
+                 "`dsp-cost` is one line with one group per configuration: `%s`", out);
+    rc = chorus_console_execute(&c, "dsp-cost two-way", out, sizeof(out));
+    chorus_check(rc == 0 && strstr(out, "dsp-cost two-way:") == out && strstr(out, "flat") == NULL,
+                 "`dsp-cost <name>` runs that one: `%s`", out);
+    rc = chorus_console_execute(&c, "dsp-cost 7.1", out, sizeof(out));
+    chorus_check(rc != 0 && strstr(out, "reason=no-such-config") != NULL, "`%s`", out);
+    rc = chorus_console_execute(&c, "dsp-cost flat sub", out, sizeof(out));
+    chorus_check(rc != 0 && strstr(out, "reason=usage") != NULL, "`%s`", out);
+    c.dsp_alloc = counting_alloc;
+    c.dsp_free = counting_free;
+    dsp_alloc_refuses = 1;
+    rc = chorus_console_execute(&c, "dsp-cost flat", out, sizeof(out));
+    chorus_check(rc != 0 && strstr(out, "reason=chain-failed") && strstr(out, "no memory"),
+                 "no memory for the chain is refused by name: `%s`", out);
+    dsp_alloc_refuses = 0;
+    c.now_ns = NULL;
+    rc = chorus_console_execute(&c, "dsp-cost", out, sizeof(out));
+    chorus_check(rc != 0 && strstr(out, "reason=no-clock") != NULL, "`%s`", out);
+
+    /* On the real monotonic clock: the HOST's figure, printed and not kept. */
+    c.now_ns = chorus_monotonic_now_ns;
+    rc = chorus_console_execute(&c, "dsp-cost", out, sizeof(out));
+    chorus_check(rc == 0 && strstr(out, "output_matches=no") == NULL,
+                 "on the host's monotonic clock (host figure, not a measurement): %s", out);
+}
+
 /* The session side of `server` and `status`: a run that starts against an
  * address nothing listens on, and is handed a loopback listener by the console
  * hook on its second attempt, connects THERE, logs the change, and hands its
@@ -517,6 +682,7 @@ int main(void)
     server_takes_a_checked_address();
     status_prints_the_telemetry_line();
     decode_cost_times_only_the_decode();
+    dsp_cost_times_only_the_chain();
     the_session_connects_where_the_console_says();
     resources_prints_what_the_bench_records();
     everything_else_is_refused_by_name();

@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "chorus/dsp.h"
+#include "chorus/protocol_v2.h"
 #include "fixture_text.h"
 #include "harness.h"
 
@@ -965,10 +966,44 @@ static void test_gain_change_keeps_state(void)
                  "the bass shelf's state survives a bass change (z1 %g)", (double)z1);
 }
 
+/* THE room-correction bounds exist twice in C: the library's
+ * CHORUS_DSP_ROOM_EQ_* (what the chain designs) and the wire codec's
+ * CHORUS_V2_SOUND_EQ_* (what a `sound` message may carry). Equal, or a filter
+ * the wire accepts could be one the chain refuses (or the reverse). Asserted
+ * at compile time, and counted here so the run says it was checked. The Rust
+ * pair is crates/server/tests/room_eq_bounds_agree.rs. */
+_Static_assert(CHORUS_DSP_ROOM_EQ_MAX_FILTERS == CHORUS_V2_SOUND_EQ_MAX_FILTERS, "max filters");
+_Static_assert(CHORUS_DSP_ROOM_EQ_FREQ_MIN_HZ == CHORUS_V2_SOUND_EQ_FREQ_HZ_MIN, "freq min");
+_Static_assert(CHORUS_DSP_ROOM_EQ_FREQ_MAX_HZ == CHORUS_V2_SOUND_EQ_FREQ_HZ_MAX, "freq max");
+_Static_assert(CHORUS_DSP_ROOM_EQ_GAIN_MIN_CDB == CHORUS_V2_SOUND_EQ_GAIN_CDB_MIN, "gain min");
+_Static_assert(CHORUS_DSP_ROOM_EQ_GAIN_MAX_CDB == CHORUS_V2_SOUND_EQ_GAIN_CDB_MAX, "gain max");
+_Static_assert(CHORUS_DSP_ROOM_EQ_Q_MIN_MILLI == CHORUS_V2_SOUND_EQ_Q_MILLI_MIN, "q min");
+_Static_assert(CHORUS_DSP_ROOM_EQ_Q_MAX_MILLI == CHORUS_V2_SOUND_EQ_Q_MILLI_MAX, "q max");
+
+static void test_room_eq_bounds_match_the_wire(void)
+{
+    chorus_section("the library's room-EQ bounds are the wire's");
+    chorus_check(CHORUS_DSP_ROOM_EQ_MAX_FILTERS == CHORUS_V2_SOUND_EQ_MAX_FILTERS,
+                 "at most %u filters on both", CHORUS_DSP_ROOM_EQ_MAX_FILTERS);
+    chorus_check(CHORUS_DSP_ROOM_EQ_FREQ_MIN_HZ == CHORUS_V2_SOUND_EQ_FREQ_HZ_MIN &&
+                     CHORUS_DSP_ROOM_EQ_FREQ_MAX_HZ == CHORUS_V2_SOUND_EQ_FREQ_HZ_MAX,
+                 "%u..%u Hz on both", CHORUS_DSP_ROOM_EQ_FREQ_MIN_HZ,
+                 CHORUS_DSP_ROOM_EQ_FREQ_MAX_HZ);
+    chorus_check(CHORUS_DSP_ROOM_EQ_GAIN_MIN_CDB == CHORUS_V2_SOUND_EQ_GAIN_CDB_MIN &&
+                     CHORUS_DSP_ROOM_EQ_GAIN_MAX_CDB == CHORUS_V2_SOUND_EQ_GAIN_CDB_MAX,
+                 "%d..%d centi-dB on both", CHORUS_DSP_ROOM_EQ_GAIN_MIN_CDB,
+                 CHORUS_DSP_ROOM_EQ_GAIN_MAX_CDB);
+    chorus_check(CHORUS_DSP_ROOM_EQ_Q_MIN_MILLI == CHORUS_V2_SOUND_EQ_Q_MILLI_MIN &&
+                     CHORUS_DSP_ROOM_EQ_Q_MAX_MILLI == CHORUS_V2_SOUND_EQ_Q_MILLI_MAX,
+                 "Q %u..%u thousandths on both", CHORUS_DSP_ROOM_EQ_Q_MIN_MILLI,
+                 CHORUS_DSP_ROOM_EQ_Q_MAX_MILLI);
+}
+
 int main(void)
 {
     run_fixtures();
     test_refusals();
     test_gain_change_keeps_state();
+    test_room_eq_bounds_match_the_wire();
     return chorus_test_report("test_dsp");
 }

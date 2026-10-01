@@ -4,7 +4,8 @@
  * power save mode and read back the mode in force
  * (tools/wireless-characterization-run.sh), point it at a server
  * (tools/endpoint-rig-run.sh), read its telemetry, and time the decoders on
- * the chip (tools/decode-cost-run.sh), and read the endpoint's resources for
+ * the chip (tools/decode-cost-run.sh) and the DSP chain beside them (the same
+ * script, `dsp-cost`), and read the endpoint's resources for
  * the EMBEDDED-5 bring-up (tools/embedded5-bringup-run.sh). Every decision about a command line -
  * what it means, what it refuses, what it prints - is here and graded on a
  * host by firmware/tests/test_console.c; firmware/main/console_esp.c only
@@ -25,6 +26,7 @@
 #include <stdint.h>
 
 #include "chorus/decode_cost.h"
+#include "chorus/dsp_cost.h"
 #include "chorus/telemetry.h"
 #include "chorus/wifi.h"
 
@@ -91,9 +93,15 @@ typedef struct {
     size_t fixture_count;
     chorus_clock_fn now_ns;
 
+    /* Where `dsp-cost` takes its chain object from and gives it back (about
+     * 72 KB, chorus/dsp_cost.h): the chip binds internal RAM, where the
+     * playout path's chain lives. NULL: malloc and free. */
+    chorus_dsp_cost_alloc_fn dsp_alloc;
+    chorus_dsp_cost_free_fn dsp_free;
+
     /* The least free stack the console task has had, in bytes, appended to
-     * the decode-cost reply: the decoders run on that task. NULL leaves it
-     * out. */
+     * the decode-cost and dsp-cost replies: the decoders and the chain run on
+     * that task. NULL leaves it out. */
     uint32_t (*stack_free_bytes)(void);
 
     /* Fills `out` for `resources`. NULL: `resources` is refused by name. */

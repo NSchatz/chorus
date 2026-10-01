@@ -236,11 +236,16 @@ deleted (K27). What changes: goal 9 knows the v6.1
 image boots on this board, and S6 below can run on the same board right after, through the
 console.
 
-### S6. The ESP32-S3's decode cost, on the chip (the owner's own board, after S5)
+### S6. The ESP32-S3's decode cost and DSP chain cost, on the chip (the owner's own board, after S5)
 
 Needs: the board from S5, flashed with an image from the same checkout, on USB; S0's checkout on
 the machine it is plugged into. No bought part. Goal 8 adds this (ADR 0060): the image carries one
-FLAC and one Opus stream from `fixtures/codec` and times their decode on its monotonic clock.
+FLAC and one Opus stream from `fixtures/codec` and times their decode on its monotonic clock. Goal
+12 adds the DSP chain to the same run (`dsp-cost`, ADR 0087): the image runs the endpoint's chain in
+four configurations (flat; all-on: tone, loudness, speech, night and eight room-EQ filters; the LFE
+member of a 2.1 set; the two-way split) over one second of a generated 48 kHz stereo signal, times
+the chain calls on the same clock, and checks the output against the checksum the host computed.
+Take it with no stream playing: the console shares the chip with the session.
 
 ```
 CHORUS_ESP32S3_PORT=/dev/ttyACM0 CHORUS_BENCH_PR=1 tools/decode-cost-run.sh
@@ -248,10 +253,18 @@ CHORUS_ESP32S3_PORT=/dev/ttyACM0 CHORUS_BENCH_PR=1 tools/decode-cost-run.sh
 
 Expected: the console answers `help`; the report `embedded5-decode-cost-<date>` is MEASURED with
 `flac_cpu_fraction` and `opus_cpu_fraction` (the fraction of one core real-time decoding takes on
-the S3), both decodes matching their references, and `console_stack_free_bytes` above zero; a pull
-request `bench/<date>-embedded5-decode-cost` opens. Nothing is graded against a bound: the figures
-feed the playout and DSP budgets. What changes: goal 6's host-only decode cost gets its S3
-counterpart; if the stack figure is small, the console's 16 KB stack (ASSUMED) grows.
+the S3), both decodes matching their references, `console_stack_free_bytes` above zero, and
+`dsp_flat_cpu_fraction`, `dsp_all_on_cpu_fraction`, `dsp_sub_cpu_fraction` and
+`dsp_two_way_cpu_fraction` (the fraction of one core the chain takes in each configuration), every
+`dsp_*_output_matches` `yes` (`bit exact` may say `no`: the chip's libm may round a last place
+differently, which the tolerance allows); a pull request `bench/<date>-embedded5-decode-cost`
+opens. The run takes under a minute after the console answers. Nothing is graded against a bound:
+the figures feed the playout and DSP budgets. If the reply is `error dsp-cost
+reason=chain-failed detail="no memory for a 72680 byte chain"`, the board has not the internal RAM
+for a second chain beside the playout path's; the report is FAIL with that line, and the decode
+figures are still in it. What changes: goal 6's host-only decode cost gets its S3 counterpart and
+the DSP chain gets its first figure anywhere on the chip, so a headroom claim for the chain can
+cite a report; if the stack figure is small, the console's 16 KB stack (ASSUMED) grows.
 
 ### S7. EMBEDDED-5: the ESP32-S3 endpoint plays, syncs and survives abuse (after S0; the Audio Brick)
 
