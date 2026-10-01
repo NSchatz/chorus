@@ -30,6 +30,7 @@
 
 #include "chorus/noise.h"
 #include "chorus/playout.h"
+#include "chorus/protocol_v2.h"
 #include "chorus/sync.h"
 #include "chorus/telemetry.h"
 
@@ -91,6 +92,15 @@ typedef struct {
     void *server_update_ctx;
     void (*on_telemetry)(void *ctx, const chorus_telemetry_t *telemetry);
     void *telemetry_ctx;
+
+    /* Handed every `sound` (0x39) the server sends, after the decoder has
+     * held it to its ranges and the run has kept it in the result
+     * (chorus_session_last_sound). Optional: NULL keeps it only there. Goal
+     * 12's phase A stores it; the endpoint DSP track configures the chain
+     * from it (docs/decisions/, "per-room sound"). Runs on the session's own
+     * task. */
+    void (*on_sound)(void *ctx, const chorus_v2_sound_t *sound);
+    void *sound_ctx;
 } chorus_session_config_t;
 
 /* Why a run ended. Never "the server went away": that is not an end, it is a
@@ -132,6 +142,13 @@ typedef struct {
     /* Frames inside records that were rejected (one frame each, never the
      * session: a record's frame boundaries are known). */
     uint64_t rejected_frames;
+    /* The last `sound` the server sent, kept across reconnects for the whole
+     * run (a new session is not a reason to forget the room's sound, as a
+     * new session is not a reason to play louder, ADR 0074), and how many
+     * arrived. Read through chorus_session_last_sound. */
+    uint8_t have_sound;
+    chorus_v2_sound_t sound;
+    uint32_t sounds_received;
     /* The fingerprint of the endpoint's own public key. */
     char key_fingerprint[CHORUS_NOISE_FINGERPRINT_LEN];
     char detail[512];
@@ -140,5 +157,14 @@ typedef struct {
 /* Run one session. Returns 0 when it ended because it ran its time, and -1
  * otherwise with `end` and `detail` saying why. */
 int chorus_session_run(const chorus_session_config_t *config, chorus_session_result_t *out);
+
+/* Keep `sound` as the last one received: what the session does with every
+ * `sound` it decodes, exposed so a test can hold the store to it. */
+void chorus_session_keep_sound(chorus_session_result_t *result, const chorus_v2_sound_t *sound);
+
+/* The last `sound` received: 1 with `*out` set, or 0 when none has arrived
+ * this run (the endpoint then plays flat, the catalog's defaults being the
+ * server's to send). */
+int chorus_session_last_sound(const chorus_session_result_t *result, chorus_v2_sound_t *out);
 
 #endif /* CHORUS_SESSION_H */

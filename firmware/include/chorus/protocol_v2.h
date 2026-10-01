@@ -46,6 +46,31 @@ extern const uint8_t CHORUS_V2_MAGIC[CHORUS_V2_MAGIC_LEN];
  * catalog's volume unit), and the longest ramp, in ms. */
 #define CHORUS_V2_ROOM_VOLUME_FULL 1000u
 #define CHORUS_V2_MAX_ROOM_VOLUME_RAMP_MS 60000u
+/* sound (0x39): bass and treble in whole dB; the crossover in Hz; the sub's
+ * level in hundredths of a dB; and the room-correction bounds, which are the
+ * control catalog's ROOM_EQ_* (crates/control/src/sound.rs) and the DSP's
+ * CHORUS_DSP_ROOM_EQ_*: frequency in Hz, gain in hundredths of a dB, Q in
+ * thousandths. */
+#define CHORUS_V2_SOUND_TONE_DB_MIN (-10)
+#define CHORUS_V2_SOUND_TONE_DB_MAX 10
+#define CHORUS_V2_SOUND_CROSSOVER_HZ_MIN 40u
+#define CHORUS_V2_SOUND_CROSSOVER_HZ_MAX 200u
+#define CHORUS_V2_SOUND_SUB_LEVEL_CDB_MIN (-1200)
+#define CHORUS_V2_SOUND_SUB_LEVEL_CDB_MAX 600
+#define CHORUS_V2_SOUND_EQ_MAX_FILTERS 8u
+#define CHORUS_V2_SOUND_EQ_FREQ_HZ_MIN 20u
+#define CHORUS_V2_SOUND_EQ_FREQ_HZ_MAX 1000u
+#define CHORUS_V2_SOUND_EQ_GAIN_CDB_MIN (-1200)
+#define CHORUS_V2_SOUND_EQ_GAIN_CDB_MAX 300
+#define CHORUS_V2_SOUND_EQ_Q_MILLI_MIN 500u
+#define CHORUS_V2_SOUND_EQ_Q_MILLI_MAX 10000u
+/* sound's flags byte. Any other bit set is rejected (UNDEFINED). */
+#define CHORUS_V2_SOUND_FLAG_LOUDNESS 0x01u
+#define CHORUS_V2_SOUND_FLAG_NIGHT 0x02u
+#define CHORUS_V2_SOUND_FLAG_SPEECH 0x04u
+#define CHORUS_V2_SOUND_FLAG_ROOM_EQ 0x08u
+#define CHORUS_V2_SOUND_FLAG_SUB_INVERTED 0x10u
+#define CHORUS_V2_SOUND_FLAGS_DEFINED 0x1Fu
 
 /* The Noise and record sizes the frame layer knows about. */
 #define CHORUS_V2_KEY_LEN 32u
@@ -79,7 +104,8 @@ typedef enum {
     CHORUS_V2_COLOR = 0x35,
     CHORUS_V2_SOURCE_OFFER = 0x36,
     CHORUS_V2_SOURCE_CONTROL = 0x37,
-    CHORUS_V2_ROOM_VOLUME = 0x38
+    CHORUS_V2_ROOM_VOLUME = 0x38,
+    CHORUS_V2_SOUND = 0x39
 } chorus_v2_type_t;
 
 /* Short stable name of a catalogued type, or NULL for an unassigned byte. */
@@ -302,6 +328,31 @@ typedef struct {
     uint16_t ramp_ms;
 } chorus_v2_room_volume_t;
 
+/* One room-correction filter in a sound: a peaking EQ. */
+typedef struct {
+    uint16_t freq_hz;
+    int16_t gain_cdb;
+    uint16_t q_milli;
+} chorus_v2_sound_filter_t;
+
+/* The room's sound settings, server to one player (docs/protocol.md, "0x39
+ * sound"): tone, the flags (loudness, night, speech, room EQ on, sub
+ * inverted), where this player sits in the room's bonded set (`role`, a
+ * channel position, 0 when in no set) and whether the set has a sub, the
+ * crossover and sub level, and up to eight correction filters. Fixed size, so
+ * a session can keep the last one by value. */
+typedef struct {
+    int8_t bass_db;
+    int8_t treble_db;
+    uint8_t flags;
+    uint8_t role;
+    uint8_t sub_present;
+    uint16_t crossover_hz;
+    int16_t sub_level_cdb;
+    uint8_t eq_count;
+    chorus_v2_sound_filter_t filters[CHORUS_V2_SOUND_EQ_MAX_FILTERS];
+} chorus_v2_sound_t;
+
 /* Any message in the v2 catalog. `type` is the wire byte and selects the
  * member of `as`. */
 typedef struct {
@@ -330,6 +381,7 @@ typedef struct {
         chorus_v2_source_offer_t source_offer;
         chorus_v2_source_control_t source_control;
         chorus_v2_room_volume_t room_volume;
+        chorus_v2_sound_t sound;
     } as;
 } chorus_v2_message_t;
 

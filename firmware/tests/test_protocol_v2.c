@@ -21,6 +21,7 @@
  * never written. */
 
 #include "chorus/protocol_v2.h"
+#include "chorus/session.h"
 #include "fixture_text.h"
 #include "harness.h"
 
@@ -346,6 +347,52 @@ static int build(const char *stem, const char *fields_text, chorus_v2_message_t 
         m->as.room_volume.limit = (uint16_t)number(&f, "limit");
         m->as.room_volume.ramp_ms = (uint16_t)number(&f, "ramp_ms");
         break;
+    case CHORUS_V2_SOUND: {
+        chorus_v2_sound_t *s = &m->as.sound;
+        s->bass_db = (int8_t)number(&f, "bass_db");
+        s->treble_db = (int8_t)number(&f, "treble_db");
+        size_t n = words(value(&f, "flags"), list, 8);
+        static const char *const FLAG_NAMES[] = {"loudness", "night", "speech", "room_eq",
+                                                 "sub_inverted"};
+        for (size_t i = 0; i < n; i++) {
+            int known = 0;
+            for (size_t b = 0; b < sizeof(FLAG_NAMES) / sizeof(FLAG_NAMES[0]); b++) {
+                if (strcmp(list[i], FLAG_NAMES[b]) == 0) {
+                    s->flags |= (uint8_t)(1u << b);
+                    known = 1;
+                }
+            }
+            chorus_check(known, "%s.fields flags names '%s'", stem, list[i]);
+            f.ok &= known;
+        }
+        char extra[32];
+        if (fixture_field(fields_text, "flags_reserved", extra, sizeof(extra)) != NULL) {
+            s->flags |= (uint8_t)strtoul(extra, NULL, 10);
+        }
+        s->role = (uint8_t)number(&f, "role");
+        s->sub_present = (uint8_t)number(&f, "sub_present");
+        s->crossover_hz = (uint16_t)number(&f, "crossover_hz");
+        s->sub_level_cdb = (int16_t)number(&f, "sub_level_cdb");
+        /* filter.<n> = freq_hz gain_cdb q_milli, numbered from 0; a
+         * rejection vector's ninth is counted and not stored (the encoder
+         * refuses the count before it would read one). */
+        for (unsigned i = 0;; i++) {
+            char key[32];
+            char triple[128];
+            snprintf(key, sizeof(key), "filter.%u", i);
+            if (fixture_field(fields_text, key, triple, sizeof(triple)) == NULL) {
+                break;
+            }
+            if (i < CHORUS_V2_SOUND_EQ_MAX_FILTERS) {
+                char *end = NULL;
+                s->filters[i].freq_hz = (uint16_t)strtol(triple, &end, 10);
+                s->filters[i].gain_cdb = (int16_t)strtol(end, &end, 10);
+                s->filters[i].q_milli = (uint16_t)strtol(end, &end, 10);
+            }
+            s->eq_count = (uint8_t)(i + 1);
+        }
+        break;
+    }
     default:
         chorus_check(0, "%s.fields message_type = %s is a v2 type this test builds", stem,
                      type_name);
@@ -460,7 +507,8 @@ static int the_committed_vectors_round_trip(void)
     /* Every type v2 added has at least one vector, and this endpoint has a
      * type for every vector (the directory and the catalog agree). */
     static const uint8_t ADDED[] = {0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x20, 0x21, 0x22, 0x23,
-                                    0x24, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38};
+                                    0x24, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38,
+                                    0x39};
     for (size_t t = 0; t < sizeof(ADDED); t++) {
         int found = 0;
         for (size_t i = 0; i < vector_count; i++) {
@@ -635,7 +683,7 @@ static void the_committed_rejection_vectors_are_refused_both_ways(void)
     if (dir == NULL) {
         return;
     }
-    static vector_t rejected[16];
+    static vector_t rejected[32];
     size_t count = 0;
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
@@ -683,7 +731,15 @@ static void the_committed_rejection_vectors_are_refused_both_ways(void)
             continue;
         }
         v->frame_len = (size_t)len;
-        chorus_check(strcmp(problem, "out_of_range") == 0, "%s: problem = %s", v->stem, problem);
+        /* Out of range for a number; undefined for a bit or a role no version
+         * defines (sound's flags and role). */
+        chorus_v2_problem_t expected = CHORUS_V2_PROBLEM_NONE;
+        if (strcmp(problem, "out_of_range") == 0) {
+            expected = CHORUS_V2_PROBLEM_OUT_OF_RANGE;
+        } else if (strcmp(problem, "undefined") == 0) {
+            expected = CHORUS_V2_PROBLEM_UNDEFINED;
+        }
+        chorus_check(expected != CHORUS_V2_PROBLEM_NONE, "%s: problem = %s", v->stem, problem);
         chorus_v2_message_t built;
         if (!build(v->stem, fields_text, &built)) {
             continue;
@@ -695,17 +751,17 @@ static void the_committed_rejection_vectors_are_refused_both_ways(void)
             chorus_v2_encode(&built, produced, sizeof(produced), &written, &error);
         int refused = status == CHORUS_ENCODE_INVALID_FIELD && written == 12345 &&
                       error.field != NULL && strcmp(error.field, field) == 0 &&
-                      error.problem == CHORUS_V2_PROBLEM_OUT_OF_RANGE;
-        chorus_check(refused, "%s: the encoder refuses %s out of range and writes nothing (%s)",
-                     v->stem, field, chorus_encode_status_name(status));
+                      error.problem == expected;
+        chorus_check(refused, "%s: the encoder refuses %s (%s) and writes nothing (%s)", v->stem,
+                     field, problem, chorus_encode_status_name(status));
         chorus_v2_frame_t d = chorus_v2_decode_frame(v->frame, v->frame_len);
         int rejected_ok = d.outcome == CHORUS_FRAME_INVALID_FIELD && d.consumed == v->frame_len &&
                           d.error.field != NULL && strcmp(d.error.field, field) == 0 &&
-                          d.error.problem == CHORUS_V2_PROBLEM_OUT_OF_RANGE;
+                          d.error.problem == expected;
         chorus_check(rejected_ok,
-                     "%s: the decoder rejects %s out of range and consumes the whole frame "
+                     "%s: the decoder rejects %s (%s) and consumes the whole frame "
                      "(%s, consumed %zu of %zu)",
-                     v->stem, field, chorus_frame_outcome_name(d.outcome), d.consumed,
+                     v->stem, field, problem, chorus_frame_outcome_name(d.outcome), d.consumed,
                      v->frame_len);
         /* The next frame after a rejected one is still found and decoded. */
         const vector_t *good = vector("room_volume");
@@ -982,6 +1038,42 @@ static void the_v1_types_are_v1s_own(void)
     }
 }
 
+/* Goal 12, phase A: the session keeps the last `sound` it decoded and a
+ * getter reads it back, which is what the endpoint DSP track builds on. The
+ * committed vectors are decoded and handed to the session's own store, in
+ * order, and the getter returns the last, field for field. */
+static void the_session_keeps_the_last_sound_it_decoded(void)
+{
+    chorus_section("sound: the session keeps the last one (chorus_session_last_sound)");
+    static chorus_session_result_t result;
+    memset(&result, 0, sizeof(result));
+    chorus_v2_sound_t got;
+    chorus_check(chorus_session_last_sound(&result, &got) == 0, "none before the first");
+    const char *const order[] = {"sound_flat", "sound_eq_8", "sound_sub_2_1"};
+    for (size_t i = 0; i < sizeof(order) / sizeof(order[0]); i++) {
+        const vector_t *v = vector(order[i]);
+        if (v == NULL) {
+            chorus_check(0, "%s is committed", order[i]);
+            return;
+        }
+        chorus_v2_frame_t d = chorus_v2_decode_frame(v->frame, v->frame_len);
+        chorus_check(d.outcome == CHORUS_FRAME_DECODED && d.message.type == CHORUS_V2_SOUND,
+                     "%s decodes as sound", order[i]);
+        chorus_session_keep_sound(&result, &d.message.as.sound);
+    }
+    int have = chorus_session_last_sound(&result, &got);
+    chorus_check(have == 1 && result.sounds_received == 3, "three kept, the last one held");
+    /* sound_sub_2_1: the LFE member of a 2.1 set, the sub inverted. */
+    chorus_check(got.bass_db == 3 && got.treble_db == -2 && got.role == 4 &&
+                     got.sub_present == 1 && got.crossover_hz == 100 &&
+                     got.sub_level_cdb == -350 &&
+                     got.flags == (CHORUS_V2_SOUND_FLAG_LOUDNESS | CHORUS_V2_SOUND_FLAG_ROOM_EQ |
+                                   CHORUS_V2_SOUND_FLAG_SUB_INVERTED) &&
+                     got.eq_count == 1 && got.filters[0].freq_hz == 42 &&
+                     got.filters[0].gain_cdb == -600 && got.filters[0].q_milli == 4500,
+                 "the getter returns sound_sub_2_1 field for field");
+}
+
 int main(void)
 {
     the_committed_vectors_round_trip();
@@ -993,5 +1085,6 @@ int main(void)
     every_prefix_of_a_stream_of_all_vectors_is_safe();
     the_encoder_refuses_rather_than_truncating();
     the_v1_types_are_v1s_own();
+    the_session_keeps_the_last_sound_it_decoded();
     return chorus_test_report("test_protocol_v2");
 }
