@@ -45,6 +45,9 @@ use crate::rooms::{
     Role, Source, MAX_DEFINITIONS, MAX_DURATION_MIN, MAX_QUIET_WINDOWS, MAX_RAMP_S, MAX_SLEEP_MIN,
     SOURCE_SPELLINGS,
 };
+use crate::sound::{
+    EqFilter, FixedPoint, Polarity, CROSSOVER_HZ, ROOM_EQ_MAX_FILTERS, SUB_LEVEL_CDB, TONE_DB,
+};
 
 /// The catalog version this build speaks: the highest it implements, and the
 /// version its state message and its session refusal carry.
@@ -298,6 +301,46 @@ pub enum Command {
     },
     /// (v2) Create or replace the autoplay rule for one input.
     Autoplay(Autoplay),
+    /// (v2, goal 12) Change a room's tone, loudness, night mode or speech
+    /// enhancement. Every field but `zone` is optional; an absent one keeps
+    /// what the room had.
+    Sound {
+        /// The room.
+        zone: String,
+        /// Bass, whole dB.
+        bass: Option<i8>,
+        /// Treble, whole dB.
+        treble: Option<i8>,
+        /// Loudness compensation.
+        loudness: Option<bool>,
+        /// Night mode.
+        night: Option<bool>,
+        /// Speech enhancement.
+        speech: Option<bool>,
+    },
+    /// (v2, goal 12) Change a room's bass management (used when its bonded
+    /// set has an `LFE` member). Partial, as `sound`.
+    BassManagement {
+        /// The room.
+        zone: String,
+        /// The crossover, Hz.
+        crossover_hz: Option<u16>,
+        /// The sub's level, hundredths of a dB.
+        sub_level_cdb: Option<i16>,
+        /// The sub's polarity.
+        sub_polarity: Option<Polarity>,
+    },
+    /// (v2, goal 12) Replace a room's correction filters, or enable or
+    /// disable them. Partial, as `sound`; an empty `filters` clears them.
+    RoomEq {
+        /// The room.
+        zone: String,
+        /// The filters, at most [`ROOM_EQ_MAX_FILTERS`], each inside the
+        /// room-correction bounds.
+        filters: Option<Vec<EqFilter>>,
+        /// Whether they are applied.
+        enabled: Option<bool>,
+    },
 }
 
 impl Command {
@@ -327,6 +370,9 @@ impl Command {
             Command::AlarmStop { .. } => "alarm_stop",
             Command::Sleep { .. } => "sleep",
             Command::Autoplay(_) => "autoplay",
+            Command::Sound { .. } => "sound",
+            Command::BassManagement { .. } => "bass_management",
+            Command::RoomEq { .. } => "room_eq",
         }
     }
 
@@ -363,7 +409,10 @@ impl Command {
             | Command::Unbond { zone }
             | Command::VolumeStep { zone, .. }
             | Command::Limit { zone, .. }
-            | Command::QuietHours { zone, .. } => Some(zone),
+            | Command::QuietHours { zone, .. }
+            | Command::Sound { zone, .. }
+            | Command::BassManagement { zone, .. }
+            | Command::RoomEq { zone, .. } => Some(zone),
             _ => None,
         }
     }
@@ -464,6 +513,57 @@ impl Command {
                     m.extend(fields);
                 }
             }
+            Command::Sound {
+                zone,
+                bass,
+                treble,
+                loudness,
+                night,
+                speech,
+            } => {
+                text("zone", zone);
+                if let Some(b) = bass {
+                    m.push(("bass".to_string(), Value::int(i64::from(*b))));
+                }
+                if let Some(t) = treble {
+                    m.push(("treble".to_string(), Value::int(i64::from(*t))));
+                }
+                for (key, flag) in [("loudness", loudness), ("night", night), ("speech", speech)] {
+                    if let Some(flag) = flag {
+                        m.push((key.to_string(), Value::Bool(*flag)));
+                    }
+                }
+            }
+            Command::BassManagement {
+                zone,
+                crossover_hz,
+                sub_level_cdb,
+                sub_polarity,
+            } => {
+                text("zone", zone);
+                if let Some(hz) = crossover_hz {
+                    m.push(("crossover_hz".to_string(), Value::int(i64::from(*hz))));
+                }
+                if let Some(level) = sub_level_cdb {
+                    m.push(("sub_level_db".to_string(), centi_db_value(*level)));
+                }
+                if let Some(polarity) = sub_polarity {
+                    m.push(("sub_polarity".to_string(), Value::text(polarity.name())));
+                }
+            }
+            Command::RoomEq {
+                zone,
+                filters,
+                enabled,
+            } => {
+                text("zone", zone);
+                if let Some(filters) = filters {
+                    m.push(("filters".to_string(), filters_value(filters)));
+                }
+                if let Some(enabled) = enabled {
+                    m.push(("enabled".to_string(), Value::Bool(*enabled)));
+                }
+            }
         }
         Value::Obj(m)
     }
@@ -528,6 +628,31 @@ pub fn alarm_value(a: &Alarm) -> Value {
         ),
         ("enabled".to_string(), Value::Bool(a.enabled)),
     ])
+}
+
+/// A value in hundredths of a dB, as the catalog writes it: two places.
+pub fn centi_db_value(cdb: i16) -> Value {
+    Value::Num(FixedPoint::literal(i64::from(cdb), 2))
+}
+
+/// Room-correction filters, each in the declared order: `freq_hz`,
+/// `gain_db`, `q`.
+pub fn filters_value(filters: &[EqFilter]) -> Value {
+    Value::Arr(
+        filters
+            .iter()
+            .map(|f| {
+                Value::Obj(vec![
+                    ("freq_hz".to_string(), Value::int(i64::from(f.freq_hz))),
+                    ("gain_db".to_string(), centi_db_value(f.gain_cdb)),
+                    (
+                        "q".to_string(),
+                        Value::Num(FixedPoint::literal(i64::from(f.q_milli), 3)),
+                    ),
+                ])
+            })
+            .collect(),
+    )
 }
 
 /// An autoplay rule's fields, in the declared order.
@@ -1028,6 +1153,100 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
                 enabled: boolean(value, "enabled").map_err(at)?,
             })
         }
+        "sound" => {
+            fields(
+                &["v", "t", "zone"],
+                &["bass", "treble", "loudness", "night", "speech"],
+            )?;
+            let zone = id("zone")?;
+            let tone = |field: &str| -> Result<Option<i8>, Refusal> {
+                match value.get(field) {
+                    None => Ok(None),
+                    Some(_) => whole(value, field, i64::from(TONE_DB.0), i64::from(TONE_DB.1))
+                        .map(|n| Some(n as i8))
+                        .map_err(at),
+                }
+            };
+            let flag = |field: &str| -> Result<Option<bool>, Refusal> {
+                match value.get(field) {
+                    None => Ok(None),
+                    Some(_) => boolean(value, field).map(Some).map_err(at),
+                }
+            };
+            Command::Sound {
+                zone,
+                bass: tone("bass")?,
+                treble: tone("treble")?,
+                loudness: flag("loudness")?,
+                night: flag("night")?,
+                speech: flag("speech")?,
+            }
+        }
+        "bass_management" => {
+            fields(
+                &["v", "t", "zone"],
+                &["crossover_hz", "sub_level_db", "sub_polarity"],
+            )?;
+            let zone = id("zone")?;
+            let crossover_hz = match value.get("crossover_hz") {
+                None => None,
+                Some(_) => Some(
+                    whole(
+                        value,
+                        "crossover_hz",
+                        i64::from(CROSSOVER_HZ.0),
+                        i64::from(CROSSOVER_HZ.1),
+                    )
+                    .map_err(at)? as u16,
+                ),
+            };
+            let sub_level_cdb = match value.get("sub_level_db") {
+                None => None,
+                Some(_) => Some(
+                    centi_db(value, "sub_level_db", SUB_LEVEL_CDB.0, SUB_LEVEL_CDB.1)
+                        .map_err(at)?,
+                ),
+            };
+            let sub_polarity = match value.get("sub_polarity") {
+                None => None,
+                Some(v) => {
+                    let word = v.as_str().unwrap_or("");
+                    Some(Polarity::parse(word).ok_or_else(|| {
+                        at(Refusal::rejected(
+                            "sub_polarity",
+                            format!(
+                                "'{}' is not a polarity; the catalog declares \"normal\" or \
+                                 \"inverted\"",
+                                word
+                            ),
+                        ))
+                    })?)
+                }
+            };
+            Command::BassManagement {
+                zone,
+                crossover_hz,
+                sub_level_cdb,
+                sub_polarity,
+            }
+        }
+        "room_eq" => {
+            fields(&["v", "t", "zone"], &["filters", "enabled"])?;
+            let zone = id("zone")?;
+            let filters = match value.get("filters") {
+                None => None,
+                Some(_) => Some(eq_filters(value).map_err(at)?),
+            };
+            let enabled = match value.get("enabled") {
+                None => None,
+                Some(_) => Some(boolean(value, "enabled").map_err(at)?),
+            };
+            Command::RoomEq {
+                zone,
+                filters,
+                enabled,
+            }
+        }
         other => {
             return Err(at(Refusal::rejected(
                 "t",
@@ -1036,6 +1255,92 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
         }
     };
     Ok(command)
+}
+
+/// A decibel value written with at most two places, from `min` to `max`
+/// hundredths, as hundredths.
+fn centi_db(value: &Value, field: &str, min: i16, max: i16) -> Result<i16, Refusal> {
+    let refuse = |what: String| {
+        Refusal::rejected(
+            field,
+            format!(
+                "the field '{}' is {} and the catalog declares a number of dB from {} to {} in \
+                 steps of 0.01",
+                field,
+                what,
+                FixedPoint::literal(i64::from(min), 2),
+                FixedPoint::literal(i64::from(max), 2)
+            ),
+        )
+    };
+    let digits = match value.get(field) {
+        Some(Value::Num(digits)) => digits,
+        Some(other) => return Err(refuse(other.kind().to_string())),
+        None => return Err(refuse("absent".to_string())),
+    };
+    match FixedPoint::parse(digits, 2) {
+        Some(n) if (i64::from(min)..=i64::from(max)).contains(&n) => Ok(n as i16),
+        _ => Err(refuse(digits.clone())),
+    }
+}
+
+/// `room_eq`'s `filters`: at most [`ROOM_EQ_MAX_FILTERS`], each inside the
+/// room-correction bounds. Every refusal names `filters`, and its detail the
+/// filter and the field inside it.
+fn eq_filters(value: &Value) -> Result<Vec<EqFilter>, Refusal> {
+    let items = objects(value, "filters", &["freq_hz", "gain_db", "q"])?;
+    if items.len() > ROOM_EQ_MAX_FILTERS {
+        return Err(Refusal::rejected(
+            "filters",
+            format!(
+                "a room holds at most {} correction filters and this lists {}",
+                ROOM_EQ_MAX_FILTERS,
+                items.len()
+            ),
+        ));
+    }
+    let mut out = Vec::new();
+    for (n, item) in items.into_iter().enumerate() {
+        let inner = |r: Refusal| {
+            Refusal::rejected(
+                "filters",
+                format!("in 'filters', filter {}: {}", n, r.detail),
+            )
+        };
+        // Read wide, then held to the bounds below, so a value out of range
+        // is refused by the bounds' own words.
+        let freq_hz = whole(item, "freq_hz", 0, i64::from(u16::MAX)).map_err(inner)? as u16;
+        let gain_cdb = centi_db(item, "gain_db", i16::MIN, i16::MAX).map_err(inner)?;
+        let q_text = match item.get("q") {
+            Some(Value::Num(digits)) => digits.clone(),
+            _ => String::new(),
+        };
+        let q_milli = FixedPoint::parse(&q_text, 3)
+            .and_then(|q| u16::try_from(q).ok())
+            .ok_or_else(|| {
+                Refusal::rejected(
+                    "filters",
+                    format!(
+                        "in 'filters', filter {}: the field 'q' is '{}' and the catalog declares \
+                         a number with at most three places",
+                        n, q_text
+                    ),
+                )
+            })?;
+        let filter = EqFilter {
+            freq_hz,
+            gain_cdb,
+            q_milli,
+        };
+        if let Some(problem) = filter.problem() {
+            return Err(Refusal::rejected(
+                "filters",
+                format!("in 'filters', filter {}: {}", n, problem),
+            ));
+        }
+        out.push(filter);
+    }
+    Ok(out)
 }
 
 fn version_list(implemented: &[i64]) -> String {

@@ -39,6 +39,57 @@ pub const ROOM_VOLUME_FULL: u16 = 1000;
 /// is a server stepping the gain itself.
 pub const MAX_ROOM_VOLUME_RAMP_MS: u16 = 60_000;
 
+/// `sound` (0x39): bass and treble, whole dB, inclusive.
+pub const SOUND_TONE_DB: (i8, i8) = (-10, 10);
+
+/// `sound`: the crossover between a bonded set's mains and its sub, Hz.
+pub const SOUND_CROSSOVER_HZ: (u16, u16) = (40, 200);
+
+/// `sound`: the sub's level trim, hundredths of a dB (-12.00 to +6.00).
+pub const SOUND_SUB_LEVEL_CDB: (i16, i16) = (-1200, 600);
+
+/// `sound`: most room-correction filters one message carries. These four
+/// `SOUND_EQ_*` bounds are the control catalog's `ROOM_EQ_*`
+/// (`crates/control/src/sound.rs`), repeated here because this crate depends
+/// on nothing; a test in `crates/server` holds the two equal.
+pub const SOUND_EQ_MAX_FILTERS: usize = 8;
+
+/// `sound`: a room-correction filter's centre frequency, Hz.
+pub const SOUND_EQ_FREQ_HZ: (u16, u16) = (20, 1000);
+
+/// `sound`: a room-correction filter's gain, hundredths of a dB.
+pub const SOUND_EQ_GAIN_CDB: (i16, i16) = (-1200, 300);
+
+/// `sound`: a room-correction filter's Q, thousandths.
+pub const SOUND_EQ_Q_MILLI: (u16, u16) = (500, 10_000);
+
+/// The bits of `sound`'s `flags` byte. A bit outside [`sound_flags::DEFINED`]
+/// is rejected (`Problem::Undefined`), not ignored: a later flag is a later
+/// version's, and an endpoint that played on without knowing it would sound
+/// different from one that knew.
+pub mod sound_flags {
+    /// Loudness compensation.
+    pub const LOUDNESS: u8 = 1 << 0;
+    /// Night mode (the compressor).
+    pub const NIGHT: u8 = 1 << 1;
+    /// Speech enhancement.
+    pub const SPEECH: u8 = 1 << 2;
+    /// The room-correction filters are applied.
+    pub const ROOM_EQ: u8 = 1 << 3;
+    /// The sub's polarity is inverted.
+    pub const SUB_INVERTED: u8 = 1 << 4;
+    /// Every defined bit.
+    pub const DEFINED: u8 = LOUDNESS | NIGHT | SPEECH | ROOM_EQ | SUB_INVERTED;
+    /// Names, in bit order, for fixtures and diagnostics.
+    pub const NAMES: [(u8, &str); 5] = [
+        (LOUDNESS, "loudness"),
+        (NIGHT, "night"),
+        (SPEECH, "speech"),
+        (ROOM_EQ, "room_eq"),
+        (SUB_INVERTED, "sub_inverted"),
+    ];
+}
+
 /// A message type in the v2 catalog.
 ///
 /// Types 0x01 to 0x03 are the v1 messages, carried into v2 unchanged
@@ -92,11 +143,13 @@ pub enum Type {
     SourceControl,
     /// 0x38, the room's gain and limit for a player (player role).
     RoomVolume,
+    /// 0x39, the room's sound settings for one player (player role).
+    Sound,
 }
 
 impl Type {
     /// Every type in the catalog, in wire order.
-    pub const ALL: [Type; 23] = [
+    pub const ALL: [Type; 24] = [
         Type::TimeSync,
         Type::AudioChunk,
         Type::StreamEnd,
@@ -120,6 +173,7 @@ impl Type {
         Type::SourceOffer,
         Type::SourceControl,
         Type::RoomVolume,
+        Type::Sound,
     ];
 
     /// The wire byte.
@@ -148,6 +202,7 @@ impl Type {
             Type::SourceOffer => 0x36,
             Type::SourceControl => 0x37,
             Type::RoomVolume => 0x38,
+            Type::Sound => 0x39,
         }
     }
 
@@ -182,6 +237,7 @@ impl Type {
             Type::SourceOffer => "source_offer",
             Type::SourceControl => "source_control",
             Type::RoomVolume => "room_volume",
+            Type::Sound => "sound",
         }
     }
 
@@ -255,6 +311,9 @@ impl Type {
             Type::SourceControl => 1 + 1 + 1,
             // gain, limit, ramp
             Type::RoomVolume => 2 + 2 + 2,
+            // bass, treble, flags, role, sub_present, crossover, sub level,
+            // eq_count (no filter)
+            Type::Sound => 1 + 1 + 1 + 1 + 1 + 2 + 2 + 1,
         }
     }
 }

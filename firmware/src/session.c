@@ -982,6 +982,24 @@ static int handle_inner(session_state_t *state, stream_state_t *stream,
             chorus_playout_set_room_volume(config->playout, rv->gain, rv->limit, rv->ramp_ms);
         }
         return 0;
+    case CHORUS_V2_SOUND: {
+        /* The room's sound (goal 12): held to its ranges by the decoder,
+         * kept as the last one received, and handed on. Phase A stores it;
+         * the endpoint DSP configures its chain from it. */
+        const chorus_v2_sound_t *sound = &frame->message.as.sound;
+        chorus_session_keep_sound(state->out, sound);
+        if (config->on_sound != NULL) {
+            config->on_sound(config->sound_ctx, sound);
+        }
+        char detail[160];
+        snprintf(detail, sizeof(detail),
+                 "bass_db=%d treble_db=%d flags=0x%02x role=%u sub_present=%u crossover_hz=%u "
+                 "sub_level_cdb=%d eq_count=%u",
+                 sound->bass_db, sound->treble_db, sound->flags, sound->role, sound->sub_present,
+                 sound->crossover_hz, sound->sub_level_cdb, sound->eq_count);
+        publish_detail(state, "sound", detail);
+        return 0;
+    }
     case CHORUS_V2_STREAM_END:
         publish(state, "stream-end");
         return 0;
@@ -1049,6 +1067,22 @@ static int take_record(session_state_t *state, stream_state_t *stream,
         }
     }
     return 0;
+}
+
+void chorus_session_keep_sound(chorus_session_result_t *result, const chorus_v2_sound_t *sound)
+{
+    result->sound = *sound;
+    result->have_sound = 1;
+    result->sounds_received++;
+}
+
+int chorus_session_last_sound(const chorus_session_result_t *result, chorus_v2_sound_t *out)
+{
+    if (!result->have_sound) {
+        return 0;
+    }
+    *out = result->sound;
+    return 1;
 }
 
 int chorus_session_run(const chorus_session_config_t *config, chorus_session_result_t *out)

@@ -59,6 +59,8 @@ static const type_entry_t TYPES[] = {
     {CHORUS_V2_SOURCE_CONTROL, "source_control", 1 + 1 + 1},
     /* gain, limit, ramp */
     {CHORUS_V2_ROOM_VOLUME, "room_volume", 2 + 2 + 2},
+    /* bass, treble, flags, role, sub_present, crossover, sub level, eq_count */
+    {CHORUS_V2_SOUND, "sound", 1 + 1 + 1 + 1 + 1 + 2 + 2 + 1},
 };
 #define TYPE_COUNT (sizeof(TYPES) / sizeof(TYPES[0]))
 
@@ -673,6 +675,38 @@ static int decode_payload(uint8_t type, const uint8_t *payload, size_t len, chor
         }
         return 0;
     }
+    case CHORUS_V2_SOUND: {
+        chorus_v2_sound_t *s = &m->as.sound;
+        uint8_t bass;
+        uint8_t treble;
+        uint16_t level;
+        if (read_u8(&r, "bass_db", &bass) != 0 || read_u8(&r, "treble_db", &treble) != 0 ||
+            read_u8(&r, "flags", &s->flags) != 0 || read_u8(&r, "role", &s->role) != 0 ||
+            read_bool(&r, "sub_present", &s->sub_present) != 0 ||
+            read_u16(&r, "crossover_hz", &s->crossover_hz) != 0 ||
+            read_u16(&r, "sub_level_cdb", &level) != 0 ||
+            read_u8(&r, "eq_count", &s->eq_count) != 0) {
+            return -1;
+        }
+        s->bass_db = (int8_t)bass;
+        s->treble_db = (int8_t)treble;
+        s->sub_level_cdb = (int16_t)level;
+        /* Before any filter is read: there is room for eight, and a count
+         * past that is the count out of range (as the Rust decoder says). */
+        if (s->eq_count > CHORUS_V2_SOUND_EQ_MAX_FILTERS) {
+            return fail(error, "eq_count", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+        }
+        for (uint8_t i = 0; i < s->eq_count; i++) {
+            uint16_t gain;
+            if (read_u16(&r, "freq_hz", &s->filters[i].freq_hz) != 0 ||
+                read_u16(&r, "gain_cdb", &gain) != 0 ||
+                read_u16(&r, "q_milli", &s->filters[i].q_milli) != 0) {
+                return -1;
+            }
+            s->filters[i].gain_cdb = (int16_t)gain;
+        }
+        return 0;
+    }
     default:
         return fail(error, "type", CHORUS_V2_PROBLEM_UNDEFINED, NULL);
     }
@@ -916,6 +950,8 @@ static int validate_command(const chorus_v2_controller_command_t *c, chorus_v2_f
     return text_ok("target", &c->target, CHORUS_V2_MAX_SHORT_TEXT, error);
 }
 
+static int validate_sound(const chorus_v2_sound_t *s, chorus_v2_field_error_t *error);
+
 int chorus_v2_validate(const chorus_v2_message_t *message, chorus_v2_field_error_t *error)
 {
     const size_t short_max = CHORUS_V2_MAX_SHORT_TEXT;
@@ -1076,9 +1112,60 @@ int chorus_v2_validate(const chorus_v2_message_t *message, chorus_v2_field_error
         }
         return 0;
     }
+    case CHORUS_V2_SOUND:
+        return validate_sound(&message->as.sound, error);
     default:
         return fail(error, "type", CHORUS_V2_PROBLEM_UNDEFINED, NULL);
     }
+}
+
+/* sound's rules, field by field in wire order, the order
+ * crates/protocol/src/v2/codec.rs checks them in, so both name the same
+ * field for a message that breaks two. Rejected, never clamped. */
+static int validate_sound(const chorus_v2_sound_t *s, chorus_v2_field_error_t *error)
+{
+    if (s->bass_db < CHORUS_V2_SOUND_TONE_DB_MIN || s->bass_db > CHORUS_V2_SOUND_TONE_DB_MAX) {
+        return fail(error, "bass_db", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+    }
+    if (s->treble_db < CHORUS_V2_SOUND_TONE_DB_MIN || s->treble_db > CHORUS_V2_SOUND_TONE_DB_MAX) {
+        return fail(error, "treble_db", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+    }
+    if ((s->flags & (uint8_t)~CHORUS_V2_SOUND_FLAGS_DEFINED) != 0) {
+        return fail(error, "flags", CHORUS_V2_PROBLEM_UNDEFINED, NULL);
+    }
+    if (!defined(CHORUS_V2_ENUM_CHANNEL_POSITION, s->role)) {
+        return fail(error, "role", CHORUS_V2_PROBLEM_UNDEFINED, NULL);
+    }
+    if (s->sub_present > 1) {
+        return fail(error, "sub_present", CHORUS_V2_PROBLEM_UNDEFINED, NULL);
+    }
+    if (s->crossover_hz < CHORUS_V2_SOUND_CROSSOVER_HZ_MIN ||
+        s->crossover_hz > CHORUS_V2_SOUND_CROSSOVER_HZ_MAX) {
+        return fail(error, "crossover_hz", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+    }
+    if (s->sub_level_cdb < CHORUS_V2_SOUND_SUB_LEVEL_CDB_MIN ||
+        s->sub_level_cdb > CHORUS_V2_SOUND_SUB_LEVEL_CDB_MAX) {
+        return fail(error, "sub_level_cdb", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+    }
+    if (s->eq_count > CHORUS_V2_SOUND_EQ_MAX_FILTERS) {
+        return fail(error, "eq_count", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+    }
+    for (uint8_t i = 0; i < s->eq_count; i++) {
+        const chorus_v2_sound_filter_t *f = &s->filters[i];
+        if (f->freq_hz < CHORUS_V2_SOUND_EQ_FREQ_HZ_MIN ||
+            f->freq_hz > CHORUS_V2_SOUND_EQ_FREQ_HZ_MAX) {
+            return fail(error, "freq_hz", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+        }
+        if (f->gain_cdb < CHORUS_V2_SOUND_EQ_GAIN_CDB_MIN ||
+            f->gain_cdb > CHORUS_V2_SOUND_EQ_GAIN_CDB_MAX) {
+            return fail(error, "gain_cdb", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+        }
+        if (f->q_milli < CHORUS_V2_SOUND_EQ_Q_MILLI_MIN ||
+            f->q_milli > CHORUS_V2_SOUND_EQ_Q_MILLI_MAX) {
+            return fail(error, "q_milli", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+        }
+    }
+    return 0;
 }
 
 /* --- decoding --------------------------------------------------------------- */
@@ -1357,6 +1444,23 @@ static void write_payload(writer_t *w, const chorus_v2_message_t *m)
         put_u16(w, m->as.room_volume.limit);
         put_u16(w, m->as.room_volume.ramp_ms);
         break;
+    case CHORUS_V2_SOUND: {
+        const chorus_v2_sound_t *s = &m->as.sound;
+        put_u8(w, (uint8_t)s->bass_db);
+        put_u8(w, (uint8_t)s->treble_db);
+        put_u8(w, s->flags);
+        put_u8(w, s->role);
+        put_u8(w, s->sub_present);
+        put_u16(w, s->crossover_hz);
+        put_u16(w, (uint16_t)s->sub_level_cdb);
+        put_u8(w, s->eq_count);
+        for (uint8_t i = 0; i < s->eq_count && i < CHORUS_V2_SOUND_EQ_MAX_FILTERS; i++) {
+            put_u16(w, s->filters[i].freq_hz);
+            put_u16(w, (uint16_t)s->filters[i].gain_cdb);
+            put_u16(w, s->filters[i].q_milli);
+        }
+        break;
+    }
     default:
         break;
     }

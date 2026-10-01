@@ -55,6 +55,15 @@
 //! is a fact about NOW stays out, as in format 1: which endpoints are present,
 //! which quiet window is active, which alarm is ringing, what a group is
 //! playing, a sleep timer's countdown, and which inputs are offered.
+//!
+//! # Format 3 (goal 12: per-room sound)
+//!
+//! Format 3 adds nine fields to `[zone]`: `bass`, `treble`, `loudness`,
+//! `night`, `speech`, `crossover_hz`, `sub_level_db`, `sub_polarity`,
+//! `room_eq` (0 or 1, whether the filters are applied) and `room_eq_filters`
+//! (`freq_hz gain_db q` per filter, `; ` between them). Every one is required
+//! in a format 3 file. A format 1 or 2 file loads unchanged with every room
+//! at the sound defaults (`crate::sound`); the next write is format 3.
 
 use std::fmt;
 use std::io::{self, Write};
@@ -65,13 +74,16 @@ use crate::rooms::{
     validate_layout, Alarm, Autoplay, BondMember, ClockTime, Days, InputId, Link, QuietWindow,
     Role, SavedGroup, Source, MAX_DURATION_MIN, MAX_QUIET_WINDOWS, MAX_RAMP_S,
 };
+use crate::sound::{
+    EqFilter, FixedPoint, Polarity, CROSSOVER_HZ, ROOM_EQ_MAX_FILTERS, SUB_LEVEL_CDB, TONE_DB,
+};
 use crate::zones::{Zone, Zones};
 
 /// The version of this file format, which is what every write produces.
-pub const STATE_FORMAT: u32 = 2;
+pub const STATE_FORMAT: u32 = 3;
 
 /// Every format this build reads.
-pub const READ_FORMATS: &[u32] = &[1, 2];
+pub const READ_FORMATS: &[u32] = &[1, 2, 3];
 
 /// Why persisted state could not be read.
 #[derive(Debug)]
@@ -187,7 +199,8 @@ pub fn render(zones: &Zones) -> String {
     );
     out.push_str("# it once at start and refuses to start on a file it cannot parse.\n");
     out.push_str("# Format 2 adds [endpoint], [saved-group], [alarm] and [autoplay] sections\n");
-    out.push_str("# and a room's limit, quiet hours and bonded set (docs/control-plane.md).\n");
+    out.push_str("# and a room's limit, quiet hours and bonded set (docs/control-plane.md);\n");
+    out.push_str("# format 3 a room's sound, bass management and correction EQ.\n");
     out.push('\n');
     out.push_str(&format!("format = {}\n", STATE_FORMAT));
     out.push_str(&format!("serial = {}\n", zones.serial()));
@@ -222,6 +235,27 @@ pub fn render(zones: &Zones) -> String {
                 .map(|b| format!("{}:{}", b.role, escape(&b.endpoint)))
                 .collect::<Vec<_>>()
                 .join(",")
+        ));
+        out.push_str(&format!("bass = {}\n", zone.sound.bass));
+        out.push_str(&format!("treble = {}\n", zone.sound.treble));
+        out.push_str(&format!("loudness = {}\n", u8::from(zone.sound.loudness)));
+        out.push_str(&format!("night = {}\n", u8::from(zone.sound.night)));
+        out.push_str(&format!("speech = {}\n", u8::from(zone.sound.speech)));
+        out.push_str(&format!("crossover_hz = {}\n", zone.bass.crossover_hz));
+        out.push_str(&format!(
+            "sub_level_db = {}\n",
+            FixedPoint::literal(i64::from(zone.bass.sub_level_cdb), 2)
+        ));
+        out.push_str(&format!("sub_polarity = {}\n", zone.bass.sub_polarity));
+        out.push_str(&format!("room_eq = {}\n", u8::from(zone.room_eq.enabled)));
+        out.push_str(&format!(
+            "room_eq_filters = {}\n",
+            zone.room_eq
+                .filters
+                .iter()
+                .map(|f| f.persisted())
+                .collect::<Vec<_>>()
+                .join("; ")
         ));
     }
     for (endpoint, link) in zones.links() {
@@ -673,7 +707,60 @@ fn load_zone(
             bonds.push((id.clone(), members));
         }
     }
+    if format >= 3 {
+        load_sound(section, &mut zone)?;
+    }
     Ok(zone)
+}
+
+/// Format 3's sound fields, each required and held to the catalog's range.
+fn load_sound(section: &Section, zone: &mut Zone) -> Result<(), StateError> {
+    let ranged = |key: &str, min: i64, max: i64| -> Result<i64, StateError> {
+        let text = section.get(key)?;
+        match text.parse::<i64>() {
+            Ok(n) if (min..=max).contains(&n) && n.to_string() == text => Ok(n),
+            _ => Err(section.fail(format!(
+                "{} = '{}', which is not a whole number from {} to {}",
+                key, text, min, max
+            ))),
+        }
+    };
+    zone.sound.bass = ranged("bass", i64::from(TONE_DB.0), i64::from(TONE_DB.1))? as i8;
+    zone.sound.treble = ranged("treble", i64::from(TONE_DB.0), i64::from(TONE_DB.1))? as i8;
+    zone.sound.loudness = section.flag("loudness")?;
+    zone.sound.night = section.flag("night")?;
+    zone.sound.speech = section.flag("speech")?;
+    zone.bass.crossover_hz = ranged(
+        "crossover_hz",
+        i64::from(CROSSOVER_HZ.0),
+        i64::from(CROSSOVER_HZ.1),
+    )? as u16;
+    let level = section.get("sub_level_db")?;
+    zone.bass.sub_level_cdb = FixedPoint::parse(&level, 2)
+        .filter(|n| (i64::from(SUB_LEVEL_CDB.0)..=i64::from(SUB_LEVEL_CDB.1)).contains(n))
+        .ok_or_else(|| {
+            section.fail(format!(
+                "sub_level_db = '{}', which is not -12.00 to 6.00",
+                level
+            ))
+        })? as i16;
+    let polarity = section.get("sub_polarity")?;
+    zone.bass.sub_polarity = Polarity::parse(&polarity)
+        .ok_or_else(|| section.fail(format!("'{}' is not a polarity", polarity)))?;
+    zone.room_eq.enabled = section.flag("room_eq")?;
+    let filters = section.get("room_eq_filters")?;
+    for filter in filters.split(';').map(str::trim).filter(|f| !f.is_empty()) {
+        zone.room_eq
+            .filters
+            .push(EqFilter::from_persisted(filter).map_err(|e| section.fail(e))?);
+    }
+    if zone.room_eq.filters.len() > ROOM_EQ_MAX_FILTERS {
+        return Err(section.fail(format!(
+            "has more than {} correction filters",
+            ROOM_EQ_MAX_FILTERS
+        )));
+    }
+    Ok(())
 }
 
 /// Read the state file at `path`, or `None` where there is none yet.
@@ -814,9 +901,9 @@ mod tests {
 
     #[test]
     fn a_state_file_this_build_does_not_understand_is_refused_rather_than_guessed() {
-        // Format 2 is this build's own since catalog v2; the next one is not.
-        let err = load("format = 3\nserial = 1\n", "x").unwrap_err();
-        assert!(err.to_string().contains("declares format 3"), "{}", err);
+        // Format 3 is this build's own since goal 12; the next one is not.
+        let err = load("format = 4\nserial = 1\n", "x").unwrap_err();
+        assert!(err.to_string().contains("declares format 4"), "{}", err);
         let err = load("serial = 1\n", "x").unwrap_err();
         assert!(err.to_string().contains("no format version"), "{}", err);
     }

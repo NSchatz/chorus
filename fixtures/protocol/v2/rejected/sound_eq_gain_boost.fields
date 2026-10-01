@@ -1,0 +1,23 @@
+# Canonical input for the sound_eq_gain_boost rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# sound_eq_gain_boost.hex as that field, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# A boost 0.01 dB past the +3.00 the room-correction bounds allow.
+
+message_type = sound
+bass_db = 3
+treble_db = -2
+flags = loudness room_eq sub_inverted
+role = 4
+sub_present = 1
+crossover_hz = 100
+sub_level_cdb = -350
+filter.0 = 120 301 2000
+rejected_field = gain_cdb
+problem = out_of_range

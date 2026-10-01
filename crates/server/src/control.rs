@@ -59,10 +59,14 @@ use chorus_control::catalog::{decode_message, Refusal};
 use chorus_control::fanout::ControlFanout;
 use chorus_control::persist;
 use chorus_control::rooms::{CivilTime, Source};
+use chorus_control::sound::Polarity;
 use chorus_control::zones::{Zone, Zones};
 use chorus_control::Command;
 use chorus_hostctl::ThreadRegistry;
-use chorus_protocol::v2::{roles, ControllerCommand, ControllerState, Playback, RoomVolume};
+use chorus_protocol::v2::{
+    roles, sound_flags, ControllerCommand, ControllerState, Playback, RoomVolume, Sound,
+    SoundFilter,
+};
 
 use crate::controller::{translate, ControllerAction, THOUSANDTHS_PER_POINT};
 use crate::events::EventStreams;
@@ -445,6 +449,11 @@ impl ControlState {
                 present: z.present.clone(),
                 endpoints: z.endpoints.clone(),
                 room_volume: room_volume_of(z),
+                sounds: z
+                    .endpoints
+                    .iter()
+                    .map(|e| (e.clone(), sound_of(z, e)))
+                    .collect(),
                 controller_state: controller_state_of(z),
                 route: match &held.slots {
                     None => Some(0),
@@ -670,6 +679,52 @@ pub fn room_volume_of(zone: &Zone) -> RoomVolume {
     }
 }
 
+/// What one player of a room is told on the audio wire about the room's
+/// sound (docs/protocol.md, "0x39 sound"; goal 12): the room's tone, flags,
+/// bass management and correction filters, all the catalog's values in the
+/// wire's own units (no conversion: both are whole dB, Hz, hundredths of a dB
+/// and thousandths), plus `endpoint`'s channel position in the room's bonded
+/// set (0 when it is in none) and whether the set has a sub. Every member of
+/// a set gets the room's whole stream and does its own bass management from
+/// these two.
+pub fn sound_of(zone: &Zone, endpoint: &str) -> Sound {
+    let s = &zone.sound;
+    let mut flags = 0u8;
+    for (on, bit) in [
+        (s.loudness, sound_flags::LOUDNESS),
+        (s.night, sound_flags::NIGHT),
+        (s.speech, sound_flags::SPEECH),
+        (zone.room_eq.enabled, sound_flags::ROOM_EQ),
+        (
+            zone.bass.sub_polarity == Polarity::Inverted,
+            sound_flags::SUB_INVERTED,
+        ),
+    ] {
+        if on {
+            flags |= bit;
+        }
+    }
+    Sound {
+        bass_db: s.bass,
+        treble_db: s.treble,
+        flags,
+        role: zone.role_of(endpoint).map_or(0, |r| r.position()),
+        sub_present: zone.has_sub(),
+        crossover_hz: zone.bass.crossover_hz,
+        sub_level_cdb: zone.bass.sub_level_cdb,
+        filters: zone
+            .room_eq
+            .filters
+            .iter()
+            .map(|f| SoundFilter {
+                freq_hz: f.freq_hz,
+                gain_cdb: f.gain_cdb,
+                q_milli: f.q_milli,
+            })
+            .collect(),
+    }
+}
+
 /// What a room's controllers are shown (docs/protocol.md, "0x33 controller
 /// state"): its volume in points, its mute and its group.
 pub fn controller_state_of(zone: &Zone) -> ControllerState {
@@ -707,6 +762,9 @@ pub struct RoomView {
     pub endpoints: Vec<String>,
     /// What its players are told.
     pub room_volume: RoomVolume,
+    /// What each of its endpoints is told about the room's sound, by
+    /// endpoint: the same room values, each with its own role.
+    pub sounds: Vec<(String, Sound)>,
     /// What its controllers are shown.
     pub controller_state: ControllerState,
     /// The fanout its group is served on: the one stream (0) in the
@@ -723,6 +781,17 @@ pub struct Snapshot {
     /// The group each stream slot serves (`None`: a free slot); empty in
     /// the one-stream shape.
     pub slots: Vec<Option<SlotGroup>>,
+}
+
+impl RoomView {
+    /// The `sound` for one of this room's endpoints (role 0 for one the
+    /// membership does not name, which a present endpoint always is in).
+    pub fn sound_for(&self, endpoint: &str) -> Option<&Sound> {
+        self.sounds
+            .iter()
+            .find(|(e, _)| e == endpoint)
+            .map(|(_, s)| s)
+    }
 }
 
 impl Snapshot {
@@ -753,6 +822,11 @@ impl Snapshot {
         SessionStart {
             route: room.route.unwrap_or(idle),
             room_volume: (session_roles & roles::PLAYER != 0).then_some(room.room_volume),
+            sound: if session_roles & roles::PLAYER != 0 {
+                room.sound_for(endpoint).cloned()
+            } else {
+                None
+            },
             controller_state: (session_roles & roles::CONTROLLER != 0)
                 .then(|| room.controller_state.clone()),
         }
