@@ -50,6 +50,7 @@ pub mod control;
 pub mod controller;
 pub mod health;
 pub mod hostreport;
+pub mod schedule_runtime;
 pub mod serve;
 pub mod session;
 pub mod source;
