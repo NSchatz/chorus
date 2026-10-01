@@ -30,7 +30,7 @@ use crate::DspError;
 
 /// The night mode's settings. ASSUMED, every one (chorus's own choice, not
 /// measured): threshold -24 dBFS, ratio 3:1, a 12 dB knee, 10 ms attack,
-/// 500 ms release (the goal-12 research's ASSUMED pair; the Dolby Metadata
+/// 500 ms release (the ASSUMED pair of docs/research/research-dsp-phase-b.md; the Dolby Metadata
 /// Guide's profiles give no times) and +6 dB makeup, so full scale comes down
 /// 10 dB and material below the knee comes up 6 dB.
 #[derive(Clone, Copy, Debug, PartialEq)]

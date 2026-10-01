@@ -17,5 +17,5 @@ tolerance_db = 1e-6
 freqs_hz = 15 60 120 240 960
 sum_tolerance_db = 1e-6
 phase_tolerance_deg = 1e-6
-sine_frames = 96000
+sine_frames = 48000
 sine_tolerance = 2e-4

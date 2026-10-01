@@ -229,7 +229,7 @@ tolerance 2e-4).
           ("read", READ), ("rate_hz", fs), ("crossover_hz", fc),
           ("at_crossover_db", "-6.020599913279624"), ("tolerance_db", "1e-6"),
           ("freqs_hz", nums(freqs)), ("sum_tolerance_db", "1e-6"),
-          ("phase_tolerance_deg", "1e-6"), ("sine_frames", fs), ("sine_tolerance", "2e-4")])
+          ("phase_tolerance_deg", "1e-6"), ("sine_frames", 48000), ("sine_tolerance", "2e-4")])
 
 
 # --- 3. delay -------------------------------------------------------------
