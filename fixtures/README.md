@@ -247,3 +247,9 @@ to end by one file. `visualizer-sequence.hex` is a stream of `color` and
 `visualizer_frame` frames (a stand-in until the DSP library computes the real
 one in goal 12) and `visualizer-sequence.led` what the compact class's LED
 shows at chosen moments while it plays.
+
+Since goal 10 the model has a Rust twin, `crates/controls`
+(`docs/decisions/0067-*`): `crates/controls/tests/shared_fixtures.rs` drives
+the same scripts and must produce the same `.hex` bytes and show the same
+`.led` moments, so the firmware and the Linux front panel cannot drift apart.
+No file here was added or changed for it.

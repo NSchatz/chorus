@@ -60,7 +60,7 @@ use chorus_audio::MonotonicTimeline;
 use chorus_hostctl::ThreadRegistry;
 
 use crate::hostreport::register_ordinary_thread;
-use crate::session::{establish, Greeting, SessionContext};
+use crate::session::{establish, route_controller, Greeting, SessionContext};
 use crate::stream::{read_requests, write_outbound, Outbound};
 
 /// How often a writer waiting for its session looks up to see whether it is
@@ -219,7 +219,10 @@ impl ClientPool {
                                 Err(_) => break None,
                             }
                         };
-                        if let Some(Greeting { sealer, messages }) = session {
+                        if let Some(Greeting {
+                            sealer, messages, ..
+                        }) = session
+                        {
                             let mut secure = SecureWriter::new(sink, sealer);
                             if messages.iter().try_for_each(|m| secure.send(m)).is_ok() {
                                 let _ = write_outbound(&mut secure, timeline, &inbox, &going);
@@ -265,6 +268,7 @@ impl ClientPool {
                         // The handshake runs here, on this slot's own thread,
                         // so a slow peer never stalls the acceptor.
                         if let Some((mut reader, hello)) = establish(&source, peer, &session) {
+                            route_controller(&mut reader, &session, &hello, out.clone());
                             if greeting.send(hello).is_ok() {
                                 (session.on_session)();
                                 read_requests(&mut reader, timeline, &out, &going);
