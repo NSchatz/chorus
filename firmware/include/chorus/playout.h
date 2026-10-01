@@ -15,7 +15,12 @@
  *     error_ns = (next_write_ts_ns + playout_latency_ns)
  *                - (now_ns + device_delay_ns + offset_ns)
  *
- * positive meaning playout is AHEAD, the sign crates/sync's servo uses. A fine
+ * positive meaning playout is AHEAD, the sign crates/sync's servo uses. With
+ * the endpoint's sound chain engaged (goal 12, chorus/endpoint_dsp.h) the
+ * device delay also carries the chain's fixed latency (the limiter's 2 ms
+ * look-ahead): a frame written now is that much further from the pins, so the
+ * loop writes content that much earlier and it is heard at the sync target,
+ * the accounting the Linux client's sink makes too. A fine
  * correction inserts or drops whole frames at the rate the servo names; a hard
  * resync steps the playout pointer under a mute. Both change WHAT is written,
  * never when, for the reason the Linux module gives.
@@ -33,6 +38,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "chorus/endpoint_dsp.h"
+#include "chorus/protocol_v2.h"
 #include "chorus/sync.h"
 #include "chorus/sync_conf.h"
 #include "chorus/volume.h"
@@ -182,6 +189,13 @@ typedef struct {
      * the next frame plays at, in thousandths. */
     uint32_t room_volume_messages;
     uint32_t applied_volume_thousandths;
+    /* The endpoint's sound chain (goal 12, chorus/endpoint_dsp.h): whether it
+     * is in the path, the latency it adds to the device delay, `sound`s it
+     * took and settings or streams it refused. All zero with no chain. */
+    uint32_t dsp_engaged;
+    uint32_t dsp_latency_frames;
+    uint32_t sounds_applied;
+    uint32_t dsp_refusals;
 } chorus_playout_stats_t;
 
 typedef struct {
@@ -269,6 +283,11 @@ typedef struct {
      * audio frame the writer hands over (chorus/volume.h). */
     chorus_volume_t volume;
 
+    /* The endpoint's sound chain (chorus/endpoint_dsp.h), or NULL: then, and
+     * while it is not engaged, the frames are written exactly as before goal
+     * 12. Caller-owned (one static per image); touched only under the lock. */
+    chorus_endpoint_dsp_t *dsp;
+
     chorus_playout_stats_t stats;
     chorus_playout_report_t last;
 } chorus_playout_t;
@@ -325,6 +344,24 @@ uint32_t chorus_playout_fill(chorus_playout_t *p, uint8_t *out, uint32_t frames)
  * chorus_playout_reset_stream: a new stream is not a reason to play louder. */
 void chorus_playout_set_room_volume(chorus_playout_t *p, uint16_t gain, uint16_t limit,
                                     uint16_t ramp_ms);
+
+/* The endpoint's sound chain (goal 12): hand the playout path its chain
+ * (NULL removes it). Called before the session starts. */
+void chorus_playout_set_dsp(chorus_playout_t *p, chorus_endpoint_dsp_t *dsp);
+
+/* The stream's channel count and positions, from stream_format, for the
+ * chain. A new stream is a new chain. No-op without a chain. */
+void chorus_playout_set_stream_layout(chorus_playout_t *p, uint32_t channels, const uint8_t *map);
+
+/* A `sound` from the session task (docs/protocol.md, "0x39 sound"), already
+ * validated by the decoder. It takes effect at the next frame the writer
+ * hands over. No-op without a chain. */
+void chorus_playout_set_sound(chorus_playout_t *p, const chorus_v2_sound_t *sound);
+
+/* The subwoofer class's level (tenths of a dB, -120..0) and phase (0..180
+ * degrees) knobs (goal 9, ADR 0063), combined with the catalog's sub level and
+ * polarity. No-op without a chain. */
+void chorus_playout_set_sub_knobs(chorus_playout_t *p, int32_t level_tenths_db, int32_t phase_deg);
 
 /* One tick of the loop, from the writer task every interval_ms: snapshot the
  * DMA side, form the error, feed the servo and set the corrector. */

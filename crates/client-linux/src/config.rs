@@ -182,6 +182,12 @@ pub struct ClientConfig {
     /// (`crate::outmap`). `None` opens the device with the stream's own
     /// channels in the stream's own order, as the client always has.
     pub output_map: Option<OutputMap>,
+    /// `--two-way crossover-hz=<Hz>,woofer=<output>,tweeter=<output>`: this
+    /// endpoint drives two drivers through an LR4 split (`crate::dsp`, goal
+    /// 12). The drivers are the speaker's, not the room's, so this is local
+    /// configuration and never the catalog's. Not combined with an output
+    /// map. `None`: no split.
+    pub two_way: Option<crate::dsp::TwoWayOutputs>,
     /// `--max-volume`: this endpoint's own volume ceiling, a fraction of full
     /// amplitude written as the control catalog writes a volume (`0.000` to
     /// `1.000`). What plays is never above it, whatever the server's
@@ -279,6 +285,7 @@ impl Default for ClientConfig {
             front_panel: None,
             extra_roles: 0,
             output_map: None,
+            two_way: None,
             max_volume: Volume::FULL,
         }
     }
@@ -392,6 +399,13 @@ pub enum ConfigError {
     },
     /// The output map was refused (`--output-channels`, `--output`).
     OutputMap(MapError),
+    /// `--two-way` was refused.
+    TwoWay {
+        /// The value as it was given.
+        value: String,
+        /// Why, and what would be right.
+        detail: String,
+    },
     /// A value that is not a number.
     NotANumber {
         /// The argument as it was given.
@@ -503,6 +517,12 @@ impl fmt::Display for ConfigError {
                 write!(f, "argument '{}' needs a value", argument)
             }
             ConfigError::OutputMap(e) => write!(f, "{}", e),
+            ConfigError::TwoWay { value, detail } => write!(
+                f,
+                "--two-way got '{}': {} (the form is \
+                 crossover-hz=<Hz>,woofer=<output>,tweeter=<output>)",
+                value, detail
+            ),
             ConfigError::NotAVolume { argument, value } => write!(
                 f,
                 "argument '{}' got '{}', which is not a volume from 0.000 to 1.000 in steps of \
@@ -758,6 +778,16 @@ impl ClientConfig {
                 }
                 "--output-channels" => output_channels = Some(value()?),
                 "--output" => outputs.push(value()?),
+                "--two-way" => {
+                    let text = value()?;
+                    config.two_way =
+                        Some(crate::dsp::TwoWayOutputs::parse(&text).map_err(|detail| {
+                            ConfigError::TwoWay {
+                                value: text.clone(),
+                                detail,
+                            }
+                        })?);
+                }
                 "--max-volume" => {
                     let text = value()?;
                     config.max_volume =
@@ -825,6 +855,19 @@ impl ClientConfig {
         }
         config.output_map = OutputMap::from_args(output_channels.as_deref(), &outputs)
             .map_err(ConfigError::OutputMap)?;
+        if config.output_map.is_some() {
+            if let Some(t) = &config.two_way {
+                return Err(ConfigError::TwoWay {
+                    value: format!(
+                        "crossover-hz={},woofer={},tweeter={}",
+                        t.crossover_hz, t.woofer, t.tweeter
+                    ),
+                    detail: "a two-way names its device outputs itself and is not combined \
+                             with --output-channels/--output; drop one of them"
+                        .to_string(),
+                });
+            }
+        }
         Ok((config, mode))
     }
 }

@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include "chorus/amp.h"
+#include "chorus/endpoint_dsp.h"
 #include "chorus/i2s.h"
 #include "chorus/link.h"
 #include "chorus/wifi.h"
@@ -69,6 +70,10 @@ typedef struct {
     /* The endpoint's own volume ceiling, in thousandths of full amplitude
      * (`max_volume`; chorus/volume.h, ADR 0074). */
     uint32_t max_volume_thousandths;
+
+    /* The endpoint's own two-way split (`two_way*`; goal 12,
+     * chorus/endpoint_dsp.h): the speaker's drivers, not the room's sound. */
+    chorus_endpoint_two_way_t two_way;
 
     char espidf_version[CHORUS_ENDPOINT_TEXT];
 } chorus_endpoint_config_t;

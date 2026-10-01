@@ -61,6 +61,19 @@ file's own comments list every argument worth setting. At least:
 - `--max-volume <0.000-1.000>`: this speaker's own volume ceiling (default 1.000). Nothing the
   server or the control plane sends plays above it, and until the server's first `room_volume`
   the speaker plays at it (`docs/decisions/0074-room-volume-on-the-audio-wire.md`).
+- `--two-way crossover-hz=<Hz>,woofer=<output>,tweeter=<output>` (optional): this speaker drives a
+  woofer and a tweeter through an LR4 crossover (`docs/dsp.md`); each key may be left out and
+  takes the ASSUMED example (2000 Hz, woofer on output 0, tweeter on output 1). The device is
+  opened with enough channels to reach both drivers. It names the device outputs itself, so it
+  is refused beside `--output-channels`/`--output`.
+
+The room's sound (bass, treble, loudness, night, speech, room correction) and, in a bonded set,
+bass management come from the server's `sound` message and need no setting here: the client runs
+the sound chain from the first `sound` it receives (`dsp engaged ...` on its output) and prints
+`dsp engaged=... sounds_applied=... refusals=... clipped_samples=...` at the end of a session. A
+member of a bonded set plays its own role; with no output map that role's feed goes to every
+device channel, and an output map (`--output 0=LFE` on a subwoofer) is resolved against the
+role, so a stereo stream's subwoofer feed reaches the output that names `LFE`.
 
 The unit adds `--rejoin --identity-dir /var/lib/chorus-client` itself: the endpoint's key and
 its server pins live in `/var/lib/chorus-client` and survive restarts and upgrades.

@@ -383,6 +383,18 @@ impl RoomGain {
         }
     }
 
+    /// The Q16 gain each of the next `frames` frames plays at, pushed onto
+    /// `out`, advancing the ramp over them exactly as [`RoomGain::apply`]
+    /// would: for the endpoint DSP, which multiplies inside its chain
+    /// (`crate::dsp`, goal 12) and is handed these instead of scaled PCM.
+    pub fn gains_q16(&mut self, zone: Volume, frames: usize, out: &mut Vec<u32>) {
+        out.reserve(frames);
+        for _ in 0..frames {
+            out.push(self.applied_q16(zone));
+            self.step();
+        }
+    }
+
     /// Scale interleaved `pcm` of `channels` channels in place, frame by
     /// frame, and advance the ramp by the frames it held. The number of frames
     /// never changes; a settled gain goes through [`ZoneGain`] unchanged.

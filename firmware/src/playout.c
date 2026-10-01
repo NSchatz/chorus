@@ -430,6 +430,42 @@ void chorus_playout_set_room_volume(chorus_playout_t *p, uint16_t gain, uint16_t
     give_lock(p);
 }
 
+void chorus_playout_set_dsp(chorus_playout_t *p, chorus_endpoint_dsp_t *dsp)
+{
+    take_lock(p);
+    p->dsp = dsp;
+    give_lock(p);
+}
+
+void chorus_playout_set_stream_layout(chorus_playout_t *p, uint32_t channels, const uint8_t *map)
+{
+    take_lock(p);
+    if (p->dsp != NULL) {
+        /* The I2S clock is the playout path's: a stream at another rate is
+         * refused chunk by chunk, so the chain is built for this one. */
+        chorus_endpoint_dsp_set_stream(p->dsp, p->config.rate_hz, channels, map);
+    }
+    give_lock(p);
+}
+
+void chorus_playout_set_sound(chorus_playout_t *p, const chorus_v2_sound_t *sound)
+{
+    take_lock(p);
+    if (p->dsp != NULL) {
+        chorus_endpoint_dsp_set_sound(p->dsp, sound);
+    }
+    give_lock(p);
+}
+
+void chorus_playout_set_sub_knobs(chorus_playout_t *p, int32_t level_tenths_db, int32_t phase_deg)
+{
+    take_lock(p);
+    if (p->dsp != NULL) {
+        chorus_endpoint_dsp_set_sub_knobs(p->dsp, level_tenths_db, phase_deg);
+    }
+    give_lock(p);
+}
+
 void chorus_playout_reset_stream(chorus_playout_t *p)
 {
     take_lock(p);
@@ -521,6 +557,13 @@ uint32_t chorus_playout_fill(chorus_playout_t *p, uint8_t *out, uint32_t frames)
     uint32_t audio = 0;
     take_lock(p);
     advance(p, p->now_ns());
+    /* The endpoint's sound chain (goal 12): when engaged, the block is built
+     * as always (audio, inserted silence, the hold, underrun silence, the
+     * resync mute) but unscaled, and then the WHOLE block goes through the
+     * chain, which applies the room's gain and limit itself, silence
+     * included, so the chain's tail plays out in time. */
+    int dsp_on = (p->dsp != NULL && p->dsp->engaged);
+    uint64_t latency = dsp_on ? chorus_endpoint_dsp_latency_frames(p->dsp) : 0u;
 
     while (produced < frames) {
         uint32_t room = frames - produced;
@@ -529,7 +572,9 @@ uint32_t chorus_playout_fill(chorus_playout_t *p, uint8_t *out, uint32_t frames)
             uint64_t owed = (uint64_t)(-p->pending_frames);
             uint32_t n = (owed < room) ? (uint32_t)owed : room;
             memset(out + (size_t)produced * fb, 0, (size_t)n * fb);
-            chorus_volume_skip(&p->volume, n);
+            if (!dsp_on) {
+                chorus_volume_skip(&p->volume, n);
+            }
             p->pending_frames += (double)n;
             p->stats.inserted_frames += n;
             produced += n;
@@ -538,7 +583,9 @@ uint32_t chorus_playout_fill(chorus_playout_t *p, uint8_t *out, uint32_t frames)
         if (!p->acquired) {
             /* Holding the buffer until the loop has placed it. */
             memset(out + (size_t)produced * fb, 0, (size_t)room * fb);
-            chorus_volume_skip(&p->volume, room);
+            if (!dsp_on) {
+                chorus_volume_skip(&p->volume, room);
+            }
             produced += room;
             break;
         }
@@ -546,7 +593,9 @@ uint32_t chorus_playout_fill(chorus_playout_t *p, uint8_t *out, uint32_t frames)
             /* Nothing to play: silence. Once audio has played, that silence
              * is an underrun, counted by the frame. */
             memset(out + (size_t)produced * fb, 0, (size_t)room * fb);
-            chorus_volume_skip(&p->volume, room);
+            if (!dsp_on) {
+                chorus_volume_skip(&p->volume, room);
+            }
             if (p->have_playout_ts) {
                 p->stats.underrun_frames += room;
             }
@@ -573,12 +622,18 @@ uint32_t chorus_playout_fill(chorus_playout_t *p, uint8_t *out, uint32_t frames)
             const chorus_playout_chunk_t *front = &p->chunks[p->chunk_read];
             uint64_t seg_ts =
                 front->timestamp_ns + (uint64_t)p->front_taken * 1000000000ull / c->rate_hz;
-            plan_marker(p, seg_ts, n, p->written_frames + produced);
+            /* With the chain engaged a frame reaches the pins its latency
+             * after it is written, so the marked frame is that much later in
+             * the written count. */
+            plan_marker(p, seg_ts, n, p->written_frames + produced + latency);
         }
         /* The room's volume, on exactly the frames handed over: the same
          * number of frames, at the same instants, only their content scaled
-         * (chorus/volume.h). Before the resync mute, which zeroes on top. */
-        chorus_volume_apply(&p->volume, dst, n, c->channels, c->out_sample_bytes);
+         * (chorus/volume.h). Before the resync mute, which zeroes on top.
+         * With the chain engaged the gain is the chain's (below). */
+        if (!dsp_on) {
+            chorus_volume_apply(&p->volume, dst, n, c->channels, c->out_sample_bytes);
+        }
         if (p->mute_frames > 0) {
             uint32_t silence = (p->mute_frames < n) ? (uint32_t)p->mute_frames : n;
             memset(dst, 0, (size_t)silence * fb);
@@ -588,6 +643,10 @@ uint32_t chorus_playout_fill(chorus_playout_t *p, uint8_t *out, uint32_t frames)
         consume_front(p, n);
         produced += n;
         audio += n;
+    }
+
+    if (dsp_on) {
+        chorus_endpoint_dsp_process(p->dsp, out, frames, c->out_sample_bytes, &p->volume);
     }
 
     note_written(p, frames, audio);
@@ -620,7 +679,10 @@ static double device_delay_frames(chorus_playout_t *p, uint64_t stamp, uint64_t 
     if (partial > queued) {
         partial = queued;
     }
-    return queued - partial;
+    /* The sound chain's latency (goal 12): frames inside the chain are as
+     * far from the pins as frames inside the DMA. */
+    double chain = (p->dsp != NULL) ? (double)chorus_endpoint_dsp_latency_frames(p->dsp) : 0.0;
+    return queued - partial + chain;
 }
 
 void chorus_playout_fifo(chorus_playout_t *p, double *frames, double *ns)
@@ -716,6 +778,12 @@ void chorus_playout_stats(chorus_playout_t *p, chorus_playout_stats_t *out)
     p->stats.marker_edges = p->marker_edges32;
     p->stats.room_volume_messages = p->volume.messages;
     p->stats.applied_volume_thousandths = chorus_volume_applied_thousandths(&p->volume);
+    if (p->dsp != NULL) {
+        p->stats.dsp_engaged = p->dsp->engaged ? 1u : 0u;
+        p->stats.dsp_latency_frames = chorus_endpoint_dsp_latency_frames(p->dsp);
+        p->stats.sounds_applied = p->dsp->sounds_applied;
+        p->stats.dsp_refusals = p->dsp->refusals;
+    }
     uint64_t missed_in_interrupt = p->marker_missed32;
     *out = p->stats;
     out->marker_missed += missed_in_interrupt;

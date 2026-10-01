@@ -64,6 +64,7 @@ idf_component_register(
         "../src/volume.c"
         "../src/controls.c"
         "../src/dsp.c"
+        "../src/endpoint_dsp.c"
         "../src/codec.c"
         "../src/codec_flac.c"
         "../src/codec_opus.c"

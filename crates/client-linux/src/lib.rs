@@ -46,6 +46,9 @@
 //! - [`source`]: the source role, a line-in captured and sent upstream.
 //! - [`front_panel`]: the endpoint's buttons and status LED as the controller
 //!   role, read through evdev and the LED class, decided by `chorus-controls`.
+//! - [`dsp`]: the endpoint's sound chain (goal 12, `crates/dsp`) at the
+//!   sink's edge, driven by the room's `sound`, volume and limit and the
+//!   endpoint's own two-way, with the output map resolved after it.
 //! - [`outmap`]: the output map, N device channels fed from stream positions
 //!   with per-channel gain and delay, at the sink's own edge.
 
@@ -57,6 +60,7 @@ pub mod config;
 pub mod control;
 pub mod decode;
 pub mod delaylog;
+pub mod dsp;
 pub mod front_panel;
 pub mod logcheck;
 pub mod offsets;
