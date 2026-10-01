@@ -757,6 +757,28 @@ Clarified in goal 10 (ADR 0066, the Linux client's line-in):
 - Sequences start at 0 for each started stream. Frames an overrun lost on the
   capture device show as a gap between two timestamps, not in the sequence.
 
+Clarified in goal 11 (ADR 0079, the server accepting a line-in):
+
+- The server names an offered input `<endpoint>/<name>` when `name` is a
+  catalog identifier (lower-case letters, digits and `-`), else
+  `<endpoint>/line-<source_id>`; that is the `line-in:<endpoint>/<input>`
+  source and the `inputs[]` entry of the control state. Only a session whose
+  `hello` declared the source role is listened to; a server with no stream
+  slots (`--slots 0`) ignores source messages as before.
+- The server sends `source_control` only inside the input's own session, and
+  `start` only names `pcm` (this server decodes no input codec).
+- The `stream_format` a started input answers with must be the server's own
+  stream format: codec `pcm`, the same rate, channel count and sample format.
+  One that is not is refused on the server: it sends `stop` and logs `line-in
+  refused reason=format-mismatch`, and nothing that input sends is played.
+  (Conversion is a follow-up.)
+- The server plays an input's PCM in order and does not read its chunk
+  timestamps: a line-in goes out on the server's own grid of stream slots
+  (`docs/control-plane.md`, "The schedule runtime"), which is what lets a
+  session move between slots with no timestamp jump. Upstream frames past what
+  the server holds (one second, ASSUMED) are dropped whole and counted.
+- The input's session ending is the input going: whatever plays it stops.
+
 ## The session, in order
 
 1. The endpoint connects and sends `handshake_init`.

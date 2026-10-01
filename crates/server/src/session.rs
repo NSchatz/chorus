@@ -44,6 +44,7 @@ use chorus_protocol::v2::{
 
 use crate::control::ControlState;
 use crate::controller::ControllerAction;
+use crate::linein::LineIns;
 use crate::router::{Router, SessionStart};
 use crate::stream::Fanout;
 use chorus_protocol::{CHUNK_HEADER_LEN, HEADER_LEN};
@@ -404,6 +405,10 @@ pub struct SessionContext {
     /// Which stream each session hears (`crate::router`): every session is
     /// registered with it once it is up, and leaves it when it ends.
     pub router: Arc<Router>,
+    /// Where a source-role session's line-in goes (`crate::linein`), or
+    /// `None` when this server plays no line-in (no control plane, or the
+    /// one-stream shape): its source messages are then ignored, as before.
+    pub line_ins: Option<Arc<LineIns>>,
 }
 
 impl fmt::Debug for SessionContext {
@@ -428,6 +433,7 @@ impl SessionContext {
             telemetry: AtomicU64::new(0),
             control: None,
             router: Arc::new(Router::single(Arc::new(Fanout::new()))),
+            line_ins: None,
         }
     }
 
@@ -663,8 +669,25 @@ pub fn route_controller(
     let ctx = Arc::clone(ctx);
     let endpoint = greeting.endpoint_id.clone();
     let is_controller = greeting.roles & roles::CONTROLLER != 0;
+    let is_source = greeting.roles & roles::SOURCE != 0;
     reader.set_handler(Box::new(move |m| {
         count(&ctx, &m);
+        // A source's offer and its started input's format (ADR 0066) go to
+        // the line-ins (`crate::linein`); its chunks arrive on the v1 path,
+        // through `read_requests_and_upstream`.
+        if let (true, Some(line_ins)) = (is_source, ctx.line_ins.as_ref()) {
+            match &m {
+                Message::SourceOffer(offer) => {
+                    line_ins.offer(&endpoint, session, offer);
+                    return;
+                }
+                Message::StreamFormat(format) => {
+                    line_ins.stream_format(session, format);
+                    return;
+                }
+                _ => {}
+            }
+        }
         let Message::ControllerCommand(command) = m else {
             return;
         };

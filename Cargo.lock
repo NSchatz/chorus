@@ -186,6 +186,7 @@ dependencies = [
  "chorus-measure",
  "chorus-protocol",
  "chorus-schedule",
+ "chorus-sync",
 ]
 
 [[package]]

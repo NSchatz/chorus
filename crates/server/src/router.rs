@@ -241,19 +241,34 @@ impl Router {
         true
     }
 
-    /// Send a session `room_volume` unless it is what the session was last
-    /// sent. Returns `Some(true)` when sent, `Some(false)` when it was a
-    /// repeat, and `None` when the session's queue is full (it is left as it
-    /// was, so the next pass tries again) or the session is gone.
+    /// Send a session `room_volume` unless its gain and limit are what the
+    /// session was last sent (a ramp step and the at-once value it reaches
+    /// are one change, not two). Returns `Some(true)` when sent,
+    /// `Some(false)` when it was a repeat, and `None` when the session's
+    /// queue is full (it is left as it was, so the next pass tries again) or
+    /// the session is gone.
     pub fn push_room_volume(&self, id: u64, message: RoomVolume) -> Option<bool> {
         let mut sessions = lock(&self.sessions);
         let entry = sessions.iter_mut().find(|e| e.id == id)?;
-        if entry.room_volume == Some(message) {
+        if entry
+            .room_volume
+            .is_some_and(|m| m.gain == message.gain && m.limit == message.limit)
+        {
             return Some(false);
         }
         send(&entry.out, &Message::RoomVolume(message))?;
         entry.room_volume = Some(message);
         Some(true)
+    }
+
+    /// Send a session any other v2 message (a line-in's `source_control`).
+    /// `false` when its queue is full or it is gone.
+    pub fn push_message(&self, id: u64, message: &Message) -> bool {
+        let sessions = lock(&self.sessions);
+        match sessions.iter().find(|e| e.id == id) {
+            Some(entry) => send(&entry.out, message).is_some(),
+            None => false,
+        }
     }
 
     /// Send a session `controller_state` unless it is what the session was

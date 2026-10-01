@@ -60,6 +60,7 @@ use chorus_control::fanout::ControlFanout;
 use chorus_control::persist;
 use chorus_control::rooms::{CivilTime, Source};
 use chorus_control::zones::{Zone, Zones};
+use chorus_control::Command;
 use chorus_hostctl::ThreadRegistry;
 use chorus_protocol::v2::{roles, ControllerCommand, ControllerState, Playback, RoomVolume};
 
@@ -67,8 +68,8 @@ use crate::controller::{translate, ControllerAction, THOUSANDTHS_PER_POINT};
 use crate::events::EventStreams;
 use crate::hostreport::register_ordinary_thread;
 use crate::router::SessionStart;
+use crate::schedule_runtime::Effect;
 use crate::slot_table::SlotTable;
-use crate::slots::SlotInput;
 
 /// Longest request the control channel will read: request line, headers and
 /// body together.
@@ -216,6 +217,10 @@ pub struct ControlState {
     /// change made before the conductor next looks.
     conductor_wake: SyncSender<()>,
     conductor_woken: Mutex<Option<Receiver<()>>>,
+    /// Every person's command applied since the conductor last looked, in
+    /// order: the schedule runtime is told of each (`on_command_applied`),
+    /// and never of a change it made itself.
+    applied_commands: Mutex<Vec<Command>>,
     /// What the page is served with, so the UI is one artifact and not three.
     ui: Ui,
 }
@@ -266,6 +271,7 @@ impl ControlState {
             events: EventStreams::new(crate::events::DEFAULT_EVENT_STREAMS),
             conductor_wake,
             conductor_woken: Mutex::new(Some(woken)),
+            applied_commands: Mutex::new(Vec::new()),
             ui: Ui {
                 html: include_str!("ui/index.html"),
                 tokens: include_str!("ui/tokens.css"),
@@ -341,6 +347,68 @@ impl ControlState {
         silenced
     }
 
+    /// Every person's command applied since the last call, in order.
+    pub fn take_applied(&self) -> Vec<Command> {
+        std::mem::take(&mut *lock(&self.applied_commands))
+    }
+
+    /// Let the schedule runtime change the room model (`change` is one of
+    /// its entry points over the zones), then plan the stream slots, persist
+    /// when an effect asks to and fan the state out when anything changed.
+    ///
+    /// Unlike a person's command, a change the runtime makes is never refused
+    /// for want of a slot (an alarm must not be lost to a full table): a
+    /// group it would give a source with no slot free plays nothing instead
+    /// (its source `none`), reported as a `Log` effect, the rule
+    /// [`ControlState::serve_on_slots`] applies at start.
+    pub fn runtime(&self, change: impl FnOnce(&mut Zones) -> Vec<Effect>) -> Vec<Effect> {
+        let (mut effects, state) = {
+            let mut held = self.locked();
+            let before = held.zones.serial();
+            let mut next = held.zones.clone();
+            let mut effects = change(&mut next);
+            if let Some(table) = &held.slots {
+                let mut planned = table.plan(&next);
+                // At most one group is silenced per pass, and there are
+                // only so many groups.
+                let mut guard = next.zones().len() + 1;
+                while planned.is_err() && guard > 0 {
+                    guard -= 1;
+                    let Some(group) = SlotTable::needing(&next)
+                        .into_iter()
+                        .rev()
+                        .find(|g| table.slot_of(g).is_none())
+                    else {
+                        break;
+                    };
+                    let _ = next.set_group_source(&group, Source::None);
+                    effects.push(Effect::Log(format!(
+                        "schedule group={} source=none outcome=no-free-slot slots={}",
+                        group,
+                        table.len()
+                    )));
+                    planned = table.plan(&next);
+                }
+                match planned {
+                    Ok(t) => held.slots = Some(t),
+                    // Nothing fits even so: leave the model as it was.
+                    Err(_) => return effects,
+                }
+            }
+            held.zones = next;
+            if effects.contains(&Effect::Persist) {
+                self.persist(&held.zones);
+            }
+            let changed = held.zones.serial() != before;
+            (effects, changed.then(|| held.zones.encode_state()))
+        };
+        if let Some(state) = state {
+            self.publish(state);
+        }
+        effects.retain(|e| *e != Effect::Persist);
+        effects
+    }
+
     /// The slot table, `slot=group` for every slot, for a status line; `None`
     /// in the one-stream shape.
     pub fn slots_report(&self) -> Option<String> {
@@ -384,18 +452,26 @@ impl ControlState {
                 },
             })
             .collect();
-        let inputs = match &held.slots {
+        let slots = match &held.slots {
             None => Vec::new(),
             Some(table) => table
                 .held()
                 .iter()
-                .map(|g| match g {
-                    Some(group) => input_for(&zones.source(group)),
-                    None => SlotInput::Silence,
+                .map(|g| {
+                    g.as_ref().map(|group| SlotGroup {
+                        group: group.clone(),
+                        source: zones.source(group),
+                        rooms: zones
+                            .zones()
+                            .iter()
+                            .filter(|z| &z.group == group)
+                            .map(|z| z.id.clone())
+                            .collect(),
+                    })
                 })
                 .collect(),
         };
-        Snapshot { rooms, inputs }
+        Snapshot { rooms, slots }
     }
 
     /// Where a session that just came up starts, and what its greeting says
@@ -472,6 +548,7 @@ impl ControlState {
         let state = {
             let mut held = self.locked();
             Self::commit(&mut held, |zones| zones.apply(&command)).map_err(|r| r.at(version))?;
+            lock(&self.applied_commands).push(command.clone());
             // A failure to persist is reported and not swallowed, and not a
             // reason to refuse the command either: the change IS in force in
             // this process, and saying it was refused would be a lie in the
@@ -526,6 +603,7 @@ impl ControlState {
                 let mut changed = None;
                 if let ControllerAction::Apply(change) = &action {
                     Self::commit(&mut held, |zones| zones.apply(change))?;
+                    lock(&self.applied_commands).push(change.clone());
                     self.persist(&held.zones);
                     changed = Some(held.zones.encode_state());
                 }
@@ -607,14 +685,15 @@ pub fn controller_state_of(zone: &Zone) -> ControllerState {
     }
 }
 
-/// What a slot plays for a group's source. The configured stream is the one
-/// input this server carries today; a chime or a line-in source plays silence
-/// until the inputs that carry them exist (the next goal 11 track).
-fn input_for(source: &Source) -> SlotInput {
-    match source {
-        Source::Stream => SlotInput::Stream,
-        Source::None | Source::Chime(_) | Source::LineIn(_) => SlotInput::Silence,
-    }
+/// The group a stream slot serves, as the conductor routes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlotGroup {
+    /// The group.
+    pub group: String,
+    /// What it plays.
+    pub source: Source,
+    /// Its rooms, in configured order.
+    pub rooms: Vec<String>,
 }
 
 /// One room as the conductor routes it.
@@ -641,8 +720,9 @@ pub struct RoomView {
 pub struct Snapshot {
     /// Every room.
     pub rooms: Vec<RoomView>,
-    /// What each stream slot plays; empty in the one-stream shape.
-    pub inputs: Vec<SlotInput>,
+    /// The group each stream slot serves (`None`: a free slot); empty in
+    /// the one-stream shape.
+    pub slots: Vec<Option<SlotGroup>>,
 }
 
 impl Snapshot {
