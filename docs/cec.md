@@ -4,8 +4,8 @@ The Linux hub (a `chorus-client` with the TV's sound on `--line-in`, kind `optic
 can also be the TV's **Audio System** over HDMI-CEC: logical address 5, the address a soundbar
 or AV receiver takes. Then the TV's own remote turns the room's volume up and down and mutes
 it, the TV shows the room's level on screen, and the TV turning on or off starts or stops the
-TV in the room. Goal 13 (the TV path); the decision record is ADR 0093
-(`docs/decisions/0093-cec-audio-system-on-the-hub.md`).
+TV in the room. Goal 13 (the TV path); the decision record is ADR 0087
+(`docs/decisions/0087-cec-audio-system-on-the-hub.md`).
 
 Nothing here is timing evidence. The code is tested on a fake CEC bus with scripted TVs; the
 bench steps below are the owner's, and a TV's real behaviour is a Needs item ("The three TVs:
