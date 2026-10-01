@@ -22,7 +22,10 @@
 //! time and ramps; an alarm with a line-in plays the line-in and ramps; a
 //! sleep timer fades, stops and restores; quiet hours pull a room down and cap
 //! an alarm's ramp on the server, on the wire and in the Linux client; line-in
-//! autoplay plays and stops after its hold; and a second room joining a
+//! autoplay plays and stops after its hold, from the scripted source and from
+//! the REAL Linux client's source role (`source::spawn` on a modelled capture
+//! device paced in real time, its own signal detection deciding when the
+//! input is offered and withdrawn); and a second room joining a
 //! line-in's group grows its latency without a glitch in the playing room
 //! (K94 on the real binary). Nothing here is timing evidence: what is graded
 //! is values, orders and counts.
@@ -38,13 +41,16 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use chorus_audio::MonotonicTimeline;
-use chorus_client_linux::config::ClientConfig;
+use chorus_client_linux::config::{ClientConfig, LineInConfig};
 use chorus_client_linux::control::ZoneWatch;
 use chorus_client_linux::delaylog::DelayLog;
 use chorus_client_linux::receive::handshake;
 use chorus_client_linux::run::{header_for, run_session};
 use chorus_client_linux::session::{self, EndpointIdentity};
 use chorus_client_linux::sink::{PcmSink, SinkError, SinkWrite};
+use chorus_client_linux::source::{
+    self, CaptureError, CaptureRead, CaptureSource, SharedWriter, SignalThresholds, SourceSetup,
+};
 use chorus_client_linux::Counters;
 use chorus_control::json::{self, Value};
 use chorus_protocol::v2::{
@@ -135,12 +141,14 @@ fn pattern(i: u64) -> i16 {
     (2_000 + t) as i16
 }
 
-/// The source position a chunk's first frame plays, read off its first two
-/// samples of channel 0; `None` near a corner, where the slope is ambiguous.
-/// `near` is where it is expected, to pick the right period.
+/// The source position a chunk's first frame plays, read off its first
+/// sample of channel 0 and, for the slope, its fifth frame's (a line-in's
+/// first chunk holds its first frame for two more); `None` near a corner,
+/// where the slope is ambiguous. `near` is where it is expected, to pick the
+/// right period.
 fn position(c: &AudioChunk, near: Option<f64>) -> Option<f64> {
     let s = samples(c);
-    let (v0, v1) = (f64::from(s[0]), f64::from(s[2]));
+    let (v0, v1) = (f64::from(s[0]), f64::from(s[8]));
     if !(2_010.0..=31_990.0).contains(&v0) {
         return None;
     }
@@ -1077,5 +1085,165 @@ fn a_second_room_joining_a_line_ins_group_grows_its_latency_without_a_glitch() {
         grown,
         grown / 48.0
     );
+    let _ = std::fs::remove_file(&source);
+}
+
+/// The Linux client's line-in, modelled: [`pattern`] for `loud_frames`, then
+/// digital silence, delivered in real time (a read returns once its last
+/// frame is due), with no capture delay.
+struct PacedCapture {
+    pos: u64,
+    loud_frames: u64,
+    started: Instant,
+}
+
+impl CaptureSource for PacedCapture {
+    fn device(&self) -> &str {
+        "modelled-line-in"
+    }
+    fn frame_len(&self) -> usize {
+        4
+    }
+    fn read(&mut self, pcm: &mut [u8]) -> Result<CaptureRead, CaptureError> {
+        let n = (pcm.len() / 4) as u64;
+        let due = self.started + Duration::from_nanos((self.pos + n) * 1_000_000_000 / 48_000);
+        let now = Instant::now();
+        if due > now {
+            thread::sleep(due - now);
+        }
+        for (k, frame) in pcm.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            let i = self.pos + k as u64;
+            let v = if i < self.loud_frames { pattern(i) } else { 0 };
+            let b = v.to_le_bytes();
+            *frame = [b[0], b[1], b[0], b[1]];
+        }
+        self.pos += n;
+        Ok(CaptureRead {
+            frames: n,
+            overran: false,
+        })
+    }
+    fn delay_frames(&mut self) -> Result<Option<i64>, CaptureError> {
+        Ok(Some(0))
+    }
+}
+
+#[test]
+fn the_real_linux_clients_line_in_is_autoplayed_to_its_target_and_stopped_when_it_falls_silent() {
+    let source = constant_source("real-line-in");
+    let server = server(&source, "2026-10-05T12:00:00Z", "20", &["kitchen"]);
+    let speaker = fresh_id("asa-real-speaker");
+    let amp = fresh_id("asa-real-amp");
+    server.applied(&format!(
+        r#"{{"v":1,"t":"attach","zone":"kitchen","endpoint":"{}"}}"#,
+        speaker
+    ));
+    // The client offers its input as `line-1`: the name it was configured
+    // with is not an identifier, so the server names it by its source id.
+    server.applied(&format!(
+        r#"{{"v":2,"t":"autoplay","input":"{}/line-1","target":"kitchen","enabled":true}}"#,
+        amp
+    ));
+    let kitchen = Recorder::player(&server.audio, &speaker);
+    kitchen.until_hearing("the stream", Duration::from_secs(5), is_stream);
+
+    // The real client: its session (hello with player | source, the first
+    // offer) and its source role (signal detection, the start check,
+    // stream_format, the chunks, stream_end) on the modelled line-in.
+    let input = LineInConfig {
+        name: "Turntable".to_string(),
+        ..LineInConfig::new("modelled-line-in")
+    };
+    let config = ClientConfig {
+        line_in: Some(input.clone()),
+        ..ClientConfig::default()
+    };
+    let stream = TcpStream::connect(&server.audio).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_millis(200)))
+        .unwrap();
+    let mut me = EndpointIdentity::ephemeral(&amp).unwrap();
+    let secure = session::open(stream, &mut me, &config).expect("the session opens");
+    let session::Session {
+        reader,
+        writer,
+        source_control,
+        ..
+    } = secure;
+    let hears = Recorder::reading(reader, Arc::new(Mutex::new(Vec::new())));
+    let counters = Arc::new(Counters::new());
+    // The stamps the client sends are its capture instants through the
+    // offset its playout loop publishes; this server plays a line-in on its
+    // own grid and does not read them, so any published offset will do.
+    counters.offset.publish(Some(0));
+    let lines = Arc::new(Mutex::new(Vec::<String>::new()));
+    let started = Instant::now();
+    let handle = {
+        let lines = Arc::clone(&lines);
+        source::spawn(
+            PacedCapture {
+                pos: 0,
+                loud_frames: 48_000 * 4,
+                started,
+            },
+            SharedWriter::new(writer),
+            SourceSetup {
+                input,
+                listed_codecs: Codec::Pcm.bit(),
+                clock: Box::new(move || started.elapsed().as_nanos() as u64),
+                counters,
+                controls: source_control,
+                thresholds: SignalThresholds::default(),
+                log: Box::new(move |l| lines.lock().unwrap().push(l.to_string())),
+            },
+        )
+    };
+    let said = |what: &str| lines.lock().unwrap().iter().any(|l| l.contains(what));
+    wait_for(
+        "the client starts its input",
+        Duration::from_secs(10),
+        || said("source-started"),
+    );
+    assert_eq!(
+        room(&server.state(), "kitchen").2,
+        format!("line-in:{}/line-1", amp)
+    );
+    wait_for(
+        "two seconds of the line-in",
+        Duration::from_secs(10),
+        || {
+            let c = kitchen.chunks();
+            c.iter()
+                .position(|c| !is_silent(c) && !is_stream(c))
+                .is_some_and(|i| c.len() > i + 100)
+        },
+    );
+    let chunks = kitchen.chunks();
+    let first = chunks
+        .iter()
+        .position(|c| !is_silent(c) && !is_stream(c))
+        .unwrap();
+    let positions = line_in_positions(&chunks[..first + 100], "the real client's line-in");
+    assert!(positions.len() > 50);
+    // Silence from 4 s: the client withdraws the signal 2 s later, the
+    // server holds 30 s of schedule (1.5 s), then stops it and restores.
+    wait_for(
+        "the client is told to stop",
+        Duration::from_secs(20),
+        || said("source-stopped"),
+    );
+    assert!(
+        said("source-offer source_id=1 signal=0"),
+        "{:?}",
+        lines.lock().unwrap()
+    );
+    wait_for("the room is restored", Duration::from_secs(5), || {
+        room(&server.state(), "kitchen").2 == "stream"
+    });
+    kitchen.until_hearing("the stream again", Duration::from_secs(5), is_stream);
+    let (stop, stats) = handle.stop();
+    assert_eq!(stop.name(), "stopped", "{:?}", lines.lock().unwrap());
+    assert_eq!(stats.starts.load(Ordering::SeqCst), 1);
+    drop(hears);
     let _ = std::fs::remove_file(&source);
 }
