@@ -7,7 +7,8 @@
   `crates/sync/src/latency_sim.rs` (the simulator and the criterion),
   `crates/sync/src/latency_report.rs` and `crates/sync/src/bin/chorus-sim-latency.rs` (the
   report), `config/sim-latency/{wired-join,wifi-join}.latency` (the scenarios); held by
-  `crates/sync/tests/latency_growth.rs` and the unit tests in both modules; report
+  `crates/sync/tests/latency_growth.rs` and the unit tests in both modules; `audio-path.conf`
+  lists the plan on the path and excludes the simulator, the report and the bin; report
   `docs/measurements/latency-growth-sim.md`
 
 ## Context
