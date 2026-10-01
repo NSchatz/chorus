@@ -353,6 +353,7 @@ impl LineIn {
                         kind: SourceKind::LineIn,
                         signal: s,
                         name: "line-1".to_string(),
+                        reason: 0,
                     })
                 };
                 let mut offered = signal.load(Ordering::SeqCst);

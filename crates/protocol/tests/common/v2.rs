@@ -303,6 +303,11 @@ pub fn v2_message_from_fields(f: &Fields) -> Message {
             kind: named("kind", SourceKind::from_name(f.str("kind"))),
             signal: f.u64("signal") == 1,
             name: f.str("name").to_string(),
+            reason: if f.has("reason") {
+                f.u64("reason") as u8
+            } else {
+                0
+            },
         }),
         Type::SourceControl => Message::SourceControl(SourceControl {
             source_id: f.u64("source_id") as u8,
@@ -352,6 +357,28 @@ pub fn v2_message_from_fields(f: &Fields) -> Message {
                 crossover_hz: f.u64("crossover_hz") as u16,
                 sub_level_cdb: int(f, "sub_level_cdb") as i16,
                 filters,
+                tv_upmix: if f.has("tv_upmix") {
+                    f.u64("tv_upmix") as u8
+                } else {
+                    0
+                },
+                fold: if f.has("fold") {
+                    words(f, "fold").iter().fold(0u8, |acc, name| {
+                        acc | named(
+                            name,
+                            sound_fold::NAMES
+                                .iter()
+                                .find(|(_, n)| n == name)
+                                .map(|(b, _)| *b),
+                        )
+                    })
+                } else {
+                    0
+                } | if f.has("fold_reserved") {
+                    f.u64("fold_reserved") as u8
+                } else {
+                    0
+                },
             })
         }
         Type::TimeSync | Type::AudioChunk | Type::StreamEnd => {

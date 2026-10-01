@@ -13,6 +13,10 @@ pub mod position {
     pub const FR: u8 = 2;
     pub const FC: u8 = 3;
     pub const LFE: u8 = 4;
+    pub const BL: u8 = 5;
+    pub const BR: u8 = 6;
+    pub const SL: u8 = 10;
+    pub const SR: u8 = 11;
     /// The highest position the map defines (`TBR`).
     pub const MAX: u8 = 18;
 }
@@ -52,6 +56,17 @@ pub const ROOM_EQ_Q_MIN_MILLI: u16 = 500;
 /// See [`ROOM_EQ_Q_MIN_MILLI`].
 pub const ROOM_EQ_Q_MAX_MILLI: u16 = 10000;
 
+/// `tv_upmix` off: a surround role on a stream with no surround channel plays
+/// silence. The default (ASSUMED: an upmix colours a stereo mix the mixer did
+/// not mean for surrounds, so it is the room's choice, not chorus's).
+pub const TV_UPMIX_OFF: u8 = 0;
+/// `tv_upmix` ambient: a surround role on a stream with no surround channel
+/// plays the passive matrix surround, `(FL - FR) / sqrt 2`, band-limited and
+/// delayed (`crate::chain::AMBIENT_*`).
+pub const TV_UPMIX_AMBIENT: u8 = 1;
+/// The highest `tv_upmix` defined.
+pub const TV_UPMIX_MAX: u8 = TV_UPMIX_AMBIENT;
+
 /// One room-correction peaking filter, in the wire's integer units.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RoomEqFilter {
@@ -88,6 +103,15 @@ pub struct SoundSettings {
     pub sub_level_cdb: i16,
     /// Up to 8 room-correction filters.
     pub room_eq: Vec<RoomEqFilter>,
+    /// What a surround role plays from a stream with no surround channel:
+    /// [`TV_UPMIX_OFF`] or [`TV_UPMIX_AMBIENT`] (goal 13).
+    pub tv_upmix: u8,
+    /// The room's set has no centre member: a front role folds the stream's
+    /// FC in at 1/sqrt 2 (ITU-R BS.775-4 Table 2, goal 13).
+    pub fold_centre: bool,
+    /// The room's set has no surround pair: a front role folds its side's
+    /// surround channel(s) in at 1/sqrt 2 (ITU-R BS.775-4 Table 2, goal 13).
+    pub fold_surround: bool,
 }
 
 impl Default for SoundSettings {
@@ -106,6 +130,9 @@ impl Default for SoundSettings {
             crossover_hz: CROSSOVER_DEFAULT_HZ,
             sub_level_cdb: 0,
             room_eq: Vec::new(),
+            tv_upmix: TV_UPMIX_OFF,
+            fold_centre: false,
+            fold_surround: false,
         }
     }
 }
@@ -127,6 +154,9 @@ impl SoundSettings {
         }
         if !(SUB_LEVEL_MIN_CDB..=SUB_LEVEL_MAX_CDB).contains(&self.sub_level_cdb) {
             return Err(DspError::Setting("sub_level_cdb"));
+        }
+        if self.tv_upmix > TV_UPMIX_MAX {
+            return Err(DspError::Setting("tv_upmix"));
         }
         if self.room_eq.len() > ROOM_EQ_MAX_FILTERS {
             return Err(DspError::Setting("eq_count"));
@@ -184,6 +214,11 @@ pub struct EndpointDsp {
     /// A delay per output, us (the two-way drivers' own delays add to
     /// outputs 0 and 1).
     pub output_delay_us: [u32; MAX_OUTPUTS],
+    /// The endpoint is one stereo speaker (goal 13): not in a set and not
+    /// two-way, a stream with more than FL and FR is downmixed to two
+    /// outputs by ITU-R BS.775-4 Table 2's 2/0 equations. Off, the stream's
+    /// channels pass to their own outputs as before.
+    pub stereo_downmix: bool,
 }
 
 impl EndpointDsp {

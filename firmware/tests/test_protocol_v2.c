@@ -371,6 +371,12 @@ static int build(const char *stem, const char *fields_text, chorus_v2_message_t 
         m->as.source_offer.kind = named(&f, "kind", CHORUS_V2_ENUM_SOURCE_KIND);
         m->as.source_offer.signal = (uint8_t)number(&f, "signal");
         m->as.source_offer.name = text(&f, "name");
+        {
+            char reason[16];
+            if (fixture_field(fields_text, "reason", reason, sizeof(reason)) != NULL) {
+                m->as.source_offer.reason = (uint8_t)strtoul(reason, NULL, 10);
+            }
+        }
         break;
     case CHORUS_V2_SOURCE_CONTROL:
         m->as.source_control.source_id = (uint8_t)number(&f, "source_id");
@@ -427,6 +433,28 @@ static int build(const char *stem, const char *fields_text, chorus_v2_message_t 
                 s->filters[i].q_milli = (uint16_t)strtol(end, &end, 10);
             }
             s->eq_count = (uint8_t)(i + 1);
+        }
+        /* Goal 13's theater block: absent keys are 0. */
+        if (fixture_field(fields_text, "tv_upmix", extra, sizeof(extra)) != NULL) {
+            s->tv_upmix = (uint8_t)strtoul(extra, NULL, 10);
+        }
+        if (fixture_field(fields_text, "fold", extra, sizeof(extra)) != NULL) {
+            size_t nf = words(extra, list, 8);
+            static const char *const FOLD_NAMES[] = {"centre", "surround"};
+            for (size_t i = 0; i < nf; i++) {
+                int known = 0;
+                for (size_t b = 0; b < sizeof(FOLD_NAMES) / sizeof(FOLD_NAMES[0]); b++) {
+                    if (strcmp(list[i], FOLD_NAMES[b]) == 0) {
+                        s->fold |= (uint8_t)(1u << b);
+                        known = 1;
+                    }
+                }
+                chorus_check(known, "%s.fields fold names '%s'", stem, list[i]);
+                f.ok &= known;
+            }
+        }
+        if (fixture_field(fields_text, "fold_reserved", extra, sizeof(extra)) != NULL) {
+            s->fold |= (uint8_t)strtoul(extra, NULL, 10);
         }
         break;
     }
@@ -720,7 +748,7 @@ static void the_committed_rejection_vectors_are_refused_both_ways(void)
     if (dir == NULL) {
         return;
     }
-    static vector_t rejected[32];
+    static vector_t rejected[64];
     size_t count = 0;
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {

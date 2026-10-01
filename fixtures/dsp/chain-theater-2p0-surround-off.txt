@@ -1,0 +1,19 @@
+# Goal 13, a 2.0 stream into a theater set, a surround role (SL) with tv_upmix
+# off (the default, ASSUMED): silence, exactly.
+
+kind = chain
+source = docs/dsp.md
+read = 2026-10-01
+rate_hz = 48000
+room_gain = 1
+limit_gain = 1
+channel_map = 1 2
+frames = 4800
+role = 10
+tv_upmix = 0
+input.0 = noise 23 0.8
+input.1 = noise 24 0.8
+out_channels = 1
+amplitude.0 = 0
+amplitude_from = 0
+amplitude_tolerance = 0

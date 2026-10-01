@@ -48,6 +48,11 @@ GEIGER = "https://www.eurasip.org/Proceedings/Eusipco/Eusipco2015/papers/1570096
 SVS = ("https://www.svsound.com/blogs/subwoofer-setup-and-tuning/"
        "tips-for-setting-the-proper-crossover-frequency-for-a-subwoofer")
 DSPDOC = "docs/dsp.md"
+BS775 = "https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.775-4-202212-I!!PDF-E.pdf"
+DRESSLER = "https://educypedia.org/library/208_Dolby_Surround_Pro_Logic_Decoder.pdf"
+SOS = "https://www.soundonsound.com/techniques/surround-sound-explained-part-2"
+KSMEDIA = ("https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ksmedia/"
+           "ns-ksmedia-ksaudio_channel_config")
 
 
 # --- the cookbook, written from the W3C note -------------------------------
@@ -530,6 +535,159 @@ inverted, 100 Hz crossover. Samples from the Rust chain (a drift fixture).
     return out
 
 
+# --- goal 13: the theater maps ---------------------------------------------
+
+def theater():
+    fs = 48000
+    common = [("rate_hz", fs), ("room_gain", 1), ("limit_gain", 1)]
+    g = 1 / math.sqrt(2)
+    out = []
+    # The 5.1 inputs: one 1 kHz tone per channel, all in phase, each at its
+    # own level, so an output's amplitude is the linear sum of the weights it
+    # took and a channel that leaks in (or one that is missing) moves it.
+    lv = {"FL": 0.3, "FR": 0.4, "FC": 0.2, "LFE": 0.5, "S_L": 0.1, "S_R": 0.25}
+    order = ["FL", "FR", "FC", "LFE", "S_L", "S_R"]
+    tone = lambda hz: [(f"input.{c}", f"sine {hz} {lv[k]}") for c, k in enumerate(order)]
+    bs = [("source", f"{BS775} {DSPDOC}"), ("read", READ)]
+
+    out.append(write("chain-theater-2p0-centre.txt", f"""
+Goal 13, a 2.0 stream into a theater set, the centre role (FC): the passive
+centre (FL + FR) / sqrt 2 (Dressler, Dolby Surround Pro Logic Decoder section
+1.1: the centre goes into Lt and Rt "divided equally ... with a 3 dB level
+reduction", {DRESSLER}, read {READ}; so (Lt + Rt) / sqrt 2 recovers it at unity,
+computed). FL a 1 kHz tone of 0.5, FR the same tone at 0.3: the output settles
+at (0.5 + 0.3) / sqrt 2 = {0.8 * g:.9f}.
+""", [("kind", "chain"), ("source", f"{DRESSLER} {DSPDOC}"), ("read", READ), *common,
+          ("channel_map", "1 2"), ("frames", 9600), ("role", 3),
+          ("input.0", "sine 1000 0.5"), ("input.1", "sine 1000 0.3"), ("out_channels", 1),
+          ("amplitude.0", repr(0.8 * g)), ("amplitude_from", 4800),
+          ("amplitude_tolerance", "1e-5"), ("golden", 1)]))
+    out.append(write("chain-theater-2p0-front.txt", """
+Goal 13, a 2.0 stream into a theater set, a front role (FL) with every fold
+asked for: the stream has no centre or surround to fold, so the output is FL
+alone, times the room gain, delayed by the look-ahead, bit for bit.
+""", [("kind", "chain"), ("source", DSPDOC), ("read", READ), *common,
+          ("channel_map", "1 2"), ("frames", 4800), ("role", 1), ("tv_upmix", 1),
+          ("fold_centre", 1), ("fold_surround", 1),
+          ("input.0", "noise 21 0.8"), ("input.1", "noise 22 0.8"), ("out_channels", 1),
+          ("latency_frames", 96), ("exact.0", 0)]))
+    out.append(write("chain-theater-2p0-surround-off.txt", """
+Goal 13, a 2.0 stream into a theater set, a surround role (SL) with tv_upmix
+off (the default, ASSUMED): silence, exactly.
+""", [("kind", "chain"), ("source", DSPDOC), ("read", READ), *common,
+          ("channel_map", "1 2"), ("frames", 4800), ("role", 10), ("tv_upmix", 0),
+          ("input.0", "noise 23 0.8"), ("input.1", "noise 24 0.8"), ("out_channels", 1),
+          ("amplitude.0", 0), ("amplitude_from", 0), ("amplitude_tolerance", 0)]))
+    hp = abs(resp(*rbj("highpass", fs, 100, g, 0), 1000, fs))
+    lp = abs(resp(*rbj("lowpass", fs, 7000, g, 0), 1000, fs))
+    out.append(write("chain-theater-2p0-ambient.txt", f"""
+Goal 13, a 2.0 stream into a theater set, a surround role (SR) with tv_upmix
+ambient: the passive matrix surround (FL - FR) / sqrt 2 (Dressler section 1.2,
+"taking the difference of Lt and Rt, then passing it through a 7 kHz low-pass
+filter, a delay line", {DRESSLER}; Sound On Sound: a band-pass "below 100Hz and
+above 7kHz" and the surround "about 20mS after the direct sound", {SOS}; both
+read {READ}). The band is one RBJ high-pass at 100 Hz and one RBJ low-pass at
+7 kHz, Q 1/sqrt 2 (ASSUMED slopes), and the 20 ms (960 frames) delay rides the
+output's delay line. FL a 1 kHz tone of 0.5, FR its negative: FL - FR is the
+tone at 1.0, so the output settles at |H_hp(1k)| |H_lp(1k)| / sqrt 2 =
+{g * hp * lp:.9f} (the designed responses, computed here).
+""", [("kind", "chain"), ("source", f"{DRESSLER} {SOS} {RBJ}"), ("read", READ), *common,
+          ("channel_map", "1 2"), ("frames", 9600), ("role", 11), ("tv_upmix", 1),
+          ("input.0", "sine 1000 0.5"), ("input.1", "sine 1000 -0.5"), ("out_channels", 1),
+          ("amplitude.0", repr(g * hp * lp)), ("amplitude_from", 4800),
+          ("amplitude_tolerance", "1e-4"), ("golden", 1)]))
+    out.append(write("chain-theater-2p0-ambient-centre.txt", f"""
+Goal 13, the ambient surround cancels what is centred: FL = FR (a dialogue
+signal, here a tone plus noise) gives FL - FR = 0 exactly, so the surround
+role plays silence (Dressler section 1.1: "the identical center channel
+components in Lt and Rt will exactly cancel each other in the surround
+output", {DRESSLER}, read {READ}).
+""", [("kind", "chain"), ("source", DRESSLER), ("read", READ), *common,
+          ("channel_map", "1 2"), ("frames", 4800), ("role", 10), ("tv_upmix", 1),
+          ("input.0", "sine 300 0.4 + noise 25 0.3"), ("input.1", "sine 300 0.4 + noise 25 0.3"),
+          ("out_channels", 1), ("amplitude.0", 0), ("amplitude_from", 0),
+          ("amplitude_tolerance", 0)]))
+
+    def five(name, header, role, folds, want, cmap="1 2 3 4 5 6"):
+        return write(name, header, [("kind", "chain"), *bs, *common, ("channel_map", cmap),
+                     ("frames", 9600), ("role", role), *folds, *tone(1000),
+                     ("out_channels", 1), ("amplitude.0", repr(want)),
+                     ("amplitude_from", 4800), ("amplitude_tolerance", "1e-5"), ("golden", 1)])
+    levels = ", ".join(f"{k.replace('S_', 'S')} {v}" for k, v in lv.items())
+    want = lv["FL"] + g * lv["FC"] + g * lv["S_L"]
+    out.append(five("chain-theater-5p1-pair-left.txt", f"""
+Goal 13, a 5.1 stream (FL FR FC LFE BL BR) into a stereo pair, the FL member
+(fold_centre and fold_surround: the set has neither): ITU-R BS.775-4 Annex 4
+Table 2, 2/0 format, "L = 1.0000 L + 0.7071 C + 0.7071 LS" ({BS775}, read
+{READ}); the LFE is dropped ("The LFE channel is often not included in a
+2-channel downmix", the same Recommendation, Annex 7). Every channel a 1 kHz
+tone in phase ({levels}): the output settles at
+0.3 + 0.2 / sqrt 2 + 0.1 / sqrt 2 = {want:.9f}.
+""", 1, [("fold_centre", 1), ("fold_surround", 1)], want))
+    want = lv["FR"] + g * lv["FC"] + g * lv["S_R"]
+    out.append(five("chain-theater-5p1-pair-right-side.txt", f"""
+Goal 13, a 5.1 stream with SIDE surrounds (FL FR FC LFE SL SR,
+KSAUDIO_SPEAKER_5POINT1_SURROUND, {KSMEDIA}) into a stereo pair, the FR member:
+BS.775-4 Table 2's 2/0 "R = 1.0000 R + 0.7071 C + 0.7071 RS" ({BS775}, read
+{READ}), LFE dropped. Tones as chain-theater-5p1-pair-left: the output settles at
+0.4 + 0.2 / sqrt 2 + 0.25 / sqrt 2 = {want:.9f}.
+""", 2, [("fold_centre", 1), ("fold_surround", 1)], want, cmap="1 2 3 4 10 11"))
+    want = lv["FL"] + g * lv["S_L"]
+    out.append(five("chain-theater-5p1-3p0-left.txt", f"""
+Goal 13, a 5.1 stream into a set with a centre and no surrounds (3.0 or 3.1),
+the FL member (fold_surround only): BS.775-4 Table 2's 3/0 format,
+"L = 1.0000 L + 0.0000 C + 0.7071 LS" ({BS775}, read {READ}). The output settles
+at 0.3 + 0.1 / sqrt 2 = {want:.9f}.
+""", 1, [("fold_surround", 1)], want))
+    out.append(write("chain-theater-5p1-side-from-back.txt", f"""
+Goal 13, a 5.1 stream with BACK surrounds (FL FR FC LFE BL BR, the server's
+6-channel map) into a set whose surrounds are SIDE (SL SR): the SL role plays
+BL, the same speaker under 5.1's other naming (KSAUDIO_SPEAKER_5POINT1 and
+KSAUDIO_SPEAKER_5POINT1_SURROUND, {KSMEDIA}, read {READ}), bit for bit.
+""", [("kind", "chain"), ("source", KSMEDIA), ("read", READ), *common,
+          ("channel_map", "1 2 3 4 5 6"), ("frames", 4800), ("role", 10), ("tv_upmix", 1),
+          *[(f"input.{c}", f"noise {30 + c} 0.5") for c in range(6)],
+          ("out_channels", 1), ("exact.0", 4)]))
+    out.append(write("chain-theater-5p1-centre.txt", """
+Goal 13, a 5.1 stream into a theater set, the centre role: the stream's FC,
+bit for bit (the folds and the upmix never touch a role the stream carries).
+""", [("kind", "chain"), ("source", DSPDOC), ("read", READ), *common,
+          ("channel_map", "1 2 3 4 5 6"), ("frames", 4800), ("role", 3), ("tv_upmix", 1),
+          ("fold_centre", 1), ("fold_surround", 1),
+          *[(f"input.{c}", f"noise {40 + c} 0.5") for c in range(6)],
+          ("out_channels", 1), ("exact.0", 2)]))
+    lo = lv["FL"] + g * lv["FC"] + g * lv["S_L"]
+    ro = lv["FR"] + g * lv["FC"] + g * lv["S_R"]
+    out.append(write("chain-theater-5p1-stereo-downmix.txt", f"""
+Goal 13, a 5.1 stream into one unbonded stereo speaker (stereo_downmix): two
+outputs, BS.775-4 Table 2's 2/0 equations ({BS775}, read {READ}), LFE dropped.
+Tones as chain-theater-5p1-pair-left: Lo = {lo:.9f}, Ro = {ro:.9f}.
+""", [("kind", "chain"), *bs, *common, ("channel_map", "1 2 3 4 5 6"), ("frames", 9600),
+          ("stereo_downmix", 1), *tone(1000), ("out_channels", 2),
+          ("amplitude.0", repr(lo)), ("amplitude.1", repr(ro)), ("amplitude_from", 4800),
+          ("amplitude_tolerance", "1e-5"), ("golden", 1)]))
+    out.append(write("chain-theater-2p0-stereo-downmix.txt", """
+Goal 13, stereo_downmix on a 2.0 stream: nothing to fold, so both channels
+pass, bit for bit.
+""", [("kind", "chain"), ("source", DSPDOC), ("read", READ), *common,
+          ("channel_map", "1 2"), ("frames", 4800), ("stereo_downmix", 1),
+          ("input.0", "noise 51 0.7"), ("input.1", "noise 52 0.7"), ("out_channels", 2),
+          ("exact.0", 0), ("exact.1", 1)]))
+    mono = 0.5 * lo + 0.5 * ro
+    out.append(write("chain-theater-5p1-two-way.txt", f"""
+Goal 13, a 5.1 stream into one unbonded two-way speaker: its one input is the
+mean of BS.775-4's 2/0 pair, (Lo + Ro) / 2 ({BS775}, read {READ}; the mean, as
+the chain already takes (FL + FR) / 2 of a stereo stream), LFE dropped. The
+two-way sums flat (RaneNote 160, {RANE}), so with every channel a 3 kHz tone
+in phase the woofer + tweeter sum settles at {mono:.9f}.
+""", [("kind", "chain"), ("source", f"{BS775} {RANE}"), ("read", READ), *common,
+          ("channel_map", "1 2 3 4 5 6"), ("frames", 9600), ("two_way", 1),
+          ("two_way_hz", 2000), ("woofer", "0 0 0"), ("tweeter", "0 0 0"), *tone(3000),
+          ("out_channels", 2), ("sum_amplitude", repr(mono)), ("amplitude_from", 4800),
+          ("amplitude_tolerance", "1e-4"), ("golden", 1)]))
+    return out
+
+
 def golden(paths):
     for path in paths:
         text = open(path, encoding="utf-8").read()
@@ -554,7 +712,7 @@ def main():
     limiters()
     compressors()
     loudness()
-    paths = chains()
+    paths = chains() + theater()
     if "--no-golden" not in sys.argv:
         golden(paths)
 

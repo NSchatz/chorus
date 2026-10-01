@@ -17,9 +17,9 @@ pub mod noise;
 pub mod session;
 
 pub use catalog::{
-    features, roles, sound_flags, ChannelPosition, Codec, Command, Link, LowLatencyDirection,
-    LowLatencyStatus, Playback, RefusalReason, SourceAction, SourceKind, Suite, Type,
-    LOW_LATENCY_FEC_DEPTH, LOW_LATENCY_FEC_K, LOW_LATENCY_MAX_CHUNK_FRAMES,
+    features, roles, signal_reason, sound_flags, sound_fold, ChannelPosition, Codec, Command, Link,
+    LowLatencyDirection, LowLatencyStatus, Playback, RefusalReason, SourceAction, SourceKind,
+    Suite, Type, LOW_LATENCY_FEC_DEPTH, LOW_LATENCY_FEC_K, LOW_LATENCY_MAX_CHUNK_FRAMES,
     LOW_LATENCY_MAX_LATENCY_NS, MAGIC, MAX_ROOM_VOLUME_RAMP_MS, PROTOCOL_VERSION, ROOM_VOLUME_FULL,
     SOUND_CROSSOVER_HZ, SOUND_EQ_FREQ_HZ, SOUND_EQ_GAIN_CDB, SOUND_EQ_MAX_FILTERS,
     SOUND_EQ_Q_MILLI, SOUND_SUB_LEVEL_CDB, SOUND_TONE_DB,

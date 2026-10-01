@@ -1,0 +1,20 @@
+# Canonical input for the source_offer_reason_undefined rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# source_offer_reason_undefined.hex as that field, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# A reason past the last defined (2, non_pcm).
+
+message_type = source_offer
+source_id = 2
+kind = hdmi_arc
+signal = 0
+name = TV
+reason = 3
+rejected_field = reason
+problem = undefined

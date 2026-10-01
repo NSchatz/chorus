@@ -1,0 +1,32 @@
+# Goal 13, a 5.1 stream with SIDE surrounds (FL FR FC LFE SL SR,
+# KSAUDIO_SPEAKER_5POINT1_SURROUND, https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ksmedia/ns-ksmedia-ksaudio_channel_config) into a stereo pair, the FR member:
+# BS.775-4 Table 2's 2/0 "R = 1.0000 R + 0.7071 C + 0.7071 RS" (https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.775-4-202212-I!!PDF-E.pdf, read
+# 2026-10-01), LFE dropped. Tones as chain-theater-5p1-pair-left: the output settles at
+# 0.4 + 0.2 / sqrt 2 + 0.25 / sqrt 2 = 0.718198052.
+
+kind = chain
+source = https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.775-4-202212-I!!PDF-E.pdf docs/dsp.md
+read = 2026-10-01
+rate_hz = 48000
+room_gain = 1
+limit_gain = 1
+channel_map = 1 2 3 4 10 11
+frames = 9600
+role = 2
+fold_centre = 1
+fold_surround = 1
+input.0 = sine 1000 0.3
+input.1 = sine 1000 0.4
+input.2 = sine 1000 0.2
+input.3 = sine 1000 0.5
+input.4 = sine 1000 0.1
+input.5 = sine 1000 0.25
+out_channels = 1
+amplitude.0 = 0.7181980515339464
+amplitude_from = 4800
+amplitude_tolerance = 1e-5
+golden = 1
+# The Rust chain's output (the chain_samples example): a drift check.
+samples_from = 9536
+samples_tolerance = 1e-6
+samples.0 = -0.62197775 -0.66352844 -0.69372606 -0.7120538 -0.71819806 -0.7120538 -0.69372606 -0.66352844 -0.62197775 -0.5697848 -0.5078427 -0.43721128 -0.35909903 -0.2748425 -0.18588334 -0.09374365 -1.11200396e-13 0.09374365 0.18588334 0.2748425 0.35909903 0.43721128 0.5078427 0.5697848 0.62197775 0.66352844 0.69372606 0.7120538 0.71819806 0.7120538 0.69372606 0.66352844 0.62197775 0.5697848 0.5078427 0.43721128 0.35909903 0.2748425 0.18588334 0.09374365 2.0059266e-13 -0.09374365 -0.18588334 -0.2748425 -0.35909903 -0.43721128 -0.5078427 -0.5697848 -0.62197775 -0.66352844 -0.69372606 -0.7120538 -0.71819806 -0.7120538 -0.69372606 -0.66352844 -0.62197775 -0.5697848 -0.5078427 -0.43721128 -0.35909903 -0.2748425 -0.18588334 -0.09374365

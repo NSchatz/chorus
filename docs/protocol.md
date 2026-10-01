@@ -462,7 +462,19 @@ names are from alsa-lib's `snd_pcm_chmap_position`
 | WAV `WAVE_FORMAT_EXTENSIBLE`, FLAC | FL FR FC LFE BL BR | the page above; RFC 9639 section 9.1.3, read 2026-09-30 |
 | ALSA `surround51` | FL FR RL RR FC LFE | `research-theater.md` [M2] (a snippet, LEAD) |
 | Opus mapping family 1 (Vorbis order) | FL FC FR RL RR LFE | RFC 7845 section 5.1.1.2, read 2026-09-30 |
-| HDMI / eARC, CTA-861 allocation 0x0B | FL FR LFE FC RL RR | **LEAD**: only a search summary; not built on until confirmed against CTA-861 (goal 13) |
+| HDMI / eARC, CTA-861 allocation 0x0B | FL FR LFE FC RL RR | **LEAD, still** (goal 13): CTA-861 itself is sold, and the 2026-10-01 search found only summaries and transmitter manuals that name the register (`CA[7:0]`) without its table, plus GPL driver source this project does not open. Nothing in goal 13 is built on it: the TV path captures stereo LPCM only (P2 Option A); a 5.1 HDMI input (Option B) confirms it first |
+
+A 5.1 stream's surrounds may be named back (BL BR, `KSAUDIO_SPEAKER_5POINT1`, the
+server's 6-channel map) or side (SL SR, `KSAUDIO_SPEAKER_5POINT1_SURROUND`, which
+Microsoft names "the speaker configuration for a 5.1-channel surround format",
+<https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ksmedia/ns-ksmedia-ksaudio_channel_config>,
+read 2026-10-01). The endpoint DSP chain treats the two as one speaker: a surround
+member of a set plays the other naming's channel when the stream lacks its own
+(goal 13, `docs/dsp.md` "The theater maps"). The Linux hub's own 5.1 output layout
+(a goal-10 follow-up) is unchanged: with an output map each device channel plays the
+position the map names (above); without one the stream's channels go out in the
+stream's order, so a device whose driver expects ALSA's `surround51` order (a LEAD,
+above) needs a map.
 
 The map describes the order of the channels as they arrive at the receiver:
 for PCM the interleave order on the wire, for FLAC and Opus the order the
@@ -641,6 +653,25 @@ dB, Hz, hundredths of a dB, thousandths), so nothing is converted on the way.
 | 9 | 1 | `eq_count` | 0 to 8: how many filters follow |
 | 10 | 6 x `eq_count` | filters | each: u16 `freq_hz` 20 to 1000, i16 `gain_cdb` -1200 to 300, u16 `q_milli` 500 to 10000 (a peaking filter) |
 
+Goal 13 appends an optional **theater block** after the filters
+(`docs/decisions/0088-theater-maps-av-trim-and-tv-autoplay.md`):
+
+| offset | size | field | notes |
+|---|---|---|---|
+| 10 + 6 x `eq_count` | 1 | `tv_upmix` | 0 off, 1 ambient (the room's catalog `tv_upmix`); any other value is rejected (undefined) |
+| 11 + 6 x `eq_count` | 1 | `fold` | bit 0 the set has no centre member, bit 1 the set has no surround pair; any other bit is rejected (undefined). Set only for an FL or FR member (0 for every other role and for a room with no set) |
+
+The block is written only when `tv_upmix` or `fold` is not 0, so a goal-12
+`sound` (and its vectors) is byte for byte what it was; a decoder reads each
+of its bytes when it is there and takes 0 when it is not, and a decoder older
+than goal 13 ignores it as excess (decoder rule below). With `fold`, a front
+member folds a 5.1 stream's centre and its side's surround into its own
+channel by ITU-R BS.775-4 Table 2; with `tv_upmix` ambient, a surround member
+plays the passive matrix surround of a stream with no surround channel
+(`docs/dsp.md`, "The theater maps"). Vectors: `sound_theater_ambient`,
+`sound_stereo_fold`; rejections: `rejected/sound_tv_upmix_undefined`,
+`rejected/sound_fold_reserved`.
+
 The minimum payload is 10 bytes (no filter). Every field is checked on its own
 and in wire order, and a value outside its range is rejected (decoder step 5),
 never clamped; an `eq_count` above 8 is rejected before any filter is read,
@@ -804,6 +835,13 @@ Endpoint to server, after `capabilities` and whenever the signal comes or goes.
 | 1 | 1 | `kind` | 1 `line_in`, 2 `optical`, 3 `hdmi_arc` |
 | 2 | 1 | `signal` | bool: a signal is present now |
 | 3 | short text | `name` | may be empty |
+| after `name` | 1 | `reason` | goal 13, optional: why the signal is what it is. 0 none (absent decodes as 0), 1 `standby` (the TV went to standby, by CEC), 2 `non_pcm` (the input carries an encoded IEC 61937 bitstream chorus does not decode); any other value is rejected (undefined). Written only when not 0, so every earlier offer keeps its bytes |
+
+A `standby` on an `optical` or `hdmi_arc` input is what stops a TV autoplay at
+once, without the hold (`docs/control-plane.md`, "TV autoplay"); the server
+treats `standby` on any other kind, and `non_pcm`, as a signal gone.
+`fixtures/protocol/v2/source_offer_standby` is the vector and
+`rejected/source_offer_reason_undefined` the rejection.
 
 #### 0x37 source control
 

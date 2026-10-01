@@ -44,7 +44,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use chorus_audio::StreamFormat as PcmFormat;
 use chorus_control::catalog::is_identifier;
 use chorus_control::rooms::InputId;
-use chorus_protocol::v2::{Codec, SourceOffer, StreamFormat};
+use chorus_protocol::v2::{signal_reason, Codec, SourceKind, SourceOffer, StreamFormat};
 use chorus_protocol::SampleFormat;
 
 /// How much upstream audio a port's ring holds, ms. ASSUMED: fifty 20 ms
@@ -89,6 +89,11 @@ impl Upstream {
 pub enum InputEvent {
     /// A `source_offer`: the input exists, with or without a signal.
     Signal(InputId, bool),
+    /// (goal 13) A TV input's (`optical` or `hdmi_arc`) `source_offer` said
+    /// its signal ended because the TV went to standby (`reason` standby).
+    /// The runtime stops a TV autoplay at once, without the hold, where its
+    /// rule says `stop_on_standby`; anything else treats it as a signal gone.
+    Standby(InputId),
     /// The input's endpoint is gone (its session ended).
     Gone(InputId),
     /// A started input's `stream_format` is not this server's: stop it.
@@ -204,7 +209,14 @@ impl LineIns {
                 true
             }
         };
-        if fresh {
+        // A TV's standby is said even when the signal was already off (the
+        // TV went quiet, then to standby): it is the standby that stops at
+        // once, so it is never folded into "nothing changed". A standby
+        // reason on an input that is not a TV's is only a signal gone.
+        let tv = matches!(offer.kind, SourceKind::Optical | SourceKind::HdmiArc);
+        if tv && !offer.signal && offer.reason == signal_reason::STANDBY {
+            self.event(&mut inner, InputEvent::Standby(id));
+        } else if fresh {
             self.event(&mut inner, InputEvent::Signal(id, offer.signal));
         }
     }
@@ -564,6 +576,7 @@ mod tests {
             kind: chorus_protocol::v2::SourceKind::LineIn,
             signal: true,
             name: String::new(),
+            reason: 0,
         };
         lineins.offer("amp", 7, &offer);
         let id = InputId::parse("amp/line-1").unwrap();
@@ -603,5 +616,46 @@ mod tests {
         lineins.session_ended(7);
         assert_eq!(lineins.take_events(), vec![InputEvent::Gone(id.clone())]);
         assert!(lineins.port_of(&id).is_none());
+    }
+
+    #[test]
+    fn only_a_tv_inputs_standby_is_a_standby() {
+        use chorus_protocol::v2::SourceKind;
+        let format = PcmFormat::new(48_000, 2, "pcm_s16le").unwrap();
+        let lineins = LineIns::new(format, 2, Box::new(|| {}));
+        let offer = |kind, signal, reason| SourceOffer {
+            source_id: 1,
+            kind,
+            signal,
+            name: "tv".to_string(),
+            reason,
+        };
+        let tv = InputId::parse("hub/tv").unwrap();
+        lineins.offer("hub", 3, &offer(SourceKind::HdmiArc, true, 0));
+        assert_eq!(
+            lineins.take_events(),
+            vec![InputEvent::Signal(tv.clone(), true)]
+        );
+        // The TV to standby: a Standby, not a signal gone.
+        lineins.offer("hub", 3, &offer(SourceKind::HdmiArc, false, 1));
+        assert_eq!(lineins.take_events(), vec![InputEvent::Standby(tv.clone())]);
+        // Said again with the signal already off: still a standby.
+        lineins.offer("hub", 3, &offer(SourceKind::HdmiArc, false, 1));
+        assert_eq!(lineins.take_events(), vec![InputEvent::Standby(tv.clone())]);
+        // An optical TV input is a TV input too.
+        let opt = InputId::parse("bar/tv").unwrap();
+        lineins.offer("bar", 4, &offer(SourceKind::Optical, false, 1));
+        assert_eq!(lineins.take_events(), vec![InputEvent::Standby(opt)]);
+        // A line-in's "standby" is only its signal going: it keeps its hold.
+        let deck = InputId::parse("deck/tv").unwrap();
+        lineins.offer("deck", 5, &offer(SourceKind::LineIn, true, 0));
+        lineins.take_events();
+        lineins.offer("deck", 5, &offer(SourceKind::LineIn, false, 1));
+        assert_eq!(lineins.take_events(), vec![InputEvent::Signal(deck, false)]);
+        // A non-PCM refusal is a signal gone (the hold), not a standby.
+        lineins.offer("hub", 3, &offer(SourceKind::HdmiArc, true, 0));
+        lineins.take_events();
+        lineins.offer("hub", 3, &offer(SourceKind::HdmiArc, false, 2));
+        assert_eq!(lineins.take_events(), vec![InputEvent::Signal(tv, false)]);
     }
 }
