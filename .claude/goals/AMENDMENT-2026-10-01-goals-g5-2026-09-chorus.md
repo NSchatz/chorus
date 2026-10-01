@@ -12,9 +12,9 @@ for that goal (the list below). A goal already running when it merged keeps the 
   chorus's runner (amendment L6, L33-34), "goals 2 to 27 then chain without further review" (brief L8),
   read as below. Nothing else in the brief, `CHECKPOINT-K.approved` or `AMENDMENT-2026-10-01.md` changes.
 
-## Noah's words it carries out (the goals interview, 2026-10-01)
+## The owner's words it carries out (the goals interview, 2026-10-01)
 
-| Row | Noah's decision, as recorded |
+| Row | The owner's decision, as recorded |
 |---|---|
 | W4 | Running programs: **"Migrate as pieces land"**: as each new piece merges, running programs are amended to use it |
 | W7 | **Between goals, self-merged**: the program PRs an AMENDMENT file into each affected repo, self-merges under that repo's merge lock, and the supervisor holds that program's next goal until it lands; no goal sees its contract change mid-run |
@@ -22,9 +22,9 @@ for that goal (the list below). A goal already running when it merged keeps the 
 | W20 | Judging "goal done": **Checker, then evaluator** |
 | W26 | Locks: **Supervisor-managed**: one lock tool, fixed names, logged wait and hold times |
 | W30, W31 | The runner: PR #67 **ported to NSchatz/goals**; supervisor cut-over **"Shadow, then swap"** |
-| W64 | Delegated checkpoint review: **Fresh independent reviewer** for checkpoints after goal 1; goal-1 checkpoints stay Noah's alone |
+| W64 | Delegated checkpoint review: **Fresh independent reviewer** for checkpoints after goal 1; goal-1 checkpoints stay the owner's alone |
 
-These are the reversals R4 (the runner) and R5 (delegated review) of the goals brief §1.1. As Noah's later
+These are the reversals R4 (the runner) and R5 (delegated review) of the goals brief §1.1. As the owner's later
 words (2026-10-01) they beat the earlier amendment's runner lines (goals brief §0.13, Precedence).
 
 ## What changes
@@ -47,16 +47,16 @@ words (2026-10-01) they beat the earlier amendment's runner lines (goals brief �
 3. **The checker (W20).** Before the evaluator judges a goal, `goals check` verifies it on origin: the
    `COMPLETE (goal n)` line, no `TODO` or `DOING` row, the report's lettered lines, merged PRs and clean
    trees. It runs in the plugin's Stop hook (at most 3 blocks) and again in the supervisor after a met
-   verdict (at most 2 re-issues, then the goal is held and Noah is pushed). A goal may run it itself
+   verdict (at most 2 re-issues, then the goal is held and the owner is pushed). A goal may run it itself
    before its final report: `goals check /workspace/chorus 2026-09-chorus <n>` (or the `/goals:check`
    skill).
 4. **End states (W20).** BLOCKED and INCOMPLETE (this brief's §0.10 and §33 formats, unchanged) are end
    states: a BLOCKED goal is held once and gets no note and no new turn; an INCOMPLETE goal holds the
-   program and pushes Noah. The old watcher's not-met notes ("Chain stopped...") no longer arrive.
+   program and pushes the owner. The old watcher's not-met notes ("Chain stopped...") no longer arrive.
 5. **Checkpoints (R5, W64).** chorus's one checkpoint, K after goal 1, is approved. A later checkpoint,
    if a future amendment adds one, goes to a **fresh independent reviewer**: a separate new session on a
    model at least as strong as the goal's, which sees only the packet and the repos and writes its
-   verdict and reasons in the checkpoint's issue in NSchatz/goals. A goal-1 checkpoint is Noah's alone.
+   verdict and reasons in the checkpoint's issue in NSchatz/goals. A goal-1 checkpoint is the owner's alone.
    The same-session delegated review (`CLAUDE_GOAL_CHAIN_REVIEW`) is never used again. No remaining chorus
    goal file names a checkpoint, so no goal-file line changes.
 6. **Locks (W26; goals brief §0.3).** `goals lock <name> -w <seconds> -- <cmd>` takes flock(2) on the same
@@ -71,9 +71,9 @@ words (2026-10-01) they beat the earlier amendment's runner lines (goals brief �
    in a drain (the supervisor starts no chorus goal while a goals PR is queued, and merges it once none
    is mid-run, re-gated on the current main under `chorus-heavy`).
 
-**Unchanged:** chorus is under a program hold since the swap, on Noah's words ("Stop the goal chains on
-holdfast and chorus", 2026-10-01 16:03Z). No chorus goal starts until Noah releases it in a session's own
-chat (`goals release chorus/2026-09-chorus --why "<Noah's words>"`). This amendment does not release it.
+**Unchanged:** chorus is under a program hold since the swap, on the owner's words ("Stop the goal chains on
+holdfast and chorus", 2026-10-01 16:03Z). No chorus goal starts until the owner releases it in a session's own
+chat (`goals release chorus/2026-09-chorus --why "<the owner's words>"`). This amendment does not release it.
 
 ## Left in force (goal files win; goals brief §0.13; goal 1's seam inventory)
 
