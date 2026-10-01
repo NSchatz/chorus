@@ -794,7 +794,7 @@ fn start_source(
             counters: Arc::clone(counters),
             controls,
             thresholds: SignalThresholds::default(),
-            log: Box::new(|line| status(line)),
+            log: Box::new(status),
         },
     ))
 }

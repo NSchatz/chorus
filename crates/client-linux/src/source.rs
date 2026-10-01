@@ -53,7 +53,7 @@ use std::fmt;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, TryLockError};
 use std::thread::{self, JoinHandle};
 
 use chorus_alsa::{AlsaError, Format, Pcm};
@@ -480,16 +480,33 @@ pub trait Upstream: Send {
 /// One session writer shared by the playout loop's time-sync exchange (as a
 /// byte [`Write`]) and the source role (as an [`Upstream`]). Each write or send
 /// holds the lock for one whole frame, so records never interleave.
-pub struct SharedWriter<W: Write>(Arc<Mutex<SecureWriter<W>>>);
+///
+/// The playout loop never waits behind the source role: a byte write (the
+/// time-sync request, one whole frame per write) that finds the writer busy
+/// is dropped whole and counted ([`SharedWriter::dropped_writes`]). A missed
+/// request costs one exchange, which the filter is built to tolerate; a
+/// playout loop stalled behind an upstream send would cost audio.
+pub struct SharedWriter<W: Write> {
+    inner: Arc<Mutex<SecureWriter<W>>>,
+    dropped: Arc<AtomicU64>,
+}
 
 impl<W: Write> SharedWriter<W> {
     /// Share `writer`.
     pub fn new(writer: SecureWriter<W>) -> SharedWriter<W> {
-        SharedWriter(Arc::new(Mutex::new(writer)))
+        SharedWriter {
+            inner: Arc::new(Mutex::new(writer)),
+            dropped: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    /// Byte writes dropped because the writer was busy.
+    pub fn dropped_writes(&self) -> u64 {
+        self.dropped.load(Ordering::Relaxed)
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, SecureWriter<W>> {
-        match self.0.lock() {
+        match self.inner.lock() {
             Ok(g) => g,
             Err(poisoned) => poisoned.into_inner(),
         }
@@ -498,17 +515,31 @@ impl<W: Write> SharedWriter<W> {
 
 impl<W: Write> Clone for SharedWriter<W> {
     fn clone(&self) -> SharedWriter<W> {
-        SharedWriter(Arc::clone(&self.0))
+        SharedWriter {
+            inner: Arc::clone(&self.inner),
+            dropped: Arc::clone(&self.dropped),
+        }
     }
 }
 
 impl<W: Write> Write for SharedWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.lock().write(buf)
+        match self.inner.try_lock() {
+            Ok(mut g) => g.write(buf),
+            Err(TryLockError::Poisoned(p)) => p.into_inner().write(buf),
+            Err(TryLockError::WouldBlock) => {
+                self.dropped.fetch_add(1, Ordering::Relaxed);
+                Ok(buf.len())
+            }
+        }
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.lock().flush()
+        match self.inner.try_lock() {
+            Ok(mut g) => g.flush(),
+            Err(TryLockError::Poisoned(p)) => p.into_inner().flush(),
+            Err(TryLockError::WouldBlock) => Ok(()),
+        }
     }
 }
 

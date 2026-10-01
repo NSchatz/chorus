@@ -464,7 +464,7 @@ pub fn open(
             Ok(m) => {
                 let is_hello = matches!(m, Message::Hello(_));
                 if let Message::SourceControl(c) = &m {
-                    let _ = controls_tx.send(c.clone());
+                    let _ = controls_tx.send(*c);
                 }
                 record(&announced, m);
                 if is_hello {
@@ -495,7 +495,7 @@ pub fn open(
             if let Message::SourceControl(c) = &m {
                 // A send fails only when nothing runs the source role, which
                 // is an endpoint with no line-in; it is still counted below.
-                let _ = controls_tx.send(c.clone());
+                let _ = controls_tx.send(*c);
             }
             record(&recorder, m)
         }));

@@ -721,7 +721,7 @@ impl Pcm {
         // SAFETY: handle is the non-null snd_pcm_t from a successful
         // snd_pcm_open (the only way a Pcm is built) and is closed only by
         // close_inner, after which no method runs; only the handle is passed.
-        let rc = unsafe { (lib.avail)(self.handle) };
+        let rc: c_long = unsafe { (lib.avail)(self.handle) };
         if rc < 0 {
             let code = rc as c_int;
             if code == NEG_ENODEV {
@@ -734,7 +734,7 @@ impl Pcm {
             }
             return Err(Pcm::error(lib, "snd_pcm_avail", &self.device, code));
         }
-        Ok(Some(i64::from(rc)))
+        Ok(Some(rc as i64))
     }
 
     /// How long ago, in frames, the next frame a read returns was digitized.
@@ -770,7 +770,7 @@ impl Pcm {
             }
             return Err(Pcm::error(lib, "snd_pcm_delay", &self.device, code));
         }
-        Ok(Some(i64::from(frames)))
+        Ok(Some(frames as i64))
     }
 
     /// Frames the device still has to play before the next frame written

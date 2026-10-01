@@ -24,8 +24,8 @@ mod common;
 use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
-use std::sync::{Arc, Condvar, Mutex, OnceLock};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -79,6 +79,8 @@ const SERVER_OFFSET_NS: i64 = 7_000_000_000;
 const ESTIMATE_TOLERANCE_NS: i64 = 50_000_000;
 
 const WAIT: Duration = Duration::from_secs(20);
+/// The whole test fails past this, whatever it is waiting on.
+const TEST_DEADLINE: Duration = Duration::from_secs(180);
 
 fn frame_ns(frame: usize) -> u64 {
     (frame as u128 * 1_000_000_000 / u128::from(RATE_HZ)) as u64
@@ -193,9 +195,12 @@ fn release(released: &Arc<(Mutex<usize>, Condvar)>, frames: usize) {
 /// PCM stream down to the player, time-sync answers on a timeline
 /// `SERVER_OFFSET_NS` ahead of the endpoint's, and every upstream message
 /// handed to the test in order.
+///
+/// Everything it sends goes through one writer thread fed by a channel, so
+/// its reader never waits on a lock held by a blocked write, and nothing the
+/// test does waits on the socket.
 struct ScriptedServer {
-    writer_rx: Receiver<Arc<Mutex<SecureWriter<TcpStream>>>>,
-    writer: OnceLock<Arc<Mutex<SecureWriter<TcpStream>>>>,
+    down: Sender<Message>,
     upstream: Receiver<Message>,
     stop_playback: Arc<AtomicBool>,
     port: u16,
@@ -206,12 +211,13 @@ impl ScriptedServer {
     fn start(timeline: MonotonicTimeline) -> ScriptedServer {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
         let port = listener.local_addr().unwrap().port();
-        let (writer_tx, writer_rx) = mpsc::channel();
+        let (down, down_rx) = mpsc::channel::<Message>();
         let (upstream_tx, upstream) = mpsc::channel();
         let (ready_tx, ready) = mpsc::channel();
         let stop_playback = Arc::new(AtomicBool::new(false));
         let stop = Arc::clone(&stop_playback);
         let server_now = move || (timeline.now_ns() as i64 + SERVER_OFFSET_NS) as u64;
+        let send = down.clone();
         thread::spawn(move || {
             let (mut stream, _) = listener.accept().expect("the endpoint connects");
             let me = Identity {
@@ -222,15 +228,18 @@ impl ScriptedServer {
                 Verdict::Adopted
             })
             .expect("the handshake completes");
-            let writer = Arc::new(Mutex::new(SecureWriter::new(
-                stream.try_clone().unwrap(),
-                established.sealer,
-            )));
-            writer_tx.send(Arc::clone(&writer)).unwrap();
+            let mut writer = SecureWriter::new(stream.try_clone().unwrap(), established.sealer);
+            thread::spawn(move || {
+                while let Ok(m) = down_rx.recv() {
+                    if writer.send(&m).is_err() {
+                        return;
+                    }
+                }
+            });
 
             // Upstream: every message in order, time-sync requests answered.
             let mut reader = SecureReader::new(stream.try_clone().unwrap(), established.opener);
-            let answer = Arc::clone(&writer);
+            let answer = send.clone();
             reader.set_handler(Box::new(|_| {}));
             reader.set_translator(Box::new(move |m| {
                 if let Message::TimeSync(t) = m {
@@ -241,7 +250,7 @@ impl ScriptedServer {
                         t2_ns: server_now(),
                         t3_ns: 0,
                     };
-                    let _ = answer.lock().unwrap().send(&Message::TimeSync(reply));
+                    let _ = answer.send(Message::TimeSync(reply));
                 }
                 let _ = upstream_tx.send(m.clone());
                 Ok(Translation::Pass)
@@ -252,34 +261,29 @@ impl ScriptedServer {
             });
 
             // Downstream: the greeting, then a paced PCM stream.
-            {
-                let mut w = writer.lock().unwrap();
-                w.send(&Message::Hello(Hello {
-                    protocol_version: PROTOCOL_VERSION,
-                    roles: 0,
-                    name: "scripted".to_string(),
-                    software: "line_in_source test".to_string(),
-                }))
-                .unwrap();
-                w.send(&Message::StreamFormat(StreamFormat {
-                    codec: Codec::Pcm,
-                    sample_format: SampleFormat::PcmS16Le,
-                    sample_rate_hz: RATE_HZ,
-                    channel_map: vec![ChannelPosition::FrontLeft, ChannelPosition::FrontRight],
-                    frames_per_chunk: CHUNK_FRAMES as u32,
-                    codec_config: Vec::new(),
-                }))
-                .unwrap();
-                w.send(&Message::OutputDelay(OutputDelay { delay_ns: 0 }))
-                    .unwrap();
-            }
-            ready_tx.send(()).unwrap();
+            let _ = send.send(Message::Hello(Hello {
+                protocol_version: PROTOCOL_VERSION,
+                roles: 0,
+                name: "scripted".to_string(),
+                software: "line_in_source test".to_string(),
+            }));
+            let _ = send.send(Message::StreamFormat(StreamFormat {
+                codec: Codec::Pcm,
+                sample_format: SampleFormat::PcmS16Le,
+                sample_rate_hz: RATE_HZ,
+                channel_map: vec![ChannelPosition::FrontLeft, ChannelPosition::FrontRight],
+                frames_per_chunk: CHUNK_FRAMES as u32,
+                codec_config: Vec::new(),
+            }));
+            let _ = send.send(Message::OutputDelay(OutputDelay { delay_ns: 0 }));
+            let _ = ready_tx.send(());
             let origin = server_now();
+            let give_up = Instant::now() + 3 * WAIT;
             let mut sequence = 0u32;
             loop {
                 let due = origin + u64::from(sequence) * CHUNK_NS;
-                if stop.load(Ordering::SeqCst) {
-                    let _ = writer.lock().unwrap().send(&Message::StreamEnd(StreamEnd {
+                if stop.load(Ordering::SeqCst) || Instant::now() > give_up {
+                    let _ = send.send(Message::StreamEnd(StreamEnd {
                         final_sequence: sequence.wrapping_sub(1),
                         end_timestamp_ns: due,
                     }));
@@ -299,20 +303,14 @@ impl ScriptedServer {
                     reserved: [0u8; 14],
                     audio_data: vec![(sequence % 251) as u8; CHUNK_FRAMES * FRAME_LEN],
                 };
-                if writer
-                    .lock()
-                    .unwrap()
-                    .send(&Message::AudioChunk(chunk))
-                    .is_err()
-                {
+                if send.send(Message::AudioChunk(chunk)).is_err() {
                     return;
                 }
                 sequence += 1;
             }
         });
         ScriptedServer {
-            writer_rx,
-            writer: OnceLock::new(),
+            down,
             upstream,
             stop_playback,
             port,
@@ -320,21 +318,9 @@ impl ScriptedServer {
         }
     }
 
-    /// The server's session writer, which exists once the handshake is
-    /// through.
-    fn writer(&self) -> &Arc<Mutex<SecureWriter<TcpStream>>> {
-        self.writer.get_or_init(|| {
-            self.writer_rx
-                .recv_timeout(WAIT)
-                .expect("the server finished the handshake")
-        })
-    }
-
     fn control(&self, action: SourceAction, codec: Codec) {
-        self.writer()
-            .lock()
-            .unwrap()
-            .send(&Message::SourceControl(SourceControl {
+        self.down
+            .send(Message::SourceControl(SourceControl {
                 source_id: 1,
                 action,
                 codec,
@@ -409,6 +395,26 @@ fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
 
 #[test]
 fn a_line_in_is_offered_started_streamed_bit_for_bit_on_the_server_timeline_and_stopped() {
+    // A hard deadline on the whole test: whatever it waits on, it fails
+    // rather than holding a test run (and the gate) for ever.
+    let finished = Arc::new(AtomicBool::new(false));
+    {
+        let finished = Arc::clone(&finished);
+        thread::spawn(move || {
+            let deadline = Instant::now() + TEST_DEADLINE;
+            while Instant::now() < deadline {
+                if finished.load(Ordering::SeqCst) {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+            eprintln!(
+                "line_in_source: the test did not finish within {:?}; failing it",
+                TEST_DEADLINE
+            );
+            std::process::exit(101);
+        });
+    }
     let timeline = MonotonicTimeline::new();
     let dir = std::env::temp_dir().join(format!("chorus-line-in-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -574,11 +580,14 @@ fn a_line_in_is_offered_started_streamed_bit_for_bit_on_the_server_timeline_and_
 
     // No offset yet: the chunks captured are held, not stamped with a guess.
     for _ in 0..5 {
-        release(&released, *released.0.lock().unwrap() + CHUNK_FRAMES);
+        // Read the count first: a guard held across `release` would be held
+        // while `release` takes the same lock.
+        let now = *released.0.lock().unwrap();
+        release(&released, now + CHUNK_FRAMES);
     }
+    let held_to = *released.0.lock().unwrap() as u64;
     wait_until("five chunks to be captured", || {
-        stats.frames_captured.load(Ordering::SeqCst)
-            >= *released.0.lock().unwrap() as u64 - CHUNK_FRAMES as u64
+        stats.frames_captured.load(Ordering::SeqCst) >= held_to - CHUNK_FRAMES as u64
     });
     thread::sleep(Duration::from_millis(50));
     assert!(
@@ -663,10 +672,18 @@ fn a_line_in_is_offered_started_streamed_bit_for_bit_on_the_server_timeline_and_
         })
         .map(|(i, _)| i)
         .unwrap();
+    // The server started the input after the offer, which came with the
+    // first full window of tone (frames 48000 to 52800); exactly which
+    // chunk the start lands on depends on where the role's reading had got
+    // to when the control arrived, so only that bound is fixed.
     assert!(
-        served[r0].first_frame > SILENCE_1 + 9_600,
+        served[r0].first_frame >= SILENCE_1 + 4_800,
         "the stream begins after the start, at frame {}",
         served[r0].first_frame
+    );
+    assert_eq!(
+        served[r0].captured_at_ns,
+        CAPTURE_BASE_NS + frame_ns(served[r0].first_frame)
     );
     let mut tone_chunks = 0;
     for (j, chunk) in chunks.iter().enumerate() {
@@ -773,4 +790,5 @@ fn a_line_in_is_offered_started_streamed_bit_for_bit_on_the_server_timeline_and_
         outcome.telemetry.accepted
     );
     let _ = std::fs::remove_dir_all(&dir);
+    finished.store(true, Ordering::SeqCst);
 }

@@ -50,6 +50,7 @@ No GPL or LGPL source was opened.
    `ReadReport` whose `overran` is the device's own signal (`-EPIPE` from `snd_pcm_readi`), and
    capture gains `capture_delay_frames` (`snd_pcm_delay` on a capture stream, `None` in the
    overrun state) and `avail_frames` (`snd_pcm_avail`, one more symbol looked up at load).
+   `crates/measure`'s capture reads the new field names.
 2. **The role is one module, `crates/client-linux/src/source.rs`,** behind a `CaptureSource`
    trait with one shipped implementation, `AlsaCapture`. The modelled capture device lives under
    `tests/` only, for the reason `sink.rs` gives: no flag selects a pretend input.
@@ -95,7 +96,9 @@ No GPL or LGPL source was opened.
    The sequence carries on (a sequence gap would read as lost network frames).
 10. **One writer per session.** The time-sync exchange and the source role share the session's
     `SecureWriter` behind a mutex (`SharedWriter`), a whole frame per lock, so records never
-    interleave. The server's `source_control` messages reach the role on a channel from the
+    interleave. The playout loop never waits behind the source: its time-sync request (one whole
+    frame per write) is dropped and counted when the writer is busy, which costs one exchange
+    rather than a stalled playout. The server's `source_control` messages reach the role on a channel from the
     session's message handler.
 11. **The server is unchanged.** It already accepts a peer declaring the source role and ignores
     its source messages; routing a shared input to rooms is goals 11 and 17. The end-to-end test
@@ -117,7 +120,9 @@ timestamps; the offer is withdrawn 2 s into the silence; `stop` yields `stream_e
 last chunk; and the playback beside it plays to its own `stream_end` with its sync exchange
 answered over the shared writer, its estimated offset within 50 ms of the true one. The stamps
 are held to an offset the test publishes, not to the playout loop's live estimate, so they can be
-checked exactly; in the binary both roles share one `Counters`. None of this is timing evidence
+checked exactly; in the binary both roles share one `Counters`. Every wait in the test has a
+deadline, and the whole test exits failed after 180 s whatever it waits on (a first draft
+deadlocked on its own mutex and held a gate run for an hour and a half). None of this is timing evidence
 (BRIEF §3.1 rule 3): it shows the stamps are computed as specified, not how well a real device
 keeps time.
 
