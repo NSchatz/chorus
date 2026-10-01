@@ -1,9 +1,11 @@
-//! ALSA PCM playback for the Linux client.
+//! ALSA PCM playback and capture for the Linux client.
 //!
 //! This is the one place in the repository that touches an audio device. It is
 //! deliberately small: open a playback device, hand it interleaved PCM, ask it
 //! how far the frames it already holds are from the DAC, and notice when it
-//! ran dry.
+//! ran dry; or open a capture device (the line-in of the source role, and the
+//! measurement harness), read interleaved PCM from it, ask how long ago the
+//! next frame was digitized, and notice when it overran.
 //!
 //! # Why the library is loaded at run time rather than linked
 //!
@@ -63,7 +65,8 @@ const STATE_XRUN: c_int = 4;
 /// `SND_PCM_STATE_DISCONNECTED`.
 const STATE_DISCONNECTED: c_int = 8;
 
-/// `-EPIPE`, which is what ALSA returns for a playback underrun.
+/// `-EPIPE`, which is what ALSA returns for a playback underrun or a capture
+/// overrun (`snd_pcm_readi`: "-EPIPE: an overrun occurred").
 const NEG_EPIPE: c_int = -32;
 
 /// `-ENODEV`, returned once a device has gone away under a running stream.
@@ -85,6 +88,7 @@ type SndPcmSetParams =
 type SndPcmWritei = unsafe extern "C" fn(*mut c_void, *const c_void, c_ulong) -> c_long;
 type SndPcmReadi = unsafe extern "C" fn(*mut c_void, *mut c_void, c_ulong) -> c_long;
 type SndPcmDelay = unsafe extern "C" fn(*mut c_void, *mut c_long) -> c_int;
+type SndPcmAvail = unsafe extern "C" fn(*mut c_void) -> c_long;
 type SndPcmPrepare = unsafe extern "C" fn(*mut c_void) -> c_int;
 type SndPcmRecover = unsafe extern "C" fn(*mut c_void, c_int, c_int) -> c_int;
 type SndPcmDrain = unsafe extern "C" fn(*mut c_void) -> c_int;
@@ -104,6 +108,7 @@ struct Lib {
     writei: SndPcmWritei,
     readi: SndPcmReadi,
     delay: SndPcmDelay,
+    avail: SndPcmAvail,
     prepare: SndPcmPrepare,
     recover: SndPcmRecover,
     drain: SndPcmDrain,
@@ -320,6 +325,10 @@ fn load_lib() -> Result<Lib, AlsaError> {
                 handle,
                 "snd_pcm_delay",
             )?),
+            avail: std::mem::transmute::<*mut c_void, SndPcmAvail>(load_symbol(
+                handle,
+                "snd_pcm_avail",
+            )?),
             prepare: std::mem::transmute::<*mut c_void, SndPcmPrepare>(load_symbol(
                 handle,
                 "snd_pcm_prepare",
@@ -375,13 +384,29 @@ pub struct WriteReport {
     pub underran: bool,
 }
 
-/// An open playback device.
+/// What the device reported when frames were read from it (capture).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReadReport {
+    /// Frames the device delivered.
+    pub frames_read: u64,
+    /// Whether the device signalled an overrun that this read recovered from.
+    ///
+    /// The device's own signal: `snd_pcm_readi` returning `-EPIPE`, which
+    /// alsa-lib documents as "an overrun occurred"
+    /// (<https://www.alsa-project.org/alsa-doc/alsa-lib/group___p_c_m.html>,
+    /// read 2026-09-30). Frames captured while the ring was full are lost, so
+    /// a read that reports this has a hole before its first frame.
+    pub overran: bool,
+}
+
+/// An open playback or capture device.
 pub struct Pcm {
     handle: *mut c_void,
     device: String,
     format: Format,
     channels: u16,
     rate_hz: u32,
+    capture: bool,
     closed: bool,
 }
 
@@ -415,11 +440,11 @@ impl Pcm {
 
     /// Open `device` for capture and configure it for this stream.
     ///
-    /// The measurement harness's only use of a device: two endpoint line
-    /// outputs arrive as the two channels of one interface, and the harness
-    /// reads them. Everything else about this crate is unchanged, including
-    /// that the library is loaded at run time, so a machine with no audio stack
-    /// still builds and still starts.
+    /// Two users: the measurement harness (two endpoint line outputs arrive as
+    /// the two channels of one interface) and the Linux client's line-in, the
+    /// source role (goal 10, K65). Everything else about this crate is
+    /// unchanged, including that the library is loaded at run time, so a
+    /// machine with no audio stack still builds and still starts.
     pub fn open_capture(
         device: &str,
         format: Format,
@@ -457,6 +482,7 @@ impl Pcm {
             format,
             channels,
             rate_hz,
+            capture: stream == STREAM_CAPTURE,
             closed: false,
         };
 
@@ -602,13 +628,24 @@ impl Pcm {
         })
     }
 
+    /// Whether this stream was opened for capture.
+    pub fn is_capture(&self) -> bool {
+        self.capture
+    }
+
+    /// Channels this stream was opened with.
+    pub fn channels(&self) -> u16 {
+        self.channels
+    }
+
     /// Fill `pcm` from a capture device, blocking until every frame arrives.
     ///
     /// Recovers from an overrun the same way the playback path recovers from
     /// an underrun, and reports whether it happened rather than swallowing it:
     /// a capture with a hole in it would put a step in the middle of a
-    /// correlation window and read as a lag.
-    pub fn read(&mut self, pcm: &mut [u8]) -> Result<WriteReport, AlsaError> {
+    /// correlation window and read as a lag, and a line-in with a hole in it
+    /// is a click every room playing it hears.
+    pub fn read(&mut self, pcm: &mut [u8]) -> Result<ReadReport, AlsaError> {
         let lib = lib()?;
         let frame_len = self.frame_len();
         debug_assert!(frame_len > 0);
@@ -667,10 +704,73 @@ impl Pcm {
             }
         }
 
-        Ok(WriteReport {
-            frames_written: frames_read,
-            underran: overran,
+        Ok(ReadReport {
+            frames_read,
+            overran,
         })
+    }
+
+    /// Frames a capture device holds ready to be read now: `snd_pcm_avail`,
+    /// "a positive number of frames ready to be read (capture)" with the
+    /// position synced to the hardware
+    /// (<https://www.alsa-project.org/alsa-doc/alsa-lib/group___p_c_m.html>,
+    /// read 2026-09-30). `None` while the device is in its overrun state
+    /// (`-EPIPE`): the next read reports and recovers it.
+    pub fn avail_frames(&self) -> Result<Option<i64>, AlsaError> {
+        let lib = lib()?;
+        // SAFETY: handle is the non-null snd_pcm_t from a successful
+        // snd_pcm_open (the only way a Pcm is built) and is closed only by
+        // close_inner, after which no method runs; only the handle is passed.
+        let rc: c_long = unsafe { (lib.avail)(self.handle) };
+        if rc < 0 {
+            let code = rc as c_int;
+            if code == NEG_ENODEV {
+                return Err(AlsaError::Disconnected {
+                    device: self.device.clone(),
+                });
+            }
+            if code == NEG_EPIPE {
+                return Ok(None);
+            }
+            return Err(Pcm::error(lib, "snd_pcm_avail", &self.device, code));
+        }
+        Ok(Some(rc as i64))
+    }
+
+    /// How long ago, in frames, the next frame a read returns was digitized.
+    ///
+    /// This is `snd_pcm_delay` on a capture stream, which alsa-lib defines as
+    /// "the time that a frame that was digitized by the audio device takes
+    /// until it can be read from the PCM stream shortly after this call
+    /// returns. It is as such the overall latency from the initial ADC to the
+    /// read call"
+    /// (<https://www.alsa-project.org/alsa-doc/alsa-lib/group___p_c_m.html>,
+    /// read 2026-09-30). Taken right after a read of `n` frames, the first of
+    /// those frames was digitized `delay + n` frames before now, which is how
+    /// the client stamps a captured chunk. `None` while the device is in its
+    /// overrun state (`-EPIPE`): no distance is reported then, and the next
+    /// read reports the overrun and recovers it.
+    pub fn capture_delay_frames(&self) -> Result<Option<i64>, AlsaError> {
+        let lib = lib()?;
+        let mut frames: c_long = 0;
+        // SAFETY: handle is the non-null snd_pcm_t from a successful
+        // snd_pcm_open (the only way a Pcm is built) and is closed only by
+        // close_inner, after which no method runs;
+        // &mut frames is a live c_long out-parameter.
+        let rc = unsafe { (lib.delay)(self.handle, &mut frames) };
+        if rc < 0 {
+            let code = rc as c_int;
+            if code == NEG_ENODEV {
+                return Err(AlsaError::Disconnected {
+                    device: self.device.clone(),
+                });
+            }
+            if code == NEG_EPIPE {
+                return Ok(None);
+            }
+            return Err(Pcm::error(lib, "snd_pcm_delay", &self.device, code));
+        }
+        Ok(Some(frames as i64))
     }
 
     /// Frames the device still has to play before the next frame written

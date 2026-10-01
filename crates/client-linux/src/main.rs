@@ -46,7 +46,7 @@ use std::io::Write;
 use std::net::TcpStream;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use chorus_audio::MonotonicTimeline;
@@ -59,11 +59,13 @@ use chorus_client_linux::receive::{handshake, HandshakeError};
 use chorus_client_linux::run::{counter_lines, header_for, run_session, StopReason};
 use chorus_client_linux::session::{self, EndpointIdentity};
 use chorus_client_linux::sink::{AlsaSink, PcmSink};
+use chorus_client_linux::source::{
+    self, AlsaCapture, SharedWriter, SignalThresholds, SourceHandle, Upstream,
+};
 use chorus_client_linux::Counters;
 use chorus_control::transport::Transport;
 use chorus_discovery::dnssd::AUDIO_SERVICE;
 use chorus_discovery::net::locate;
-use chorus_protocol::v2::session::SecureWriter;
 
 const EXIT_CONFIG: u8 = 2;
 const EXIT_SERVER: u8 = 3;
@@ -98,6 +100,7 @@ fn main() -> ExitCode {
 
     match mode {
         ClientMode::ProbeDevice => probe_device(&config),
+        ClientMode::ProbeLineIn => probe_line_in(&config),
         ClientMode::Play => endpoint(&config),
     }
 }
@@ -332,27 +335,6 @@ fn start_panel(
     Ok((Some(running), with_roles))
 }
 
-/// The session's writer, shared by the time-sync exchange and the front
-/// panel. Each takes the lock for one whole frame.
-struct SharedWriter(Arc<Mutex<SecureWriter<TcpStream>>>);
-
-impl std::io::Write for SharedWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        lock(&self.0).write(buf)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        lock(&self.0).flush()
-    }
-}
-
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    match m.lock() {
-        Ok(g) => g,
-        Err(poisoned) => poisoned.into_inner(),
-    }
-}
-
 /// This endpoint's protocol v2 identity, from `--identity-dir`, or made for
 /// this process alone with `--ephemeral-identity`, or refused by name.
 fn load_identity(config: &ClientConfig) -> Result<EndpointIdentity, String> {
@@ -481,6 +463,56 @@ fn probe_device(config: &ClientConfig) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Open the configured line-in, capture 200 ms of it, say what the device
+/// reported, exit. Plays nothing and sends nothing; it is how an operator (and
+/// `make verify-alsa-null`, on ALSA's `null` capture device) checks a capture
+/// device opens, delivers frames and reports its delay, without a server.
+fn probe_line_in(config: &ClientConfig) -> ExitCode {
+    use chorus_client_linux::source::{CaptureSource, SignalDetector};
+    let Some(input) = config.line_in.as_ref() else {
+        report("configuration refused", "--probe-line-in needs --line-in");
+        return ExitCode::from(EXIT_CONFIG);
+    };
+    let unusable = |detail: &str| {
+        report("no usable line-in", detail);
+        status(&format!("line-in-probe device={} usable=0", input.device));
+        ExitCode::from(EXIT_DEVICE)
+    };
+    let mut capture = match AlsaCapture::open(input) {
+        Ok(c) => c,
+        Err(e) => return unusable(&e.to_string()),
+    };
+    let frames = (input.rate_hz / 5) as usize; // 200 ms
+    let mut pcm = vec![0u8; frames * capture.frame_len()];
+    let read = match capture.read(&mut pcm) {
+        Ok(r) => r,
+        Err(e) => return unusable(&e.to_string()),
+    };
+    let delay = match capture.delay_frames() {
+        Ok(Some(d)) => d.to_string(),
+        Ok(None) => "overrun".to_string(),
+        Err(e) => return unusable(&e.to_string()),
+    };
+    let mut detector = SignalDetector::new(
+        SignalThresholds::default(),
+        input.rate_hz,
+        input.channels,
+        input.sample_format,
+    );
+    detector.push(&pcm);
+    status(&format!(
+        "line-in-probe device={} usable=1 frames_read={} overran={} delay_frames={} signal={} \
+         frame_len={}",
+        input.device,
+        read.frames,
+        u8::from(read.overran),
+        delay,
+        u8::from(detector.present()),
+        capture.frame_len()
+    ));
+    ExitCode::SUCCESS
+}
+
 fn refused(code: u8, reason: &str) -> SessionOutcome {
     SessionOutcome {
         code: ExitCode::from(code),
@@ -585,14 +617,18 @@ fn play(
         reader: mut stream,
         writer,
         announced,
+        source_control,
         ..
     } = secure;
-    // One writer for the exchange and the front panel's commands.
-    let writer = Arc::new(Mutex::new(writer));
+    // One writer for the session, shared by the time-sync exchange, the
+    // source role and the front panel's commands; records never interleave
+    // inside a frame.
+    let writer = SharedWriter::new(writer);
+    let counters = Arc::new(Counters::new());
     if let Some(panel) = panel {
         session::also_hand(&mut stream, &announced, panel.server_messages());
-        let uplink = Arc::clone(&writer);
-        panel.connect(Box::new(move |m| lock(&uplink).send(m)));
+        let mut uplink = writer.clone();
+        panel.connect(Box::new(move |m| uplink.send(m)));
     }
     // The panel is told when this session ends, whichever way it ends.
     struct Disconnect<'a>(Option<&'a FrontPanel>);
@@ -604,6 +640,12 @@ fn play(
         }
     }
     let _disconnect = Disconnect(panel);
+    // The source role runs for the whole session, beside the playout, and is
+    // stopped (with `stream_end` for a started input) whichever way the
+    // session ends.
+    let _source = SourceGuard(config.line_in.as_ref().and_then(|input| {
+        start_source(config, input, &writer, &counters, timeline, source_control)
+    }));
 
     // The device cannot be opened until the stream says what it is, so the
     // first chunk is read first and carried forward.
@@ -729,12 +771,11 @@ fn play(
     // the criterion's own wording and is also the only way the round trip it
     // measures is the round trip the audio takes. It is sealed like
     // everything else in the session, and nothing else writes on it.
-    let sync_out: Option<Box<dyn std::io::Write>> = Some(Box::new(SharedWriter(writer)));
+    let sync_out: Option<Box<dyn std::io::Write>> = Some(Box::new(writer.clone()));
     if let Some(panel) = panel {
         panel.set_playing(true);
     }
 
-    let counters = Arc::new(Counters::new());
     let outcome = match run_session(
         config,
         stream,
@@ -805,4 +846,69 @@ fn play(
         frames_played: outcome.summary.frames_played,
         reason: outcome.stop.name().to_string(),
     }
+}
+
+/// Stops the source role when a session ends, however it ends, and says what
+/// it did.
+struct SourceGuard(Option<SourceHandle>);
+
+impl Drop for SourceGuard {
+    fn drop(&mut self) {
+        if let Some(handle) = self.0.take() {
+            let (stop, stats) = handle.stop();
+            status(&stats.line());
+            status(&format!("source stopped reason={}", stop.name()));
+        }
+    }
+}
+
+/// Open the configured line-in and run the source role on it. A capture
+/// device that cannot be opened is reported by name and the endpoint goes on
+/// playing: its first offer already said there is no signal, which stays true.
+fn start_source(
+    config: &ClientConfig,
+    input: &chorus_client_linux::config::LineInConfig,
+    writer: &SharedWriter<TcpStream>,
+    counters: &Arc<Counters>,
+    timeline: MonotonicTimeline,
+    controls: std::sync::mpsc::Receiver<chorus_protocol::v2::SourceControl>,
+) -> Option<SourceHandle> {
+    let capture = match AlsaCapture::open(input) {
+        Ok(c) => c,
+        Err(e) => {
+            report(
+                "the configured line-in could not be opened",
+                &format!("{}: {}", input.device, e),
+            );
+            status(&format!(
+                "source unusable device={} source_id={}",
+                input.device, input.source_id
+            ));
+            return None;
+        }
+    };
+    status(&format!(
+        "source offered source_id={} kind={} name=\"{}\" device={} rate_hz={} channels={} \
+         sample_format={}",
+        input.source_id,
+        input.kind.name(),
+        input.name,
+        input.device,
+        input.rate_hz,
+        input.channels,
+        input.sample_format.name()
+    ));
+    Some(source::spawn(
+        capture,
+        writer.clone(),
+        source::SourceSetup {
+            input: input.clone(),
+            listed_codecs: session::capabilities(config).codecs,
+            clock: Box::new(move || timeline.now_ns()),
+            counters: Arc::clone(counters),
+            controls,
+            thresholds: SignalThresholds::default(),
+            log: Box::new(status),
+        },
+    ))
 }
