@@ -48,8 +48,9 @@
 //! After each tick's broadcast, every slot a visualizer session is on
 //! ([`Router::watched`]) has the chunk it just played analysed by its own
 //! `chorus_dsp::visualizer::Analyzer` (its spectrum from the channels'
-//! mean, its peak from every channel), and each frame that completes goes to those sessions
-//! through [`Router::push_visualizer`], stamped where the analysis says on
+//! mean, its peak from every channel), and each frame that completes goes
+//! to those sessions through [`Router::push_visualizer`], stamped where the
+//! analysis says on
 //! the grid's timeline (`origin + sample * 1e9 / rate`) plus each session's
 //! heard latency. The analysers are allocated before the first tick and a
 //! slot nobody watches costs nothing; a slot watched again after a gap is
