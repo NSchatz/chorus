@@ -506,9 +506,9 @@ static int the_committed_vectors_round_trip(void)
 
     /* Every type v2 added has at least one vector, and this endpoint has a
      * type for every vector (the directory and the catalog agree). */
-    static const uint8_t ADDED[] = {0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x20, 0x21, 0x22, 0x23,
-                                    0x24, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38,
-                                    0x39};
+    static const uint8_t ADDED[] = {0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x20,
+                                    0x21, 0x22, 0x23, 0x24, 0x30, 0x31, 0x32,
+                                    0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39};
     for (size_t t = 0; t < sizeof(ADDED); t++) {
         int found = 0;
         for (size_t i = 0; i < vector_count; i++) {
@@ -1064,9 +1064,8 @@ static void the_session_keeps_the_last_sound_it_decoded(void)
     int have = chorus_session_last_sound(&result, &got);
     chorus_check(have == 1 && result.sounds_received == 3, "three kept, the last one held");
     /* sound_sub_2_1: the LFE member of a 2.1 set, the sub inverted. */
-    chorus_check(got.bass_db == 3 && got.treble_db == -2 && got.role == 4 &&
-                     got.sub_present == 1 && got.crossover_hz == 100 &&
-                     got.sub_level_cdb == -350 &&
+    chorus_check(got.bass_db == 3 && got.treble_db == -2 && got.role == 4 && got.sub_present == 1 &&
+                     got.crossover_hz == 100 && got.sub_level_cdb == -350 &&
                      got.flags == (CHORUS_V2_SOUND_FLAG_LOUDNESS | CHORUS_V2_SOUND_FLAG_ROOM_EQ |
                                    CHORUS_V2_SOUND_FLAG_SUB_INVERTED) &&
                      got.eq_count == 1 && got.filters[0].freq_hz == 42 &&

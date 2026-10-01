@@ -55,9 +55,9 @@ pub const TONE_DB: (i8, i8) = (-10, 10);
 /// A bonded set's crossover between the mains and the sub, in Hz, inclusive.
 pub const CROSSOVER_HZ: (u16, u16) = (40, 200);
 
-/// The crossover a room starts with: 80 Hz, THX's recommended crossover
-/// (`research-theater.md` section 5.2 cites it); the endpoint DSP track
-/// carries the citation with the filter.
+/// The crossover a room starts with: 80 Hz, the THX/SMPTE crossover
+/// (`.claude/goals/2026-09-chorus-research/research-theater.md` section 5.2
+/// and its source [B1]).
 pub const DEFAULT_CROSSOVER_HZ: u16 = 80;
 
 /// The sub's level trim, in hundredths of a dB, inclusive: -12.00 to +6.00.

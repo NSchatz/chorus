@@ -97,7 +97,7 @@ typedef struct {
      * held it to its ranges and the run has kept it in the result
      * (chorus_session_last_sound). Optional: NULL keeps it only there. Goal
      * 12's phase A stores it; the endpoint DSP track configures the chain
-     * from it (docs/decisions/, "per-room sound"). Runs on the session's own
+     * from it (docs/decisions/0081-*). Runs on the session's own
      * task. */
     void (*on_sound)(void *ctx, const chorus_v2_sound_t *sound);
     void *sound_ctx;

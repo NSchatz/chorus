@@ -602,7 +602,8 @@ kinds are tested on it.
 
 ### 0x39 sound
 
-Server to player (goal 12; the per-room sound ADR in `docs/decisions/`). The
+Server to player (goal 12,
+`docs/decisions/0081-per-room-sound-in-the-catalog-and-on-the-wire.md`). The
 room's sound settings, from the control catalog's `sound`, `bass_management`
 and `room_eq` (`docs/control-plane.md`), plus where THIS player sits in the
 room's bonded set. Every member of a set receives the room's whole stream, so

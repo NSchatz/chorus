@@ -25,7 +25,8 @@ ceiling), `docs/decisions/0018-the-persisted-zone-state.md` (the state file),
 `docs/decisions/0019-a-persisted-endpoint-that-never-comes-back.md`, and for
 catalog v2 `docs/decisions/0075-control-catalog-v2.md` (the version policy, group
 volume's definition and its citation, take-the-room, the clamp rule, the bond
-layouts and the Wi-Fi refusal, state-file format 2).
+layouts and the Wi-Fi refusal, state-file format 2), and for per-room sound
+`docs/decisions/0081-per-room-sound-in-the-catalog-and-on-the-wire.md`.
 
 ## The versions
 
@@ -348,6 +349,9 @@ runtime drives"), and every volume it sets is clamped like any other. What the
 server's runtime does is "The schedule runtime" below.
 
 ### Per-room sound (goal 12)
+
+`docs/decisions/0081-per-room-sound-in-the-catalog-and-on-the-wire.md` records
+the choices and the citations.
 
 `sound`, `bass_management` and `room_eq` are a room's sound, carried to every
 endpoint of the room on the audio wire as `sound` (`docs/protocol.md`, "0x39
