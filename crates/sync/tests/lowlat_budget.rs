@@ -198,7 +198,7 @@ fn the_lip_sync_verdicts_are_the_window_applied() {
         );
     }
     let (s, _) = named("wired-clean");
-    // -(1 ms TV lag + 0.0625 ms S/PDIF receiver + L_tv 25 ms), ADR 0093.
+    // -(1 ms TV lag + 0.0625 ms S/PDIF receiver + L_tv 25 ms), ADR 0094.
     assert_eq!(s.lip_sync_ns(), -26_062_500);
 }
 

@@ -18,7 +18,7 @@ chunk_frames = 120
 fec_k = 4
 fec_depth = 2
 # From the capture stamp to the speaker.
-# Depth 2 doubles the FEC wait: the floor is 31.917 ms, so 35 ms (ADR 0093).
+# Depth 2 doubles the FEC wait: the floor is 31.917 ms, so 35 ms (ADR 0094).
 l_tv_us = 35000
 # The TV's own audio output against its picture. ASSUMED: standard picture mode on the one set measured (avlatency.com, LEAD); the Needs
 # item "The three TVs: model, eARC port, optical out and audio menu" replaces it.

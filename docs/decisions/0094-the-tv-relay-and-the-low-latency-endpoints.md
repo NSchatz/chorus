@@ -1,7 +1,7 @@
-# 0093: a TV played into one wired room goes hub to server to players as UDP datagrams, offered to the players before the hub, restamped capture plus the room's trimmed L_tv on one relay thread, played at its stamps with a one-chunk fade over a gap, and every other case stays on the slot grid by name
+# 0094: a TV played into one wired room goes hub to server to players as UDP datagrams, offered to the players before the hub, restamped capture plus the room's trimmed L_tv on one relay thread, played at its stamps with a one-chunk fade over a gap, and every other case stays on the slot grid by name
 
 - Status: accepted (goal 13, 2026-10-01)
-- Decided by: the goal-13 design envelope, section 5 (Integration), track `chorus-g13/tv-path`;
+- Decided by: the goal-13 design envelope, section 5 (Integration), track `chorus-g13/tv-path` (PR #93, closed after three red gate rounds; re-landed as PR #94);
   the follow-ups ADRs 0087, 0088, 0090 and 0091 handed this track; BRIEF.md 5.7 ("UDP + simple
   XOR parity FEC, wired only, stereo first") and section 3.1 (monotonic clocks in the audio
   path, the measurement rule); the placements below where the envelope left them open

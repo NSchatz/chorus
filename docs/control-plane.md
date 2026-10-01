@@ -430,7 +430,7 @@ The state message carries both per room: `"av_trim_ms":0` beside `sound`, and
 
 The server's TV relay (`crates/server/src/tvrelay.rs`; the wire is
 `docs/protocol.md` "Low-latency path", the integration's choices
-`docs/decisions/0093-the-tv-relay-and-the-low-latency-endpoints.md`) plays a TV input in low-latency mode when, at the
+`docs/decisions/0094-the-tv-relay-and-the-low-latency-endpoints.md`) plays a TV input in low-latency mode when, at the
 conductor's pass, all of these hold, and otherwise leaves it on its stream slot
 (ADR 0079), unchanged:
 

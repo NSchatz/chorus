@@ -1328,7 +1328,7 @@ pub const DEFAULTS: Plan = Plan {
     fec_k: 4,
     fec_depth: 1,
     // 25 ms: the floor (24.417 ms, with the hub's real capture term below)
-    // rounded up to a whole millisecond and a half (tv-path, ADR 0093; ADR
+    // rounded up to a whole millisecond and a half (tv-path, ADR 0094; ADR
     // 0091 chose 20 ms over a 19.417 ms floor that assumed 1 ms periods).
     l_tv_ns: 25_000_000,
     l_tv_range_ns: (10_000_000, 40_000_000),
@@ -1403,7 +1403,7 @@ impl Plan {
                     "the Linux hub as built (ADR 0090: 240-frame periods and \
                      SEND_DELAY_NS 2 ms, both ASSUMED there): a chunk's last frame is sent \
                      at the first period read at least 2 ms past it, at worst one period \
-                     later (ADR 0093); replaced by bench session S8",
+                     later (ADR 0094); replaced by bench session S8",
                 ),
             },
             BudgetItem {
