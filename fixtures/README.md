@@ -261,3 +261,27 @@ Since goal 10 the model has a Rust twin, `crates/controls`
 the same scripts and must produce the same `.hex` bytes and show the same
 `.led` moments, so the firmware and the Linux front panel cannot drift apart.
 No file here was added or changed for it.
+
+## `schedule/`
+
+Time zone data for `crates/schedule` (Rust-only by declaration: the endpoint schedules nothing).
+Regenerated only by `make schedule-fixtures` (`tools/schedule-fixtures.sh`), from the host's tz
+database; committed from tzdata **2026c** (Debian `tzdata 2026c-0+deb13u1`, `tzdata.zi` sha256
+`af5c1d3bebe136d372c131bb1a45725f955a8cc2a5ae2fc5a31d3b372e145f49`), read 2026-10-01. The tz
+database is in the public domain (https://data.iana.org/time-zones/tz-link.html and the Debian
+package's copyright file, "This database is in the public domain", read 2026-10-01); IANA's
+current release that day was 2026e (https://www.iana.org/time-zones), whose one change (Manitoba)
+touches none of these zones.
+
+- `<Area>_<City>.fat.tzif`: the host's compiled zoneinfo, copied as it is (version 2, or 3 for
+  Asia/Jerusalem and America/Nuuk, whose footers use version 3's hours beyond 24 and below 0).
+- `<Area>_<City>.slim.tzif`: `zic -b slim` from the same `tzdata.zi`: only the transitions the
+  footer cannot express, so 2026 is answered by the footer TZ string.
+- `zdump.txt`: glibc's `zdump -v` for the same zones: the second before and the second of each
+  transition in 2026, 2027 and 2100, and Samoa's skipped day in 2011. The reader must agree with
+  every line, from both builds (`crates/schedule/tests/tzif_fixtures.rs`).
+
+The zones: America/New_York and Europe/Berlin (one-hour changes either side of the Atlantic),
+Australia/Lord_Howe (half-hour daylight saving, southern hemisphere), Asia/Jerusalem and
+America/Nuuk (version 3 rules), Pacific/Apia (a whole skipped day) and Etc/UTC.
+
