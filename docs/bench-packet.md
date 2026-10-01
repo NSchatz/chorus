@@ -241,7 +241,7 @@ console.
 Needs: the board from S5, flashed with an image from the same checkout, on USB; S0's checkout on
 the machine it is plugged into. No bought part. Goal 8 adds this (ADR 0060): the image carries one
 FLAC and one Opus stream from `fixtures/codec` and times their decode on its monotonic clock. Goal
-12 adds the DSP chain to the same run (`dsp-cost`, ADR 0087): the image runs the endpoint's chain in
+12 adds the DSP chain to the same run (`dsp-cost`, ADR 0086): the image runs the endpoint's chain in
 four configurations (flat; all-on: tone, loudness, speech, night and eight room-EQ filters; the LFE
 member of a 2.1 set; the two-way split) over one second of a generated 48 kHz stereo signal, times
 the chain calls on the same clock, and checks the output against the checksum the host computed.

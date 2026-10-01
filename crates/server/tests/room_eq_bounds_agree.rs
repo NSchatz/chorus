@@ -24,7 +24,10 @@ fn fixtures() -> PathBuf {
 /// The two crates' bounds are the same numbers, field by field.
 #[test]
 fn the_dsp_and_control_room_eq_bounds_are_the_same() {
-    assert_eq!(dsp::ROOM_EQ_MAX_FILTERS, chorus_control::ROOM_EQ_MAX_FILTERS);
+    assert_eq!(
+        dsp::ROOM_EQ_MAX_FILTERS,
+        chorus_control::ROOM_EQ_MAX_FILTERS
+    );
     assert_eq!(
         (dsp::ROOM_EQ_FREQ_MIN_HZ, dsp::ROOM_EQ_FREQ_MAX_HZ),
         chorus_control::ROOM_EQ_FREQ_HZ
@@ -58,13 +61,18 @@ fn the_catalog_accepts_every_fixture_fit_as_room_eq() {
         let room = Room::from_params(&params).unwrap();
         let bytes = std::fs::read(fixtures().join(params.text("output").unwrap())).unwrap();
         let (_, samples) = parse_wav(&bytes).unwrap();
-        let fit = fit_recording(&samples, &room.sweep, &Target::flat(), &FitConfig::default())
-            .unwrap_or_else(|e| panic!("{}: {e}", p.display()));
+        let fit = fit_recording(
+            &samples,
+            &room.sweep,
+            &Target::flat(),
+            &FitConfig::default(),
+        )
+        .unwrap_or_else(|e| panic!("{}: {e}", p.display()));
         assert!(!fit.filters.is_empty(), "{}: no filters", p.display());
 
         let json = room_eq_command_json("living", &fit.filters);
-        let command =
-            decode_command(&json).unwrap_or_else(|e| panic!("{}: `{json}` refused: {e}", p.display()));
+        let command = decode_command(&json)
+            .unwrap_or_else(|e| panic!("{}: `{json}` refused: {e}", p.display()));
         match command {
             Command::RoomEq {
                 zone,
@@ -81,7 +89,12 @@ fn the_catalog_accepts_every_fixture_fit_as_room_eq() {
                     .iter()
                     .map(|f| (f.freq_hz, f.gain_cdb, f.q_milli))
                     .collect();
-                assert_eq!(read_back, chosen, "{}: the catalog read `{json}`", p.display());
+                assert_eq!(
+                    read_back,
+                    chosen,
+                    "{}: the catalog read `{json}`",
+                    p.display()
+                );
             }
             other => panic!("{}: `{json}` decoded as {other:?}", p.display()),
         }
