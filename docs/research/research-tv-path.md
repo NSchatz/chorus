@@ -712,7 +712,7 @@ carrier in standby (bench).
   ALSA buffer, and 5 ms forwarded chunks per BRIEF 5.7. The FEC note itself computes that d = 5 ms,
   k = 4 totals ~34 ms ("too tight"). The two must be reconciled in the goal-13 decision record.
 
-## 5. What was read, and what was not opened (clean room)
+## What was read
 
 All on 2026-10-01.
 
