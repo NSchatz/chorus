@@ -295,3 +295,21 @@ drove every volume path: the greeting, `volume` above the limit, `volume_step`, 
 `controller_command`. That test asserts a run reproduces it byte for byte;
 `firmware/tests/test_volume.c` feeds it through the C endpoint's decoder and volume path and
 asserts the clamp at every message. Regenerated only by `make volume-sequence`.
+
+## `roomfit/`
+
+Room-correction fitting's inputs (goal 12, `docs/room-correction.md`), Rust-only by declaration
+(`check-shared-fixtures.sh`: the fitting runs on the server). In the `measure/` shape: a
+`.params` file holding every value a recording was made from, the room's ground truth included,
+and the recording it generates, a 48 kHz mono 16-bit WAV of a 1 s exponential sine sweep played
+through a synthetic room (a speaker roll-off, modes and nulls as peaking filters, a level offset,
+seeded noise). `expect` names what the fit must make of it: `fit`, or the refusal it must give
+(`too_quiet`, `clipped`, `too_short`, `too_noisy`).
+
+```
+make roomfit-fixtures     # regenerate every recording from its parameters
+```
+
+`crates/dsp/tests/roomfit.rs` asserts that regenerating reproduces every committed recording
+byte for byte, so that target is for changing a fixture's parameters and never for making a red
+assertion green. Adding a room is adding a `.params` file and running the target.

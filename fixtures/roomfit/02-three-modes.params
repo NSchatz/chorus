@@ -1,0 +1,32 @@
+# Three modes across the modal region and a null between the upper two, with more latency, a
+# lower level and more noise than 01.
+kind = synthetic-room
+output = 02-three-modes.wav
+expect = fit
+
+# The recording: 48 kHz, mono, 16-bit.
+rate_hz = 48000
+total_samples = 76800
+lead_in_samples = 3000
+
+# The sweep (Farina's exponential sine sweep, crates/dsp/src/roomfit.rs): 1 s from 10 Hz to
+# 20 kHz at half full scale, stopped at its last zero crossing; no fade-in (the phase starts at
+# zero, and a fade-in on a 1 s sweep would reach into the fit band).
+sweep_f1_hz = 10
+sweep_f2_hz = 20000
+sweep_samples = 48000
+sweep_amplitude = 0.5
+sweep_fade_in_samples = 0
+
+highpass_hz = 25
+highpass_q = 0.707
+mode_freq_hz = 38 95 210
+mode_gain_db = 8 6 9
+mode_q = 7 3 6
+null_freq_hz = 150
+null_gain_db = -15
+null_q = 8
+
+level_db = -20
+noise_rms_dbfs = -66
+seed = 120002

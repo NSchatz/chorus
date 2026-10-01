@@ -1,0 +1,32 @@
+# One mode stronger than a single filter may cut (16 dB against the 12 dB bound) and a broad,
+# mild one: the fit must stay inside the bounds and still take most of the strong mode down.
+kind = synthetic-room
+output = 03-strong-mode.wav
+expect = fit
+
+# The recording: 48 kHz, mono, 16-bit.
+rate_hz = 48000
+total_samples = 76800
+lead_in_samples = 600
+
+# The sweep (Farina's exponential sine sweep, crates/dsp/src/roomfit.rs): 1 s from 10 Hz to
+# 20 kHz at half full scale, stopped at its last zero crossing; no fade-in (the phase starts at
+# zero, and a fade-in on a 1 s sweep would reach into the fit band).
+sweep_f1_hz = 10
+sweep_f2_hz = 20000
+sweep_samples = 48000
+sweep_amplitude = 0.5
+sweep_fade_in_samples = 0
+
+highpass_hz = 20
+highpass_q = 0.707
+mode_freq_hz = 55 170
+mode_gain_db = 16 5
+mode_q = 8 2.5
+null_freq_hz =
+null_gain_db =
+null_q =
+
+level_db = -6
+noise_rms_dbfs = -72
+seed = 120003
