@@ -154,7 +154,7 @@ static void every_profile_reads_as_the_image_reads_it(void)
 
     /* A profile may set only board keys, and only keys the base carries. */
     char detail[512];
-    static char base[16384];
+    static char base[32768];
     FILE *file = fopen(chorus_endpoint_config_default_path(), "rb");
     size_t read = file ? fread(base, 1, sizeof(base) - 1, file) : 0;
     if (file) {

@@ -22,6 +22,7 @@
 
 #include "console_esp.h"
 #include "esp_hal.h"
+#include "esp_heap_caps.h"
 #include "esp_link.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -31,6 +32,7 @@
 
 #include "chorus/amp.h"
 #include "chorus/endpoint_config.h"
+#include "chorus/endpoint_dsp.h"
 #include "chorus/link.h"
 #include "chorus/playout.h"
 #include "chorus/session.h"
@@ -134,7 +136,7 @@ static void session_task(void *argument)
 
 void app_main(void)
 {
-    static char text[16384];
+    static char text[32768];
     static char board_text[4096];
     /* The two linker symbols bound one object, but C only defines subtracting
      * pointers into the same array, and the compiler sees two. The addresses
@@ -219,6 +221,39 @@ void app_main(void)
     if (playout == NULL) {
         ESP_LOGE(TAG, "no playout path; the output stage stays dead");
         return;
+    }
+
+    /* The sound chain (goal 12, chorus/endpoint_dsp.h), configured from
+     * endpoint.conf's two-way and from each `sound` and stream_format the
+     * session hands the playout path; out of the path until a `sound` arrives
+     * or the two-way is on. It is one object of about 73 KB (the chain alone
+     * is 72680 bytes) and nothing on the audio path allocates, but as a static
+     * it does not fit the linker's static DRAM region beside the rest of the
+     * image (it overflowed dram0_0_seg by 38256 bytes), so it is taken from
+     * the internal heap once, here at boot, as the jitter buffer is
+     * (esp_playout.c), never from external RAM (firmware/endpoint-units.conf
+     * rule 3). Without the RAM the endpoint plays as before goal 12, with the
+     * room's gain, and says so. The subwoofer's level and phase knobs reach
+     * the chain through chorus_playout_set_sub_knobs; their ADC binding is not
+     * written yet (ADR 0063), so until it is they sit at 0 dB and 0 degrees. */
+    chorus_endpoint_dsp_t *dsp =
+        heap_caps_malloc(sizeof(chorus_endpoint_dsp_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (dsp == NULL) {
+        ESP_LOGE(TAG,
+                 "no internal RAM for the %u-byte sound chain (%u bytes free); playing "
+                 "without it",
+                 (unsigned)sizeof(chorus_endpoint_dsp_t),
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    } else {
+        chorus_endpoint_dsp_init(dsp, &config.two_way);
+        chorus_playout_set_dsp(playout, dsp);
+        ESP_LOGI(TAG,
+                 "sound chain: %u bytes, two_way=%s crossover_hz=%u woofer_slot=%u "
+                 "tweeter_slot=%u, internal RAM free after it: %u bytes",
+                 (unsigned)sizeof(chorus_endpoint_dsp_t), config.two_way.enabled ? "on" : "off",
+                 (unsigned)config.two_way.crossover_hz, (unsigned)config.two_way.woofer_slot,
+                 (unsigned)config.two_way.tweeter_slot,
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     }
 
     static chorus_telemetry_t telemetry;

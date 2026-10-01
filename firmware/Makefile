@@ -84,7 +84,8 @@ LIB_SRC := \
 	$(FW)/src/playout.c \
 	$(FW)/src/volume.c \
 	$(FW)/src/controls.c \
-	$(FW)/src/dsp.c
+	$(FW)/src/dsp.c \
+	$(FW)/src/endpoint_dsp.c
 
 # The four units the configuration checker itself needs. It is built without
 # the gate below, because it IS the gate. wifi.c is here because the reader
@@ -147,7 +148,8 @@ CFLAGS += $(DRFLAC_DEFS) $(CODEC_INC)
 all: $(BUILD)/chorus-endpoint-config-check $(BUILD)/chorus-endpoint-scan \
      $(BUILD)/chorus-endpoint-session $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 \
      $(BUILD)/test_noise $(BUILD)/test_sync $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_scan $(BUILD)/test_telemetry \
-     $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_codec $(BUILD)/test_playout $(BUILD)/test_volume $(BUILD)/test_controls $(BUILD)/test_dsp $(BUILD)/opus_compare
+     $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_codec $(BUILD)/test_playout $(BUILD)/test_volume $(BUILD)/test_controls $(BUILD)/test_dsp $(BUILD)/test_endpoint_dsp \
+     $(BUILD)/chorus-endpoint-dsp-session $(BUILD)/opus_compare
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -210,6 +212,14 @@ $(BUILD)/chorus-endpoint-session: $(LIB_SRC) $(FW)/tests/main_session.c $(STAMP)
 	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(FW)/tests/main_session.c $(PSA_LIB) \
 		$(VENDOR_OBJ) $(LDLIBS)
 
+# Goal 12's end to end on fakes (firmware/tests/dsp-session.sh): the real
+# session, the real playout path and its sound chain, and a fake I2S DMA that
+# keeps every frame written. Links pthreads for the writer thread.
+$(BUILD)/chorus-endpoint-dsp-session: $(LIB_SRC) $(FW)/tests/main_dsp_session.c $(STAMP) \
+                                      $(PSA_LIB) $(VENDOR_OBJ) | $(BUILD)
+	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(FW)/tests/main_dsp_session.c $(PSA_LIB) \
+		$(VENDOR_OBJ) $(LDLIBS) -lpthread
+
 # The scan's own tests link the scanner and not the endpoint library: the
 # scanner is host tooling and deliberately outside the tree it scans.
 $(BUILD)/test_scan: $(SCAN_SRC) $(FW)/tests/test_scan.c | $(BUILD)
@@ -218,7 +228,8 @@ $(BUILD)/test_scan: $(SCAN_SRC) $(FW)/tests/test_scan.c | $(BUILD)
 $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 $(BUILD)/test_noise $(BUILD)/test_sync \
 $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_telemetry \
 $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_playout \
-$(BUILD)/test_volume $(BUILD)/test_controls $(BUILD)/test_dsp: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
+$(BUILD)/test_volume $(BUILD)/test_controls $(BUILD)/test_dsp \
+$(BUILD)/test_endpoint_dsp: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
                          $(FW)/tests/test_%.c $(STAMP) $(PSA_LIB) $(VENDOR_OBJ) | $(BUILD)
 	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(TEST_SUPPORT) $(FW)/tests/test_$*.c \
 		$(PSA_LIB) $(VENDOR_OBJ) $(LDLIBS)
@@ -321,6 +332,20 @@ controls: $(BUILD)/test_controls
 dsp: $(BUILD)/test_dsp
 	$(BUILD)/test_dsp
 
+# Goal 12: the endpoint's sound chain in the playout path
+# (firmware/include/chorus/endpoint_dsp.h): the wire's sound and the sub knobs
+# as settings, when the chain is in the path, the gain inside it, the latency
+# in the device delay, bass management and the two-way at the LR4 levels, and
+# the limiter at the room's limit.
+endpoint-dsp: $(BUILD)/test_endpoint_dsp
+	$(BUILD)/test_endpoint_dsp
+
+# Goal 12, done-when line C on the C endpoint: the real chorus-server, a bonded
+# 2.1 set and a two-way of real C sessions on loopback, their written frames
+# captured from a fake I2S DMA and analysed (firmware/tests/dsp-session.sh).
+dsp-session: $(BUILD)/chorus-endpoint-dsp-session
+	bash $(FW)/tests/dsp-session.sh
+
 session-outage: $(BUILD)/chorus-endpoint-session
 	bash $(FW)/tests/session-outage.sh
 
@@ -338,7 +363,8 @@ codec-fixtures:
 		--vectors "$(OPUS_VECTORS)" --out $(REPO_ROOT)/fixtures/codec
 
 check: config-check golden-vectors sync-scenarios safety-scans clocking amplifier telemetry \
-       wireless link console playout volume controls dsp session-outage codec
+       wireless link console playout volume controls dsp endpoint-dsp session-outage dsp-session \
+       codec
 
 clean:
 	rm -rf $(BUILD)
