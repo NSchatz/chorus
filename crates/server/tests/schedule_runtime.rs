@@ -830,9 +830,126 @@ fn autoplay_house(target: &str) -> House {
         input: input("turntable/line1"),
         target: target.into(),
         enabled: true,
+        stop_on_standby: true,
+        low_latency: true,
     }));
     h.signal("turntable/line1", false); // offered, no signal yet
     h
+}
+
+// --- goal 13: TV autoplay (K81) ------------------------------------------
+
+/// The house of a TV: the lounge (the theater room) and the kitchen grouped
+/// as "downstairs" and playing the stream, and an autoplay rule for the hub's
+/// TV input (an `hdmi_arc` or `optical` input; the runtime is told a standby
+/// only for those, `crate::linein`) that targets the lounge alone.
+fn tv_house(stop_on_standby: bool) -> House {
+    let mut h = House::new(
+        Zone::utc(),
+        thursday(20, 0, 0),
+        &[("kitchen", 500), ("lounge", 400)],
+    );
+    h.command(Command::GroupSave {
+        group: "downstairs".into(),
+        name: "Downstairs".into(),
+        zones: vec!["kitchen".into(), "lounge".into()],
+    });
+    h.command(Command::Take {
+        target: "downstairs".into(),
+        source: Some(Source::Stream),
+    });
+    h.command(Command::Autoplay(Autoplay {
+        input: input("hub/tv"),
+        target: "lounge".into(),
+        enabled: true,
+        stop_on_standby,
+        low_latency: true,
+    }));
+    h.signal("hub/tv", false); // offered, the TV off
+    assert_eq!(h.group("lounge"), "downstairs");
+    h
+}
+
+impl House {
+    fn standby(&mut self, id: &str) -> Vec<Effect> {
+        let out = self
+            .rt
+            .on_input_standby(&input(id), self.mono, &mut self.zones);
+        self.check(out)
+    }
+}
+
+#[test]
+fn tv_on_takes_the_theater_room_out_of_its_group_and_plays_the_tv() {
+    let mut h = tv_house(true);
+    let on = h.signal("hub/tv", true);
+    // The lounge leaves "downstairs" and plays the TV; the kitchen stays.
+    assert_eq!(h.group("lounge"), "lounge");
+    assert_eq!(h.source_of("lounge"), Source::LineIn(input("hub/tv")));
+    assert_eq!(h.group("kitchen"), "downstairs");
+    assert_eq!(h.source_of("kitchen"), Source::Stream);
+    assert!(on.contains(&control("hub/tv", InputAction::Start)));
+    assert!(h.rt.is_autoplaying(&input("hub/tv")));
+    assert!(h.rt.is_held("lounge"));
+}
+
+#[test]
+fn tv_standby_stops_it_at_once_and_restores_what_the_room_played() {
+    let mut h = tv_house(true);
+    h.signal("hub/tv", true);
+    let off = h.standby("hub/tv");
+    // At once: no hold, the TV's input stopped in the same call.
+    assert!(off.contains(&control("hub/tv", InputAction::Stop)));
+    assert!(!h.rt.is_autoplaying(&input("hub/tv")));
+    assert!(!h.rt.is_held("lounge"));
+    // Restored: back in "downstairs", playing the stream, at its volume.
+    assert_eq!(h.group("lounge"), "downstairs");
+    assert_eq!(h.source_of("lounge"), Source::Stream);
+    assert_eq!(h.volume("lounge"), 400);
+    assert_eq!(h.logged("stopped reason=standby"), 1);
+    assert!(h.zones.inputs().is_empty(), "withdrawn");
+    // Nothing is left to stop later.
+    let later = h.run(2 * AUTOPLAY_HOLD_MS, 1_000);
+    assert!(!later
+        .iter()
+        .any(|e| matches!(e, Effect::SourceControl { .. })));
+}
+
+#[test]
+fn tv_standby_with_stop_on_standby_off_holds_as_a_signal_gone() {
+    let mut h = tv_house(false);
+    h.signal("hub/tv", true);
+    let off = h.standby("hub/tv");
+    assert!(!off.contains(&control("hub/tv", InputAction::Stop)));
+    assert!(h.rt.is_autoplaying(&input("hub/tv")));
+    h.run(AUTOPLAY_HOLD_MS - 1_000, 500);
+    assert_eq!(h.source_of("lounge"), Source::LineIn(input("hub/tv")));
+    let over = h.run(1_000, 500);
+    assert!(over.contains(&control("hub/tv", InputAction::Stop)));
+    assert_eq!(h.group("lounge"), "downstairs");
+    assert_eq!(h.logged("stopped reason=hold-over"), 1);
+}
+
+#[test]
+fn a_non_tv_line_in_keeps_its_hold_and_a_standby_with_nothing_playing_is_a_signal_gone() {
+    // A turntable's signal going is the 30 s hold, as before goal 13: the
+    // runtime is never told a standby for it (only a TV input's offer is
+    // one, crates/server/src/linein.rs), and its rule's default changes
+    // nothing.
+    let mut h = autoplay_house("lounge");
+    h.signal("turntable/line1", true);
+    let off = h.signal("turntable/line1", false);
+    assert!(!off.contains(&control("turntable/line1", InputAction::Stop)));
+    assert_eq!(h.logged("holding 30000 ms"), 1);
+    h.run(AUTOPLAY_HOLD_MS - 1_000, 500);
+    assert!(h.rt.is_autoplaying(&input("turntable/line1")));
+    // A TV that goes to standby while nothing plays it: just withdrawn.
+    let mut t = tv_house(true);
+    let out = t.standby("hub/tv");
+    assert!(!out
+        .iter()
+        .any(|e| matches!(e, Effect::SourceControl { .. })));
+    assert_eq!(t.group("lounge"), "downstairs");
 }
 
 #[test]
