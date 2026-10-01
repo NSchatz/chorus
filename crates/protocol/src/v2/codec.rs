@@ -19,8 +19,8 @@ use crate::message::{MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ};
 use crate::v2::catalog::{
     roles, ChannelPosition, Codec, Command, Link, Playback, RefusalReason, SourceAction,
     SourceKind, Suite, Type, FLAC_STREAMINFO_LEN, MAGIC, MAX_ARTWORK_LEN, MAX_LONG_TEXT,
-    MAX_OUTPUT_DELAY_NS, MAX_RATES, MAX_SHORT_TEXT, MAX_VISUALIZER_BANDS, OPUS_FRAME_COUNTS_48K,
-    OPUS_HEAD_MIN_LEN,
+    MAX_OUTPUT_DELAY_NS, MAX_RATES, MAX_ROOM_VOLUME_RAMP_MS, MAX_SHORT_TEXT, MAX_VISUALIZER_BANDS,
+    OPUS_FRAME_COUNTS_48K, OPUS_HEAD_MIN_LEN, ROOM_VOLUME_FULL,
 };
 use crate::v2::messages::*;
 
@@ -361,6 +361,11 @@ pub fn encode_payload(message: &Message) -> Result<Vec<u8>, EncodeError> {
             w.u8(m.source_id);
             w.u8(m.action.to_wire());
             w.u8(m.codec.to_wire());
+        }
+        Message::RoomVolume(m) => {
+            w.u16(m.gain);
+            w.u16(m.limit);
+            w.u16(m.ramp_ms);
         }
     }
     Ok(w.out)
@@ -720,6 +725,11 @@ fn decode_payload(message_type: Type, payload: &[u8]) -> Result<Message, FieldEr
                 })?,
             })
         }
+        Type::RoomVolume => Message::RoomVolume(RoomVolume {
+            gain: r.u16("gain")?,
+            limit: r.u16("limit")?,
+            ramp_ms: r.u16("ramp_ms")?,
+        }),
     };
     // Bytes past the last known field are a later version's fields: ignored.
     Ok(m)
@@ -974,6 +984,21 @@ pub fn validate(message: &Message) -> Result<(), FieldError> {
         Message::Color(_) => Ok(()),
         Message::SourceOffer(m) => short_text_ok("name", &m.name),
         Message::SourceControl(_) => Ok(()),
+        Message::RoomVolume(m) => {
+            // Each field on its own: a gain above the limit is a valid
+            // message (the player plays it at the limit), a gain or a limit
+            // above full scale is not one.
+            if m.gain > ROOM_VOLUME_FULL {
+                return err("gain", Problem::OutOfRange(m.gain as i128));
+            }
+            if m.limit > ROOM_VOLUME_FULL {
+                return err("limit", Problem::OutOfRange(m.limit as i128));
+            }
+            if m.ramp_ms > MAX_ROOM_VOLUME_RAMP_MS {
+                return err("ramp_ms", Problem::OutOfRange(m.ramp_ms as i128));
+            }
+            Ok(())
+        }
     }
 }
 

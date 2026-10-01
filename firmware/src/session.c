@@ -971,6 +971,17 @@ static int handle_inner(session_state_t *state, stream_state_t *stream,
     case CHORUS_V2_OUTPUT_DELAY:
         stream->output_delay_ns = frame->message.as.output_delay.delay_ns;
         return 0;
+    case CHORUS_V2_ROOM_VOLUME:
+        /* The room's gain and limit, enforced where the frames are written
+         * (chorus/volume.h, ADR 0074): the decoder has already rejected a
+         * value out of range, and the playout path clamps a gain above the
+         * limit or the ceiling. It travels only inside a record, like every
+         * frame here. */
+        if (config->playout != NULL) {
+            const chorus_v2_room_volume_t *rv = &frame->message.as.room_volume;
+            chorus_playout_set_room_volume(config->playout, rv->gain, rv->limit, rv->ramp_ms);
+        }
+        return 0;
     case CHORUS_V2_STREAM_END:
         publish(state, "stream-end");
         return 0;

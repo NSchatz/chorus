@@ -1,0 +1,15 @@
+# Canonical input for the room_volume golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly room_volume.hex, and decoding room_volume.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+#
+# An ordinary change: 0.400 of full amplitude under a 0.750 limit, ramped over 250 ms.
+
+message_type = room_volume
+gain = 400
+limit = 750
+ramp_ms = 250

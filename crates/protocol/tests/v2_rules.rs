@@ -11,7 +11,7 @@ mod common;
 use chorus_protocol::v2::*;
 use chorus_protocol::SampleFormat;
 
-use common::v2::{load_v2, v2_stems};
+use common::v2::{load_v2, rejected_vectors, v2_stems};
 
 fn refused_both_ways(message: Message, field: &str) {
     match encode(&message) {
@@ -124,6 +124,72 @@ fn the_stated_value_rules_are_refused_by_the_encoder() {
         }),
         "roles",
     );
+    let room = |gain, limit, ramp_ms| {
+        Message::RoomVolume(RoomVolume {
+            gain,
+            limit,
+            ramp_ms,
+        })
+    };
+    refused_both_ways(room(1001, 1000, 0), "gain");
+    refused_both_ways(room(0, 1001, 0), "limit");
+    refused_both_ways(room(0, 0, 60_001), "ramp_ms");
+    // The edges are values the format accepts, and a gain above the limit is
+    // one too: the player is what clamps it, never the decoder.
+    for ok in [room(1000, 1000, 60_000), room(0, 0, 0), room(900, 600, 0)] {
+        validate(&ok).unwrap_or_else(|e| panic!("{:?} must be accepted: {}", ok, e));
+    }
+}
+
+#[test]
+fn the_committed_rejection_vectors_are_refused_both_ways_as_their_field() {
+    let vectors = rejected_vectors();
+    assert!(
+        !vectors.is_empty(),
+        "fixtures/protocol/v2/rejected holds vectors"
+    );
+    for v in &vectors {
+        assert_eq!(
+            v.problem, "out_of_range",
+            "{}: the problem these name",
+            v.stem
+        );
+        // The encoder refuses the fields by name and emits nothing.
+        match encode(&v.message) {
+            Err(EncodeError::InvalidField(e)) => {
+                assert_eq!(e.field, v.rejected_field, "{}", v.stem);
+                assert!(matches!(e.problem, Problem::OutOfRange(_)), "{}", v.stem);
+            }
+            other => panic!("{}: the encoder must refuse it, got {:?}", v.stem, other),
+        }
+        // The decoder rejects the committed frame as that field, consuming
+        // exactly the frame, so the next one is still found.
+        let d = decode_frame(&v.frame);
+        assert_eq!(d.consumed, v.frame.len(), "{}: one whole frame", v.stem);
+        match d.outcome {
+            Outcome::Rejected(DecodeError::InvalidField { error, .. }) => {
+                assert_eq!(error.field, v.rejected_field, "{}", v.stem);
+                assert!(
+                    matches!(error.problem, Problem::OutOfRange(_)),
+                    "{}",
+                    v.stem
+                );
+            }
+            other => panic!("{}: the decoder must reject it, got {:?}", v.stem, other),
+        }
+        let mut stream = v.frame.clone();
+        stream.extend_from_slice(&load_v2("room_volume").frame);
+        let (outcomes, consumed) = decode_all(&stream);
+        assert_eq!(consumed, stream.len(), "{}", v.stem);
+        assert!(matches!(outcomes[0], Outcome::Rejected(_)), "{}", v.stem);
+        assert_eq!(
+            outcomes[1],
+            Outcome::Decoded(load_v2("room_volume").message),
+            "{}: the frame after a rejected one still decodes",
+            v.stem
+        );
+    }
+    println!("rejection vectors: {} refused both ways", vectors.len());
 }
 
 #[test]

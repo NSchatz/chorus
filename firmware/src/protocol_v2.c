@@ -57,6 +57,8 @@ static const type_entry_t TYPES[] = {
     {CHORUS_V2_SOURCE_OFFER, "source_offer", 1 + 1 + 1 + 1},
     /* id, action, codec */
     {CHORUS_V2_SOURCE_CONTROL, "source_control", 1 + 1 + 1},
+    /* gain, limit, ramp */
+    {CHORUS_V2_ROOM_VOLUME, "room_volume", 2 + 2 + 2},
 };
 #define TYPE_COUNT (sizeof(TYPES) / sizeof(TYPES[0]))
 
@@ -663,6 +665,14 @@ static int decode_payload(uint8_t type, const uint8_t *payload, size_t len, chor
         }
         return 0;
     }
+    case CHORUS_V2_ROOM_VOLUME: {
+        chorus_v2_room_volume_t *v = &m->as.room_volume;
+        if (read_u16(&r, "gain", &v->gain) != 0 || read_u16(&r, "limit", &v->limit) != 0 ||
+            read_u16(&r, "ramp_ms", &v->ramp_ms) != 0) {
+            return -1;
+        }
+        return 0;
+    }
     default:
         return fail(error, "type", CHORUS_V2_PROBLEM_UNDEFINED, NULL);
     }
@@ -1051,6 +1061,21 @@ int chorus_v2_validate(const chorus_v2_message_t *message, chorus_v2_field_error
         }
         return enum_ok("codec", CHORUS_V2_ENUM_CODEC, s->codec, error);
     }
+    case CHORUS_V2_ROOM_VOLUME: {
+        /* Rejected, never clamped: a decoder that clamped an out-of-range
+         * limit would be choosing a limit nobody sent. */
+        const chorus_v2_room_volume_t *v = &message->as.room_volume;
+        if (v->gain > CHORUS_V2_ROOM_VOLUME_FULL) {
+            return fail(error, "gain", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+        }
+        if (v->limit > CHORUS_V2_ROOM_VOLUME_FULL) {
+            return fail(error, "limit", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+        }
+        if (v->ramp_ms > CHORUS_V2_MAX_ROOM_VOLUME_RAMP_MS) {
+            return fail(error, "ramp_ms", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+        }
+        return 0;
+    }
     default:
         return fail(error, "type", CHORUS_V2_PROBLEM_UNDEFINED, NULL);
     }
@@ -1326,6 +1351,11 @@ static void write_payload(writer_t *w, const chorus_v2_message_t *m)
         put_u8(w, m->as.source_control.source_id);
         put_u8(w, m->as.source_control.action);
         put_u8(w, m->as.source_control.codec);
+        break;
+    case CHORUS_V2_ROOM_VOLUME:
+        put_u16(w, m->as.room_volume.gain);
+        put_u16(w, m->as.room_volume.limit);
+        put_u16(w, m->as.room_volume.ramp_ms);
         break;
     default:
         break;
