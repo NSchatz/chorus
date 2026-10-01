@@ -1,9 +1,12 @@
 # The chorus control plane
 
-Version: catalog version **1**, the PRODUCT-6 catalog. Every message is one
-JSON object, UTF-8, with no byte order mark and no trailing newline on the wire.
+Version: catalog version **2** (goal 11: rooms, bonded sets, saved and live
+groups, limits, quiet hours, alarms), a superset of catalog version **1** (the
+PRODUCT-6 catalog). A build implements both. Every message is one JSON object,
+UTF-8, with no byte order mark and no trailing newline on the wire.
 
-This document and the vectors under `fixtures/control/` are the contract. A
+This document and the vectors under `fixtures/control/` (catalog v1) and
+`fixtures/control/v2/` (what catalog v2 adds) are the contract. A
 second implementation is correct when it produces those bytes and recovers
 those fields, not when it matches the Rust code. Where this document and
 `crates/control` disagree, this document is right and the code is the defect.
@@ -19,7 +22,32 @@ Why the pieces are shaped the way they are:
 `docs/decisions/0016-the-control-catalog.md` (the version, the volume range and
 its curve), `docs/decisions/0017-the-control-fanout.md` (the subscriber queue
 ceiling), `docs/decisions/0018-the-persisted-zone-state.md` (the state file),
-`docs/decisions/0019-a-persisted-endpoint-that-never-comes-back.md`.
+`docs/decisions/0019-a-persisted-endpoint-that-never-comes-back.md`, and for
+catalog v2 `docs/decisions/0075-control-catalog-v2.md` (the version policy, group
+volume's definition and its citation, take-the-room, the clamp rule, the bond
+layouts and the Wi-Fi refusal, state-file format 2).
+
+## The versions
+
+- **A command is written at the lowest catalog version that declares it.** Every
+  v1 command (`hello`, `attach` without `link`, `name`, `group`, `ungroup`,
+  `volume`, `mute`) is written `"v":1`, so every v1 vector is byte-identical
+  under a v2 build and a v1 server still reads what a v2 client sends it.
+  Everything below marked (v2) is written `"v":2`.
+- **A v1 command is accepted at `"v":1` or `"v":2`.** A v2-only command, or a
+  v2-only field (`attach`'s `link`), at `"v":1` is rejected exactly as an
+  unknown command or an undeclared field is at that version: one message, the
+  session stays open.
+- **The state message is v2** (`"v":2`) on `GET /api/state`, on
+  `GET /api/events` and in the answer to a `POST /api/command`.
+  `GET /api/state?v=1` and `GET /api/events?v=1` serve the v1 shape of the same
+  state, byte for byte what a v1 build served (`fixtures/control/state.json` is
+  that renderer's vector). A v2 state's `zones` carry every field a v1 state's
+  do, under the same names and in the same order, followed by v2's.
+- **An `error` is written at the version of the message it answers**, and at
+  `"v":1` where that version could not be read (the message is not JSON, or has
+  no readable `v`): every peer reads v1. A `refused` is written at the build's
+  own version and lists every version it implements, `[1,2]`.
 
 ## The state a server holds
 
@@ -28,7 +56,8 @@ could be reading instead, which is what makes "fan the resulting state out to
 all subscribers" a complete description rather than half of a reconciliation
 problem.
 
-A **zone** is a room. It has:
+A **zone** is a room (catalog v2's documents say "room"; the wire keeps the key
+`zone`). It has:
 
 | field | what it is |
 |---|---|
@@ -39,13 +68,74 @@ A **zone** is a room. It has:
 | `muted` | whether it is silenced |
 | `endpoints` | every endpoint this zone has ever had, persisted |
 | `present` | the subset attached right now, never persisted |
+| `limit` (v2) | the room's maximum volume, `1.000` unless set |
+| `quiet` (v2) | the room's quiet-hours windows, each with its own cap |
+| `bond` (v2) | the room's bonded set: endpoints each playing a channel role, or none |
 
+**The clamp rule (v2).** A room's **effective limit** is
+`min(limit, the cap of every quiet-hours window active now)`. Every volume path
+is CLAMPED to it, never refused: `volume`, `volume_step`, `group_volume`,
+`group_volume_step`, a speaker's buttons (the controller role, which becomes a
+`volume` command), and the server runtime's own ramps and steps. A volume above
+the effective limit is set to it; lowering a limit, or a window becoming active,
+pulls the volume (and a running ramp's target) down to it; a window ending
+raises nothing. Mute is untouched by all of it.
+
+**Which windows are active is an input.** The room model reads no clock: the
+server's runtime tells it the civil time (a weekday and `HH:MM` in the house's
+own time zone), and a window is active when that time is inside it. A window
+whose `end` is not after its `start` runs past midnight, and its `days` are the
+days it STARTS on: a Friday `22:00` to `07:00` window covers Saturday `03:00`.
+`start` is inside, `end` is not; a window starting and ending at the same minute
+is refused as ambiguous. With no time given, no window is active.
+
+An **endpoint** (v2) has a **link**: `wired`, `wireless` or `unknown`. It is
+what the endpoint says on `attach` (`link`); an endpoint that never said is
+`unknown`. It is persisted. It is not the room's TRANSPORT (`--zone
+<id>=wireless`, `docs/decisions/0024-the-wireless-tier.md`), which is configured,
+never commanded, and is in the state as `transport`.
+
+A **bonded set** (v2) is endpoints of ONE room each playing a channel role, a
+channel position from `docs/protocol.md`'s channel map: `FL FR FC LFE BL BR SL
+SR`. A set is a valid layout or it is refused: stereo `FL FR`; a sub (`LFE`) may
+be added to any; a front three `FL FR FC`; a theater `FL FR FC`, optional
+`LFE`, and one surround pair, `SL SR` or `BL BR` (never one of each, never
+surrounds without the centre). One endpoint per role and one role per endpoint;
+every member is an endpoint of that room and in no other room's set. **An
+endpoint whose link is not `wired` (wireless OR unknown) is refused from any
+bonded set (K91), and a room declared wireless cannot hold one**; the refusal
+names the field and the endpoint. An endpoint in a set that later reports a link
+other than `wired` has that `attach` refused (field `link`) until the set is
+dissolved, so a set never holds one. A room with no set plays the stream's
+channels as catalog v1 did.
 A **group** is the unit a stream is served to. Every zone is in a group,
 always: a zone in no group would be a zone with nothing to play. `ungroup`
 therefore puts a zone into a group of its own, named for the zone, rather than
 into an absent state the state message would have to spell `null`. One
 consequence worth stating: `ungroup` on a zone that is already alone is not an
 error and changes nothing.
+
+A group is FORMED by the rooms whose `group` names it, and (v2) has a kind:
+
+| kind | what it is |
+|---|---|
+| `room` | one room alone in the group named for it |
+| `saved` | a group whose id is a saved definition |
+| `live` | any other: rooms grouped and not saved |
+
+A **saved group** (v2) is a persisted definition: an id no room has, a name, and
+two or more rooms. It is listed always (K59), with `active` true when every one
+of its rooms is in it. A **live group** is formed by `join` (with an id the
+server assigns, `live-<n>`, the smallest `n` from 1 that names no room, no
+formed group and no saved group) or by catalog v1's `group` (with the id the
+client chose). A live group that `join` or `take` leaves with one room
+**dissolves** into that room's own group, still playing what it played; v1's
+`group` and `ungroup` keep v1's behaviour exactly and dissolve nothing.
+
+Each formed group plays a **source** (v2): `stream` (the server's configured
+stream, the default), `none`, `chime:<name>` or `line-in:<endpoint>/<input>`.
+The spelling is the catalog's; which chimes exist and which inputs are offered
+is the server runtime's, and the state lists the offered ones as `inputs`.
 
 The set of zones is **configured, not commanded**. `--zone <id>` on the server's
 command line, one per room. A control message cannot create a zone, because the
@@ -152,6 +242,13 @@ which endpoints are switched on, because that is a fact about now.
 The endpoint joins the zone's `endpoints` if it is not in it already, and its
 `present`.
 
+(v2) `attach` may carry `link`, what the endpoint says about how it reaches the
+server; without it the endpoint's link is what was known before:
+
+```json
+{"v":2,"t":"attach","zone":"living","endpoint":"endpoint-a","link":"wired"}
+```
+
 ### `name`
 
 ```json
@@ -193,6 +290,91 @@ endpoint applies `0.000` while muted and keeps writing exactly as many frames:
 a mute that stopped writing would change that endpoint's alignment, and coming
 back from it would be a resync.
 
+`volume`, at either version, is clamped to the room's effective limit (above).
+
+## The commands catalog version 2 adds
+
+Each is written `"v":2`, and `fixtures/control/v2/` has a vector for each. A
+**target** is an identifier naming a room or a group; which kinds of group a
+command accepts is in its row. A **step** is signed thousandths of full scale,
+`-1000` to `1000`, written as a whole number. A **time** is `"HH:MM"`, `00:00`
+to `23:59`, two digits each. **Days** are an array of `mon tue wed thu fri sat
+sun`, each once and in that order. Members are written in the order the tables
+give them.
+
+| command | fields | what it does |
+|---|---|---|
+| `join` | `zone`, `target` (a room, or a formed or saved group) | the room plays in the target's group; joining a room that is alone forms a live group with an assigned id. The group the room left dissolves if it is left with one room and is not saved |
+| `bond` | `zone`, `members`: `[{"endpoint","role"}]` | the room's bonded set, replacing any it had; refused under the rules above |
+| `unbond` | `zone` | dissolves the room's set; a room with none is not an error |
+| `group_save` | `group`, `name`, `zones` (two or more rooms) | saves or replaces a definition. Its id may not be a room's |
+| `group_delete` | `group` (saved) | forgets the definition; its rooms stay where they are |
+| `take` | `target` (a room, a saved group or a formed group), optional `source` | take the room (K78), below |
+| `group_volume` | `group` (formed), `volume` | Sonos-style group volume, below |
+| `group_volume_step` | `group` (formed), `step` | the same, from the group volume plus `step`, held to `0.000` to `1.000` |
+| `volume_step` | `zone`, `step` | the room's volume plus `step`, held to `0.000` to `1.000`, then clamped |
+| `limit` | `zone`, `limit` (a volume) | the room's maximum; pulls its volume down to it |
+| `quiet_hours` | `zone`, `windows`: `[{"days","start","end","limit"}]`, at most 8 | replaces the room's windows; `[]` removes them. Days are never empty |
+| `alarm_set` | `alarm`, `target` (a room or a saved group), `time`, `days` (empty is once), `source`, `volume`, `ramp_s` (0 to 600), `duration_min` (0 to 720; 0 plays until stopped), `enabled` | creates or replaces an alarm |
+| `alarm_delete` | `alarm` | forgets it |
+| `alarm_stop` | `alarm` | stops it ringing; one not ringing is not an error |
+| `sleep` | `target` (a room or a formed group), `minutes` (0 to 720) | asks for a sleep timer; `0` cancels |
+| `autoplay` | `input` (`<endpoint>/<input>`), `target` (a room or a saved group), `enabled` | creates or replaces the rule for that input |
+
+```json
+{"v":2,"t":"bond","zone":"living","members":[{"endpoint":"endpoint-a","role":"FL"},{"endpoint":"endpoint-b","role":"FR"}]}
+{"v":2,"t":"take","target":"downstairs","source":"line-in:endpoint-c/line-1"}
+{"v":2,"t":"quiet_hours","zone":"bedroom","windows":[{"days":["mon","tue","wed","thu","fri"],"start":"22:00","end":"07:00","limit":0.250}]}
+```
+
+An alarm, an autoplay rule and a saved group outlive a restart, so their
+targets are rooms or saved groups; a live group's id names nothing once it
+dissolves. A sleep timer does not outlive a restart (its countdown cannot be
+resumed) and may name any group formed now; it goes when its group does. At
+most 32 saved groups, 32 alarms and 32 autoplay rules are held (ASSUMED: a
+bound on the state message's size, far past a house of a dozen rooms).
+
+**This catalog configures alarms, sleep timers and autoplay; it does not run
+them.** Firing an alarm, ramping it, counting a sleep timer down and fading it,
+and starting a line-in are the server runtime's, which tells the room model
+what it did through the model's hooks (`crates/control/src/zones.rs`, "What the
+runtime drives"), and every volume it sets is clamped like any other.
+
+### Take the room (K78)
+
+`take` moves every room of the target out of whatever group it is in and into
+the target's group: for a room, the group named for it; for a saved group, its
+id (which makes it active); for a formed group, itself. Rooms left behind keep
+playing what they were playing. A group that is not saved and is left with one
+room dissolves into that room's own group, still playing. A room that had joined
+the target room's own group without being the target leaves it, keeping what it
+played (alone into its own group, or with the others into a new live group).
+With `source`, the target then plays that; without, it keeps what its group
+played (`stream` for a group that was not formed).
+
+### Group volume (K77, Sonos-style)
+
+Sonos defines a group's volume as the **average** of its players' volumes, and
+setting it "proportionally adjusts the volume of each player so that the average
+corresponds to the desired group volume level"
+(<https://docs.sonos.com/docs/volume>, read 2026-10-01). chorus does the same:
+
+- the group volume `G` is the average of the member rooms' volumes, in
+  thousandths, rounded half up;
+- setting it to `G'` scales every room by `G'/G` (rounded half up), so the
+  balance between rooms is kept, then clamps each room to its own effective
+  limit. A clamped room's shortfall is NOT redistributed to the others, so the
+  average can end below `G'`;
+- from `G = 0` there is no balance left to keep, and every room is set to `G'`;
+- `group_volume_step` is the same with `G' = G + step`, held to `0` to `1000`;
+- each room stays individually adjustable with `volume` and `volume_step`.
+
+Two differences from Sonos, both deliberate: Sonos's `setVolume` also unmutes
+the group (<https://docs.sonos.com/reference/groupvolume-setvolume-groupid>,
+read 2026-10-01) and chorus's mute is untouched by any volume command; and
+Sonos scales from a snapshot of the volumes taken before a run of changes,
+where chorus scales from the volumes as they stand.
+
 ## The state message
 
 Server to every subscriber, after every change, and once when a subscriber
@@ -214,6 +396,25 @@ A server with no zone configured serves `{"v":1,"t":"state","serial":0,
 `fixtures/control/state-empty.json` pins it, so "no zones yet" is a shape the
 catalog declares rather than something a client infers from a missing field.
 
+That is the v1 shape, served on `?v=1`. **The v2 state** is the same message
+with more fields, in this order (`fixtures/control/v2/state-rich.json` pins one
+of each, `fixtures/control/v2/state-empty.json` the empty house):
+
+| field | notes |
+|---|---|
+| `zones[]` | v1's fields, then `transport` (`wired` or `wireless`, as declared), `limit`, `effective_limit`, `quiet` (`[{"days","start","end","limit","active"}]`), `bond` (`[{"endpoint","role"}]`, `[]` for none) and `ramp` (a running ramp's target, or `null`) |
+| `groups[]` | every formed group, in the order its first room was configured: `id`, `kind`, `zones`, `volume` (the group volume), `source`, `audio` |
+| `saved_groups[]` | every saved definition, sorted by id, active or not: `id`, `name`, `zones`, `active` |
+| `endpoints[]` | every endpoint any room has or that has reported a link, sorted: `id`, `link` |
+| `alarms[]` | sorted by id: `alarm_set`'s fields from `alarm` on, then `ringing` |
+| `sleep[]` | the sleep timers asked for, sorted by target: `target`, `minutes` |
+| `autoplay[]` | sorted by input: `autoplay`'s fields |
+| `inputs[]` | the line-ins offered now, as `<endpoint>/<input>`, sorted |
+
+```json
+{"v":2,"t":"state","serial":0,"zones":[],"groups":[],"saved_groups":[],"endpoints":[],"alarms":[],"sleep":[],"autoplay":[],"inputs":[]}
+```
+
 ## The refusals
 
 ```json
@@ -230,7 +431,22 @@ it would still be an error.
 ```
 
 `offered` is the version the peer sent, or `null` where it sent no number.
-`implemented` is every version this build has.
+`implemented` is every version this build has. That vector
+(`fixtures/control/refused-unknown-version.json`) is what a build implementing
+only version 1 sent; this build sends
+`fixtures/control/v2/refused-unknown-version.json`:
+
+```json
+{"v":2,"t":"refused","field":"v","detail":"catalog version 9 was offered and this build implements 1, 2; nothing from this peer has been applied","offered":9,"implemented":[1,2]}
+```
+
+Catalog v2's refusals are `error`s like v1's, each pinned under
+`fixtures/control/v2/` (`refused-*` and `error-*`). The bond refusals name the
+field and the endpoint:
+
+```json
+{"v":2,"t":"error","field":"members","detail":"endpoint 'endpoint-b' (FR) has a link that is wireless, not wired; a bonded set holds wired endpoints only (K91), because a stereo pair or a theater is held to the wired tier's bound and a radio is not"}
+```
 
 ## How the messages travel
 
@@ -241,10 +457,10 @@ The catalog above is the contract. The transport is HTTP on the address
 |---|---|
 | `GET /` | the control page |
 | `GET /chorus.css`, `GET /chorus.js` | what the page loads |
-| `GET /api/state` | the state message, once |
-| `GET /api/events` | a `text/event-stream`, one `data: <state message>` per change, starting with the state as it stands |
+| `GET /api/state` | the state message, once (v2; `?v=1` for the v1 shape) |
+| `GET /api/events` | a `text/event-stream`, one `data: <state message>` per change, starting with the state as it stands (v2; `?v=1` for the v1 shape, rendered from the state as it stands when each change reaches the stream) |
 | `GET /api/report` | one line of plain text: commands applied, commands refused, connections and streams turned away, and the fanout's ceiling and drops |
-| `POST /api/command` | the body is one control message, sent as `Content-Type: application/json`. `200` with the resulting state, `400` with an `error`, or `426` with a `refused`; `415` or `403` under the rules below |
+| `POST /api/command` | the body is one control message, sent as `Content-Type: application/json`. `200` with the resulting state (v2, the bytes every subscriber is sent), `400` with an `error` (at the message's version), or `426` with a `refused`; `415` or `403` under the rules below |
 | `POST /api/leaving` | the body is an endpoint identifier, which stops being `present`. The same two rules as a command |
 
 A browser opens `/api/events` with `EventSource` and a shell script opens it
@@ -363,5 +579,20 @@ reachable from outside a local network. The channel binds a configured address
 and nothing in this phase changes that. The catalog has no message that grants
 or checks a permission, and a version that adds one will be a new version.
 
-Also absent, and belonging to later phases: telemetry from an endpoint, source
-selection, presets, and anything about what is playing rather than where.
+Also absent, and belonging to later phases: telemetry from an endpoint, presets,
+and anything about what is playing rather than where. Catalog v2 names a
+group's source and the inputs offered; choosing what a stream URL or a service
+plays is not here.
+
+## What survives a restart (state-file format 2)
+
+The server persists, in `--state-file`, everything a person configured: each
+room's name, group, volume, mute, endpoints, `limit`, quiet-hours windows and
+bonded set; each endpoint's link; saved groups; alarms; autoplay rules. It does
+not persist what is a fact about now: which endpoints are present, which quiet
+window is active, which alarm is ringing, a running ramp, what a group is
+playing, a sleep timer, or which inputs are offered. A format 1 file (every build
+before catalog v2) loads unchanged with the v2 defaults; the next write is format
+2. A write goes to a temporary that is `fsync`ed, renamed over the file, and the
+directory is `fsync`ed, and a render that would not read back as the same state
+is never installed (`crates/control/src/persist.rs`).

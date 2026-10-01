@@ -16,6 +16,10 @@ license.workspace = true
 # what this costs, and it is the same trade crates/server already makes to
 # decode its own output with the client's receiver.
 chorus-server = { path = "../server" }
+# The controller role's commands are protocol v2 messages, and catalog_v2.rs
+# drives them through the server's translation into a limited room, which is
+# the "a button is never a bypass" half of the clamp rule.
+chorus-protocol = { path = "../protocol" }
 
 [lints]
 workspace = true

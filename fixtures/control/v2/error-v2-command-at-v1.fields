@@ -1,0 +1,16 @@
+# Canonical input for the catalog v2 error-v2-command-at-v1 vector.
+#
+# `input` is refused, by the decoder or by the room state the commands below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-v2-command-at-v1.json. Nothing of it is applied.
+#
+# A v2-only command written at v1 is not a command of that version.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+zones = living
+input = {"v":1,"t":"bond","zone":"living","members":[{"endpoint":"endpoint-a","role":"FL"},{"endpoint":"endpoint-b","role":"FR"}]}
+field = t
+ends_the_session = 0

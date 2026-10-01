@@ -49,7 +49,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use chorus_control::catalog::{decode_command, Refusal};
+use chorus_control::catalog::{decode_message, Refusal};
 use chorus_control::fanout::ControlFanout;
 use chorus_control::persist;
 use chorus_control::zones::Zones;
@@ -255,9 +255,16 @@ impl ControlState {
         &self.fanout
     }
 
-    /// The state message as it stands.
+    /// The state message as it stands, at the build's own catalog version.
     pub fn encoded_state(&self) -> String {
         self.locked().encode_state()
+    }
+
+    /// The state message as it stands, at catalog version `version`: the v1
+    /// shape for `?v=1` peers (docs/control-plane.md, "How the messages
+    /// travel"), the v2 shape otherwise.
+    pub fn encoded_state_at(&self, version: i64) -> String {
+        self.locked().encode_state_at(version)
     }
 
     /// The line a run prints about what the control plane did.
@@ -283,11 +290,17 @@ impl ControlState {
     /// The state is persisted BEFORE it is fanned out, so that a subscriber
     /// which has been told a change happened cannot be told something the disk
     /// would contradict after a restart.
+    ///
+    /// A refusal is answered at the catalog version the message was written
+    /// at (a v1 peer's refusal says `"v":1`); a change is answered with the
+    /// state every subscriber is sent, which is the build's own (v2): one
+    /// state, the same bytes for everybody. A v2 state's `zones` carry every
+    /// field a v1 state's do, under the same names.
     fn apply(&self, text: &str) -> Result<String, Refusal> {
-        let command = decode_command(text)?;
+        let (version, command) = decode_message(text)?;
         let (state, persist_error) = {
             let mut zones = self.locked();
-            zones.apply(&command)?;
+            zones.apply(&command).map_err(|r| r.at(version))?;
             let state = zones.encode_state();
             let mut persist_error = None;
             if let Some(path) = &self.state_file {
@@ -927,6 +940,7 @@ fn serve_connection(
         }
     };
     let path = request.path.split('?').next().unwrap_or("/").to_string();
+    let version = requested_version(&request.path);
     // The two routes that change anything are held to the rules a browser
     // needs to keep a page elsewhere from using them. See post_refusal.
     if request.method == "POST" && (path == "/api/command" || path == "/api/leaving") {
@@ -983,7 +997,7 @@ fn serve_connection(
             &mut connection,
             "200 OK",
             "application/json",
-            &state.encoded_state(),
+            &state.encoded_state_at(version),
         ),
         // The bound's report half, over the wire. AC-11 asks that what a
         // dropped subscriber lost is counted AND reported, and a count that
@@ -995,7 +1009,9 @@ fn serve_connection(
             "text/plain; charset=utf-8",
             &format!("{}\n", state.report()),
         ),
-        ("GET", "/api/events") => serve_events(connection, state, keep, stream_slots, workers),
+        ("GET", "/api/events") => {
+            serve_events(connection, state, keep, stream_slots, workers, version)
+        }
         ("POST", "/api/command") => {
             match state.apply(request.body.trim()) {
                 Ok(applied) => respond(&mut connection, "200 OK", "application/json", &applied),
@@ -1045,6 +1061,7 @@ fn serve_events(
     keep: &Arc<AtomicBool>,
     stream_slots: usize,
     workers: usize,
+    version: i64,
 ) {
     let Some(_slot) = StreamSlot::take(&state.streaming, stream_slots) else {
         state.turned_away.fetch_add(1, Ordering::Relaxed);
@@ -1064,7 +1081,7 @@ fn serve_events(
         return;
     };
     let inbox = state.fanout.subscribe();
-    let opening = state.encoded_state();
+    let opening = state.encoded_state_at(version);
     if write!(
         connection,
         "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\n\
@@ -1081,6 +1098,16 @@ fn serve_events(
         match inbox.recv_timeout(IDLE_WAKE) {
             Ok(message) => {
                 since_keepalive = Duration::ZERO;
+                // The fanout carries the build's own (v2) state. A v1
+                // subscriber is written the v1 rendering of the state as it
+                // stands when the change reaches it: still one complete
+                // snapshot per change, and never an older one than the
+                // change it is told about.
+                let message = if version == chorus_control::CATALOG_VERSION {
+                    message
+                } else {
+                    Arc::new(state.encoded_state_at(version))
+                };
                 if write!(connection, "data: {}\n\n", message).is_err()
                     || connection.flush().is_err()
                 {
@@ -1099,6 +1126,18 @@ fn serve_events(
             }
             Err(RecvTimeoutError::Disconnected) => return,
         }
+    }
+}
+
+/// The catalog version a `GET` asks its state in: `?v=1` is the v1 shape, and
+/// anything else (no query, or a version this build does not render) is the
+/// build's own.
+fn requested_version(target: &str) -> i64 {
+    let query = target.split_once('?').map(|(_, q)| q).unwrap_or("");
+    if query.split('&').any(|pair| pair == "v=1") {
+        1
+    } else {
+        chorus_control::CATALOG_VERSION
     }
 }
 

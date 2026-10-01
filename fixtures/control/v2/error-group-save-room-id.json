@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"group","detail":"'kitchen' is a room's identifier, and a room alone is already its own group; a saved group takes an identifier no room has"}

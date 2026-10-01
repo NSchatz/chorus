@@ -1,0 +1,1 @@
+{"v":2,"t":"quiet_hours","zone":"bedroom","windows":[{"days":["mon","tue","wed","thu","fri"],"start":"22:00","end":"07:00","limit":0.250},{"days":["sat","sun"],"start":"13:00","end":"15:00","limit":0.400}]}

@@ -1,0 +1,21 @@
+# Canonical input for the catalog v2 quiet_hours vector.
+#
+# Encoding these field values must produce exactly quiet_hours.json, and decoding
+# quiet_hours.json must recover exactly these field values.
+#
+# Two windows: one crossing midnight (it belongs to the days it starts on),
+# one inside a day. Days are listed once each in week order.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = quiet_hours
+zone = bedroom
+window.0.days = mon,tue,wed,thu,fri
+window.0.start = 22:00
+window.0.end = 07:00
+window.0.limit = 0.250
+window.1.days = sat,sun
+window.1.start = 13:00
+window.1.end = 15:00
+window.1.limit = 0.400

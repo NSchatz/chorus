@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"link","detail":"endpoint 'endpoint-b' plays in room 'living''s bonded set and reports its link as wireless; a bonded set holds wired endpoints only (K91), so unbond room 'living' first"}

@@ -353,7 +353,7 @@ WRONG_VERSION="$(refuse_message '{"v":9,"t":"hello"}')"
 check "the-binary-refuses-an-unimplemented-catalog-version-and-names-both" \
     "$(printf '%s' "$WRONG_VERSION" | grep -q '426 Upgrade Required' \
         && printf '%s' "$WRONG_VERSION" | grep -q '"offered":9' \
-        && printf '%s' "$WRONG_VERSION" | grep -q '"implemented":\[1\]' && echo 1 || echo 0)" \
+        && printf '%s' "$WRONG_VERSION" | grep -q '"implemented":\[1,2\]' && echo 1 || echo 0)" \
     "$(printf '%s' "$WRONG_VERSION" | tail -n 1 | cut -c1-110)"
 AFTER_STATE="$(refuse_message '{"v":1,"t":"hello"}' | tail -n 1)"
 check "no-refused-message-changed-the-state-a-subscriber-would-be-sent" \

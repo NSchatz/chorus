@@ -1,0 +1,14 @@
+# Canonical input for the catalog v2 group_save vector.
+#
+# Encoding these field values must produce exactly group_save.json, and decoding
+# group_save.json must recover exactly these field values.
+#
+# A saved group is a persisted definition, listed whether active or not.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = group_save
+group = downstairs
+name = Downstairs #1
+zones = kitchen,living

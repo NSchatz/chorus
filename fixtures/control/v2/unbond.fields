@@ -1,0 +1,10 @@
+# Canonical input for the catalog v2 unbond vector.
+#
+# Encoding these field values must produce exactly unbond.json, and decoding
+# unbond.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = unbond
+zone = living

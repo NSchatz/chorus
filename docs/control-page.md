@@ -128,8 +128,11 @@ byte-identical to what it was.
 created or loaded. It is how a subscriber tells a message it has seen from one it
 has not.
 
-`catalog version 1` is the version of the control catalog this server implements.
-`docs/control-plane.md` is that catalog.
+`catalog version 2` is the version of the state message the page is showing, which is the
+highest version of the control catalog this server implements (it implements 1 and 2).
+`docs/control-plane.md` is that catalog. The page reads the fields catalog version 1 declared
+and ignores the rest; the rooms, groups, limits and alarms catalog version 2 adds have no
+controls here yet.
 
 `N zones unreadable`, when it appears, counts zones in the state message that
 carried no identifier this page could use. They are counted here rather than

@@ -1,0 +1,13 @@
+# Canonical input for the catalog v2 take-source vector.
+#
+# Encoding these field values must produce exactly take-source.json, and decoding
+# take-source.json must recover exactly these field values.
+#
+# Take a saved group and say what it plays from now.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = take
+target = downstairs
+source = line-in:endpoint-c/line-1

@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"zone","detail":"room 'bedroom' is declared wireless ('--zone bedroom=wireless'), and a bonded set holds wired endpoints only (K91; docs/decisions/0024-the-wireless-tier.md): a room on the wireless tier cannot hold a bond"}

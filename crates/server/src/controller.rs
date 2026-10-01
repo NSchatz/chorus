@@ -45,9 +45,11 @@ pub enum ControllerAction {
 /// Turn `command`, from an endpoint playing `zone`, into what it asks for.
 ///
 /// Every volume is clamped into the catalog's range here, and the result goes
-/// through [`Zones::apply`], which refuses an unknown zone; the room limits of
-/// K81 (goal 11) apply there too once they exist, so a button is never a
-/// bypass (I10).
+/// through [`Zones::apply`], which refuses an unknown zone and clamps every
+/// volume to the room's effective limit (its `limit` and any active quiet
+/// hours, K81, catalog v2), so a button is never a bypass (I10):
+/// `crates/control/tests/catalog_v2.rs` drives both controller volume
+/// commands through this function into a limited room.
 pub fn translate(
     zones: &Zones,
     zone: &str,
