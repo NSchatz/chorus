@@ -10,8 +10,8 @@ Every report carries two lines, held by `tools/conventions/check-measurements.sh
 - `Build measured: <40-hex sha>`: a commit in this history (a squash-merged change cites the
   merge commit, not a branch commit).
 
-As of 2026-09-30 no report here is `hardware`: four are `synthetic`, four are `host` and one is
-`simulation` (`sim-house-8-rooms.md`). The build commits the reports written before the rule first named no longer exist; each report says which
+As of 2026-10-01 no report here is `hardware`: four are `synthetic`, four are `host` and two are
+`simulation` (`sim-house-8-rooms.md`, `latency-growth-sim.md`). The build commits the reports written before the rule first named no longer exist; each report says which
 commit replaced it and why (K48, audit A-6).
 
 Hardware reports arrive through the bench scripts (K45, `docs/bench.md`): each is
