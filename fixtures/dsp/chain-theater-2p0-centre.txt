@@ -1,0 +1,27 @@
+# Goal 13, a 2.0 stream into a theater set, the centre role (FC): the passive
+# centre (FL + FR) / sqrt 2 (Dressler, Dolby Surround Pro Logic Decoder section
+# 1.1: the centre goes into Lt and Rt "divided equally ... with a 3 dB level
+# reduction", https://educypedia.org/library/208_Dolby_Surround_Pro_Logic_Decoder.pdf, read 2026-10-01; so (Lt + Rt) / sqrt 2 recovers it at unity,
+# computed). FL a 1 kHz tone of 0.5, FR the same tone at 0.3: the output settles
+# at (0.5 + 0.3) / sqrt 2 = 0.565685425.
+
+kind = chain
+source = https://educypedia.org/library/208_Dolby_Surround_Pro_Logic_Decoder.pdf docs/dsp.md
+read = 2026-10-01
+rate_hz = 48000
+room_gain = 1
+limit_gain = 1
+channel_map = 1 2
+frames = 9600
+role = 3
+input.0 = sine 1000 0.5
+input.1 = sine 1000 0.3
+out_channels = 1
+amplitude.0 = 0.565685424949238
+amplitude_from = 4800
+amplitude_tolerance = 1e-5
+golden = 1
+# The Rust chain's output (the chain_samples example): a drift check.
+samples_from = 9536
+samples_tolerance = 1e-6
+samples.0 = -0.4898979 -0.52262515 -0.54641014 -0.5608459 -0.5656854 -0.5608459 -0.54641014 -0.52262515 -0.4898979 -0.4487884 -0.39999998 -0.34436744 -0.2828427 -0.21647844 -0.14641015 -0.07383676 -8.7586486e-14 0.07383676 0.14641015 0.21647844 0.2828427 0.34436744 0.39999998 0.4487884 0.4898979 0.52262515 0.54641014 0.5608459 0.5656854 0.5608459 0.54641014 0.52262515 0.4898979 0.4487884 0.39999998 0.34436744 0.2828427 0.21647844 0.14641015 0.07383676 1.579959e-13 -0.07383676 -0.14641015 -0.21647844 -0.2828427 -0.34436744 -0.39999998 -0.4487884 -0.4898979 -0.52262515 -0.54641014 -0.5608459 -0.5656854 -0.5608459 -0.54641014 -0.52262515 -0.4898979 -0.4487884 -0.39999998 -0.34436744 -0.2828427 -0.21647844 -0.14641015 -0.07383676

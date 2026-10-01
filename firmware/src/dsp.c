@@ -665,6 +665,15 @@ chorus_dsp_err_t chorus_dsp_speech_design(double rate_hz, chorus_dsp_coeffs_t *o
 #define TREBLE_HZ 8000.0
 #define TONE_Q 0.70710678118654752440
 #define LFE_GAIN_DB 10.0
+/* Goal 13, the theater maps; every value and its citation is Rust's
+ * (crates/dsp/src/chain.rs): BS.775-4's 0.7071, the passive matrix's
+ * surround gain, its 20 ms delay and 100 Hz..7 kHz band (Q ASSUMED). */
+#define DOWNMIX_GAIN 0.70710678118654752440
+#define AMBIENT_GAIN 0.70710678118654752440
+#define AMBIENT_DELAY_US 20000u
+#define AMBIENT_LOW_HZ 100.0
+#define AMBIENT_HIGH_HZ 7000.0
+#define AMBIENT_Q 0.70710678118654752440
 
 void chorus_dsp_sound_default(chorus_dsp_sound_t *s)
 {
@@ -704,6 +713,9 @@ chorus_dsp_err_t chorus_dsp_sound_validate(const chorus_dsp_sound_t *s, const ch
     if (s->sub_level_cdb < CHORUS_DSP_SUB_LEVEL_MIN_CDB ||
         s->sub_level_cdb > CHORUS_DSP_SUB_LEVEL_MAX_CDB) {
         return refuse(field, "sub_level_cdb", bad);
+    }
+    if (s->tv_upmix > CHORUS_DSP_TV_UPMIX_MAX) {
+        return refuse(field, "tv_upmix", bad);
     }
     if (s->eq_count > CHORUS_DSP_ROOM_EQ_MAX_FILTERS) {
         return refuse(field, "eq_count", bad);
@@ -758,6 +770,84 @@ static int find(const chorus_dsp_chain_t *c, uint8_t position)
     return -1;
 }
 
+typedef struct {
+    uint8_t position;
+    double gain;
+} term_t;
+
+/* Rust's Mix::row: each term the map carries, in the order given. */
+static void mix_row(const chorus_dsp_chain_t *c, const term_t *terms, uint32_t count,
+                    chorus_dsp_mix_t *m)
+{
+    memset(m, 0, sizeof(*m));
+    for (uint32_t k = 0; k < count; k++) {
+        int i = find(c, terms[k].position);
+        if (i >= 0 && m->n < CHORUS_DSP_MIX_TERMS) {
+            m->at[m->n] = (uint32_t)i;
+            m->gain[m->n] = (float)terms[k].gain;
+            m->n++;
+        }
+    }
+}
+
+static float mix_apply(const chorus_dsp_mix_t *m, const float *x)
+{
+    float v = 0.0f;
+    for (uint32_t k = 0; k < m->n; k++) {
+        v += x[m->at[k]] * m->gain[k];
+    }
+    return v;
+}
+
+static bool is_surround(uint8_t p)
+{
+    return p == CHORUS_DSP_POS_BL || p == CHORUS_DSP_POS_BR || p == CHORUS_DSP_POS_SL ||
+           p == CHORUS_DSP_POS_SR;
+}
+
+/* The other 5.1 naming of the same surround speaker (back for side). */
+static uint8_t equivalent(uint8_t p)
+{
+    switch (p) {
+    case CHORUS_DSP_POS_BL:
+        return CHORUS_DSP_POS_SL;
+    case CHORUS_DSP_POS_SL:
+        return CHORUS_DSP_POS_BL;
+    case CHORUS_DSP_POS_BR:
+        return CHORUS_DSP_POS_SR;
+    case CHORUS_DSP_POS_SR:
+        return CHORUS_DSP_POS_BR;
+    default:
+        return p;
+    }
+}
+
+/* BS.775-4's 2/0 row for one side (Rust's stereo_row). */
+static void stereo_row(bool left, term_t out[4])
+{
+    out[0].position = left ? CHORUS_DSP_POS_FL : CHORUS_DSP_POS_FR;
+    out[0].gain = 1.0;
+    out[1].position = CHORUS_DSP_POS_FC;
+    out[1].gain = DOWNMIX_GAIN;
+    out[2].position = left ? CHORUS_DSP_POS_BL : CHORUS_DSP_POS_BR;
+    out[2].gain = DOWNMIX_GAIN;
+    out[3].position = left ? CHORUS_DSP_POS_SL : CHORUS_DSP_POS_SR;
+    out[3].gain = DOWNMIX_GAIN;
+}
+
+static bool mix_equal(const chorus_dsp_mix_t *a, const chorus_dsp_mix_t *b)
+{
+    if (a->n != b->n) {
+        return false;
+    }
+    for (uint32_t k = 0; k < a->n; k++) {
+        if (a->at[k] != b->at[k] || a->gain[k] != b->gain[k]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static float driver_trim(const chorus_dsp_driver_t *d)
 {
     float g = (float)chorus_dsp_db_to_gain((double)d->trim_cdb / 100.0);
@@ -807,18 +897,49 @@ static chorus_dsp_err_t apply(chorus_dsp_chain_t *c, const chorus_dsp_sound_t *s
     chorus_dsp_source_t source;
     uint32_t sa = 0, sb = 0;
     bool highpass = false;
+    chorus_dsp_mix_t mix[2];
+    memset(mix, 0, sizeof(mix));
+    bool extra = false, any_surround = false;
+    for (uint32_t i = 0; i < n; i++) {
+        if (c->map[i] == CHORUS_DSP_POS_FC || is_surround(c->map[i])) {
+            extra = true;
+        }
+        if (is_surround(c->map[i])) {
+            any_surround = true;
+        }
+    }
+    int fl = find(c, CHORUS_DSP_POS_FL), fr = find(c, CHORUS_DSP_POS_FR);
     if (s->role == 0) {
         if (c->endpoint.two_way) {
-            int l = find(c, CHORUS_DSP_POS_FL), r = find(c, CHORUS_DSP_POS_FR);
-            if (l >= 0 && r >= 0) {
+            if (fl >= 0 && fr >= 0 && extra) {
+                /* Rust's mono_row: the mean of BS.775-4's 2/0 pair. */
+                const term_t mono[7] = {
+                    {CHORUS_DSP_POS_FL, 0.5},
+                    {CHORUS_DSP_POS_FR, 0.5},
+                    {CHORUS_DSP_POS_FC, DOWNMIX_GAIN},
+                    {CHORUS_DSP_POS_BL, 0.5 * DOWNMIX_GAIN},
+                    {CHORUS_DSP_POS_BR, 0.5 * DOWNMIX_GAIN},
+                    {CHORUS_DSP_POS_SL, 0.5 * DOWNMIX_GAIN},
+                    {CHORUS_DSP_POS_SR, 0.5 * DOWNMIX_GAIN},
+                };
+                source = CHORUS_DSP_SOURCE_MIX;
+                mix_row(c, mono, 7, &mix[0]);
+            } else if (fl >= 0 && fr >= 0) {
                 source = CHORUS_DSP_SOURCE_PAIR;
-                sa = (uint32_t)l;
-                sb = (uint32_t)r;
+                sa = (uint32_t)fl;
+                sb = (uint32_t)fr;
             } else if (n == 1) {
                 source = CHORUS_DSP_SOURCE_CHANNEL;
             } else {
                 source = CHORUS_DSP_SOURCE_MEAN;
             }
+        } else if (c->endpoint.stereo_downmix && extra && fl >= 0 && fr >= 0) {
+            term_t row[4];
+            source = CHORUS_DSP_SOURCE_DOWNMIX;
+            stereo_row(true, row);
+            mix_row(c, row, 4, &mix[0]);
+            stereo_row(false, row);
+            mix_row(c, row, 4, &mix[1]);
         } else {
             source = CHORUS_DSP_SOURCE_PASS;
         }
@@ -826,18 +947,67 @@ static chorus_dsp_err_t apply(chorus_dsp_chain_t *c, const chorus_dsp_sound_t *s
         source = CHORUS_DSP_SOURCE_SUB;
     } else {
         int at = find(c, s->role);
-        if (at < 0 && n == 1 && c->map[0] == CHORUS_DSP_POS_MONO) {
-            at = 0;
-        }
+        highpass = s->sub_present;
         if (at >= 0) {
+            /* The role's own channel, and for a front role the folds. */
+            term_t terms[4];
+            uint32_t nt = 0;
+            terms[nt].position = s->role;
+            terms[nt++].gain = 1.0;
+            bool left = s->role == CHORUS_DSP_POS_FL;
+            if (left || s->role == CHORUS_DSP_POS_FR) {
+                if (s->fold_centre) {
+                    terms[nt].position = CHORUS_DSP_POS_FC;
+                    terms[nt++].gain = DOWNMIX_GAIN;
+                }
+                if (s->fold_surround) {
+                    terms[nt].position = left ? CHORUS_DSP_POS_BL : CHORUS_DSP_POS_BR;
+                    terms[nt++].gain = DOWNMIX_GAIN;
+                    terms[nt].position = left ? CHORUS_DSP_POS_SL : CHORUS_DSP_POS_SR;
+                    terms[nt++].gain = DOWNMIX_GAIN;
+                }
+            }
+            mix_row(c, terms, nt, &mix[0]);
+            if (mix[0].n == 1) {
+                source = CHORUS_DSP_SOURCE_CHANNEL;
+                sa = (uint32_t)at;
+                memset(mix, 0, sizeof(mix));
+            } else {
+                source = CHORUS_DSP_SOURCE_MIX;
+            }
+        } else if (n == 1 && c->map[0] == CHORUS_DSP_POS_MONO) {
             source = CHORUS_DSP_SOURCE_CHANNEL;
-            sa = (uint32_t)at;
+            sa = 0;
+        } else if (s->role == CHORUS_DSP_POS_FC) {
+            if (fl >= 0 && fr >= 0) {
+                const term_t centre[2] = {{CHORUS_DSP_POS_FL, DOWNMIX_GAIN},
+                                          {CHORUS_DSP_POS_FR, DOWNMIX_GAIN}};
+                source = CHORUS_DSP_SOURCE_MIX;
+                mix_row(c, centre, 2, &mix[0]);
+            } else {
+                source = CHORUS_DSP_SOURCE_SILENCE;
+            }
+        } else if (is_surround(s->role)) {
+            int k = find(c, equivalent(s->role));
+            if (k >= 0) {
+                source = CHORUS_DSP_SOURCE_CHANNEL;
+                sa = (uint32_t)k;
+            } else if (fl >= 0 && fr >= 0 && !any_surround &&
+                       s->tv_upmix == CHORUS_DSP_TV_UPMIX_AMBIENT) {
+                source = CHORUS_DSP_SOURCE_AMBIENT;
+                sa = (uint32_t)fl;
+                sb = (uint32_t)fr;
+            } else {
+                source = CHORUS_DSP_SOURCE_SILENCE;
+            }
         } else {
             source = CHORUS_DSP_SOURCE_SILENCE;
         }
-        highpass = s->sub_present;
     }
-    uint32_t base = (source == CHORUS_DSP_SOURCE_PASS) ? n : 1u;
+    bool ambient = source == CHORUS_DSP_SOURCE_AMBIENT;
+    uint32_t base = (source == CHORUS_DSP_SOURCE_PASS)      ? n
+                    : (source == CHORUS_DSP_SOURCE_DOWNMIX) ? 2u
+                                                            : 1u;
     uint32_t outputs = c->endpoint.two_way ? 2u : base;
 
     /* 8. Delays: refused before anything changes. */
@@ -845,6 +1015,9 @@ static chorus_dsp_err_t apply(chorus_dsp_chain_t *c, const chorus_dsp_sound_t *s
     uint64_t pool = 0;
     for (uint32_t o = 0; o < outputs; o++) {
         uint64_t us = c->endpoint.output_delay_us[o];
+        if (ambient) {
+            us += AMBIENT_DELAY_US;
+        }
         if (c->endpoint.two_way) {
             us += (o == 0) ? c->endpoint.woofer.delay_us : c->endpoint.tweeter.delay_us;
         }
@@ -863,6 +1036,17 @@ static chorus_dsp_err_t apply(chorus_dsp_chain_t *c, const chorus_dsp_sound_t *s
     }
     chorus_dsp_lr4_design_t bass;
     rc = chorus_dsp_lr4_design(rate, corner((double)s->crossover_hz, rate), &bass);
+    if (rc != CHORUS_DSP_OK) {
+        return rc;
+    }
+    chorus_dsp_coeffs_t ambient_designs[2];
+    rc = chorus_dsp_biquad_design(CHORUS_DSP_HIGHPASS, rate, corner(AMBIENT_LOW_HZ, rate),
+                                  AMBIENT_Q, 0.0, &ambient_designs[0]);
+    if (rc != CHORUS_DSP_OK) {
+        return rc;
+    }
+    rc = chorus_dsp_biquad_design(CHORUS_DSP_LOWPASS, rate, corner(AMBIENT_HIGH_HZ, rate),
+                                  AMBIENT_Q, 0.0, &ambient_designs[1]);
     if (rc != CHORUS_DSP_OK) {
         return rc;
     }
@@ -898,7 +1082,8 @@ static chorus_dsp_err_t apply(chorus_dsp_chain_t *c, const chorus_dsp_sound_t *s
     }
     bool changed = first || source != c->source || sa != c->source_a || sb != c->source_b ||
                    highpass != c->highpass || outputs != c->outputs ||
-                   s->crossover_hz != c->sound.crossover_hz;
+                   s->crossover_hz != c->sound.crossover_hz || !mix_equal(&mix[0], &c->mix[0]) ||
+                   !mix_equal(&mix[1], &c->mix[1]);
     for (uint32_t o = 0; o < outputs && !changed; o++) {
         if (frames[o] != c->delays[o].frames) {
             changed = true;
@@ -911,8 +1096,12 @@ static chorus_dsp_err_t apply(chorus_dsp_chain_t *c, const chorus_dsp_sound_t *s
         c->source = source;
         c->source_a = sa;
         c->source_b = sb;
+        c->mix[0] = mix[0];
+        c->mix[1] = mix[1];
         c->highpass = highpass;
         chorus_dsp_lr4_reset(&c->bass);
+        chorus_dsp_biquad_init(&c->ambient[0], &ambient_designs[0]);
+        chorus_dsp_biquad_init(&c->ambient[1], &ambient_designs[1]);
         chorus_dsp_lr4_reset(&c->two_way);
         uint32_t at = 0;
         for (uint32_t o = 0; o < outputs; o++) {
@@ -1003,6 +1192,7 @@ chorus_dsp_err_t chorus_dsp_chain_init(chorus_dsp_chain_t *c, const chorus_dsp_s
     c->source = CHORUS_DSP_SOURCE_PASS;
     c->sub_gain = 1.0f;
     c->lfe_gain = (float)chorus_dsp_db_to_gain(LFE_GAIN_DB);
+    c->ambient_gain = (float)AMBIENT_GAIN;
     c->lfe = find(c, CHORUS_DSP_POS_LFE);
     c->lookahead = (uint32_t)chorus_dsp_frames_for_us(CHORUS_DSP_LIMITER_LOOKAHEAD_US, rate_hz);
     if (c->lookahead > CHORUS_DSP_LIMITER_MAX_LOOKAHEAD) {
@@ -1172,6 +1362,28 @@ chorus_dsp_err_t chorus_dsp_chain_process(chorus_dsp_chain_t *c, const float *in
                 }
             }
             c->out[0] = (count > 0) ? sum * (1.0f / (float)count) : 0.0f;
+            break;
+        }
+        case CHORUS_DSP_SOURCE_MIX: {
+            float v = mix_apply(&c->mix[0], x);
+            if (c->highpass) {
+                v = chorus_dsp_lr4_high(&c->bass, v);
+            }
+            c->out[0] = v;
+            break;
+        }
+        case CHORUS_DSP_SOURCE_DOWNMIX:
+            c->out[0] = mix_apply(&c->mix[0], x);
+            c->out[1] = mix_apply(&c->mix[1], x);
+            break;
+        case CHORUS_DSP_SOURCE_AMBIENT: {
+            float v = (x[c->source_a] - x[c->source_b]) * c->ambient_gain;
+            v = chorus_dsp_biquad_process(&c->ambient[0], v);
+            v = chorus_dsp_biquad_process(&c->ambient[1], v);
+            if (c->highpass) {
+                v = chorus_dsp_lr4_high(&c->bass, v);
+            }
+            c->out[0] = v;
             break;
         }
         }

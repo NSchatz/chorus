@@ -1,0 +1,22 @@
+# Goal 13, the ambient surround cancels what is centred: FL = FR (a dialogue
+# signal, here a tone plus noise) gives FL - FR = 0 exactly, so the surround
+# role plays silence (Dressler section 1.1: "the identical center channel
+# components in Lt and Rt will exactly cancel each other in the surround
+# output", https://educypedia.org/library/208_Dolby_Surround_Pro_Logic_Decoder.pdf, read 2026-10-01).
+
+kind = chain
+source = https://educypedia.org/library/208_Dolby_Surround_Pro_Logic_Decoder.pdf
+read = 2026-10-01
+rate_hz = 48000
+room_gain = 1
+limit_gain = 1
+channel_map = 1 2
+frames = 4800
+role = 10
+tv_upmix = 1
+input.0 = sine 300 0.4 + noise 25 0.3
+input.1 = sine 300 0.4 + noise 25 0.3
+out_channels = 1
+amplitude.0 = 0
+amplitude_from = 0
+amplitude_tolerance = 0
