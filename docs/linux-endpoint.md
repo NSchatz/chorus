@@ -112,7 +112,7 @@ A `line_in` (analogue) input is captured and stamped as before, without rate mat
 ### The TV path's low-latency stream (`--low-latency on|off`)
 
 A TV played into one wired room is not played at the slot path's 180 ms: the server relays it
-over UDP, each 2.5 ms chunk stamped to be heard `L_tv` (20 ms by default) after the TV made it
+over UDP, each 2.5 ms chunk stamped to be heard `L_tv` (25 ms by default) after the TV made it
 (`docs/protocol.md` "Low-latency path", ADR 0091). A wired endpoint takes part by default;
 `--low-latency off` keeps it on the slot path (it then never advertises the feature). An endpoint
 with `--transport wireless` never advertises it either (the path is wired only).

@@ -468,8 +468,8 @@ The server's flags for it:
 | flag | default | what |
 |---|---|---|
 | `--low-latency-port <port>` | the audio port + 1 (ASSUMED); with an ephemeral audio port, ephemeral | the relay's UDP port, on the audio listener's address; 0 asks for an ephemeral one |
-| `--tv-latency-ms <ms>` | 20 (`lowlat::DEFAULTS`) | `L_tv`; refused outside 10..40 or below the plan's floor (19.417 ms at the defaults) |
-| `--test-tv-latency-ms <ms>` | off | **tests only**: `L_tv` outside 10..40 (up to 5 s), still never below the floor; a loaded test host does not keep a 20 ms deadline |
+| `--tv-latency-ms <ms>` | 25 (`lowlat::DEFAULTS`) | `L_tv`; refused outside 10..40 or below the plan's floor (24.417 ms at the defaults) |
+| `--test-tv-latency-ms <ms>` | off | **tests only**: `L_tv` outside 10..40 (up to 5 s), still never below the floor; a loaded test host does not keep a 25 ms deadline |
 | `--fec-k <k>`, `--fec-depth <d>` | 4, 1 | the streams' FEC; `--fec-k 0` is no FEC (the tests' negative control) |
 | `--udp-loss <ppm>,<seed>` | off | **tests only**: drop that many datagrams per million, seeded, on both legs (each received from a hub, each sent to a player); never set in a deployment |
 

@@ -83,6 +83,15 @@ const WINDOW: usize = 24_000;
 const CHUNK_NS: u64 = 2_500_000;
 const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
+/// One of these tests at a time: each runs a server, a hub and up to six
+/// endpoints in real time, and three at once on a shared host starve the
+/// hub's capture thread (its ring underflows), which grades the host.
+static SERIAL: Mutex<()> = Mutex::new(());
+
+fn one_at_a_time() -> std::sync::MutexGuard<'static, ()> {
+    SERIAL.lock().unwrap_or_else(|p| p.into_inner())
+}
+
 fn silent_source() -> PathBuf {
     let path = std::env::temp_dir().join(format!(
         "chorus-tvll-{}-{}.pcm",
@@ -702,6 +711,7 @@ fn until_low_latency(players: &[&Endpoint], played: u64, received: usize) {
 
 #[test]
 fn a_theater_set_plays_the_tv_in_low_latency_mode_with_its_maps_its_lead_and_its_trim() {
+    let _serial = one_at_a_time();
     let dir = scratch("theater");
     let (mut server, source) =
         server(&["--udp-loss", "1000,7", "--test-tv-latency-ms", TEST_L_TV_MS]);
@@ -968,6 +978,7 @@ fn loss_run(ppm: u32, fec_k: u8, secs: u64) -> (String, u64, u64, u64, u64) {
 
 #[test]
 fn loss_on_both_legs_is_repaired_by_the_fec_and_is_lost_without_it() {
+    let _serial = one_at_a_time();
     let mut lines = Vec::new();
     let mut by_case = Vec::new();
     for (ppm, k) in [(1_000u32, 4u8), (10_000, 4), (10_000, 0)] {
@@ -1033,6 +1044,7 @@ fn group_of(state: &str, zone: &str) -> (String, String) {
 
 #[test]
 fn tv_power_on_the_cec_bus_plays_the_theater_in_low_latency_mode_and_standby_restores_it() {
+    let _serial = one_at_a_time();
     let dir = scratch("cec");
     let (mut server, source) = server(&[]);
     let ids = [fresh_id("cec-fl"), fresh_id("cec-fr")];

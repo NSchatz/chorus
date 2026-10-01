@@ -932,7 +932,8 @@ mod tests {
             .lock()
             .unwrap()
             .iter()
-            .any(|l| l.contains("tv-relay lead") && l.contains("lead_ns=70000000")));
+            .any(|l| l.contains("tv-relay lead")
+                && l.contains(&format!("lead_ns={}", DEFAULTS.l_tv_ns + 50_000_000))));
         relay.reconcile(&[play(-100)]);
         let floor = DEFAULTS.floor_ns();
         assert!(said

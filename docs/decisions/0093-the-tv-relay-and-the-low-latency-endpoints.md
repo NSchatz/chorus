@@ -34,6 +34,10 @@ record is that integration and what its end-to-end tests found.
 
 ## What was read
 
+Main at this record's merge includes #92 (ADR 0092: an autoplay is kept through the hub's CEC
+volume and mute, `stereo_downmix` is set, the `chorus-udp-loss` probe and bench session S8); this
+change was merged onto it and its tests run there.
+
 All 2026-10-01: the envelope and the tracks' follow-ups; ADRs 0004, 0066, 0071, 0079, 0087,
 0088, 0090, 0091; `docs/protocol.md` "Low-latency path"; the code each "Implemented in" names and
 the end-to-end tests it copies its harness from (`tv_capture_rate_match.rs`, `cec_tv.rs`,
@@ -84,7 +88,22 @@ for a number used here (every new number is ASSUMED, below).
    splitmix64 on both legs (each received from a hub, each sent to a player);
    `--test-tv-latency-ms` lets `L_tv` leave 10..40 ms (never below the floor); `--fec-k 0` is
    the negative control.
-7. **Third-party crates are optimised in debug and test builds** (`[profile.dev.package."*"]
+7. **The budget's capture term is the hub as built, and `L_tv` is 25 ms** (the coordinator's
+   binding note; ADR 0091 assumed 2.0 ms of capture buffering, two 1 ms periods). The hub
+   (ADR 0090) reads 240-frame (5 ms) periods and sends a frame once it is 2 ms
+   (`SEND_DELAY_NS`) old, so a chunk's last frame leaves up to one period plus 2 ms after it
+   was digitized: `DEFAULTS.capture_ns` is 7 ms, the floor 24.417 ms, and `DEFAULTS.l_tv_ns`
+   25 ms (the interleaved scenario 35 ms over its 31.917 ms floor). The other choice, a capture
+   period at or under the chunk in low-latency mode, was not taken: with the 2 ms send delay
+   kept, even 1 ms periods give a floor of 20.417 ms, over 20; it would need the period and
+   the send delay changed together, a re-derivation of the DLL and ratio-loop constants and
+   ADR 0090's 10 tests on another period rate, for 4.6 ms. Lip sync stays inside BRIEF.md
+   2.2's [-40, +15]: -(1 + 0.0625 + 25) = -26.06 ms at the defaults (-36.06 ms interleaved);
+   the game-mode TV scenario was outside before (-86.06 ms) and is outside now (-91.06 ms),
+   as the report says. `docs/measurements/low-latency-budget-sim.md` is regenerated
+   (simulation, not timing evidence); `crates/sync/tests/lowlat_budget.rs` pins the new lip
+   sync. Bench S8.4 measures the capture term.
+8. **Third-party crates are optimised in debug and test builds** (`[profile.dev.package."*"]
    opt-level = 2`). Unoptimised, the RustCrypto AEAD could not seal and open the end-to-end
    tests' 3000 datagrams a second on the shared host: the relay fell behind until it was
    discarding late chunks, which pinned the chunks' age at the relay to `L_tv` itself
@@ -98,21 +117,23 @@ Test runs on a shared 4-core host at a load average of 11 to 21 (other jobs), th
 evidence (BRIEF.md 3.1 rule 3): every process shares one clock, the TV and the DACs are modelled.
 
 - `tv_low_latency.rs`, a theater set (FL FR FC LFE SL SR) on `L_tv` 110 ms, 1e-3 loss on both
-  legs: FL plays the left (1 kHz at 0.00 dB, the right's 1.5 kHz at -67.6 dB), FR the right
-  (-0.17 dB; the left at -64.6 dB), FC both at -3.01 and -3.18 dB ((L + R) / sqrt 2), the LFE
-  50 Hz at +4.9 dB and the mids under -82 dB, SL and SR digital silence (`tv_upmix` off); every
-  one of 1668 chunks received was stamped capture + 110 ms; a +50 ms trim made it 160 ms and a
-  -100 ms trim clamped at the floor 19.416667 ms with `av-trim-clamped`; before the trims the six
-  players played 9822 chunks, rebuilt 10, lost none; joining the den's group put it back on the
-  slot (`reason=grouped`) and the players back on TCP.
+  legs: FL plays the left (1 kHz at 0.00 dB, the right's 1.5 kHz at -81.4 dB), FR the right
+  (-0.01 dB; the left at -78.1 dB), FC both at -3.01 and -3.02 dB ((L + R) / sqrt 2), the LFE
+  50 Hz at +4.8 dB and the mids under -86 dB, SL and SR digital silence (`tv_upmix` off); every
+  one of 1666 chunks received was stamped capture + 110 ms; a +50 ms trim made it 160 ms and a
+  -100 ms trim clamped at the floor 24.416667 ms with `av-trim-clamped`; before the trims the six
+  players played 9824 chunks, rebuilt 10, lost none; joining the den's group put it back on the
+  slot (`reason=grouped`) and the players back on TCP. The three tests run one at a time: run
+  together on the shared host (load average above 30 at the time) the hub's capture thread was
+  starved into ring underflows and nothing reached the relay in time.
 - The same, two players, 6 s each: 1e-3 with FEC: 12 datagrams dropped, 3 rebuilt at the relay and 9 at the players, 0 lost;
   1e-2 with FEC: 100 dropped, 24 rebuilt at the relay and 58 at the players, 2 lost (two
   losses in one group); 1e-2 without
   FEC (the control): 86 dropped, 26 chunks lost at the relay and 112 at the players (the
   relay's included, once per player).
-- CEC on the fake bus (default `L_tv` 20 ms): the theater, in the den's group, is taken out of it
-  and played in low-latency mode when the TV powers on; every chunk received is stamped capture
-  + 20 ms; the standby stops the autoplay (`stopped reason=standby`), ends the relay and
+- CEC on the fake bus (the configured default `L_tv`, 25 ms): the theater, in the den's group, is
+  taken out of it and played in low-latency mode when the TV powers on; every chunk received is
+  stamped capture + 25 ms; the standby stops the autoplay (`stopped reason=standby`), ends the relay and
   restores the theater.
 
 ## ASSUMED values
@@ -132,11 +153,9 @@ three TVs: model, eARC port, optical out and audio menu".
   lead, so the player plays each chunk at its stamp and holds nothing before it.
 - The slot that still carries the room's group hears nothing from the hub while the relay plays
   (its port underruns and counts it); the players ignore the slot's chunks for that time.
-- The hub's capture adds more than the budget's 2.0 ms: its 5 ms periods (ADR 0090) and the
-  matcher's 2 ms send delay put a chunk at the relay several ms after its capture stamp before
-  any network (8.5 ms mean in the least loaded run). Not timing evidence, and it does not change
-  the floor rule, but it says the 19.4 ms floor's capture term is optimistic for this hub;
-  bench S8 measures it (follow-up).
+- ADR 0091's defaults change: the capture term 2 to 7 ms and `L_tv` 20 to 25 ms (decision 7).
+  On the test host a chunk reached the relay 8.5 ms after its capture stamp on average in the
+  least loaded run, consistent with the new term (not timing evidence).
 
 ## Not chosen
 
@@ -154,7 +173,7 @@ three TVs: model, eARC port, optical out and audio menu".
 - Firmware: the UDP socket, the session wiring of 0x16/0x17 and a long-lived PSA key per stream
   (ADR 0091; the C layer and its vectors are in). Until then the C endpoint never advertises
   `low_latency` and a room with one plays the TV on the slot path (`player-not-capable`).
-- Bench S8: the hub's capture-to-send latency against the floor's 2 ms term, the ALSA period a
+- Bench S8: the hub's capture-to-send latency against the floor's 7 ms term, the ALSA period a
   real DAC needs to hold the 4 ms target, the relay and the legs on the owner's LAN.
 - A `low_latency` field on `take` (a catalog change with vectors), if a command should choose.
 - 5.1 at s24 needs 60-frame chunks (`chunk-does-not-fit` today); the TV path is stereo.

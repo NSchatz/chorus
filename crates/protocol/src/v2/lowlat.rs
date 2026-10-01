@@ -1327,9 +1327,15 @@ pub const DEFAULTS: Plan = Plan {
     chunk_frames: 120,
     fec_k: 4,
     fec_depth: 1,
-    l_tv_ns: 20_000_000,
+    // 25 ms: the floor (24.417 ms, with the hub's real capture term below)
+    // rounded up to a whole millisecond and a half (tv-path, ADR 0093; ADR
+    // 0091 chose 20 ms over a 19.417 ms floor that assumed 1 ms periods).
+    l_tv_ns: 25_000_000,
     l_tv_range_ns: (10_000_000, 40_000_000),
-    capture_ns: 2_000_000,
+    // 7 ms: what the Linux hub does (ADR 0090): a chunk's last frame leaves
+    // at the first 5 ms period read that is 2 ms (SEND_DELAY_NS) past it, so
+    // up to one period plus the send delay after it was digitized.
+    capture_ns: 7_000_000,
     network_leg_ns: 250_000,
     relay_ns: 500_000,
     jitter_margin_ns: 2_000_000,
@@ -1391,12 +1397,13 @@ impl Plan {
     pub fn budget(&self) -> [BudgetItem; 9] {
         [
             BudgetItem {
-                stage: "capture buffering (two ALSA periods of 1 ms)",
+                stage: "capture: one 5 ms ALSA period plus the hub's 2 ms send delay",
                 ns: self.capture_ns,
                 source: Source::Assumed(
-                    "two 1 ms periods, the least ALSA allows per buffer \
-                     (https://www.alsa-project.org/wiki/FramesPeriods, a search summary \
-                     read 2026-10-01, LEAD); replaced by bench session S8",
+                    "the Linux hub as built (ADR 0090: 240-frame periods and \
+                     SEND_DELAY_NS 2 ms, both ASSUMED there): a chunk's last frame is sent \
+                     at the first period read at least 2 ms past it, at worst one period \
+                     later (ADR 0093); replaced by bench session S8",
                 ),
             },
             BudgetItem {

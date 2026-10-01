@@ -569,7 +569,8 @@ target/release/chorus-wakeup-probe --period-us 1000 --seconds 600 --raw hub-w1ms
 
 **Expected:** a lateness table (p50, p99, p99.9, max). What changes: ADR 0090's DLL tests assume
 wakeups late by up to 100 us (uniform, `tests/common/tv.rs`); a p99.9 well above that moves
-`DLL_BANDWIDTH_HZ` and the ring (`RING_FRAMES`), and ADR 0091's 2 ms capture-buffering term.
+`DLL_BANDWIDTH_HZ` and the ring (`RING_FRAMES`), and the budget's 7 ms capture term (one
+period plus the 2 ms send delay, ADR 0093; ADR 0091 had 2 ms).
 
 #### S8.5 The lip-sync measurement and the A/V trim
 
@@ -607,7 +608,8 @@ target/release/chorus-udp-loss send --to <hub>:47100 --seconds 86400            
 `udp-loss burst length=<L> count=<n>` line per burst length and a `transit-variation` table. If
 the hub's firewall drops the port, open it for the run only. What changes: ADR 0091's FEC
 choice. Single losses only: depth 1 (the default) stands. Bursts of 2 or more: depth 2 with
-`L_tv` 30 ms, which the simulator already prices. The `transit-variation` p99.9 replaces the 2 ms
+`L_tv` 35 ms (ADR 0093; 30 ms before the hub's real capture term), which the simulator
+already prices. The `transit-variation` p99.9 replaces the 2 ms
 jitter margin, and a loss ratio well above 1e-3 per leg is a wiring finding before it is a FEC
 one. (One-way delay, the `ASSUMED` 0.25 ms per leg, needs agreeing clocks and is not measured
 here.)

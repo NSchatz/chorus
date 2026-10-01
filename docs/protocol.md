@@ -1079,11 +1079,12 @@ session wiring or a per-stream key: it never advertises `low_latency` yet.
 
 `crates/protocol/src/v2/lowlat.rs`, `DEFAULTS` (the server, the hub and the
 client use them unless a flag overrides): 120-frame chunks (2.5 ms at
-48 kHz), `fec_k` 4, `fec_depth` 1, `L_tv` 20 ms from the capture stamp to the
+48 kHz), `fec_k` 4, `fec_depth` 1, `L_tv` 25 ms from the capture stamp to the
 speaker (configurable 10 to 40 ms). The floor rule: an `L_tv` below capture
-buffering + one chunk + the FEC wait `(k - 1) x D` chunks + both UDP legs +
+(the Linux hub's: one 5 ms ALSA period plus its 2 ms send delay) + one chunk + the FEC wait `(k - 1) x D` chunks + both UDP legs +
 the relay + the jitter margin + the endpoint's output path is refused, never
-raised (19.417 ms at the defaults; each term and its source is in the ADR and
+raised (24.417 ms at the defaults; each term and its source is in ADRs 0091
+and 0093 and
 in `docs/measurements/low-latency-budget-sim.md`, a simulation that is not
 timing evidence).
 
