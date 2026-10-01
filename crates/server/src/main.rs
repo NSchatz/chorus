@@ -844,6 +844,13 @@ fn main() -> ExitCode {
     let mut relay_threads = 0usize;
     let tv_relay = match (&line_ins, &control) {
         (Some(_), Some((_, state))) => {
+            if let Err(e) = config.check_low_latency() {
+                report("configuration refused", &e.to_string());
+                println!(
+                    "chorus-server: stopped reason=configuration-refused chunks_sent=0 played=0"
+                );
+                return ExitCode::from(EXIT_CONFIG);
+            }
             let address = match udp_address(&config.listen, config.low_latency_port) {
                 Some(a) => a,
                 None => {

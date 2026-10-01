@@ -612,9 +612,17 @@ impl ServerConfig {
         if config.event_streams == 0 {
             return Err(ServerConfigError::NoEventStreamsAllowed);
         }
-        // The low-latency plan these flags make must be one the offer can
-        // carry and the floor rule allows (ADR 0091): refused, never raised.
-        let plan = config.low_latency_plan();
+        Ok(config)
+    }
+}
+
+impl ServerConfig {
+    /// The low-latency plan these flags make must be one the offer can carry
+    /// and the floor rule allows (ADR 0091): refused, never raised. Checked
+    /// where the TV relay is built, after the stream format was accepted (a
+    /// rate this server cannot carry is refused as that first).
+    pub fn check_low_latency(&self) -> Result<(), ServerConfigError> {
+        let plan = self.low_latency_plan();
         if let Err(e) = plan.fec() {
             return Err(ServerConfigError::LowLatency {
                 argument: "--fec-k/--fec-depth".to_string(),
@@ -627,11 +635,9 @@ impl ServerConfig {
                 detail: e.to_string(),
             });
         }
-        Ok(config)
+        Ok(())
     }
-}
 
-impl ServerConfig {
     /// The low-latency plan this configuration runs (goal 13): the protocol's
     /// defaults with this server's rate, `L_tv` and FEC shape.
     pub fn low_latency_plan(&self) -> chorus_protocol::v2::lowlat::Plan {
