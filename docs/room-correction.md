@@ -4,7 +4,7 @@ How chorus turns a recording of a sweep played in a room into the room's `room_e
 (goal 12, K31). The measurement itself, a phone's microphone through the control app, is goal
 22's (K87); this is the fitting, from a recording, and it runs on the server
 (`crates/dsp/src/roomfit.rs`). An endpoint only runs the filters it is sent. The decision record
-is `docs/decisions/0000-room-correction-fitting.md`; the sources, with what each says, are
+is `docs/decisions/0083-room-correction-fitting.md`; the sources, with what each says, are
 `docs/research/room-correction-sources.md`.
 
 Every value below is either cited (URL, read 2026-10-01) or marked **ASSUMED**: a starting point

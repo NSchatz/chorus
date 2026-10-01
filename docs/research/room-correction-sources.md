@@ -2,7 +2,7 @@
 
 Research for goal 12 (DSP), track `chorus-g12/roomfit`, 2026-10-01, by a research agent with the
 coordinator's questions; what `docs/room-correction.md` and
-`docs/decisions/0000-room-correction-fitting.md` rest on. This is section 1, the room-fit
+`docs/decisions/0083-room-correction-fitting.md` rest on. This is section 1, the room-fit
 recommendations and the room-fit sources of the goal-12 phase B research notes (which also cover
 the visualizer, bass management, speech and night mode for the other tracks); paths under
 `/cache/tmp/chorus-g12/` are working files outside the repository. Every URL was read on

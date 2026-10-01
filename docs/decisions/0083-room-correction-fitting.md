@@ -1,4 +1,4 @@
-# 0000: room-correction fitting deconvolves a Farina sweep, smooths it, and greedily fits at most eight peaking filters that stay inside the room_eq bounds, prefer cuts, never boost past +3 dB and leave nulls alone
+# 0083: room-correction fitting deconvolves a Farina sweep, smooths it, and greedily fits at most eight peaking filters that stay inside the room_eq bounds, prefer cuts, never boost past +3 dB and leave nulls alone
 
 - Status: accepted (goal 12, 2026-10-01)
 - Decided by: the goal (section 16 item 4; K31, K87) through the coordinator's goal 12 design
@@ -18,8 +18,8 @@ Goal 12's line D asks for room-correction fitting that "produces bounded filters
 recordings". The measurement is a phone's microphone through the control app (K87), which goal
 22 builds; this change is what the server does with a recording once it has one. The catalog's
 `room_eq` command (at most 8 peaking filters, 20 to 1000 Hz, -12.00 to +3.00 dB, Q 0.5 to 10.0)
-and the endpoints' RBJ peaking filters are the other two tracks' (ADRs of `chorus-g12/sound-catalog`
-and `chorus-g12/dsp-core`); the fit has to land exactly on what they accept and run.
+and the endpoints' RBJ peaking filters are the other two tracks' (the sound-catalog track's PR #81, and
+ADR 0082, the DSP library); the fit has to land exactly on what they accept and run.
 
 ## What was read
 
