@@ -90,6 +90,41 @@ pub mod sound_flags {
     ];
 }
 
+/// `sound`'s `tv_upmix` (goal 13, the optional theater block after the
+/// filters): 0 off, 1 ambient. A value past [`SOUND_TV_UPMIX_MAX`] is rejected
+/// (`Problem::Undefined`), as an unknown flag is.
+pub const SOUND_TV_UPMIX_MAX: u8 = 1;
+
+/// The bits of `sound`'s `fold` byte (goal 13, the theater block): which
+/// positions the room's bonded set lacks, so a front member folds the
+/// stream's channels for them into its own (ITU-R BS.775-4 Table 2). A bit
+/// outside [`sound_fold::DEFINED`] is rejected, as `flags`' are.
+pub mod sound_fold {
+    /// The set has no centre member.
+    pub const CENTRE: u8 = 1 << 0;
+    /// The set has no surround pair.
+    pub const SURROUND: u8 = 1 << 1;
+    /// Every defined bit.
+    pub const DEFINED: u8 = CENTRE | SURROUND;
+    /// Names, in bit order, for fixtures and diagnostics.
+    pub const NAMES: [(u8, &str); 2] = [(CENTRE, "centre"), (SURROUND, "surround")];
+}
+
+/// `source_offer`'s optional `reason` (goal 13): why an input's signal is
+/// what it is. A value past [`signal_reason::MAX`] is rejected (`Undefined`).
+pub mod signal_reason {
+    /// No reason given (every offer before goal 13).
+    pub const NONE: u8 = 0;
+    /// The TV went to standby (CEC): a TV autoplay stops at once, no hold.
+    pub const STANDBY: u8 = 1;
+    /// The input carries an encoded (IEC 61937) bitstream, not PCM.
+    pub const NON_PCM: u8 = 2;
+    /// The highest defined.
+    pub const MAX: u8 = NON_PCM;
+    /// Names, for fixtures and diagnostics.
+    pub const NAMES: [(u8, &str); 3] = [(NONE, "none"), (STANDBY, "standby"), (NON_PCM, "non_pcm")];
+}
+
 /// A message type in the v2 catalog.
 ///
 /// Types 0x01 to 0x03 are the v1 messages, carried into v2 unchanged

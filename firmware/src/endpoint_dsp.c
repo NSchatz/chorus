@@ -47,6 +47,9 @@ void chorus_endpoint_dsp_settings(const chorus_v2_sound_t *wire, int32_t knob_le
     out->role = wire->role;
     out->sub_present = wire->sub_present != 0;
     out->crossover_hz = wire->crossover_hz;
+    out->tv_upmix = wire->tv_upmix;
+    out->fold_centre = (wire->fold & CHORUS_V2_SOUND_FOLD_CENTRE) != 0;
+    out->fold_surround = (wire->fold & CHORUS_V2_SOUND_FOLD_SURROUND) != 0;
     /* The knob is a cut beside the catalog's level (ADR 0063: a cut only, so
      * no knob position lifts the sub above what the room set). The sum is
      * held to the wire's range, which is the chain's. */

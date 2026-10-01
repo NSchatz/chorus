@@ -1,0 +1,19 @@
+# Canonical input for the source_offer_standby golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly source_offer_standby.hex, and decoding source_offer_standby.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+# `reason` is a number (absent = 0, none): 1 standby, 2 non_pcm.
+#
+# Goal 13: the hub's TV input, its TV gone to standby (CEC): the signal ends with
+# reason standby, which stops a TV autoplay at once, without the hold.
+
+message_type = source_offer
+source_id = 2
+kind = hdmi_arc
+signal = 0
+name = TV
+reason = 1

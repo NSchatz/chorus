@@ -1,0 +1,24 @@
+# chorus rejection vector: source_offer, protocol v2 message type 0x36, reason undefined.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# reject this frame naming reason (see source_offer_reason_undefined.fields).
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x36, payload length 7 (0x0007), big-endian
+36 00 07
+
+# source_id = 2
+02
+
+# kind = 3 (hdmi_arc)
+03
+
+# signal = 0 (absent)
+00
+
+# name: length 2, then UTF-8
+02 54 56
+
+# reason = 3 (no such reason; goal 13, after name)
+03

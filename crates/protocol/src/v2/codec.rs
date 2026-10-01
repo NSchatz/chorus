@@ -16,7 +16,6 @@ use crate::codec::{
 };
 use crate::message::{Message as V1Message, SampleFormat, MAX_CHANNELS};
 use crate::message::{MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ};
-use crate::v2::catalog::sound_flags;
 use crate::v2::catalog::{
     roles, ChannelPosition, Codec, Command, Link, Playback, RefusalReason, SourceAction,
     SourceKind, Suite, Type, FLAC_STREAMINFO_LEN, MAGIC, MAX_ARTWORK_LEN, MAX_LONG_TEXT,
@@ -25,6 +24,7 @@ use crate::v2::catalog::{
     SOUND_EQ_FREQ_HZ, SOUND_EQ_GAIN_CDB, SOUND_EQ_MAX_FILTERS, SOUND_EQ_Q_MILLI,
     SOUND_SUB_LEVEL_CDB, SOUND_TONE_DB,
 };
+use crate::v2::catalog::{signal_reason, sound_flags, sound_fold, SOUND_TV_UPMIX_MAX};
 use crate::v2::messages::*;
 
 /// What is wrong with a field.
@@ -359,6 +359,11 @@ pub fn encode_payload(message: &Message) -> Result<Vec<u8>, EncodeError> {
             w.u8(m.kind.to_wire());
             w.u8(m.signal as u8);
             w.short_text(&m.name);
+            // Goal 13's reason only when there is one, so an offer without
+            // keeps its bytes and its vector.
+            if m.reason != 0 {
+                w.u8(m.reason);
+            }
         }
         Message::SourceControl(m) => {
             w.u8(m.source_id);
@@ -383,6 +388,12 @@ pub fn encode_payload(message: &Message) -> Result<Vec<u8>, EncodeError> {
                 w.u16(f.freq_hz);
                 w.u16(f.gain_cdb as u16);
                 w.u16(f.q_milli);
+            }
+            // The theater block (goal 13) only when it says something, so a
+            // goal-12 sound keeps its bytes and its vectors.
+            if m.tv_upmix != 0 || m.fold != 0 {
+                w.u8(m.tv_upmix);
+                w.u8(m.fold);
             }
         }
     }
@@ -725,6 +736,11 @@ fn decode_payload(message_type: Type, payload: &[u8]) -> Result<Message, FieldEr
                 })?,
                 signal: r.bool("signal")?,
                 name: r.short_text("name")?,
+                reason: if r.remaining() > 0 {
+                    r.u8("reason")?
+                } else {
+                    0
+                },
             })
         }
         Type::SourceControl => {
@@ -771,6 +787,14 @@ fn decode_payload(message_type: Type, payload: &[u8]) -> Result<Message, FieldEr
                     q_milli: r.u16("q_milli")?,
                 });
             }
+            // The theater block (goal 13): each field read when its byte is
+            // there, 0 when it is not (a goal-12 server's sound).
+            let tv_upmix = if r.remaining() > 0 {
+                r.u8("tv_upmix")?
+            } else {
+                0
+            };
+            let fold = if r.remaining() > 0 { r.u8("fold")? } else { 0 };
             Message::Sound(Sound {
                 bass_db,
                 treble_db,
@@ -780,6 +804,8 @@ fn decode_payload(message_type: Type, payload: &[u8]) -> Result<Message, FieldEr
                 crossover_hz,
                 sub_level_cdb,
                 filters,
+                tv_upmix,
+                fold,
             })
         }
     };
@@ -1034,7 +1060,13 @@ pub fn validate(message: &Message) -> Result<(), FieldError> {
             Ok(())
         }
         Message::Color(_) => Ok(()),
-        Message::SourceOffer(m) => short_text_ok("name", &m.name),
+        Message::SourceOffer(m) => {
+            short_text_ok("name", &m.name)?;
+            if m.reason > signal_reason::MAX {
+                return err("reason", Problem::Undefined(m.reason as u64));
+            }
+            Ok(())
+        }
         Message::SourceControl(_) => Ok(()),
         Message::RoomVolume(m) => {
             // Each field on its own: a gain above the limit is a valid
@@ -1103,6 +1135,12 @@ fn validate_sound(m: &Sound) -> Result<(), FieldError> {
             f.q_milli as i128,
             (SOUND_EQ_Q_MILLI.0 as i128, SOUND_EQ_Q_MILLI.1 as i128),
         )?;
+    }
+    if m.tv_upmix > SOUND_TV_UPMIX_MAX {
+        return err("tv_upmix", Problem::Undefined(m.tv_upmix as u64));
+    }
+    if m.fold & !sound_fold::DEFINED != 0 {
+        return err("fold", Problem::Undefined(m.fold as u64));
     }
     Ok(())
 }
@@ -1232,6 +1270,11 @@ impl<'a> Reader<'a> {
             );
         }
         self.text(field, n)
+    }
+    /// Bytes not yet read: an optional trailing field is read only when its
+    /// byte is there (`sound`'s theater block).
+    fn remaining(&self) -> usize {
+        self.buf.len() - self.at
     }
     fn rest(&mut self) -> &'a [u8] {
         let s = &self.buf[self.at..];

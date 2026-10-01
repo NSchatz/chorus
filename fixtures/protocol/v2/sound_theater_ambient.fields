@@ -1,0 +1,24 @@
+# Canonical input for the sound_theater_ambient golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly sound_theater_ambient.hex, and decoding sound_theater_ambient.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+# `role` is a channel position number (0 = in no bonded set); `tv_upmix` is a number
+# (absent = 0); `fold` is a bit set of `centre` and `surround` (absent = none);
+# `fold_reserved` is a number ORed into `fold` (rejection vectors only).
+#
+# Goal 13: the SL member of a 5.1 set with a sub, told to play the ambient surround
+# when the stream has no surround channel; the set lacks nothing, so fold is none.
+
+message_type = sound
+bass_db = 0
+treble_db = 0
+flags = loudness room_eq
+role = 10
+sub_present = 1
+crossover_hz = 80
+sub_level_cdb = 0
+tv_upmix = 1

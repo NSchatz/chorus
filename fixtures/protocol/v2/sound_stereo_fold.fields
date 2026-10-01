@@ -1,0 +1,24 @@
+# Canonical input for the sound_stereo_fold golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly sound_stereo_fold.hex, and decoding sound_stereo_fold.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+# `role` is a channel position number (0 = in no bonded set); `tv_upmix` is a number
+# (absent = 0); `fold` is a bit set of `centre` and `surround` (absent = none);
+# `fold_reserved` is a number ORed into `fold` (rejection vectors only).
+#
+# Goal 13: the FL member of a stereo pair, which lacks a centre and surrounds, so a
+# 5.1 stream is folded into it (ITU-R BS.775-4 Table 2, 2/0); tv_upmix is off.
+
+message_type = sound
+bass_db = 0
+treble_db = 0
+flags = loudness
+role = 1
+sub_present = 0
+crossover_hz = 80
+sub_level_cdb = 0
+fold = centre surround

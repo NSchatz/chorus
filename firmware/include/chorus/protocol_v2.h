@@ -71,6 +71,19 @@ extern const uint8_t CHORUS_V2_MAGIC[CHORUS_V2_MAGIC_LEN];
 #define CHORUS_V2_SOUND_FLAG_ROOM_EQ 0x08u
 #define CHORUS_V2_SOUND_FLAG_SUB_INVERTED 0x10u
 #define CHORUS_V2_SOUND_FLAGS_DEFINED 0x1Fu
+/* Goal 13, sound's optional theater block after the filters: tv_upmix (0 off,
+ * 1 ambient; past 1 rejected, UNDEFINED) and fold (what the set lacks; any
+ * other bit rejected). Written only when one of them is not 0; a byte that is
+ * absent decodes as 0. */
+#define CHORUS_V2_SOUND_TV_UPMIX_MAX 1u
+/* Goal 13, source_offer's optional reason. */
+#define CHORUS_V2_SIGNAL_REASON_NONE 0u
+#define CHORUS_V2_SIGNAL_REASON_STANDBY 1u
+#define CHORUS_V2_SIGNAL_REASON_NON_PCM 2u
+#define CHORUS_V2_SIGNAL_REASON_MAX 2u
+#define CHORUS_V2_SOUND_FOLD_CENTRE 0x01u
+#define CHORUS_V2_SOUND_FOLD_SURROUND 0x02u
+#define CHORUS_V2_SOUND_FOLD_DEFINED 0x03u
 
 /* The Noise and record sizes the frame layer knows about. */
 #define CHORUS_V2_KEY_LEN 32u
@@ -311,6 +324,9 @@ typedef struct {
     uint8_t kind;
     uint8_t signal;
     chorus_v2_bytes_t name;
+    /* Goal 13: CHORUS_V2_SIGNAL_REASON_*, written only when not 0, after
+     * name; absent decodes as 0. */
+    uint8_t reason;
 } chorus_v2_source_offer_t;
 
 typedef struct {
@@ -351,6 +367,8 @@ typedef struct {
     int16_t sub_level_cdb;
     uint8_t eq_count;
     chorus_v2_sound_filter_t filters[CHORUS_V2_SOUND_EQ_MAX_FILTERS];
+    uint8_t tv_upmix; /* goal 13 */
+    uint8_t fold;     /* goal 13, CHORUS_V2_SOUND_FOLD_* */
 } chorus_v2_sound_t;
 
 /* Any message in the v2 catalog. `type` is the wire byte and selects the

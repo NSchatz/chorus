@@ -255,6 +255,12 @@ pub struct SourceOffer {
     pub signal: bool,
     /// Its name, which may be empty.
     pub name: String,
+    /// (goal 13) Why the signal is what it is, a
+    /// [`crate::v2::catalog::signal_reason`] value: 0 none given, 1 the TV
+    /// went to standby (autoplay stops it at once, without the hold), 2 the
+    /// input carries an encoded bitstream chorus does not decode. Written only
+    /// when not 0, after `name`; absent decodes as 0.
+    pub reason: u8,
 }
 
 /// The server starting or stopping a shared input.
@@ -322,6 +328,14 @@ pub struct Sound {
     pub sub_level_cdb: i16,
     /// The room-correction filters, at most 8.
     pub filters: Vec<SoundFilter>,
+    /// Goal 13, the theater block: what a surround member plays from a
+    /// stream with no surround channel, 0 off or 1 ambient. With `fold`, the
+    /// block is on the wire only when one of them is not 0, so a goal-12
+    /// `sound` is byte for byte what it was; absent decodes as 0.
+    pub tv_upmix: u8,
+    /// Goal 13, the theater block: [`crate::v2::catalog::sound_fold`] bits,
+    /// what the room's set lacks; any other bit is rejected.
+    pub fold: u8,
 }
 
 /// Any message in the v2 catalog.

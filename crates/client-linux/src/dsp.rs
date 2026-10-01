@@ -63,7 +63,7 @@ use std::sync::Arc;
 
 use chorus_dsp::settings::TWO_WAY_EXAMPLE_HZ;
 use chorus_dsp::{Chain, Driver, DspError, EndpointDsp, RoomEqFilter, SoundSettings, TwoWay};
-use chorus_protocol::v2::{sound_flags, ChannelPosition, Sound};
+use chorus_protocol::v2::{sound_flags, sound_fold, ChannelPosition, Sound};
 use chorus_protocol::SampleFormat;
 
 use crate::control::ZoneWatch;
@@ -217,6 +217,9 @@ pub fn settings_from(sound: &Sound) -> SoundSettings {
                 q_milli: f.q_milli,
             })
             .collect(),
+        tv_upmix: sound.tv_upmix,
+        fold_centre: sound.fold & sound_fold::CENTRE != 0,
+        fold_surround: sound.fold & sound_fold::SURROUND != 0,
     }
 }
 
@@ -739,10 +742,15 @@ mod tests {
                 gain_cdb: -600,
                 q_milli: 4500,
             }],
+            tv_upmix: 1,
+            fold: sound_fold::SURROUND,
         };
         let t = settings_from(&s);
         assert!(t.night && t.sub_polarity_inverted && t.room_eq_enabled);
         assert!(!t.loudness && !t.speech);
+        // Goal 13's theater block.
+        assert_eq!(t.tv_upmix, 1);
+        assert!(t.fold_surround && !t.fold_centre);
         assert_eq!((t.bass_db, t.treble_db, t.role), (3, -2, 4));
         assert_eq!((t.crossover_hz, t.sub_level_cdb), (100, -350));
         assert_eq!(t.room_eq.len(), 1);
