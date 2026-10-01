@@ -22,7 +22,9 @@
 # through the C endpoint's volume path, so both endpoint kinds are held to one sequence.
 # fixtures/dsp (goal 12) is the DSP library's contract: crates/dsp/tests/shared_fixtures.rs and
 # firmware/tests/test_dsp.c both walk it and fail on a kind they do not know, so every file name
-# is read (`*`).
+# is read (`*`). fixtures/protocol/lowlat (goal 13) is the low-latency datagram layer's: sealed
+# streams and loss, replay and tamper cases that crates/protocol/tests/lowlat.rs and
+# firmware/tests/test_lowlat.c both walk, so the Rust and C datagrams are the same bytes.
 . "$(dirname "$0")/lib.sh"
 # directory | extensions both sides read | where Rust reads it | where C reads it
 shared=(
@@ -33,6 +35,7 @@ shared=(
     "fixtures/protocol/v2|hex fields|crates/protocol/tests|firmware/tests/test_protocol_v2.c"
     "fixtures/protocol/v2/rejected|hex fields|crates/protocol/tests|firmware/tests/test_protocol_v2.c"
     "fixtures/protocol/v2/noise|fields|crates/protocol/tests|firmware/tests/test_noise.c"
+    "fixtures/protocol/lowlat|fields|crates/protocol/tests|firmware/tests/test_lowlat.c"
     "fixtures/codec|fields chunks pcm|crates/client-linux/tests|firmware/tests/test_codec.c"
     "fixtures/controls|hex led|crates/server/tests crates/controls/tests|firmware/tests/test_controls.c"
     "fixtures/volume|hex|crates/server/tests|firmware/tests/test_volume.c"

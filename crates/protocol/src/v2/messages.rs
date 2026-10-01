@@ -6,8 +6,8 @@
 
 use crate::message::{AudioChunk, SampleFormat, StreamEnd, TimeSync};
 use crate::v2::catalog::{
-    ChannelPosition, Codec, Command, Link, Playback, RefusalReason, SourceAction, SourceKind,
-    Suite, Type,
+    ChannelPosition, Codec, Command, Link, LowLatencyDirection, LowLatencyStatus, Playback,
+    RefusalReason, SourceAction, SourceKind, Suite, Type,
 };
 
 /// Who a peer is and which roles it takes. The first message inside a
@@ -44,6 +44,11 @@ pub struct Capabilities {
     pub led_count: u16,
     /// Most visualizer bands the endpoint wants; 0 when it takes none.
     pub visualizer_bands: u8,
+    /// Bits of [`crate::v2::features`] (goal 13): what else the endpoint can
+    /// do. A trailing byte: absent on the wire reads as 0, and an encoder
+    /// writes it only when a bit is set, so a `capabilities` without features
+    /// is byte for byte what it was before the field existed.
+    pub features: u8,
 }
 
 /// The announcement that precedes a stream.
@@ -105,6 +110,45 @@ pub struct Telemetry {
     pub rssi_dbm: i8,
     /// Board temperature in hundredths of a degree Celsius; `i16::MIN` when unknown.
     pub temperature_centi_c: i16,
+}
+
+/// The server offering a low-latency stream to an endpoint, or ending one
+/// (`docs/protocol.md`, "Low-latency path"). Travels inside the session, so
+/// the `key` it carries is as secret as the session is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LowLatencyOffer {
+    /// Which way the audio flows; [`LowLatencyDirection::End`] ends the
+    /// stream named by `stream_tag`, and then every other field is zero.
+    pub direction: LowLatencyDirection,
+    /// Names the stream in every datagram; nonzero, unique per server
+    /// process. An offer with a tag already in use replaces that stream.
+    pub stream_tag: u32,
+    /// The ChaCha20-Poly1305 key of the stream's datagrams, fresh random per
+    /// offer; never all zero.
+    pub key: [u8; 32],
+    /// The server's UDP receive port for [`LowLatencyDirection::FromEndpoint`];
+    /// 0 for [`LowLatencyDirection::ToEndpoint`].
+    pub udp_port: u16,
+    /// PCM frames per chunk, 1 to 700.
+    pub chunk_frames: u32,
+    /// Data chunks per XOR parity group: 0 (no FEC) or 2 to 16.
+    pub fec_k: u8,
+    /// Column-interleave depth, 1 (none) to 8; 1 when `fec_k` is 0.
+    pub fec_depth: u8,
+    /// Informational: the stamp lead the sender uses, in ns, at most 5 s.
+    pub latency_ns: u64,
+}
+
+/// An endpoint's answer to a `low_latency_offer`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LowLatencyAccept {
+    /// The offer's `stream_tag`; nonzero.
+    pub stream_tag: u32,
+    /// Accepted, or why not.
+    pub status: LowLatencyStatus,
+    /// The endpoint's UDP receive port for a stream to it; 0 for a stream
+    /// from it, and 0 whenever the offer is refused.
+    pub udp_port: u16,
 }
 
 /// The first frame of a session, sent in the clear by the endpoint.
@@ -359,6 +403,10 @@ pub enum Message {
     OutputDelay(OutputDelay),
     /// 0x15.
     Telemetry(Telemetry),
+    /// 0x16.
+    LowLatencyOffer(LowLatencyOffer),
+    /// 0x17.
+    LowLatencyAccept(LowLatencyAccept),
     /// 0x20.
     HandshakeInit(HandshakeInit),
     /// 0x21.
@@ -404,6 +452,8 @@ impl Message {
             Message::CodedChunk(_) => Type::CodedChunk,
             Message::OutputDelay(_) => Type::OutputDelay,
             Message::Telemetry(_) => Type::Telemetry,
+            Message::LowLatencyOffer(_) => Type::LowLatencyOffer,
+            Message::LowLatencyAccept(_) => Type::LowLatencyAccept,
             Message::HandshakeInit(_) => Type::HandshakeInit,
             Message::HandshakeResponse(_) => Type::HandshakeResponse,
             Message::HandshakeFinish(_) => Type::HandshakeFinish,

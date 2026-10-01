@@ -63,6 +63,43 @@ pub const SOUND_EQ_GAIN_CDB: (i16, i16) = (-1200, 300);
 /// `sound`: a room-correction filter's Q, thousandths.
 pub const SOUND_EQ_Q_MILLI: (u16, u16) = (500, 10_000);
 
+/// `low_latency_offer` (0x16): data chunks per XOR parity group when FEC is
+/// on, inclusive. `fec_k` 0 is "no FEC"; 1 would be a copy, not a parity.
+/// The upper bound is the design envelope's (goal 13) and keeps a group's
+/// received mask in 16 bits.
+pub const LOW_LATENCY_FEC_K: (u8, u8) = (2, 16);
+
+/// `low_latency_offer`: the column-interleave depth, inclusive; 1 is none.
+/// ASSUMED upper bound (8): the decoder holds three blocks of `k x depth`
+/// chunks, and SMPTE ST 2022-1 decoders are reported to cap L x D at 100
+/// (`docs/decisions/`, the low-latency path record, cites the source).
+pub const LOW_LATENCY_FEC_DEPTH: (u8, u8) = (1, 8);
+
+/// `low_latency_offer`: most PCM frames per chunk. A data plaintext (the
+/// 32-byte chunk header and the PCM) must leave room for the parity's 8-byte
+/// header inside one 1472-byte datagram, so it is at most 1432 bytes and the
+/// PCM at most 1400: 700 frames of the narrowest frame the format has (mono
+/// 16-bit). Whether a given format fits is [`crate::v2::lowlat::chunk_fits`].
+pub const LOW_LATENCY_MAX_CHUNK_FRAMES: u32 = 700;
+
+/// `low_latency_offer`: the largest informational `latency_ns`, the same 5 s
+/// bound as `output_delay`.
+pub const LOW_LATENCY_MAX_LATENCY_NS: u64 = MAX_OUTPUT_DELAY_NS;
+
+/// The bits of `capabilities`' trailing `features` byte (goal 13). Unlike
+/// `sound`'s flags, a bit no version defines is accepted and kept: a feature
+/// is something an endpoint CAN do, and a server that does not know one simply
+/// never uses it, so refusing the whole `capabilities` would turn a newer
+/// endpoint into no endpoint at all.
+pub mod features {
+    /// The endpoint takes a low-latency UDP stream (`low_latency_offer`).
+    pub const LOW_LATENCY: u8 = 1 << 0;
+    /// Every defined bit.
+    pub const DEFINED: u8 = LOW_LATENCY;
+    /// Names, in bit order, for fixtures and diagnostics.
+    pub const NAMES: [(u8, &str); 1] = [(LOW_LATENCY, "low_latency")];
+}
+
 /// The bits of `sound`'s `flags` byte. A bit outside [`sound_flags::DEFINED`]
 /// is rejected (`Problem::Undefined`), not ignored: a later flag is a later
 /// version's, and an endpoint that played on without knowing it would sound
@@ -150,6 +187,10 @@ pub enum Type {
     OutputDelay,
     /// 0x15, an endpoint's periodic health and sync report.
     Telemetry,
+    /// 0x16, the server offering (or ending) a low-latency UDP stream.
+    LowLatencyOffer,
+    /// 0x17, an endpoint's answer to a `low_latency_offer`.
+    LowLatencyAccept,
     /// 0x20, the first frame of a session: magic, version, suite, Noise message 1.
     HandshakeInit,
     /// 0x21, Noise message 2.
@@ -184,7 +225,7 @@ pub enum Type {
 
 impl Type {
     /// Every type in the catalog, in wire order.
-    pub const ALL: [Type; 24] = [
+    pub const ALL: [Type; 26] = [
         Type::TimeSync,
         Type::AudioChunk,
         Type::StreamEnd,
@@ -194,6 +235,8 @@ impl Type {
         Type::CodedChunk,
         Type::OutputDelay,
         Type::Telemetry,
+        Type::LowLatencyOffer,
+        Type::LowLatencyAccept,
         Type::HandshakeInit,
         Type::HandshakeResponse,
         Type::HandshakeFinish,
@@ -223,6 +266,8 @@ impl Type {
             Type::CodedChunk => 0x13,
             Type::OutputDelay => 0x14,
             Type::Telemetry => 0x15,
+            Type::LowLatencyOffer => 0x16,
+            Type::LowLatencyAccept => 0x17,
             Type::HandshakeInit => 0x20,
             Type::HandshakeResponse => 0x21,
             Type::HandshakeFinish => 0x22,
@@ -258,6 +303,8 @@ impl Type {
             Type::CodedChunk => "coded_chunk",
             Type::OutputDelay => "output_delay",
             Type::Telemetry => "telemetry",
+            Type::LowLatencyOffer => "low_latency_offer",
+            Type::LowLatencyAccept => "low_latency_accept",
             Type::HandshakeInit => "handshake_init",
             Type::HandshakeResponse => "handshake_response",
             Type::HandshakeFinish => "handshake_finish",
@@ -318,6 +365,11 @@ impl Type {
             Type::CodedChunk => 4 + 8 + 4 + 1,
             Type::OutputDelay => 8,
             Type::Telemetry => 8 + 8 + 4 + 4 + 4 + 4 + 1 + 1 + 2,
+            // direction, stream_tag, key, udp_port, chunk_frames, fec_k,
+            // fec_depth, latency_ns: all fixed
+            Type::LowLatencyOffer => 1 + 4 + 32 + 2 + 4 + 1 + 1 + 8,
+            // stream_tag, status, udp_port
+            Type::LowLatencyAccept => 4 + 1 + 2,
             // magic, version, suite, the 32-byte ephemeral key
             Type::HandshakeInit => 4 + 2 + 1 + 32,
             // e (32), encrypted s (48), an encrypted payload tag (16)
@@ -547,6 +599,32 @@ wire_enum! {
         Start = 1, "start";
         /// Stop sending it.
         Stop = 2, "stop";
+    }
+}
+
+wire_enum! {
+    /// Which way a low-latency stream flows (`low_latency_offer.direction`).
+    LowLatencyDirection {
+        /// Ends the stream named by `stream_tag`; every other field is zero.
+        End = 0, "end";
+        /// The server sends audio to this endpoint (a player of the room).
+        ToEndpoint = 1, "to_endpoint";
+        /// This endpoint sends its source to the server (the TV hub).
+        FromEndpoint = 2, "from_endpoint";
+    }
+}
+
+wire_enum! {
+    /// An endpoint's answer to a `low_latency_offer`.
+    LowLatencyStatus {
+        /// Accepted: datagrams may flow.
+        Accepted = 0, "accepted";
+        /// Refused: the endpoint is on a wireless link (BRIEF.md 5.7: wired only).
+        RefusedWireless = 1, "refused_wireless";
+        /// Refused: the endpoint could not open a UDP socket.
+        RefusedNoSocket = 2, "refused_no_socket";
+        /// Refused: the endpoint cannot run the offered FEC (k or depth).
+        RefusedFec = 3, "refused_fec";
     }
 }
 

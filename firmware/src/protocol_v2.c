@@ -31,6 +31,11 @@ static const type_entry_t TYPES[] = {
     {CHORUS_V2_CODED_CHUNK, "coded_chunk", 4 + 8 + 4 + 1},
     {CHORUS_V2_OUTPUT_DELAY, "output_delay", 8},
     {CHORUS_V2_TELEMETRY, "telemetry", 8 + 8 + 4 + 4 + 4 + 4 + 1 + 1 + 2},
+    /* direction, stream_tag, key, udp_port, chunk_frames, fec_k, fec_depth,
+     * latency_ns: all fixed */
+    {CHORUS_V2_LOW_LATENCY_OFFER, "low_latency_offer", 1 + 4 + 32 + 2 + 4 + 1 + 1 + 8},
+    /* stream_tag, status, udp_port */
+    {CHORUS_V2_LOW_LATENCY_ACCEPT, "low_latency_accept", 4 + 1 + 2},
     /* magic, version, suite, the 32-byte ephemeral key */
     {CHORUS_V2_HANDSHAKE_INIT, "handshake_init", 4 + 2 + 1 + 32},
     /* e, encrypted s, an encrypted payload's tag */
@@ -127,6 +132,10 @@ static const char *const KINDS[] = {NULL, "line_in", "optical", "hdmi_arc"};
 static const char *const ACTIONS[] = {NULL, "start", "stop"};
 static const char *const LINKS[] = {"unknown", "wired", "wireless"};
 static const char *const ROLES[] = {"player", "metadata", "controller", "visualizer", "source"};
+static const char *const DIRECTIONS[] = {"end", "to_endpoint", "from_endpoint"};
+static const char *const STATUSES[] = {"accepted", "refused_wireless", "refused_no_socket",
+                                       "refused_fec"};
+static const char *const FEATURES[] = {"low_latency"};
 
 static const char *const *enum_table(chorus_v2_enum_t which, size_t *count)
 {
@@ -172,6 +181,18 @@ static const char *const *enum_table(chorus_v2_enum_t which, size_t *count)
     case CHORUS_V2_ENUM_ROLE_BIT:
         table = ROLES;
         n = sizeof(ROLES) / sizeof(ROLES[0]);
+        break;
+    case CHORUS_V2_ENUM_LOW_LATENCY_DIRECTION:
+        table = DIRECTIONS;
+        n = sizeof(DIRECTIONS) / sizeof(DIRECTIONS[0]);
+        break;
+    case CHORUS_V2_ENUM_LOW_LATENCY_STATUS:
+        table = STATUSES;
+        n = sizeof(STATUSES) / sizeof(STATUSES[0]);
+        break;
+    case CHORUS_V2_ENUM_FEATURE_BIT:
+        table = FEATURES;
+        n = sizeof(FEATURES) / sizeof(FEATURES[0]);
         break;
     }
     *count = n;
@@ -472,6 +493,10 @@ static int decode_payload(uint8_t type, const uint8_t *payload, size_t len, chor
             read_u8(&r, "visualizer_bands", &c->visualizer_bands) != 0) {
             return -1;
         }
+        /* The trailing features byte (goal 13): absent reads as none. */
+        if (r.at < r.len && read_u8(&r, "features", &c->features) != 0) {
+            return -1;
+        }
         return 0;
     }
     case CHORUS_V2_STREAM_FORMAT: {
@@ -658,6 +683,30 @@ static int decode_payload(uint8_t type, const uint8_t *payload, size_t len, chor
         }
         s->reason = 0;
         if (r.at < r.len && read_u8(&r, "reason", &s->reason) != 0) {
+            return -1;
+        }
+        return 0;
+    }
+    case CHORUS_V2_LOW_LATENCY_OFFER: {
+        chorus_v2_low_latency_offer_t *o = &m->as.low_latency_offer;
+        const uint8_t *key = NULL;
+        if (read_enum(&r, "direction", CHORUS_V2_ENUM_LOW_LATENCY_DIRECTION, &o->direction) != 0 ||
+            read_u32(&r, "stream_tag", &o->stream_tag) != 0 ||
+            take(&r, "key", CHORUS_V2_KEY_LEN, &key) != 0 ||
+            read_u16(&r, "udp_port", &o->udp_port) != 0 ||
+            read_u32(&r, "chunk_frames", &o->chunk_frames) != 0 ||
+            read_u8(&r, "fec_k", &o->fec_k) != 0 || read_u8(&r, "fec_depth", &o->fec_depth) != 0 ||
+            read_u64(&r, "latency_ns", &o->latency_ns) != 0) {
+            return -1;
+        }
+        memcpy(o->key, key, CHORUS_V2_KEY_LEN);
+        return 0;
+    }
+    case CHORUS_V2_LOW_LATENCY_ACCEPT: {
+        chorus_v2_low_latency_accept_t *a = &m->as.low_latency_accept;
+        if (read_u32(&r, "stream_tag", &a->stream_tag) != 0 ||
+            read_enum(&r, "status", CHORUS_V2_ENUM_LOW_LATENCY_STATUS, &a->status) != 0 ||
+            read_u16(&r, "udp_port", &a->udp_port) != 0) {
             return -1;
         }
         return 0;
@@ -965,6 +1014,59 @@ static int validate_command(const chorus_v2_controller_command_t *c, chorus_v2_f
 
 static int validate_sound(const chorus_v2_sound_t *s, chorus_v2_field_error_t *error);
 
+/* low_latency_offer's rules, field by field in wire order, the order
+ * crates/protocol/src/v2/codec.rs checks them in. Rejected, never clamped. */
+static int validate_low_latency_offer(const chorus_v2_low_latency_offer_t *o,
+                                      chorus_v2_field_error_t *error)
+{
+    uint8_t key_or = 0;
+    for (size_t i = 0; i < CHORUS_V2_KEY_LEN; i++) {
+        key_or |= o->key[i];
+    }
+    if (enum_ok("direction", CHORUS_V2_ENUM_LOW_LATENCY_DIRECTION, o->direction, error) != 0) {
+        return -1;
+    }
+    if (o->stream_tag == 0) {
+        return fail(error, "stream_tag", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+    }
+    if (o->direction == CHORUS_V2_LOW_LATENCY_END) {
+        /* An end names its stream and nothing else. */
+        if (key_or != 0 || o->udp_port != 0 || o->chunk_frames != 0 || o->fec_k != 0 ||
+            o->fec_depth != 0 || o->latency_ns != 0) {
+            return fail(error, "direction", CHORUS_V2_PROBLEM_INCONSISTENT,
+                        "an end carries only its stream_tag; the rest is zero");
+        }
+        return 0;
+    }
+    if (key_or == 0) {
+        return fail(error, "key", CHORUS_V2_PROBLEM_INCONSISTENT, "a stream key is never all zero");
+    }
+    int port_needed = o->direction == CHORUS_V2_LOW_LATENCY_FROM_ENDPOINT;
+    if (port_needed == (o->udp_port == 0)) {
+        return fail(error, "udp_port", CHORUS_V2_PROBLEM_INCONSISTENT,
+                    "names the server's port for a stream from the endpoint, and only then");
+    }
+    if (o->chunk_frames == 0 || o->chunk_frames > CHORUS_V2_LOW_LATENCY_MAX_CHUNK_FRAMES) {
+        return fail(error, "chunk_frames", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+    }
+    if (o->fec_k != 0 && (o->fec_k < CHORUS_V2_LOW_LATENCY_FEC_K_MIN ||
+                          o->fec_k > CHORUS_V2_LOW_LATENCY_FEC_K_MAX)) {
+        return fail(error, "fec_k", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+    }
+    if (o->fec_depth < CHORUS_V2_LOW_LATENCY_FEC_DEPTH_MIN ||
+        o->fec_depth > CHORUS_V2_LOW_LATENCY_FEC_DEPTH_MAX) {
+        return fail(error, "fec_depth", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+    }
+    if (o->fec_k == 0 && o->fec_depth != 1) {
+        return fail(error, "fec_depth", CHORUS_V2_PROBLEM_INCONSISTENT,
+                    "a stream without FEC has no interleave");
+    }
+    if (o->latency_ns > CHORUS_V2_LOW_LATENCY_MAX_LATENCY_NS) {
+        return fail(error, "latency_ns", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+    }
+    return 0;
+}
+
 int chorus_v2_validate(const chorus_v2_message_t *message, chorus_v2_field_error_t *error)
 {
     const size_t short_max = CHORUS_V2_MAX_SHORT_TEXT;
@@ -1106,6 +1208,22 @@ int chorus_v2_validate(const chorus_v2_message_t *message, chorus_v2_field_error
         }
         if (s->reason > CHORUS_V2_SIGNAL_REASON_MAX) {
             return fail(error, "reason", CHORUS_V2_PROBLEM_UNDEFINED, NULL);
+        }
+        return 0;
+    }
+    case CHORUS_V2_LOW_LATENCY_OFFER:
+        return validate_low_latency_offer(&message->as.low_latency_offer, error);
+    case CHORUS_V2_LOW_LATENCY_ACCEPT: {
+        const chorus_v2_low_latency_accept_t *a = &message->as.low_latency_accept;
+        if (a->stream_tag == 0) {
+            return fail(error, "stream_tag", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+        }
+        if (enum_ok("status", CHORUS_V2_ENUM_LOW_LATENCY_STATUS, a->status, error) != 0) {
+            return -1;
+        }
+        if (a->status != CHORUS_V2_LOW_LATENCY_ACCEPTED && a->udp_port != 0) {
+            return fail(error, "udp_port", CHORUS_V2_PROBLEM_INCONSISTENT,
+                        "a refusal names no port");
         }
         return 0;
     }
@@ -1352,6 +1470,11 @@ static void write_payload(writer_t *w, const chorus_v2_message_t *m)
         put_u32(w, c->intrinsic_latency_ns);
         put_u16(w, c->led_count);
         put_u8(w, c->visualizer_bands);
+        /* Trailing and optional: written only when a bit is set, so a
+         * capabilities without features keeps its pre-goal-13 bytes. */
+        if (c->features != 0) {
+            put_u8(w, c->features);
+        }
         break;
     }
     case CHORUS_V2_STREAM_FORMAT: {
@@ -1461,6 +1584,23 @@ static void write_payload(writer_t *w, const chorus_v2_message_t *m)
         if (m->as.source_offer.reason != 0) {
             put_u8(w, m->as.source_offer.reason);
         }
+        break;
+    case CHORUS_V2_LOW_LATENCY_OFFER: {
+        const chorus_v2_low_latency_offer_t *o = &m->as.low_latency_offer;
+        put_u8(w, o->direction);
+        put_u32(w, o->stream_tag);
+        put(w, o->key, CHORUS_V2_KEY_LEN);
+        put_u16(w, o->udp_port);
+        put_u32(w, o->chunk_frames);
+        put_u8(w, o->fec_k);
+        put_u8(w, o->fec_depth);
+        put_u64(w, o->latency_ns);
+        break;
+    }
+    case CHORUS_V2_LOW_LATENCY_ACCEPT:
+        put_u32(w, m->as.low_latency_accept.stream_tag);
+        put_u8(w, m->as.low_latency_accept.status);
+        put_u16(w, m->as.low_latency_accept.udp_port);
         break;
     case CHORUS_V2_SOURCE_CONTROL:
         put_u8(w, m->as.source_control.source_id);

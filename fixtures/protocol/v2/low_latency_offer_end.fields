@@ -1,0 +1,20 @@
+# Canonical input for the low_latency_offer_end golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly low_latency_offer_end.hex, and decoding low_latency_offer_end.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+#
+# The end of stream 305419896: only the tag; every other field zero.
+
+message_type = low_latency_offer
+direction = end
+stream_tag = 305419896
+key = 0000000000000000000000000000000000000000000000000000000000000000
+udp_port = 0
+chunk_frames = 0
+fec_k = 0
+fec_depth = 0
+latency_ns = 0

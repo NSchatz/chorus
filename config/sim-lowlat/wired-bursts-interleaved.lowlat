@@ -1,0 +1,36 @@
+# The low-latency TV path in the simulator (goal 13), scenario: wired, bursts, column interleave
+# A simulation input: nothing here is measured, and the report made from it is
+# not timing evidence (BRIEF.md section 3.1 rule 3). Read by
+# crates/sync/src/lowlat_sim.rs; the budget figures not named here are
+# chorus_protocol::v2::lowlat::DEFAULTS, each with its source there and in the
+# decision record that adds this file.
+#
+# Format: key = value, '#' starts a comment.
+
+name = wired-bursts-interleaved
+purpose = wired-bursts' seed and loss with interleave depth 2, and the L_tv its floor needs.
+seed = 20261002
+duration_ms = 600000
+
+# 2.5 ms chunks at 48 kHz; depth 2: two interleaved columns, so a burst of two costs each group one
+sample_rate_hz = 48000
+chunk_frames = 120
+fec_k = 4
+fec_depth = 2
+# From the capture stamp to the speaker.
+# Depth 2 doubles the FEC wait: the floor is 26.917 ms, so 30 ms.
+l_tv_us = 30000
+# The TV's own audio output against its picture. ASSUMED: standard picture mode on the one set measured (avlatency.com, LEAD); the Needs
+# item "The three TVs: model, eARC port, optical out and audio menu" replaces it.
+tv_audio_lag_us = 1000
+
+# Both legs: a quiet switched wired LAN, ASSUMED (no chorus measurement yet):
+# 80 us of send, two switch hops and receive, plus exponential jitter of mean
+# 20 us, first in first out (one path: a datagram never overtakes the one
+# sent before it).
+up_base_us = 80
+up_jitter = exponential 20
+up_loss = gilbert 0.0005 0.5 0 1
+down_base_us = 80
+down_jitter = exponential 20
+down_loss = gilbert 0.0005 0.5 0 1

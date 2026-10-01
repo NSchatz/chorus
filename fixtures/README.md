@@ -76,6 +76,34 @@ The C endpoint reads these when it moves to v2 (goal 6); until then
 `tools/conventions/check-shared-fixtures.sh` holds them to their Rust reader and
 prints that the C reader is pending.
 
+### `protocol/lowlat/`
+
+The low-latency path's datagram layer (goal 13, `docs/protocol.md`
+"Low-latency path"), shared: `crates/protocol/tests/lowlat.rs` and
+`firmware/tests/test_lowlat.c` both walk the directory, and only `.fields`
+files live in it.
+
+- `stream_*.fields`: a public test `key` (never a device's), a `stream_tag`,
+  the first counter, `fec_k` and `fec_depth`, then `chunk.<i>` (each an
+  `audio_chunk` payload with its reserved block zero) and, in send order,
+  `plaintext.<j>` and `datagram.<j>`. Pushing the chunks through the FEC
+  encoder and sealing what it emits must give exactly those bytes.
+- `case_*.fields`: a `stream`, the datagrams to `deliver` in order (an index
+  twice is a repeat), optionally a `tamper` (datagram, byte offset, XOR mask)
+  and a `receiver_stream_tag`; then `expect_delivered` and `expect_recovered`
+  (chunk numbers) and every count (`expect_opened`, `expect_malformed`,
+  `expect_wrong_stream_tag`, `expect_replayed`, `expect_auth_failed`,
+  `expect_unrecoverable`, `expect_duplicate`). The cases hold each single loss
+  position, a burst under the interleave, an unrecoverable double loss, a
+  tampered tag and header, a bad magic, a replay, a wrong tag and the no-FEC
+  loss.
+
+Written by `cargo run -p chorus-protocol --example lowlat_vectors --
+fixtures/protocol/lowlat`, whose expectations are typed by hand per case and
+which refuses to write a case the Rust implementation does not reproduce; the
+C endpoint's PSA-backed implementation reproduces every datagram byte for
+byte.
+
 ## `control/`
 
 The control catalog's golden vectors, in the same two-file shape as

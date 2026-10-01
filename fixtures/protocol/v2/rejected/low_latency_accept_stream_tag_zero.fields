@@ -1,0 +1,18 @@
+# Canonical input for the low_latency_accept_stream_tag_zero rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# low_latency_accept_stream_tag_zero.hex as that field, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# stream_tag 0 names no stream.
+
+message_type = low_latency_accept
+stream_tag = 0
+status = accepted
+udp_port = 40002
+rejected_field = stream_tag
+problem = out_of_range

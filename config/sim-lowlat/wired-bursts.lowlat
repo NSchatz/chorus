@@ -1,0 +1,37 @@
+# The low-latency TV path in the simulator (goal 13), scenario: wired, bursts of loss
+# A simulation input: nothing here is measured, and the report made from it is
+# not timing evidence (BRIEF.md section 3.1 rule 3). Read by
+# crates/sync/src/lowlat_sim.rs; the budget figures not named here are
+# chorus_protocol::v2::lowlat::DEFAULTS, each with its source there and in the
+# decision record that adds this file.
+#
+# Format: key = value, '#' starts a comment.
+
+name = wired-bursts
+purpose = Gilbert-Elliott bursts, mean 2 chunks, long-run rate about 1e-3 on each leg, with the defaults (no interleave).
+seed = 20261002
+duration_ms = 600000
+# The chunk, the FEC and L_tv are the defaults' (a test holds them to it).
+defaults = yes
+
+# 2.5 ms chunks at 48 kHz
+sample_rate_hz = 48000
+chunk_frames = 120
+fec_k = 4
+fec_depth = 1
+# From the capture stamp to the speaker.
+l_tv_us = 20000
+# The TV's own audio output against its picture. ASSUMED: standard picture mode on the one set measured (avlatency.com, LEAD); the Needs
+# item "The three TVs: model, eARC port, optical out and audio menu" replaces it.
+tv_audio_lag_us = 1000
+
+# Both legs: a quiet switched wired LAN, ASSUMED (no chorus measurement yet):
+# 80 us of send, two switch hops and receive, plus exponential jitter of mean
+# 20 us, first in first out (one path: a datagram never overtakes the one
+# sent before it).
+up_base_us = 80
+up_jitter = exponential 20
+up_loss = gilbert 0.0005 0.5 0 1
+down_base_us = 80
+down_jitter = exponential 20
+down_loss = gilbert 0.0005 0.5 0 1

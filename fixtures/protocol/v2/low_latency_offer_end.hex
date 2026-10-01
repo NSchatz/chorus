@@ -1,0 +1,35 @@
+# chorus golden vector: low_latency_offer, protocol v2 message type 0x16.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# produce these exact bytes from the canonical input in low_latency_offer_end.fields, and recover
+# exactly those fields from them (docs/protocol.md, "Low-latency path").
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x16, payload length 53 (0x0035), big-endian
+16 00 35
+
+# direction = 0 (end)
+00
+
+# stream_tag = 305419896
+12 34 56 78
+
+# key: 32 bytes (zero: an end carries none)
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+
+# udp_port = 0
+00 00
+
+# chunk_frames = 0
+00 00 00 00
+
+# fec_k = 0
+00
+
+# fec_depth = 0
+00
+
+# latency_ns = 0
+00 00 00 00 00 00 00 00

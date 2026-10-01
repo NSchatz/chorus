@@ -66,6 +66,7 @@ LIB_SRC := \
 	$(FW)/src/protocol.c \
 	$(FW)/src/protocol_v2.c \
 	$(FW)/src/noise.c \
+	$(FW)/src/lowlat.c \
 	$(FW)/src/sync_rng.c \
 	$(FW)/src/sync_servo.c \
 	$(FW)/src/sync_sim.c \
@@ -139,7 +140,7 @@ LIB_SRC += $(CODEC_SRC)
 CFLAGS += $(DRFLAC_DEFS) $(CODEC_INC)
 
 .PHONY: all check config-check golden-vectors sync-scenarios safety-scans amplifier clocking \
-        telemetry wireless link console session-outage noise-vectors psa-tree codec codec-fixtures playout volume controls dsp clean
+        telemetry wireless link console session-outage noise-vectors psa-tree codec codec-fixtures playout volume controls dsp lowlat clean
 
 # Every binary this makefile builds, enumerated. There is no wildcard over
 # firmware/tests on purpose, and the cost of that is a test has to be named in
@@ -148,7 +149,7 @@ CFLAGS += $(DRFLAC_DEFS) $(CODEC_INC)
 # builds.
 all: $(BUILD)/chorus-endpoint-config-check $(BUILD)/chorus-endpoint-scan \
      $(BUILD)/chorus-endpoint-session $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 \
-     $(BUILD)/test_noise $(BUILD)/test_sync $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_scan $(BUILD)/test_telemetry \
+     $(BUILD)/test_noise $(BUILD)/test_lowlat $(BUILD)/test_sync $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_scan $(BUILD)/test_telemetry \
      $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_codec $(BUILD)/test_playout $(BUILD)/test_volume $(BUILD)/test_controls $(BUILD)/test_dsp $(BUILD)/test_endpoint_dsp \
      $(BUILD)/chorus-endpoint-dsp-session $(BUILD)/opus_compare
 
@@ -226,8 +227,8 @@ $(BUILD)/chorus-endpoint-dsp-session: $(LIB_SRC) $(FW)/tests/main_dsp_session.c 
 $(BUILD)/test_scan: $(SCAN_SRC) $(FW)/tests/test_scan.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(FW)/check -I$(FW)/tests -o $@ $(SCAN_SRC) $(FW)/tests/test_scan.c $(LDLIBS)
 
-$(BUILD)/test_protocol $(BUILD)/test_protocol_v2 $(BUILD)/test_noise $(BUILD)/test_sync \
-$(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_telemetry \
+$(BUILD)/test_protocol $(BUILD)/test_protocol_v2 $(BUILD)/test_noise $(BUILD)/test_lowlat \
+$(BUILD)/test_sync $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_telemetry \
 $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_playout \
 $(BUILD)/test_volume $(BUILD)/test_controls $(BUILD)/test_dsp \
 $(BUILD)/test_endpoint_dsp: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
@@ -266,6 +267,13 @@ golden-vectors: $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 $(BUILD)/test_n
 
 noise-vectors: $(BUILD)/test_noise
 	$(BUILD)/test_noise
+
+# Goal 13: the low-latency datagram layer (chorus/lowlat.h) against the shared
+# vectors in fixtures/protocol/lowlat, which crates/protocol/tests/lowlat.rs
+# holds the Rust implementation to: the same datagrams byte for byte, the same
+# rebuilds and the same counts, sealed and opened through PSA.
+lowlat: $(BUILD)/test_lowlat
+	$(BUILD)/test_lowlat
 
 sync-scenarios: $(BUILD)/test_sync
 	$(BUILD)/test_sync
@@ -363,7 +371,7 @@ codec-fixtures:
 	python3 $(REPO_ROOT)/tools/codec-fixtures/generate.py --flac "$(FLAC)" \
 		--vectors "$(OPUS_VECTORS)" --out $(REPO_ROOT)/fixtures/codec
 
-check: config-check golden-vectors sync-scenarios safety-scans clocking amplifier telemetry \
+check: config-check golden-vectors lowlat sync-scenarios safety-scans clocking amplifier telemetry \
        wireless link console playout volume controls dsp endpoint-dsp session-outage dsp-session \
        codec
 

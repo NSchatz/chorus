@@ -204,6 +204,9 @@ dependencies = [
 [[package]]
 name = "chorus-sync"
 version = "0.1.0"
+dependencies = [
+ "chorus-protocol",
+]
 
 [[package]]
 name = "cipher"

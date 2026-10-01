@@ -95,3 +95,10 @@ rationale for the size, and this is it:
 TV-9 assigns the first byte of the block. That is a decision-log entry of its
 own: it turns opaque space into a named field and the golden vectors move with
 it.
+
+## Revisited (goal 13, 2026-10-01)
+
+ADR 0091 is that entry. It assigns the block on the low-latency UDP path only
+(`ll_marker`, `fec_k`, `fec_depth`, `group_index`, `group`, six zero bytes).
+The rules above stand for the TCP path: an encoder there writes zeros, every
+decoder ignores the block, and no golden vector moved.

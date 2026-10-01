@@ -1,0 +1,22 @@
+# Canonical input for the low_latency_offer golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly low_latency_offer.hex, and decoding low_latency_offer.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+#
+# The TV hub's offer: send the TV input upstream to the server's UDP port 40000, in
+# 120-frame chunks (2.5 ms at 48 kHz), one parity per 4 chunks, no interleave, the
+# 20 ms lead the defaults use (crates/protocol/src/v2/lowlat.rs, DEFAULTS).
+
+message_type = low_latency_offer
+direction = from_endpoint
+stream_tag = 305419896
+key = 202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f
+udp_port = 40000
+chunk_frames = 120
+fec_k = 4
+fec_depth = 1
+latency_ns = 20000000

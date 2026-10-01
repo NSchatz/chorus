@@ -17,9 +17,11 @@ use crate::codec::{
 use crate::message::{Message as V1Message, SampleFormat, MAX_CHANNELS};
 use crate::message::{MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ};
 use crate::v2::catalog::{
-    roles, ChannelPosition, Codec, Command, Link, Playback, RefusalReason, SourceAction,
-    SourceKind, Suite, Type, FLAC_STREAMINFO_LEN, MAGIC, MAX_ARTWORK_LEN, MAX_LONG_TEXT,
-    MAX_OUTPUT_DELAY_NS, MAX_RATES, MAX_ROOM_VOLUME_RAMP_MS, MAX_SHORT_TEXT, MAX_VISUALIZER_BANDS,
+    roles, ChannelPosition, Codec, Command, Link, LowLatencyDirection, LowLatencyStatus, Playback,
+    RefusalReason, SourceAction, SourceKind, Suite, Type, FLAC_STREAMINFO_LEN,
+    LOW_LATENCY_FEC_DEPTH, LOW_LATENCY_FEC_K, LOW_LATENCY_MAX_CHUNK_FRAMES,
+    LOW_LATENCY_MAX_LATENCY_NS, MAGIC, MAX_ARTWORK_LEN, MAX_LONG_TEXT, MAX_OUTPUT_DELAY_NS,
+    MAX_RATES, MAX_ROOM_VOLUME_RAMP_MS, MAX_SHORT_TEXT, MAX_VISUALIZER_BANDS,
     OPUS_FRAME_COUNTS_48K, OPUS_HEAD_MIN_LEN, ROOM_VOLUME_FULL, SOUND_CROSSOVER_HZ,
     SOUND_EQ_FREQ_HZ, SOUND_EQ_GAIN_CDB, SOUND_EQ_MAX_FILTERS, SOUND_EQ_Q_MILLI,
     SOUND_SUB_LEVEL_CDB, SOUND_TONE_DB,
@@ -266,6 +268,11 @@ pub fn encode_payload(message: &Message) -> Result<Vec<u8>, EncodeError> {
             w.u32(m.intrinsic_latency_ns);
             w.u16(m.led_count);
             w.u8(m.visualizer_bands);
+            // Trailing and optional: written only when a bit is set, so a
+            // capabilities without features keeps its pre-goal-13 bytes.
+            if m.features != 0 {
+                w.u8(m.features);
+            }
         }
         Message::StreamFormat(m) => {
             w.u8(m.codec.to_wire());
@@ -286,6 +293,21 @@ pub fn encode_payload(message: &Message) -> Result<Vec<u8>, EncodeError> {
             w.bytes(&m.data);
         }
         Message::OutputDelay(m) => w.u64(m.delay_ns),
+        Message::LowLatencyOffer(m) => {
+            w.u8(m.direction.to_wire());
+            w.u32(m.stream_tag);
+            w.bytes(&m.key);
+            w.u16(m.udp_port);
+            w.u32(m.chunk_frames);
+            w.u8(m.fec_k);
+            w.u8(m.fec_depth);
+            w.u64(m.latency_ns);
+        }
+        Message::LowLatencyAccept(m) => {
+            w.u32(m.stream_tag);
+            w.u8(m.status.to_wire());
+            w.u16(m.udp_port);
+        }
         Message::Telemetry(m) => {
             w.u64(m.taken_ns);
             w.u64(m.sync_error_ns as u64);
@@ -559,6 +581,8 @@ fn decode_payload(message_type: Type, payload: &[u8]) -> Result<Message, FieldEr
                 intrinsic_latency_ns: r.u32("intrinsic_latency_ns")?,
                 led_count: r.u16("led_count")?,
                 visualizer_bands: r.u8("visualizer_bands")?,
+                // Absent (a pre-goal-13 endpoint) reads as no features.
+                features: r.optional_u8(),
             })
         }
         Type::StreamFormat => {
@@ -620,6 +644,38 @@ fn decode_payload(message_type: Type, payload: &[u8]) -> Result<Message, FieldEr
             rssi_dbm: r.u8("rssi_dbm")? as i8,
             temperature_centi_c: r.u16("temperature_centi_c")? as i16,
         }),
+        Type::LowLatencyOffer => {
+            let b = r.u8("direction")?;
+            let direction = LowLatencyDirection::from_wire(b).ok_or(FieldError {
+                field: "direction",
+                problem: Problem::Undefined(b as u64),
+            })?;
+            let stream_tag = r.u32("stream_tag")?;
+            let mut key = [0u8; 32];
+            key.copy_from_slice(r.take("key", 32)?);
+            Message::LowLatencyOffer(LowLatencyOffer {
+                direction,
+                stream_tag,
+                key,
+                udp_port: r.u16("udp_port")?,
+                chunk_frames: r.u32("chunk_frames")?,
+                fec_k: r.u8("fec_k")?,
+                fec_depth: r.u8("fec_depth")?,
+                latency_ns: r.u64("latency_ns")?,
+            })
+        }
+        Type::LowLatencyAccept => {
+            let stream_tag = r.u32("stream_tag")?;
+            let b = r.u8("status")?;
+            Message::LowLatencyAccept(LowLatencyAccept {
+                stream_tag,
+                status: LowLatencyStatus::from_wire(b).ok_or(FieldError {
+                    field: "status",
+                    problem: Problem::Undefined(b as u64),
+                })?,
+                udp_port: r.u16("udp_port")?,
+            })
+        }
         Type::HandshakeInit => {
             let magic = r.take("magic", 4)?;
             if magic != MAGIC {
@@ -963,6 +1019,16 @@ pub fn validate(message: &Message) -> Result<(), FieldError> {
             Ok(())
         }
         Message::Telemetry(_) => Ok(()),
+        Message::LowLatencyOffer(m) => validate_low_latency_offer(m),
+        Message::LowLatencyAccept(m) => {
+            if m.stream_tag == 0 {
+                return err("stream_tag", Problem::OutOfRange(0));
+            }
+            if m.status != LowLatencyStatus::Accepted && m.udp_port != 0 {
+                return err("udp_port", Problem::Inconsistent("a refusal names no port"));
+            }
+            Ok(())
+        }
         Message::HandshakeInit(m) => {
             if m.noise.len() < 32 {
                 return err("noise", Problem::Truncated);
@@ -1085,6 +1151,64 @@ pub fn validate(message: &Message) -> Result<(), FieldError> {
         }
         Message::Sound(m) => validate_sound(m),
     }
+}
+
+/// `low_latency_offer`'s rules, field by field in wire order
+/// (`docs/protocol.md`, "0x16 low latency offer"). Rejected, never clamped.
+fn validate_low_latency_offer(m: &LowLatencyOffer) -> Result<(), FieldError> {
+    if m.stream_tag == 0 {
+        return err("stream_tag", Problem::OutOfRange(0));
+    }
+    if m.direction == LowLatencyDirection::End {
+        // An end names its stream and nothing else.
+        let rest_zero = m.key == [0u8; 32]
+            && m.udp_port == 0
+            && m.chunk_frames == 0
+            && m.fec_k == 0
+            && m.fec_depth == 0
+            && m.latency_ns == 0;
+        if !rest_zero {
+            return err(
+                "direction",
+                Problem::Inconsistent("an end carries only its stream_tag; the rest is zero"),
+            );
+        }
+        return Ok(());
+    }
+    if m.key == [0u8; 32] {
+        return err(
+            "key",
+            Problem::Inconsistent("a stream key is never all zero"),
+        );
+    }
+    let port_needed = m.direction == LowLatencyDirection::FromEndpoint;
+    if port_needed == (m.udp_port == 0) {
+        return err(
+            "udp_port",
+            Problem::Inconsistent(
+                "names the server's port for a stream from the endpoint, and only then",
+            ),
+        );
+    }
+    if m.chunk_frames == 0 || m.chunk_frames > LOW_LATENCY_MAX_CHUNK_FRAMES {
+        return err("chunk_frames", Problem::OutOfRange(m.chunk_frames as i128));
+    }
+    if m.fec_k != 0 && (m.fec_k < LOW_LATENCY_FEC_K.0 || m.fec_k > LOW_LATENCY_FEC_K.1) {
+        return err("fec_k", Problem::OutOfRange(m.fec_k as i128));
+    }
+    if m.fec_depth < LOW_LATENCY_FEC_DEPTH.0 || m.fec_depth > LOW_LATENCY_FEC_DEPTH.1 {
+        return err("fec_depth", Problem::OutOfRange(m.fec_depth as i128));
+    }
+    if m.fec_k == 0 && m.fec_depth != 1 {
+        return err(
+            "fec_depth",
+            Problem::Inconsistent("a stream without FEC has no interleave"),
+        );
+    }
+    if m.latency_ns > LOW_LATENCY_MAX_LATENCY_NS {
+        return err("latency_ns", Problem::OutOfRange(m.latency_ns as i128));
+    }
+    Ok(())
 }
 
 /// `sound`'s rules, field by field in wire order (`docs/protocol.md`, "0x39
@@ -1270,6 +1394,16 @@ impl<'a> Reader<'a> {
             );
         }
         self.text(field, n)
+    }
+    /// A trailing optional byte: 0 when the payload ends here.
+    fn optional_u8(&mut self) -> u8 {
+        match self.buf.get(self.at) {
+            Some(&b) => {
+                self.at += 1;
+                b
+            }
+            None => 0,
+        }
     }
     /// Bytes not yet read: an optional trailing field is read only when its
     /// byte is there (`sound`'s theater block).

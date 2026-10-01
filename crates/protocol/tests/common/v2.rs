@@ -162,6 +162,20 @@ pub fn v2_message_from_fields(f: &Fields) -> Message {
             intrinsic_latency_ns: f.u64("intrinsic_latency_ns") as u32,
             led_count: f.u64("led_count") as u16,
             visualizer_bands: f.u64("visualizer_bands") as u8,
+            // Optional (goal 13): a vector made before the field has none.
+            features: if f.has("features") {
+                words(f, "features").iter().fold(0u8, |acc, name| {
+                    acc | named(
+                        name,
+                        features::NAMES
+                            .iter()
+                            .find(|(_, n)| n == name)
+                            .map(|(b, _)| *b),
+                    )
+                })
+            } else {
+                0
+            },
         }),
         Type::StreamFormat => Message::StreamFormat(StreamFormat {
             codec: named("codec", Codec::from_name(f.str("codec"))),
@@ -196,6 +210,29 @@ pub fn v2_message_from_fields(f: &Fields) -> Message {
             link: named("link", Link::from_name(f.str("link"))),
             rssi_dbm: int(f, "rssi_dbm") as i8,
             temperature_centi_c: int(f, "temperature_centi_c") as i16,
+        }),
+        Type::LowLatencyOffer => Message::LowLatencyOffer(LowLatencyOffer {
+            direction: named(
+                "direction",
+                LowLatencyDirection::from_name(f.str("direction")),
+            ),
+            stream_tag: f.u64("stream_tag") as u32,
+            key: {
+                let bytes = f.bytes("key");
+                let mut k = [0u8; 32];
+                k.copy_from_slice(&bytes);
+                k
+            },
+            udp_port: f.u64("udp_port") as u16,
+            chunk_frames: f.u64("chunk_frames") as u32,
+            fec_k: f.u64("fec_k") as u8,
+            fec_depth: f.u64("fec_depth") as u8,
+            latency_ns: f.u64("latency_ns"),
+        }),
+        Type::LowLatencyAccept => Message::LowLatencyAccept(LowLatencyAccept {
+            stream_tag: f.u64("stream_tag") as u32,
+            status: named("status", LowLatencyStatus::from_name(f.str("status"))),
+            udp_port: f.u64("udp_port") as u16,
         }),
         Type::HandshakeInit => Message::HandshakeInit(HandshakeInit {
             protocol_version: f.u64("protocol_version") as u16,
