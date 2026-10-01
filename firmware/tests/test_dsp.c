@@ -592,6 +592,10 @@ static uint32_t run_chain(uint32_t block, uint32_t *frames_out, double *room_out
     s.sub_present = num_or("sub_present", 0) != 0;
     s.crossover_hz = (uint16_t)num_or("crossover_hz", 80);
     s.sub_level_cdb = (int16_t)num_or("sub_level_cdb", 0);
+    s.tv_upmix = (uint8_t)num_or("tv_upmix", 0);
+    s.fold_centre = num_or("fold_centre", 0) != 0;
+    s.fold_surround = num_or("fold_surround", 0) != 0;
+    e.stereo_downmix = num_or("stereo_downmix", 0) != 0;
     double eq[3 * CHORUS_DSP_ROOM_EQ_MAX_FILTERS];
     int ne = list("room_eq", eq, 3 * CHORUS_DSP_ROOM_EQ_MAX_FILTERS);
     if (ne > 0) {

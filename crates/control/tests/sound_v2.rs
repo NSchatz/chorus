@@ -77,7 +77,8 @@ fn a_room_starts_flat_with_loudness_on_and_bass_management_at_80_hz() {
     assert!(z.room_eq.enabled && z.room_eq.filters.is_empty());
     assert_eq!(
         json::write(zone_state(&zones, "kitchen").get("sound").unwrap()),
-        r#"{"bass":0,"treble":0,"loudness":true,"night":false,"speech":false}"#
+        // Goal 13 added `tv_upmix` (its own tests: tests/theater_v2.rs).
+        r#"{"bass":0,"treble":0,"loudness":true,"night":false,"speech":false,"tv_upmix":"off"}"#
     );
 }
 
@@ -297,8 +298,9 @@ fn everything_sound_holds_survives_the_state_file_as_format_3() {
         apply(&mut zones, text);
     }
     let text = render(&zones);
-    assert_eq!(STATE_FORMAT, 3);
-    assert!(text.contains("format = 3\n"), "{}", text);
+    // Format 4 (goal 13) still holds every format 3 field, in its place.
+    assert_eq!(STATE_FORMAT, 4);
+    assert!(text.contains("format = 4\n"), "{}", text);
     assert!(text.contains(
         "bass = -4\ntreble = 2\nloudness = 0\nnight = 1\nspeech = 1\ncrossover_hz = 120\n\
          sub_level_db = -1.75\nsub_polarity = inverted\nroom_eq = 0\n\
@@ -344,7 +346,8 @@ fn a_format_2_file_loads_unchanged_with_the_sound_defaults() {
     assert_eq!(z.bass.crossover_hz, 80);
     assert!(z.room_eq.filters.is_empty() && z.room_eq.enabled);
     let again = render(&zones);
-    assert!(again.contains("format = 3\n"));
+    // The next write is the current format (4 since goal 13).
+    assert!(again.contains("format = 4\n"));
     assert_eq!(render(&load(&again, "x").unwrap()), again);
 }
 

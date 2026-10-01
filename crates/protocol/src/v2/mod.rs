@@ -16,9 +16,9 @@ pub mod noise;
 pub mod session;
 
 pub use catalog::{
-    roles, sound_flags, ChannelPosition, Codec, Command, Link, Playback, RefusalReason,
-    SourceAction, SourceKind, Suite, Type, MAGIC, MAX_ROOM_VOLUME_RAMP_MS, PROTOCOL_VERSION,
-    ROOM_VOLUME_FULL, SOUND_CROSSOVER_HZ, SOUND_EQ_FREQ_HZ, SOUND_EQ_GAIN_CDB,
+    roles, signal_reason, sound_flags, sound_fold, ChannelPosition, Codec, Command, Link, Playback,
+    RefusalReason, SourceAction, SourceKind, Suite, Type, MAGIC, MAX_ROOM_VOLUME_RAMP_MS,
+    PROTOCOL_VERSION, ROOM_VOLUME_FULL, SOUND_CROSSOVER_HZ, SOUND_EQ_FREQ_HZ, SOUND_EQ_GAIN_CDB,
     SOUND_EQ_MAX_FILTERS, SOUND_EQ_Q_MILLI, SOUND_SUB_LEVEL_CDB, SOUND_TONE_DB,
 };
 pub use codec::{

@@ -443,6 +443,7 @@ pub fn first_source_offer(config: &ClientConfig) -> Option<SourceOffer> {
         kind: input.kind,
         signal: false,
         name: input.name.clone(),
+        reason: 0,
     })
 }
 

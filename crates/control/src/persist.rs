@@ -64,6 +64,16 @@
 //! (`freq_hz gain_db q` per filter, `; ` between them). Every one is required
 //! in a format 3 file. A format 1 or 2 file loads unchanged with every room
 //! at the sound defaults (`crate::sound`); the next write is format 3.
+//!
+//! # Format 4 (goal 13: the TV path)
+//!
+//! Format 4 adds two fields to `[zone]`, `tv_upmix` (`off` or `ambient`) and
+//! `av_trim_ms` (a whole number, -100 to 200), and two to `[autoplay]`,
+//! `stop_on_standby` and `low_latency` (0 or 1). Every one is required in a
+//! format 4 file. A format 1, 2 or 3 file loads unchanged with every room at
+//! `tv_upmix = off` and no trim and every rule at 1 for both (their
+//! defaults, `crate::theater` and `crate::rooms::Autoplay`); the next write is
+//! format 4.
 
 use std::fmt;
 use std::io::{self, Write};
@@ -77,13 +87,14 @@ use crate::rooms::{
 use crate::sound::{
     EqFilter, FixedPoint, Polarity, CROSSOVER_HZ, ROOM_EQ_MAX_FILTERS, SUB_LEVEL_CDB, TONE_DB,
 };
+use crate::theater::{TvUpmix, AV_TRIM_MS};
 use crate::zones::{Zone, Zones};
 
 /// The version of this file format, which is what every write produces.
-pub const STATE_FORMAT: u32 = 3;
+pub const STATE_FORMAT: u32 = 4;
 
 /// Every format this build reads.
-pub const READ_FORMATS: &[u32] = &[1, 2, 3];
+pub const READ_FORMATS: &[u32] = &[1, 2, 3, 4];
 
 /// Why persisted state could not be read.
 #[derive(Debug)]
@@ -200,7 +211,8 @@ pub fn render(zones: &Zones) -> String {
     out.push_str("# it once at start and refuses to start on a file it cannot parse.\n");
     out.push_str("# Format 2 adds [endpoint], [saved-group], [alarm] and [autoplay] sections\n");
     out.push_str("# and a room's limit, quiet hours and bonded set (docs/control-plane.md);\n");
-    out.push_str("# format 3 a room's sound, bass management and correction EQ.\n");
+    out.push_str("# format 3 a room's sound, bass management and correction EQ; format 4\n");
+    out.push_str("# a room's TV upmix and A/V trim and an autoplay rule's TV behaviour.\n");
     out.push('\n');
     out.push_str(&format!("format = {}\n", STATE_FORMAT));
     out.push_str(&format!("serial = {}\n", zones.serial()));
@@ -257,6 +269,8 @@ pub fn render(zones: &Zones) -> String {
                 .collect::<Vec<_>>()
                 .join("; ")
         ));
+        out.push_str(&format!("tv_upmix = {}\n", zone.sound.tv_upmix));
+        out.push_str(&format!("av_trim_ms = {}\n", zone.av_trim_ms));
     }
     for (endpoint, link) in zones.links() {
         out.push('\n');
@@ -286,6 +300,11 @@ pub fn render(zones: &Zones) -> String {
         out.push_str(&format!("[autoplay {}]\n", rule.input.literal()));
         out.push_str(&format!("target = {}\n", rule.target));
         out.push_str(&format!("enabled = {}\n", u8::from(rule.enabled)));
+        out.push_str(&format!(
+            "stop_on_standby = {}\n",
+            u8::from(rule.stop_on_standby)
+        ));
+        out.push_str(&format!("low_latency = {}\n", u8::from(rule.low_latency)));
     }
     out
 }
@@ -575,10 +594,20 @@ pub fn load(text: &str, default_audio: &str) -> Result<Zones, StateError> {
                 target
             )));
         }
+        let (stop_on_standby, low_latency) = if format >= 4 {
+            (
+                section.flag("stop_on_standby")?,
+                section.flag("low_latency")?,
+            )
+        } else {
+            (true, true)
+        };
         zones.restore_autoplay(Autoplay {
             input: InputId::parse(&section.id).expect("checked at the header"),
             target,
             enabled: section.flag("enabled")?,
+            stop_on_standby,
+            low_latency,
         });
     }
     // Bonds last, through the same rule a `bond` command is held to, against
@@ -710,6 +739,9 @@ fn load_zone(
     if format >= 3 {
         load_sound(section, &mut zone)?;
     }
+    if format >= 4 {
+        load_theater(section, &mut zone)?;
+    }
     Ok(zone)
 }
 
@@ -760,6 +792,24 @@ fn load_sound(section: &Section, zone: &mut Zone) -> Result<(), StateError> {
             ROOM_EQ_MAX_FILTERS
         )));
     }
+    Ok(())
+}
+
+/// Format 4's TV fields, each required and held to the catalog's range.
+fn load_theater(section: &Section, zone: &mut Zone) -> Result<(), StateError> {
+    let upmix = section.get("tv_upmix")?;
+    zone.sound.tv_upmix = TvUpmix::parse(&upmix)
+        .ok_or_else(|| section.fail(format!("'{}' is not a TV upmix", upmix)))?;
+    let trim = section.get("av_trim_ms")?;
+    zone.av_trim_ms = match trim.parse::<i16>() {
+        Ok(n) if (AV_TRIM_MS.0..=AV_TRIM_MS.1).contains(&n) && n.to_string() == trim => n,
+        _ => {
+            return Err(section.fail(format!(
+                "av_trim_ms = '{}', which is not a whole number from {} to {}",
+                trim, AV_TRIM_MS.0, AV_TRIM_MS.1
+            )))
+        }
+    };
     Ok(())
 }
 
@@ -901,9 +951,9 @@ mod tests {
 
     #[test]
     fn a_state_file_this_build_does_not_understand_is_refused_rather_than_guessed() {
-        // Format 3 is this build's own since goal 12; the next one is not.
-        let err = load("format = 4\nserial = 1\n", "x").unwrap_err();
-        assert!(err.to_string().contains("declares format 4"), "{}", err);
+        // Format 4 is this build's own since goal 13; the next one is not.
+        let err = load("format = 5\nserial = 1\n", "x").unwrap_err();
+        assert!(err.to_string().contains("declares format 5"), "{}", err);
         let err = load("serial = 1\n", "x").unwrap_err();
         assert!(err.to_string().contains("no format version"), "{}", err);
     }

@@ -80,6 +80,10 @@
 #define CHORUS_DSP_POS_FR 2u
 #define CHORUS_DSP_POS_FC 3u
 #define CHORUS_DSP_POS_LFE 4u
+#define CHORUS_DSP_POS_BL 5u
+#define CHORUS_DSP_POS_BR 6u
+#define CHORUS_DSP_POS_SL 10u
+#define CHORUS_DSP_POS_SR 11u
 #define CHORUS_DSP_POS_MAX 18u
 
 typedef enum {
@@ -256,6 +260,15 @@ typedef struct {
     uint16_t q_milli;
 } chorus_dsp_eq_filter_t;
 
+/* `tv_upmix` (goal 13): what a surround role plays from a stream with no
+ * surround channel. Off (silence) is the default, ASSUMED; ambient is the
+ * passive matrix surround (crates/dsp/src/chain.rs, docs/dsp.md). */
+#define CHORUS_DSP_TV_UPMIX_OFF 0u
+#define CHORUS_DSP_TV_UPMIX_AMBIENT 1u
+#define CHORUS_DSP_TV_UPMIX_MAX CHORUS_DSP_TV_UPMIX_AMBIENT
+/* The most terms one mix row holds: a 7.1 map's seven main channels. */
+#define CHORUS_DSP_MIX_TERMS 7u
+
 /* Exactly the wire `sound` message's fields. */
 typedef struct {
     int8_t bass_db;
@@ -271,6 +284,10 @@ typedef struct {
     int16_t sub_level_cdb;
     uint8_t eq_count;
     chorus_dsp_eq_filter_t eq[CHORUS_DSP_ROOM_EQ_MAX_FILTERS];
+    /* Goal 13: the theater maps. */
+    uint8_t tv_upmix;
+    bool fold_centre;   /* the set has no FC: a front role folds FC in */
+    bool fold_surround; /* the set has no surrounds: a front role folds its side's */
 } chorus_dsp_sound_t;
 
 /* Flat: every stage bypassed, not in a set, the default crossover. */
@@ -291,6 +308,9 @@ typedef struct {
     uint32_t two_way_hz;
     chorus_dsp_driver_t woofer, tweeter;
     uint32_t output_delay_us[CHORUS_DSP_MAX_OUTPUTS];
+    /* Goal 13: one stereo speaker; not in a set and not two-way, a stream
+     * with a centre or surrounds is downmixed to two outputs (BS.775-4). */
+    bool stereo_downmix;
 } chorus_dsp_endpoint_t;
 
 void chorus_dsp_endpoint_default(chorus_dsp_endpoint_t *e);
@@ -302,7 +322,18 @@ typedef enum {
     CHORUS_DSP_SOURCE_SUB,
     CHORUS_DSP_SOURCE_PAIR,
     CHORUS_DSP_SOURCE_MEAN,
+    CHORUS_DSP_SOURCE_MIX,
+    CHORUS_DSP_SOURCE_DOWNMIX,
+    CHORUS_DSP_SOURCE_AMBIENT,
 } chorus_dsp_source_t;
+
+/* One output's weighted sum of stream channels, summed in term order (Rust's
+ * `Mix`, term for term). */
+typedef struct {
+    uint32_t at[CHORUS_DSP_MIX_TERMS];
+    float gain[CHORUS_DSP_MIX_TERMS];
+    uint32_t n;
+} chorus_dsp_mix_t;
 
 typedef struct {
     uint32_t rate_hz;
@@ -323,6 +354,9 @@ typedef struct {
     chorus_dsp_compressor_t night;
     chorus_dsp_source_t source;
     uint32_t source_a, source_b;
+    chorus_dsp_mix_t mix[2];
+    chorus_dsp_biquad_t ambient[2];
+    float ambient_gain;
     bool highpass;
     chorus_dsp_lr4_t bass;
     float sub_gain;

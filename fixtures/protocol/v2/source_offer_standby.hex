@@ -1,0 +1,25 @@
+# chorus golden vector: source_offer, protocol v2 message type 0x36.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# produce these exact bytes from the canonical input in source_offer_standby.fields, and recover
+# exactly those fields from them (docs/protocol.md, "0x36 source_offer").
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x36, payload length 7 (0x0007), big-endian
+36 00 07
+
+# source_id = 2
+02
+
+# kind = 3 (hdmi_arc)
+03
+
+# signal = 0 (absent)
+00
+
+# name: length 2, then UTF-8
+02 54 56
+
+# reason = 1 (standby; goal 13, after name)
+01

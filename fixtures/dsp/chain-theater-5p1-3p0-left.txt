@@ -1,0 +1,30 @@
+# Goal 13, a 5.1 stream into a set with a centre and no surrounds (3.0 or 3.1),
+# the FL member (fold_surround only): BS.775-4 Table 2's 3/0 format,
+# "L = 1.0000 L + 0.0000 C + 0.7071 LS" (https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.775-4-202212-I!!PDF-E.pdf, read 2026-10-01). The output settles
+# at 0.3 + 0.1 / sqrt 2 = 0.370710678.
+
+kind = chain
+source = https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.775-4-202212-I!!PDF-E.pdf docs/dsp.md
+read = 2026-10-01
+rate_hz = 48000
+room_gain = 1
+limit_gain = 1
+channel_map = 1 2 3 4 5 6
+frames = 9600
+role = 1
+fold_surround = 1
+input.0 = sine 1000 0.3
+input.1 = sine 1000 0.4
+input.2 = sine 1000 0.2
+input.3 = sine 1000 0.5
+input.4 = sine 1000 0.1
+input.5 = sine 1000 0.25
+out_channels = 1
+amplitude.0 = 0.37071067811865477
+amplitude_from = 4800
+amplitude_tolerance = 1e-5
+golden = 1
+# The Rust chain's output (the chain_samples example): a drift check.
+samples_from = 9536
+samples_tolerance = 1e-6
+samples.0 = -0.32104486 -0.342492 -0.35807902 -0.3675392 -0.3707107 -0.3675392 -0.35807902 -0.342492 -0.32104486 -0.29410455 -0.26213205 -0.22567436 -0.18535535 -0.14186484 -0.09594698 -0.048387453 -5.7398056e-14 0.048387453 0.09594698 0.14186484 0.18535535 0.22567436 0.26213205 0.29410455 0.32104486 0.342492 0.35807902 0.3675392 0.3707107 0.3675392 0.35807902 0.342492 0.32104486 0.29410455 0.26213205 0.22567436 0.18535535 0.14186484 0.09594698 0.048387453 1.0353947e-13 -0.048387453 -0.09594698 -0.14186484 -0.18535535 -0.22567436 -0.26213205 -0.29410455 -0.32104486 -0.342492 -0.35807902 -0.3675392 -0.3707107 -0.3675392 -0.35807902 -0.342492 -0.32104486 -0.29410455 -0.26213205 -0.22567436 -0.18535535 -0.14186484 -0.09594698 -0.048387453

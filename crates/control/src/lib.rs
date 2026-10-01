@@ -23,6 +23,7 @@
 //! - [`catalog`] is the message types, their fields and their ranges.
 //! - [`zones`] is the server-authoritative state a command changes.
 //! - [`sound`] is a room's tone, bass management and correction EQ.
+//! - [`theater`] is a room's A/V trim and TV upmix (goal 13).
 //! - [`persist`] is what survives a restart.
 //! - [`fanout`] is how a change reaches every subscriber, bounded.
 //! - [`transport`] is the tier a zone is DECLARED in, beside the catalog and
@@ -42,6 +43,7 @@ pub mod json;
 pub mod persist;
 pub mod rooms;
 pub mod sound;
+pub mod theater;
 pub mod transport;
 pub mod zones;
 

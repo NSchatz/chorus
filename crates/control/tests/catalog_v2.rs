@@ -22,6 +22,7 @@ use chorus_control::rooms::{
     Source,
 };
 use chorus_control::sound::{EqFilter, FixedPoint, Polarity};
+use chorus_control::theater::TvUpmix;
 use chorus_control::transport::{Transport, ZoneTransports};
 use chorus_control::zones::{GroupKind, Zone, Zones};
 use chorus_protocol::v2::{self as wire, ControllerCommand};
@@ -52,6 +53,7 @@ const EVERY_V2_MESSAGE_TYPE: &[&str] = &[
     "sound",
     "bass_management",
     "room_eq",
+    "av_trim",
     "state",
     "error",
     "refused",
@@ -338,6 +340,9 @@ fn command_from(fields: &Fields) -> Command {
             input: InputId::parse(&get("input")).unwrap(),
             target: get("target"),
             enabled: flag("enabled"),
+            // Goal 13: absent is true, as the decoder reads it.
+            stop_on_standby: !fields.has("stop_on_standby") || flag("stop_on_standby"),
+            low_latency: !fields.has("low_latency") || flag("low_latency"),
         }),
         "sound" => {
             let tone = |k: &str| fields.has(k).then(|| num(k) as i8);
@@ -349,8 +354,15 @@ fn command_from(fields: &Fields) -> Command {
                 loudness: flag("loudness"),
                 night: flag("night"),
                 speech: flag("speech"),
+                tv_upmix: fields
+                    .has("tv_upmix")
+                    .then(|| TvUpmix::parse(&get("tv_upmix")).unwrap()),
             }
         }
+        "av_trim" => Command::AvTrim {
+            zone: get("zone"),
+            av_trim_ms: num("av_trim_ms") as i16,
+        },
         "bass_management" => Command::BassManagement {
             zone: get("zone"),
             crossover_hz: fields

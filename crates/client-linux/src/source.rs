@@ -840,6 +840,7 @@ fn offer<U: Upstream>(
         kind: input.kind,
         signal,
         name: input.name.clone(),
+        reason: 0,
     }))?;
     stats.offers_sent.fetch_add(1, Ordering::Relaxed);
     Ok(())

@@ -109,6 +109,9 @@ pub struct Zone {
     pub bass: BassManagement,
     /// (v2, goal 12) The room-correction EQ.
     pub room_eq: RoomEq,
+    /// (v2, goal 13) The A/V trim, ms: positive plays the room's TV audio
+    /// later ([`crate::theater`]).
+    pub av_trim_ms: i16,
 }
 
 impl Zone {
@@ -132,6 +135,7 @@ impl Zone {
             sound: SoundSettings::default(),
             bass: BassManagement::default(),
             room_eq: RoomEq::default(),
+            av_trim_ms: 0,
         }
     }
 
@@ -654,6 +658,7 @@ impl Zones {
                 loudness,
                 night,
                 speech,
+                tv_upmix,
                 ..
             } => {
                 // Partial: an absent field keeps what the room had. No
@@ -664,6 +669,12 @@ impl Zones {
                 sound.loudness = loudness.unwrap_or(sound.loudness);
                 sound.night = night.unwrap_or(sound.night);
                 sound.speech = speech.unwrap_or(sound.speech);
+                sound.tv_upmix = tv_upmix.unwrap_or(sound.tv_upmix);
+            }
+            Command::AvTrim { av_trim_ms, .. } => {
+                // Its range is the decoder's; the relay clamps a trim the
+                // floor cannot carry (crate::theater), which is not this.
+                self.zones[room()].av_trim_ms = *av_trim_ms;
             }
             Command::BassManagement {
                 crossover_hz,
@@ -1368,7 +1379,12 @@ impl Zones {
                     ("loudness".to_string(), Value::Bool(z.sound.loudness)),
                     ("night".to_string(), Value::Bool(z.sound.night)),
                     ("speech".to_string(), Value::Bool(z.sound.speech)),
+                    ("tv_upmix".to_string(), Value::text(z.sound.tv_upmix.name())),
                 ]),
+            ),
+            (
+                "av_trim_ms".to_string(),
+                Value::int(i64::from(z.av_trim_ms)),
             ),
             (
                 "bass_management".to_string(),

@@ -387,6 +387,45 @@ whatever the room's set; the state's `active` says whether the set has an
 {"v":2,"t":"room_eq","zone":"living","filters":[{"freq_hz":42,"gain_db":-6.00,"q":4.500},{"freq_hz":120,"gain_db":-3.25,"q":2.000}],"enabled":true}
 ```
 
+### The TV path: A/V trim, TV upmix, TV autoplay (goal 13)
+
+`docs/decisions/0088-theater-maps-av-trim-and-tv-autoplay.md` records the
+choices and the citations.
+
+- **`av_trim`** sets a room's signed A/V trim, `av_trim_ms`, a whole number of
+  milliseconds from -100 to 200 (ASSUMED bounds, waiting on the Needs item "The
+  three TVs: model, eARC port, optical out and audio menu"). Positive DELAYS
+  the room's TV audio (a TV whose picture is slower than its sound); negative
+  brings it earlier. It applies only to the TV relay's stamps:
+  `play_at = capture_stamp + max(L_floor, L_tv + trim)`, and a trim that asks
+  for less than the floor is clamped to it and logged `av-trim-clamped`, never
+  refused (`chorus_control::theater::tv_play_at_lead_ns` is the rule, pure). It
+  is not a volume path and moves nothing else. Out of range is refused naming
+  `av_trim_ms`.
+- **`tv_upmix`** is a field of `sound` (partial, as the others): `"off"` (the
+  default, ASSUMED) or `"ambient"`. It decides what a theater set's surround
+  members play from a stream with no surround channel (a stereo TV): silence,
+  or the passive matrix surround `(FL - FR) / sqrt 2`, band-limited and 20 ms
+  late (`docs/dsp.md`, "The theater maps"). It travels to the endpoints in the
+  `sound` message's theater block, with the set's `fold` bits the server
+  derives from the bond (`docs/protocol.md`, 0x39).
+- **An autoplay rule's TV fields** (K81): `stop_on_standby` (default `true`):
+  for a TV input (kind `optical` or `hdmi_arc`), the TV going to standby stops
+  the autoplay at once, without the 30 s hold, and restores what its rooms
+  played; `low_latency` (default `true`): the integration track's relay plays
+  the TV in low-latency mode when the target is one wired room, and `false`
+  keeps it on the slot path. Both are written only when `false`, so a rule
+  that leaves them at their defaults has goal 11's bytes.
+
+```json
+{"v":2,"t":"av_trim","zone":"living","av_trim_ms":-40}
+{"v":2,"t":"sound","zone":"living","tv_upmix":"ambient"}
+{"v":2,"t":"autoplay","input":"hub/tv","target":"living","enabled":true,"stop_on_standby":false,"low_latency":false}
+```
+
+The state message carries both per room: `"av_trim_ms":0` beside `sound`, and
+`"tv_upmix":"off"` inside it.
+
 ### Take the room (K78)
 
 `take` moves every room of the target out of whatever group it is in and into
@@ -697,6 +736,16 @@ rules the catalog configures (ADR 0079 wires it):
   takes the rule's target and plays the input; when the signal goes it is held
   30 s (on top of the endpoint's own 2 s), then stopped and the target
   restored; the signal coming back within the hold cancels the stop.
+- **TV autoplay** (goal 13, K81): a TV input (`optical`, `hdmi_arc`) is an
+  input like any other, so the TV coming on is a signal and its rule's `take`
+  takes the target room out of whatever group it was in. The TV going to
+  standby is a `source_offer` with `signal` false and `reason` standby
+  (`docs/protocol.md`, 0x36), which the server hands the runtime as a standby
+  (`InputEvent::Standby`; an offer from any other kind of input with that
+  reason is only a signal gone): an autoplay of it whose rule says
+  `stop_on_standby` stops NOW, no hold, and restores its rooms
+  (`schedule autoplay input=<id> stopped reason=standby restored=<rooms>`);
+  one whose rule says otherwise holds as for a signal gone.
 
 Every default above is ASSUMED and listed in ADR 0076 and ADR 0079.
 
@@ -774,16 +823,20 @@ and anything about what is playing rather than where. Catalog v2 names a
 group's source and the inputs offered; choosing what a stream URL or a service
 plays is not here.
 
-## What survives a restart (state-file format 3)
+## What survives a restart (state-file format 4)
 
 The server persists, in `--state-file`, everything a person configured: each
 room's name, group, volume, mute, endpoints, `limit`, quiet-hours windows,
-bonded set, and (format 3, goal 12) its sound, bass management and correction
-filters; each endpoint's link; saved groups; alarms; autoplay rules. It does
+bonded set, (format 3, goal 12) its sound, bass management and correction
+filters, and (format 4, goal 13) its `tv_upmix` and `av_trim_ms`; each
+endpoint's link; saved groups; alarms; autoplay rules (with, from format 4,
+`stop_on_standby` and `low_latency`). It does
 not persist what is a fact about now: which endpoints are present, which quiet
 window is active, which alarm is ringing, a running ramp, what a group is
 playing, a sleep timer, or which inputs are offered. A format 1 file (every build
 before catalog v2) loads unchanged with the v2 defaults, and a format 2 file
-(goal 11's builds) with the sound defaults; the next write is format 3. A write goes to a temporary that is `fsync`ed, renamed over the file, and the
+(goal 11's builds) with the sound defaults, and a format 3 file (goal 12's
+builds) with no trim, the upmix off and every rule's TV fields true; the next
+write is format 4. A write goes to a temporary that is `fsync`ed, renamed over the file, and the
 directory is `fsync`ed, and a render that would not read back as the same state
 is never installed (`crates/control/src/persist.rs`).

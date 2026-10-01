@@ -353,6 +353,10 @@ impl Conductor {
                         self.state
                             .runtime(|zones| runtime.on_input_signal(&input, signal, mono, zones)),
                     ),
+                    InputEvent::Standby(input) => effects.extend(
+                        self.state
+                            .runtime(|zones| runtime.on_input_standby(&input, mono, zones)),
+                    ),
                     InputEvent::Gone(input) => effects.extend(
                         self.state
                             .runtime(|zones| runtime.on_input_gone(&input, mono, zones)),

@@ -475,6 +475,8 @@ mod tests {
                 gain_cdb: -600,
                 q_milli: 4500,
             }],
+            tv_upmix: 0,
+            fold: 0,
         };
         inbox.deliver(sound.clone());
         assert_eq!(inbox.take(), Some(sound.clone()));

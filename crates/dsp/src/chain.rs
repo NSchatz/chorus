@@ -23,7 +23,15 @@
 //!    read 2026-10-01; and "It is designed to be amplified by 10 dB on
 //!    playback and summed into the signal going to the subwoofer",
 //!    <https://en.wikipedia.org/wiki/Bass_management>, read 2026-10-01),
-//!    times the subwoofer level, inverted if set.
+//!    times the subwoofer level, inverted if set. The theater maps (goal 13,
+//!    `docs/dsp.md` "The theater maps") choose what a role plays when the
+//!    stream and the set do not match: a front role of a set with no centre
+//!    or no surrounds folds those in (ITU-R BS.775-4 Table 2), a centre role
+//!    on a stream with no centre plays `(FL + FR) / sqrt 2`, a surround role
+//!    takes the other surround pair's channel (side for back, back for side)
+//!    or, on a stream with no surround at all, silence or the room's
+//!    `tv_upmix` ambient feed, and an unbonded stereo speaker
+//!    (`stereo_downmix`) or two-way takes the BS.775-4 downmix.
 //! 7. **Two-way**: when the endpoint has one, its one input (the role's
 //!    channel, or for role 0 the downmix `(FL + FR)/2`, the mono channel, or
 //!    the mean of the main channels) split by LR4 into woofer (output 0) and
@@ -47,7 +55,9 @@ use crate::crossover::{Lr4, Lr4Design};
 use crate::delay::{self, Delay};
 use crate::limiter::{self, Limiter};
 use crate::loudness;
-use crate::settings::{position, EndpointDsp, SoundSettings, MAX_OUTPUTS, ROOM_EQ_MAX_FILTERS};
+use crate::settings::{
+    position, EndpointDsp, SoundSettings, MAX_OUTPUTS, ROOM_EQ_MAX_FILTERS, TV_UPMIX_AMBIENT,
+};
 use crate::speech::{self, Mode};
 use crate::{db_to_gain, DspError, MAX_RATE_HZ, MIN_RATE_HZ};
 
@@ -59,6 +69,39 @@ pub const TREBLE_HZ: f64 = 8000.0;
 pub const TONE_Q: f64 = core::f64::consts::FRAC_1_SQRT_2;
 /// The LFE channel's gain into the subwoofer feed, dB (cited above).
 pub const LFE_GAIN_DB: f64 = 10.0;
+/// 1/sqrt 2, every downmix and fold coefficient: ITU-R BS.775-4 (12/2022),
+/// Annex 4 Table 2 prints it as 0.7071 (for example the 2/0 format's
+/// `L = 1.0000 L + 0.7071 C + 0.7071 LS`),
+/// <https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.775-4-202212-I!!PDF-E.pdf>,
+/// read 2026-10-01. The exact value is used; the table's is it rounded.
+pub const DOWNMIX_GAIN: f64 = core::f64::consts::FRAC_1_SQRT_2;
+/// The ambient surround's gain on `FL - FR`: the passive matrix's. Its
+/// encoder puts the surround into Lt and Rt "divided equally" at -3 dB with
+/// opposite signs (R. Dressler, "Dolby Surround Pro Logic Decoder Principles
+/// of Operation", section 1.1,
+/// <https://educypedia.org/library/208_Dolby_Surround_Pro_Logic_Decoder.pdf>,
+/// read 2026-10-01), so `(Lt - Rt) / sqrt 2` gives it back at unity
+/// (computed). The same reasoning gives the centre's `(Lt + Rt) / sqrt 2`.
+pub const AMBIENT_GAIN: f64 = core::f64::consts::FRAC_1_SQRT_2;
+/// The ambient surround's delay, us: "the crosstalk from the surrounds will
+/// arrive at the listener about 20mS after the direct sound from the front
+/// channels" (Sound On Sound, "Surround Sound Explained: Part 2",
+/// <https://www.soundonsound.com/techniques/surround-sound-explained-part-2>,
+/// read 2026-10-01; Dressler section 2: the delay uses the precedence effect
+/// so leakage does not pull the image off the screen).
+pub const AMBIENT_DELAY_US: u32 = 20_000;
+/// The ambient surround's band: "a band-pass filter to remove frequencies
+/// below 100Hz and above 7kHz" (Sound On Sound, above; Dressler section 1.2:
+/// "a 7 kHz low-pass filter").
+pub const AMBIENT_LOW_HZ: f64 = 100.0;
+/// See [`AMBIENT_LOW_HZ`].
+pub const AMBIENT_HIGH_HZ: f64 = 7000.0;
+/// The band's two sections' Q (one RBJ high-pass, one RBJ low-pass). ASSUMED:
+/// 1/sqrt 2 (Butterworth); the sources give the corners, not the slopes.
+pub const AMBIENT_Q: f64 = core::f64::consts::FRAC_1_SQRT_2;
+/// The most terms one mix row holds: the seven main channels of a 7.1 map.
+pub const MIX_TERMS: usize = 7;
+
 /// The delay frames all of a chain's outputs may hold between them: two
 /// outputs at [`delay::MAX_FRAMES`] (so the C chain's fixed pool is 38.4 KB).
 pub const DELAY_POOL_FRAMES: usize = 2 * delay::MAX_FRAMES;
@@ -74,8 +117,105 @@ pub fn corner(freq_hz: f64, rate_hz: f64) -> f64 {
     }
 }
 
+/// One output's weighted sum of stream channels, summed in the order the
+/// terms were added (the C mirror adds them in the same order, so the two
+/// agree bit for bit). Each gain is designed in `f64` and rounded to `f32`
+/// once.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Mix {
+    at: [usize; MIX_TERMS],
+    gain: [f32; MIX_TERMS],
+    n: usize,
+}
+
+impl Mix {
+    /// A row of `terms` (position, gain), each present in `map` taken in the
+    /// order given; a position the map lacks is skipped.
+    fn row(map: &[u8], terms: &[(u8, f64)]) -> Mix {
+        let mut m = Mix {
+            at: [0; MIX_TERMS],
+            gain: [0.0; MIX_TERMS],
+            n: 0,
+        };
+        for &(p, g) in terms {
+            if let Some(i) = map.iter().position(|&q| q == p) {
+                if m.n < MIX_TERMS {
+                    m.at[m.n] = i;
+                    m.gain[m.n] = g as f32;
+                    m.n += 1;
+                }
+            }
+        }
+        m
+    }
+
+    fn apply(&self, x: &[f32]) -> f32 {
+        let mut v = 0.0f32;
+        for k in 0..self.n {
+            v += x[self.at[k]] * self.gain[k];
+        }
+        v
+    }
+}
+
+/// The surround positions on a side: left (`BL`, `SL`) or right.
+fn side(left: bool) -> [u8; 2] {
+    if left {
+        [position::BL, position::SL]
+    } else {
+        [position::BR, position::SR]
+    }
+}
+
+fn is_surround(p: u8) -> bool {
+    matches!(p, position::BL | position::BR | position::SL | position::SR)
+}
+
+/// The other 5.1 surround naming of the same speaker: a 5.1 stream carries
+/// its surrounds as back (BL BR, `KSAUDIO_SPEAKER_5POINT1`) or side (SL SR,
+/// `KSAUDIO_SPEAKER_5POINT1_SURROUND`, which Microsoft names "the speaker
+/// configuration for a 5.1-channel surround format"),
+/// <https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ksmedia/ns-ksmedia-ksaudio_channel_config>,
+/// read 2026-10-01.
+fn equivalent(p: u8) -> u8 {
+    match p {
+        position::BL => position::SL,
+        position::SL => position::BL,
+        position::BR => position::SR,
+        position::SR => position::BR,
+        other => other,
+    }
+}
+
+/// The BS.775-4 2/0 row for one side: the front channel, the centre and the
+/// side's surround(s), each surround at 1/sqrt 2.
+fn stereo_row(left: bool) -> [(u8, f64); 4] {
+    let g = DOWNMIX_GAIN;
+    let s = side(left);
+    let front = if left { position::FL } else { position::FR };
+    [(front, 1.0), (position::FC, g), (s[0], g), (s[1], g)]
+}
+
+/// The mono row a two-way endpoint takes from a stream with a centre or
+/// surrounds: the mean of BS.775-4's 2/0 pair, `(Lo + Ro) / 2`, the same
+/// "mean of the stereo pair" rule the chain already applies to a stereo
+/// stream (so a 5.1 and a 2.0 mix of one programme play at one level; the
+/// table's 1/0 row would play the 5.1 3 dB hotter).
+fn mono_row() -> [(u8, f64); 7] {
+    let g = DOWNMIX_GAIN;
+    [
+        (position::FL, 0.5),
+        (position::FR, 0.5),
+        (position::FC, g),
+        (position::BL, 0.5 * g),
+        (position::BR, 0.5 * g),
+        (position::SL, 0.5 * g),
+        (position::SR, 0.5 * g),
+    ]
+}
+
 /// Where the (first) output's signal comes from, before the two-way split.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Source {
     /// Every stream channel to its own output.
     Pass,
@@ -87,6 +227,12 @@ enum Source {
     Pair(usize, usize),
     /// The mean of the main channels.
     MeanOfMains,
+    /// One weighted sum (a fold, the centre upmix, a two-way's downmix).
+    Mix(Mix),
+    /// Two outputs, the BS.775-4 2/0 downmix (`stereo_downmix`).
+    Downmix(Mix, Mix),
+    /// The ambient surround from these two channels (FL, FR).
+    Ambient(usize, usize),
 }
 
 /// The running chain. See the module for the order.
@@ -109,8 +255,10 @@ pub struct Chain {
     source: Source,
     highpass: bool,
     bass: Lr4,
+    ambient: [Biquad; 2],
     sub_gain: f32,
     lfe_gain: f32,
+    ambient_gain: f32,
     lfe: Option<usize>,
     two_way: Option<(Lr4, [f32; 2])>,
     delays: Vec<Delay>,
@@ -175,8 +323,10 @@ impl Chain {
             source: Source::Pass,
             highpass: false,
             bass: Lr4::default(),
+            ambient: [Biquad::default(); 2],
             sub_gain: 1.0,
             lfe_gain: db_to_gain(LFE_GAIN_DB) as f32,
+            ambient_gain: AMBIENT_GAIN as f32,
             lfe: map.iter().position(|&p| p == position::LFE),
             two_way: None,
             delays: Vec::new(),
@@ -277,31 +427,86 @@ impl Chain {
 
         // 6. The output's source.
         let role = s.role;
+        let map = &self.map;
+        let find = |p: u8| map.iter().position(|&q| q == p);
+        // A centre or a surround beside the front pair: what a downmix folds.
+        let extra = map.iter().any(|&p| p == position::FC || is_surround(p));
+        let front = (find(position::FL), find(position::FR));
         let (source, highpass) = if role == 0 {
             if self.two_way.is_some() {
-                let l = self.map.iter().position(|&p| p == position::FL);
-                let r = self.map.iter().position(|&p| p == position::FR);
-                let src = match (l, r) {
+                let src = match front {
+                    (Some(_), Some(_)) if extra => Source::Mix(Mix::row(map, &mono_row())),
                     (Some(l), Some(r)) => Source::Pair(l, r),
                     _ if n == 1 => Source::Channel(Some(0)),
                     _ => Source::MeanOfMains,
                 };
                 (src, false)
+            } else if self.endpoint.stereo_downmix
+                && extra
+                && front.0.is_some()
+                && front.1.is_some()
+            {
+                let lo = Mix::row(map, &stereo_row(true));
+                let ro = Mix::row(map, &stereo_row(false));
+                (Source::Downmix(lo, ro), false)
             } else {
                 (Source::Pass, false)
             }
         } else if role == position::LFE {
             (Source::Sub, false)
-        } else {
-            let at = self.map.iter().position(|&p| p == role);
-            let at = match at {
-                Some(i) => Some(i),
-                None if self.map == [position::MONO] => Some(0),
-                None => None,
+        } else if let Some(i) = find(role) {
+            // The role's own channel, and for a front role the folds the
+            // set asks for (BS.775-4 Table 2: 3/0 folds the surrounds, 2/2
+            // the centre, 2/0 both).
+            let mut terms = vec![(role, 1.0)];
+            if role == position::FL || role == position::FR {
+                if s.fold_centre {
+                    terms.push((position::FC, DOWNMIX_GAIN));
+                }
+                if s.fold_surround {
+                    for p in side(role == position::FL) {
+                        terms.push((p, DOWNMIX_GAIN));
+                    }
+                }
+            }
+            let m = Mix::row(map, &terms);
+            let src = if m.n == 1 {
+                Source::Channel(Some(i))
+            } else {
+                Source::Mix(m)
             };
-            (Source::Channel(at), s.sub_present)
+            (src, s.sub_present)
+        } else if self.map == [position::MONO] {
+            (Source::Channel(Some(0)), s.sub_present)
+        } else if role == position::FC {
+            // The passive centre, (FL + FR) / sqrt 2; silence without both.
+            let src = match front {
+                (Some(_), Some(_)) => Source::Mix(Mix::row(
+                    map,
+                    &[(position::FL, DOWNMIX_GAIN), (position::FR, DOWNMIX_GAIN)],
+                )),
+                _ => Source::Channel(None),
+            };
+            (src, s.sub_present)
+        } else if is_surround(role) {
+            let any_surround = map.iter().any(|&p| is_surround(p));
+            let src = match (find(equivalent(role)), front) {
+                (Some(k), _) => Source::Channel(Some(k)),
+                (None, (Some(l), Some(r))) if !any_surround && s.tv_upmix == TV_UPMIX_AMBIENT => {
+                    Source::Ambient(l, r)
+                }
+                _ => Source::Channel(None),
+            };
+            (src, s.sub_present)
+        } else {
+            (Source::Channel(None), s.sub_present)
         };
-        let base_outputs = if source == Source::Pass { n } else { 1 };
+        let ambient = matches!(source, Source::Ambient(..));
+        let base_outputs = match source {
+            Source::Pass => n,
+            Source::Downmix(..) => 2,
+            _ => 1,
+        };
         let outputs = if self.two_way.is_some() {
             2
         } else {
@@ -312,6 +517,9 @@ impl Chain {
         let mut pool = 0usize;
         for (o, slot) in frames.iter_mut().enumerate().take(outputs) {
             let mut us = self.endpoint.output_delay_us[o] as u64;
+            if ambient {
+                us += AMBIENT_DELAY_US as u64;
+            }
             if let Some(t) = &self.endpoint.two_way {
                 us += if o == 0 {
                     t.woofer.delay_us
@@ -331,6 +539,22 @@ impl Chain {
             return Err(DspError::DelayTooLong);
         }
         let bass_design = Lr4Design::new(rate, corner(s.crossover_hz as f64, rate))?;
+        let ambient_designs = [
+            Coefficients::design(
+                Kind::Highpass,
+                rate,
+                corner(AMBIENT_LOW_HZ, rate),
+                AMBIENT_Q,
+                0.0,
+            )?,
+            Coefficients::design(
+                Kind::Lowpass,
+                rate,
+                corner(AMBIENT_HIGH_HZ, rate),
+                AMBIENT_Q,
+                0.0,
+            )?,
+        ];
 
         // Commit.
         for c in 0..n {
@@ -376,6 +600,9 @@ impl Chain {
             self.source = source;
             self.highpass = highpass;
             self.bass.reset();
+            for (b, d) in self.ambient.iter_mut().zip(ambient_designs.iter()) {
+                *b = Biquad::new(d);
+            }
             if let Some((split, _)) = &mut self.two_way {
                 split.reset();
             }
@@ -531,6 +758,26 @@ impl Chain {
                     self.out[0] = v * self.sub_gain;
                 }
                 Source::Pair(l, r) => self.out[0] = (x[l] + x[r]) * 0.5,
+                Source::Mix(m) => {
+                    let mut v = m.apply(x);
+                    if self.highpass {
+                        v = self.bass.high(v);
+                    }
+                    self.out[0] = v;
+                }
+                Source::Downmix(lo, ro) => {
+                    self.out[0] = lo.apply(x);
+                    self.out[1] = ro.apply(x);
+                }
+                Source::Ambient(l, r) => {
+                    let mut v = (x[l] - x[r]) * self.ambient_gain;
+                    v = self.ambient[0].process(v);
+                    v = self.ambient[1].process(v);
+                    if self.highpass {
+                        v = self.bass.high(v);
+                    }
+                    self.out[0] = v;
+                }
                 Source::MeanOfMains => {
                     let mut sum = 0.0f32;
                     let mut count = 0u32;
@@ -654,5 +901,57 @@ mod tests {
         )
         .unwrap();
         assert_eq!(c.out_channels(), 6);
+    }
+
+    #[test]
+    fn the_theater_maps_pick_their_outputs() {
+        let five = [1, 2, 3, 4, 5, 6];
+        // tv_upmix past the last defined value is refused by name.
+        let bad = SoundSettings {
+            tv_upmix: 2,
+            ..SoundSettings::default()
+        };
+        assert_eq!(
+            Chain::new(&bad, &EndpointDsp::default(), &[1, 2], 48000).err(),
+            Some(DspError::Setting("tv_upmix"))
+        );
+        // A stereo speaker downmixes 5.1 to two outputs and passes stereo.
+        let stereo = EndpointDsp {
+            stereo_downmix: true,
+            ..EndpointDsp::default()
+        };
+        let s = SoundSettings::default();
+        assert_eq!(
+            Chain::new(&s, &stereo, &five, 48000)
+                .unwrap()
+                .out_channels(),
+            2
+        );
+        assert_eq!(
+            Chain::new(&s, &stereo, &[1, 2], 48000)
+                .unwrap()
+                .out_channels(),
+            2
+        );
+        // The ambient surround's 20 ms rides the output's delay line, so a
+        // rate where it does not fit is refused, not silently shortened.
+        let amb = SoundSettings {
+            role: position::SL,
+            tv_upmix: TV_UPMIX_AMBIENT,
+            ..SoundSettings::default()
+        };
+        assert!(Chain::new(&amb, &EndpointDsp::default(), &[1, 2], 192_000).is_ok());
+        assert_eq!(
+            Chain::new(&amb, &EndpointDsp::default(), &[1, 2], 384_000).err(),
+            Some(DspError::DelayTooLong)
+        );
+        // A role change between upmix and plain channel re-plans the output.
+        let mut c = Chain::new(&amb, &EndpointDsp::default(), &[1, 2], 48000).unwrap();
+        let off = SoundSettings {
+            tv_upmix: 0,
+            ..amb.clone()
+        };
+        c.set_sound(&off).unwrap();
+        assert_eq!(c.settings().tv_upmix, 0);
     }
 }
