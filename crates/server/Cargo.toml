@@ -37,6 +37,9 @@ chorus-client-linux = { path = "../client-linux" }
 # the audio-path check's own settable-clock vocabulary, as the schedule crate's
 # no-clock test does, rather than a second word list that could drift.
 chorus-audio-path = { path = "../audio-path" }
+# tests/dsp_end_to_end.rs predicts what the endpoints play with the DSP
+# library's own responses and chain (goal 12).
+chorus-dsp = { path = "../dsp" }
 
 [[bin]]
 name = "chorus-server"
