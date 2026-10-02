@@ -108,16 +108,23 @@ impl RunningServer {
     /// Start the server with a control plane and a throwaway identity, both
     /// sockets on port 0, plus `extra`; return once it is listening for audio.
     pub fn start(extra: &[&str]) -> RunningServer {
+        RunningServer::start_on("127.0.0.1:0", &["--ephemeral-identity"], extra)
+    }
+
+    /// [`RunningServer::start`] with the audio address and the identity
+    /// flags given: for a test that restarts the server and wants the same
+    /// audio port and the same key and pins back (`--identity-dir <dir>`).
+    pub fn start_on(listen: &str, identity: &[&str], extra: &[&str]) -> RunningServer {
         let mut child = Command::new(env!("CARGO_BIN_EXE_chorus-server"))
             .args([
                 "--listen",
-                "127.0.0.1:0",
+                listen,
                 "--control-listen",
                 "127.0.0.1:0",
                 "--allow-non-realtime",
                 "--allow-unlocked-memory",
-                "--ephemeral-identity",
             ])
+            .args(identity)
             .args(extra)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -276,12 +283,18 @@ impl Player {
     /// Open a session as `endpoint` with the Linux client's `config` (its
     /// `hello` and `capabilities` are what that configuration declares).
     pub fn connect_with(address: &str, endpoint: &str, config: &ClientConfig) -> Player {
+        let mut me = EndpointIdentity::ephemeral(endpoint).expect("an identity");
+        Player::connect_as(address, &mut me, config)
+    }
+
+    /// Open a session as the identity `me` (its id, its key and its pins,
+    /// which a test keeps in a directory as the shipped client does).
+    pub fn connect_as(address: &str, me: &mut EndpointIdentity, config: &ClientConfig) -> Player {
         let stream = TcpStream::connect(address).expect("the server is listening");
         stream
             .set_read_timeout(Some(Duration::from_millis(200)))
             .unwrap();
-        let mut me = EndpointIdentity::ephemeral(endpoint).expect("an identity");
-        let mut session = session::open(stream, &mut me, config)
+        let mut session = session::open(stream, me, config)
             .unwrap_or_else(|e| panic!("the v2 session opens: {}", e));
         let messages = Arc::new(Mutex::new(Vec::new()));
         {
