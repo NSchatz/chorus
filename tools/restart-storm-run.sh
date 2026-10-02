@@ -329,12 +329,21 @@ done
 
 # The strongest form of it: what a subscriber is served after the restart is the
 # same zone state it was served before, field for field. Only the serial and the
-# presence differ, because those are facts about now.
-BEFORE_ZONES="$(printf '%s' "$BEFORE" | sed 's/"serial":[0-9]*//; s/"present":\[[^]]*\]//g')"
-AFTER_ZONES="$(printf '%s' "$AFTER" | sed 's/"serial":[0-9]*//; s/"present":\[[^]]*\]//g')"
+# presence differ, because those are facts about now; so are, from goal 14, what
+# is known of each adopted speaker right now (whether its session is up, its
+# software, its key's fingerprint and its roles) and the key changes refused.
+# A speaker's name, whether it was named and its room are compared.
+persisted_view() {
+    printf '%s' "$1" | sed 's/"serial":[0-9]*//; s/"present":\[[^]]*\]//g
+        s/"present":\(true\|false\),"software":"[^"]*"//g
+        s/"key":"[^"]*","roles":\[[^]]*\]//g
+        s/,"key_changes":\[[^]]*\]//'
+}
+BEFORE_ZONES="$(persisted_view "$BEFORE")"
+AFTER_ZONES="$(persisted_view "$AFTER")"
 check "the-whole-zone-state-survived-the-restart" \
     "$([ "$BEFORE_ZONES" = "$AFTER_ZONES" ] && echo 1 || echo 0)" \
-    "every field but the serial and which endpoints are attached is byte-identical"
+    "every field but the serial, which endpoints are attached and what is known of a speaker right now is byte-identical"
 
 # And it survived because it was PERSISTED, not because the process never died.
 check "the-state-was-read-back-from-the-file-and-not-reconfigured" \

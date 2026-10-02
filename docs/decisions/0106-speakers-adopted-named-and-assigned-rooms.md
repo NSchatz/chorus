@@ -116,6 +116,13 @@ own summary says which room volume it applied) and makes its key per run. The te
 both with `firmware/Makefile`, so `cargo test` now needs what `make firmware-check` needs
 and fails naming the prerequisite when it is missing.
 
+## The restart storm's comparison
+
+`tools/restart-storm-run.sh` compares the whole state before a SIGKILL and after the restart,
+bar the facts about now. Its endpoints are adopted speakers now, so the facts about now it
+sets aside include each speaker's `present`, `software`, `key` and `roles` and the
+`key_changes` list; a speaker's `name`, `named` and `room` are compared like everything else.
+
 ## How ota-server extends this
 
 - A per-speaker runtime fact (the running version, board, slot, transfer state, progress,
