@@ -1116,7 +1116,7 @@ within `ota_confirm_seconds` of boot (ASSUMED 60 s,
 `firmware/config/endpoint.conf`); otherwise it marks itself invalid and
 reboots, and the bootloader goes back to the image that ran before. The
 decisions are `firmware/src/ota.c`, graded over a fault-injecting fake flash
-(`firmware/tests/test_ota.c`); `docs/decisions/OTAADR-the-ota-state-machine-and-the-firmware-wire.md`.
+(`firmware/tests/test_ota.c`); `docs/decisions/0107-the-ota-state-machine-and-the-firmware-wire.md`.
 
 ### 0x18 firmware offer
 

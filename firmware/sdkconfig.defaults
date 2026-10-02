@@ -58,7 +58,7 @@ CONFIG_ETH_USE_SPI_ETHERNET=y
 #   "cannot be reverted back to 0", and guardrail 2 forbids that on development
 #   hardware outright.
 
-# The firmware update's layout (goal 14, docs/decisions/OTAADR-*): two app slots of
+# The firmware update's layout (goal 14, docs/decisions/0107-*): two app slots of
 # equal size and the otadata that selects one, no factory app (firmware/partitions.csv). Two
 # 3 MiB slots do not fit ESP-IDF's default 2 MB of flash, so the flash size is stated: 8 MB,
 # which is what both board profiles declare (board_flash_size_mb) and is ASSUMED for the
@@ -70,7 +70,7 @@ CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 
 # Rollback: the bootloader boots a newly selected image ONCE on trial and goes back to the
 # previous one unless the app confirmed it (CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE,
-# components/bootloader/Kconfig.projbuild in the pinned v6.1; the rule itself is
+# components/bootloader/Kconfig.app_rollback:3-13 in the pinned v6.1; the rule itself is
 # components/bootloader_support/src/bootloader_utility.c:393-401 and :443-449, read
 # 2026-10-02). firmware/src/ota.c decides when to confirm; firmware/main/esp_ota.c is the one
 # unit that calls ESP-IDF's OTA functions.

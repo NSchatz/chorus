@@ -25,7 +25,7 @@
  *     (:178-185). The calls themselves are named in one unit only,
  *     firmware/main/esp_ota.c; the source scan refuses them here.
  *
- * The rules (docs/decisions/OTAADR-*, docs/protocol.md "Firmware update"):
+ * The rules (docs/decisions/0107-*, docs/protocol.md "Firmware update"):
  *
  *   1. Nothing is written without an offer. An offer carries the size, the
  *      SHA-256 and the version; one that does not fit the slot, is for

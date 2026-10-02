@@ -23,7 +23,7 @@
  *     PENDING_VERIFY (:443-449);
  *   - the load (bootloader_utility.c:576-627): the selected slot's image is
  *     verified, and when it does not verify the other slot is tried; the
- *     first boot of a blank otadata writes entry 0 as VALID (:487-498);
+ *     first boot of a blank otadata writes entry 0 as VALID (:488-499);
  *   - the app side (esp_ota_ops.c): esp_ota_begin refuses the running slot
  *     and a running image on trial, erases the slot and drops the inactive
  *     entry (:155-230, :1316-1362); esp_ota_end verifies the written image
@@ -32,7 +32,7 @@
  *     esp_ota_mark_app_valid_cancel_rollback and
  *     esp_ota_mark_app_invalid_rollback rewrite the active entry
  *     (:1179-1236), the latter only when another image can be booted
- *     (:1088-1128); esp_ota_get_state_partition (:1282-1312);
+ *     (:1077-1128); esp_ota_get_state_partition (:1282-1312);
  *   - the image: ESP-IDF's application image format (docs/en/api-reference/
  *     system/app_image_format.rst; components/bootloader_support/include/
  *     esp_app_format.h:77-121): the 0xE9 header, segments, a checksum byte on
