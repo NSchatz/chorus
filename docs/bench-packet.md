@@ -649,13 +649,122 @@ from the Needs item, the hub, the receiver) and the raw files (`s8-hub.log`, `s8
 request from the hub, as the production wakeup run does (section 6). A later chorus goal
 validates it and replaces each `ASSUMED` value it answers.
 
+### S9. Wi-Fi provisioning from a phone (goal 14; after S5; the compact Wi-Fi profile)
+
+Needs: one ESP32-S3 board that S5 showed reaching Play (a TAS5825M board, the Audio Brick or the
+owner's own: the image brings the amplifier up before the link, so a bare development board stops
+at `amp=amplifier-did-not-answer` and never reaches provisioning), its USB cable and serial
+console, ESP-IDF v6.1 (the pin in `firmware/config/endpoint.conf`), a phone, and the house's
+Wi-Fi network on 2.4 GHz with a WPA2 passphrase (the ESP32-S3's radio is 2.4 GHz only: ASSUMED
+from the chip family, verify against the datasheet; an open network is refused by design). No
+bought part. A chorus server on the network is not needed for this session.
+
+This is goal 14's hardware step for the compact Wi-Fi speakers (K91): the speaker learns its
+network at run time from a phone, because the repository declares `link_wifi_ssid` and
+`link_wifi_secret` `unknown` and always will. The host build grades every decision
+(`make firmware-check`, `test_provision`); the binding to the radio, the speaker's own page and
+ESP-IDF's provisioning manager has never run, and this session is its first run (ADR 0103). It
+flashes with the guarded tool, run by the owner only:
+
+```
+. <esp-idf v6.1>/export.sh
+CHORUS_BOARD_PROFILE=compact-s3-wifi make firmware-image     # builds firmware/build/image
+CHORUS_BOARD_PROFILE=compact-s3-wifi tools/firmware-flash.sh --print --port /dev/ttyACM0   # shows the esptool command, runs nothing
+CHORUS_BOARD_PROFILE=compact-s3-wifi CHORUS_OWNER_AT_BENCH=1 tools/firmware-flash.sh --port /dev/ttyACM0
+cd firmware && idf.py -B build/image -p /dev/ttyACM0 monitor
+```
+
+Never run `espefuse` or any eFuse command (BRIEF.md section 3.1 rule 2); the image guard in
+`make gate` already proves the image burns none. Never type the network's name or passphrase into
+a file in the checkout or a command line: they go into the phone only.
+
+**S9.1 First boot.** Expected on the console, after the amplifier's lines:
+
+```
+chorus-store: store: NVS ready, namespace chorus
+chorus-provision: provision: setup secret created
+chorus-provision: provision: unprovisioned
+chorus-provision: provision: setup secret <12 characters> (the access point's passphrase and the proof of possession)
+chorus-provision: provision: page http://<address>/
+chorus-provision: provision: AP up name=chorus-setup-<6 characters>
+```
+
+Write the 12 characters down (they stay the same for this board until its flash is erased).
+
+**S9.2 The browser path (the one the web app will walk people through).** On the phone, join the
+Wi-Fi network `chorus-setup-<6 characters>` with the setup secret as its password (iOS: Settings,
+Wi-Fi; accept "no internet"). Open the address of the `provision: page` line in the phone's
+browser. Expected: a page titled "chorus speaker setup" with two fields. Type the house network's
+name and its passphrase, press Join. Expected: a page that says "Received", and on the console
+within about 30 s (ASSUMED: one join may take up to 20 s):
+
+```
+chorus-provision: provision: credentials received ssid_bytes=<n> secret_bytes=<n>
+chorus-provision: provision: credentials stored
+chorus-provision: provision: AP down
+chorus-provision: provision: joined
+```
+
+then the link line with `transport=wireless wifi_ps_declared=none wifi_ps_in_force=none`, then
+the session's own lines (it reports no server until one is configured or discovered; that is not
+this session's concern). The phone drops back to the house network on its own.
+
+**S9.3 A wrong passphrase.** Before S9.2, or after S9.5's reset: post the form once with a
+deliberately wrong passphrase. Expected: `provision: join failed reason=auth-error` (or
+`reason=network-not-found` for a mistyped name), no `credentials stored` line, the access point
+still up; join it again, reload the page, and it shows the same reason above the form.
+
+**S9.4 Reboot.** Power-cycle the speaker. Expected, with no access point at any time:
+
+```
+chorus-provision: provision: setup secret loaded
+chorus-provision: provision: provisioned at boot
+chorus-provision: provision: joining (attempt 1 of 3)
+chorus-provision: provision: joined
+```
+
+Optional: switch the router's Wi-Fi off and power-cycle the speaker. Expected: three
+`join failed reason=network-not-found` lines, then `AP up` under the same name; switch the Wi-Fi
+back on and within about two minutes (ASSUMED 120 s) `provision: trying the stored network again`
+and `provision: joined`, with nobody touching the speaker.
+
+**S9.5 Reset.** At the console type `wifi-reset`. Expected:
+`provision: reset, the stored network is erased` and
+`provision: restart the speaker to set it up again`. Power-cycle it. Expected: S9.1's lines again
+with `setup secret loaded` in place of `created`, and the same name and secret.
+
+**S9.6 Espressif's phone app as the cross-check (optional).** After S9.5, install Espressif's
+"ESP SoftAP Provisioning" app (App Store id1474040630; Play `com.espressif.provsoftap`). In the
+app choose to provision without a QR code, join `chorus-setup-<6 characters>` when it asks, enter
+the same setup secret as the proof of possession, pick the house network and enter its
+passphrase. Expected on the console: the four lines of S9.2. The app's last tick may not arrive
+(Espressif documents this for SoftAP: "it may cause connection status updates not to be reliably
+received by the phone"); the console is the authority. The app's screens are not something this repository has seen: say what
+differed.
+
+Paste into the Needs item: only the console lines that contain `provision:` or `store:`, with the
+`setup secret <12 characters>` line deleted, plus any `MAC:` line deleted if one is in the range
+(K27); those lines carry no network name, no passphrase and no address of the house's network by
+construction, and nothing else from the log is needed. Add the phone's model and browser, the
+seconds from pressing Join to `provision: joined`, and for S9.6 whether the app's last tick
+arrived.
+
+What changes: goal 14's provisioning line gains its hardware evidence, or a named fault to fix;
+the ASSUMED values of ADR 0103 (three joins at boot, the 120 s retry, the 20 s join timeout, the
+one-second reply grace, the HTTP server's default header limit against this phone's browser) are
+replaced or confirmed; and WIFI-7's characterization run (section 6) has the provisioning path it
+was waiting for.
+
 ## 4. Order and what each session unblocks
 
 S0 first; S1 needs one Pi; S2 needs both and the interface; S3 needs S2's rig trusted; S4 after
 S3. S5 is independent (the owner's own board) and can run any time; S6 follows S5 on the same
 board. S7 needs an Audio Brick (B1): S7.1-S7.3 after S0 alone, S7.4 after S2's rig is trusted,
 S7.5 whenever a logic analyzer and a free pin exist. S8 needs the three TVs' answers first, then
-one Pi as the hub (S0) and a receiver HAT (T1 or T2); S8.5 and S8.7 also need S1's endpoint. None
+one Pi as the hub (S0) and a receiver HAT (T1 or T2); S8.5 and S8.7 also need S1's endpoint. S9
+follows S5 on a board whose amplifier bring-up reaches Play, flashed with the compact Wi-Fi
+profile; it needs a phone and the house's 2.4 GHz network and no chorus server, and it unblocks
+WIFI-7's characterization run (section 6). None
 of these blocks a chorus
 goal (K7): each goal that can use a result re-checks for its pull request.
 
@@ -664,8 +773,9 @@ goal (K7): each goal that can use a result re-checks for its pull request.
 Each evidence run (S1-S4, S6, S7.3, S7.4) commits its report on `bench/<date>-<topic>` and opens a pull request
 from endpoint A (`docs/bench.md`); the owner does nothing else. If the report or pull-request half
 fails after a measurement, nothing is lost: fix the cause and run the same script with
-`--report-from <run directory>` (printed at the start) from the same commit. S0 and S5 are answered in their
-Needs items.
+`--report-from <run directory>` (printed at the start) from the same commit. S0, S5 and S9 are
+answered in their Needs items; S9's answer is console lines only, chosen so that no network name,
+passphrase or address is pasted.
 
 ## 6. Not in this packet
 
@@ -674,7 +784,11 @@ Needs items.
   exist and assigned it to goal 26 (ADR 0067), and the goal that has a capture to read writes its
   report.
 - WIFI-7 (`tools/wireless-characterization-run.sh`, the compact speakers' Wi-Fi tier): it needs a
-  wireless network the repository declares unknown and a provisioning path (chorus goal 14).
+  speaker on a wireless network the repository declares unknown. Chorus goal 14 built the
+  provisioning path (S9); the run itself still waits for S9's answer and the capture rig.
+- A QR code for the speaker's setup network, a captive-portal redirect so the phone opens the
+  join page by itself, and a list of scanned networks on the page: none is built (ADR 0103); the
+  page is reached by typing the address the console prints.
 - The production host's SCHED_FIFO wakeup-jitter run: a homelab-side Needs item, not a bench
   session (`docs/measurements/host-wakeup-jitter.md`). Its output files come back the bench way:
   committed under `docs/measurements/raw/production-wakeup-<date>/` on a

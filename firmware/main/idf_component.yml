@@ -12,7 +12,7 @@
 ##
 ## espressif/network_provisioning: ESP-IDF's provisioning manager, used by the
 ## Wi-Fi profile's SoftAP provisioning (goal 14, firmware/main/esp_provision.c,
-## docs/decisions/ADRNUM-wifi-provisioning-over-softap.md). ESP-IDF v6 removed the
+## docs/decisions/0103-wifi-provisioning-over-softap.md). ESP-IDF v6 removed the
 ## in-tree `wifi_provisioning` and renamed it to this registry component
 ## (docs/en/migration-guides/release-6.x/6.0/provisioning.rst:9 in the pinned
 ## v6.1, read 2026-10-02). 1.2.5 (2026-09-23) carries the fix for buffer

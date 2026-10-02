@@ -35,7 +35,7 @@ endif()
 configure_file("${chorus_board_file}" "${CMAKE_CURRENT_BINARY_DIR}/board_profile.conf" COPYONLY)
 message(STATUS "chorus: board profile ${CHORUS_BOARD_PROFILE}")
 
-# Wi-Fi provisioning (goal 14, docs/decisions/ADRNUM-wifi-provisioning-over-softap.md):
+# Wi-Fi provisioning (goal 14, docs/decisions/0103-wifi-provisioning-over-softap.md):
 # the binding to the access point, the HTTP server and the pinned
 # espressif/network_provisioning manager is compiled only into an image whose
 # board profile is wireless. A wired speaker never provisions, and its image

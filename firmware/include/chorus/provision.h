@@ -17,7 +17,7 @@
  * to the radio and to ESP-IDF's provisioning manager is
  * firmware/main/esp_provision.c, compiled only into the Wi-Fi profile's image
  * and claimed by nobody until the owner's bench session (docs/bench-packet.md
- * S9). docs/decisions/ADRNUM-wifi-provisioning-over-softap.md is the record.
+ * S9). docs/decisions/0103-wifi-provisioning-over-softap.md is the record.
  *
  * # The three seams
  *

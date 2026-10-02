@@ -2,7 +2,7 @@
 # by tools/firmware-image.sh for the compact-s3-wifi profile only (goal 14).
 #
 # What is here is what Wi-Fi provisioning needs (firmware/main/esp_provision.c,
-# docs/decisions/ADRNUM-wifi-provisioning-over-softap.md) and the wired image has no
+# docs/decisions/0103-wifi-provisioning-over-softap.md) and the wired image has no
 # use for: a wired speaker never provisions. Line numbers are in the pinned
 # ESP-IDF v6.1, read 2026-10-02.
 
