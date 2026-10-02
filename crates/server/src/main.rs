@@ -39,6 +39,12 @@
 //! control plane with `GET /api/state`, and exits `0` on a 200 answer and `1`
 //! otherwise, which is Docker's healthcheck contract.
 //!
+//! `stage-firmware --image <file.bin> --board <profile> --firmware-dir <dir>
+//! [--name <name>]` is another (goal 14, `chorus_server::firmware::stage`):
+//! it starts nothing, copies one image into a firmware directory with the
+//! manifest the server verifies it against, prints what it staged and exits
+//! `0`, or names what is wrong and exits `2`. It writes local files only.
+//!
 //! # The shape of the process, and why the report can be taken once
 //!
 //! Every thread this process will ever run is created here, before the
@@ -102,6 +108,7 @@ use chorus_server::clients::ClientPool;
 use chorus_server::conductor::{self, CivilClock, Clocks, Conductor, Schedule};
 use chorus_server::config::{ServerConfig, ServerConfigError};
 use chorus_server::control::{initial_state, ControlPlane, ControlState};
+use chorus_server::firmware::Firmware;
 use chorus_server::hostreport::{
     decide_memory_lock, register_ordinary_thread, scheduling_report, take_contract_for_this_thread,
     ContractRefused, RealTimeOutcome, SchedulingVerdict,
@@ -238,6 +245,14 @@ identity (protocol v2; every audio connection is an encrypted session):
   --server-id <id>            the id endpoints pin this server's key to (default chorus-server)
   --ephemeral-identity        a key for this process only and adoptions in memory (tests)
 
+firmware (goal 14; docs/firmware-updates.md):
+  --firmware-dir <dir>        staged images (<name>.bin + <name>.manifest), verified at start and
+                              on firmware_rescan; installed only by firmware_install (needs
+                              --control-listen). A transfer to a speaker that is not on this
+                              host is refused unless the owner's bench variable is set
+  stage-firmware --image <file.bin> --board <profile> --firmware-dir <dir> [--name <name>]
+                              stage one image with its manifest, then exit (starts nothing)
+
 host contract:
   --rt-priority <n> --rttime-us <us> --memlock-wanted-bytes <bytes>
   --allow-non-realtime --no-lock-memory --allow-unlocked-memory
@@ -327,6 +342,18 @@ fn main() -> ExitCode {
     if args.iter().any(|a| a == "--help" || a == "-h") {
         print!("{USAGE}");
         return ExitCode::SUCCESS;
+    }
+    if args.first().map(String::as_str) == Some("stage-firmware") {
+        return match chorus_server::firmware::stage_command(&args[1..]) {
+            Ok(line) => {
+                println!("chorus-server: {}", line);
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                report("staging refused", &e);
+                ExitCode::from(2)
+            }
+        };
     }
     if args.first().map(String::as_str) == Some("--health-check") {
         let Some(address) = args.get(1).filter(|_| args.len() == 2) else {
@@ -936,6 +963,28 @@ fn main() -> ExitCode {
             status.say(&line);
         }
     }
+    // (goal 14) The firmware images and installs: the directory is read now
+    // and listed; nothing is offered to anybody by starting. Only with a
+    // control plane, whose firmware_install is the one way to start one.
+    let firmware = match control.as_ref() {
+        Some((_, state)) => {
+            let seed = chorus_server::session::random_32()
+                .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .unwrap_or(1);
+            let firmware = Arc::new(Firmware::new(
+                config.firmware_dir.as_ref().map(std::path::PathBuf::from),
+                Arc::clone(&router),
+                seed,
+                {
+                    let status = status.clone();
+                    Box::new(move |line: &str| status.say(line))
+                },
+            ));
+            state.firmware_through(Arc::clone(&firmware));
+            Some(firmware)
+        }
+        None => None,
+    };
     let session = Arc::new(SessionContext {
         identity,
         adoptions,
@@ -958,6 +1007,7 @@ fn main() -> ExitCode {
         router: Arc::clone(&router),
         line_ins: line_ins.clone(),
         tv_relay: tv_relay.clone(),
+        firmware,
     });
     drop(arrived);
 

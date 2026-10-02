@@ -36,6 +36,10 @@
 //! touches an audio frame, and every thread it needs is created before the
 //! scheduling report is taken, for the reason [`clients`] gives about its own.
 //!
+//! **Firmware** ([`firmware`], goal 14) is staged images verified and sent to
+//! a speaker inside its own session, only when the control plane applies a
+//! `firmware_install`: nothing installs without that explicit action.
+//!
 //! **The host half** ([`hostreport`], and `chorus_hostctl` under it) reads the
 //! real-time priority ceiling the container was granted, takes a priority no
 //! greater than it, bounds every real-time thread with a CPU-time limit before
@@ -63,6 +67,7 @@ pub mod config;
 pub mod control;
 pub mod controller;
 pub mod events;
+pub mod firmware;
 pub mod health;
 pub mod hostreport;
 pub mod linein;

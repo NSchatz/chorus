@@ -26,6 +26,8 @@
 //! - [`theater`] is a room's A/V trim and TV upmix (goal 13).
 //! - [`speakers`] is the adopted speakers: their names, rooms and what is
 //!   known of each now (goal 14).
+//! - [`firmware`] is the staged firmware images and what each speaker runs
+//!   (goal 14): facts and words only; nothing in this crate installs.
 //! - [`persist`] is what survives a restart.
 //! - [`fanout`] is how a change reaches every subscriber, bounded.
 //! - [`transport`] is the tier a zone is DECLARED in, beside the catalog and
@@ -41,6 +43,7 @@
 
 pub mod catalog;
 pub mod fanout;
+pub mod firmware;
 pub mod json;
 pub mod persist;
 pub mod rooms;

@@ -1,0 +1,11 @@
+# Canonical input for the catalog v2 firmware_rescan vector.
+#
+# Encoding these field values must produce exactly firmware_rescan.json, and decoding
+# firmware_rescan.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# Goal 14: read the firmware directory again and grade every image.
+
+message_type = firmware_rescan

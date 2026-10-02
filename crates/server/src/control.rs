@@ -72,6 +72,7 @@ use chorus_protocol::v2::{
 
 use crate::controller::{translate, ControllerAction, THOUSANDTHS_PER_POINT};
 use crate::events::EventStreams;
+use crate::firmware::Firmware;
 use crate::hostreport::register_ordinary_thread;
 use crate::router::SessionStart;
 use crate::schedule_runtime::Effect;
@@ -235,6 +236,11 @@ pub struct ControlState {
     /// removes a speaker's pin here, and nothing else in the control plane
     /// touches it.
     adoptions: OnceLock<Arc<Adoptions>>,
+    /// (goal 14) The staged firmware images and the installs in progress,
+    /// once the server has made them ([`ControlState::firmware_through`]):
+    /// `firmware_install` starts a transfer here, inside the command's own
+    /// commit, and nothing else in the control plane does.
+    firmware: OnceLock<Arc<Firmware>>,
 }
 
 /// The files the browser is served: the page, what it loads, and the document
@@ -292,6 +298,7 @@ impl ControlState {
                 doc: include_str!("../../../docs/control-page.md"),
             },
             adoptions: OnceLock::new(),
+            firmware: OnceLock::new(),
         }
     }
 
@@ -583,6 +590,11 @@ impl ControlState {
                 if let Command::SpeakerForget { speaker } = &command {
                     self.forget_pin(speaker)?;
                 }
+                // (goal 14) The firmware commands' server half, inside the
+                // same commit: a transfer that cannot start (the guard, the
+                // file changed since it was verified) refuses the command
+                // whole and nothing is installed or marked.
+                self.firmware_effects(zones, &command)?;
                 Ok(())
             })
             .map_err(|r| r.at(version))?;
@@ -828,6 +840,100 @@ impl ControlState {
         };
         self.publish(state);
         true
+    }
+}
+
+/// Firmware (goal 14): the server half of `firmware_install`,
+/// `firmware_cancel` and `firmware_rescan`, and what a session's
+/// `firmware_status` says, each fanned out like any other change. The facts
+/// are `chorus_control::firmware`'s; the files and the transfers are
+/// [`Firmware`]'s.
+impl ControlState {
+    /// Keep the firmware images and installs in `firmware` from now on, and
+    /// list what its directory holds. Called once, at start, before any
+    /// session. Nothing is offered to anybody by this.
+    pub fn firmware_through(&self, firmware: Arc<Firmware>) {
+        let images = firmware.scan();
+        let state = {
+            let mut held = self.locked();
+            held.zones
+                .set_firmware_images(images)
+                .then(|| held.zones.encode_state())
+        };
+        let _ = self.firmware.set(firmware);
+        if let Some(state) = state {
+            self.publish(state);
+        }
+    }
+
+    /// The firmware command's effect beyond the room model, on the copy the
+    /// commit is building. `zones` has already applied the command.
+    fn firmware_effects(&self, zones: &mut Zones, command: &Command) -> Result<(), Refusal> {
+        let Some(firmware) = self.firmware.get() else {
+            return Ok(());
+        };
+        match command {
+            Command::FirmwareInstall { speaker, image, .. } => {
+                // The model marked exactly these `requested`: the speakers
+                // whose install now holds this image and no transfer yet.
+                let targets: Vec<String> = zones
+                    .speakers()
+                    .all()
+                    .iter()
+                    .filter(|s| speaker.as_deref().is_none_or(|id| id == s.id))
+                    .filter(|s| {
+                        s.now.firmware.as_ref().is_some_and(|f| {
+                            f.state == chorus_control::firmware::REQUESTED
+                                && f.install
+                                    .as_ref()
+                                    .is_some_and(|i| i.image == *image && i.transfer == 0)
+                        })
+                    })
+                    .map(|s| s.id.clone())
+                    .collect();
+                let staged = zones
+                    .firmware_images()
+                    .and_then(|images| images.iter().find(|i| i.name == *image))
+                    .cloned()
+                    .expect("the model accepted the install, so the image is staged");
+                let field = if speaker.is_some() { "speaker" } else { "all" };
+                for (id, transfer) in firmware.start(&targets, &staged, field)? {
+                    zones.speaker_now(&id, |now| {
+                        if let Some(install) =
+                            now.firmware.as_mut().and_then(|f| f.install.as_mut())
+                        {
+                            install.transfer = transfer;
+                        }
+                    });
+                }
+            }
+            Command::FirmwareCancel { speaker } => {
+                firmware.cancel(speaker);
+            }
+            Command::FirmwareRescan => {
+                zones.set_firmware_images(firmware.scan());
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// A speaker said what it runs and where its install stands (its
+    /// `firmware_status`, translated by [`Firmware::status`]).
+    pub fn firmware_reported(&self, id: &str, report: &chorus_control::firmware::Report) {
+        self.speaker_now(id, |now| {
+            chorus_control::firmware::SpeakerFirmware::absorb(&mut now.firmware, report)
+        });
+    }
+
+    /// The session a speaker's install travelled in ended before the image
+    /// was verified: the install is `interrupted`, and is not resumed.
+    pub fn firmware_interrupted(&self, id: &str) {
+        self.speaker_now(id, |now| {
+            if let Some(fw) = &mut now.firmware {
+                fw.ended(chorus_control::firmware::INTERRUPTED, "session_ended");
+            }
+        });
     }
 }
 

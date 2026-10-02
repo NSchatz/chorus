@@ -1,0 +1,12 @@
+# Canonical input for the catalog v2 firmware_cancel vector.
+#
+# Encoding these field values must produce exactly firmware_cancel.json, and decoding
+# firmware_cancel.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# Goal 14: abandon a speaker's install that is not yet verified.
+
+message_type = firmware_cancel
+speaker = chorus-0123456789ab

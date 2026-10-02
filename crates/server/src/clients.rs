@@ -317,11 +317,21 @@ impl ClientPool {
                                         line_ins.chunk(id, &c.audio_data);
                                     }
                                 };
+                                // (goal 14) Every time the reader looks up
+                                // from its socket (a frame, or its read
+                                // timeout) it tops up the firmware transfer
+                                // travelling in this session, if there is
+                                // one: the sender is this thread, not a new
+                                // one (crate::firmware).
+                                let looking = || {
+                                    session.pump_firmware(id);
+                                    going()
+                                };
                                 read_requests_and_upstream(
                                     &mut reader,
                                     timeline,
                                     &out,
-                                    &going,
+                                    &looking,
                                     &mut upstream,
                                 );
                             }
@@ -329,7 +339,7 @@ impl ClientPool {
                                 line_ins.session_ended(id);
                             }
                             session.router.unregister(id);
-                            session.session_down(&hello_id);
+                            session.session_down(&hello_id, id);
                             // The TV relay's streams of this session end on
                             // the conductor's next pass (`crate::tvrelay`).
                             if let Some(control) = &session.control {

@@ -68,11 +68,22 @@
 //! which is what lets an endpoint with no control client (the firmware) be in
 //! a room at all. The session layer's hooks bump the serial when they change
 //! something, as the runtime's do.
+//!
+//! # Firmware (goal 14, explicit installs)
+//!
+//! The staged images ([`Zones::set_firmware_images`]) and what each speaker
+//! reported it runs ([`crate::speakers::SpeakerNow::firmware`]) are held here
+//! because `firmware_install` is refused or accepted against both, by name:
+//! [`Zones::firmware_targets`] says who an install would reach, and the
+//! server starts the transfers for exactly those, inside the same commit. The
+//! model starts nothing itself: accepting the command marks each target
+//! `requested`, and that is all.
 
 use crate::catalog::{
     alarm_value, autoplay_value, centi_db_value, filters_value, is_display_name, is_identifier,
     members_value, texts, window_value, Command, Refusal, Volume, MAX_IDENTIFIER_LEN, VOLUME_SCALE,
 };
+use crate::firmware::{self, image_value, Image};
 use crate::json::{self, Value};
 use crate::rooms::{
     Alarm, Autoplay, BondMember, CivilTime, InputId, Link, QuietWindow, Role, SavedGroup,
@@ -261,6 +272,10 @@ pub struct Zones {
     now: Option<CivilTime>,
     /// (v2, goal 14) The adopted speakers and the key changes refused.
     speakers: Speakers,
+    /// (v2, goal 14) The firmware images staged in `--firmware-dir`, as the
+    /// server last graded them; `None` when it has no such directory. Never
+    /// persisted: the directory is.
+    firmware_images: Option<Vec<Image>>,
 }
 
 /// What a target names.
@@ -797,6 +812,173 @@ impl Zones {
                 self.links.retain(|(e, _)| e != speaker);
                 self.speakers.forget(speaker);
             }
+            Command::FirmwareInstall {
+                speaker,
+                image,
+                force,
+            } => {
+                let (image, targets) = self.firmware_targets(speaker.as_deref(), image, *force)?;
+                for target in targets {
+                    self.speakers.set_now(&target, |now| {
+                        if let Some(fw) = &mut now.firmware {
+                            fw.requested(&image);
+                        }
+                    });
+                }
+            }
+            Command::FirmwareCancel { speaker } => {
+                self.speaker_exists(speaker)?;
+                let mut state = String::new();
+                let cancelled = self.speakers.set_now(speaker, |now| {
+                    if let Some(fw) = &mut now.firmware {
+                        state = fw.state.clone();
+                        fw.ended(firmware::CANCELLED, firmware::NO_REASON);
+                    }
+                });
+                if !cancelled {
+                    return Err(Refusal::rejected(
+                        "speaker",
+                        format!(
+                            "nothing-to-cancel: speaker '{}' has no transfer to cancel (its \
+                             firmware state is {}); an image already verified is the speaker's \
+                             to boot",
+                            speaker,
+                            if state.is_empty() { "unknown" } else { &state }
+                        ),
+                    ));
+                }
+            }
+            Command::FirmwareRescan => {
+                if self.firmware_images.is_none() {
+                    return Err(Refusal::rejected(
+                        "t",
+                        "no-firmware-dir: this server was started without --firmware-dir, so \
+                         there is no directory to read"
+                            .to_string(),
+                    ));
+                }
+                // The directory is the server's to read; the model only
+                // agrees that there is one (crates/server/src/control.rs).
+            }
+        }
+        Ok(())
+    }
+
+    /// Who `firmware_install` would reach: `speaker`, or (`None`) every
+    /// present speaker of the image's board that takes updates, is not busy
+    /// and does not run the image's version already (any version with
+    /// `force`). Refused by name, with nothing changed, when the image is not
+    /// staged or not verified, when the named speaker cannot take it, or when
+    /// `all` reaches nobody. Each refusal's detail starts with its name:
+    /// `unknown-image`, `image-not-verified`, `speaker-absent`,
+    /// `not-updatable`, `busy`, `wrong-board`, `already-running`,
+    /// `nothing-to-install` (and an unknown speaker is the catalog's usual
+    /// refusal of the `speaker` field).
+    pub fn firmware_targets(
+        &self,
+        speaker: Option<&str>,
+        image: &str,
+        force: bool,
+    ) -> Result<(Image, Vec<String>), Refusal> {
+        let images = self.firmware_images.as_deref().unwrap_or(&[]);
+        let Some(staged) = images.iter().find(|i| i.name == image) else {
+            let names: Vec<&str> = images.iter().map(|i| i.name.as_str()).collect();
+            return Err(Refusal::rejected(
+                "image",
+                format!(
+                    "unknown-image: there is no staged image '{}'; {}",
+                    image,
+                    match (&self.firmware_images, names.is_empty()) {
+                        (None, _) => "this server was started without --firmware-dir".to_string(),
+                        (Some(_), true) => "no image is staged".to_string(),
+                        (Some(_), false) => format!("the staged images are {}", names.join(", ")),
+                    }
+                ),
+            ));
+        };
+        if let Some(reason) = &staged.refused {
+            return Err(Refusal::rejected(
+                "image",
+                format!(
+                    "image-not-verified: image '{}' was refused ({}) and is never offered",
+                    image, reason
+                ),
+            ));
+        }
+        let targets = match speaker {
+            Some(id) => {
+                self.speaker_exists(id)?;
+                let record = self.speakers.get(id).expect("checked above");
+                Self::takes(record, staged, force).map_err(|(name, why)| {
+                    Refusal::rejected("speaker", format!("{}: speaker '{}' {}", name, id, why))
+                })?;
+                vec![id.to_string()]
+            }
+            None => {
+                let all: Vec<String> = self
+                    .speakers
+                    .all()
+                    .iter()
+                    .filter(|s| Self::takes(s, staged, force).is_ok())
+                    .map(|s| s.id.clone())
+                    .collect();
+                if all.is_empty() {
+                    return Err(Refusal::rejected(
+                        "all",
+                        format!(
+                            "nothing-to-install: no present speaker of board '{}' takes image \
+                             '{}' ({}{})",
+                            staged.board,
+                            image,
+                            "each is absent, busy, of another board, or runs version ",
+                            staged.version
+                        ),
+                    ));
+                }
+                all
+            }
+        };
+        Ok((staged.clone(), targets))
+    }
+
+    /// Whether one speaker can be given `image` now; the refusal's name and
+    /// its words where it cannot.
+    fn takes(speaker: &Speaker, image: &Image, force: bool) -> Result<(), (&'static str, String)> {
+        if !speaker.now.present() {
+            return Err(("speaker-absent", "has no session up".to_string()));
+        }
+        let Some(fw) = &speaker.now.firmware else {
+            return Err((
+                "not-updatable",
+                "has not said what firmware it runs, so it takes no updates".to_string(),
+            ));
+        };
+        if fw.busy() {
+            return Err((
+                "busy",
+                format!(
+                    "has an install in progress (its firmware state is {})",
+                    fw.state
+                ),
+            ));
+        }
+        if fw.board != image.board {
+            return Err((
+                "wrong-board",
+                format!(
+                    "is board '{}' and image '{}' was built for board '{}'",
+                    fw.board, image.name, image.board
+                ),
+            ));
+        }
+        if fw.version == image.version && !force {
+            return Err((
+                "already-running",
+                format!(
+                    "already runs version {}; add \"force\": true to install it again",
+                    fw.version
+                ),
+            ));
         }
         Ok(())
     }
@@ -1434,6 +1616,24 @@ impl Zones {
         changed
     }
 
+    /// The staged firmware images as the server graded them, or `None` when
+    /// it has no firmware directory. Whether anything changed; the serial
+    /// moves only when it did.
+    pub fn set_firmware_images(&mut self, images: Option<Vec<Image>>) -> bool {
+        if self.firmware_images == images {
+            return false;
+        }
+        self.firmware_images = images;
+        self.serial += 1;
+        true
+    }
+
+    /// The staged firmware images, or `None` when the server has no firmware
+    /// directory.
+    pub fn firmware_images(&self) -> Option<&[Image]> {
+        self.firmware_images.as_deref()
+    }
+
     /// Change what is known about a speaker now ([`crate::speakers::SpeakerNow`]):
     /// the hook a later per-speaker runtime fact is set through. Whether
     /// anything changed; the serial moves only when it did.
@@ -1585,7 +1785,13 @@ impl Zones {
                     self.speakers
                         .all()
                         .iter()
-                        .map(|s| speaker_value(s, self.link(&s.id)))
+                        .map(|s| {
+                            speaker_value(
+                                s,
+                                self.link(&s.id),
+                                self.firmware_images.as_deref().unwrap_or(&[]),
+                            )
+                        })
                         .collect(),
                 ),
             ));
@@ -1600,6 +1806,17 @@ impl Zones {
                         .map(key_change_value)
                         .collect(),
                 ),
+            ));
+        }
+        // (goal 14) The staged images, written only by a server with a
+        // firmware directory, last of all for the same reason.
+        if let Some(images) = &self.firmware_images {
+            state.push((
+                "firmware".to_string(),
+                Value::Obj(vec![(
+                    "images".to_string(),
+                    Value::Arr(images.iter().map(image_value).collect()),
+                )]),
             ));
         }
         Value::Obj(state)

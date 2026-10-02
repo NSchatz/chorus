@@ -375,6 +375,26 @@ pub enum Command {
         /// The speaker.
         speaker: String,
     },
+    /// (v2, goal 14) Install a staged, verified firmware image: on one
+    /// speaker (`speaker`), or on every present speaker of the image's board
+    /// that does not run its version already (`"all": true`). The ONE thing
+    /// that starts a transfer (K93, I13). `force` installs a version the
+    /// speaker already runs.
+    FirmwareInstall {
+        /// The speaker, or `None` for all of them (`"all": true` on the wire).
+        speaker: Option<String>,
+        /// The staged image, by name.
+        image: String,
+        /// Install even the version the speaker runs; written only when true.
+        force: bool,
+    },
+    /// (v2, goal 14) Abandon a speaker's install that is not yet verified.
+    FirmwareCancel {
+        /// The speaker.
+        speaker: String,
+    },
+    /// (v2, goal 14) Read the firmware directory again and grade every image.
+    FirmwareRescan,
 }
 
 impl Command {
@@ -411,6 +431,9 @@ impl Command {
             Command::SpeakerName { .. } => "speaker_name",
             Command::SpeakerRoom { .. } => "speaker_room",
             Command::SpeakerForget { .. } => "speaker_forget",
+            Command::FirmwareInstall { .. } => "firmware_install",
+            Command::FirmwareCancel { .. } => "firmware_cancel",
+            Command::FirmwareRescan => "firmware_rescan",
         }
     }
 
@@ -626,6 +649,22 @@ impl Command {
                 ));
             }
             Command::SpeakerForget { speaker } => text("speaker", speaker),
+            Command::FirmwareInstall {
+                speaker,
+                image,
+                force,
+            } => {
+                match speaker {
+                    Some(speaker) => text("speaker", speaker),
+                    None => m.push(("all".to_string(), Value::Bool(true))),
+                }
+                m.push(("image".to_string(), Value::text(image)));
+                if *force {
+                    m.push(("force".to_string(), Value::Bool(true)));
+                }
+            }
+            Command::FirmwareCancel { speaker } => text("speaker", speaker),
+            Command::FirmwareRescan => {}
         }
         Value::Obj(m)
     }
@@ -1319,6 +1358,55 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
             Command::SpeakerForget {
                 speaker: id("speaker")?,
             }
+        }
+        "firmware_install" => {
+            fields(&["v", "t", "image"], &["speaker", "all", "force"])?;
+            // One speaker, or all of them, said out loud: never both, never
+            // neither, and `all` is only ever `true`.
+            let speaker = match (value.get("speaker"), value.get("all")) {
+                (Some(_), Some(_)) => {
+                    return Err(at(Refusal::rejected(
+                        "all",
+                        "firmware_install names one speaker or says \"all\": true, not both"
+                            .to_string(),
+                    )))
+                }
+                (Some(_), None) => Some(id("speaker")?),
+                (None, Some(_)) => {
+                    if !boolean(value, "all").map_err(at)? {
+                        return Err(at(Refusal::rejected(
+                            "all",
+                            "\"all\" is true or is left out; to install on one speaker, name it"
+                                .to_string(),
+                        )));
+                    }
+                    None
+                }
+                (None, None) => {
+                    return Err(at(Refusal::rejected(
+                        "speaker",
+                        "firmware_install names a speaker, or says \"all\": true".to_string(),
+                    )))
+                }
+            };
+            Command::FirmwareInstall {
+                speaker,
+                image: id("image")?,
+                force: match value.get("force") {
+                    None => false,
+                    Some(_) => boolean(value, "force").map_err(at)?,
+                },
+            }
+        }
+        "firmware_cancel" => {
+            fields(&["v", "t", "speaker"], &[])?;
+            Command::FirmwareCancel {
+                speaker: id("speaker")?,
+            }
+        }
+        "firmware_rescan" => {
+            fields(&["v", "t"], &[])?;
+            Command::FirmwareRescan
         }
         "bass_management" => {
             fields(

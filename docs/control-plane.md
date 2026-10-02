@@ -552,6 +552,69 @@ The end-to-end test is
 `crates/server/tests/adoption.rs::a_new_speaker_is_adopted_named_and_assigned_a_room`:
 the real server, the real C endpoint binaries and a Linux client.
 
+### Firmware: staged images and explicit installs (goal 14)
+
+The decisions are `docs/decisions/0000-explicit-firmware-installs.md`; the
+owner's page is `docs/firmware-updates.md`; the wire is `docs/protocol.md`,
+"Firmware update".
+
+**Nothing installs without an explicit install action (K93, I13).** A server
+started with `--firmware-dir <dir>` (it needs `--control-listen`) reads the
+directory at start and lists every image staged in it (`<name>.bin` and
+`<name>.manifest`: `version`, `board`, `size`, `sha256`), each graded
+`verified` or `refused` with a reason by name. A speaker that takes updates
+(its session's `capabilities` say `ota`) reports the version, board and slot it
+runs, and the state says `update_available` when a verified image for its
+board carries another version. That is information: staging, a session coming
+up, a reconnect and a server restart send nothing to anybody. Only
+`firmware_install` starts a transfer, and nothing about an install survives a
+restart (an install in progress when the server stops is not resumed: the
+next process tells the speaker to drop it and says `interrupted`).
+
+- **`firmware_install`** names a speaker and a staged image, or says
+  `"all": true` for every present speaker of the image's board that is not
+  busy and does not run the image's version already. `"force": true` installs
+  a version the speaker already runs (a reinstall; written only when true).
+  Refused, each naming its field and starting its detail with its name, and
+  with nothing sent to anybody: an unknown speaker (`speaker`, the catalog's
+  usual words); `unknown-image`, `image-not-verified` (`image`: refused at the
+  scan, or changed on disk since); `speaker-absent`, `not-updatable` (it never
+  reported a version), `busy` (an install in progress, from `requested` to
+  `pending_verify`), `wrong-board`, `already-running` (`speaker`);
+  `nothing-to-install` (`all`); `owner-not-at-bench` (`speaker` or `all`: a
+  speaker that is not on this host, without the owner's bench variable; see
+  below). `all` with any one target refused by the guard is refused whole.
+- **`firmware_cancel`** abandons a speaker's install that has not been
+  verified yet (`requested` or `receiving`): the server drops the transfer and
+  sends the speaker the cancel. Refused `nothing-to-cancel` otherwise; an
+  image already verified is the speaker's to boot.
+- **`firmware_rescan`** reads the directory again and grades every image.
+  Refused `no-firmware-dir` (field `t`) on a server without one.
+
+```json
+{"v":2,"t":"firmware_install","speaker":"chorus-0123456789ab","image":"brick-2-0-0"}
+{"v":2,"t":"firmware_install","all":true,"image":"brick-2-0-0"}
+{"v":2,"t":"firmware_install","speaker":"chorus-0123456789ab","image":"brick-2-0-0","force":true}
+{"v":2,"t":"firmware_cancel","speaker":"chorus-0123456789ab"}
+{"v":2,"t":"firmware_rescan"}
+```
+
+**The owner-at-bench guard (program section 0.7).** A transfer to a speaker
+whose session's peer address is not loopback writes to a real device, which is
+the owner's action: it is refused `owner-not-at-bench` unless the server's
+environment holds `CHORUS_OWNER_AT_BENCH` set to `1`. Nothing in this
+repository sets it; `docs/firmware-updates.md` says how the owner's deploy
+does. Tests and the emulator run reach the server on loopback.
+
+A speaker's `firmware.state` is what it is doing (`idle`, `requested`,
+`receiving`, `verified`, `pending_verify`) or how the last install this
+server process saw ended (`confirmed`, `rolled_back`, `refused`,
+`interrupted`, `cancelled`); an outcome stays until the next install or a
+restart, so a rollback is still shown after the speaker's next `idle`.
+
+The end-to-end tests are `crates/server/tests/firmware_install.rs`, the first
+of them `nothing_installs_until_the_explicit_install_action`.
+
 ### Take the room (K78)
 
 `take` moves every room of the target out of whatever group it is in and into
@@ -624,11 +687,14 @@ of each, `fixtures/control/v2/state-empty.json` the empty house):
 | `inputs[]` | the line-ins offered now, as `<endpoint>/<input>`, sorted |
 | `speakers[]` | (goal 14) **written only when there is at least one**: every adopted speaker, sorted by id: `id`, `name`, `named`, `room` (the assigned room, or `null`), then what is true now: `present` (a session of it is up), `software` (its latest `hello`'s, `""` before one), `link` (what it reported with `attach`, as in `endpoints[]`; `unknown` for an endpoint with no control client), `key` (the fingerprint of its pinned key), `roles` (its latest `hello`'s, by name) |
 | `key_changes[]` | (goal 14) **written only when there is at least one**: every handshake refused for a changed key since the server started, the latest per id, sorted by id: `id`, `pinned`, `offered` (fingerprints) |
+| `speakers[].firmware` | (goal 14) **written only once the speaker has reported** (its session declared `ota` and sent a `firmware_status`), after `roles`: `version`, `board`, `slot` (0, 1 or `null`) it runs, `state`, `reason` (`none` or the reason by name), `update_available` (a verified staged image for its board with another version; derived, never stored), and the install the state is about: `image` (the staged name, `null` when none or when this server did not start it), `image_version`, `received` and `size` (bytes; the progress). Never persisted |
+| `firmware` | (goal 14) **written only by a server with `--firmware-dir`**, last: `{"images":[...]}`, every staged image sorted by name: `name`, `version`, `board`, `size`, `sha256`, `verdict` (`verified` or `refused`), and `reason` for a refused one. Never persisted (the directory is) |
 
 `speakers` and `key_changes` come after every member the v2 state already had
 and are absent, not empty, on a server that has adopted nothing, so
 `state-empty.json` and `state-rich.json` are the bytes they were;
-`fixtures/control/v2/state-speakers.json` pins both. A reader takes the
+`fixtures/control/v2/state-speakers.json` pins both, and
+`fixtures/control/v2/state-firmware.json` the firmware members. A reader takes the
 members it knows by name and ignores the rest (the page and the Linux client
 do); a later goal's per-speaker facts are appended to a speaker's object
 after `roles`.
@@ -773,7 +839,10 @@ With `--control-listen`, the server runs one control acceptor, one worker per
 (below), all created before the scheduling report is taken and none created
 afterwards however many subscribers, sessions or groups come and go. The whole
 process is `6 + 2N + M` threads, plus one for `--advertise`, and it does not
-depend on `--slots`: every stream slot is cut by the one audio thread.
+depend on `--slots`: every stream slot is cut by the one audio thread. Nor
+on `--firmware-dir` (goal 14): an image travels in the speaker's own session,
+queued by the control worker that applies `firmware_install` (the offer) and
+by that session's own reader (the chunks).
 
 This is a safety property and not a style. `std::thread::spawn` inherits the
 creating thread's scheduling policy, and `deploy/run-server.sh` runs the server
@@ -975,6 +1044,10 @@ and anything about what is playing rather than where. Catalog v2 names a
 group's source and the inputs offered; choosing what a stream URL or a service
 plays is not here.
 
+No firmware image travels over this channel (goal 14): a request is at most
+16 KiB and an image is megabytes. Images are staged as files in
+`--firmware-dir`, and the bytes go to a speaker inside its own audio session.
+
 ## What survives a restart (state-file format 5)
 
 The server persists, in `--state-file`, everything a person configured: each
@@ -988,7 +1061,10 @@ not persist what is a fact about now: which endpoints are present, which quiet
 window is active, which alarm is ringing, a running ramp, what a group is
 playing, a sleep timer, which inputs are offered, or a speaker's presence,
 software, roles, key fingerprint and refused key changes (the pins themselves
-are the server's `adopted-endpoints`, beside its key). A format 1 file (every build
+are the server's `adopted-endpoints`, beside its key), or anything about
+firmware: the staged images (the directory is read again at start) and a
+speaker's version, state and install, so an install in progress is never
+resumed by a restart (goal 14). A format 1 file (every build
 before catalog v2) loads unchanged with the v2 defaults, and a format 2 file
 (goal 11's builds) with the sound defaults, and a format 3 file (goal 12's
 builds) with no trim, the upmix off and every rule's TV fields true, and a
