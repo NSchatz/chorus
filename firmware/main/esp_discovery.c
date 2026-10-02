@@ -75,14 +75,14 @@ static long link_receive(void *context, uint8_t *out, size_t capacity, uint32_t 
     return (long)got;
 }
 
-static const chorus_discovery_link_t link = {
+static const chorus_discovery_link_t browse_link = {
     .context = NULL,
     .send = link_send,
     .receive = link_receive,
 };
 
 static const chorus_relocator_t relocator = {
-    .link = &link,
+    .link = &browse_link,
     .service = CHORUS_DISCOVERY_AUDIO_SERVICE,
     .window_ms = CHORUS_DISCOVERY_DEFAULT_WINDOW_MS,
     .scratch = datagram,
@@ -112,7 +112,7 @@ void chorus_esp_discovery_locate(chorus_session_config_t *session)
     /* A socket that would not open leaves the link refusing its sends, which
      * the decision reports as discovery that could not run. */
     (void)open_socket();
-    request.link = &link;
+    request.link = &browse_link;
     request.service = CHORUS_DISCOVERY_AUDIO_SERVICE;
     request.window_ms = CHORUS_DISCOVERY_DEFAULT_WINDOW_MS;
     request.store = session->store;
