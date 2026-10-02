@@ -68,7 +68,57 @@ static int fake_join(void *ctx, const char *ssid, const char *secret)
     fake->joins++;
     snprintf(fake->joined_ssid, sizeof(fake->joined_ssid), "%s", ssid);
     snprintf(fake->joined_secret, sizeof(fake->joined_secret), "%s", secret);
-    return fake->join_refuses ? -1 : 0;
+    fake->join_reason[0] = '\0';
+    if (fake->join_refuses) {
+        return -1;
+    }
+    if (fake->network_known) {
+        if (strcmp(ssid, fake->network_ssid) != 0) {
+            snprintf(fake->join_reason, sizeof(fake->join_reason), "network-not-found");
+            return -1;
+        }
+        if (strcmp(secret, fake->network_secret) != 0) {
+            snprintf(fake->join_reason, sizeof(fake->join_reason), "auth-error");
+            return -1;
+        }
+    }
+    return 0;
+}
+
+void fake_radio_set_network(fake_radio_t *fake, const char *ssid, const char *secret)
+{
+    fake->network_known = 1;
+    snprintf(fake->network_ssid, sizeof(fake->network_ssid), "%s", ssid);
+    snprintf(fake->network_secret, sizeof(fake->network_secret), "%s", secret);
+}
+
+int fake_radio_ap_start(void *ctx, const char *name, const char *key)
+{
+    fake_radio_t *fake = (fake_radio_t *)ctx;
+    record(fake, FAKE_RADIO_AP_START, fake->power_save);
+    if (fake->ap_start_refuses) {
+        return -1;
+    }
+    fake->ap_up = 1;
+    fake->ap_starts++;
+    snprintf(fake->ap_name, sizeof(fake->ap_name), "%s", name);
+    snprintf(fake->ap_key, sizeof(fake->ap_key), "%s", key);
+    return 0;
+}
+
+int fake_radio_ap_stop(void *ctx)
+{
+    fake_radio_t *fake = (fake_radio_t *)ctx;
+    record(fake, FAKE_RADIO_AP_STOP, fake->power_save);
+    fake->ap_up = 0;
+    fake->ap_stops++;
+    return 0;
+}
+
+const char *fake_radio_join_reason(void *ctx)
+{
+    fake_radio_t *fake = (fake_radio_t *)ctx;
+    return fake->join_reason[0] != '\0' ? fake->join_reason : NULL;
 }
 
 chorus_radio_t fake_radio(fake_radio_t *fake)
@@ -124,6 +174,10 @@ const char *fake_radio_event_kind_name(fake_radio_event_kind_t kind)
         return "coexistence-query";
     case FAKE_RADIO_JOIN:
         return "join";
+    case FAKE_RADIO_AP_START:
+        return "ap-start";
+    case FAKE_RADIO_AP_STOP:
+        return "ap-stop";
     }
     return "unknown";
 }

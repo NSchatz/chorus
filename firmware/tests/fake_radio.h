@@ -24,7 +24,10 @@ typedef enum {
     FAKE_RADIO_SET_POWER_SAVE,
     FAKE_RADIO_GET_POWER_SAVE,
     FAKE_RADIO_COEXISTENCE_QUERY,
-    FAKE_RADIO_JOIN
+    FAKE_RADIO_JOIN,
+    /* The speaker's own access point (goal 14, chorus/provision.h). */
+    FAKE_RADIO_AP_START,
+    FAKE_RADIO_AP_STOP
 } fake_radio_event_kind_t;
 
 typedef struct {
@@ -32,7 +35,9 @@ typedef struct {
     chorus_wifi_ps_t mode;
 } fake_radio_event_t;
 
-#define FAKE_RADIO_MAX_EVENTS 32
+/* Room for a provisioning run: several joins, each an init, a set, a readback,
+ * a coexistence query and the join itself. */
+#define FAKE_RADIO_MAX_EVENTS 256
 #define FAKE_RADIO_TEXT 128
 
 typedef struct {
@@ -62,6 +67,25 @@ typedef struct {
     char joined_ssid[FAKE_RADIO_TEXT];
     char joined_secret[FAKE_RADIO_TEXT];
     size_t joins;
+
+    /* The network in range (goal 14). When `network_known` is set, a join
+     * succeeds only for this name with this passphrase, and a join that fails
+     * leaves the platform's word for why in `join_reason`: the two words
+     * ESP-IDF's provisioning manager has, an unknown network and a refused
+     * passphrase. Unset, every join succeeds unless `join_refuses`, as before. */
+    int network_known;
+    char network_ssid[FAKE_RADIO_TEXT];
+    char network_secret[FAKE_RADIO_TEXT];
+    char join_reason[FAKE_RADIO_TEXT];
+
+    /* The speaker's own access point: whether it is up, under what name and
+     * key, and how often it was raised and dropped. */
+    int ap_up;
+    int ap_start_refuses;
+    char ap_name[FAKE_RADIO_TEXT];
+    char ap_key[FAKE_RADIO_TEXT];
+    size_t ap_starts;
+    size_t ap_stops;
 } fake_radio_t;
 
 void fake_radio_init(fake_radio_t *fake);
@@ -72,6 +96,17 @@ chorus_radio_t fake_radio(fake_radio_t *fake);
 /* The same, with `coexistence_active` left NULL, which is what a platform with
  * no opinion looks like: the committed declaration then stands alone. */
 chorus_radio_t fake_radio_without_coexistence_query(fake_radio_t *fake);
+
+/* The network in range from here on (see `network_known`). */
+void fake_radio_set_network(fake_radio_t *fake, const char *ssid, const char *secret);
+
+/* The access point and the join's reason, in the shape
+ * `chorus_provision_platform_t` takes them; `ctx` is the `fake_radio_t`. They
+ * are plain functions and not a struct so this header needs nothing of the
+ * provisioning unit's. */
+int fake_radio_ap_start(void *ctx, const char *name, const char *key);
+int fake_radio_ap_stop(void *ctx);
+const char *fake_radio_join_reason(void *ctx);
 
 /* Index of the first event of `kind`, or -1. */
 int fake_radio_first(const fake_radio_t *fake, fake_radio_event_kind_t kind);
