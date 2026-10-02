@@ -1,0 +1,19 @@
+# chorus golden vector: firmware chunk, protocol v2 message type 0x19.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# produce these exact bytes from the canonical input in firmware_chunk.fields, and recover
+# exactly those fields from them (docs/protocol.md, "0x19 firmware chunk").
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x19, payload length 24 (0x0018), big-endian
+19 00 18
+
+# transfer = 7
+00 00 00 07
+
+# offset = 8192
+00 00 20 00
+
+# data: the rest of the frame, 16 bytes
+E9 06 02 20 A0 82 37 40 EE 00 00 00 09 00 00 00

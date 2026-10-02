@@ -36,10 +36,12 @@ typedef struct {
     uint32_t flash_size_mb;
 } chorus_board_t;
 
-/* The smallest flash an image fits: the endpoint uses ESP-IDF's 1.5 MB
- * single-app partition inside the default 2 MB of flash
- * (firmware/sdkconfig.defaults, docs/decisions/0044-*). */
-#define CHORUS_MIN_FLASH_MB 2u
+/* The smallest flash the image's layout fits: two 3 MiB app slots, otadata,
+ * NVS and the PHY data end at 0x620000 (firmware/partitions.csv), and the
+ * build declares 8 MB (firmware/sdkconfig.defaults,
+ * CONFIG_ESPTOOLPY_FLASHSIZE_8MB; goal 14). The 8 MB itself is ASSUMED for the
+ * owner's board until its module markings and a read-only chip report say. */
+#define CHORUS_MIN_FLASH_MB 8u
 
 typedef struct {
     /* The board this configuration is for, and how sure the repository is. */
@@ -57,6 +59,9 @@ typedef struct {
     uint32_t reconnect_first_backoff_ms;
     uint32_t reconnect_max_backoff_ms;
     uint32_t outage_minutes_seconds;
+    /* How long after boot a new image on trial has to reach its server before
+     * it rolls itself back (chorus/ota.h rule 3). */
+    uint32_t ota_confirm_seconds;
 
     chorus_i2s_clock_t clock;
     chorus_pin_map_t pins;

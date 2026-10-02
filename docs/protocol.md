@@ -71,6 +71,9 @@ What a decoder does when it cannot accept a frame:
 | 0x15 | `telemetry` | v2 | in a record | 36 bytes, fixed |
 | 0x16 | `low_latency_offer` | v2 (goal 13) | in a record | 53 bytes, fixed: direction, stream tag, key, UDP port, chunk, FEC, lead |
 | 0x17 | `low_latency_accept` | v2 (goal 13) | in a record | 7 bytes, fixed: stream tag, status, UDP port |
+| 0x18 | `firmware_offer` | v2 (goal 14) | in a record | transfer, size, SHA-256, chunk size, version, board; or the cancel |
+| 0x19 | `firmware_chunk` | v2 (goal 14) | in a record | transfer, offset, then image bytes |
+| 0x1A | `firmware_status` | v2 (goal 14) | in a record | transfer, state, reason, bytes received, running version, board, slot, image version |
 | 0x20 | `handshake_init` | v2 | in the clear | magic, version, suite, Noise message 1 |
 | 0x21 | `handshake_response` | v2 | in the clear | Noise message 2 |
 | 0x22 | `handshake_finish` | v2 | in the clear | Noise message 3 |
@@ -378,7 +381,7 @@ Sent by an endpoint after its `hello`; what it can accept.
 | .. | 4 | `intrinsic_latency_ns` | its own delay from playout point to sound (a measured value, or `ASSUMED` where not yet measured) |
 | .. | 2 | `led_count` | addressable lights for the colour role; 0 for none |
 | .. | 1 | `visualizer_bands` | most bands it wants per visualizer frame, 0 to 64 |
-| .. | 1 | `features` | optional, goal 13: bit 0 `low_latency` (takes a `low_latency_offer`); absent reads as 0 |
+| .. | 1 | `features` | optional, goal 13: bit 0 `low_latency` (takes a `low_latency_offer`); goal 14: bit 1 `ota` (takes a `firmware_offer`); absent reads as 0 |
 
 `features` is a trailing byte under the rule that a payload longer than the
 fields a decoder knows is accepted ("Decoder behaviour"): an encoder writes it
@@ -387,7 +390,8 @@ what it was before the field existed (`v2/capabilities.hex` is unchanged), and
 an older server ignores it. A bit no version defines is kept and accepted, not
 rejected as `sound`'s flags are: a feature is something an endpoint can do,
 and a server that does not know one simply never uses it. An endpoint without
-`low_latency` is never offered a low-latency stream.
+`low_latency` is never offered a low-latency stream, and one without `ota` is
+never offered a firmware image ("Firmware update"; `v2/capabilities_ota.hex`).
 
 ## The stream format and the channel map
 
@@ -1088,6 +1092,124 @@ and 0093 and
 in `docs/measurements/low-latency-budget-sim.md`, a simulation that is not
 timing evidence).
 
+## Firmware update
+
+Goal 14. An endpoint's firmware is updated inside its own session: the image
+travels in the encrypted records of the connection the endpoint already holds
+to the server it adopted, so it needs no second transport, no second trust
+decision and no new thread on either side. `0x1B` and `0x1C` are reserved
+beside these three for `identify`.
+
+**Nothing installs by itself.** A server sends `firmware_offer` only on an
+explicit install action (the control plane's `firmware_install`), never
+because an image was staged, a session began or the server restarted. An
+endpoint writes nothing without an offer.
+
+The endpoint keeps two app slots and runs from one (ESP-IDF's A/B scheme:
+`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`, two OTA partitions and `otadata`).
+The new image goes to the other slot; the slot is selected for boot only
+after the whole image is written, its SHA-256 equals the offer's, and the
+flash's own check of the written image passes; the new image then boots ONCE
+on trial and is kept only if it confirms. It confirms when its session
+reached its server (the handshake done and the server's first record opened)
+within `ota_confirm_seconds` of boot (ASSUMED 60 s,
+`firmware/config/endpoint.conf`); otherwise it marks itself invalid and
+reboots, and the bootloader goes back to the image that ran before. The
+decisions are `firmware/src/ota.c`, graded over a fault-injecting fake flash
+(`firmware/tests/test_ota.c`); `docs/decisions/OTAADR-the-ota-state-machine-and-the-firmware-wire.md`.
+
+### 0x18 firmware offer
+
+Server to endpoint, inside a record.
+
+| offset | size | field | notes |
+|---|---|---|---|
+| 0 | 4 | `transfer` | names the transfer; nonzero, unique per server process. 0 is the cancel |
+| 4 | 4 | `size` | bytes in the whole image, 1 to 16777216 |
+| 8 | 32 | `sha256` | SHA-256 of the whole image |
+| 40 | 2 | `chunk_bytes` | the most bytes one `firmware_chunk` of this transfer carries, 1 to 4096 |
+| 42 | short text | `version` | the image's version, at most 47 bytes |
+| .. | short text | `board` | the board profile the image was built for, at most 47 bytes |
+
+`transfer` 0 with every other field zero or empty is the **cancel**: the
+endpoint gives up the transfer it is receiving and answers with a status. A
+cancel that names anything is rejected (`size`, and so on, inconsistent). An
+image that is already selected for boot is past cancelling: its trial decides.
+
+The endpoint answers every offer with one `firmware_status`: `receiving`, or
+`refused` with the reason. It refuses, writing nothing, an image that does not
+fit its slot (`too_large`), one built for another board (`wrong_board`), any
+offer while its running image is still on trial (`not_confirmed`), and a
+different offer while a transfer is in progress (`busy`; the transfer in
+progress is untouched). The SAME offer again (same `transfer`, `size` and
+`sha256`) while it is being received is the resume: the status says how many
+bytes are already written.
+
+### 0x19 firmware chunk
+
+Server to endpoint, inside a record.
+
+| offset | size | field | notes |
+|---|---|---|---|
+| 0 | 4 | `transfer` | the offer's; nonzero |
+| 4 | 4 | `offset` | where this piece starts in the image |
+| 8 | rest | `data` | 1 to 4096 bytes: the rest of the frame |
+
+The endpoint writes only the next bytes in order. A chunk whose `offset` is
+below what it has (a duplicate) is ignored. A chunk past a gap is ignored and
+answered once with a status `receiving`, reason `bad_offset`, whose `received`
+is where to resume. A chunk that is in order and longer than the offer's
+`chunk_bytes`, or that runs past `size`, ends the transfer: `refused`,
+`bad_offset`. A chunk of no transfer in progress is ignored.
+
+### 0x1A firmware status
+
+Endpoint to server, inside a record.
+
+| offset | size | field | notes |
+|---|---|---|---|
+| 0 | 4 | `transfer` | the transfer the status is about; 0 when none |
+| 4 | 1 | `state` | 0 `idle`, 1 `receiving`, 2 `verified`, 3 `pending_verify`, 4 `confirmed`, 5 `rolled_back`, 6 `refused` |
+| 5 | 1 | `reason` | 0 `none`, 1 `too_large`, 2 `bad_digest`, 3 `write_failed`, 4 `busy`, 5 `wrong_board`, 6 `not_confirmed`, 7 `bad_offset`, 8 `medium_refused` |
+| 6 | 4 | `received` | bytes written in order so far: the acknowledgement and the resume point |
+| 10 | short text | `version` | the RUNNING image's version, at most 47 bytes |
+| .. | short text | `board` | the board profile the running image was built for |
+| .. | 1 | `slot` | the slot the running image runs from, 0 or 1; 255 unknown |
+| .. | short text | `image_version` | the version of the image the status is about (while receiving, verified, refused or rolled back); empty when none |
+
+An undefined `state` or `reason` and a `slot` other than 0, 1 or 255 are
+rejected.
+
+The states: `idle`, a confirmed image runs and nothing is in progress;
+`receiving`, a transfer is being written; `verified`, written, digest good,
+checked by the flash, boot slot set, and the endpoint reboots right after
+sending it; `pending_verify`, the running image is on its trial boot;
+`confirmed`, it passed its trial in this boot; `rolled_back`, the image that
+was tried is not the one running (`image_version` names it, `version` is what
+runs, `reason` is `not_confirmed`); `refused`, an offer or a transfer was
+refused, by name. A `pending_verify` with reason `not_confirmed` is the image
+on trial saying its deadline passed: it has marked itself invalid and reboots.
+
+An endpoint with the `ota` feature sends one `firmware_status`:
+
+- right after `capabilities`, on every session: what runs and how any
+  transfer stands (so a `receiving` there is the resume point, and the first
+  session after a rollback says `rolled_back`, once);
+- after every 16 chunks written in order (ASSUMED 16);
+- at each change of state, and in answer to every offer and to the cancel.
+
+A server keeps at most a window of chunks in flight beyond the last
+`received` it was told (ASSUMED 32 chunks), so image bytes never crowd out
+the audio in the same session; on a status `receiving` with `bad_offset` it
+goes back to `received`. A transfer survives the session dropping: the
+endpoint keeps what it wrote until it reboots, and a server that still holds
+the transfer resumes it with the same offer, while one that does not (it
+restarted) cancels it before offering anew.
+
+`crates/protocol/tests/firmware_session.rs` runs all of this between the Rust
+messages and the real C endpoint binary on loopback, and is the reference
+for a sender.
+
 ## The session, in order
 
 1. The endpoint connects and sends `handshake_init`.
@@ -1097,7 +1219,8 @@ timing evidence).
 4. The server checks the endpoint's key against its adoption store, adopting a
    new id; a changed key is refused.
 5. From here every frame on the connection is a `secure_record`. The endpoint
-   sends `hello` and `capabilities`; the server sends `hello`, negotiates, and
+   sends `hello` and `capabilities` (and, with the `ota` feature, a
+   `firmware_status`); the server sends `hello`, negotiates, and
    sends `stream_format`, `output_delay` (with a control plane, the room's
    `room_volume` and `sound` for a player and its `controller_state` for a
    controller) and the audio. With stream slots (`docs/control-plane.md`) the audio is the
@@ -1165,7 +1288,8 @@ encoder refuses exactly what the decoder rejects.
   `problem`: an encoder must refuse the fields naming that field and emit
   nothing, and a decoder must reject the frame as that field, consume it
   whole and decode the frame after it (goal 11: `room_volume` with each of
-  its fields out of range; goal 12: `sound` with each field and bound broken).
+  its fields out of range; goal 12: `sound` with each field and bound broken;
+  goal 14: `firmware_offer`, `firmware_chunk` and `firmware_status`).
   `problem` is `out_of_range` for a number and `undefined` for a bit or a
   role no version defines (`sound`'s `flags` and `role`).
 - `fixtures/protocol/v2/noise/cacophony_xx.fields`: the published Noise test
