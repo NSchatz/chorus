@@ -1816,6 +1816,95 @@ mod tests {
         );
     }
 
+    /// Goal 14: the speakers a server lists are the ones its pins hold, a
+    /// session lists a new one, and `speaker_forget` removes the pin with the
+    /// record, or refuses whole when the pin file cannot be rewritten.
+    #[test]
+    fn a_speaker_is_listed_from_its_pin_and_forgotten_with_it_or_not_at_all() {
+        use crate::session::{Adoptions, ADOPTED_FILE};
+        let dir = std::env::temp_dir().join(format!("chorus-speakers-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(ADOPTED_FILE);
+        let adoptions = Arc::new(Adoptions::load(&path).unwrap());
+        // Pinned before the control plane knew of it (an upgraded server).
+        assert!(adoptions.check("den", &[1; 32]).unwrap().admits());
+        assert!(adoptions.check("Not An Id", &[2; 32]).unwrap().admits());
+
+        let mut zones = Zones::new("127.0.0.1:4010");
+        zones.add(Zone::new("kitchen")).unwrap();
+        let state = Arc::new(ControlState::new(zones, None));
+        let unlisted = state.adopt_through(Arc::clone(&adoptions));
+        assert_eq!(unlisted.len(), 1, "{:?}", unlisted);
+        assert!(
+            unlisted[0].starts_with("speaker not listed id=Not An Id reason=id-not-an-identifier"),
+            "{}",
+            unlisted[0]
+        );
+        let listed = state.encoded_state();
+        assert!(
+            listed.contains(r#""speakers":[{"id":"den","name":"Speaker den","named":false,"room":null,"present":false"#),
+            "{}",
+            listed
+        );
+
+        // A new id's first session lists it, says so once, and marks it
+        // present; its end marks it absent.
+        assert!(adoptions.check("hall", &[3; 32]).unwrap().admits());
+        let lines = state.speaker_session_up("hall", "aaaa:bbbb:cccc:dddd", "sw 1", roles::PLAYER);
+        assert_eq!(
+            lines,
+            vec![r#"speaker listed id=hall name="Speaker hall" named=0"#.to_string()]
+        );
+        assert!(state
+            .speaker_session_up("hall", "aaaa:bbbb:cccc:dddd", "sw 1", roles::PLAYER)
+            .is_empty());
+        assert!(state.encoded_state().contains(
+            r#"{"id":"hall","name":"Speaker hall","named":false,"room":null,"present":true,"software":"sw 1","link":"unknown","key":"aaaa:bbbb:cccc:dddd","roles":["player"]}"#
+        ));
+        state.speaker_session_down("hall");
+        state.speaker_session_down("hall");
+        assert!(state.encoded_state().contains(
+            r#""id":"hall","name":"Speaker hall","named":false,"room":null,"present":false"#
+        ));
+
+        // A refused key change is in the state.
+        state.speaker_key_changed("den", "1111:2222:3333:4444", "5555:6666:7777:8888");
+        assert!(state.encoded_state().contains(
+            r#""key_changes":[{"id":"den","pinned":"1111:2222:3333:4444","offered":"5555:6666:7777:8888"}]"#
+        ));
+
+        // The pin file cannot be rewritten: the command is refused whole.
+        std::fs::remove_dir_all(&dir).unwrap();
+        let before = state.encoded_state();
+        let refusal = state
+            .apply(r#"{"v":2,"t":"speaker_forget","speaker":"den"}"#)
+            .unwrap_err();
+        assert_eq!(refusal.field, "speaker");
+        assert!(refusal.detail.contains("was not forgotten"), "{}", refusal);
+        assert_eq!(state.encoded_state(), before, "nothing moved");
+        assert!(
+            adoptions.pins().iter().any(|(id, _)| id == "den"),
+            "and the pin is still held"
+        );
+
+        // With the directory back, the record, the key change and the pin go
+        // together, and the next handshake under the id is an adoption.
+        std::fs::create_dir_all(&dir).unwrap();
+        let after = state
+            .apply(r#"{"v":2,"t":"speaker_forget","speaker":"den"}"#)
+            .unwrap();
+        assert!(!after.contains(r#""id":"den""#), "{}", after);
+        assert!(!after.contains("key_changes"), "{}", after);
+        assert!(!adoptions.pins().iter().any(|(id, _)| id == "den"));
+        assert!(!std::fs::read_to_string(&path).unwrap().contains(" den\n"));
+        assert_eq!(
+            adoptions.check("den", &[9; 32]).unwrap(),
+            chorus_protocol::v2::adoption::Verdict::Adopted
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn a_command_that_is_refused_reaches_nobody() {
         let mut zones = Zones::new("127.0.0.1:4010");
