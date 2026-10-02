@@ -145,7 +145,7 @@ Protocol, sync and DSP behaviour is specified by files that both the Rust and th
 implementations read: `fixtures/protocol`, `fixtures/sync`, `fixtures/sync/crosscheck`, and
 `fixtures/dsp` from goal 12. A behaviour change adds or changes a fixture, never a constant in
 one language only. `check-shared-fixtures.sh` holds each directory to a Rust reader and a C
-reader and fails on a file of a kind neither reads. `fixtures/control`, `fixtures/discovery`,
+reader and fails on a file of a kind neither reads. `fixtures/control`,
 `fixtures/measure`, `fixtures/schedule`, `fixtures/roomfit` and `fixtures/cec` are Rust-only by declaration (the endpoint does not speak them yet; room-correction fitting runs on the server; CEC runs on the Linux hub alone).
 `fixtures/protocol/v2` (protocol v2, goal 5) and `fixtures/protocol/v2/noise` are shared like the
 rest: since the endpoint moved to v2 (goal 6) the check holds them to their Rust readers and to
@@ -155,6 +155,9 @@ rest: since the endpoint moved to v2 (goal 6) the check holds them to their Rust
 `fixtures/codec` (goal 6) holds FLAC and Opus streams as the wire carries them with their
 reference decodes, read by `firmware/tests/test_codec.c` and
 `crates/client-linux/tests/codec_fixtures.rs`; `fixtures/README.md` says what each file is.
+`fixtures/discovery` (shared since goal 14, when the endpoint got its own DNS-SD browse) holds the
+browse queries and the advertisements with what each resolves to, read by
+`crates/discovery/tests/dnssd_vectors.rs` and `firmware/tests/test_discovery.c`.
 `fixtures/volume` (goal 11) is the `room_volume` sequence the real server sends over every volume
 path, captured by `crates/server/tests/limits_hold_for_every_volume_path.rs` and fed through the C
 endpoint's volume path by `firmware/tests/test_volume.c`.

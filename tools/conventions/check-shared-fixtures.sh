@@ -3,7 +3,7 @@
 # behaviour is specified by files that both implementations read, so the Rust and C cores cannot
 # drift apart. Each shared directory below is read by a Rust test and by a C test (both walk the
 # directory), and every file in it has an extension those tests read: a file of any other kind
-# would be read by neither. fixtures/control, fixtures/discovery and fixtures/measure are
+# would be read by neither. fixtures/control and fixtures/measure are
 # Rust-only by declaration (the endpoint does not speak them yet; goal 6 moves control here), and
 # so is fixtures/visualizer (goal 12: the server computes the visualizer stream, no endpoint does).
 # fixtures/roomfit (goal 12) is Rust-only by declaration too: room-correction fitting runs on the
@@ -25,6 +25,10 @@
 # is read (`*`). fixtures/protocol/lowlat (goal 13) is the low-latency datagram layer's: sealed
 # streams and loss, replay and tamper cases that crates/protocol/tests/lowlat.rs and
 # firmware/tests/test_lowlat.c both walk, so the Rust and C datagrams are the same bytes.
+# fixtures/discovery (shared since goal 14, when the endpoint got its own DNS-SD browse) is the
+# query and response packets: crates/discovery/tests/dnssd_vectors.rs and
+# firmware/tests/test_discovery.c both walk it, produce every query vector byte for byte and
+# resolve every response vector to its .expected, so the Rust and C resolvers cannot drift apart.
 . "$(dirname "$0")/lib.sh"
 # directory | extensions both sides read | where Rust reads it | where C reads it
 shared=(
@@ -39,6 +43,7 @@ shared=(
     "fixtures/codec|fields chunks pcm|crates/client-linux/tests|firmware/tests/test_codec.c"
     "fixtures/controls|hex led|crates/server/tests crates/controls/tests|firmware/tests/test_controls.c"
     "fixtures/volume|hex|crates/server/tests|firmware/tests/test_volume.c"
+    "fixtures/discovery|hex params expected|crates/discovery/tests|firmware/tests/test_discovery.c"
 )
 rc=0
 bad() { fail "Shared fixtures" "$1"; rc=1; }

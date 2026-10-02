@@ -136,6 +136,15 @@ verify-house-soak: tools-executable
 verify-mdns: tools-executable
 	bash tools/mdns-live-run.sh
 
+# The same live exchange for the C endpoint (goal 14): the firmware's own
+# DNS-SD browse (firmware/src/discovery.c), in the host session binary over a
+# POSIX socket, against a real `chorus-server --advertise`; then its fallbacks
+# in order, and finding a server that appeared after it started. Refuses by
+# name where the link carries no multicast. The packet-graded half is in
+# `make firmware-check` (the gate), which needs no network.
+verify-endpoint-mdns: tools-executable
+	bash tools/endpoint-mdns-live-run.sh
+
 # The other half of AC-2's fallback sentence: "connects to the configured static
 # address AND PLAYS". Needs a playback device that opens and no multicast at
 # all; the browse returning nothing is the antecedent, and a browse that cannot
@@ -315,6 +324,6 @@ verify-null-device: tools-executable
 	firmware-wireless gate gate-fast measure-fixture-reports measure-fixtures one  \
 	probe sim-house sync-vectors ten-minute-run ten-minute-run-null test tools-executable verify verify-alsa-null verify-control  \
 	verify-control-determinism verify-device verify-discovery-fallback  \
-	verify-endpoint-rig verify-host verify-mdns verify-measure-device  \
+	verify-endpoint-mdns verify-endpoint-rig verify-host verify-mdns verify-measure-device  \
 	verify-house-soak verify-null-device verify-restart-storm verify-soak verify-sync-hour  \
 	verify-wireless 

@@ -150,6 +150,13 @@ make discovery-vectors     # regenerate every packet from its parameters
 every committed `.hex` byte for byte, so that target is for changing a
 fixture's parameters and never for making a red assertion green.
 
+Shared since goal 14: the endpoint's own browse (`firmware/src/discovery.c`) is
+held to the same files by `firmware/tests/test_discovery.c`, which walks the
+directory, produces every `kind = query` packet byte for byte and resolves
+every packet with an `.expected` to exactly what that file says. The C resolver
+dials IPv4 only, so a vector whose expected address is an IPv6 one would need
+the C side taught first.
+
 One vector is the same advertisement written with DNS name compression. The
 encoder in `crates/discovery/src/wire.rs` deliberately never compresses - one
 message, one spelling, which is what makes a vector a contract - so that vector
