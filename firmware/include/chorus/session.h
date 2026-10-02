@@ -32,6 +32,7 @@
 #include "chorus/ota.h"
 #include "chorus/playout.h"
 #include "chorus/protocol_v2.h"
+#include "chorus/store.h"
 #include "chorus/sync.h"
 #include "chorus/telemetry.h"
 
@@ -57,10 +58,19 @@ typedef struct {
     /* Where to write one telemetry line per event. NULL prints nothing. */
     const char *event_log_path;
 
-    /* Who this endpoint is: its id (1 to 255 bytes; empty uses
-     * CHORUS_SESSION_DEFAULT_ID) and where its long-term X25519 secret lives
-     * (64 hex digits and a newline, mode 0600, made from the random source
-     * when the file is absent). NULL keeps a key for this run only. */
+    /* What the endpoint keeps across boots (goal 14, chorus/store.h and
+     * chorus/identity.h), optional. With a store the long-term key, the
+     * pinned servers and, when `endpoint_id` is empty, the id itself are the
+     * store's (`key_path` and `server_pins_path` are then not read), a key or
+     * pin the store did not keep is refused rather than used, and the address
+     * of each server a handshake completes with is kept for discovery's
+     * fallback. NULL is the run as it was: the file paths below. */
+    const chorus_store_t *store;
+
+    /* Who this endpoint is: its id (1 to 255 bytes; empty uses the store's
+     * id when there is a store, else CHORUS_SESSION_DEFAULT_ID) and where its long-term X25519
+     * secret lives (64 hex digits and a newline, mode 0600, made from the random source when the
+     * file is absent). NULL keeps a key for this run only. */
     char endpoint_id[CHORUS_SESSION_ID_MAX];
     const char *key_path;
     /* Where the pinned servers live, in the adoption store's text form (one
@@ -93,6 +103,17 @@ typedef struct {
     void *server_update_ctx;
     void (*on_telemetry)(void *ctx, const chorus_telemetry_t *telemetry);
     void *telemetry_ctx;
+
+    /* Discovery's seam (goal 14, chorus/discovery.h), optional. Asked after
+     * every third connection attempt in a row that reached no server: it
+     * returns 1 and writes a `host:port` into `address` when it FOUND the
+     * server somewhere, 0 otherwise. A different address applies from the
+     * next attempt and is published as `server-relocated`; the same one, or
+     * one that does not split, changes nothing. Runs on the session's own
+     * task and may take as long as a browse does: nothing is connected while
+     * it is asked. NULL never asks. */
+    int (*relocate)(void *ctx, char *address, size_t address_len);
+    void *relocate_ctx;
 
     /* Handed every `sound` (0x39) the server sends, after the decoder has
      * held it to its ranges and the run has kept it in the result

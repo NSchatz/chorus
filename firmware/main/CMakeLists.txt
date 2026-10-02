@@ -44,6 +44,9 @@ idf_component_register(
         "esp_marker.c"
         "console_esp.c"
         "esp_ota.c"
+        "esp_store.c"
+        "esp_identity.c"
+        "esp_discovery.c"
         "../src/conf.c"
         "../src/protocol.c"
         "../src/protocol_v2.c"
@@ -74,6 +77,9 @@ idf_component_register(
         "../src/decode_cost.c"
         "../src/dsp_cost.c"
         "../src/ota.c"
+        "../src/store.c"
+        "../src/identity.c"
+        "../src/discovery.c"
         "${CHORUS_THIRD_PARTY}/dr_flac/dr_flac.c"
         ${chorus_opus_srcs}
     INCLUDE_DIRS
