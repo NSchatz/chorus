@@ -15,12 +15,37 @@
  * made for this run only, and without --server-pins the pins are kept for this
  * run only.
  *
+ * Goal 14 gave the board an identity it keeps and a way to find the server,
+ * and this binary takes both the way the board does, through the same seams:
+ *
+ *   --store <dir>     what the endpoint keeps across boots (chorus/store.h),
+ *                     as a directory of files instead of NVS: the id
+ *                     (`chorus-` and twelve hex digits, made at the first run),
+ *                     the key, the pinned servers and the last server that
+ *                     answered. Starting the binary again over the same
+ *                     directory is a reboot. --key and --server-pins are then
+ *                     not read; --endpoint-id still names the id.
+ *   --discover        browse for `_chorus-audio._tcp.local.` (chorus/discovery.h)
+ *                     over a real UDP socket before connecting, and again when
+ *                     a run of connection attempts reaches nothing. Falls back
+ *                     to the store's last server, then to --server.
+ *   --discover-ms <n> the browse window.
+ *   --no-server       take the static address away, so a run that discovers
+ *                     nothing has nowhere to go and exits 7 saying so.
+ *
+ * The committed `server_address` is loopback and is NOT a fallback (no board
+ * can reach a server there); a --server given on the command line is, loopback
+ * or not, because on a host that is where a server is.
+ *
  * Every constant it is not given comes from firmware/config/endpoint.conf, so
  * a run and the file that describes it cannot drift apart. */
 
+#include "chorus/discovery.h"
 #include "chorus/endpoint_config.h"
 #include "chorus/session.h"
 #include "chorus/sync_conf.h"
+#include "file_store.h"
+#include "posix_discovery.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -34,7 +59,9 @@ static void usage(void)
             "                               [--log path] [--sync-interval-ms n]\n"
             "                               [--first-backoff-ms n] [--max-backoff-ms n]\n"
             "                               [--endpoint-id id] [--key path]\n"
-            "                               [--server-pins path] [--handshake-timeout-ms n]\n");
+            "                               [--server-pins path] [--handshake-timeout-ms n]\n"
+            "                               [--store dir] [--discover] [--discover-ms n]\n"
+            "                               [--no-server]\n");
 }
 
 int main(int argc, char **argv)
@@ -69,12 +96,29 @@ int main(int argc, char **argv)
     config.filter_window = sync.filter_window;
     config.smoothing_alpha = sync.smoothing_alpha;
 
+    const char *store_directory = NULL;
+    int discover = 0;
+    int no_server = 0;
+    int server_given = 0;
+    uint32_t discover_ms = CHORUS_DISCOVERY_DEFAULT_WINDOW_MS;
+
     for (int i = 1; i < argc; i++) {
         const char *arg = argv[i];
         const char *value = (i + 1 < argc) ? argv[i + 1] : NULL;
         if (strcmp(arg, "--server") == 0 && value != NULL) {
             snprintf(config.server, sizeof(config.server), "%s", value);
+            server_given = 1;
             i++;
+        } else if (strcmp(arg, "--store") == 0 && value != NULL) {
+            store_directory = value;
+            i++;
+        } else if (strcmp(arg, "--discover") == 0) {
+            discover = 1;
+        } else if (strcmp(arg, "--discover-ms") == 0 && value != NULL) {
+            discover_ms = (uint32_t)strtoul(value, NULL, 10);
+            i++;
+        } else if (strcmp(arg, "--no-server") == 0) {
+            no_server = 1;
         } else if (strcmp(arg, "--run-seconds") == 0 && value != NULL) {
             config.run_seconds = (uint32_t)strtoul(value, NULL, 10);
             i++;
@@ -112,8 +156,70 @@ int main(int argc, char **argv)
         }
     }
 
+    /* What the endpoint keeps across runs, when it is given somewhere to
+     * keep it. */
+    static file_store_t files;
+    static chorus_store_t store;
+    if (store_directory != NULL) {
+        if (file_store_open(&files, store_directory, detail, sizeof(detail)) != 0) {
+            fprintf(stderr, "chorus-endpoint-session: %s\n", detail);
+            return 2;
+        }
+        store = file_store_as_store(&files);
+        config.store = &store;
+    }
+
+    /* Where the server is. The decision is chorus/discovery.h's, the one the
+     * board makes; only the socket is this binary's own. */
+    static posix_discovery_t browse_socket = {-1};
+    static chorus_discovery_link_t link;
+    static uint8_t datagram[CHORUS_DISCOVERY_MAX_DATAGRAM];
+    static chorus_relocator_t relocator;
+    if (discover || no_server) {
+        chorus_locate_t request;
+        memset(&request, 0, sizeof(request));
+        if (discover) {
+            if (posix_discovery_open(&browse_socket, detail, sizeof(detail)) != 0) {
+                fprintf(stderr, "chorus-endpoint-session: %s\n", detail);
+            }
+            link = posix_discovery_link(&browse_socket);
+            request.link = &link;
+        }
+        request.service = CHORUS_DISCOVERY_AUDIO_SERVICE;
+        request.window_ms = discover_ms;
+        request.store = config.store;
+        request.configured = no_server ? NULL : config.server;
+        request.loopback_is_usable = server_given;
+        static chorus_located_t located;
+        char line[640];
+        int found = chorus_discovery_locate(&request, datagram, sizeof(datagram), &located);
+        chorus_located_line(&located, line, sizeof(line));
+        printf("chorus-endpoint-session: %s\n", line);
+        fflush(stdout);
+        if (found != 0) {
+            fprintf(stderr,
+                    "chorus-endpoint-session: this endpoint has no server address: %s. It needs "
+                    "one of them: a chorus server advertising %s on this link (--discover), a "
+                    "--store that has met a server, or --server <host:port>\n",
+                    located.because, CHORUS_DISCOVERY_AUDIO_SERVICE);
+            posix_discovery_close(&browse_socket);
+            return 7;
+        }
+        snprintf(config.server, sizeof(config.server), "%s", located.address);
+        if (discover) {
+            relocator.link = &link;
+            relocator.service = CHORUS_DISCOVERY_AUDIO_SERVICE;
+            relocator.window_ms = discover_ms;
+            relocator.scratch = datagram;
+            relocator.scratch_capacity = sizeof(datagram);
+            config.relocate = chorus_discovery_relocate;
+            config.relocate_ctx = &relocator;
+        }
+    }
+
     static chorus_session_result_t result;
     int status = chorus_session_run(&config, &result);
+    posix_discovery_close(&browse_socket);
     if (status != 0 && result.end != CHORUS_SESSION_SERVER_KEY_CHANGED) {
         fprintf(stderr, "chorus-endpoint-session: %s: %s\n", chorus_session_end_name(result.end),
                 result.detail);

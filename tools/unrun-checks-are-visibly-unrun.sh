@@ -240,6 +240,14 @@ expect_missing_prerequisite "mdns-live-run.sh" \
     bash "$REPO_ROOT/tools/with-mdns-port-taken.sh" \
     bash "$REPO_ROOT/tools/mdns-live-run.sh"
 
+# The same for the C endpoint's live exchange (goal 14): the firmware's own
+# browse against a real advertising server. Its prerequisite is the same link,
+# made absent the same way; it refuses before it builds or starts anything.
+expect_missing_prerequisite "endpoint-mdns-live-run.sh" \
+    env CHORUS_SKIP_BUILD=1 \
+    bash "$REPO_ROOT/tools/with-mdns-port-taken.sh" \
+    bash "$REPO_ROOT/tools/endpoint-mdns-live-run.sh"
+
 # --- and the list above is the whole list ------------------------------------
 #
 # An entry point is environment-dependent exactly when it calls one of lib.sh's

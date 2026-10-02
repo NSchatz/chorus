@@ -1,6 +1,7 @@
 #include "chorus/session.h"
 
 #include "chorus/codec.h"
+#include "chorus/identity.h"
 #include "chorus/monotonic.h"
 #include "chorus/noise.h"
 #include "chorus/protocol.h"
@@ -36,8 +37,12 @@
  * only 64 KiB buffer is the one the receive side needs. */
 #define CHORUS_SESSION_SEND_BUFFER 1280u
 
-/* The pins this endpoint keeps: one per server id it has met. */
-#define CHORUS_SESSION_MAX_PINS 8
+/* After this many connection attempts in a row that reached nothing, the
+ * `relocate` seam is asked whether the server has moved, and again after each
+ * further run of the same length. ASSUMED: three attempts is past a server
+ * that is only restarting (the first backoffs are short) and well inside the
+ * time a person waits before walking to the speaker. */
+#define CHORUS_SESSION_RELOCATE_AFTER_FAILURES 3u
 
 /* What this endpoint says it is and what it can play. PCM only: the FLAC and
  * Opus decoders are a sibling track's, and advertising a codec with no
@@ -73,19 +78,19 @@ const char *chorus_session_end_name(chorus_session_end_t end)
 }
 
 typedef struct {
-    int used;
-    char id[CHORUS_SESSION_ID_MAX];
-    uint8_t key[CHORUS_NOISE_KEY_LEN];
-} pin_t;
-
-typedef struct {
     FILE *log;
     chorus_telemetry_t telemetry;
     const chorus_session_config_t *config;
     chorus_session_result_t *out;
     const char *endpoint_id;
+    /* The id read from the store, when the configuration names none and
+     * hands in a store (chorus/identity.h). */
+    char stored_id[CHORUS_IDENTITY_ID_LEN + 1];
     chorus_noise_keypair_t identity;
-    pin_t pins[CHORUS_SESSION_MAX_PINS];
+    /* The pinned servers (one per server id met), and the text they are read
+     * from and written as: here and not on the task's stack. */
+    chorus_pins_t pins;
+    char pins_text[CHORUS_PINS_TEXT_MAX];
 } session_state_t;
 
 /* The console's `status` reads what the run last published (audit A-13). */
@@ -183,14 +188,64 @@ static int random_bytes(const chorus_session_config_t *config, uint8_t *out, siz
     return source(config->random_ctx, out, len);
 }
 
-/* Read the long-term key at `path`, or make one from the random source and
- * write it with mode 0600 if there is none. The secret is never printed. */
+/* Where this run's identity lives, for a line in the log: the store, a file,
+ * or nowhere past this run. */
+static const char *identity_home(const chorus_session_config_t *config)
+{
+    if (config->store != NULL) {
+        return "store";
+    }
+    return (config->key_path == NULL) ? "this-run" : config->key_path;
+}
+
+/* The endpoint's id: the one the configuration names; else, with a store, the
+ * board's own (made at first boot and kept, chorus/identity.h); else the
+ * shared default. */
+static int load_id(session_state_t *state, char *detail, size_t detail_len)
+{
+    const chorus_session_config_t *config = state->config;
+    if (config->endpoint_id[0] != '\0') {
+        state->endpoint_id = config->endpoint_id;
+        return 0;
+    }
+    if (config->store == NULL) {
+        state->endpoint_id = CHORUS_SESSION_DEFAULT_ID;
+        return 0;
+    }
+    chorus_identity_status_t status =
+        chorus_identity_id(config->store, config->random, config->random_ctx, state->stored_id,
+                           sizeof(state->stored_id), NULL);
+    if (status != CHORUS_IDENTITY_OK) {
+        snprintf(detail, detail_len,
+                 "the endpoint id could not be read from or kept in the store: %s",
+                 chorus_identity_status_name(status));
+        return -1;
+    }
+    state->endpoint_id = state->stored_id;
+    return 0;
+}
+
+/* The long-term key. With a store: the store's, made and KEPT at first boot,
+ * and a key the store did not keep is refused rather than used for one boot
+ * (chorus/identity.h). Otherwise read the key at `path`, or make one from the
+ * random source and write it with mode 0600 if there is none. The secret is
+ * never printed. */
 static int load_identity(session_state_t *state, char *detail, size_t detail_len)
 {
     const chorus_session_config_t *config = state->config;
     uint8_t secret[CHORUS_NOISE_KEY_LEN];
     int have = 0;
-    if (config->key_path != NULL) {
+    if (config->store != NULL) {
+        chorus_identity_status_t kept =
+            chorus_identity_secret(config->store, config->random, config->random_ctx, secret, NULL);
+        if (kept != CHORUS_IDENTITY_OK) {
+            snprintf(detail, detail_len,
+                     "the endpoint's key could not be read from or kept in the store: %s",
+                     chorus_identity_status_name(kept));
+            return -1;
+        }
+        have = 1;
+    } else if (config->key_path != NULL) {
         FILE *file = fopen(config->key_path, "r");
         if (file != NULL) {
             char text[2 * CHORUS_NOISE_KEY_LEN + 8];
@@ -217,7 +272,7 @@ static int load_identity(session_state_t *state, char *detail, size_t detail_len
             snprintf(detail, detail_len, "the random source gave no key");
             return -1;
         }
-        if (config->key_path != NULL) {
+        if (config->store == NULL && config->key_path != NULL) {
             int fd = open(config->key_path, O_WRONLY | O_CREAT | O_EXCL, 0600);
             if (fd < 0) {
                 snprintf(detail, detail_len, "%s could not be created: %s", config->key_path,
@@ -250,6 +305,25 @@ static int load_identity(session_state_t *state, char *detail, size_t detail_len
 
 static int load_pins(session_state_t *state, char *detail, size_t detail_len)
 {
+    if (state->config->store != NULL) {
+        int line_number = 0;
+        chorus_identity_status_t status =
+            chorus_identity_pins_load(state->config->store, &state->pins, &line_number,
+                                      state->pins_text, sizeof(state->pins_text));
+        if (status == CHORUS_IDENTITY_NOT_AN_IDENTITY) {
+            snprintf(detail, detail_len,
+                     "the store's server pins, line %d, is not `pinned <public key hex> <server "
+                     "id>` (or names a server twice, or the store is full)",
+                     line_number);
+            return -1;
+        }
+        if (status != CHORUS_IDENTITY_OK) {
+            snprintf(detail, detail_len, "the store's server pins could not be read: %s",
+                     chorus_identity_status_name(status));
+            return -1;
+        }
+        return 0;
+    }
     const char *path = state->config->server_pins_path;
     if (path == NULL) {
         return 0;
@@ -262,33 +336,16 @@ static int load_pins(session_state_t *state, char *detail, size_t detail_len)
         snprintf(detail, detail_len, "%s could not be read: %s", path, strerror(errno));
         return -1;
     }
-    char line[2 * CHORUS_NOISE_KEY_LEN + CHORUS_SESSION_ID_MAX + 32];
-    size_t n = 0;
-    int line_number = 0;
-    int bad = 0;
-    while (fgets(line, sizeof(line), file) != NULL) {
-        line_number++;
-        size_t len = strcspn(line, "\r\n");
-        line[len] = '\0';
-        if (len == 0 || line[0] == '#') {
-            continue;
-        }
-        /* `pinned <64 hex digits> <id>`, the adoption store's text form. */
-        const size_t key_at = 7;
-        const size_t id_at = key_at + 2 * CHORUS_NOISE_KEY_LEN + 1;
-        if (strncmp(line, "pinned ", key_at) != 0 || len <= id_at || line[id_at - 1] != ' ' ||
-            n >= CHORUS_SESSION_MAX_PINS || len - id_at >= CHORUS_SESSION_ID_MAX ||
-            unhex(line + key_at, state->pins[n].key, CHORUS_NOISE_KEY_LEN) != 0) {
-            bad = 1;
-            break;
-        }
-        state->pins[n].used = 1;
-        memcpy(state->pins[n].id, line + id_at, len - id_at);
-        state->pins[n].id[len - id_at] = '\0';
-        n++;
-    }
+    size_t got = fread(state->pins_text, 1, sizeof(state->pins_text), file);
+    int more = (got == sizeof(state->pins_text)) && fgetc(file) != EOF;
+    int failed = ferror(file);
     fclose(file);
-    if (bad) {
+    if (failed) {
+        snprintf(detail, detail_len, "%s could not be read", path);
+        return -1;
+    }
+    int line_number = 0;
+    if (more || chorus_pins_parse(state->pins_text, got, &state->pins, &line_number) != 0) {
         snprintf(detail, detail_len,
                  "%s line %d is not `pinned <public key hex> <server id>` (or the store is full)",
                  path, line_number);
@@ -297,13 +354,23 @@ static int load_pins(session_state_t *state, char *detail, size_t detail_len)
     return 0;
 }
 
-/* Rewrite the store by writing a temporary beside it and renaming it over
- * the old one, so a reader never sees half a file. */
-static int save_pins(const session_state_t *state)
+/* Keep the pins. In the store: one value replaced whole, or not at all
+ * (chorus/store.h). In a file: rewritten by writing a temporary beside it and
+ * renaming it over the old one, so a reader never sees half a file. */
+static int save_pins(void *ctx, const chorus_pins_t *pins)
 {
+    session_state_t *state = (session_state_t *)ctx;
+    if (state->config->store != NULL) {
+        return chorus_identity_pins_save(state->config->store, pins, state->pins_text,
+                                         sizeof(state->pins_text));
+    }
     const char *path = state->config->server_pins_path;
     if (path == NULL) {
         return 0;
+    }
+    long length = chorus_pins_render(pins, state->pins_text, sizeof(state->pins_text));
+    if (length < 0) {
+        return -1;
     }
     char temporary[512];
     if (snprintf(temporary, sizeof(temporary), "%s.writing", path) >= (int)sizeof(temporary)) {
@@ -313,52 +380,12 @@ static int save_pins(const session_state_t *state)
     if (file == NULL) {
         return -1;
     }
-    fprintf(file, "# chorus adopted peers: <pinned|removed> <public key hex> <id>\n");
-    for (size_t i = 0; i < CHORUS_SESSION_MAX_PINS; i++) {
-        if (state->pins[i].used) {
-            char hex[2 * CHORUS_NOISE_KEY_LEN + 1];
-            tohex(state->pins[i].key, CHORUS_NOISE_KEY_LEN, hex);
-            fprintf(file, "pinned %s %s\n", hex, state->pins[i].id);
-        }
-    }
-    int failed = ferror(file);
+    size_t wrote = fwrite(state->pins_text, 1, (size_t)length, file);
+    int failed = ferror(file) || wrote != (size_t)length;
     if (fclose(file) != 0 || failed) {
         return -1;
     }
     return rename(temporary, path);
-}
-
-typedef enum {
-    PIN_ADOPTED,
-    PIN_KNOWN,
-    PIN_CHANGED,
-    PIN_UNSAVED
-} pin_verdict_t;
-
-static pin_verdict_t check_pin(session_state_t *state, const char *id,
-                               const uint8_t key[CHORUS_NOISE_KEY_LEN], uint8_t pinned[32])
-{
-    for (size_t i = 0; i < CHORUS_SESSION_MAX_PINS; i++) {
-        if (state->pins[i].used && strcmp(state->pins[i].id, id) == 0) {
-            memcpy(pinned, state->pins[i].key, CHORUS_NOISE_KEY_LEN);
-            return (memcmp(pinned, key, CHORUS_NOISE_KEY_LEN) == 0) ? PIN_KNOWN : PIN_CHANGED;
-        }
-    }
-    for (size_t i = 0; i < CHORUS_SESSION_MAX_PINS; i++) {
-        if (!state->pins[i].used) {
-            state->pins[i].used = 1;
-            snprintf(state->pins[i].id, sizeof(state->pins[i].id), "%s", id);
-            memcpy(state->pins[i].key, key, CHORUS_NOISE_KEY_LEN);
-            if (save_pins(state) != 0) {
-                /* A pin that could not be kept is not an adoption: the next
-                 * start would pin whatever key came first. */
-                state->pins[i].used = 0;
-                return PIN_UNSAVED;
-            }
-            return PIN_ADOPTED;
-        }
-    }
-    return PIN_UNSAVED;
 }
 
 /* --- the socket ------------------------------------------------------------- */
@@ -647,12 +674,13 @@ static handshake_result_t handshake(session_state_t *state, int fd, receive_t *r
     /* The server's key against its pin: trust on first use, and a changed
      * key refused and surfaced, never re-pinned. */
     uint8_t pinned[CHORUS_NOISE_KEY_LEN];
-    pin_verdict_t verdict = check_pin(state, server_id, hs.rs, pinned);
+    chorus_pin_verdict_t verdict =
+        chorus_pins_check(&state->pins, server_id, hs.rs, pinned, save_pins, state);
     char offered_fp[CHORUS_NOISE_FINGERPRINT_LEN];
     chorus_noise_fingerprint(hs.rs, offered_fp);
-    if (verdict == PIN_CHANGED || verdict == PIN_UNSAVED) {
+    if (verdict == CHORUS_PIN_CHANGED || verdict == CHORUS_PIN_UNSAVED) {
         char detail[CHORUS_SESSION_ID_MAX + 160];
-        if (verdict == PIN_CHANGED) {
+        if (verdict == CHORUS_PIN_CHANGED) {
             char pinned_fp[CHORUS_NOISE_FINGERPRINT_LEN];
             chorus_noise_fingerprint(pinned, pinned_fp);
             snprintf(detail, sizeof(detail),
@@ -664,14 +692,17 @@ static handshake_result_t handshake(session_state_t *state, int fd, receive_t *r
         } else {
             snprintf(detail, sizeof(detail),
                      "the pin of %s (key %s) could not be written to %s; refused", server_id,
-                     offered_fp, config->server_pins_path);
+                     offered_fp,
+                     (config->store != NULL)              ? "the store"
+                     : (config->server_pins_path != NULL) ? config->server_pins_path
+                                                          : "the pins of this run");
             refuse(fd, CHORUS_V2_REFUSED_HANDSHAKE_FAILED, detail);
             publish_detail(state, "pin-not-persisted", detail);
         }
         chorus_noise_handshake_clear(&hs);
-        return (verdict == PIN_CHANGED) ? HANDSHAKE_KEY_CHANGED : HANDSHAKE_REFUSED;
+        return (verdict == CHORUS_PIN_CHANGED) ? HANDSHAKE_KEY_CHANGED : HANDSHAKE_REFUSED;
     }
-    if (verdict == PIN_ADOPTED) {
+    if (verdict == CHORUS_PIN_ADOPTED) {
         char detail[CHORUS_SESSION_ID_MAX + 64];
         snprintf(detail, sizeof(detail), "server pinned id=%s key=%s", server_id, offered_fp);
         state->out->servers_pinned++;
@@ -1115,20 +1146,24 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
     chorus_telemetry_init(&state.telemetry);
     state.config = config;
     state.out = out;
-    state.endpoint_id =
-        (config->endpoint_id[0] == '\0') ? CHORUS_SESSION_DEFAULT_ID : config->endpoint_id;
+    /* The crypto library first: the id may be made from its random source. */
+    if (chorus_noise_setup() != CHORUS_NOISE_OK) {
+        out->end = CHORUS_SESSION_IDENTITY_UNUSABLE;
+        snprintf(out->detail, sizeof(out->detail), "the crypto library did not start");
+        return -1;
+    }
+    if (load_id(&state, out->detail, sizeof(out->detail)) != 0) {
+        out->end = CHORUS_SESSION_IDENTITY_UNUSABLE;
+        return -1;
+    }
     if (!chorus_v2_is_utf8((const uint8_t *)state.endpoint_id, strlen(state.endpoint_id))) {
         out->end = CHORUS_SESSION_IDENTITY_UNUSABLE;
         snprintf(out->detail, sizeof(out->detail), "the endpoint id is not UTF-8");
         return -1;
     }
-    if (chorus_noise_setup() != CHORUS_NOISE_OK ||
-        load_identity(&state, out->detail, sizeof(out->detail)) != 0 ||
+    if (load_identity(&state, out->detail, sizeof(out->detail)) != 0 ||
         load_pins(&state, out->detail, sizeof(out->detail)) != 0) {
         out->end = CHORUS_SESSION_IDENTITY_UNUSABLE;
-        if (out->detail[0] == '\0') {
-            snprintf(out->detail, sizeof(out->detail), "the crypto library did not start");
-        }
         return -1;
     }
 
@@ -1155,11 +1190,13 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
     uint64_t went_down_ns = 0;
     int have_been_up = 0;
     int key_changed = 0;
+    /* Connection attempts in a row that reached no server at all. */
+    uint32_t unreached = 0;
 
     {
         char detail[CHORUS_SESSION_ID_MAX + 96];
         snprintf(detail, sizeof(detail), "identity id=%s key=%s store=%s", state.endpoint_id,
-                 out->key_fingerprint, (config->key_path == NULL) ? "this-run" : config->key_path);
+                 out->key_fingerprint, identity_home(config));
         publish_detail(&state, "start", detail);
     }
 
@@ -1193,6 +1230,29 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
                                         ? state.telemetry.audio
                                         : CHORUS_AUDIO_IDLE;
             publish(&state, "connect-failed");
+            /* The server may not be down but MOVED (a new address lease, a
+             * new host): after a run of attempts that reached nothing, ask
+             * whoever can look for it (discovery, chorus/discovery.h). An
+             * answer applies from the next attempt, exactly as an address set
+             * on the console does; no answer changes nothing. */
+            unreached++;
+            if (config->relocate != NULL &&
+                unreached % CHORUS_SESSION_RELOCATE_AFTER_FAILURES == 0 &&
+                config->relocate(config->relocate_ctx, next, sizeof(next)) == 1) {
+                char next_host[CHORUS_SESSION_ADDRESS_MAX];
+                char next_port[16];
+                if (split_address(next, next_host, sizeof(next_host), next_port,
+                                  sizeof(next_port)) == 0 &&
+                    (strcmp(next_host, host) != 0 || strcmp(next_port, port) != 0)) {
+                    char detail[CHORUS_SESSION_ADDRESS_MAX + 64];
+                    memcpy(host, next_host, sizeof(host));
+                    memcpy(port, next_port, sizeof(port));
+                    backoff_ms = config->first_backoff_ms;
+                    snprintf(detail, sizeof(detail), "server=%s", next);
+                    publish_detail(&state, "server-relocated", detail);
+                    continue;
+                }
+            }
             chorus_monotonic_sleep_ms(backoff_ms);
             /* Doubling, capped. Never zero, never unbounded, and there is no
              * attempt counter that can run out. */
@@ -1201,6 +1261,7 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
             continue;
         }
 
+        unreached = 0;
         rx.held = 0;
         static chorus_noise_transport_t transport;
         handshake_result_t shaken = handshake(&state, fd, &rx, &transport);
@@ -1233,6 +1294,17 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
         have_been_up = 1;
         went_down_ns = 0;
         publish(&state, "link-up");
+        /* The server that just proved its pinned key is the one discovery
+         * falls back to next boot (chorus/identity.h). Written only when it
+         * differs from the one held; a store that refuses is said, and is no
+         * reason to drop a session that is up. */
+        if (config->store != NULL) {
+            char address[CHORUS_SESSION_ADDRESS_MAX + 16];
+            snprintf(address, sizeof(address), "%s:%s", host, port);
+            if (chorus_identity_server_save(config->store, address) != 0) {
+                publish_detail(&state, "server-address-not-kept", address);
+            }
+        }
 
         const char *why = NULL;
         if (send_greeting(&state, fd, &transport.send) != 0) {
