@@ -16,3 +16,8 @@
 
 # Python byte code, should a tool script be imported or compiled.
 __pycache__/
+
+# Core dumps (W62): a file named core or core.<pid>, never a directory named core.
+core
+!core/
+core.[0-9]*

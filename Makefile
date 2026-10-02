@@ -16,6 +16,16 @@ gate: tools-executable
 gate-fast: tools-executable
 	bash tools/gate.sh fast
 
+# The gate tiers (the goals program, W15, W36): tier-fast on every PR, tier-full at a goal's
+# end and nightly on main. tier-full is the gate itself; gate and gate-fast keep their meaning.
+# Callers take chorus-heavy.lock for both, as for the gate.
+tier-fast: tools-executable
+	bash tools/gate.sh tier-fast
+
+tier-full: gate
+
+.PHONY: tier-fast tier-full
+
 # The chorus-server OCI image as a tarball, built with no container daemon, and
 # its test: unpacked, `--help` run, the control plane read back (tools/image.sh).
 image: tools-executable

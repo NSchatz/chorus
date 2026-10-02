@@ -41,7 +41,9 @@ umbrella's section, its specs, stages and pointers, is removed.)
   BRIEF.md section 8's "success looks like" and the program's done-when lines.
 - Conventions and the rule-to-check table: `docs/conventions.md`. The gate is
   `make gate` (callers take `/cache/locks/chorus-heavy.lock`); `make gate-fast`
-  is the conventions checks alone.
+  is the conventions checks alone. Tiers: `make tier-fast` (conventions, fmt,
+  clippy, the workspace tests) on every PR, `make tier-full` (= `make gate`) at a
+  goal's end and nightly on main, except where a goal file names its gate.
 - Flashing, eFuses, deploys to the homelab and OTA installs on installed speakers are the owner's actions (K4, K28, K93); nothing in this repo sets `CHORUS_OWNER_AT_BENCH`.
 - BRIEF.md is kept current by the program: verified corrections and the owner's
   decisions are written into it, each dated with its decision IDs. Its section
