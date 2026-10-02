@@ -37,13 +37,47 @@
  * can reach a server there); a --server given on the command line is, loopback
  * or not, because on a host that is where a server is.
  *
+ * THE FIRMWARE UPDATE (goal 14). With --ota-flash <file> the endpoint has an
+ * update unit (firmware/src/ota.c, the code the board runs) over a two-slot
+ * fake flash kept in that file (firmware/tests/fake_flash.c, which models
+ * ESP-IDF's bootloader), so a test "reboots" the endpoint by starting this
+ * binary again on the same file: each start runs the bootloader model first.
+ *
+ *   --ota-flash <file>         the flash; made blank, with a first image in
+ *                              slot 0, when it does not exist. The update's
+ *                              note is kept beside it as <file>.note.
+ *   --ota-version <text>       the version of that first image (only used
+ *                              when the flash is made, and by --ota-make-image).
+ *                              Afterwards the running version is read from the
+ *                              running slot's application description.
+ *   --ota-board <text>         the board this endpoint says it is (default:
+ *                              endpoint.conf's board_profile).
+ *   --ota-never-confirm        behave as a bad image: never confirm, so a
+ *                              trial ends in a rollback.
+ *   --ota-confirm-seconds <n>  the trial's length (default: endpoint.conf's
+ *                              ota_confirm_seconds).
+ *   --ota-make-image <file>    write an application image of --ota-version
+ *                              (--ota-image-bytes of filler, default 65536)
+ *                              that the fake flash accepts, and exit.
+ *
+ * It prints, on stdout, one line per change of the update's state:
+ *
+ *   ota state=<state> transfer=<n> received=<n> slot=<n> version=<v> reason=<r> image=<v>
+ *
+ * with <state> one of idle, receiving, verified, pending_verify, confirmed,
+ * rolled_back, refused (the wire's names), the first of them at start; and
+ * `ota reboot` before it exits 0 because the unit rebooted.
+ *
  * Every constant it is not given comes from firmware/config/endpoint.conf, so
  * a run and the file that describes it cannot drift apart. */
 
 #include "chorus/discovery.h"
 #include "chorus/endpoint_config.h"
+#include "chorus/monotonic.h"
+#include "chorus/ota.h"
 #include "chorus/session.h"
 #include "chorus/sync_conf.h"
+#include "fake_flash.h"
 #include "file_store.h"
 #include "posix_discovery.h"
 
@@ -60,8 +94,52 @@ static void usage(void)
             "                               [--first-backoff-ms n] [--max-backoff-ms n]\n"
             "                               [--endpoint-id id] [--key path]\n"
             "                               [--server-pins path] [--handshake-timeout-ms n]\n"
+            "                               [--ota-flash file] [--ota-version text]\n"
+            "                               [--ota-board text] [--ota-never-confirm]\n"
+            "                               [--ota-confirm-seconds n]\n"
+            "                               [--ota-make-image file [--ota-image-bytes n]]\n"
             "                               [--store dir] [--discover] [--discover-ms n]\n"
             "                               [--no-server]\n");
+}
+
+/* One line per change of the update's state, flushed, for the test that
+ * drives this binary to read. */
+static void print_ota(void *context, const chorus_ota_status_t *status, chorus_ota_state_t state)
+{
+    (void)context;
+    (void)state;
+    printf("ota state=%s transfer=%lu received=%lu slot=%u version=%s reason=%s image=%s\n",
+           chorus_v2_enum_name(CHORUS_V2_ENUM_FIRMWARE_STATE, status->state),
+           (unsigned long)status->transfer, (unsigned long)status->received, (unsigned)status->slot,
+           status->version, chorus_v2_enum_name(CHORUS_V2_ENUM_FIRMWARE_REASON, status->reason),
+           status->image_version);
+    fflush(stdout);
+}
+
+/* --ota-make-image: an image the fake flash's own check accepts. */
+static int make_image(const char *path, const char *version, size_t body_bytes)
+{
+    size_t capacity = body_bytes + 1024;
+    uint8_t *image = malloc(capacity);
+    if (image == NULL) {
+        return 2;
+    }
+    /* The filler is seeded from the version, so two versions differ in more
+     * than their name. */
+    uint32_t seed = 2166136261u;
+    for (const char *c = version; *c != '\0'; c++) {
+        seed = (seed ^ (uint8_t)*c) * 16777619u;
+    }
+    size_t length = fake_flash_make_image(image, capacity, version, body_bytes, seed);
+    FILE *f = (length == 0) ? NULL : fopen(path, "wb");
+    if (f == NULL || fwrite(image, 1, length, f) != length || fclose(f) != 0) {
+        fprintf(stderr, "chorus-endpoint-session: %s could not be written\n", path);
+        free(image);
+        return 2;
+    }
+    free(image);
+    printf("ota image=%s version=%s bytes=%zu\n", path, version, length);
+    return 0;
 }
 
 int main(int argc, char **argv)
@@ -96,6 +174,13 @@ int main(int argc, char **argv)
     config.filter_window = sync.filter_window;
     config.smoothing_alpha = sync.smoothing_alpha;
 
+    const char *ota_flash_path = NULL;
+    const char *ota_version = "0.0.0-host";
+    const char *ota_board = committed.board.profile;
+    const char *ota_image_path = NULL;
+    size_t ota_image_bytes = 65536;
+    uint32_t ota_confirm_seconds = committed.ota_confirm_seconds;
+    int ota_never_confirm = 0;
     const char *store_directory = NULL;
     int discover = 0;
     int no_server = 0;
@@ -105,7 +190,31 @@ int main(int argc, char **argv)
     for (int i = 1; i < argc; i++) {
         const char *arg = argv[i];
         const char *value = (i + 1 < argc) ? argv[i + 1] : NULL;
-        if (strcmp(arg, "--server") == 0 && value != NULL) {
+        if (strcmp(arg, "--ota-flash") == 0 && value != NULL) {
+            ota_flash_path = value;
+            i++;
+        } else if (strcmp(arg, "--ota-version") == 0 && value != NULL) {
+            if (strlen(value) == 0 || strlen(value) > 31) {
+                fprintf(stderr, "chorus-endpoint-session: a version is 1 to 31 bytes\n");
+                return 2;
+            }
+            ota_version = value;
+            i++;
+        } else if (strcmp(arg, "--ota-board") == 0 && value != NULL) {
+            ota_board = value;
+            i++;
+        } else if (strcmp(arg, "--ota-never-confirm") == 0) {
+            ota_never_confirm = 1;
+        } else if (strcmp(arg, "--ota-confirm-seconds") == 0 && value != NULL) {
+            ota_confirm_seconds = (uint32_t)strtoul(value, NULL, 10);
+            i++;
+        } else if (strcmp(arg, "--ota-make-image") == 0 && value != NULL) {
+            ota_image_path = value;
+            i++;
+        } else if (strcmp(arg, "--ota-image-bytes") == 0 && value != NULL) {
+            ota_image_bytes = (size_t)strtoul(value, NULL, 10);
+            i++;
+        } else if (strcmp(arg, "--server") == 0 && value != NULL) {
             snprintf(config.server, sizeof(config.server), "%s", value);
             server_given = 1;
             i++;
@@ -154,6 +263,77 @@ int main(int argc, char **argv)
             usage();
             return 2;
         }
+    }
+
+    if (ota_image_path != NULL) {
+        if (ota_image_bytes > FAKE_FLASH_FILE_SLOT_BYTES - 1024) {
+            fprintf(stderr, "chorus-endpoint-session: an image is at most %u bytes of filler\n",
+                    (unsigned)(FAKE_FLASH_FILE_SLOT_BYTES - 1024));
+            return 2;
+        }
+        return make_image(ota_image_path, ota_version, ota_image_bytes);
+    }
+
+    /* The update unit over the flash file: the bootloader model runs first,
+     * as it does on the board, and the unit starts from what it left. */
+    static fake_flash_t flash;
+    static fake_notes_t notes;
+    static chorus_ota_flash_t flash_ops;
+    static chorus_ota_notes_t notes_ops;
+    static chorus_ota_t ota;
+    if (ota_flash_path != NULL) {
+        int created = 0;
+        if (fake_flash_open(&flash, ota_flash_path, FAKE_FLASH_FILE_SLOT_BYTES, &created, detail,
+                            sizeof(detail)) != 0) {
+            fprintf(stderr, "chorus-endpoint-session: %s\n", detail);
+            return 2;
+        }
+        if (created) {
+            /* The first flash over USB: one image, in slot 0. */
+            static uint8_t first[8192];
+            size_t length = fake_flash_make_image(first, sizeof(first), ota_version, 4096, 1);
+            if (length == 0 || fake_flash_install(&flash, 0, first, length) != 0) {
+                fprintf(stderr, "chorus-endpoint-session: the first image could not be made\n");
+                return 2;
+            }
+        }
+        fake_boot_t booted;
+        int tries = 0;
+        do {
+            booted = fake_flash_boot(&flash);
+        } while (booted == FAKE_BOOT_POWER_LOST && ++tries < 4);
+        if (booted != FAKE_BOOT_OK) {
+            fprintf(stderr, "chorus-endpoint-session: %s holds no bootable image\n",
+                    ota_flash_path);
+            return 5;
+        }
+        char note_path[FAKE_FLASH_PATH_MAX];
+        if (snprintf(note_path, sizeof(note_path), "%s.note", ota_flash_path) >=
+            (int)sizeof(note_path)) {
+            fprintf(stderr, "chorus-endpoint-session: the flash path is too long\n");
+            return 2;
+        }
+        fake_notes_init(&notes, note_path);
+        flash_ops = fake_flash_ops(&flash);
+        notes_ops = fake_notes_ops(&notes);
+        chorus_ota_config_t ota_config;
+        memset(&ota_config, 0, sizeof(ota_config));
+        ota_config.flash = &flash_ops;
+        ota_config.notes = &notes_ops;
+        if (fake_flash_slot_version(&flash, flash.running, ota_config.version,
+                                    sizeof(ota_config.version)) != 0) {
+            snprintf(ota_config.version, sizeof(ota_config.version), "%.47s", ota_version);
+        }
+        snprintf(ota_config.board, sizeof(ota_config.board), "%.47s", ota_board);
+        ota_config.confirm_ns = (uint64_t)ota_confirm_seconds * 1000000000ull;
+        ota_config.never_confirm = ota_never_confirm;
+        ota_config.on_change = print_ota;
+        printf("ota boot slot=%d image=%s version=%s board=%s\n", flash.running,
+               chorus_ota_image_state_name(fake_flash_state(&flash, flash.running)),
+               ota_config.version, ota_config.board);
+        fflush(stdout);
+        (void)chorus_ota_boot(&ota, &ota_config, chorus_monotonic_now_ns());
+        config.ota = &ota;
     }
 
     /* What the endpoint keeps across runs, when it is given somewhere to
@@ -220,6 +400,10 @@ int main(int argc, char **argv)
     static chorus_session_result_t result;
     int status = chorus_session_run(&config, &result);
     posix_discovery_close(&browse_socket);
+    if (config.ota != NULL && result.end == CHORUS_SESSION_REBOOTING) {
+        printf("ota reboot\n");
+        fflush(stdout);
+    }
     if (status != 0 && result.end != CHORUS_SESSION_SERVER_KEY_CHANGED) {
         fprintf(stderr, "chorus-endpoint-session: %s: %s\n", chorus_session_end_name(result.end),
                 result.detail);

@@ -135,6 +135,39 @@ firmware_qemu_boot() {
         bash tools/qemu-boot-run.sh
 }
 
+# The profiles the image steps built and scanned in THIS run (each step's log
+# ends with `firmware image: target esp32s3, board profile <p>` and carries the
+# guard's `safety scan: <p>: ... pass` line) against firmware/boards/*.conf.
+# Fails naming the profile when one was not built, did not pass its scan, or
+# was built without being a committed profile.
+profiles_all_built() {
+    local committed built scanned p rc=0
+    committed="$(for p in firmware/boards/*.conf; do p="${p##*/}"; echo "${p%.conf}"; done | sort)"
+    built="$(sed -n 's/^firmware image: target esp32s3, board profile \(.*\)$/\1/p' \
+        "$LOG"/firmware-esp32s3-*.log 2>/dev/null | sort -u)"
+    scanned="$(sed -n 's/^safety scan: \([^:]*\): no eFuse write, no Secure Boot, no Flash Encryption, no anti-rollback: pass$/\1/p' \
+        "$LOG"/firmware-esp32s3-*.log 2>/dev/null | sort -u)"
+    for p in $committed; do
+        if ! printf '%s\n' "$built" | grep -qx -- "$p"; then
+            echo "FAIL board-profile-not-built :: firmware/boards/$p.conf has no image step in tools/gate.sh that built it in this run"
+            rc=1
+        elif ! printf '%s\n' "$scanned" | grep -qx -- "$p"; then
+            echo "FAIL board-profile-not-scanned :: the image for $p did not pass tools/firmware-image-guard.sh in this run"
+            rc=1
+        else
+            echo "safety scan: $p: no eFuse write, no Secure Boot, no Flash Encryption, no anti-rollback: pass"
+        fi
+    done
+    for p in $built; do
+        if ! printf '%s\n' "$committed" | grep -qx -- "$p"; then
+            echo "FAIL image-built-for-no-committed-profile :: $p is not one of firmware/boards/*.conf"
+            rc=1
+        fi
+    done
+    [ "$rc" -eq 0 ] && echo "pass firmware-profiles: the images built and scanned are exactly firmware/boards/*.conf: $(echo "$committed" | tr '\n' ' ')"
+    return "$rc"
+}
+
 echo "gate: $MODE, $(git rev-parse --short HEAD 2>/dev/null), $(cargo --version), IDF_PY_BUILD_JOBS=${IDF_PY_BUILD_JOBS:-2}" | tee -a "$LOG/summary.txt"
 
 conventions
@@ -161,11 +194,17 @@ if [ "$MODE" = full ]; then
     step firmware-esp32s3-wired firmware_idf brick-s3-wired
     step firmware-esp32s3-wifi  firmware_idf compact-s3-wifi
     step firmware-esp32s3-qemu  firmware_idf qemu-s3-openeth
+    # Every board profile is built and scanned (goal 14): a profile added to
+    # firmware/boards without an image step here would ship unbuilt and
+    # unguarded, so the two sets are held to each other.
+    step firmware-profiles profiles_all_built
     # What each image is, from its own build log, into the summary: the
-    # target, the board and its ASSUMED status with the Needs item, the link.
+    # target, the board and its ASSUMED status with the Needs item, the link,
+    # and the safety scan's verdict for that target.
     for p in wired wifi qemu; do
         sed -n -e 's/^  board: *\(.*\)/  board \1/p' -e 's/^  needs item: *\(.*\)/  needs item \1/p' \
-            -e 's/^chorus: image built: \(.*\)/  built: \1/p' "$LOG/firmware-esp32s3-$p.log" |
+            -e 's/^chorus: image built: \(.*\)/  built: \1/p' \
+            -e 's/^\(safety scan: .*\)/  \1/p' "$LOG/firmware-esp32s3-$p.log" |
             sed "s/^/gate: firmware-esp32s3-$p /" | tee -a "$LOG/summary.txt"
     done
     # The emulator's image, booted against a real server: adopted, and the same

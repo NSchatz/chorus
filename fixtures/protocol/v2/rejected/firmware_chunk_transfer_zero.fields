@@ -1,0 +1,18 @@
+# Canonical input for the firmware_chunk_transfer_zero rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# firmware_chunk_transfer_zero.hex as that field out of range, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# A chunk of transfer 0, which names no transfer.
+
+message_type = firmware_chunk
+transfer = 0
+offset = 0
+data = e9060220
+rejected_field = transfer
+problem = out_of_range

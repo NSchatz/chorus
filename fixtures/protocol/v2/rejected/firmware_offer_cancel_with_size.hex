@@ -1,0 +1,30 @@
+# chorus REJECTION vector: firmware offer, protocol v2 message type 0x18.
+#
+# Committed, and never written by a test. A well-formed frame whose value the format does not
+# accept: any implementation of chorus protocol v2 must reject it naming `size` (inconsistent),
+# consume the whole frame and carry on with the next one, and must refuse to encode the fields in
+# firmware_offer_cancel_with_size.fields (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x18, payload length 44 (0x002C), big-endian
+18 00 2C
+
+# transfer = 0
+00 00 00 00
+
+# size = 4096 bytes
+00 00 10 00
+
+# sha256, the digest of the whole image
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+
+# chunk_bytes = 0
+00 00
+
+# version length = 0
+00
+
+# board length = 0
+00

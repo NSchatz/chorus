@@ -29,6 +29,7 @@
 #include <stdint.h>
 
 #include "chorus/noise.h"
+#include "chorus/ota.h"
 #include "chorus/playout.h"
 #include "chorus/protocol_v2.h"
 #include "chorus/store.h"
@@ -122,6 +123,14 @@ typedef struct {
      * own task. */
     void (*on_sound)(void *ctx, const chorus_v2_sound_t *sound);
     void *sound_ctx;
+
+    /* The firmware update unit (chorus/ota.h), already started for this
+     * boot. With it the endpoint sets capabilities.features `ota`, opens
+     * every session with a firmware_status, hands firmware_offer and
+     * firmware_chunk to the unit, confirms an image on trial once the
+     * server's first record opens, and ends the run when the unit reboots.
+     * NULL: no `ota` feature, and the three types are stepped over. */
+    chorus_ota_t *ota;
 } chorus_session_config_t;
 
 /* Why a run ended. Never "the server went away": that is not an end, it is a
@@ -136,7 +145,11 @@ typedef enum {
     /* A server presented a key other than the one pinned to its id. Refused
      * with session_refused key_changed, and the run ends: only the owner
      * changes a pin. */
-    CHORUS_SESSION_SERVER_KEY_CHANGED
+    CHORUS_SESSION_SERVER_KEY_CHANGED,
+    /* The update unit rebooted (a new image selected, or one on trial that
+     * did not confirm). Only a host build sees this end: on the board the
+     * reboot does not return. Not a failure. */
+    CHORUS_SESSION_REBOOTING
 } chorus_session_end_t;
 
 const char *chorus_session_end_name(chorus_session_end_t end);

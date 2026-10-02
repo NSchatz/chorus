@@ -1,0 +1,22 @@
+# Canonical input for the capabilities_ota golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly capabilities_ota.hex, and decoding capabilities_ota.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+#
+# An ESP32-S3 endpoint that takes a firmware image inside its session (goal 14): the trailing
+# `features` byte with bit 1 set. An endpoint without the bit is never sent a firmware_offer.
+
+message_type = capabilities
+codecs = pcm flac opus
+sample_formats = pcm_s16le pcm_s24le
+max_channels = 2
+sample_rates_hz = 44100 48000
+buffer_ms = 300
+intrinsic_latency_ns = 0
+led_count = 0
+visualizer_bands = 0
+features = ota

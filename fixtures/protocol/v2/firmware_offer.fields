@@ -1,0 +1,20 @@
+# Canonical input for the firmware_offer golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly firmware_offer.hex, and decoding firmware_offer.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+#
+# The server offering a 1437696-byte image, version 0.3.0, built for the brick-s3-wired board
+# profile, in 4096-byte chunks. The digest here is of no real image: it is the SHA-256 of the
+# ASCII text "chorus firmware_offer golden vector image".
+
+message_type = firmware_offer
+transfer = 7
+size = 1437696
+sha256 = 771af91304d48062a3d06876eb347d8869c6aea85869c01735a5994841a1f9c8
+chunk_bytes = 4096
+version = 0.3.0
+board = brick-s3-wired

@@ -202,8 +202,10 @@ a pull request `bench/<date>-product6-soak` opens.
 
 ### S5. The ESP32-S3 on ESP-IDF v6.1: boot check (the owner's own board)
 
-Needs: one of the owner's ESP32-S3 boards with at least 2 MB of flash (the image's application
-partition is 1.5 MB, ADR 0044), a USB cable, ESP-IDF v6.1 on endpoint A or a laptop (the pin in
+Needs: one of the owner's ESP32-S3 boards with 8 MB of flash or more (since goal 14 the image's
+layout is two 3 MiB update slots, `firmware/partitions.csv`, and the build declares 8 MB; the
+board's flash size is ASSUMED until this session's read-only chip report says; a board with less
+cannot hold this layout, and that is a finding to paste back, not something to work around), a USB cable, ESP-IDF v6.1 on endpoint A or a laptop (the pin in
 `firmware/config/endpoint.conf`). No bought part.
 
 This is the goal-6 follow-up: the first run of the v6.1 image on silicon. It flashes with chorus's

@@ -360,6 +360,8 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
                          detail_len));
     NEED(chorus_conf_u32(conf, "outage_minutes_seconds", &out->outage_minutes_seconds, detail,
                          detail_len));
+    NEED(chorus_conf_u32(conf, "ota_confirm_seconds", &out->ota_confirm_seconds, detail,
+                         detail_len));
 
     NEED(chorus_conf_u32(conf, "i2s_sample_rate_hz", &out->clock.sample_rate_hz, detail,
                          detail_len));
@@ -519,8 +521,8 @@ size_t chorus_endpoint_config_validate(const chorus_endpoint_config_t *config,
     if (config->board.flash_size_mb < CHORUS_MIN_FLASH_MB && *count < capacity) {
         snprintf(findings[*count].rule, sizeof(findings[*count].rule), "board-flash-too-small");
         snprintf(findings[*count].detail, sizeof(findings[*count].detail),
-                 "board_flash_size_mb = %u; the image's 1.5 MB application partition sits in the "
-                 "default 2 MB of flash (firmware/sdkconfig.defaults)",
+                 "board_flash_size_mb = %u; the image's two 3 MiB update slots need the 8 MB of "
+                 "flash the build declares (firmware/partitions.csv, firmware/sdkconfig.defaults)",
                  (unsigned)config->board.flash_size_mb);
         (*count)++;
     }
@@ -546,6 +548,17 @@ size_t chorus_endpoint_config_validate(const chorus_endpoint_config_t *config,
                  "link_transport = emulated with board_audio_output = amplifier; the emulator "
                  "has no I2C and no I2S, so the emulated board declares board_audio_output = "
                  "none");
+        (*count)++;
+    }
+    /* A trial too short rolls back a good image before its link is up; one
+     * with no end is no trial. */
+    if ((config->ota_confirm_seconds < 10 || config->ota_confirm_seconds > 3600) &&
+        *count < capacity) {
+        snprintf(findings[*count].rule, sizeof(findings[*count].rule),
+                 "ota-confirm-window-out-of-range");
+        snprintf(findings[*count].detail, sizeof(findings[*count].detail),
+                 "ota_confirm_seconds = %u; a new image's trial is 10 to 3600 seconds",
+                 (unsigned)config->ota_confirm_seconds);
         (*count)++;
     }
     if (config->board.model_status == CHORUS_BOARD_ASSUMED &&

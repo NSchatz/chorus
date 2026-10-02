@@ -1,0 +1,21 @@
+# Canonical input for the firmware_offer_cancel_with_size rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# firmware_offer_cancel_with_size.hex as that field inconsistent, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# A cancel (transfer 0) that names a size: a cancel names no image.
+
+message_type = firmware_offer
+transfer = 0
+size = 4096
+sha256 = 0000000000000000000000000000000000000000000000000000000000000000
+chunk_bytes = 0
+version =
+board =
+rejected_field = size
+problem = inconsistent

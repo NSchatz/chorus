@@ -27,6 +27,7 @@
 #include "esp_identity.h"
 #include "esp_link.h"
 #include "esp_log.h"
+#include "esp_ota.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -218,6 +219,11 @@ void app_main(void)
      * and nothing is erased; whoever needs it then refuses by name. */
     (void)chorus_esp_store_init();
 
+    /* Which slot runs and what the bootloader recorded about it (goal 14),
+     * and, for an image on its trial boot, the backstop that rolls it back
+     * if nothing below ever gets as far as a session. */
+    chorus_esp_ota_boot_report(config.ota_confirm_seconds);
+
     /* Whether this board plays through anything (goal 14, chorus/
      * endpoint_config.h). Every speaker does. The emulator's board declares
      * `none` (the validation above refuses that on any other link), and then
@@ -402,6 +408,10 @@ void app_main(void)
     session->filter_window = sync.filter_window;
     session->smoothing_alpha = sync.smoothing_alpha;
     session->playout = playout;
+    /* The update unit; it confirms or rolls back through the session, never
+     * from here (firmware/main/esp_ota.c is the only unit that names the
+     * calls). */
+    session->ota = chorus_esp_ota_unit(config.board.profile, config.ota_confirm_seconds);
     task.controller = &controller;
     task.stage = &stage;
     /* NULL on a board that plays through nothing: the session task then has no

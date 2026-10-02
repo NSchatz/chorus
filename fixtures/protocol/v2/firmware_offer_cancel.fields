@@ -1,0 +1,19 @@
+# Canonical input for the firmware_offer_cancel golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly firmware_offer_cancel.hex, and decoding firmware_offer_cancel.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+#
+# The cancel: transfer 0 and every other field zero or empty. It gives up the transfer in
+# progress and never touches the boot selection.
+
+message_type = firmware_offer
+transfer = 0
+size = 0
+sha256 = 0000000000000000000000000000000000000000000000000000000000000000
+chunk_bytes = 0
+version =
+board =

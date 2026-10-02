@@ -598,6 +598,65 @@ int main(void)
                       "ota-activation-in-the-endpoint-tree",
                       "an image confirming itself, which disarms the only recovery there is");
 
+    /* Goal 14: the calls are allowed in the one glue unit and nowhere else. */
+    one_demonstration("ota-app-main", "firmware/main/app_main.c",
+                      "\n/* Introduced by the endpoint-scan demonstration. */\n"
+                      "void chorus_demonstration_ota_app_main(void)\n"
+                      "{\n"
+                      "    esp_ota_mark_app_valid_cancel_rollback();\n"
+                      "}\n",
+                      "ota-activation-in-the-endpoint-tree",
+                      "a confirm from app_main, beside the binding and outside the glue unit");
+    one_demonstration("ota-state-machine", "firmware/src/ota.c",
+                      "\n/* Introduced by the endpoint-scan demonstration. */\n"
+                      "void chorus_demonstration_ota_unit(void)\n"
+                      "{\n"
+                      "    esp_ota_set_boot_partition(next);\n"
+                      "}\n",
+                      "ota-activation-in-the-endpoint-tree",
+                      "the pure update unit naming an ESP-IDF call it is graded without");
+    one_demonstration("ota-header", "firmware/main/esp_link.c",
+                      "\n/* Introduced by the endpoint-scan demonstration. */\n"
+                      "#include \"esp_ota_ops.h\"\n",
+                      "ota-activation-in-the-endpoint-tree",
+                      "another binding unit including the OTA header");
+    one_demonstration("ota-vendored", "third_party/dr_flac/dr_flac.c",
+                      "\n/* Introduced by the endpoint-scan demonstration. */\n"
+                      "void chorus_demonstration_ota_vendored(void)\n"
+                      "{\n"
+                      "    esp_ota_begin(slot, size, &handle);\n"
+                      "}\n",
+                      "ota-activation-in-the-endpoint-tree",
+                      "a vendored unit starting an OTA write");
+    one_green_demonstration("ota-glue", "firmware/main/esp_ota.c",
+                            "\n/* Introduced by the endpoint-scan demonstration. */\n"
+                            "void chorus_demonstration_ota_glue(void)\n"
+                            "{\n"
+                            "    esp_ota_set_boot_partition(next);\n"
+                            "    esp_ota_mark_app_valid_cancel_rollback();\n"
+                            "    esp_ota_mark_app_invalid_rollback_and_reboot();\n"
+                            "}\n",
+                            "the OTA calls in firmware/main/esp_ota.c, the one glue unit");
+
+    chorus_section("ESP-IDF's own OTA transport, refused everywhere");
+    one_demonstration("ota-https", "firmware/src/session.c",
+                      "\n/* Introduced by the endpoint-scan demonstration. */\n"
+                      "void chorus_demonstration_ota_https(void)\n"
+                      "{\n"
+                      "    esp_https_ota(&config);\n"
+                      "}\n",
+                      "ota-transport-in-the-endpoint-tree",
+                      "an image fetched over HTTPS instead of the session");
+    one_demonstration("ota-https-glue", "firmware/main/esp_ota.c",
+                      "\n/* Introduced by the endpoint-scan demonstration. */\n"
+                      "void chorus_demonstration_ota_https_glue(void)\n"
+                      "{\n"
+                      "    esp_https_ota(&config);\n"
+                      "}\n",
+                      "ota-transport-in-the-endpoint-tree",
+                      "the same in the glue unit itself, which is allowed the calls and not "
+                      "the transport");
+
     chorus_section("a DMA descriptor placed in external RAM");
     one_demonstration("psram", "firmware/src/i2s.c",
                       "\n/* Introduced by the endpoint-scan demonstration. */\n"
