@@ -29,7 +29,7 @@ Later releases add more firmware targets as the program builds them.
 
    ```
    git switch --detach origin/main
-   timeout 3600 flock -o -w 1800 /cache/locks/chorus-heavy.lock make release VERSION=<ver>
+   timeout 3600 goals lock -w 1800 goals-heavy -- goals lock -w 1800 chorus-heavy -- make release VERSION=<ver>
    ```
 
    `tools/release.sh` refuses by name on a dirty tree, a commit not on `origin/main`, a
