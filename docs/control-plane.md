@@ -554,7 +554,7 @@ the real server, the real C endpoint binaries and a Linux client.
 
 ### Firmware: staged images and explicit installs (goal 14)
 
-The decisions are `docs/decisions/0000-explicit-firmware-installs.md`; the
+The decisions are `docs/decisions/0110-explicit-firmware-installs.md`; the
 owner's page is `docs/firmware-updates.md`; the wire is `docs/protocol.md`,
 "Firmware update".
 

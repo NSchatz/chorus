@@ -3,7 +3,7 @@
 How a speaker gets new firmware: an image is staged on the server, the server checks it, the
 control state says which speakers it would update, and nothing is installed until somebody
 sends the install command (K93, I13). The decisions are in
-`docs/decisions/0000-explicit-firmware-installs.md`; the wire is `docs/protocol.md`, "Firmware
+`docs/decisions/0110-explicit-firmware-installs.md`; the wire is `docs/protocol.md`, "Firmware
 update"; the commands and the state are `docs/control-plane.md`, "Firmware: staged images and
 explicit installs".
 

@@ -1,4 +1,4 @@
-# 0000: firmware images are staged and verified by the server, shown as an update available, and sent to a speaker inside its own session only on an explicit install command, never to a real address without the owner at the bench
+# 0110: firmware images are staged and verified by the server, shown as an update available, and sent to a speaker inside its own session only on an explicit install command, never to a real address without the owner at the bench
 
 - Status: accepted (goal 14, 2026-10-02)
 - Decided by: the goal (program section 18; K93, I13, section 0.7) inside the coordinator's
