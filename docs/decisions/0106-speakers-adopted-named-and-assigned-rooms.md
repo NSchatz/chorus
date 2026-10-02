@@ -142,11 +142,12 @@ and fails naming the prerequisite when it is missing.
 - The envelope names one C binary (`chorus-endpoint-session`); the test uses it and
   `chorus-endpoint-dsp-session`, for the reason above. `firmware/` is not edited.
 - `identify` (0x1B, 0x1C) is not built: optional, and skipped as the envelope allows.
-- The branch is `chorus-g14/adoption-server-b`, not `chorus-g14/adoption-server`: the first
-  branch's history holds a fixture line (a made-up key fingerprint after a field named
-  `key_change`) that the gate's secret scan reads as a generic API key. Pushed history is
-  never rewritten and the scan's configuration was not touched, so the work was committed
-  again on a fresh branch with the fixture field renamed `changed`.
+- The branch is `chorus-g14/adoption-server-b`, not `chorus-g14/adoption-server`: a commit
+  on the first branch held a fixture line (a made-up key fingerprint after a field named
+  `key_change`) that the gate's secret scan reads as a generic API key. The scan reads every
+  ref of the repository, so that branch turned the identity step red in every worktree. The
+  work was committed again on a fresh branch with the fixture field renamed `changed`, and
+  the first branch (and with it PR 105) was deleted; the scan's configuration was not touched.
 
 ## ASSUMED
 
