@@ -1,0 +1,15 @@
+# Canonical input for the firmware_chunk golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly firmware_chunk.hex, and decoding firmware_chunk.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+#
+# Sixteen bytes of transfer 7 at offset 8192: the rest of the frame is the data.
+
+message_type = firmware_chunk
+transfer = 7
+offset = 8192
+data = e9060220a0823740ee00000009000000

@@ -1,0 +1,21 @@
+# Canonical input for the firmware_status_rolled_back golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly firmware_status_rolled_back.hex, and decoding firmware_status_rolled_back.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+#
+# The first session after a rollback: 0.3.0 (transfer 7) was tried, did not confirm, and the
+# bootloader went back to 0.2.0 in slot 0.
+
+message_type = firmware_status
+transfer = 7
+state = rolled_back
+reason = not_confirmed
+received = 0
+version = 0.2.0
+board = brick-s3-wired
+slot = 0
+image_version = 0.3.0

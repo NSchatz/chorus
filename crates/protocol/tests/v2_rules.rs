@@ -336,3 +336,147 @@ fn a_sound_whose_sub_present_is_not_a_bool_is_rejected_as_that_field() {
         other => panic!("rejected as sub_present, got {:?}", other),
     }
 }
+
+fn firmware_offer() -> FirmwareOffer {
+    FirmwareOffer {
+        transfer: 7,
+        size: 4096,
+        sha256: [0xAB; 32],
+        chunk_bytes: 1024,
+        version: "0.3.0".to_string(),
+        board: "brick-s3-wired".to_string(),
+    }
+}
+
+fn firmware_status() -> FirmwareStatus {
+    FirmwareStatus {
+        transfer: 0,
+        state: FirmwareState::Idle,
+        reason: FirmwareReason::None,
+        received: 0,
+        version: "0.2.0".to_string(),
+        board: "brick-s3-wired".to_string(),
+        slot: 0,
+        image_version: String::new(),
+    }
+}
+
+/// Goal 14: the three firmware messages' rules, each refused by the encoder
+/// and rejected by the decoder as the field named, and their edges accepted.
+#[test]
+fn the_firmware_messages_are_held_to_their_rules_and_their_edges_are_accepted() {
+    // An offer: sizes 1 and 16 MiB, chunks of 1 and 4096 bytes, texts of 47.
+    for (size, chunk) in [(1, 1), (FIRMWARE_MAX_SIZE, FIRMWARE_MAX_CHUNK_BYTES)] {
+        let mut o = firmware_offer();
+        o.size = size;
+        o.chunk_bytes = chunk;
+        o.version = "v".repeat(FIRMWARE_MAX_TEXT);
+        o.board = "b".repeat(FIRMWARE_MAX_TEXT);
+        let frame = encode(&Message::FirmwareOffer(o.clone())).expect("an edge is accepted");
+        assert_eq!(
+            decode_frame(&frame).outcome,
+            Outcome::Decoded(Message::FirmwareOffer(o))
+        );
+    }
+    let mut o = firmware_offer();
+    o.size = FIRMWARE_MAX_SIZE + 1;
+    refused_both_ways(Message::FirmwareOffer(o), "size");
+    let mut o = firmware_offer();
+    o.chunk_bytes = 0;
+    refused_both_ways(Message::FirmwareOffer(o), "chunk_bytes");
+    let mut o = firmware_offer();
+    o.version = "v".repeat(FIRMWARE_MAX_TEXT + 1);
+    refused_both_ways(Message::FirmwareOffer(o), "version");
+    let mut o = firmware_offer();
+    o.board = "b".repeat(FIRMWARE_MAX_TEXT + 1);
+    refused_both_ways(Message::FirmwareOffer(o), "board");
+
+    // The cancel carries nothing else, field by field in wire order.
+    let cancel = FirmwareOffer::cancel();
+    assert!(cancel.is_cancel() && !firmware_offer().is_cancel());
+    let frame = encode(&Message::FirmwareOffer(cancel.clone())).expect("the cancel encodes");
+    assert_eq!(
+        decode_frame(&frame).outcome,
+        Outcome::Decoded(Message::FirmwareOffer(cancel.clone()))
+    );
+    let mut c = cancel.clone();
+    c.sha256[31] = 1;
+    refused_both_ways(Message::FirmwareOffer(c), "sha256");
+    let mut c = cancel.clone();
+    c.chunk_bytes = 1024;
+    refused_both_ways(Message::FirmwareOffer(c), "chunk_bytes");
+    let mut c = cancel.clone();
+    c.version = "0.3.0".to_string();
+    refused_both_ways(Message::FirmwareOffer(c), "version");
+    let mut c = cancel;
+    c.board = "brick-s3-wired".to_string();
+    refused_both_ways(Message::FirmwareOffer(c), "board");
+
+    // A chunk: 1 to 4096 bytes of a nonzero transfer.
+    for len in [1usize, FIRMWARE_MAX_CHUNK_BYTES as usize] {
+        let k = FirmwareChunk {
+            transfer: 7,
+            offset: u32::MAX,
+            data: vec![0x5A; len],
+        };
+        let frame = encode(&Message::FirmwareChunk(k.clone())).expect("an edge is accepted");
+        assert_eq!(
+            decode_frame(&frame).outcome,
+            Outcome::Decoded(Message::FirmwareChunk(k))
+        );
+    }
+    refused_both_ways(
+        Message::FirmwareChunk(FirmwareChunk {
+            transfer: 7,
+            offset: 0,
+            data: vec![0; FIRMWARE_MAX_CHUNK_BYTES as usize + 1],
+        }),
+        "data",
+    );
+    assert!(
+        encode(&Message::FirmwareChunk(FirmwareChunk {
+            transfer: 7,
+            offset: 0,
+            data: Vec::new(),
+        }))
+        .is_err(),
+        "a chunk of no bytes is refused"
+    );
+
+    // A status: slots 0, 1 and 255, every state and reason.
+    for slot in [0, 1, FIRMWARE_SLOT_UNKNOWN] {
+        for state in FirmwareState::ALL {
+            for reason in FirmwareReason::ALL {
+                let mut s = firmware_status();
+                s.slot = slot;
+                s.state = *state;
+                s.reason = *reason;
+                let frame = encode(&Message::FirmwareStatus(s.clone())).expect("accepted");
+                assert_eq!(
+                    decode_frame(&frame).outcome,
+                    Outcome::Decoded(Message::FirmwareStatus(s))
+                );
+            }
+        }
+    }
+    let mut s = firmware_status();
+    s.slot = 254;
+    refused_both_ways(Message::FirmwareStatus(s), "slot");
+    let mut s = firmware_status();
+    s.image_version = "i".repeat(FIRMWARE_MAX_TEXT + 1);
+    refused_both_ways(Message::FirmwareStatus(s), "image_version");
+
+    // An undefined state or reason on the wire is rejected as that field.
+    let good = encode(&Message::FirmwareStatus(firmware_status())).unwrap();
+    for (at, field) in [(3 + 4, "state"), (3 + 5, "reason")] {
+        let mut frame = good.clone();
+        frame[at] = 0x7F;
+        match decode_frame(&frame).outcome {
+            Outcome::Rejected(DecodeError::InvalidField { error, .. }) => {
+                assert_eq!(error.field, field);
+                assert!(matches!(error.problem, Problem::Undefined(0x7F)));
+            }
+            other => panic!("an undefined {} must be rejected, got {:?}", field, other),
+        }
+    }
+}

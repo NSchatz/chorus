@@ -36,6 +36,13 @@ static const type_entry_t TYPES[] = {
     {CHORUS_V2_LOW_LATENCY_OFFER, "low_latency_offer", 1 + 4 + 32 + 2 + 4 + 1 + 1 + 8},
     /* stream_tag, status, udp_port */
     {CHORUS_V2_LOW_LATENCY_ACCEPT, "low_latency_accept", 4 + 1 + 2},
+    /* transfer, size, sha256, chunk_bytes, two text lengths */
+    {CHORUS_V2_FIRMWARE_OFFER, "firmware_offer", 4 + 4 + 32 + 2 + 1 + 1},
+    /* transfer, offset, one data byte */
+    {CHORUS_V2_FIRMWARE_CHUNK, "firmware_chunk", 4 + 4 + 1},
+    /* transfer, state, reason, received, two text lengths, slot, one more
+     * text length */
+    {CHORUS_V2_FIRMWARE_STATUS, "firmware_status", 4 + 1 + 1 + 4 + 1 + 1 + 1 + 1},
     /* magic, version, suite, the 32-byte ephemeral key */
     {CHORUS_V2_HANDSHAKE_INIT, "handshake_init", 4 + 2 + 1 + 32},
     /* e, encrypted s, an encrypted payload's tag */
@@ -135,7 +142,12 @@ static const char *const ROLES[] = {"player", "metadata", "controller", "visuali
 static const char *const DIRECTIONS[] = {"end", "to_endpoint", "from_endpoint"};
 static const char *const STATUSES[] = {"accepted", "refused_wireless", "refused_no_socket",
                                        "refused_fec"};
-static const char *const FEATURES[] = {"low_latency"};
+static const char *const FEATURES[] = {"low_latency", "ota"};
+static const char *const FIRMWARE_STATES[] = {
+    "idle", "receiving", "verified", "pending_verify", "confirmed", "rolled_back", "refused"};
+static const char *const FIRMWARE_REASONS[] = {"none",          "too_large",  "bad_digest",
+                                               "write_failed",  "busy",       "wrong_board",
+                                               "not_confirmed", "bad_offset", "medium_refused"};
 
 static const char *const *enum_table(chorus_v2_enum_t which, size_t *count)
 {
@@ -193,6 +205,14 @@ static const char *const *enum_table(chorus_v2_enum_t which, size_t *count)
     case CHORUS_V2_ENUM_FEATURE_BIT:
         table = FEATURES;
         n = sizeof(FEATURES) / sizeof(FEATURES[0]);
+        break;
+    case CHORUS_V2_ENUM_FIRMWARE_STATE:
+        table = FIRMWARE_STATES;
+        n = sizeof(FIRMWARE_STATES) / sizeof(FIRMWARE_STATES[0]);
+        break;
+    case CHORUS_V2_ENUM_FIRMWARE_REASON:
+        table = FIRMWARE_REASONS;
+        n = sizeof(FIRMWARE_REASONS) / sizeof(FIRMWARE_REASONS[0]);
         break;
     }
     *count = n;
@@ -720,6 +740,43 @@ static int decode_payload(uint8_t type, const uint8_t *payload, size_t len, chor
         }
         return 0;
     }
+    case CHORUS_V2_FIRMWARE_OFFER: {
+        chorus_v2_firmware_offer_t *o = &m->as.firmware_offer;
+        const uint8_t *digest;
+        if (read_u32(&r, "transfer", &o->transfer) != 0 || read_u32(&r, "size", &o->size) != 0 ||
+            take(&r, "sha256", CHORUS_V2_SHA256_LEN, &digest) != 0) {
+            return -1;
+        }
+        memcpy(o->sha256, digest, CHORUS_V2_SHA256_LEN);
+        if (read_u16(&r, "chunk_bytes", &o->chunk_bytes) != 0 ||
+            read_short_text(&r, "version", &o->version) != 0 ||
+            read_short_text(&r, "board", &o->board) != 0) {
+            return -1;
+        }
+        return 0;
+    }
+    case CHORUS_V2_FIRMWARE_CHUNK: {
+        chorus_v2_firmware_chunk_t *k = &m->as.firmware_chunk;
+        if (read_u32(&r, "transfer", &k->transfer) != 0 ||
+            read_u32(&r, "offset", &k->offset) != 0) {
+            return -1;
+        }
+        read_rest(&r, &k->data);
+        return 0;
+    }
+    case CHORUS_V2_FIRMWARE_STATUS: {
+        chorus_v2_firmware_status_t *s = &m->as.firmware_status;
+        if (read_u32(&r, "transfer", &s->transfer) != 0 ||
+            read_enum(&r, "state", CHORUS_V2_ENUM_FIRMWARE_STATE, &s->state) != 0 ||
+            read_enum(&r, "reason", CHORUS_V2_ENUM_FIRMWARE_REASON, &s->reason) != 0 ||
+            read_u32(&r, "received", &s->received) != 0 ||
+            read_short_text(&r, "version", &s->version) != 0 ||
+            read_short_text(&r, "board", &s->board) != 0 || read_u8(&r, "slot", &s->slot) != 0 ||
+            read_short_text(&r, "image_version", &s->image_version) != 0) {
+            return -1;
+        }
+        return 0;
+    }
     case CHORUS_V2_ROOM_VOLUME: {
         chorus_v2_room_volume_t *v = &m->as.room_volume;
         if (read_u16(&r, "gain", &v->gain) != 0 || read_u16(&r, "limit", &v->limit) != 0 ||
@@ -1016,6 +1073,45 @@ static int validate_sound(const chorus_v2_sound_t *s, chorus_v2_field_error_t *e
 
 /* low_latency_offer's rules, field by field in wire order, the order
  * crates/protocol/src/v2/codec.rs checks them in. Rejected, never clamped. */
+/* firmware_offer's rules, field by field in wire order, the order
+ * crates/protocol/src/v2/codec.rs checks them in. The cancel (transfer 0)
+ * carries nothing else. */
+static int validate_firmware_offer(const chorus_v2_firmware_offer_t *o,
+                                   chorus_v2_field_error_t *error)
+{
+    static const char *const why = "a cancel names no image";
+    const size_t text_max = CHORUS_V2_FIRMWARE_MAX_TEXT;
+    if (o->transfer == 0) {
+        static const uint8_t none[CHORUS_V2_SHA256_LEN];
+        if (o->size != 0) {
+            return fail(error, "size", CHORUS_V2_PROBLEM_INCONSISTENT, why);
+        }
+        if (memcmp(o->sha256, none, sizeof(none)) != 0) {
+            return fail(error, "sha256", CHORUS_V2_PROBLEM_INCONSISTENT, why);
+        }
+        if (o->chunk_bytes != 0) {
+            return fail(error, "chunk_bytes", CHORUS_V2_PROBLEM_INCONSISTENT, why);
+        }
+        if (o->version.len != 0) {
+            return fail(error, "version", CHORUS_V2_PROBLEM_INCONSISTENT, why);
+        }
+        if (o->board.len != 0) {
+            return fail(error, "board", CHORUS_V2_PROBLEM_INCONSISTENT, why);
+        }
+        return 0;
+    }
+    if (o->size == 0 || o->size > CHORUS_V2_FIRMWARE_MAX_SIZE) {
+        return fail(error, "size", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+    }
+    if (o->chunk_bytes == 0 || o->chunk_bytes > CHORUS_V2_FIRMWARE_MAX_CHUNK_BYTES) {
+        return fail(error, "chunk_bytes", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+    }
+    if (text_ok("version", &o->version, text_max, error) != 0) {
+        return -1;
+    }
+    return text_ok("board", &o->board, text_max, error);
+}
+
 static int validate_low_latency_offer(const chorus_v2_low_latency_offer_t *o,
                                       chorus_v2_field_error_t *error)
 {
@@ -1233,6 +1329,35 @@ int chorus_v2_validate(const chorus_v2_message_t *message, chorus_v2_field_error
             return -1;
         }
         return enum_ok("codec", CHORUS_V2_ENUM_CODEC, s->codec, error);
+    }
+    case CHORUS_V2_FIRMWARE_OFFER:
+        return validate_firmware_offer(&message->as.firmware_offer, error);
+    case CHORUS_V2_FIRMWARE_CHUNK: {
+        const chorus_v2_firmware_chunk_t *k = &message->as.firmware_chunk;
+        if (k->transfer == 0) {
+            return fail(error, "transfer", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+        }
+        if (k->data.len == 0 || k->data.data == NULL) {
+            return fail(error, "data", CHORUS_V2_PROBLEM_TRUNCATED, NULL);
+        }
+        if (k->data.len > CHORUS_V2_FIRMWARE_MAX_CHUNK_BYTES) {
+            return fail(error, "data", CHORUS_V2_PROBLEM_TOO_LONG, NULL);
+        }
+        return 0;
+    }
+    case CHORUS_V2_FIRMWARE_STATUS: {
+        const chorus_v2_firmware_status_t *s = &message->as.firmware_status;
+        const size_t text_max = CHORUS_V2_FIRMWARE_MAX_TEXT;
+        if (enum_ok("state", CHORUS_V2_ENUM_FIRMWARE_STATE, s->state, error) != 0 ||
+            enum_ok("reason", CHORUS_V2_ENUM_FIRMWARE_REASON, s->reason, error) != 0 ||
+            text_ok("version", &s->version, text_max, error) != 0 ||
+            text_ok("board", &s->board, text_max, error) != 0) {
+            return -1;
+        }
+        if (s->slot > 1 && s->slot != CHORUS_V2_FIRMWARE_SLOT_UNKNOWN) {
+            return fail(error, "slot", CHORUS_V2_PROBLEM_OUT_OF_RANGE, NULL);
+        }
+        return text_ok("image_version", &s->image_version, text_max, error);
     }
     case CHORUS_V2_ROOM_VOLUME: {
         /* Rejected, never clamped: a decoder that clamped an out-of-range
@@ -1607,6 +1732,33 @@ static void write_payload(writer_t *w, const chorus_v2_message_t *m)
         put_u8(w, m->as.source_control.action);
         put_u8(w, m->as.source_control.codec);
         break;
+    case CHORUS_V2_FIRMWARE_OFFER: {
+        const chorus_v2_firmware_offer_t *o = &m->as.firmware_offer;
+        put_u32(w, o->transfer);
+        put_u32(w, o->size);
+        put(w, o->sha256, CHORUS_V2_SHA256_LEN);
+        put_u16(w, o->chunk_bytes);
+        put_short_text(w, &o->version);
+        put_short_text(w, &o->board);
+        break;
+    }
+    case CHORUS_V2_FIRMWARE_CHUNK:
+        put_u32(w, m->as.firmware_chunk.transfer);
+        put_u32(w, m->as.firmware_chunk.offset);
+        put_bytes(w, &m->as.firmware_chunk.data);
+        break;
+    case CHORUS_V2_FIRMWARE_STATUS: {
+        const chorus_v2_firmware_status_t *s = &m->as.firmware_status;
+        put_u32(w, s->transfer);
+        put_u8(w, s->state);
+        put_u8(w, s->reason);
+        put_u32(w, s->received);
+        put_short_text(w, &s->version);
+        put_short_text(w, &s->board);
+        put_u8(w, s->slot);
+        put_short_text(w, &s->image_version);
+        break;
+    }
     case CHORUS_V2_ROOM_VOLUME:
         put_u16(w, m->as.room_volume.gain);
         put_u16(w, m->as.room_volume.limit);

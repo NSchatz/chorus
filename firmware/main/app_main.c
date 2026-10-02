@@ -25,6 +25,7 @@
 #include "esp_heap_caps.h"
 #include "esp_link.h"
 #include "esp_log.h"
+#include "esp_ota.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -193,6 +194,11 @@ void app_main(void)
         return;
     }
 
+    /* Which slot runs and what the bootloader recorded about it (goal 14),
+     * and, for an image on its trial boot, the backstop that rolls it back
+     * if nothing below ever gets as far as a session. */
+    chorus_esp_ota_boot_report(config.ota_confirm_seconds);
+
     static chorus_i2c_bus_t bus;
     static chorus_output_stage_t stage;
     static chorus_i2s_controller_t controller;
@@ -330,6 +336,10 @@ void app_main(void)
     session->smoothing_alpha = sync.smoothing_alpha;
     session->event_log_path = NULL;
     session->playout = playout;
+    /* The update unit; it confirms or rolls back through the session, never
+     * from here (firmware/main/esp_ota.c is the only unit that names the
+     * calls). */
+    session->ota = chorus_esp_ota_unit(config.board.profile, config.ota_confirm_seconds);
     task.controller = &controller;
     task.stage = &stage;
     task.amp = &config.amp;

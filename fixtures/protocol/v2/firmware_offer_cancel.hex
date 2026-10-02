@@ -1,0 +1,29 @@
+# chorus golden vector: firmware offer, protocol v2 message type 0x18.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# produce these exact bytes from the canonical input in firmware_offer_cancel.fields, and recover
+# exactly those fields from them (docs/protocol.md, "0x18 firmware offer").
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x18, payload length 44 (0x002C), big-endian
+18 00 2C
+
+# transfer = 0
+00 00 00 00
+
+# size = 0 bytes
+00 00 00 00
+
+# sha256, the digest of the whole image
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+
+# chunk_bytes = 0
+00 00
+
+# version length = 0
+00
+
+# board length = 0
+00

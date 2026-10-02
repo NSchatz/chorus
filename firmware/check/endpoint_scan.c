@@ -79,17 +79,35 @@ static const char *const EFUSE_WRITE_NAMES[] = {
     "ets_efuse_write_key",
 };
 
-/* Activating an OTA image. chorus#FLEET-10 owns this, with a deliberately bad
- * image shipped and reverted as its evidence. */
+/* Writing, selecting, confirming or invalidating an OTA image. Since goal 14
+ * the endpoint has a firmware update, and these are its calls; they are
+ * allowed in ONE unit, OTA_GLUE_UNIT below, and refused in every other one
+ * and in every vendored tree: the decisions (firmware/src/ota.c) are graded
+ * on a host against a fake flash, and they stay gradable only while nothing
+ * else in the tree can change the boot selection behind them. The header is
+ * on the list so that no other unit can even declare the calls. */
 static const char *const OTA_NAMES[] = {
     "esp_ota_set_boot_partition",
     "esp_ota_mark_app_valid",
     "esp_ota_mark_app_invalid",
     "esp_ota_begin",
+    "esp_ota_resume",
     "esp_ota_write",
     "esp_ota_end",
-    "esp_https_ota",
+    "esp_ota_abort",
+    "esp_ota_erase_last_boot_app_partition",
+    "esp_ota_invalidate_inactive_ota_data_slot",
     "esp_ota_get_next_update_partition",
+    "esp_ota_ops.h",
+};
+
+/* ESP-IDF's own OTA transport. Refused EVERYWHERE, the glue unit included:
+ * an image reaches the endpoint only inside its chorus session, from the
+ * server it adopted, on an explicit install (docs/protocol.md, "Firmware
+ * update"); a second way in would be a way around all three. */
+static const char *const OTA_TRANSPORT_NAMES[] = {
+    "esp_https_ota",
+    "esp_http_client",
 };
 
 /* Placing anything in external RAM. */
@@ -102,6 +120,12 @@ static const char *const EXTERNAL_RAM_NAMES[] = {
 /* The one unit the register-literal rule applies to, and the reason it is the
  * only one: it is the unit that talks to the amplifier. */
 static const char *const AMP_DRIVER_UNIT = "firmware/src/amp.c";
+
+/* The one unit that may name ESP-IDF's OTA calls (goal 14). Named HERE and
+ * not in firmware/endpoint-units.conf on purpose: a list a change can widen
+ * is not the rule, and adding a second unit has to be a change to the scanner
+ * with a demonstration beside it (firmware/tests/test_scan.c). */
+static const char *const OTA_GLUE_UNIT = "firmware/main/esp_ota.c";
 
 /* --- line reading ----------------------------------------------------------- */
 
@@ -469,8 +493,12 @@ static void scan_unit(chorus_scan_result_t *out, const char *root, const char *u
                     SETTABLE_CLOCK_NAMES, COUNT_OF(SETTABLE_CLOCK_NAMES));
         check_names(out, "efuse-write-in-the-endpoint-tree", unit, line_no, code, raw,
                     EFUSE_WRITE_NAMES, COUNT_OF(EFUSE_WRITE_NAMES));
-        check_names(out, "ota-activation-in-the-endpoint-tree", unit, line_no, code, raw, OTA_NAMES,
-                    COUNT_OF(OTA_NAMES));
+        if (strcmp(unit, OTA_GLUE_UNIT) != 0) {
+            check_names(out, "ota-activation-in-the-endpoint-tree", unit, line_no, code, raw,
+                        OTA_NAMES, COUNT_OF(OTA_NAMES));
+        }
+        check_names(out, "ota-transport-in-the-endpoint-tree", unit, line_no, code, raw,
+                    OTA_TRANSPORT_NAMES, COUNT_OF(OTA_TRANSPORT_NAMES));
         check_names(out, "dma-descriptor-in-external-ram", unit, line_no, code, raw,
                     EXTERNAL_RAM_NAMES, COUNT_OF(EXTERNAL_RAM_NAMES));
 
@@ -961,7 +989,8 @@ void chorus_scan_report(const chorus_scan_result_t *result, void *stream)
     if (chorus_scan_ok(result)) {
         fprintf(out,
                 "pass endpoint-scan: %zu units scanned, none reads a settable clock, none burns "
-                "an eFuse, none activates an OTA image, none places anything in external RAM, "
+                "an eFuse, none but the update's glue unit names an OTA call, none places "
+                "anything in external RAM, "
                 "the amplifier driver names no register address, and none is unaccounted for; "
                 "%zu vendored units (third_party) pass the same rules; "
                 "%zu build-configuration files (firmware/sdkconfig*, CMake) enable no option "

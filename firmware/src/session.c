@@ -68,6 +68,8 @@ const char *chorus_session_end_name(chorus_session_end_t end)
         return "identity-unusable";
     case CHORUS_SESSION_SERVER_KEY_CHANGED:
         return "server-key-changed";
+    case CHORUS_SESSION_REBOOTING:
+        return "rebooting";
     }
     return "unknown";
 }
@@ -756,11 +758,73 @@ static int send_greeting(session_state_t *state, int fd, chorus_noise_cipher_t *
     m.as.capabilities.sample_rates_hz[1] = 48000;
     m.as.capabilities.buffer_ms = CHORUS_SESSION_BUFFER_MS;
     m.as.capabilities.intrinsic_latency_ns = CHORUS_SESSION_INTRINSIC_LATENCY_NS;
+    /* Goal 14: with an update unit this endpoint takes a firmware image in
+     * its session; without one it never claims to, and is never offered. */
+    if (state->config->ota != NULL) {
+        m.as.capabilities.features |= CHORUS_V2_FEATURE_OTA;
+    }
     if (chorus_v2_encode(&m, frames + at, sizeof(frames) - at, &len, NULL) != CHORUS_ENCODE_OK) {
         return -1;
     }
     at += len;
     return send_sealed(state, fd, cipher, frames, at);
+}
+
+/* --- the firmware update (goal 14, chorus/ota.h) ----------------------------
+ *
+ * The session is the update's transport and its self-test, and nothing more:
+ * it hands offers and chunks to the unit, sends the statuses the unit raises,
+ * tells it when the server was reached, passes it the time, and ends the run
+ * when it reboots. Every decision is the unit's. */
+
+/* Send every status the unit has waiting. */
+static int send_ota_statuses(session_state_t *state, int fd, chorus_noise_cipher_t *cipher)
+{
+    chorus_ota_t *ota = state->config->ota;
+    chorus_ota_status_t status;
+    while (ota != NULL && chorus_ota_take_status(ota, &status)) {
+        chorus_v2_message_t m;
+        memset(&m, 0, sizeof(m));
+        m.type = CHORUS_V2_FIRMWARE_STATUS;
+        m.as.firmware_status.transfer = status.transfer;
+        m.as.firmware_status.state = status.state;
+        m.as.firmware_status.reason = status.reason;
+        m.as.firmware_status.received = status.received;
+        m.as.firmware_status.version.data = (const uint8_t *)status.version;
+        m.as.firmware_status.version.len = strlen(status.version);
+        m.as.firmware_status.board.data = (const uint8_t *)status.board;
+        m.as.firmware_status.board.len = strlen(status.board);
+        m.as.firmware_status.slot = status.slot;
+        m.as.firmware_status.image_version.data = (const uint8_t *)status.image_version;
+        m.as.firmware_status.image_version.len = strlen(status.image_version);
+        uint8_t frame[256];
+        size_t len = 0;
+        if (chorus_v2_encode(&m, frame, sizeof(frame), &len, NULL) != CHORUS_ENCODE_OK) {
+            /* A version or board that is not UTF-8 cannot be sent; the
+             * session carries on without this status. */
+            continue;
+        }
+        if (send_sealed(state, fd, cipher, frame, len) != 0) {
+            return -1;
+        }
+        char detail[200];
+        snprintf(detail, sizeof(detail), "state=%s reason=%s transfer=%lu received=%lu slot=%u",
+                 chorus_v2_enum_name(CHORUS_V2_ENUM_FIRMWARE_STATE, status.state),
+                 chorus_v2_enum_name(CHORUS_V2_ENUM_FIRMWARE_REASON, status.reason),
+                 (unsigned long)status.transfer, (unsigned long)status.received,
+                 (unsigned)status.slot);
+        publish_detail(state, "firmware-status", detail);
+    }
+    return 0;
+}
+
+/* A text field into the unit's fixed buffer. The decoder held it to
+ * CHORUS_V2_FIRMWARE_MAX_TEXT, which the buffer fits with its terminator. */
+static void ota_text(char *out, const chorus_v2_bytes_t *text)
+{
+    size_t n = (text->len < CHORUS_OTA_TEXT_MAX - 1) ? text->len : CHORUS_OTA_TEXT_MAX - 1;
+    memcpy(out, text->data, n);
+    out[n] = '\0';
 }
 
 /* Send one time-sync request with t0 stamped and the other three zero, which
@@ -1010,6 +1074,32 @@ static int handle_inner(session_state_t *state, stream_state_t *stream,
         publish_detail(state, "sound", detail);
         return 0;
     }
+    case CHORUS_V2_FIRMWARE_OFFER: {
+        if (config->ota == NULL) {
+            /* No update unit: this endpoint never set the `ota` feature. */
+            return 0;
+        }
+        const chorus_v2_firmware_offer_t *wire = &frame->message.as.firmware_offer;
+        chorus_ota_offer_t offer;
+        memset(&offer, 0, sizeof(offer));
+        offer.transfer = wire->transfer;
+        offer.size = wire->size;
+        memcpy(offer.sha256, wire->sha256, sizeof(offer.sha256));
+        offer.chunk_bytes = wire->chunk_bytes;
+        ota_text(offer.version, &wire->version);
+        ota_text(offer.board, &wire->board);
+        chorus_ota_offer(config->ota, &offer, chorus_monotonic_now_ns());
+        return 0;
+    }
+    case CHORUS_V2_FIRMWARE_CHUNK: {
+        if (config->ota == NULL) {
+            return 0;
+        }
+        const chorus_v2_firmware_chunk_t *chunk = &frame->message.as.firmware_chunk;
+        chorus_ota_chunk(config->ota, chunk->transfer, chunk->offset, chunk->data.data,
+                         chunk->data.len, chorus_monotonic_now_ns());
+        return 0;
+    }
     case CHORUS_V2_STREAM_END:
         publish(state, "stream-end");
         return 0;
@@ -1043,6 +1133,13 @@ static int take_record(session_state_t *state, stream_state_t *stream,
         return -1;
     }
     state->out->records_received++;
+    if (state->config->ota != NULL) {
+        /* The server opened this session and its record opened here: the
+         * handshake, the adoption and the greeting all held. That is the new
+         * image's self-test (chorus/ota.h rule 3); the unit decides what it
+         * is worth. */
+        chorus_ota_session_healthy(state->config->ota, chorus_monotonic_now_ns());
+    }
     size_t at = 0;
     while (at < plain_len) {
         chorus_v2_frame_t frame = chorus_v2_decode_frame(plain + at, plain_len - at);
@@ -1155,6 +1252,7 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
     uint64_t went_down_ns = 0;
     int have_been_up = 0;
     int key_changed = 0;
+    chorus_ota_t *ota = config->ota;
 
     {
         char detail[CHORUS_SESSION_ID_MAX + 96];
@@ -1164,6 +1262,14 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
     }
 
     while (run_ns == 0 || chorus_monotonic_now_ns() - started_ns < run_ns) {
+        if (ota != NULL) {
+            /* An image on trial that never reaches a server still meets its
+             * deadline: the clock is passed in here too, between attempts. */
+            chorus_ota_tick(ota, chorus_monotonic_now_ns());
+            if (chorus_ota_rebooting(ota)) {
+                break;
+            }
+        }
         /* A server address set on the console since the last attempt
          * (audit A-13) applies from this attempt on. */
         char next[CHORUS_SESSION_ADDRESS_MAX];
@@ -1237,6 +1343,15 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
         const char *why = NULL;
         if (send_greeting(&state, fd, &transport.send) != 0) {
             why = "greeting-not-sent";
+        } else if (ota != NULL) {
+            /* Right after capabilities, on every session: what runs here and
+             * how any transfer stands (docs/protocol.md, "Firmware update"). */
+            chorus_ota_session_started(ota);
+            if (send_ota_statuses(&state, fd, &transport.send) != 0) {
+                why = "send-failed";
+            } else {
+                chorus_ota_reported(ota);
+            }
         }
 
         uint64_t chunks_at_connect = state.telemetry.chunks_received;
@@ -1299,6 +1414,23 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
                 }
                 consume(&rx, len);
             }
+
+            if (ota != NULL && why == NULL) {
+                chorus_ota_tick(ota, chorus_monotonic_now_ns());
+                if (send_ota_statuses(&state, fd, &transport.send) != 0) {
+                    why = "send-failed";
+                    break;
+                }
+                if (chorus_ota_reboot_due(ota)) {
+                    /* The new image is selected and the server has been
+                     * told. On the board this does not return. */
+                    publish(&state, "firmware-reboot");
+                    chorus_ota_reboot(ota);
+                }
+                if (chorus_ota_rebooting(ota)) {
+                    why = "rebooting";
+                }
+            }
         }
 
         close(fd);
@@ -1320,6 +1452,9 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
         if (run_ns != 0 && chorus_monotonic_now_ns() - started_ns >= run_ns) {
             break;
         }
+        if (ota != NULL && chorus_ota_rebooting(ota)) {
+            break;
+        }
         chorus_monotonic_sleep_ms(backoff_ms);
         backoff_ms =
             (backoff_ms * 2 > config->max_backoff_ms) ? config->max_backoff_ms : backoff_ms * 2;
@@ -1335,7 +1470,8 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
         }
         return -1;
     }
-    out->end = CHORUS_SESSION_RAN_ITS_TIME;
+    out->end = (ota != NULL && chorus_ota_rebooting(ota)) ? CHORUS_SESSION_REBOOTING
+                                                          : CHORUS_SESSION_RAN_ITS_TIME;
     publish(&state, "stop");
     if (state.log != NULL) {
         fclose(state.log);

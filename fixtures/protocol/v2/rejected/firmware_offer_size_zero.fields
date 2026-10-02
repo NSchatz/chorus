@@ -1,0 +1,21 @@
+# Canonical input for the firmware_offer_size_zero rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# firmware_offer_size_zero.hex as that field out of range, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# An offer (transfer nonzero) of an image of no bytes.
+
+message_type = firmware_offer
+transfer = 7
+size = 0
+sha256 = 771af91304d48062a3d06876eb347d8869c6aea85869c01735a5994841a1f9c8
+chunk_bytes = 4096
+version = 0.3.0
+board = brick-s3-wired
+rejected_field = size
+problem = out_of_range

@@ -1,0 +1,41 @@
+# chorus REJECTION vector: firmware status, protocol v2 message type 0x1A.
+#
+# Committed, and never written by a test. A well-formed frame whose value the format does not
+# accept: any implementation of chorus protocol v2 must reject it naming `slot` (out of range),
+# consume the whole frame and carry on with the next one, and must refuse to encode the fields in
+# firmware_status_slot_two.fields (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x1A, payload length 33 (0x0021), big-endian
+1A 00 21
+
+# transfer = 0
+00 00 00 00
+
+# state = 0 (idle)
+00
+
+# reason = 0 (none)
+00
+
+# received = 0 bytes
+00 00 00 00
+
+# version length = 5
+05
+
+# version = "0.2.0"
+30 2E 32 2E 30
+
+# board length = 14
+0E
+
+# board = "brick-s3-wired"
+62 72 69 63 6B 2D 73 33 2D 77 69 72 65 64
+
+# slot = 2
+02
+
+# image_version length = 0
+00

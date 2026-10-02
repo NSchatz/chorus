@@ -43,6 +43,7 @@ idf_component_register(
         "esp_playout.c"
         "esp_marker.c"
         "console_esp.c"
+        "esp_ota.c"
         "../src/conf.c"
         "../src/protocol.c"
         "../src/protocol_v2.c"
@@ -72,6 +73,7 @@ idf_component_register(
         "../src/console.c"
         "../src/decode_cost.c"
         "../src/dsp_cost.c"
+        "../src/ota.c"
         "${CHORUS_THIRD_PARTY}/dr_flac/dr_flac.c"
         ${chorus_opus_srcs}
     INCLUDE_DIRS
@@ -103,6 +105,11 @@ idf_component_register(
         lwip
         mbedtls
         console
+        # The firmware update (goal 14): esp_ota.c is the one unit that names
+        # app_update's calls (firmware/check/endpoint_scan.c, OTA_GLUE_UNIT).
+        app_update
+        esp_app_format
+        esp_partition
     EMBED_TXTFILES
         "../config/endpoint.conf"
         "${CMAKE_CURRENT_BINARY_DIR}/board_profile.conf"
