@@ -160,9 +160,9 @@ static void every_profile_reads_as_the_image_reads_it(void)
                      "qemu-s3-openeth: plays through %s",
                      chorus_audio_output_name(profiled.board.audio_output));
         chorus_check(profiled.board.model_status == CHORUS_BOARD_CONFIRMED &&
-                         !profiled.pins.octal_psram,
-                     "qemu-s3-openeth: model \"%s\" %s, no octal PSRAM", profiled.board.model,
-                     chorus_board_status_name(profiled.board.model_status));
+                         profiled.pins.octal_psram,
+                     "qemu-s3-openeth: model \"%s\" %s, octal PSRAM as a speaker's",
+                     profiled.board.model, chorus_board_status_name(profiled.board.model_status));
         chorus_finding_t findings[32];
         size_t count = 0;
         chorus_endpoint_config_validate(&profiled, findings, 32, &count);

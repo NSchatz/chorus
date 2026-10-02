@@ -14,9 +14,11 @@
 # link is `emulated`, and refuses by name in an image built without it.
 CONFIG_ETH_USE_OPENETH=y
 
-# No PSRAM. The speakers' boards carry octal PSRAM and sdkconfig.defaults
-# requires it at boot; the emulator is started without any (it could emulate
-# one, behind another machine option), and nothing the endpoint runs lives in
-# external RAM (firmware/endpoint-units.conf rule 3), so the emulated board
-# does without rather than emulating a part nothing uses.
-CONFIG_SPIRAM=n
+# The octal PSRAM stays as sdkconfig.defaults has it: the emulator emulates an
+# octal part (tools/qemu/lib.sh starts it with one), and the endpoint needs it.
+# Built without PSRAM, the image stopped at its first step in the emulator,
+# "no memory to read firmware/config/endpoint.conf and the embedded board
+# profile": the configuration reader takes one 128 KiB block for its two
+# tables, the internal heap's largest free block was 90 KiB, and on a speaker
+# malloc() places a block that large in PSRAM (the generated sdkconfig has
+# CONFIG_SPIRAM_USE_MALLOC=y; docs/decisions/0109-*).

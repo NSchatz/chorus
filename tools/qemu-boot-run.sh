@@ -177,7 +177,7 @@ wait_for_speaker() {
 # (firmware/main/esp_identity.c).
 IDENTITY_LINE='identity id=chorus-[0-9a-f]{12} key=[^ ]+ id_made_this_boot=[01] key_made_this_boot=[01]'
 identity_field() { # identity_field <serial log> <field>
-    command grep -a -o -E "$IDENTITY_LINE" "$1" | head -n 1 | tr ' ' '\n' | sed -n "s/^$2=//p"
+    { command grep -a -o -E "$IDENTITY_LINE" "$1" | head -n 1 | tr ' ' '\n' | sed -n "s/^$2=//p"; } || true
 }
 # A panic, an abort or a reset the image did not ask for.
 crashed() {

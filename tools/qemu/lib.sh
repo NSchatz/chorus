@@ -185,6 +185,8 @@ PY
 #   - the flash and the eFuse file as drives; the eFuse file is opened read and
 #     write because the machine requires a writable drive, and the caller proves
 #     afterwards that nothing was written;
+#   - octal PSRAM, as a speaker's board carries (sdkconfig.defaults requires
+#     it at boot); `-m 32M` is the size ESP-IDF's launcher gives the machine;
 #   - the timer group's watchdog off, as ESP-IDF's launcher sets it: the
 #     emulator's sense of time under a loaded host is not the chip's;
 #   - a user network with the OpenCores controller: the guest gets an address by
@@ -199,6 +201,7 @@ qemu_boot() {
         -drive "file=$efuses,if=none,format=raw,id=efuse" \
         -global driver=nvram.esp32s3.efuse,property=drive,value=efuse \
         -global driver=timer.esp32s3.timg,property=wdt_disable,value=true \
+        -global driver=ssi_psram,property=is_octal,value=true \
         -nic user,model=open_eth \
         -nographic -monitor none -serial "file:$serial" > "$serial.emulator" 2>&1 &
     QEMU_PID=$!
