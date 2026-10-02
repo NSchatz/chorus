@@ -1,0 +1,25 @@
+# Canonical input for the catalog v2 state-speakers vector.
+#
+# A server configured with these zones, on which the session layer adopted the
+# ids below (`adopted.N = <id> <key fingerprint>`), the commands were applied
+# in order, the sessions below came up (`session.N = <id> | <software> |
+# <roles>`) and one handshake was refused for a changed key (`key_change.N =
+# <id> <pinned> <offered>`), must produce exactly state-speakers.json.
+#
+# Goal 14: `speakers` and `key_changes` are written only when they are not
+# empty, after every member the state had before, so state-empty.json and
+# state-rich.json did not move. One speaker is named, in a room and present;
+# the other was adopted and nothing else: unnamed, in no room, absent.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = state
+default_audio = 127.0.0.1:4010
+zones = living,kitchen
+adopted.0 = chorus-0123456789ab 1f0e:2d3c:4b5a:6978
+adopted.1 = chorus-ba9876543210 8796:a5b4:c3d2:e1f0
+command.0 = {"v":2,"t":"speaker_name","speaker":"chorus-0123456789ab","name":"Kitchen left"}
+command.1 = {"v":2,"t":"speaker_room","speaker":"chorus-0123456789ab","room":"kitchen"}
+session.0 = chorus-0123456789ab | chorus-endpoint 0.1.0 | player
+key_change.0 = chorus-ba9876543210 8796:a5b4:c3d2:e1f0 0a1b:2c3d:4e5f:6071

@@ -1,0 +1,13 @@
+# Canonical input for the catalog v2 speaker_room-none vector.
+#
+# Encoding these field values must produce exactly speaker_room-none.json, and decoding
+# speaker_room-none.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# Goal 14: `room` null takes a speaker out of every room. There is no `room`
+# line here: an absent line is the wire's null.
+
+message_type = speaker_room
+speaker = chorus-0123456789ab

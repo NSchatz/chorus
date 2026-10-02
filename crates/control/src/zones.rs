@@ -57,6 +57,17 @@
 //! - [`Zones::sleep_expired`] removes a sleep timer that ran out;
 //! - [`Zones::offer_input`] and [`Zones::withdraw_input`] say which line-ins
 //!   are offered.
+//!
+//! # Speakers (goal 14)
+//!
+//! The speakers the server has adopted are held here too
+//! ([`crate::speakers`]), because a speaker's room is a fact about the rooms:
+//! `speaker_room` makes the speaker a member of the room (its `endpoints`),
+//! and a speaker with an assigned room is marked present and absent by its
+//! SESSION ([`Zones::speaker_session_up`], [`Zones::speaker_session_down`]),
+//! which is what lets an endpoint with no control client (the firmware) be in
+//! a room at all. The session layer's hooks bump the serial when they change
+//! something, as the runtime's do.
 
 use crate::catalog::{
     alarm_value, autoplay_value, centi_db_value, filters_value, is_display_name, is_identifier,
@@ -68,6 +79,7 @@ use crate::rooms::{
     SleepTimer, Source, MAX_DEFINITIONS,
 };
 use crate::sound::{BassManagement, RoomEq, SoundSettings};
+use crate::speakers::{key_change_value, speaker_value, KeyChange, NotListed, Speaker, Speakers};
 use crate::transport::{Transport, ZoneTransports};
 
 /// One zone: what it is called, what it plays, and how loudly.
@@ -247,6 +259,8 @@ pub struct Zones {
     inputs: Vec<InputId>,
     /// (v2) The civil time the quiet-hours flags were last set for.
     now: Option<CivilTime>,
+    /// (v2, goal 14) The adopted speakers and the key changes refused.
+    speakers: Speakers,
 }
 
 /// What a target names.
@@ -442,7 +456,24 @@ impl Zones {
     ///
     /// It stays in the zone's membership; only its presence changes. See
     /// `docs/decisions/0019-a-persisted-endpoint-that-never-comes-back.md`.
+    ///
+    /// A speaker that was assigned its room (`speaker_room`) and has a
+    /// session up stays present: its presence is its session's, and a control
+    /// client saying goodbye does not end the session that is playing.
     pub fn endpoint_left(&mut self, endpoint: &str) -> bool {
+        if self
+            .speakers
+            .get(endpoint)
+            .is_some_and(|s| s.room.is_some() && s.now.present())
+        {
+            return false;
+        }
+        self.clear_presence(endpoint)
+    }
+
+    /// Take `endpoint` out of every room's `present`. Whether it was in one;
+    /// the serial moves only when it was.
+    fn clear_presence(&mut self, endpoint: &str) -> bool {
         let mut changed = false;
         for zone in &mut self.zones {
             let before = zone.present.len();
@@ -513,7 +544,17 @@ impl Zones {
                     }
                     self.set_link(endpoint, *link);
                 }
-                let zone = &mut self.zones[room()];
+                // A speaker the owner assigned a room (`speaker_room`) plays
+                // there: an `attach` naming another room is accepted, so the
+                // endpoint's control client keeps working, and attaches it to
+                // the room it was assigned (the ADR: the explicit assignment
+                // wins over the endpoint's own start-up flag).
+                let assigned = self
+                    .speakers
+                    .get(endpoint)
+                    .and_then(|s| s.room.as_deref())
+                    .and_then(|r| self.zones.iter().position(|z| z.id == r));
+                let zone = &mut self.zones[assigned.unwrap_or_else(room)];
                 if !zone.endpoints.iter().any(|e| e == endpoint) {
                     zone.endpoints.push(endpoint.clone());
                 }
@@ -696,8 +737,102 @@ impl Zones {
                 }
                 eq.enabled = enabled.unwrap_or(eq.enabled);
             }
+            Command::SpeakerName { speaker, name } => {
+                self.speaker_exists(speaker)?;
+                let record = self.speakers.get_mut(speaker).expect("checked above");
+                record.name = name.clone();
+                record.named = true;
+            }
+            Command::SpeakerRoom { speaker, room } => {
+                self.speaker_exists(speaker)?;
+                let target = match room {
+                    Some(id) => {
+                        Some(self.zones.iter().position(|z| z.id == *id).ok_or_else(|| {
+                            Refusal::rejected(
+                                "room",
+                                format!(
+                                    "there is no zone '{}'; the zones configured on this server \
+                                     are {}",
+                                    id,
+                                    self.zone_list()
+                                ),
+                            )
+                        })?)
+                    }
+                    None => None,
+                };
+                self.not_bonded_elsewhere(speaker, room.as_deref())?;
+                let present = self.speakers.get(speaker).is_some_and(|s| s.now.present());
+                for (i, zone) in self.zones.iter_mut().enumerate() {
+                    if Some(i) == target {
+                        continue;
+                    }
+                    zone.endpoints.retain(|e| e != speaker);
+                    zone.present.retain(|e| e != speaker);
+                }
+                if let Some(i) = target {
+                    let zone = &mut self.zones[i];
+                    if !zone.endpoints.iter().any(|e| e == speaker) {
+                        zone.endpoints.push(speaker.clone());
+                    }
+                    // Its presence is its session's from here on.
+                    zone.present.retain(|e| e != speaker);
+                    if present {
+                        zone.present.push(speaker.clone());
+                    }
+                }
+                self.speakers.get_mut(speaker).expect("checked above").room = room.clone();
+            }
+            Command::SpeakerForget { speaker } => {
+                if self.speakers.get(speaker).is_none()
+                    && !self.speakers.key_changes().iter().any(|c| c.id == *speaker)
+                {
+                    return Err(self.no_speaker(speaker));
+                }
+                self.not_bonded_elsewhere(speaker, None)?;
+                for zone in &mut self.zones {
+                    zone.endpoints.retain(|e| e != speaker);
+                    zone.present.retain(|e| e != speaker);
+                }
+                self.links.retain(|(e, _)| e != speaker);
+                self.speakers.forget(speaker);
+            }
         }
         Ok(())
+    }
+
+    fn no_speaker(&self, speaker: &str) -> Refusal {
+        Refusal::rejected(
+            "speaker",
+            format!(
+                "there is no speaker '{}'; the speakers adopted on this server are {}",
+                speaker,
+                self.speakers.id_list()
+            ),
+        )
+    }
+
+    fn speaker_exists(&self, speaker: &str) -> Result<(), Refusal> {
+        match self.speakers.get(speaker) {
+            Some(_) => Ok(()),
+            None => Err(self.no_speaker(speaker)),
+        }
+    }
+
+    /// Refuse to take a speaker out of a room whose bonded set it plays in:
+    /// a set with a member gone is not a layout, and which role goes is the
+    /// owner's call (`unbond`), not a side effect of moving a speaker.
+    fn not_bonded_elsewhere(&self, speaker: &str, staying_in: Option<&str>) -> Result<(), Refusal> {
+        match self.bonded_in(speaker) {
+            Some(bonded) if Some(bonded.as_str()) != staying_in => Err(Refusal::rejected(
+                "speaker",
+                format!(
+                    "speaker '{}' plays in room '{}''s bonded set; unbond room '{}' first",
+                    speaker, bonded, bonded
+                ),
+            )),
+            _ => Ok(()),
+        }
     }
 
     /// Refuse a new definition past [`MAX_DEFINITIONS`]; replacing one is
@@ -1214,6 +1349,116 @@ impl Zones {
         changed
     }
 
+    // --- the session layer's hooks (goal 14) --------------------------------
+
+    /// The adopted speakers and the key changes refused.
+    pub fn speakers(&self) -> &Speakers {
+        &self.speakers
+    }
+
+    /// Install a persisted speaker record, which loading persisted state
+    /// does. The caller has validated it; its room's membership is made to
+    /// agree with it, as `speaker_room` leaves it.
+    pub fn restore_speaker(&mut self, speaker: Speaker) {
+        if let Some(room) = &speaker.room {
+            if let Some(zone) = self.zones.iter_mut().find(|z| z.id == *room) {
+                if !zone.endpoints.iter().any(|e| *e == speaker.id) {
+                    zone.endpoints.push(speaker.id.clone());
+                }
+            }
+        }
+        self.speakers.restore(speaker);
+    }
+
+    /// Say that `id` is adopted (its key is pinned) and what its key's
+    /// fingerprint is: the record is created, unnamed and in no room, if
+    /// there is none. `Ok(true)` when a record was created, which is what the
+    /// caller persists on; an id that cannot be listed is refused by name and
+    /// changes nothing.
+    pub fn speaker_adopted(&mut self, id: &str, key: &str) -> Result<bool, NotListed> {
+        let created = self.speakers.adopt(id)?;
+        let told = self.speakers.set_now(id, |now| now.key = key.to_string());
+        if created || told {
+            self.serial += 1;
+        }
+        Ok(created)
+    }
+
+    /// Say that a session of speaker `id` is up, with what its `hello` said.
+    /// A speaker with an assigned room is marked present in it. Whether
+    /// anything changed; nothing does for an id with no record.
+    pub fn speaker_session_up(&mut self, id: &str, software: &str, roles: &[String]) -> bool {
+        let mut changed = self.speakers.set_now(id, |now| {
+            now.sessions = now.sessions.saturating_add(1);
+            now.software = software.to_string();
+            now.roles = roles.to_vec();
+        });
+        let room = self.speakers.get(id).and_then(|s| s.room.clone());
+        if let Some(zone) = room.and_then(|r| self.zones.iter_mut().find(|z| z.id == r)) {
+            if !zone.endpoints.iter().any(|e| e == id) {
+                zone.endpoints.push(id.to_string());
+                changed = true;
+            }
+            if !zone.present.iter().any(|e| e == id) {
+                zone.present.push(id.to_string());
+                changed = true;
+            }
+        }
+        if changed {
+            self.serial += 1;
+        }
+        changed
+    }
+
+    /// Say that a session of speaker `id` has ended. When it was the last
+    /// one, a speaker with an assigned room is marked absent from it (an
+    /// unassigned one's presence is its control client's, as before goal 14).
+    pub fn speaker_session_down(&mut self, id: &str) -> bool {
+        let mut changed = self
+            .speakers
+            .set_now(id, |now| now.sessions = now.sessions.saturating_sub(1));
+        let gone = self
+            .speakers
+            .get(id)
+            .is_some_and(|s| s.room.is_some() && !s.now.present());
+        if gone {
+            for zone in &mut self.zones {
+                let before = zone.present.len();
+                zone.present.retain(|e| e != id);
+                changed |= zone.present.len() != before;
+            }
+        }
+        if changed {
+            self.serial += 1;
+        }
+        changed
+    }
+
+    /// Change what is known about a speaker now ([`crate::speakers::SpeakerNow`]):
+    /// the hook a later per-speaker runtime fact is set through. Whether
+    /// anything changed; the serial moves only when it did.
+    pub fn speaker_now(
+        &mut self,
+        id: &str,
+        change: impl FnOnce(&mut crate::speakers::SpeakerNow),
+    ) -> bool {
+        let changed = self.speakers.set_now(id, change);
+        if changed {
+            self.serial += 1;
+        }
+        changed
+    }
+
+    /// Record a handshake refused because the key under an adopted id
+    /// changed. The pin is not this model's and is not touched.
+    pub fn speaker_key_changed(&mut self, change: KeyChange) -> bool {
+        let changed = self.speakers.key_changed(change);
+        if changed {
+            self.serial += 1;
+        }
+        changed
+    }
+
     fn zone_list(&self) -> String {
         if self.zones.is_empty() {
             return "none: this server has no zone configured".to_string();
@@ -1306,7 +1551,7 @@ impl Zones {
                 ])
             })
             .collect();
-        Value::Obj(vec![
+        let mut state = vec![
             ("v".to_string(), Value::int(version)),
             ("t".to_string(), Value::text("state")),
             ("serial".to_string(), Value::int(self.serial as i64)),
@@ -1329,7 +1574,35 @@ impl Zones {
                         .collect(),
                 ),
             ),
-        ])
+        ];
+        // (goal 14) Written only when there is something to say, so a server
+        // that has adopted nothing sends the bytes it sent before goal 14 and
+        // the committed state vectors did not move.
+        if !self.speakers.all().is_empty() {
+            state.push((
+                "speakers".to_string(),
+                Value::Arr(
+                    self.speakers
+                        .all()
+                        .iter()
+                        .map(|s| speaker_value(s, self.link(&s.id)))
+                        .collect(),
+                ),
+            ));
+        }
+        if !self.speakers.key_changes().is_empty() {
+            state.push((
+                "key_changes".to_string(),
+                Value::Arr(
+                    self.speakers
+                        .key_changes()
+                        .iter()
+                        .map(key_change_value)
+                        .collect(),
+                ),
+            ));
+        }
+        Value::Obj(state)
     }
 
     fn zone_value_v2(&self, z: &Zone) -> Value {

@@ -52,7 +52,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -61,6 +61,7 @@ use chorus_control::fanout::ControlFanout;
 use chorus_control::persist;
 use chorus_control::rooms::{CivilTime, Role, Source};
 use chorus_control::sound::Polarity;
+use chorus_control::speakers::{KeyChange, NotListed, SpeakerNow};
 use chorus_control::zones::{Zone, Zones};
 use chorus_control::Command;
 use chorus_hostctl::ThreadRegistry;
@@ -74,6 +75,7 @@ use crate::events::EventStreams;
 use crate::hostreport::register_ordinary_thread;
 use crate::router::SessionStart;
 use crate::schedule_runtime::Effect;
+use crate::session::Adoptions;
 use crate::slot_table::SlotTable;
 
 /// Longest request the control channel will read: request line, headers and
@@ -228,6 +230,11 @@ pub struct ControlState {
     applied_commands: Mutex<Vec<Command>>,
     /// What the page is served with, so the UI is one artifact and not three.
     ui: Ui,
+    /// (goal 14) The pins the audio sessions adopt through, once the server
+    /// has an identity ([`ControlState::adopt_through`]): `speaker_forget`
+    /// removes a speaker's pin here, and nothing else in the control plane
+    /// touches it.
+    adoptions: OnceLock<Arc<Adoptions>>,
 }
 
 /// The files the browser is served: the page, what it loads, and the document
@@ -284,6 +291,7 @@ impl ControlState {
                 js: include_str!("ui/chorus.js"),
                 doc: include_str!("../../../docs/control-page.md"),
             },
+            adoptions: OnceLock::new(),
         }
     }
 
@@ -566,7 +574,18 @@ impl ControlState {
         let (version, command) = decode_message(text)?;
         let state = {
             let mut held = self.locked();
-            Self::commit(&mut held, |zones| zones.apply(&command)).map_err(|r| r.at(version))?;
+            Self::commit(&mut held, |zones| {
+                zones.apply(&command)?;
+                // (goal 14) Forgetting a speaker forgets its pin too, after
+                // the room model has agreed and before anything is installed:
+                // a pin file that could not be rewritten refuses the command
+                // whole, so the record and the pin never disagree.
+                if let Command::SpeakerForget { speaker } = &command {
+                    self.forget_pin(speaker)?;
+                }
+                Ok(())
+            })
+            .map_err(|r| r.at(version))?;
             lock(&self.applied_commands).push(command.clone());
             // A failure to persist is reported and not swallowed, and not a
             // reason to refuse the command either: the change IS in force in
@@ -666,6 +685,167 @@ impl ControlState {
         };
         self.publish(state);
     }
+}
+
+/// The speaker registry's server half (goal 14): what the session layer says
+/// about adoption, presence and refused key changes, each fanned out like any
+/// other change. `chorus_control::speakers` holds the records; the pins stay
+/// the session layer's ([`Adoptions`]).
+impl ControlState {
+    /// Adopt through `adoptions` from now on, and make a speaker record for
+    /// every id it already has pinned and this state does not list (a server
+    /// upgraded from before goal 14, or a state file that was removed).
+    /// Called once, at start, before any session. Returns a line for each id
+    /// that could not be listed.
+    pub fn adopt_through(&self, adoptions: Arc<Adoptions>) -> Vec<String> {
+        let mut unlisted = Vec::new();
+        let state = {
+            let mut held = self.locked();
+            let before = held.zones.serial();
+            let mut created = false;
+            for (id, key) in adoptions.pins() {
+                match held.zones.speaker_adopted(&id, &key) {
+                    Ok(made) => created |= made,
+                    Err(why) => unlisted.push(not_listed_line(&id, &why)),
+                }
+            }
+            if created {
+                self.persist(&held.zones);
+            }
+            (held.zones.serial() != before).then(|| held.zones.encode_state())
+        };
+        let _ = self.adoptions.set(adoptions);
+        if let Some(state) = state {
+            self.publish(state);
+        }
+        unlisted
+    }
+
+    /// Remove `speaker`'s pin, so its next session is adopted afresh.
+    fn forget_pin(&self, speaker: &str) -> Result<(), Refusal> {
+        let Some(adoptions) = self.adoptions.get() else {
+            return Ok(());
+        };
+        adoptions.forget(speaker).map(|_| ()).map_err(|e| {
+            Refusal::rejected(
+                "speaker",
+                format!(
+                    "speaker '{}' was not forgotten: {}. Nothing changed",
+                    speaker, e
+                ),
+            )
+        })
+    }
+
+    /// A session of `id` is up: its record is made if this is the first the
+    /// server has seen of it (auto-adoption: the handshake pinned its key,
+    /// and this lists it, unnamed and in no room), it is marked present, and
+    /// what its `hello` said is kept. Returns the lines to log: one when a
+    /// record was created, or one naming why the id is not listed.
+    pub fn speaker_session_up(
+        &self,
+        id: &str,
+        key: &str,
+        software: &str,
+        session_roles: u16,
+    ) -> Vec<String> {
+        let names: Vec<String> = roles::NAMES
+            .iter()
+            .filter(|(bit, _)| session_roles & bit != 0)
+            .map(|(_, name)| name.to_string())
+            .collect();
+        let mut lines = Vec::new();
+        let state = {
+            let mut held = self.locked();
+            let before = held.zones.serial();
+            match held.zones.speaker_adopted(id, key) {
+                Ok(true) => {
+                    self.persist(&held.zones);
+                    let name = held
+                        .zones
+                        .speakers()
+                        .get(id)
+                        .map(|s| s.name.clone())
+                        .unwrap_or_default();
+                    lines.push(format!(
+                        "speaker listed id={} name=\"{}\" named=0",
+                        id, name
+                    ));
+                }
+                Ok(false) => {}
+                Err(why) => lines.push(not_listed_line(id, &why)),
+            }
+            held.zones.speaker_session_up(id, software, &names);
+            (held.zones.serial() != before).then(|| held.zones.encode_state())
+        };
+        if let Some(state) = state {
+            self.publish(state);
+        }
+        lines
+    }
+
+    /// A session of `id` has ended.
+    pub fn speaker_session_down(&self, id: &str) {
+        let state = {
+            let mut held = self.locked();
+            if !held.zones.speaker_session_down(id) {
+                return;
+            }
+            held.zones.encode_state()
+        };
+        self.publish(state);
+    }
+
+    /// A handshake under an adopted id offered another key and was refused:
+    /// surfaced in the state message's `key_changes`, where the app and Home
+    /// Assistant read it, and not only in the log.
+    pub fn speaker_key_changed(&self, id: &str, pinned: &str, offered: &str) {
+        let state = {
+            let mut held = self.locked();
+            let change = KeyChange {
+                id: id.to_string(),
+                pinned: pinned.to_string(),
+                offered: offered.to_string(),
+            };
+            if !held.zones.speaker_key_changed(change) {
+                return;
+            }
+            held.zones.encode_state()
+        };
+        self.publish(state);
+    }
+
+    /// Change what is known about speaker `id` right now (a per-speaker
+    /// runtime fact, [`SpeakerNow`]) and fan the state out when it changed.
+    /// Never persisted. Returns whether anything changed.
+    pub fn speaker_now(&self, id: &str, change: impl FnOnce(&mut SpeakerNow)) -> bool {
+        let state = {
+            let mut held = self.locked();
+            if !held.zones.speaker_now(id, change) {
+                return false;
+            }
+            held.zones.encode_state()
+        };
+        self.publish(state);
+        true
+    }
+}
+
+fn not_listed_line(id: &str, why: &NotListed) -> String {
+    format!(
+        "speaker not listed id={} reason={} detail=\"{}\"",
+        id,
+        why.name(),
+        match why {
+            NotListed::NotAnIdentifier =>
+                "its key is pinned and it plays, but no control command can name this id"
+                    .to_string(),
+            NotListed::Full => format!(
+                "this server lists at most {} speakers; forget one (speaker_forget)",
+                chorus_control::speakers::MAX_SPEAKERS
+            ),
+        }
+    )
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {

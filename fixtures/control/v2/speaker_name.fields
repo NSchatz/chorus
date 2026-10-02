@@ -1,0 +1,14 @@
+# Canonical input for the catalog v2 speaker_name vector.
+#
+# Encoding these field values must produce exactly speaker_name.json, and decoding
+# speaker_name.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# Goal 14: an adopted speaker is named after the fact (K92). The speaker is
+# named by the id its sessions authenticate as.
+
+message_type = speaker_name
+speaker = chorus-0123456789ab
+name = Kitchen left

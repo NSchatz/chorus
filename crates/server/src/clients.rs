@@ -275,6 +275,9 @@ impl ClientPool {
                             // room_volume is sealed before the first chunk,
                             // which the router only starts handing this
                             // session's queue once it is registered.
+                            // (goal 14) The speaker is listed and marked
+                            // present first, so its start is its room's.
+                            session.session_up(&hello);
                             let start = session.start_for(&hello);
                             if let Some(volume) = start.room_volume {
                                 hello.messages.push(Message::RoomVolume(volume));
@@ -300,6 +303,7 @@ impl ClientPool {
                                 control.wake_conductor();
                             }
                             route_controller(&mut reader, &session, &hello, id);
+                            let hello_id = hello.endpoint_id.clone();
                             if greeting.send(hello).is_ok() {
                                 (session.on_session)();
                                 // A line-in's upstream chunks, into its port.
@@ -325,6 +329,7 @@ impl ClientPool {
                                 line_ins.session_ended(id);
                             }
                             session.router.unregister(id);
+                            session.session_down(&hello_id);
                             // The TV relay's streams of this session end on
                             // the conductor's next pass (`crate::tvrelay`).
                             if let Some(control) = &session.control {
