@@ -1,4 +1,4 @@
-/* Who this board is, kept across boots (goal 14, docs/decisions/0000-*).
+/* Who this board is, kept across boots (goal 14, docs/decisions/0104-*).
  *
  * Before this unit a board had no identity of its own: every board presented
  * the id `chorus-endpoint` and a Noise key made fresh at each boot, so the

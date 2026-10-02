@@ -1,5 +1,5 @@
 /* Finding the server: a DNS-SD browse, and what to dial when it finds nothing
- * (goal 14, docs/decisions/0000-*; audit A-10's server-address part).
+ * (goal 14, docs/decisions/0104-*; audit A-10's server-address part).
  *
  * Until this unit the board dialled `server_address` from endpoint.conf, and
  * the committed value is loopback: a board cannot reach anything there. The
