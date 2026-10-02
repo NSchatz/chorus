@@ -9,6 +9,21 @@
 ## 2.0.0 of 2026-06-25, 1.0.1, 1.0.0), and its manifest requires `idf: '>=6.0'`
 ## and espressif/wiznet_common ^1.0.0 (github.com/espressif/esp-eth-drivers
 ## w5500/idf_component.yml at ed7342c, read 2026-09-30). docs/decisions/0057-*.
+##
+## espressif/network_provisioning: ESP-IDF's provisioning manager, used by the
+## Wi-Fi profile's SoftAP provisioning (goal 14, firmware/main/esp_provision.c,
+## docs/decisions/0103-wifi-provisioning-over-softap.md). ESP-IDF v6 removed the
+## in-tree `wifi_provisioning` and renamed it to this registry component
+## (docs/en/migration-guides/release-6.x/6.0/provisioning.rst:9 in the pinned
+## v6.1, read 2026-10-02). 1.2.5 (2026-09-23) carries the fix for buffer
+## overreads on names and passwords that are not terminated, and depends on
+## espressif/cjson ^1.7.19 (MIT); 1.3.0 and 1.3.1, two days and one day old on
+## the day of the pin, replace cJSON with a json_generator major version
+## published the same day and add nothing this endpoint uses
+## (components.espressif.com/api/components/espressif/network_provisioning and
+## its CHANGELOG.md, read 2026-10-02). The registry labels 1.2.5's licence
+## "Custom"; the licence text it ships is Apache-2.0 (the ADR has the hash).
 dependencies:
   idf: ">=6.0"
   espressif/w5500: "==2.0.0"
+  espressif/network_provisioning: "==1.2.5"

@@ -89,6 +89,7 @@ LIB_SRC := \
 	$(FW)/src/dsp.c \
 	$(FW)/src/endpoint_dsp.c \
 	$(FW)/src/store.c \
+	$(FW)/src/provision.c \
 	$(FW)/src/identity.c \
 	$(FW)/src/discovery.c
 
@@ -149,7 +150,7 @@ LIB_SRC += $(CODEC_SRC)
 CFLAGS += $(DRFLAC_DEFS) $(CODEC_INC)
 
 .PHONY: all check config-check golden-vectors sync-scenarios safety-scans amplifier clocking \
-        telemetry wireless link console session-outage noise-vectors psa-tree codec codec-fixtures playout volume controls dsp lowlat \
+        telemetry wireless link console provisioning session-outage noise-vectors psa-tree codec codec-fixtures playout volume controls dsp lowlat \
         identity discovery clean
 
 # Every binary this makefile builds, enumerated. There is no wildcard over
@@ -161,7 +162,7 @@ all: $(BUILD)/chorus-endpoint-config-check $(BUILD)/chorus-endpoint-scan \
      $(BUILD)/chorus-endpoint-session $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 \
      $(BUILD)/test_noise $(BUILD)/test_lowlat $(BUILD)/test_sync $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_scan $(BUILD)/test_telemetry \
      $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_codec $(BUILD)/test_playout $(BUILD)/test_volume $(BUILD)/test_controls $(BUILD)/test_dsp $(BUILD)/test_endpoint_dsp \
-     $(BUILD)/test_identity $(BUILD)/test_discovery \
+     $(BUILD)/test_identity $(BUILD)/test_discovery $(BUILD)/test_provision \
      $(BUILD)/chorus-endpoint-dsp-session $(BUILD)/opus_compare
 
 $(BUILD):
@@ -242,7 +243,7 @@ $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 $(BUILD)/test_noise $(BUILD)/te
 $(BUILD)/test_sync $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_telemetry \
 $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_playout \
 $(BUILD)/test_volume $(BUILD)/test_controls $(BUILD)/test_dsp \
-$(BUILD)/test_endpoint_dsp $(BUILD)/test_identity \
+$(BUILD)/test_endpoint_dsp $(BUILD)/test_identity $(BUILD)/test_provision \
 $(BUILD)/test_discovery: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
                          $(FW)/tests/test_%.c $(STAMP) $(PSA_LIB) $(VENDOR_OBJ) | $(BUILD)
 	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(TEST_SUPPORT) $(FW)/tests/test_$*.c \
@@ -327,6 +328,18 @@ link: $(BUILD)/test_link
 console: $(BUILD)/test_console
 	$(BUILD)/test_console
 
+# Goal 14: Wi-Fi provisioning for the compact speakers and the store it keeps a
+# network in (chorus/provision.h, chorus/store.h). Every state and transition,
+# the join form's parser on good and hostile bodies, the setup secret, a full
+# run from first boot to a reboot that joins with no access point, and the
+# rule that no network name, passphrase or setup secret reaches a log line or
+# the store's event log. Against the simulated radio and a simulated store; no
+# radio, no flash, no ESP-IDF. The manager's own handshake is not host-run
+# (ESP-IDF's protocomm does not build for the host: its CMakeLists.txt returns
+# early on the linux target), and docs/bench-packet.md S9 is where it runs.
+provisioning: $(BUILD)/test_provision
+	$(BUILD)/test_provision
+
 # The playout path (audit A-9, goal 8): the jitter buffer, the DMA-consumed
 # frames the I2S interrupt stamps on the monotonic clock, and the servo they
 # feed, driven by a fake DMA on a fake clock; and config/sync.conf read by the
@@ -404,7 +417,7 @@ codec-fixtures:
 
 check: config-check golden-vectors lowlat sync-scenarios safety-scans clocking amplifier telemetry \
        wireless link console playout volume controls dsp endpoint-dsp identity discovery \
-       session-outage dsp-session codec
+       session-outage dsp-session codec provisioning
 
 clean:
 	rm -rf $(BUILD)

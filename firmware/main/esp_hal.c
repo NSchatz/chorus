@@ -391,14 +391,19 @@ static chorus_wifi_ps_t from_platform_mode(wifi_ps_type_t mode)
 static int hal_radio_init(void *ctx)
 {
     (void)ctx;
+    /* The radio keeps its calibration in NVS. NVS is the store's to bring up
+     * (firmware/main/esp_store.c, goal 14) and holds the board's identity, its
+     * server pins and its Wi-Fi network, so a partition NVS cannot read is
+     * REFUSED here and never erased: the erase this function used to do on
+     * ESP_ERR_NVS_NO_FREE_PAGES and ESP_ERR_NVS_NEW_VERSION_FOUND would have
+     * thrown all three away to start a radio. A second nvs_flash_init is
+     * free. */
     esp_err_t nvs = nvs_flash_init();
-    if (nvs == ESP_ERR_NVS_NO_FREE_PAGES || nvs == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        if (nvs_flash_erase() != ESP_OK || nvs_flash_init() != ESP_OK) {
-            ESP_LOGE(TAG, "the non-volatile store the radio needs could not be prepared");
-            return -1;
-        }
-    } else if (nvs != ESP_OK) {
-        ESP_LOGE(TAG, "the non-volatile store the radio needs could not be prepared");
+    if (nvs != ESP_OK) {
+        ESP_LOGE(TAG,
+                 "nvs-not-usable (%s): the radio is not started and nothing is erased; the "
+                 "partition holds this board's identity and network",
+                 esp_err_to_name(nvs));
         return -1;
     }
     if (esp_netif_init() != ESP_OK) {

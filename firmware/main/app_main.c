@@ -31,6 +31,8 @@
 #include "freertos/task.h"
 
 #include "esp_playout.h"
+#include "esp_provision.h"
+#include "esp_store.h"
 
 #include "chorus/amp.h"
 #include "chorus/endpoint_config.h"
@@ -195,6 +197,11 @@ void app_main(void)
         return;
     }
 
+    /* What the board keeps across boots (goal 14, chorus/store.h): NVS, once,
+     * before anything reads it. A store that cannot be initialised is said
+     * and nothing is erased; whoever needs it then refuses by name. */
+    (void)chorus_esp_store_init();
+
     static chorus_i2c_bus_t bus;
     static chorus_output_stage_t stage;
     static chorus_i2s_controller_t controller;
@@ -291,6 +298,10 @@ void app_main(void)
     chorus_esp_hal_radio(&radio);
     chorus_ethernet_t ethernet;
     chorus_esp_link_ethernet(&ethernet);
+    /* Goal 14: a wireless speaker gets its network from the store, or raises
+     * its own access point and waits here until a phone gives it one
+     * (esp_provision.h). In a wired image this is nothing. */
+    chorus_esp_provision_or_join(&config, &radio);
     static chorus_link_report_t link;
     chorus_bring_up_status_t link_status =
         chorus_link_bring_up(&config.link, &config.eth, &config.pins, &ethernet, &radio, &link);
