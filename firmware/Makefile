@@ -89,7 +89,9 @@ LIB_SRC := \
 	$(FW)/src/dsp.c \
 	$(FW)/src/endpoint_dsp.c \
 	$(FW)/src/store.c \
-	$(FW)/src/provision.c
+	$(FW)/src/provision.c \
+	$(FW)/src/identity.c \
+	$(FW)/src/discovery.c
 
 # The four units the configuration checker itself needs. It is built without
 # the gate below, because it IS the gate. wifi.c is here because the reader
@@ -110,6 +112,12 @@ SCAN_SRC := $(FW)/check/endpoint_scan.c
 # outside firmware/src on purpose: they are what the endpoint is graded AGAINST,
 # and a fake inside the tree the scans cover would be endpoint source.
 TEST_SUPPORT := $(FW)/tests/fake_amp.c $(FW)/tests/fake_radio.c $(FW)/tests/fake_store.c
+
+# The host session binary's own glue (goal 14), outside firmware/src for the
+# same reason: the board has NVS and lwIP behind the same two seams
+# (firmware/main/esp_identity.c, esp_discovery.c), the host a directory of
+# files and POSIX sockets.
+SESSION_SUPPORT := $(FW)/tests/file_store.c $(FW)/tests/posix_discovery.c
 
 STAMP := $(BUILD)/config-ok.stamp
 
@@ -142,7 +150,8 @@ LIB_SRC += $(CODEC_SRC)
 CFLAGS += $(DRFLAC_DEFS) $(CODEC_INC)
 
 .PHONY: all check config-check golden-vectors sync-scenarios safety-scans amplifier clocking \
-        telemetry wireless link console provisioning session-outage noise-vectors psa-tree codec codec-fixtures playout volume controls dsp lowlat clean
+        telemetry wireless link console provisioning session-outage noise-vectors psa-tree codec codec-fixtures playout volume controls dsp lowlat \
+        identity discovery clean
 
 # Every binary this makefile builds, enumerated. There is no wildcard over
 # firmware/tests on purpose, and the cost of that is a test has to be named in
@@ -152,7 +161,8 @@ CFLAGS += $(DRFLAC_DEFS) $(CODEC_INC)
 all: $(BUILD)/chorus-endpoint-config-check $(BUILD)/chorus-endpoint-scan \
      $(BUILD)/chorus-endpoint-session $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 \
      $(BUILD)/test_noise $(BUILD)/test_lowlat $(BUILD)/test_sync $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_scan $(BUILD)/test_telemetry \
-     $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_codec $(BUILD)/test_playout $(BUILD)/test_volume $(BUILD)/test_controls $(BUILD)/test_dsp $(BUILD)/test_endpoint_dsp $(BUILD)/test_provision \
+     $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_codec $(BUILD)/test_playout $(BUILD)/test_volume $(BUILD)/test_controls $(BUILD)/test_dsp $(BUILD)/test_endpoint_dsp \
+     $(BUILD)/test_identity $(BUILD)/test_discovery $(BUILD)/test_provision \
      $(BUILD)/chorus-endpoint-dsp-session $(BUILD)/opus_compare
 
 $(BUILD):
@@ -211,10 +221,10 @@ config-check: $(STAMP)
 $(BUILD)/chorus-endpoint-scan: $(SCAN_SRC) $(FW)/check/main_endpoint_scan.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(FW)/check -o $@ $^ $(LDLIBS)
 
-$(BUILD)/chorus-endpoint-session: $(LIB_SRC) $(FW)/tests/main_session.c $(STAMP) $(PSA_LIB) \
-                                  $(VENDOR_OBJ) | $(BUILD)
-	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(FW)/tests/main_session.c $(PSA_LIB) \
-		$(VENDOR_OBJ) $(LDLIBS)
+$(BUILD)/chorus-endpoint-session: $(LIB_SRC) $(SESSION_SUPPORT) $(FW)/tests/main_session.c \
+                                  $(STAMP) $(PSA_LIB) $(VENDOR_OBJ) | $(BUILD)
+	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(SESSION_SUPPORT) $(FW)/tests/main_session.c \
+		$(PSA_LIB) $(VENDOR_OBJ) $(LDLIBS)
 
 # Goal 12's end to end on fakes (firmware/tests/dsp-session.sh): the real
 # session, the real playout path and its sound chain, and a fake I2S DMA that
@@ -233,7 +243,8 @@ $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 $(BUILD)/test_noise $(BUILD)/te
 $(BUILD)/test_sync $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_telemetry \
 $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_playout \
 $(BUILD)/test_volume $(BUILD)/test_controls $(BUILD)/test_dsp \
-$(BUILD)/test_endpoint_dsp $(BUILD)/test_provision: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
+$(BUILD)/test_endpoint_dsp $(BUILD)/test_identity $(BUILD)/test_provision \
+$(BUILD)/test_discovery: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
                          $(FW)/tests/test_%.c $(STAMP) $(PSA_LIB) $(VENDOR_OBJ) | $(BUILD)
 	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(TEST_SUPPORT) $(FW)/tests/test_$*.c \
 		$(PSA_LIB) $(VENDOR_OBJ) $(LDLIBS)
@@ -366,6 +377,25 @@ endpoint-dsp: $(BUILD)/test_endpoint_dsp
 # Goal 12, done-when line C on the C endpoint: the real chorus-server, a bonded
 # 2.1 set and a two-way of real C sessions on loopback, their written frames
 # captured from a fake I2S DMA and analysed (firmware/tests/dsp-session.sh).
+# Goal 14: who the board is across boots (chorus/identity.h) over the fake
+# store: the id (random, never the MAC) and the Noise key made once and the
+# same after a reboot, a failed store write refused rather than run unsaved,
+# the server's pin kept and a changed server key still refused, and the
+# session taking all of it from the store. Then the same end to end
+# (firmware/tests/identity-session.sh): the real chorus-server on loopback and
+# the session binary over a directory store, a reboot being a new process.
+identity: $(BUILD)/test_identity $(BUILD)/chorus-endpoint-session
+	$(BUILD)/test_identity
+	bash $(FW)/tests/identity-session.sh
+
+# Goal 14: the endpoint's DNS-SD browse (chorus/discovery.h) against the
+# packets in fixtures/discovery, the ones crates/discovery/tests/dnssd_vectors.rs
+# holds the Rust resolver to, then the browse and the fallback order over a
+# fake link and the fake store. No socket: the live exchange over real
+# multicast is `make verify-endpoint-mdns`, outside the gate.
+discovery: $(BUILD)/test_discovery
+	$(BUILD)/test_discovery
+
 dsp-session: $(BUILD)/chorus-endpoint-dsp-session
 	bash $(FW)/tests/dsp-session.sh
 
@@ -386,8 +416,8 @@ codec-fixtures:
 		--vectors "$(OPUS_VECTORS)" --out $(REPO_ROOT)/fixtures/codec
 
 check: config-check golden-vectors lowlat sync-scenarios safety-scans clocking amplifier telemetry \
-       wireless link console playout volume controls dsp endpoint-dsp session-outage dsp-session \
-       codec provisioning
+       wireless link console playout volume controls dsp endpoint-dsp identity discovery \
+       session-outage dsp-session codec provisioning
 
 clean:
 	rm -rf $(BUILD)

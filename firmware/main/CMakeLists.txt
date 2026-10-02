@@ -58,6 +58,8 @@ idf_component_register(
         "console_esp.c"
         "esp_store.c"
         ${chorus_profile_srcs}
+        "esp_identity.c"
+        "esp_discovery.c"
         "../src/conf.c"
         "../src/protocol.c"
         "../src/protocol_v2.c"
@@ -89,6 +91,8 @@ idf_component_register(
         "../src/dsp_cost.c"
         "../src/store.c"
         "../src/provision.c"
+        "../src/identity.c"
+        "../src/discovery.c"
         "${CHORUS_THIRD_PARTY}/dr_flac/dr_flac.c"
         ${chorus_opus_srcs}
     INCLUDE_DIRS

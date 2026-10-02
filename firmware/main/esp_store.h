@@ -18,13 +18,15 @@
 /* Initialise NVS, once, before anything reads the store. Returns 0 when the
  * store is usable. It never erases: a partition NVS cannot read is reported
  * and left as it is, because what it holds is the speaker's identity and its
- * network, and nothing in the image may throw those away on its own. Every
- * later read and write then answers `failed`, and each user of the store
- * refuses by name. */
+ * network, and nothing in the image may throw those away on its own.
+ * chorus_esp_store then answers NULL, and each user of the store refuses by
+ * name. */
 int chorus_esp_store_init(void);
 
-/* The NVS-backed store. Always the same object; valid for the life of the
- * image. */
+/* The NVS-backed store, or NULL until chorus_esp_store_init has succeeded.
+ * Always the same object once it exists; valid for the life of the image.
+ * chorus_esp_store_init may be called again by whoever needs the store first:
+ * a second call is free. */
 const chorus_store_t *chorus_esp_store(void);
 
 #endif /* CHORUS_ESP_STORE_H */

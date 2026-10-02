@@ -97,6 +97,14 @@ Kconfig list: it needs Flash Encryption or an eFuse key), so everything stored, 
 passphrase included, is readable by anyone who can read the flash chip. That is the price of
 guardrail 2 on development hardware and is stated here rather than discovered later.
 
+The radio bring-up in `firmware/main/esp_hal.c` used to erase NVS and try again on
+`ESP_ERR_NVS_NO_FREE_PAGES` and `ESP_ERR_NVS_NEW_VERSION_FOUND` (ESP-IDF's example idiom). That
+erase is removed in this change: it would have wiped the board's identity, its server pins and
+its Wi-Fi network to start a radio. The bring-up now refuses by name (`nvs-not-usable`) and the
+link stays down. The identity and discovery track (ADR 0104) landed its own copies of the seam's
+files first; this change keeps one copy of each, with `chorus_esp_store()` answering NULL until
+the store is up and the fake carrying both tracks' helpers.
+
 **2. SoftAP, not BLE.** The client that must work is a web page on any phone (K16). Web
 Bluetooth does not exist on iOS, BLE would put a Bluetooth stack in an image K53 keeps Bluetooth
 out of, and software coexistence makes Wi-Fi sleep outside its time slice, which the wireless
@@ -247,8 +255,6 @@ since v6.0), security 2 and 0 off, and states SoftAP support, the DHCP server an
 - Provisioning runs after the amplifier's bring-up (the envelope's order), so a board whose
   amplifier does not answer never reaches it; S9 says so. Moving it earlier is a change to
   `app_main.c`'s order for a later goal to weigh.
-- `esp_hal.c`'s `hal_radio_init` still erases NVS on `ESP_ERR_NVS_NO_FREE_PAGES`; with the store
-  initialised first it is not reached in practice, but it should go, by whoever next edits it.
 - The pairing button's long hold has no GPIO binding yet; `chorus_esp_provision_request_reset` is
   what it calls.
 - The setup secret is on the console only; the endpoint console's `status` could repeat it, and

@@ -21,8 +21,10 @@
 #include <string.h>
 
 #include "console_esp.h"
+#include "esp_discovery.h"
 #include "esp_hal.h"
 #include "esp_heap_caps.h"
+#include "esp_identity.h"
 #include "esp_link.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -369,6 +371,22 @@ void app_main(void)
 
     /* The console's hooks into the session (audit A-13): `server` and `status`. */
     chorus_esp_console_attach(session);
+
+    /* Who this board is and where its server is (goal 14), with the link up
+     * and before the session runs. The identity is the store's: an id and a
+     * Noise key made at the first boot and the same at every boot after, so
+     * the server that adopted this board knows it again. A board that cannot
+     * keep one opens no session: under an id and key that change at the next
+     * boot it would be adopted once and refused ever after. Then the server:
+     * a DNS-SD browse, else the last server this board shook hands with, else
+     * a configured address that is not loopback (firmware/src/discovery.c). */
+    if (chorus_esp_identity_load(session) != 0) {
+        ESP_LOGE(TAG, "this board has no identity it can keep; no session is opened and the "
+                      "output stage goes back to high impedance");
+        (void)chorus_amp_shut_down(&config.amp, &bus, &stage, &controller);
+        return;
+    }
+    chorus_esp_discovery_locate(session);
 
     if (xTaskCreate(session_task, "chorus-session", SESSION_STACK_BYTES, &task, SESSION_PRIORITY,
                     NULL) != pdPASS) {

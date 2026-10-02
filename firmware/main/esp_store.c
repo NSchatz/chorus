@@ -160,5 +160,7 @@ static const chorus_store_t nvs_store = {
 
 const chorus_store_t *chorus_esp_store(void)
 {
-    return &nvs_store;
+    /* No store before, or without, a working NVS: a caller that is handed
+     * NULL refuses by name rather than running on a medium that is not there. */
+    return store_ready ? &nvs_store : NULL;
 }
