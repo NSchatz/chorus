@@ -12,6 +12,9 @@
 #
 #   make gate             # everything
 #   make gate-fast        # the conventions checks only, for docs-only changes
+#   make tier-fast        # the conventions checks, fmt, clippy and the workspace tests: the fast
+#                         # tier run on every PR (the goals program's gate tiers, W15, W36);
+#                         # `make tier-full` is `make gate`, run at goal end and nightly on main
 #
 # Environment:
 #   CHORUS_IDF_ENV            a script that puts ESP-IDF on PATH and sets IDF_PATH,
@@ -116,6 +119,15 @@ firmware_idf() {
 echo "gate: $MODE, $(git rev-parse --short HEAD 2>/dev/null), $(cargo --version), IDF_PY_BUILD_JOBS=${IDF_PY_BUILD_JOBS:-2}" | tee -a "$LOG/summary.txt"
 
 conventions
+
+if [ "$MODE" = tier-fast ]; then
+    # The steps of the full gate that check the Rust code itself, without the long runs (the
+    # determinism, firmware, verify and image steps): cargo test builds what it tests, so the
+    # separate build step is left to the full tier.
+    step fmt              cargo fmt --all --check
+    step clippy           cargo clippy --workspace --all-targets --locked -- -D warnings
+    step test             cargo test --workspace --locked
+fi
 
 if [ "$MODE" = full ]; then
     step fmt              cargo fmt --all --check
