@@ -14,7 +14,7 @@ on real endpoints (AC-4) is a different run, below.
 ## Running it
 
 ```sh
-timeout 4300 flock -o -w 3600 /cache/locks/chorus-heavy.lock \
+timeout 4300 goals lock -w 3600 goals-heavy -- goals lock -w 3600 chorus-heavy -- \
     env CHORUS_HOUSE_SOAK_SECONDS=3600 make verify-house-soak
 ```
 

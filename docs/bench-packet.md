@@ -4,8 +4,8 @@ What the owner buys, how it is wired, the exact commands each bench session runs
 each one should print. Written in chorus goal 7 (2026-09-30) against proposal P4's recommended
 tier, which Checkpoint K deferred: the buy list is **awaiting the owner's choice** (Needs item
 "The bench buy list, awaiting your choice"), and nothing is ordered by the program (K4, K38).
-Every session here is the owner's (brief §0.6); each has its own Needs item in the `## chorus`
-section of NSchatz/shopkit `NEEDS-NOAH.md`. How a bench script turns a run into a report and a
+Every session here is the owner's (brief §0.6); each has its own item in the owner's queue (issues
+in NSchatz/goals; `goals needs add`, `/goals:needs`). How a bench script turns a run into a report and a
 pull request is `docs/bench.md`.
 
 Nothing in this file is a measurement. Every expected result below is a criterion or an
