@@ -194,8 +194,10 @@ void app_main(void)
         return;
     }
 
-    /* Which slot runs and what the bootloader recorded about it (goal 14). */
-    chorus_esp_ota_boot_report();
+    /* Which slot runs and what the bootloader recorded about it (goal 14),
+     * and, for an image on its trial boot, the backstop that rolls it back
+     * if nothing below ever gets as far as a session. */
+    chorus_esp_ota_boot_report(config.ota_confirm_seconds);
 
     static chorus_i2c_bus_t bus;
     static chorus_output_stage_t stage;

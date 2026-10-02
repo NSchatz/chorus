@@ -172,6 +172,7 @@ test passes in.
 - `firmware_chunk` at most 4096 bytes, one status per 16 chunks (`CHORUS_OTA_ACK_EVERY`,
   `FIRMWARE_ACK_EVERY`), a sender's window of 32 chunks (`FIRMWARE_WINDOW_CHUNKS`): nothing
   measured what a session carrying audio tolerates.
+- The backstop's 30 s margin after the unit's own deadline (`firmware/main/esp_ota.c`).
 - `firmware_offer.size` at most 16 MiB and the 47-byte bound on version and board texts: sanity
   bounds on the wire, chosen, not derived.
 
@@ -186,8 +187,14 @@ test passes in.
   directly after an idempotent `nvs_flash_init`. The store seam is another track's file, not
   merged when this was written; the key and namespace are the envelope's, so moving the glue onto
   `chorus_esp_store()` later changes no stored byte.
-- `app_main.c` has two additions, not one call: `chorus_esp_ota_boot_report()` where the envelope
-  places it, and `session->ota = chorus_esp_ota_unit(...)` where the session is configured.
+- `app_main.c` has two additions, not one call: `chorus_esp_ota_boot_report(confirm_seconds)`
+  where the envelope places it, and `session->ota = chorus_esp_ota_unit(...)` where the session
+  is configured. The report takes the trial's length because it also arms a backstop task in the
+  glue: an image on trial that is still unconfirmed 30 s (ASSUMED) after the unit's own deadline
+  is marked invalid and rebooted whether or not a session ever started. Without it an image whose
+  bring-up fails before the session task exists (app_main returns early on a dead link or
+  amplifier) would stay unconfirmed until its power was cycled. The backstop is binding code:
+  claimed on the emulator and the bench, not on a host.
 - The host binary gains `--ota-confirm-seconds` (a test cannot wait 60 s for a rollback) and
   `--ota-make-image` (so a test needs no image builder of its own). Its running version is read
   from the running slot's application description; `--ota-version` names only the first image.

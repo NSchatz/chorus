@@ -30,6 +30,8 @@
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 
@@ -261,12 +263,41 @@ static int note_clear(void *context)
 
 /* --- what app_main calls ------------------------------------------------------- */
 
-void chorus_esp_ota_boot_report(void)
+/* How long after the unit's own deadline the backstop acts. ASSUMED 30 s:
+ * long enough that the unit, when it runs, always decides first (and tells
+ * the server), short enough that a stuck image is gone within two minutes. */
+#define TRIAL_BACKSTOP_MARGIN_SECONDS 30u
+#define TRIAL_BACKSTOP_STACK_BYTES 4096u
+
+static void trial_backstop(void *arg)
+{
+    uint32_t seconds = (uint32_t)(uintptr_t)arg;
+    vTaskDelay((TickType_t)seconds * (TickType_t)configTICK_RATE_HZ);
+    if (glue_slot_state(NULL, glue_running_slot(NULL)) == CHORUS_OTA_IMAGE_PENDING_VERIFY) {
+        ESP_LOGE(TAG, "still unconfirmed %u s after boot, with or without a session",
+                 (unsigned)seconds);
+        (void)glue_invalidate_running_and_reboot(NULL);
+    }
+    vTaskDelete(NULL);
+}
+
+void chorus_esp_ota_boot_report(uint32_t confirm_seconds)
 {
     int slot = glue_running_slot(NULL);
+    chorus_ota_image_state_t state = glue_slot_state(NULL, slot);
     const esp_app_desc_t *description = esp_app_get_description();
-    ESP_LOGI(TAG, "running slot=%d state=%s version=%s", slot,
-             chorus_ota_image_state_name(glue_slot_state(NULL, slot)), description->version);
+    ESP_LOGI(TAG, "running slot=%d state=%s version=%s", slot, chorus_ota_image_state_name(state),
+             description->version);
+    if (state != CHORUS_OTA_IMAGE_PENDING_VERIFY) {
+        return;
+    }
+    uint32_t seconds = confirm_seconds + TRIAL_BACKSTOP_MARGIN_SECONDS;
+    if (xTaskCreate(trial_backstop, "chorus-ota-trial", TRIAL_BACKSTOP_STACK_BYTES,
+                    (void *)(uintptr_t)seconds, 5, NULL) != pdPASS) {
+        /* Without the backstop the unit's own deadline still stands, and a
+         * power cycle still rolls an unconfirmed image back. */
+        ESP_LOGE(TAG, "the trial's backstop task could not be started");
+    }
 }
 
 chorus_ota_t *chorus_esp_ota_unit(const char *board, uint32_t confirm_seconds)
