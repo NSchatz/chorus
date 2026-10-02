@@ -174,6 +174,13 @@ same target `make firmware-check` runs, exactly as those three do.
   them. They are scanned as text by the safety scans, and that is the only thing
   said about them. Everything they bind is graded; the wiring is not, and the
   criterion that grades the wiring is AC-2.
+- **Wi-Fi provisioning's binding (goal 14).** `firmware/main/esp_provision.c`
+  and `firmware/main/esp_store.c` are compiled only by ESP-IDF, and the pinned
+  `espressif/network_provisioning` manager's handshake does not build for the
+  host at all. What IS graded is every decision they bind
+  (`firmware/tests/test_provision.c`, `make firmware-check`, target
+  `provisioning`); the first run of the binding is the owner's bench session
+  `docs/bench-packet.md` S9 (ADR 0103).
 - **Any image, any flash, any eFuse, any OTA.** Untouched, and the endpoint
   safety scan enforces that the last two do not appear.
 - **The Linux client's own radio.** Nothing here turns Linux modem power save

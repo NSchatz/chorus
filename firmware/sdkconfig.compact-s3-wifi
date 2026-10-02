@@ -1,0 +1,38 @@
+# The compact Wi-Fi speaker's own ESP-IDF options, laid over sdkconfig.defaults
+# by tools/firmware-image.sh for the compact-s3-wifi profile only (goal 14).
+#
+# What is here is what Wi-Fi provisioning needs (firmware/main/esp_provision.c,
+# docs/decisions/0103-wifi-provisioning-over-softap.md) and the wired image has no
+# use for: a wired speaker never provisions. Line numbers are in the pinned
+# ESP-IDF v6.1, read 2026-10-02.
+
+# The speaker's own access point. Already the default (components/esp_wifi/
+# Kconfig:455-457); stated because the provisioning component compiles its
+# SoftAP scheme only with it, so a change of default would remove the scheme
+# silently.
+CONFIG_ESP_WIFI_SOFTAP_SUPPORT=y
+
+# The address the phone is handed on that access point comes from lwIP's DHCP
+# server. Already the default (components/lwip/Kconfig:409-411); stated for the
+# same reason.
+CONFIG_LWIP_DHCPS=y
+
+# protocomm security 1 (Curve25519 exchange, the key mixed with the proof of
+# possession, AES-CTR): what Espressif's phone app and esp_prov speak with a
+# plain proof-of-possession string. It defaults to n since ESP-IDF v6.0
+# (components/protocomm/Kconfig:14-16; docs/en/migration-guides/release-6.x/6.0/
+# provisioning.rst:44-52), and without it the manager refuses to start.
+CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_1=y
+# Security 2 (SRP6a) defaults to y (Kconfig:25-27). It needs a salt and verifier
+# made beforehand and the secret still has to reach the phone, so it buys
+# nothing here; off drops security2.c and the SRP6a sources
+# (components/protocomm/CMakeLists.txt:33-38).
+CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_2=n
+# Security 0 is no security at all. It defaults to n (Kconfig:3-5) and is
+# stated so nothing turns it on by accident.
+CONFIG_ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_0=n
+
+# Security 1's cipher. Both default to y (components/mbedtls/Kconfig:892-894,
+# 943-945); stated so a change of default cannot remove them silently.
+CONFIG_MBEDTLS_AES_C=y
+CONFIG_MBEDTLS_CIPHER_MODE_CTR=y
