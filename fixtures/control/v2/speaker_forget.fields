@@ -1,0 +1,14 @@
+# Canonical input for the catalog v2 speaker_forget vector.
+#
+# Encoding these field values must produce exactly speaker_forget.json, and decoding
+# speaker_forget.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# Goal 14: forget an adopted speaker: its record, its place in any room and,
+# on the server, its pinned key. Its next session is adopted afresh; this is
+# the owner's only way past a changed key.
+
+message_type = speaker_forget
+speaker = chorus-0123456789ab
