@@ -88,6 +88,7 @@ LIB_SRC := \
 	$(FW)/src/controls.c \
 	$(FW)/src/dsp.c \
 	$(FW)/src/endpoint_dsp.c \
+	$(FW)/src/ota.c \
 	$(FW)/src/store.c \
 	$(FW)/src/provision.c \
 	$(FW)/src/identity.c \
@@ -111,7 +112,8 @@ SCAN_SRC := $(FW)/check/endpoint_scan.c
 # The simulated part, output stage, I2S controller and radio. Test-only, and
 # outside firmware/src on purpose: they are what the endpoint is graded AGAINST,
 # and a fake inside the tree the scans cover would be endpoint source.
-TEST_SUPPORT := $(FW)/tests/fake_amp.c $(FW)/tests/fake_radio.c $(FW)/tests/fake_store.c
+TEST_SUPPORT := $(FW)/tests/fake_amp.c $(FW)/tests/fake_radio.c $(FW)/tests/fake_store.c \
+	$(FW)/tests/fake_flash.c
 
 # The host session binary's own glue (goal 14), outside firmware/src for the
 # same reason: the board has NVS and lwIP behind the same two seams
@@ -151,7 +153,7 @@ CFLAGS += $(DRFLAC_DEFS) $(CODEC_INC)
 
 .PHONY: all check config-check golden-vectors sync-scenarios safety-scans amplifier clocking \
         telemetry wireless link console provisioning session-outage noise-vectors psa-tree codec codec-fixtures playout volume controls dsp lowlat \
-        identity discovery clean
+        identity discovery ota clean
 
 # Every binary this makefile builds, enumerated. There is no wildcard over
 # firmware/tests on purpose, and the cost of that is a test has to be named in
@@ -162,7 +164,7 @@ all: $(BUILD)/chorus-endpoint-config-check $(BUILD)/chorus-endpoint-scan \
      $(BUILD)/chorus-endpoint-session $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 \
      $(BUILD)/test_noise $(BUILD)/test_lowlat $(BUILD)/test_sync $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_scan $(BUILD)/test_telemetry \
      $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_codec $(BUILD)/test_playout $(BUILD)/test_volume $(BUILD)/test_controls $(BUILD)/test_dsp $(BUILD)/test_endpoint_dsp \
-     $(BUILD)/test_identity $(BUILD)/test_discovery $(BUILD)/test_provision \
+     $(BUILD)/test_identity $(BUILD)/test_discovery $(BUILD)/test_provision $(BUILD)/test_ota \
      $(BUILD)/chorus-endpoint-dsp-session $(BUILD)/opus_compare
 
 $(BUILD):
@@ -221,10 +223,12 @@ config-check: $(STAMP)
 $(BUILD)/chorus-endpoint-scan: $(SCAN_SRC) $(FW)/check/main_endpoint_scan.c | $(BUILD)
 	$(CC) $(CFLAGS) -I$(FW)/check -o $@ $^ $(LDLIBS)
 
+# fake_flash.c is linked for --ota-flash: the host session's two-slot flash in
+# a file, so a test can "reboot" the endpoint by starting the binary again.
 $(BUILD)/chorus-endpoint-session: $(LIB_SRC) $(SESSION_SUPPORT) $(FW)/tests/main_session.c \
-                                  $(STAMP) $(PSA_LIB) $(VENDOR_OBJ) | $(BUILD)
+                                  $(FW)/tests/fake_flash.c $(STAMP) $(PSA_LIB) $(VENDOR_OBJ) | $(BUILD)
 	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(SESSION_SUPPORT) $(FW)/tests/main_session.c \
-		$(PSA_LIB) $(VENDOR_OBJ) $(LDLIBS)
+		$(FW)/tests/fake_flash.c $(PSA_LIB) $(VENDOR_OBJ) $(LDLIBS)
 
 # Goal 12's end to end on fakes (firmware/tests/dsp-session.sh): the real
 # session, the real playout path and its sound chain, and a fake I2S DMA that
@@ -243,7 +247,7 @@ $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 $(BUILD)/test_noise $(BUILD)/te
 $(BUILD)/test_sync $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_telemetry \
 $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_playout \
 $(BUILD)/test_volume $(BUILD)/test_controls $(BUILD)/test_dsp \
-$(BUILD)/test_endpoint_dsp $(BUILD)/test_identity $(BUILD)/test_provision \
+$(BUILD)/test_endpoint_dsp $(BUILD)/test_identity $(BUILD)/test_provision $(BUILD)/test_ota \
 $(BUILD)/test_discovery: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
                          $(FW)/tests/test_%.c $(STAMP) $(PSA_LIB) $(VENDOR_OBJ) | $(BUILD)
 	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(TEST_SUPPORT) $(FW)/tests/test_$*.c \
@@ -295,6 +299,9 @@ sync-scenarios: $(BUILD)/test_sync
 # self-test (tools/firmware-image-guard.sh): the guard itself needs a built
 # image and runs after the ESP-IDF build, but the demonstration that it goes
 # red on a smuggled option, writer or ROM call needs nothing, so it runs here.
+# Since goal 14 the scan allows ESP-IDF's OTA calls in ONE unit
+# (firmware/main/esp_ota.c) and nowhere else, and the guard also asserts the
+# bootloader's rollback on and anti-rollback off.
 safety-scans: $(BUILD)/chorus-endpoint-scan $(BUILD)/test_scan
 	$(BUILD)/chorus-endpoint-scan $(REPO_ROOT)
 	$(BUILD)/test_scan
@@ -399,6 +406,14 @@ discovery: $(BUILD)/test_discovery
 dsp-session: $(BUILD)/chorus-endpoint-dsp-session
 	bash $(FW)/tests/dsp-session.sh
 
+# Goal 14's foundation line: the firmware update's state machine
+# (firmware/src/ota.c) over a fake two-slot flash with ESP-IDF v6.1's bootloader
+# rule (firmware/tests/fake_flash.c): power lost at every write index, a seeded
+# campaign of random faults and each named one, a VALID slot bootable after
+# every one of them, and a bad image rolled back.
+ota: $(BUILD)/test_ota
+	$(BUILD)/test_ota
+
 session-outage: $(BUILD)/chorus-endpoint-session
 	bash $(FW)/tests/session-outage.sh
 
@@ -416,7 +431,7 @@ codec-fixtures:
 		--vectors "$(OPUS_VECTORS)" --out $(REPO_ROOT)/fixtures/codec
 
 check: config-check golden-vectors lowlat sync-scenarios safety-scans clocking amplifier telemetry \
-       wireless link console playout volume controls dsp endpoint-dsp identity discovery \
+       wireless link console playout volume controls dsp endpoint-dsp identity discovery ota \
        session-outage dsp-session codec provisioning
 
 clean:

@@ -234,6 +234,34 @@ pub fn v2_message_from_fields(f: &Fields) -> Message {
             status: named("status", LowLatencyStatus::from_name(f.str("status"))),
             udp_port: f.u64("udp_port") as u16,
         }),
+        Type::FirmwareOffer => Message::FirmwareOffer(FirmwareOffer {
+            transfer: f.u64("transfer") as u32,
+            size: f.u64("size") as u32,
+            sha256: {
+                let bytes = f.bytes("sha256");
+                let mut k = [0u8; 32];
+                k.copy_from_slice(&bytes);
+                k
+            },
+            chunk_bytes: f.u64("chunk_bytes") as u16,
+            version: f.str("version").to_string(),
+            board: f.str("board").to_string(),
+        }),
+        Type::FirmwareChunk => Message::FirmwareChunk(FirmwareChunk {
+            transfer: f.u64("transfer") as u32,
+            offset: f.u64("offset") as u32,
+            data: f.bytes("data"),
+        }),
+        Type::FirmwareStatus => Message::FirmwareStatus(FirmwareStatus {
+            transfer: f.u64("transfer") as u32,
+            state: named("state", FirmwareState::from_name(f.str("state"))),
+            reason: named("reason", FirmwareReason::from_name(f.str("reason"))),
+            received: f.u64("received") as u32,
+            version: f.str("version").to_string(),
+            board: f.str("board").to_string(),
+            slot: f.u64("slot") as u8,
+            image_version: f.str("image_version").to_string(),
+        }),
         Type::HandshakeInit => Message::HandshakeInit(HandshakeInit {
             protocol_version: f.u64("protocol_version") as u16,
             suite: named("suite", Suite::from_name(f.str("suite"))),

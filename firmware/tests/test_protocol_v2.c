@@ -383,6 +383,39 @@ static int build(const char *stem, const char *fields_text, chorus_v2_message_t 
         m->as.source_control.action = named(&f, "action", CHORUS_V2_ENUM_SOURCE_ACTION);
         m->as.source_control.codec = named(&f, "codec", CHORUS_V2_ENUM_CODEC);
         break;
+    case CHORUS_V2_FIRMWARE_OFFER: {
+        chorus_v2_firmware_offer_t *o = &m->as.firmware_offer;
+        o->transfer = (uint32_t)unsigned_number(&f, "transfer");
+        o->size = (uint32_t)unsigned_number(&f, "size");
+        chorus_v2_bytes_t digest = hex_bytes(&f, "sha256");
+        if (digest.len != CHORUS_V2_SHA256_LEN) {
+            chorus_check(0, "%s.fields sha256 is 32 bytes", stem);
+            f.ok = 0;
+        } else {
+            memcpy(o->sha256, digest.data, CHORUS_V2_SHA256_LEN);
+        }
+        o->chunk_bytes = (uint16_t)number(&f, "chunk_bytes");
+        o->version = text(&f, "version");
+        o->board = text(&f, "board");
+        break;
+    }
+    case CHORUS_V2_FIRMWARE_CHUNK:
+        m->as.firmware_chunk.transfer = (uint32_t)unsigned_number(&f, "transfer");
+        m->as.firmware_chunk.offset = (uint32_t)unsigned_number(&f, "offset");
+        m->as.firmware_chunk.data = hex_bytes(&f, "data");
+        break;
+    case CHORUS_V2_FIRMWARE_STATUS: {
+        chorus_v2_firmware_status_t *s = &m->as.firmware_status;
+        s->transfer = (uint32_t)unsigned_number(&f, "transfer");
+        s->state = named(&f, "state", CHORUS_V2_ENUM_FIRMWARE_STATE);
+        s->reason = named(&f, "reason", CHORUS_V2_ENUM_FIRMWARE_REASON);
+        s->received = (uint32_t)unsigned_number(&f, "received");
+        s->version = text(&f, "version");
+        s->board = text(&f, "board");
+        s->slot = (uint8_t)number(&f, "slot");
+        s->image_version = text(&f, "image_version");
+        break;
+    }
     case CHORUS_V2_ROOM_VOLUME:
         /* Read wide and narrowed on purpose: a rejection vector's 1001 has to
          * reach the encoder as 1001, and every value here fits a u16. */

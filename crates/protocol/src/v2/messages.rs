@@ -6,8 +6,8 @@
 
 use crate::message::{AudioChunk, SampleFormat, StreamEnd, TimeSync};
 use crate::v2::catalog::{
-    ChannelPosition, Codec, Command, Link, LowLatencyDirection, LowLatencyStatus, Playback,
-    RefusalReason, SourceAction, SourceKind, Suite, Type,
+    ChannelPosition, Codec, Command, FirmwareReason, FirmwareState, Link, LowLatencyDirection,
+    LowLatencyStatus, Playback, RefusalReason, SourceAction, SourceKind, Suite, Type,
 };
 
 /// Who a peer is and which roles it takes. The first message inside a
@@ -149,6 +149,90 @@ pub struct LowLatencyAccept {
     /// The endpoint's UDP receive port for a stream to it; 0 for a stream
     /// from it, and 0 whenever the offer is refused.
     pub udp_port: u16,
+}
+
+/// The server offering a firmware image to one endpoint, or cancelling the
+/// transfer in progress (`docs/protocol.md`, "0x18 firmware offer"; goal 14).
+/// Sent only on an explicit install action, and only to an endpoint whose
+/// `capabilities.features` has [`crate::v2::features::OTA`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FirmwareOffer {
+    /// Names the transfer; nonzero and unique per server process. 0, with
+    /// every other field zero or empty, cancels the transfer in progress.
+    pub transfer: u32,
+    /// Bytes in the whole image, 1 to 16 MiB.
+    pub size: u32,
+    /// SHA-256 of the whole image.
+    pub sha256: [u8; 32],
+    /// The most bytes one `firmware_chunk` of this transfer carries, 1 to 4096.
+    pub chunk_bytes: u16,
+    /// The image's version, at most 47 bytes.
+    pub version: String,
+    /// The board profile the image was built for, at most 47 bytes.
+    pub board: String,
+}
+
+impl FirmwareOffer {
+    /// The cancel: transfer 0 and nothing else.
+    pub fn cancel() -> FirmwareOffer {
+        FirmwareOffer {
+            transfer: 0,
+            size: 0,
+            sha256: [0; 32],
+            chunk_bytes: 0,
+            version: String::new(),
+            board: String::new(),
+        }
+    }
+
+    /// Whether this offer is the cancel.
+    pub fn is_cancel(&self) -> bool {
+        self.transfer == 0
+    }
+
+    /// The SHA-256 of a whole image: what an offer's `sha256` holds, and
+    /// what the endpoint compares its own digest of the bytes it wrote to.
+    pub fn digest_of(image: &[u8]) -> [u8; 32] {
+        use sha2::Digest;
+        let mut out = [0u8; 32];
+        out.copy_from_slice(&sha2::Sha256::digest(image));
+        out
+    }
+}
+
+/// One piece of an offered firmware image, server to endpoint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FirmwareChunk {
+    /// The offer's `transfer`; nonzero.
+    pub transfer: u32,
+    /// Where this piece starts in the image.
+    pub offset: u32,
+    /// This piece, 1 to the offer's `chunk_bytes` bytes.
+    pub data: Vec<u8>,
+}
+
+/// An endpoint's firmware state, endpoint to server: sent once right after
+/// `capabilities` on every session, after every
+/// [`crate::v2::FIRMWARE_ACK_EVERY`] chunks written, and at each change.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FirmwareStatus {
+    /// The transfer the status is about; 0 when none.
+    pub transfer: u32,
+    /// Where the endpoint's firmware stands.
+    pub state: FirmwareState,
+    /// Why, when there is a why.
+    pub reason: FirmwareReason,
+    /// Bytes written in order so far: the acknowledgement and the resume point.
+    pub received: u32,
+    /// The RUNNING image's version.
+    pub version: String,
+    /// The board profile the running image was built for.
+    pub board: String,
+    /// The slot the running image runs from, 0 or 1; 255 unknown.
+    pub slot: u8,
+    /// The version of the image the status is about (the offered one while
+    /// receiving, verified, refused or rolled back); empty when none.
+    pub image_version: String,
 }
 
 /// The first frame of a session, sent in the clear by the endpoint.
@@ -407,6 +491,12 @@ pub enum Message {
     LowLatencyOffer(LowLatencyOffer),
     /// 0x17.
     LowLatencyAccept(LowLatencyAccept),
+    /// 0x18.
+    FirmwareOffer(FirmwareOffer),
+    /// 0x19.
+    FirmwareChunk(FirmwareChunk),
+    /// 0x1A.
+    FirmwareStatus(FirmwareStatus),
     /// 0x20.
     HandshakeInit(HandshakeInit),
     /// 0x21.
@@ -454,6 +544,9 @@ impl Message {
             Message::Telemetry(_) => Type::Telemetry,
             Message::LowLatencyOffer(_) => Type::LowLatencyOffer,
             Message::LowLatencyAccept(_) => Type::LowLatencyAccept,
+            Message::FirmwareOffer(_) => Type::FirmwareOffer,
+            Message::FirmwareChunk(_) => Type::FirmwareChunk,
+            Message::FirmwareStatus(_) => Type::FirmwareStatus,
             Message::HandshakeInit(_) => Type::HandshakeInit,
             Message::HandshakeResponse(_) => Type::HandshakeResponse,
             Message::HandshakeFinish(_) => Type::HandshakeFinish,

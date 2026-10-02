@@ -17,14 +17,15 @@ use crate::codec::{
 use crate::message::{Message as V1Message, SampleFormat, MAX_CHANNELS};
 use crate::message::{MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ};
 use crate::v2::catalog::{
-    roles, ChannelPosition, Codec, Command, Link, LowLatencyDirection, LowLatencyStatus, Playback,
-    RefusalReason, SourceAction, SourceKind, Suite, Type, FLAC_STREAMINFO_LEN,
-    LOW_LATENCY_FEC_DEPTH, LOW_LATENCY_FEC_K, LOW_LATENCY_MAX_CHUNK_FRAMES,
-    LOW_LATENCY_MAX_LATENCY_NS, MAGIC, MAX_ARTWORK_LEN, MAX_LONG_TEXT, MAX_OUTPUT_DELAY_NS,
-    MAX_RATES, MAX_ROOM_VOLUME_RAMP_MS, MAX_SHORT_TEXT, MAX_VISUALIZER_BANDS,
-    OPUS_FRAME_COUNTS_48K, OPUS_HEAD_MIN_LEN, ROOM_VOLUME_FULL, SOUND_CROSSOVER_HZ,
-    SOUND_EQ_FREQ_HZ, SOUND_EQ_GAIN_CDB, SOUND_EQ_MAX_FILTERS, SOUND_EQ_Q_MILLI,
-    SOUND_SUB_LEVEL_CDB, SOUND_TONE_DB,
+    roles, ChannelPosition, Codec, Command, FirmwareReason, FirmwareState, Link,
+    LowLatencyDirection, LowLatencyStatus, Playback, RefusalReason, SourceAction, SourceKind,
+    Suite, Type, FIRMWARE_MAX_CHUNK_BYTES, FIRMWARE_MAX_SIZE, FIRMWARE_MAX_TEXT,
+    FIRMWARE_SLOT_UNKNOWN, FLAC_STREAMINFO_LEN, LOW_LATENCY_FEC_DEPTH, LOW_LATENCY_FEC_K,
+    LOW_LATENCY_MAX_CHUNK_FRAMES, LOW_LATENCY_MAX_LATENCY_NS, MAGIC, MAX_ARTWORK_LEN,
+    MAX_LONG_TEXT, MAX_OUTPUT_DELAY_NS, MAX_RATES, MAX_ROOM_VOLUME_RAMP_MS, MAX_SHORT_TEXT,
+    MAX_VISUALIZER_BANDS, OPUS_FRAME_COUNTS_48K, OPUS_HEAD_MIN_LEN, ROOM_VOLUME_FULL,
+    SOUND_CROSSOVER_HZ, SOUND_EQ_FREQ_HZ, SOUND_EQ_GAIN_CDB, SOUND_EQ_MAX_FILTERS,
+    SOUND_EQ_Q_MILLI, SOUND_SUB_LEVEL_CDB, SOUND_TONE_DB,
 };
 use crate::v2::catalog::{signal_reason, sound_flags, sound_fold, SOUND_TV_UPMIX_MAX};
 use crate::v2::messages::*;
@@ -307,6 +308,29 @@ pub fn encode_payload(message: &Message) -> Result<Vec<u8>, EncodeError> {
             w.u32(m.stream_tag);
             w.u8(m.status.to_wire());
             w.u16(m.udp_port);
+        }
+        Message::FirmwareOffer(m) => {
+            w.u32(m.transfer);
+            w.u32(m.size);
+            w.bytes(&m.sha256);
+            w.u16(m.chunk_bytes);
+            w.short_text(&m.version);
+            w.short_text(&m.board);
+        }
+        Message::FirmwareChunk(m) => {
+            w.u32(m.transfer);
+            w.u32(m.offset);
+            w.bytes(&m.data);
+        }
+        Message::FirmwareStatus(m) => {
+            w.u32(m.transfer);
+            w.u8(m.state.to_wire());
+            w.u8(m.reason.to_wire());
+            w.u32(m.received);
+            w.short_text(&m.version);
+            w.short_text(&m.board);
+            w.u8(m.slot);
+            w.short_text(&m.image_version);
         }
         Message::Telemetry(m) => {
             w.u64(m.taken_ns);
@@ -676,6 +700,48 @@ fn decode_payload(message_type: Type, payload: &[u8]) -> Result<Message, FieldEr
                 udp_port: r.u16("udp_port")?,
             })
         }
+        Type::FirmwareOffer => {
+            let transfer = r.u32("transfer")?;
+            let size = r.u32("size")?;
+            let mut sha256 = [0u8; 32];
+            sha256.copy_from_slice(r.take("sha256", 32)?);
+            Message::FirmwareOffer(FirmwareOffer {
+                transfer,
+                size,
+                sha256,
+                chunk_bytes: r.u16("chunk_bytes")?,
+                version: r.short_text("version")?,
+                board: r.short_text("board")?,
+            })
+        }
+        Type::FirmwareChunk => Message::FirmwareChunk(FirmwareChunk {
+            transfer: r.u32("transfer")?,
+            offset: r.u32("offset")?,
+            data: r.rest().to_vec(),
+        }),
+        Type::FirmwareStatus => {
+            let transfer = r.u32("transfer")?;
+            let s = r.u8("state")?;
+            let state = FirmwareState::from_wire(s).ok_or(FieldError {
+                field: "state",
+                problem: Problem::Undefined(s as u64),
+            })?;
+            let b = r.u8("reason")?;
+            let reason = FirmwareReason::from_wire(b).ok_or(FieldError {
+                field: "reason",
+                problem: Problem::Undefined(b as u64),
+            })?;
+            Message::FirmwareStatus(FirmwareStatus {
+                transfer,
+                state,
+                reason,
+                received: r.u32("received")?,
+                version: r.short_text("version")?,
+                board: r.short_text("board")?,
+                slot: r.u8("slot")?,
+                image_version: r.short_text("image_version")?,
+            })
+        }
         Type::HandshakeInit => {
             let magic = r.take("magic", 4)?;
             if magic != MAGIC {
@@ -1029,6 +1095,33 @@ pub fn validate(message: &Message) -> Result<(), FieldError> {
             }
             Ok(())
         }
+        Message::FirmwareOffer(m) => validate_firmware_offer(m),
+        Message::FirmwareChunk(m) => {
+            if m.transfer == 0 {
+                return err("transfer", Problem::OutOfRange(0));
+            }
+            if m.data.is_empty() {
+                return err("data", Problem::Truncated);
+            }
+            if m.data.len() > FIRMWARE_MAX_CHUNK_BYTES as usize {
+                return err(
+                    "data",
+                    Problem::TooLong {
+                        len: m.data.len(),
+                        max: FIRMWARE_MAX_CHUNK_BYTES as usize,
+                    },
+                );
+            }
+            Ok(())
+        }
+        Message::FirmwareStatus(m) => {
+            firmware_text_ok("version", &m.version)?;
+            firmware_text_ok("board", &m.board)?;
+            if m.slot > 1 && m.slot != FIRMWARE_SLOT_UNKNOWN {
+                return err("slot", Problem::OutOfRange(m.slot as i128));
+            }
+            firmware_text_ok("image_version", &m.image_version)
+        }
         Message::HandshakeInit(m) => {
             if m.noise.len() < 32 {
                 return err("noise", Problem::Truncated);
@@ -1151,6 +1244,54 @@ pub fn validate(message: &Message) -> Result<(), FieldError> {
         }
         Message::Sound(m) => validate_sound(m),
     }
+}
+
+/// `firmware_offer`'s rules, field by field in wire order (`docs/protocol.md`,
+/// "0x18 firmware offer"). Rejected, never clamped. The cancel (transfer 0)
+/// carries nothing else.
+fn validate_firmware_offer(m: &FirmwareOffer) -> Result<(), FieldError> {
+    if m.transfer == 0 {
+        if m.size != 0 {
+            return err("size", Problem::Inconsistent("a cancel names no image"));
+        }
+        if m.sha256 != [0u8; 32] {
+            return err("sha256", Problem::Inconsistent("a cancel names no image"));
+        }
+        if m.chunk_bytes != 0 {
+            return err(
+                "chunk_bytes",
+                Problem::Inconsistent("a cancel names no image"),
+            );
+        }
+        if !m.version.is_empty() {
+            return err("version", Problem::Inconsistent("a cancel names no image"));
+        }
+        if !m.board.is_empty() {
+            return err("board", Problem::Inconsistent("a cancel names no image"));
+        }
+        return Ok(());
+    }
+    if m.size == 0 || m.size > FIRMWARE_MAX_SIZE {
+        return err("size", Problem::OutOfRange(m.size as i128));
+    }
+    if m.chunk_bytes == 0 || m.chunk_bytes > FIRMWARE_MAX_CHUNK_BYTES {
+        return err("chunk_bytes", Problem::OutOfRange(m.chunk_bytes as i128));
+    }
+    firmware_text_ok("version", &m.version)?;
+    firmware_text_ok("board", &m.board)
+}
+
+fn firmware_text_ok(field: &'static str, text: &str) -> Result<(), FieldError> {
+    if text.len() > FIRMWARE_MAX_TEXT {
+        return err(
+            field,
+            Problem::TooLong {
+                len: text.len(),
+                max: FIRMWARE_MAX_TEXT,
+            },
+        );
+    }
+    Ok(())
 }
 
 /// `low_latency_offer`'s rules, field by field in wire order

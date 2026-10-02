@@ -1,0 +1,23 @@
+# Canonical input for the firmware_status_slot_two rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# firmware_status_slot_two.hex as that field out of range, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# A slot that is neither 0, 1 nor 255 (unknown): there are two slots.
+
+message_type = firmware_status
+transfer = 0
+state = idle
+reason = none
+received = 0
+version = 0.2.0
+board = brick-s3-wired
+slot = 2
+image_version =
+rejected_field = slot
+problem = out_of_range

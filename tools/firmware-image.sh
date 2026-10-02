@@ -14,10 +14,11 @@
 # the refusal names it. A DIFFERENT installed version is refused too: an image
 # built by a toolchain nobody chose looks exactly like an image that was.
 #
-# THIS SHIPS NOTHING. It builds an image and stops. OTA, rollback and every
-# form of image activation belong to chorus#FLEET-10, and
-# firmware/check/endpoint_scan.c fails the suite if a line of the endpoint tree
-# so much as names one.
+# THIS SHIPS NOTHING. It builds an image and stops. The image carries the
+# firmware update (goal 14: two app slots, the bootloader's rollback, the
+# update unit and its one glue unit, firmware/main/esp_ota.c), but nothing here
+# installs anything: an install is an explicit action on the server, and on an
+# installed speaker it is the owner's (CLAUDE.md, the plan of record).
 #
 # THE BOARD PROFILE. CHORUS_BOARD_PROFILE names one of firmware/boards/*.conf
 # (default: the one endpoint.conf names, brick-s3-wired, the wired classes'
@@ -137,7 +138,10 @@ say "  jobs:       IDF_PY_BUILD_JOBS=${IDF_PY_BUILD_JOBS:-<unset: the ninja defa
 # Guardrail 2 over what was just built: the generated configuration and both
 # linked images, before anything is reported as an image.
 bash "$REPO_ROOT/tools/firmware-image-guard.sh" "$OUT_DIR"
+# The guard passed (set -e): the four things it holds this image to, one line
+# per target, which the gate copies into its summary.
+say "safety scan: $PROFILE: no eFuse write, no Secure Boot, no Flash Encryption, no anti-rollback: pass"
 
 say "chorus: image built: target esp32s3, board profile $PROFILE, link $(endpoint_conf link_transport)"
 say "chorus: the image is in $OUT_DIR and has NOT been flashed or shipped"
-say "chorus: flashing is an operator act; OTA is chorus#FLEET-10 and is not in this phase"
+say "chorus: flashing is the owner's act, and so is an OTA install on an installed speaker"

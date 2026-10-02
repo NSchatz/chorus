@@ -56,6 +56,7 @@ idf_component_register(
         "esp_playout.c"
         "esp_marker.c"
         "console_esp.c"
+        "esp_ota.c"
         "esp_store.c"
         ${chorus_profile_srcs}
         "esp_identity.c"
@@ -89,6 +90,7 @@ idf_component_register(
         "../src/console.c"
         "../src/decode_cost.c"
         "../src/dsp_cost.c"
+        "../src/ota.c"
         "../src/store.c"
         "../src/provision.c"
         "../src/identity.c"
@@ -124,6 +126,11 @@ idf_component_register(
         lwip
         mbedtls
         console
+        # The firmware update (goal 14): esp_ota.c is the one unit that names
+        # app_update's calls (firmware/check/endpoint_scan.c, OTA_GLUE_UNIT).
+        app_update
+        esp_app_format
+        esp_partition
         # The join form's server (goal 14). Named for every profile because a
         # component's requirements are fixed before the profile is known to
         # CMake; only the Wi-Fi profile's binding calls it, and the linker

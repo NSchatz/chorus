@@ -193,6 +193,61 @@ grade_configuration() {
     ' "$file"
 }
 
+# The positive half of the update's configuration (goal 14): ROLLBACK is on,
+# ANTI-rollback is off. The refuse list above already fails anti-rollback when
+# it is on; this states the pair, so an image without the bootloader's rollback
+# (which would keep a bad update forever) is refused as well, and so the two
+# options, whose names differ by one word, cannot be mistaken for each other.
+# Reads one sdkconfig-format file or one sdkconfig.json. Prints one FAIL line
+# per finding.
+grade_rollback() {
+    local file="$1"
+    local label="$2"
+    awk -v label="$label" '
+        function value_of(line,    v) {
+            v = ""
+            if (line ~ /^[[:space:]]*CONFIG_[A-Za-z0-9_]+[[:space:]]*=/) {
+                v = line
+                sub(/^[^=]*=[[:space:]]*/, "", v)
+                sub(/[[:space:]]*$/, "", v)
+            } else if (line ~ /^[[:space:]]*"[A-Za-z0-9_]+"[[:space:]]*:/) {
+                v = line
+                sub(/^[^:]*:[[:space:]]*/, "", v)
+                sub(/[[:space:]]*,?[[:space:]]*$/, "", v)
+                if (v == "true") { v = "y" }
+            }
+            return v
+        }
+        function name_of(line,    n) {
+            n = ""
+            if (line ~ /^[[:space:]]*CONFIG_[A-Za-z0-9_]+[[:space:]]*=/) {
+                n = line
+                sub(/^[[:space:]]*/, "", n)
+                sub(/[[:space:]]*=.*/, "", n)
+            } else if (line ~ /^[[:space:]]*"[A-Za-z0-9_]+"[[:space:]]*:/) {
+                n = line
+                sub(/^[[:space:]]*"/, "", n)
+                sub(/".*/, "", n)
+                n = "CONFIG_" n
+            }
+            return n
+        }
+        {
+            name = name_of($0)
+            if (name == "CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE" && value_of($0) == "y") { rollback = 1 }
+            if (name == "CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK" && value_of($0) == "y") { anti = NR }
+        }
+        END {
+            if (!rollback) {
+                printf "FAIL rollback-not-enabled-in-the-generated-configuration %s CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE is not on: the bootloader would keep a bad update (firmware/sdkconfig.defaults sets it)\n", label
+            }
+            if (anti) {
+                printf "FAIL anti-rollback-enabled-in-the-generated-configuration %s:%d CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK is on: it burns the secure version into an eFuse (guardrail 2)\n", label, anti
+            }
+        }
+    ' "$file"
+}
+
 # --- the linked image --------------------------------------------------------
 
 # Grade one image from its `nm` listing and the aligned 32-bit words of its
@@ -286,6 +341,8 @@ CONFIG_SECURE_ROM_DL_MODE_ENABLED=y
 CONFIG_BOOT_ROM_LOG_ALWAYS_ON=y
 # CONFIG_BOOT_ROM_LOG_ALWAYS_OFF is not set
 # CONFIG_EFUSE_VIRTUAL is not set
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+# CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK is not set
 EOF
     cat >"$scratch/sdkconfig.json" <<'EOF'
 {
@@ -294,6 +351,8 @@ EOF
     "SECURE_BOOT_V2_RSA_SUPPORTED": true,
     "SECURE_FLASH_ENC_ENABLED": false,
     "SECURE_ROM_DL_MODE_ENABLED": true,
+    "BOOTLOADER_APP_ROLLBACK_ENABLE": true,
+    "BOOTLOADER_APP_ANTI_ROLLBACK": false,
     "BOOT_ROM_LOG_ALWAYS_ON": true
 }
 EOF
@@ -316,6 +375,37 @@ EOF
     expect_red "SECURE_FLASH_ENC_ENABLED true in the sdkconfig.json the code was compiled against" \
         "$(grade_configuration "$scratch/smuggled.json" sdkconfig.json)" \
         " CONFIG_SECURE_FLASH_ENC_ENABLED is on"
+
+    # Goal 14's pair: rollback on, anti-rollback off, in both formats.
+    say "chorus: firmware-image-guard self-test, rollback on and anti-rollback off"
+    expect_green "rollback on and anti-rollback off in an sdkconfig" \
+        "$(grade_rollback "$scratch/sdkconfig" sdkconfig)"
+    expect_green "rollback on and anti-rollback off in an sdkconfig.json" \
+        "$(grade_rollback "$scratch/sdkconfig.json" sdkconfig.json)"
+    grep -v 'CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE' "$scratch/sdkconfig" >"$scratch/no-rollback"
+    expect_red "an sdkconfig that does not mention rollback" \
+        "$(grade_rollback "$scratch/no-rollback" sdkconfig)" \
+        "FAIL rollback-not-enabled-in-the-generated-configuration"
+    sed 's/^CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y$/# CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE is not set/' \
+        "$scratch/sdkconfig" >"$scratch/rollback-off"
+    expect_red "an sdkconfig with rollback written as not set" \
+        "$(grade_rollback "$scratch/rollback-off" sdkconfig)" \
+        "FAIL rollback-not-enabled-in-the-generated-configuration"
+    sed 's/"BOOTLOADER_APP_ROLLBACK_ENABLE": true/"BOOTLOADER_APP_ROLLBACK_ENABLE": false/' \
+        "$scratch/sdkconfig.json" >"$scratch/rollback-off.json"
+    expect_red "an sdkconfig.json with rollback false" \
+        "$(grade_rollback "$scratch/rollback-off.json" sdkconfig.json)" \
+        "FAIL rollback-not-enabled-in-the-generated-configuration"
+    sed 's/^# CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK is not set$/CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK=y/' \
+        "$scratch/sdkconfig" >"$scratch/anti-on"
+    expect_red "an sdkconfig with anti-rollback on beside rollback" \
+        "$(grade_rollback "$scratch/anti-on" sdkconfig)" \
+        "FAIL anti-rollback-enabled-in-the-generated-configuration"
+    sed 's/"BOOTLOADER_APP_ANTI_ROLLBACK": false/"BOOTLOADER_APP_ANTI_ROLLBACK": true/' \
+        "$scratch/sdkconfig.json" >"$scratch/anti-on.json"
+    expect_red "an sdkconfig.json with anti-rollback true" \
+        "$(grade_rollback "$scratch/anti-on.json" sdkconfig.json)" \
+        "FAIL anti-rollback-enabled-in-the-generated-configuration"
 
     # A clean image: the reads the stock app links, the ROM writers present as
     # the absolute symbols every image carries, and one ROM function that IS
@@ -358,7 +448,7 @@ EOF
         say "FAIL firmware-image-guard-self-test: $failures demonstration(s) did not behave"
         return 1
     fi
-    say "pass firmware-image-guard-self-test: a stock-shaped configuration and image are green, and every smuggled option, writer and ROM call goes red by name"
+    say "pass firmware-image-guard-self-test: a stock-shaped configuration and image are green, every smuggled option, writer and ROM call goes red by name, and so does rollback off or anti-rollback on"
 }
 
 # --- a real build -------------------------------------------------------------
@@ -454,6 +544,15 @@ guard_build() {
         bootloader/config/sdkconfig.json)" || return 2
     findings="$findings${out:+$'\n'$out}"
 
+    # Rollback on, anti-rollback off, in all three (goal 14).
+    out="$(grade_rollback "$config_file" "$config_file")"
+    findings="$findings${out:+$'\n'$out}"
+    out="$(grade_rollback "$build_dir/config/sdkconfig.json" config/sdkconfig.json)"
+    findings="$findings${out:+$'\n'$out}"
+    out="$(grade_rollback "$build_dir/bootloader/config/sdkconfig.json" \
+        bootloader/config/sdkconfig.json)"
+    findings="$findings${out:+$'\n'$out}"
+
     local scratch
     scratch="$(mktemp -d "${TMPDIR:-/tmp}/chorus-image-guard.XXXXXX")"
     local elf label word_count
@@ -473,7 +572,7 @@ guard_build() {
         printf '%s\n' "$findings" >&2
         return 1
     fi
-    say "pass firmware-image-guard: the generated configuration enables no option that burns an eFuse, and neither the app nor the bootloader links an eFuse writer or loads a ROM eFuse writer's address"
+    say "pass firmware-image-guard: the generated configuration enables no option that burns an eFuse, has the bootloader's rollback on and anti-rollback off, and neither the app nor the bootloader links an eFuse writer or loads a ROM eFuse writer's address"
 }
 
 case "${1:-}" in

@@ -86,6 +86,28 @@ pub const LOW_LATENCY_MAX_CHUNK_FRAMES: u32 = 700;
 /// bound as `output_delay`.
 pub const LOW_LATENCY_MAX_LATENCY_NS: u64 = MAX_OUTPUT_DELAY_NS;
 
+/// `firmware_chunk`: the most image bytes in one chunk, and so the largest
+/// `firmware_offer.chunk_bytes` (goal 14, `docs/protocol.md` "Firmware
+/// update"). ASSUMED: one flash sector, and small enough that a chunk never
+/// holds the record stream longer than an audio chunk does.
+pub const FIRMWARE_MAX_CHUNK_BYTES: u16 = 4096;
+/// `firmware_offer`: the largest image a frame can announce, 16 MiB. A
+/// sanity bound on the wire, not a slot size: the endpoint refuses what does
+/// not fit its own slot (`too_large`).
+pub const FIRMWARE_MAX_SIZE: u32 = 16 * 1024 * 1024;
+/// The firmware messages' `version`, `board` and `image_version`: at most
+/// this many bytes of UTF-8 (the endpoint keeps them in fixed buffers).
+pub const FIRMWARE_MAX_TEXT: usize = 47;
+/// `firmware_status.slot` when the endpoint cannot tell which slot runs.
+pub const FIRMWARE_SLOT_UNKNOWN: u8 = 255;
+/// The endpoint sends one `firmware_status` after this many chunks written
+/// in order. ASSUMED 16; the C endpoint's `CHORUS_OTA_ACK_EVERY`.
+pub const FIRMWARE_ACK_EVERY: u32 = 16;
+/// The most chunks a server has in flight beyond the last `received` it was
+/// told, so image bytes never starve the audio in the same session. ASSUMED
+/// 32 (two acknowledgements' worth).
+pub const FIRMWARE_WINDOW_CHUNKS: u32 = 32;
+
 /// The bits of `capabilities`' trailing `features` byte (goal 13). Unlike
 /// `sound`'s flags, a bit no version defines is accepted and kept: a feature
 /// is something an endpoint CAN do, and a server that does not know one simply
@@ -94,10 +116,13 @@ pub const LOW_LATENCY_MAX_LATENCY_NS: u64 = MAX_OUTPUT_DELAY_NS;
 pub mod features {
     /// The endpoint takes a low-latency UDP stream (`low_latency_offer`).
     pub const LOW_LATENCY: u8 = 1 << 0;
+    /// The endpoint takes a firmware image inside its session
+    /// (`firmware_offer`, goal 14). An endpoint without it is never offered.
+    pub const OTA: u8 = 1 << 1;
     /// Every defined bit.
-    pub const DEFINED: u8 = LOW_LATENCY;
+    pub const DEFINED: u8 = LOW_LATENCY | OTA;
     /// Names, in bit order, for fixtures and diagnostics.
-    pub const NAMES: [(u8, &str); 1] = [(LOW_LATENCY, "low_latency")];
+    pub const NAMES: [(u8, &str); 2] = [(LOW_LATENCY, "low_latency"), (OTA, "ota")];
 }
 
 /// The bits of `sound`'s `flags` byte. A bit outside [`sound_flags::DEFINED`]
@@ -191,6 +216,12 @@ pub enum Type {
     LowLatencyOffer,
     /// 0x17, an endpoint's answer to a `low_latency_offer`.
     LowLatencyAccept,
+    /// 0x18, the server offering (or cancelling) a firmware image (goal 14).
+    FirmwareOffer,
+    /// 0x19, one piece of an offered firmware image.
+    FirmwareChunk,
+    /// 0x1A, an endpoint's firmware state: what runs, and how a transfer stands.
+    FirmwareStatus,
     /// 0x20, the first frame of a session: magic, version, suite, Noise message 1.
     HandshakeInit,
     /// 0x21, Noise message 2.
@@ -225,7 +256,7 @@ pub enum Type {
 
 impl Type {
     /// Every type in the catalog, in wire order.
-    pub const ALL: [Type; 26] = [
+    pub const ALL: [Type; 29] = [
         Type::TimeSync,
         Type::AudioChunk,
         Type::StreamEnd,
@@ -237,6 +268,9 @@ impl Type {
         Type::Telemetry,
         Type::LowLatencyOffer,
         Type::LowLatencyAccept,
+        Type::FirmwareOffer,
+        Type::FirmwareChunk,
+        Type::FirmwareStatus,
         Type::HandshakeInit,
         Type::HandshakeResponse,
         Type::HandshakeFinish,
@@ -268,6 +302,9 @@ impl Type {
             Type::Telemetry => 0x15,
             Type::LowLatencyOffer => 0x16,
             Type::LowLatencyAccept => 0x17,
+            Type::FirmwareOffer => 0x18,
+            Type::FirmwareChunk => 0x19,
+            Type::FirmwareStatus => 0x1A,
             Type::HandshakeInit => 0x20,
             Type::HandshakeResponse => 0x21,
             Type::HandshakeFinish => 0x22,
@@ -305,6 +342,9 @@ impl Type {
             Type::Telemetry => "telemetry",
             Type::LowLatencyOffer => "low_latency_offer",
             Type::LowLatencyAccept => "low_latency_accept",
+            Type::FirmwareOffer => "firmware_offer",
+            Type::FirmwareChunk => "firmware_chunk",
+            Type::FirmwareStatus => "firmware_status",
             Type::HandshakeInit => "handshake_init",
             Type::HandshakeResponse => "handshake_response",
             Type::HandshakeFinish => "handshake_finish",
@@ -370,6 +410,13 @@ impl Type {
             Type::LowLatencyOffer => 1 + 4 + 32 + 2 + 4 + 1 + 1 + 8,
             // stream_tag, status, udp_port
             Type::LowLatencyAccept => 4 + 1 + 2,
+            // transfer, size, sha256, chunk_bytes, two text lengths
+            Type::FirmwareOffer => 4 + 4 + 32 + 2 + 1 + 1,
+            // transfer, offset, one data byte
+            Type::FirmwareChunk => 4 + 4 + 1,
+            // transfer, state, reason, received, two text lengths, slot, one
+            // more text length
+            Type::FirmwareStatus => 4 + 1 + 1 + 4 + 1 + 1 + 1 + 1,
             // magic, version, suite, the 32-byte ephemeral key
             Type::HandshakeInit => 4 + 2 + 1 + 32,
             // e (32), encrypted s (48), an encrypted payload tag (16)
@@ -625,6 +672,55 @@ wire_enum! {
         RefusedNoSocket = 2, "refused_no_socket";
         /// Refused: the endpoint cannot run the offered FEC (k or depth).
         RefusedFec = 3, "refused_fec";
+    }
+}
+
+wire_enum! {
+    /// `firmware_status.state`: where an endpoint's firmware stands.
+    FirmwareState {
+        /// A confirmed image runs and no transfer is in progress.
+        Idle = 0, "idle";
+        /// A transfer is being written; `received` is how far it is.
+        Receiving = 1, "receiving";
+        /// Written, digest good, boot slot set: the endpoint is about to reboot.
+        Verified = 2, "verified";
+        /// The running image is on its trial boot and has not confirmed yet.
+        PendingVerify = 3, "pending_verify";
+        /// The running image passed its trial in this boot.
+        Confirmed = 4, "confirmed";
+        /// The image that was tried is not the one running: it was rolled back.
+        RolledBack = 5, "rolled_back";
+        /// The offer or the transfer was refused; `reason` says why.
+        Refused = 6, "refused";
+    }
+}
+
+wire_enum! {
+    /// `firmware_status.reason`: why a transfer was refused, or what a state
+    /// is qualified by.
+    FirmwareReason {
+        /// Nothing to say.
+        None = 0, "none";
+        /// The image does not fit the endpoint's slot.
+        TooLarge = 1, "too_large";
+        /// The SHA-256 of what arrived is not the offer's.
+        BadDigest = 2, "bad_digest";
+        /// The flash refused a write.
+        WriteFailed = 3, "write_failed";
+        /// Another transfer is in progress.
+        Busy = 4, "busy";
+        /// The image was built for another board.
+        WrongBoard = 5, "wrong_board";
+        /// The running image has not confirmed (an offer during its trial), or
+        /// did not confirm (a rollback).
+        NotConfirmed = 6, "not_confirmed";
+        /// A chunk that is not the next one in order, or not one this
+        /// transfer can hold. With state `receiving`, `received` is where to
+        /// resume.
+        BadOffset = 7, "bad_offset";
+        /// The medium refused: its own check of the image, the erase, or the
+        /// boot selection.
+        MediumRefused = 8, "medium_refused";
     }
 }
 

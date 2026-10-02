@@ -51,20 +51,36 @@ CONFIG_ETH_USE_SPI_ETHERNET=y
 # - Wi-Fi power save. chorus#WIFI-7 owns the wireless tier, asserts the mode by
 #   name and measures the jitter both ways. This phase asserts nothing about
 #   which link the endpoint uses, so it sets nothing.
-# - OTA, rollback and anti-rollback. chorus#FLEET-10 owns them, and its
-#   evidence is a deliberately bad image shipped and reverted. There is no
-#   OTA partition here and no image state is changed by anything in this tree.
+# - Anti-rollback. It burns an eFuse (the secure version), and guardrail 2
+#   forbids that on development hardware; see the firmware update block below,
+#   which states it off, and the image guard, which refuses it on.
 # - Secure Boot and Flash Encryption. Both burn eFuses, an eFuse bit set to 1
 #   "cannot be reverted back to 0", and guardrail 2 forbids that on development
 #   hardware outright.
 
-# The app partition (goal 6, docs/decisions/0044-the-vendored-decoders.md): the FLAC and Opus
-# decoders took the image past ESP-IDF's default 1 MB single-app partition, so the endpoint uses
-# its "Single factory app (large), no OTA" table, 1.5 MB for the app within the default 2 MB of
-# flash (components/partition_table/Kconfig.projbuild and partitions_singleapp_large.csv in the
-# pinned ESP-IDF v6.1, read 2026-09-30). Still no OTA partition: the layout OTA needs is
-# chorus#FLEET-10's (goal 14), which revisits this table and the flash size together.
-CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+# The firmware update's layout (goal 14, docs/decisions/0108-*): two app slots of
+# equal size and the otadata that selects one, no factory app (firmware/partitions.csv). Two
+# 3 MiB slots do not fit ESP-IDF's default 2 MB of flash, so the flash size is stated: 8 MB,
+# which is what both board profiles declare (board_flash_size_mb) and is ASSUMED for the
+# owner's board until the item "Your ESP32-S3 boards: module markings and a read-only chip
+# report" says. The 1.5 MB single-app table of goal 6 (docs/decisions/0044-*) is retired.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+
+# Rollback: the bootloader boots a newly selected image ONCE on trial and goes back to the
+# previous one unless the app confirmed it (CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE,
+# components/bootloader/Kconfig.app_rollback:3-13 in the pinned v6.1; the rule itself is
+# components/bootloader_support/src/bootloader_utility.c:393-401 and :443-449, read
+# 2026-10-02). firmware/src/ota.c decides when to confirm; firmware/main/esp_ota.c is the one
+# unit that calls ESP-IDF's OTA functions.
+#
+# Anti-rollback is NOT rollback: it burns the image's secure version into an eFuse, which
+# guardrail 2 forbids. It is stated off here, refused by the source scan
+# (firmware/check/efuse-kconfig.list) and asserted off in every built image by
+# tools/firmware-image-guard.sh.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+# CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK is not set
 
 # app_main's own stack (goal 8). Its large objects are static and the session and
 # playout writer run in their own tasks (firmware/main/app_main.c), but the bring-up

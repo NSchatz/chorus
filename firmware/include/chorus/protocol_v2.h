@@ -95,6 +95,18 @@ extern const uint8_t CHORUS_V2_MAGIC[CHORUS_V2_MAGIC_LEN];
  * that does not know one never uses it. Absent on the wire reads as 0, and an
  * encoder writes the byte only when a bit is set. */
 #define CHORUS_V2_FEATURE_LOW_LATENCY 0x01u
+/* Goal 14: the endpoint takes a firmware image inside its session
+ * (firmware_offer). An endpoint without the bit is never offered. */
+#define CHORUS_V2_FEATURE_OTA 0x02u
+/* The firmware messages' bounds (docs/protocol.md, "Firmware update"): the
+ * most bytes in one firmware_chunk, the largest size an offer may announce
+ * (a sanity bound, not a slot size), and the most bytes of a version or
+ * board text. */
+#define CHORUS_V2_FIRMWARE_MAX_CHUNK_BYTES 4096u
+#define CHORUS_V2_FIRMWARE_MAX_SIZE (16u * 1024u * 1024u)
+#define CHORUS_V2_FIRMWARE_MAX_TEXT 47u
+#define CHORUS_V2_FIRMWARE_SLOT_UNKNOWN 255u
+#define CHORUS_V2_SHA256_LEN 32u
 /* Goal 13, sound's optional theater block after the filters: tv_upmix (0 off,
  * 1 ambient; past 1 rejected, UNDEFINED) and fold (what the set lacks; any
  * other bit rejected). Written only when one of them is not 0; a byte that is
@@ -130,6 +142,9 @@ typedef enum {
     CHORUS_V2_TELEMETRY = 0x15,
     CHORUS_V2_LOW_LATENCY_OFFER = 0x16,
     CHORUS_V2_LOW_LATENCY_ACCEPT = 0x17,
+    CHORUS_V2_FIRMWARE_OFFER = 0x18,
+    CHORUS_V2_FIRMWARE_CHUNK = 0x19,
+    CHORUS_V2_FIRMWARE_STATUS = 0x1A,
     CHORUS_V2_HANDSHAKE_INIT = 0x20,
     CHORUS_V2_HANDSHAKE_RESPONSE = 0x21,
     CHORUS_V2_HANDSHAKE_FINISH = 0x22,
@@ -175,11 +190,13 @@ typedef enum {
     CHORUS_V2_ENUM_ROLE_BIT,
     CHORUS_V2_ENUM_LOW_LATENCY_DIRECTION,
     CHORUS_V2_ENUM_LOW_LATENCY_STATUS,
-    CHORUS_V2_ENUM_FEATURE_BIT
+    CHORUS_V2_ENUM_FEATURE_BIT,
+    CHORUS_V2_ENUM_FIRMWARE_STATE,
+    CHORUS_V2_ENUM_FIRMWARE_REASON
 } chorus_v2_enum_t;
 
 /* The name of a value, or NULL when the value is not defined. For ROLE_BIT
- * the value is a bit index, 0 to 4; for FEATURE_BIT, 0. */
+ * the value is a bit index, 0 to 4; for FEATURE_BIT, 0 or 1. */
 const char *chorus_v2_enum_name(chorus_v2_enum_t which, uint8_t value);
 
 /* The value with this name. Returns 0 and sets *out, or -1. */
@@ -423,6 +440,39 @@ typedef struct {
     uint8_t fold;     /* goal 13, CHORUS_V2_SOUND_FOLD_* */
 } chorus_v2_sound_t;
 
+/* The server offering a firmware image, or (transfer 0, all else zero or
+ * empty) cancelling the transfer in progress (docs/protocol.md, "0x18
+ * firmware offer"). `sha256` is CHORUS_V2_SHA256_LEN bytes. */
+typedef struct {
+    uint32_t transfer;
+    uint32_t size;
+    uint8_t sha256[CHORUS_V2_SHA256_LEN];
+    uint16_t chunk_bytes;
+    chorus_v2_bytes_t version;
+    chorus_v2_bytes_t board;
+} chorus_v2_firmware_offer_t;
+
+/* One piece of an offered image: the rest of the frame is the data. */
+typedef struct {
+    uint32_t transfer;
+    uint32_t offset;
+    chorus_v2_bytes_t data;
+} chorus_v2_firmware_chunk_t;
+
+/* An endpoint's firmware state. `state` and `reason` are the values of
+ * chorus_ota_wire_state_t and chorus_ota_reason_t (chorus/ota.h), which are
+ * the wire's. */
+typedef struct {
+    uint32_t transfer;
+    uint8_t state;
+    uint8_t reason;
+    uint32_t received;
+    chorus_v2_bytes_t version;
+    chorus_v2_bytes_t board;
+    uint8_t slot;
+    chorus_v2_bytes_t image_version;
+} chorus_v2_firmware_status_t;
+
 /* Any message in the v2 catalog. `type` is the wire byte and selects the
  * member of `as`. */
 typedef struct {
@@ -439,6 +489,9 @@ typedef struct {
         chorus_v2_telemetry_t telemetry;
         chorus_v2_low_latency_offer_t low_latency_offer;
         chorus_v2_low_latency_accept_t low_latency_accept;
+        chorus_v2_firmware_offer_t firmware_offer;
+        chorus_v2_firmware_chunk_t firmware_chunk;
+        chorus_v2_firmware_status_t firmware_status;
         chorus_v2_handshake_init_t handshake_init;
         chorus_v2_handshake_message_t handshake_response;
         chorus_v2_handshake_message_t handshake_finish;

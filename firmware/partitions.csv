@@ -1,0 +1,19 @@
+# The endpoint's partition table (goal 14): two app slots for A/B updates.
+#
+# No factory app: a board is flashed once over USB into ota_0, and from then on
+# each update goes to the slot that is not running. otadata is the bootloader's
+# record of which slot to boot and of each image's state (two 4 KiB sectors,
+# ESP-IDF's size for it). The slots are 3 MiB each: the image is about 1.4 MB
+# today (FLAC and Opus decoders, docs/decisions/0044-*), and the design asks for
+# at least 2 MB a slot. Everything ends at 0x620000, inside the 8 MB the build
+# declares (CONFIG_ESPTOOLPY_FLASHSIZE_8MB, ASSUMED for the owner's board). The
+# 3 MiB is ASSUMED headroom, not a measured need. Layout rules (app partitions
+# on 64 KiB boundaries, the table itself at 0x8000): ESP-IDF v6.1
+# docs/en/api-guides/partition-tables.rst, read 2026-10-02.
+#
+# Name,   Type, SubType, Offset,   Size
+nvs,      data, nvs,     0x9000,   0x6000
+otadata,  data, ota,     0xf000,   0x2000
+phy_init, data, phy,     0x11000,  0x1000
+ota_0,    app,  ota_0,   0x20000,  0x300000
+ota_1,    app,  ota_1,   0x320000, 0x300000

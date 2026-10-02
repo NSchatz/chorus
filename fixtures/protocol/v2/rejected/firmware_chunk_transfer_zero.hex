@@ -1,0 +1,20 @@
+# chorus REJECTION vector: firmware chunk, protocol v2 message type 0x19.
+#
+# Committed, and never written by a test. A well-formed frame whose value the format does not
+# accept: any implementation of chorus protocol v2 must reject it naming `transfer` (out of range),
+# consume the whole frame and carry on with the next one, and must refuse to encode the fields in
+# firmware_chunk_transfer_zero.fields (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x19, payload length 12 (0x000C), big-endian
+19 00 0C
+
+# transfer = 0
+00 00 00 00
+
+# offset = 0
+00 00 00 00
+
+# data: the rest of the frame, 4 bytes
+E9 06 02 20

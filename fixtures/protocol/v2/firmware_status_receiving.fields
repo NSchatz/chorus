@@ -1,0 +1,21 @@
+# Canonical input for the firmware_status_receiving golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly firmware_status_receiving.hex, and decoding firmware_status_receiving.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+#
+# The acknowledgement after sixteen 4096-byte chunks of transfer 7: 65536 bytes written in
+# order, which is also where a sender resumes.
+
+message_type = firmware_status
+transfer = 7
+state = receiving
+reason = none
+received = 65536
+version = 0.2.0
+board = brick-s3-wired
+slot = 0
+image_version = 0.3.0
