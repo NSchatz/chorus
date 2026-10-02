@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"name","detail":"'' is not a name: the catalog declares 1 to 64 characters, no control character, and no leading or trailing space"}

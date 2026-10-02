@@ -22,6 +22,7 @@ use chorus_control::rooms::{
     Source,
 };
 use chorus_control::sound::{EqFilter, FixedPoint, Polarity};
+use chorus_control::speakers::KeyChange;
 use chorus_control::theater::TvUpmix;
 use chorus_control::transport::{Transport, ZoneTransports};
 use chorus_control::zones::{GroupKind, Zone, Zones};
@@ -54,6 +55,9 @@ const EVERY_V2_MESSAGE_TYPE: &[&str] = &[
     "bass_management",
     "room_eq",
     "av_trim",
+    "speaker_name",
+    "speaker_room",
+    "speaker_forget",
     "state",
     "error",
     "refused",
@@ -178,6 +182,15 @@ fn server_from(fields: &Fields) -> Zones {
         zones.add(Zone::new(&id)).unwrap();
     }
     zones.set_transports(ZoneTransports::new(&declared));
+    // (goal 14) What the session layer said before the commands: the ids it
+    // adopted, each with its key's fingerprint (`adopted.N = <id> <key>`).
+    let mut n = 0;
+    while fields.has(&format!("adopted.{}", n)) {
+        let line = fields.get(&format!("adopted.{}", n));
+        let (id, key) = line.split_once(' ').unwrap();
+        zones.speaker_adopted(id, key).unwrap();
+        n += 1;
+    }
     let mut n = 0;
     while fields.has(&format!("command.{}", n)) {
         let text = fields.get(&format!("command.{}", n));
@@ -185,6 +198,27 @@ fn server_from(fields: &Fields) -> Zones {
         zones
             .apply(&command)
             .unwrap_or_else(|e| panic!("{}: {}", text, e));
+        n += 1;
+    }
+    // And after them: the sessions that are up (`session.N = <id> | <software>
+    // | <roles>`) and the key changes refused (`changed.N = <id> <pinned>
+    // <offered>`).
+    let mut n = 0;
+    while fields.has(&format!("session.{}", n)) {
+        let line = fields.get(&format!("session.{}", n));
+        let parts: Vec<&str> = line.split('|').map(str::trim).collect();
+        zones.speaker_session_up(parts[0], parts[1], &list(parts[2]));
+        n += 1;
+    }
+    let mut n = 0;
+    while fields.has(&format!("changed.{}", n)) {
+        let line = fields.get(&format!("changed.{}", n));
+        let parts: Vec<&str> = line.split(' ').collect();
+        zones.speaker_key_changed(KeyChange {
+            id: parts[0].to_string(),
+            pinned: parts[1].to_string(),
+            offered: parts[2].to_string(),
+        });
         n += 1;
     }
     zones
@@ -362,6 +396,18 @@ fn command_from(fields: &Fields) -> Command {
         "av_trim" => Command::AvTrim {
             zone: get("zone"),
             av_trim_ms: num("av_trim_ms") as i16,
+        },
+        "speaker_name" => Command::SpeakerName {
+            speaker: get("speaker"),
+            name: get("name"),
+        },
+        "speaker_room" => Command::SpeakerRoom {
+            speaker: get("speaker"),
+            // No `room` line is the wire's `null`: no room.
+            room: fields.has("room").then(|| get("room")),
+        },
+        "speaker_forget" => Command::SpeakerForget {
+            speaker: get("speaker"),
         },
         "bass_management" => Command::BassManagement {
             zone: get("zone"),

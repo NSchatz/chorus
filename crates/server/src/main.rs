@@ -928,6 +928,14 @@ fn main() -> ExitCode {
         });
     }
 
+    // (goal 14) The control plane lists every speaker the pins already hold
+    // and forgets a pin on `speaker_forget`: one store, shared.
+    let adoptions = Arc::new(adoptions);
+    if let Some((_, state)) = control.as_ref() {
+        for line in state.adopt_through(Arc::clone(&adoptions)) {
+            status.say(&line);
+        }
+    }
     let session = Arc::new(SessionContext {
         identity,
         adoptions,

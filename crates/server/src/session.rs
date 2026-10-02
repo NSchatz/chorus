@@ -204,6 +204,40 @@ impl Adoptions {
         Ok(verdict)
     }
 
+    /// Every id with a pinned key, in order, with the key's fingerprint.
+    pub fn pins(&self) -> Vec<(String, String)> {
+        let store = self.lock();
+        store
+            .ids()
+            .into_iter()
+            .filter_map(|id| store.pinned(&id).map(|key| (id, fingerprint(&key))))
+            .collect()
+    }
+
+    /// The owner's act (`speaker_forget`): forget this id entirely, so it is
+    /// adopted afresh on its next handshake. The file is rewritten before the
+    /// answer; when it cannot be, the pin is put back and the reason comes
+    /// back, so a pin the disk still holds is never reported forgotten.
+    /// `Ok(false)` where there was no pin.
+    pub fn forget(&self, id: &str) -> Result<bool, String> {
+        let mut store = self.lock();
+        let before = store.clone();
+        if !store.forget(id) {
+            return Ok(false);
+        }
+        if let Some(path) = &self.path {
+            if let Err(e) = write_atomically(path, &store.to_text()) {
+                *store = before;
+                return Err(format!(
+                    "its pin could not be removed from {}: {}",
+                    path.display(),
+                    e
+                ));
+            }
+        }
+        Ok(true)
+    }
+
     /// Every key change refused since this store was loaded.
     pub fn key_changes(&self) -> Vec<chorus_protocol::v2::adoption::KeyChange> {
         self.lock().key_changes().to_vec()
@@ -386,8 +420,9 @@ impl Offer {
 pub struct SessionContext {
     /// This server's id and long-term key.
     pub identity: Identity,
-    /// The endpoints it has adopted.
-    pub adoptions: Adoptions,
+    /// The endpoints it has adopted. Shared with the control plane, whose
+    /// `speaker_forget` removes a pin (goal 14).
+    pub adoptions: Arc<Adoptions>,
     /// The stream it offers.
     pub offer: Offer,
     /// Where status lines go (`key=value` lines, one per event).
@@ -430,7 +465,7 @@ impl SessionContext {
     pub fn quiet(identity: Identity, offer: Offer) -> SessionContext {
         SessionContext {
             identity,
-            adoptions: Adoptions::in_memory(),
+            adoptions: Arc::new(Adoptions::in_memory()),
             offer,
             log: Box::new(|_| {}),
             on_session: Box::new(|| {}),
@@ -462,6 +497,29 @@ impl SessionContext {
         }
     }
 
+    /// (goal 14) Tell the control plane a session is up, before it is given
+    /// its start: the speaker is listed if this is the first the server has
+    /// seen of it, and marked present (in its assigned room, if it has one).
+    pub fn session_up(&self, greeting: &Greeting) {
+        if let Some(control) = &self.control {
+            for line in control.speaker_session_up(
+                &greeting.endpoint_id,
+                &greeting.key,
+                &greeting.software,
+                greeting.roles,
+            ) {
+                self.say(&line);
+            }
+        }
+    }
+
+    /// (goal 14) Tell the control plane a session has ended.
+    pub fn session_down(&self, endpoint_id: &str) {
+        if let Some(control) = &self.control {
+            control.speaker_session_down(endpoint_id);
+        }
+    }
+
     fn say(&self, line: &str) {
         (self.log)(line)
     }
@@ -485,6 +543,10 @@ pub struct Greeting {
     pub visualizer_bands: u8,
     /// Its `capabilities.features` (goal 13: `low_latency`).
     pub features: u8,
+    /// (goal 14) The software string its `hello` named.
+    pub software: String,
+    /// (goal 14) The fingerprint of its authenticated key.
+    pub key: String,
 }
 
 /// The session the reader runs its requests over.
@@ -555,6 +617,12 @@ pub fn establish<'a>(
                     "endpoint key changed id={} pinned={} offered={}; refused",
                     change.id, change.pinned, change.offered
                 ));
+                // And where the app reads it (goal 14): the state message's
+                // `key_changes`. The pin is not moved by this or anything
+                // but the owner's `speaker_forget`.
+                if let Some(control) = &ctx.control {
+                    control.speaker_key_changed(&change.id, &change.pinned, &change.offered);
+                }
             } else {
                 ctx.say(&format!(
                     "client refused peer={} reason={} detail=\"{}\"",
@@ -652,6 +720,8 @@ pub fn establish<'a>(
             roles: hello.roles,
             visualizer_bands: caps.visualizer_bands,
             features: caps.features,
+            software: hello.software,
+            key,
         },
     ))
 }

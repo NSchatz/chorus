@@ -353,6 +353,28 @@ pub enum Command {
         /// The trim, ms.
         av_trim_ms: i16,
     },
+    /// (v2, goal 14) Name an adopted speaker.
+    SpeakerName {
+        /// The speaker, by the id its sessions authenticate as.
+        speaker: String,
+        /// What a person sees.
+        name: String,
+    },
+    /// (v2, goal 14) Assign an adopted speaker to a room, or to none: it
+    /// becomes a member of the room and leaves every other.
+    SpeakerRoom {
+        /// The speaker.
+        speaker: String,
+        /// The room, or `None` (`null` on the wire) for no room.
+        room: Option<String>,
+    },
+    /// (v2, goal 14) Forget an adopted speaker: its record, its place in any
+    /// room, and (on the server) its pinned key, so the next session under
+    /// its id is adopted afresh. The owner's only way past a changed key.
+    SpeakerForget {
+        /// The speaker.
+        speaker: String,
+    },
 }
 
 impl Command {
@@ -386,6 +408,9 @@ impl Command {
             Command::BassManagement { .. } => "bass_management",
             Command::RoomEq { .. } => "room_eq",
             Command::AvTrim { .. } => "av_trim",
+            Command::SpeakerName { .. } => "speaker_name",
+            Command::SpeakerRoom { .. } => "speaker_room",
+            Command::SpeakerForget { .. } => "speaker_forget",
         }
     }
 
@@ -586,6 +611,21 @@ impl Command {
                 text("zone", zone);
                 m.push(("av_trim_ms".to_string(), Value::int(i64::from(*av_trim_ms))));
             }
+            Command::SpeakerName { speaker, name } => {
+                text("speaker", speaker);
+                text("name", name);
+            }
+            Command::SpeakerRoom { speaker, room } => {
+                text("speaker", speaker);
+                m.push((
+                    "room".to_string(),
+                    match room {
+                        Some(room) => Value::text(room),
+                        None => Value::Null,
+                    },
+                ));
+            }
+            Command::SpeakerForget { speaker } => text("speaker", speaker),
         }
         Value::Obj(m)
     }
@@ -1253,6 +1293,31 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
                     i64::from(AV_TRIM_MS.1),
                 )
                 .map_err(at)? as i16,
+            }
+        }
+        "speaker_name" => {
+            fields(&["v", "t", "speaker", "name"], &[])?;
+            Command::SpeakerName {
+                speaker: id("speaker")?,
+                name: display_name(value, "name").map_err(at)?,
+            }
+        }
+        "speaker_room" => {
+            fields(&["v", "t", "speaker", "room"], &[])?;
+            Command::SpeakerRoom {
+                speaker: id("speaker")?,
+                // `null` is "no room", said out loud: a `room` left out is a
+                // message somebody forgot a field of, and is refused.
+                room: match value.get("room") {
+                    Some(Value::Null) => None,
+                    _ => Some(id("room")?),
+                },
+            }
+        }
+        "speaker_forget" => {
+            fields(&["v", "t", "speaker"], &[])?;
+            Command::SpeakerForget {
+                speaker: id("speaker")?,
             }
         }
         "bass_management" => {
