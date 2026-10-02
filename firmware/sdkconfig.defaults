@@ -58,7 +58,7 @@ CONFIG_ETH_USE_SPI_ETHERNET=y
 #   "cannot be reverted back to 0", and guardrail 2 forbids that on development
 #   hardware outright.
 
-# The firmware update's layout (goal 14, docs/decisions/0107-*): two app slots of
+# The firmware update's layout (goal 14, docs/decisions/0108-*): two app slots of
 # equal size and the otadata that selects one, no factory app (firmware/partitions.csv). Two
 # 3 MiB slots do not fit ESP-IDF's default 2 MB of flash, so the flash size is stated: 8 MB,
 # which is what both board profiles declare (board_flash_size_mb) and is ASSUMED for the

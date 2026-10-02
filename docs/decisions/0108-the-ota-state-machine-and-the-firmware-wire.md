@@ -1,8 +1,8 @@
-# 0107: the endpoint's firmware update is a pure A/B state machine graded over a fake flash that models ESP-IDF's bootloader, an image travels inside the session as three new messages, and ESP-IDF's OTA calls live in one glue unit
+# 0108: the endpoint's firmware update is a pure A/B state machine graded over a fake flash that models ESP-IDF's bootloader, an image travels inside the session as three new messages, and ESP-IDF's OTA calls live in one glue unit
 
 - Status: accepted (goal 14, 2026-10-02)
 - Decided by: the goal-14 design envelope, section 2 (OTA on the endpoint) and "The wire", track
-  `chorus-g14/ota-core` (PR #107); the program's research
+  `chorus-g14/ota-core` (PR #108; first opened as #107, whose branch carried a commit subject one character over the limit); the program's research
   `.claude/goals/2026-09-chorus-research/research-platform-network.md` section 3 (OTA testability
   without hardware: "the A/B decision logic must be chorus's own pure C"); BRIEF.md 5.9 and
   section 3.1 rule 2 (no eFuse burns on dev hardware); the owner's decisions K91, K92, K93 and I13
