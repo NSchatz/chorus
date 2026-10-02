@@ -72,8 +72,9 @@ against the sources below before anything was built on it.
   is 11365 bytes, sha256
   `f0f612d1627194ddd07c8b5b238a514ae9794632e5470c00f16237def7dc2246`, begins "Apache License,
   Version 2.0, January 2004", and is byte-identical to the `LICENSE` inside the archive. The
-  component is Apache-2.0; only the label changed. Its dependency `espressif/cjson` is MIT per
-  the registry.
+  component is Apache-2.0; only the label changed. Its dependency resolved to `espressif/cjson` 1.7.19~2
+  (hash `e7883232...`, in `dependencies.lock`), labelled MIT by the registry
+  (https://components.espressif.com/api/components/espressif/cjson).
 - chorus: `firmware/include/chorus/wifi.h`, `firmware/src/wifi.c`, `firmware/tests/fake_radio.*`,
   `firmware/tests/test_wifi.c`, `firmware/main/{app_main.c,esp_hal.c,console_esp.c,CMakeLists.txt}`,
   `firmware/Makefile`, `firmware/endpoint-units.conf`, `firmware/check/efuse-kconfig.list`,
@@ -182,8 +183,18 @@ since v6.0), security 2 and 0 off, and states SoftAP support, the DHCP server an
 
   | profile | before (origin/main `0ea250d`) | after | delta | free after |
   |---|---|---|---|---|
-  | compact-s3-wifi | 1,367,968 (0x14dfa0) | SIZE_WIFI_AFTER | SIZE_WIFI_DELTA | SIZE_WIFI_FREE |
-  | brick-s3-wired | 1,368,672 (0x14e260) | SIZE_WIRED_AFTER | SIZE_WIRED_DELTA | SIZE_WIRED_FREE |
+  | compact-s3-wifi | 1,367,968 (0x14dfa0) | 1,498,096 (0x16dbf0) | +130,128 | 37,904 (2%) |
+  | brick-s3-wired | 1,368,672 (0x14e260) | 1,369,216 (0x14e480) | +544 | 166,784 (11%) |
+
+  Where the Wi-Fi image's growth is, from `python -m esp_idf_size --archives --diff` over the two
+  map files (bytes): the manager 28,714; string constants 27,636 (the linker merges them into one
+  section the tool books under `libesp_stdio.a`); chorus's own units and binding 15,122 (5,596 of
+  it static RAM); the HTTP parser 15,029; protocomm 11,206; the HTTP server 10,943; protobuf-c
+  10,072; the Wi-Fi library's access-point paths 5,268; lwIP (the DHCP server) 4,012; cJSON 3,037.
+  The wired image grew by the store alone. THE WI-FI IMAGE HAS 37,904 BYTES LEFT in the 1.5 MB
+  single-app partition: enough to merge, not enough to grow in. The goal's OTA layout replaces
+  that partition with slots of at least 2 MB; until it lands, anything else that grows the Wi-Fi
+  image has to count these bytes.
 
   These are build outputs, not measurements of a device, and nothing here is timing evidence.
 - NOT host-tested, and said so in the test's header and the Makefile: the binding and the
