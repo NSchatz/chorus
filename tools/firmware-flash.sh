@@ -123,6 +123,13 @@ fi
 if [ -n "${CHORUS_BOARD_PROFILE:-}" ] && [ "$CHORUS_BOARD_PROFILE" != "$built_profile" ]; then
     refuse "CHORUS_BOARD_PROFILE is $CHORUS_BOARD_PROFILE but the image in $image_dir was built for $built_profile; rebuild with CHORUS_BOARD_PROFILE=$CHORUS_BOARD_PROFILE make firmware-image"
 fi
+# The emulator's image is not a speaker's (goal 14): its link is a controller no
+# board has and it brings up no amplifier. It goes into an emulator's flash
+# file (tools/qemu-boot-run.sh) and never onto a device, with or without the
+# owner at the bench.
+if command grep -q -E '^link_transport *= *emulated' "$image_dir/board_profile.conf"; then
+    refuse "the image in $image_dir was built for the emulator's board ($built_profile, link_transport = emulated); it is never written to a device. Build a speaker's profile with CHORUS_BOARD_PROFILE=<profile> make firmware-image"
+fi
 
 # Guardrail 2, over what would be written. Encrypted flashing leaves its own
 # argument files; an eFuse-burning option in the build's sdkconfig is refused

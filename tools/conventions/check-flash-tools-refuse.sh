@@ -15,7 +15,8 @@
 # 3. --print (no guard): the command it prints is esptool's write-flash for esp32s3 with the
 #    fixture's offsets and no eFuse, Secure Boot or encryption word, and no shim runs. It still
 #    refuses an argument naming an eFuse operation, an image asking for encrypted flashing, an
-#    eFuse-burning sdkconfig option, and a board profile the image was not built for.
+#    eFuse-burning sdkconfig option, a board profile the image was not built for, and an image
+#    built for the emulator's board (goal 14), which is never written to a device.
 #
 # This file sets the variable (to values other than 1), so it builds the name from pieces and is
 # one of the two files check-flash-guard.sh does not scan.
@@ -130,6 +131,9 @@ expect_refusal() { # expect_refusal <what> <text in the refusal> <env args...> -
 expect_refusal "an argument naming an eFuse operation" "guardrail 2" -u "$name" -- "$t" --print --efuse-burn
 expect_refusal "a board profile the image was not built for" "was built for brick-s3-wired" \
     -u "$name" CHORUS_BOARD_PROFILE=compact-s3-wifi -- "$t" --print
+printf 'board_profile = qemu-s3-openeth\nlink_transport = emulated\n' > "$img/board_profile.conf"
+expect_refusal "an image built for the emulator's board" "never written to a device" -u "$name" -- "$t" --print
+printf 'board_profile = brick-s3-wired\n' > "$img/board_profile.conf"
 : > "$img/encrypted_app-flash_args"
 expect_refusal "an image asking for encrypted flashing" "encrypted flashing" -u "$name" -- "$t" --print
 rm -f "$img/encrypted_app-flash_args"

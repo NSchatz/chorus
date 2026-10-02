@@ -26,6 +26,20 @@ typedef enum {
 
 const char *chorus_board_status_name(chorus_board_status_t status);
 
+/* What a board plays through (goal 14). Every speaker has the amplifier on I2S
+ * and I2C. The emulator has neither peripheral, so its profile declares `none`
+ * and the image then brings up no I2C bus, no I2S channel, no amplifier and no
+ * playout path: the session runs with nowhere to play, as the host session
+ * binary does. chorus_endpoint_config_validate refuses `none` on any link but
+ * the emulated one, so no speaker's profile can switch its amplifier's
+ * bring-up off. */
+typedef enum {
+    CHORUS_AUDIO_OUTPUT_AMPLIFIER = 0,
+    CHORUS_AUDIO_OUTPUT_NONE
+} chorus_audio_output_t;
+
+const char *chorus_audio_output_name(chorus_audio_output_t output);
+
 /* The board a profile describes (firmware/boards/<profile>.conf). */
 typedef struct {
     char profile[CHORUS_ENDPOINT_TEXT];
@@ -34,6 +48,7 @@ typedef struct {
     /* The Needs item an ASSUMED model waits on, verbatim. */
     char needs_item[CHORUS_ENDPOINT_TEXT];
     uint32_t flash_size_mb;
+    chorus_audio_output_t audio_output;
 } chorus_board_t;
 
 /* The smallest flash an image fits: the endpoint uses ESP-IDF's 1.5 MB

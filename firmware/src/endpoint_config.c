@@ -64,6 +64,11 @@ const char *chorus_board_status_name(chorus_board_status_t status)
     return (status == CHORUS_BOARD_CONFIRMED) ? "confirmed" : "ASSUMED";
 }
 
+const char *chorus_audio_output_name(chorus_audio_output_t output)
+{
+    return (output == CHORUS_AUDIO_OUTPUT_NONE) ? "none" : "amplifier";
+}
+
 /* A GPIO number, or `none` for a pin the board does not route out. */
 static int read_pin(const chorus_conf_t *conf, const char *key, uint32_t *out, char *detail,
                     size_t detail_len)
@@ -257,6 +262,18 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
                             sizeof(out->board.needs_item), detail, detail_len));
     NEED(chorus_conf_u32(conf, "board_flash_size_mb", &out->board.flash_size_mb, detail,
                          detail_len));
+    char output_text[CHORUS_ENDPOINT_TEXT];
+    NEED(chorus_conf_string(conf, "board_audio_output", output_text, sizeof(output_text), detail,
+                            detail_len));
+    if (strcmp(output_text, "amplifier") == 0) {
+        out->board.audio_output = CHORUS_AUDIO_OUTPUT_AMPLIFIER;
+    } else if (strcmp(output_text, "none") == 0) {
+        out->board.audio_output = CHORUS_AUDIO_OUTPUT_NONE;
+    } else {
+        snprintf(detail, detail_len, "%s: board_audio_output = %s is not `amplifier` or `none`",
+                 conf->path, output_text);
+        return -1;
+    }
 
     /* The W5500 (chorus/link.h). */
     char host_text[CHORUS_ENDPOINT_TEXT];
@@ -291,8 +308,9 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
     int link_ok = 0;
     out->link.transport = chorus_transport_from_name(link_text, &link_ok);
     if (!link_ok) {
-        snprintf(detail, detail_len, "%s: link_transport = %s is not `wired` or `wireless`",
-                 conf->path, link_text);
+        snprintf(detail, detail_len,
+                 "%s: link_transport = %s is not `wired`, `wireless` or `emulated`", conf->path,
+                 link_text);
         return -1;
     }
     NEED(chorus_conf_string(conf, "link_wifi_power_save", link_text, sizeof(link_text), detail,
@@ -504,6 +522,30 @@ size_t chorus_endpoint_config_validate(const chorus_endpoint_config_t *config,
                  "board_flash_size_mb = %u; the image's 1.5 MB application partition sits in the "
                  "default 2 MB of flash (firmware/sdkconfig.defaults)",
                  (unsigned)config->board.flash_size_mb);
+        (*count)++;
+    }
+    /* The emulator and the missing amplifier go together, both ways (goal 14):
+     * a speaker's profile cannot switch its amplifier's bring-up off, and the
+     * emulator, which has neither I2C nor I2S, cannot be asked to drive one. */
+    int emulated = config->link.transport == CHORUS_TRANSPORT_EMULATED;
+    int silent = config->board.audio_output == CHORUS_AUDIO_OUTPUT_NONE;
+    if (silent && !emulated && *count < capacity) {
+        snprintf(findings[*count].rule, sizeof(findings[*count].rule),
+                 "no-audio-output-on-a-speaker");
+        snprintf(findings[*count].detail, sizeof(findings[*count].detail),
+                 "board_audio_output = none with link_transport = %s; only the emulated board "
+                 "(link_transport = emulated) has no amplifier, and a speaker's amplifier "
+                 "bring-up is never skipped",
+                 chorus_transport_name(config->link.transport));
+        (*count)++;
+    }
+    if (emulated && !silent && *count < capacity) {
+        snprintf(findings[*count].rule, sizeof(findings[*count].rule),
+                 "emulated-link-with-an-amplifier");
+        snprintf(findings[*count].detail, sizeof(findings[*count].detail),
+                 "link_transport = emulated with board_audio_output = amplifier; the emulator "
+                 "has no I2C and no I2S, so the emulated board declares board_audio_output = "
+                 "none");
         (*count)++;
     }
     if (config->board.model_status == CHORUS_BOARD_ASSUMED &&

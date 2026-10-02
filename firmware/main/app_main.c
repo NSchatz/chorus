@@ -133,9 +133,25 @@ static void session_task(void *argument)
     /* run_seconds is zero, so the line above does not return while the board
      * has power. If it ever does, the output stage goes dead rather than being
      * left live with nothing feeding it. */
-    (void)chorus_amp_shut_down(task->amp, task->bus, task->stage, task->controller);
-    ESP_LOGE(TAG, "the session ended; the output stage is in high impedance");
+    if (task->amp != NULL) {
+        (void)chorus_amp_shut_down(task->amp, task->bus, task->stage, task->controller);
+        ESP_LOGE(TAG, "the session ended; the output stage is in high impedance");
+    } else {
+        ESP_LOGE(TAG, "the session ended (%s): %s", chorus_session_end_name(result.end),
+                 result.detail);
+    }
     vTaskDelete(NULL);
+}
+
+/* The output stage back to high impedance, on every path that stops after the
+ * amplifier came up. A board that plays through nothing (the emulated one) has
+ * no output stage, and nothing is asked of a bus that was never created. */
+static void output_stage_off(int plays, const chorus_amp_config_t *amp, chorus_i2c_bus_t *bus,
+                             chorus_output_stage_t *stage, chorus_i2s_controller_t *controller)
+{
+    if (plays) {
+        (void)chorus_amp_shut_down(amp, bus, stage, controller);
+    }
 }
 
 void app_main(void)
@@ -202,10 +218,22 @@ void app_main(void)
      * and nothing is erased; whoever needs it then refuses by name. */
     (void)chorus_esp_store_init();
 
+    /* Whether this board plays through anything (goal 14, chorus/
+     * endpoint_config.h). Every speaker does. The emulator's board declares
+     * `none` (the validation above refuses that on any other link), and then
+     * no I2C bus, I2S channel, amplifier, playout path or fault watch is
+     * brought up: the session runs with nowhere to play, and everything else
+     * below is the code a speaker runs. */
+    const int plays = config.board.audio_output == CHORUS_AUDIO_OUTPUT_AMPLIFIER;
+    if (!plays) {
+        ESP_LOGW(TAG, "board_audio_output = none: no amplifier, no I2S and no I2C are brought up "
+                      "(the emulated board); the session runs with nowhere to play");
+    }
+
     static chorus_i2c_bus_t bus;
     static chorus_output_stage_t stage;
     static chorus_i2s_controller_t controller;
-    if (chorus_esp_hal_init(&config, &bus, &stage, &controller) != 0) {
+    if (plays && chorus_esp_hal_init(&config, &bus, &stage, &controller) != 0) {
         ESP_LOGE(TAG, "the hardware could not be brought up; the output stage stays dead");
         return;
     }
@@ -226,8 +254,8 @@ void app_main(void)
         ESP_LOGE(TAG, "%s", detail);
         return;
     }
-    chorus_playout_t *playout = chorus_esp_playout_create(&config, &sync);
-    if (playout == NULL) {
+    chorus_playout_t *playout = plays ? chorus_esp_playout_create(&config, &sync) : NULL;
+    if (plays && playout == NULL) {
         ESP_LOGE(TAG, "no playout path; the output stage stays dead");
         return;
     }
@@ -245,9 +273,12 @@ void app_main(void)
      * room's gain, and says so. The subwoofer's level and phase knobs reach
      * the chain through chorus_playout_set_sub_knobs; their ADC binding is not
      * written yet (ADR 0063), so until it is they sit at 0 dB and 0 degrees. */
-    chorus_endpoint_dsp_t *dsp =
-        heap_caps_malloc(sizeof(chorus_endpoint_dsp_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (dsp == NULL) {
+    chorus_endpoint_dsp_t *dsp = plays ? heap_caps_malloc(sizeof(chorus_endpoint_dsp_t),
+                                                          MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+                                       : NULL;
+    if (!plays) {
+        /* Nothing to run a sound chain for. */
+    } else if (dsp == NULL) {
         ESP_LOGE(TAG,
                  "no internal RAM for the %u-byte sound chain (%u bytes free); playing "
                  "without it",
@@ -269,19 +300,21 @@ void app_main(void)
     chorus_telemetry_init(&telemetry);
 
     static chorus_amp_report_t report;
-    chorus_amp_status_t status = chorus_amp_bring_up(&config.amp, &config.gain, &config.clock, &bus,
-                                                     &stage, &controller, &report);
-    chorus_telemetry_record_amp(&telemetry, &report);
-    if (status != CHORUS_AMP_OK) {
-        static char line[1024];
-        chorus_telemetry_line(&telemetry, line, sizeof(line));
-        /* Surfaced, not swallowed, and the endpoint stops here rather than
-         * starting a session it cannot play. */
-        ESP_LOGE(TAG, "%s", line);
-        ESP_LOGE(TAG, "%s", report.detail);
-        return;
+    if (plays) {
+        chorus_amp_status_t status = chorus_amp_bring_up(&config.amp, &config.gain, &config.clock,
+                                                         &bus, &stage, &controller, &report);
+        chorus_telemetry_record_amp(&telemetry, &report);
+        if (status != CHORUS_AMP_OK) {
+            static char line[1024];
+            chorus_telemetry_line(&telemetry, line, sizeof(line));
+            /* Surfaced, not swallowed, and the endpoint stops here rather than
+             * starting a session it cannot play. */
+            ESP_LOGE(TAG, "%s", line);
+            ESP_LOGE(TAG, "%s", report.detail);
+            return;
+        }
+        ESP_LOGI(TAG, "%s", report.detail);
     }
-    ESP_LOGI(TAG, "%s", report.detail);
 
     /* The link, before the session is told it is usable.
      *
@@ -297,7 +330,12 @@ void app_main(void)
     chorus_radio_t radio;
     chorus_esp_hal_radio(&radio);
     chorus_ethernet_t ethernet;
-    chorus_esp_link_ethernet(&ethernet);
+    if (config.link.transport == CHORUS_TRANSPORT_EMULATED) {
+        /* The emulator's controller instead of the W5500 (esp_link.h). */
+        chorus_esp_link_emulated(&ethernet);
+    } else {
+        chorus_esp_link_ethernet(&ethernet);
+    }
     /* Goal 14: a wireless speaker gets its network from the store, or raises
      * its own access point and waits here until a phone gives it one
      * (esp_provision.h). In a wired image this is nothing. */
@@ -321,13 +359,13 @@ void app_main(void)
     if (!link.link_up) {
         ESP_LOGE(TAG, "the link is down (%s); no session is opened",
                  chorus_bring_up_status_name(link_status));
-        (void)chorus_amp_shut_down(&config.amp, &bus, &stage, &controller);
+        output_stage_off(plays, &config.amp, &bus, &stage, &controller);
         return;
     }
 
     /* The writer, now that the clock runs: it paces itself on the DMA. */
-    if (chorus_esp_playout_start(playout) != 0) {
-        (void)chorus_amp_shut_down(&config.amp, &bus, &stage, &controller);
+    if (plays && chorus_esp_playout_start(playout) != 0) {
+        output_stage_off(plays, &config.amp, &bus, &stage, &controller);
         return;
     }
 
@@ -335,17 +373,40 @@ void app_main(void)
     chorus_session_config_t *session = &task.session;
     memset(session, 0, sizeof(*session));
     snprintf(session->server, sizeof(session->server), "%s", config.server_address);
+    if (config.link.transport == CHORUS_TRANSPORT_EMULATED) {
+        /* The emulator's network carries no multicast and the committed
+         * address is the guest's own loopback; its server is the gateway the
+         * address lease named, at the committed port (chorus/link.h). The
+         * emulator is also the one board with nobody at its console, so the
+         * session's events go to the console, where the run that grades it
+         * reads them (tools/qemu-boot-run.sh). */
+        static char gateway[32];
+        static char emulated_server[sizeof(session->server)];
+        if (chorus_esp_link_gateway(gateway, sizeof(gateway)) == 0 &&
+            chorus_link_emulated_server(gateway, config.server_address, emulated_server,
+                                        sizeof(emulated_server)) == 0) {
+            snprintf(session->server, sizeof(session->server), "%s", emulated_server);
+            ESP_LOGI(TAG, "emulated link: the server is the gateway, %s", session->server);
+        } else {
+            ESP_LOGE(TAG,
+                     "emulated link: the address lease named no gateway; the session keeps "
+                     "the configured %s",
+                     session->server);
+        }
+        session->event_log_path = "/dev/console";
+    }
     session->first_backoff_ms = config.reconnect_first_backoff_ms;
     session->max_backoff_ms = config.reconnect_max_backoff_ms;
     session->run_seconds = 0; /* until the power goes away */
     session->sync_interval_ms = sync.sync_interval_ms;
     session->filter_window = sync.filter_window;
     session->smoothing_alpha = sync.smoothing_alpha;
-    session->event_log_path = NULL;
     session->playout = playout;
     task.controller = &controller;
     task.stage = &stage;
-    task.amp = &config.amp;
+    /* NULL on a board that plays through nothing: the session task then has no
+     * output stage to put in high impedance if the session ever ends. */
+    task.amp = plays ? &config.amp : NULL;
     task.bus = &bus;
 
     /* The fault poll runs BESIDE the session, in its own task, rather than
@@ -362,10 +423,10 @@ void app_main(void)
     watch.stage = &stage;
     watch.controller = &controller;
     watch.telemetry = &telemetry;
-    if (xTaskCreate(fault_watch, "chorus-amp-fault", 4096, &watch, 5, NULL) != pdPASS) {
+    if (plays && xTaskCreate(fault_watch, "chorus-amp-fault", 4096, &watch, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "the amplifier fault watch could not be started; nothing would notice a "
                       "fault, so the output stage goes back to high impedance");
-        (void)chorus_amp_shut_down(&config.amp, &bus, &stage, &controller);
+        output_stage_off(plays, &config.amp, &bus, &stage, &controller);
         return;
     }
 
@@ -383,7 +444,7 @@ void app_main(void)
     if (chorus_esp_identity_load(session) != 0) {
         ESP_LOGE(TAG, "this board has no identity it can keep; no session is opened and the "
                       "output stage goes back to high impedance");
-        (void)chorus_amp_shut_down(&config.amp, &bus, &stage, &controller);
+        output_stage_off(plays, &config.amp, &bus, &stage, &controller);
         return;
     }
     chorus_esp_discovery_locate(session);
@@ -392,7 +453,7 @@ void app_main(void)
                     NULL) != pdPASS) {
         ESP_LOGE(TAG, "the session task could not be started; the output stage goes back to "
                       "high impedance");
-        (void)chorus_amp_shut_down(&config.amp, &bus, &stage, &controller);
+        output_stage_off(plays, &config.amp, &bus, &stage, &controller);
     }
     /* app_main returns and its task is deleted (CONFIG_ESP_MAIN_TASK_STACK_SIZE
      * help: "If app_main() returns then this task is deleted"); everything the

@@ -70,6 +70,16 @@ jobs:
       - name: ESP-IDF v6.1 crypto sources
         run: echo "CHORUS_IDF_V61_DIR=$HOME/esp-idf" >> "$GITHUB_ENV"
 
+      # The emulator the gate boots the endpoint image on (goal 14): the pinned
+      # release and its pinned libraries, each checked against its sha256
+      # (tools/qemu/pins.conf, tools/qemu/libs.explicit.txt), rootless.
+      - name: Emulator
+        run: |
+          echo "CHORUS_QEMU_HOME=$HOME/chorus-qemu" >> "$GITHUB_ENV"
+          echo "CHORUS_QEMU_LIBS=$HOME/chorus-qemu-libs" >> "$GITHUB_ENV"
+          CHORUS_QEMU_HOME="$HOME/chorus-qemu" CHORUS_QEMU_LIBS="$HOME/chorus-qemu-libs" \
+            bash tools/qemu-env.sh install
+
       # The identity step needs the private term list, which never exists on
       # a runner: with CI=true (set by GitHub) it prints SKIPPED and the
       # reason; everywhere else its absence fails the gate.

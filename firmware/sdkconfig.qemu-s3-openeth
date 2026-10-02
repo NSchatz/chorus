@@ -1,0 +1,22 @@
+# The emulator board's own ESP-IDF options, laid over sdkconfig.defaults by
+# tools/firmware-image.sh for the qemu-s3-openeth profile only (goal 14,
+# docs/decisions/0109-*). Line numbers are in the pinned ESP-IDF v6.1, read
+# 2026-10-02.
+#
+# Only what the emulator forces. The partition table, the flash size and every
+# option of the firmware update are sdkconfig.defaults', so the image the
+# emulator boots has the layout a speaker's has.
+
+# The emulator's Ethernet controller: "OpenCores Ethernet MAC driver can be
+# used when an ESP-IDF application is executed in QEMU. This driver is not
+# supported when running on a real chip." (components/esp_eth/Kconfig:149-155;
+# it defaults to n.) firmware/main/esp_link.c binds it for a profile whose
+# link is `emulated`, and refuses by name in an image built without it.
+CONFIG_ETH_USE_OPENETH=y
+
+# No PSRAM. The speakers' boards carry octal PSRAM and sdkconfig.defaults
+# requires it at boot; the emulator is started without any (it could emulate
+# one, behind another machine option), and nothing the endpoint runs lives in
+# external RAM (firmware/endpoint-units.conf rule 3), so the emulated board
+# does without rather than emulating a part nothing uses.
+CONFIG_SPIRAM=n

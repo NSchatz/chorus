@@ -13,6 +13,11 @@
 #include "esp_netif.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "sdkconfig.h"
+
+#if defined(CONFIG_ETH_USE_OPENETH)
+#include "esp_eth_mac_openeth.h"
+#endif
 
 static const char *TAG = "chorus-link";
 
@@ -152,4 +157,85 @@ void chorus_esp_link_ethernet(chorus_ethernet_t *ethernet)
     ethernet->init = esp_link_init;
     ethernet->start = esp_link_start;
     ethernet->wait_for_address = esp_link_wait_for_address;
+}
+
+/* The emulator's controller (goal 14, docs/decisions/0109-*). ESP-IDF v6.1
+ * carries the driver in esp_eth itself: components/esp_eth/Kconfig:149-155,
+ * ETH_USE_OPENETH, "OpenCores Ethernet MAC driver can be used when an ESP-IDF
+ * application is executed in QEMU. This driver is not supported when running
+ * on a real chip." (read 2026-10-02). Only firmware/sdkconfig.qemu-s3-openeth
+ * turns the option on, so in a speaker's image this init is the refusal below
+ * and none of the driver is linked. */
+static int esp_link_emulated_init(void *ctx, const chorus_eth_config_t *config)
+{
+    (void)ctx;
+    (void)config;
+#if defined(CONFIG_ETH_USE_OPENETH)
+    memset(&link, 0, sizeof(link));
+    link.events = xEventGroupCreate();
+    if (link.events == NULL) {
+        return -1;
+    }
+    if (esp_netif_init() != ESP_OK) {
+        return -1;
+    }
+    esp_err_t loop = esp_event_loop_create_default();
+    if (loop != ESP_OK && loop != ESP_ERR_INVALID_STATE) {
+        return -1;
+    }
+    eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
+    eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
+    /* The emulated PHY answers at address 1 and has no reset line; it has
+     * nothing to negotiate with, so the wait for autonegotiation is the
+     * shortest the driver takes. The values are the ones ESP-IDF's own
+     * emulator support used while it carried an example for this controller,
+     * tried here in the emulator on 2026-10-02 (docs/decisions/0109-*). */
+    phy_config.phy_addr = 1;
+    phy_config.reset_gpio_num = -1;
+    phy_config.autonego_timeout_ms = 100;
+    esp_eth_mac_t *mac = esp_eth_mac_new_openeth(&mac_config);
+    esp_eth_phy_t *phy = esp_eth_phy_new_generic(&phy_config);
+    if (mac == NULL || phy == NULL) {
+        ESP_LOGE(TAG, "the emulated Ethernet MAC or PHY could not be created");
+        return -1;
+    }
+    esp_eth_config_t eth_config = ETH_DEFAULT_CONFIG(mac, phy);
+    if (esp_eth_driver_install(&eth_config, &link.handle) != ESP_OK) {
+        ESP_LOGE(TAG, "the emulated Ethernet driver could not be installed");
+        return -1;
+    }
+    esp_netif_config_t netif_config = ESP_NETIF_DEFAULT_ETH();
+    link.netif = esp_netif_new(&netif_config);
+    if (link.netif == NULL ||
+        esp_netif_attach(link.netif, esp_eth_new_netif_glue(link.handle)) != ESP_OK) {
+        ESP_LOGE(TAG, "the emulated Ethernet could not be attached to the network stack");
+        return -1;
+    }
+    if (esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, on_got_address, NULL) != ESP_OK) {
+        return -1;
+    }
+    return 0;
+#else
+    ESP_LOGE(TAG, "this image carries no emulated Ethernet controller: only the emulator's board "
+                  "profile is built with one");
+    return -1;
+#endif
+}
+
+void chorus_esp_link_emulated(chorus_ethernet_t *ethernet)
+{
+    ethernet->ctx = &link;
+    ethernet->init = esp_link_emulated_init;
+    ethernet->start = esp_link_start;
+    ethernet->wait_for_address = esp_link_wait_for_address;
+}
+
+int chorus_esp_link_gateway(char *out, size_t out_len)
+{
+    esp_netif_ip_info_t info;
+    if (out == NULL || out_len == 0 || link.netif == NULL ||
+        esp_netif_get_ip_info(link.netif, &info) != ESP_OK) {
+        return -1;
+    }
+    return (esp_ip4addr_ntoa(&info.gw, out, (int)out_len) != NULL) ? 0 : -1;
 }

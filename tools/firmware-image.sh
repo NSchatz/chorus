@@ -21,7 +21,8 @@
 #
 # THE BOARD PROFILE. CHORUS_BOARD_PROFILE names one of firmware/boards/*.conf
 # (default: the one endpoint.conf names, brick-s3-wired, the wired classes'
-# W5500 link); compact-s3-wifi is the compact speakers' Wi-Fi tier (K91). The
+# W5500 link); compact-s3-wifi is the compact speakers' Wi-Fi tier (K91);
+# qemu-s3-openeth is the emulator's board (goal 14), not a speaker's. The
 # profile is embedded in the image beside endpoint.conf (docs/decisions/0057-*),
 # and the build prints the target, the board, how sure the repository is of it
 # and the link, so a log says which image it made.
@@ -51,6 +52,8 @@ if [ "$(board_value board_model_status)" = ASSUMED ]; then
 fi
 if [ "$(endpoint_conf link_transport)" = wired ]; then
     say "  link:       wired, W5500 on $(endpoint_conf eth_spi_host) at $(endpoint_conf eth_spi_clock_mhz) MHz, INT GPIO$(endpoint_conf pin_eth_int)"
+elif [ "$(endpoint_conf link_transport)" = emulated ]; then
+    say "  link:       emulated, the emulator's OpenCores Ethernet; audio output $(endpoint_conf board_audio_output) (not a speaker's image)"
 else
     say "  link:       wireless, the Wi-Fi tier, power save $(endpoint_conf link_wifi_power_save)"
 fi

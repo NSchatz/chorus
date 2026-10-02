@@ -152,6 +152,23 @@ static void every_profile_reads_as_the_image_reads_it(void)
         chorus_check(count == 0, "compact-s3-wifi breaks no rule (%zu findings)", count);
     }
 
+    if (load_profile("qemu-s3-openeth")) {
+        chorus_check(profiled.link.transport == CHORUS_TRANSPORT_EMULATED &&
+                         strcmp(profiled.board.profile, "qemu-s3-openeth") == 0,
+                     "qemu-s3-openeth: link %s", chorus_transport_name(profiled.link.transport));
+        chorus_check(profiled.board.audio_output == CHORUS_AUDIO_OUTPUT_NONE,
+                     "qemu-s3-openeth: plays through %s",
+                     chorus_audio_output_name(profiled.board.audio_output));
+        chorus_check(profiled.board.model_status == CHORUS_BOARD_CONFIRMED &&
+                         !profiled.pins.octal_psram,
+                     "qemu-s3-openeth: model \"%s\" %s, no octal PSRAM", profiled.board.model,
+                     chorus_board_status_name(profiled.board.model_status));
+        chorus_finding_t findings[32];
+        size_t count = 0;
+        chorus_endpoint_config_validate(&profiled, findings, 32, &count);
+        chorus_check(count == 0, "qemu-s3-openeth breaks no rule (%zu findings)", count);
+    }
+
     /* A profile may set only board keys, and only keys the base carries. */
     char detail[512];
     static char base[32768];
@@ -243,6 +260,181 @@ static void a_wireless_endpoint_never_touches_the_w5500(void)
                      report.wifi.status == CHORUS_WIFI_CREDENTIAL_UNKNOWN && eth_log.inits == 0,
                  "the shipped Wi-Fi profile refuses to join on unknown credentials: %s",
                  report.wifi.detail);
+}
+
+/* Goal 14: the emulator's board. Its link is a third arm, and the two real
+ * ones are untouched by it. */
+static void an_emulated_endpoint_touches_neither_the_radio_nor_a_w5500_rule(void)
+{
+    chorus_section("emulated: the emulator's controller, never the radio");
+    if (!load_profile("qemu-s3-openeth")) {
+        return;
+    }
+    fake_ethernet_t eth_log;
+    chorus_ethernet_t eth = fake_ethernet(&eth_log);
+    fake_radio_t radio_log;
+    fake_radio_init(&radio_log);
+    chorus_radio_t radio = fake_radio(&radio_log);
+    chorus_link_report_t report;
+
+    /* A W5500 wiring that a wired link refuses outright: the emulated link has
+     * no pins, so none of it is read. */
+    chorus_eth_config_t no_wiring = profiled.eth;
+    no_wiring.int_pin = CHORUS_PIN_NONE;
+    no_wiring.sclk = CHORUS_PIN_NONE;
+    no_wiring.spi_clock_mhz = 0;
+    chorus_bring_up_status_t status =
+        chorus_link_bring_up(&profiled.link, &no_wiring, &profiled.pins, &eth, &radio, &report);
+    chorus_check(status == CHORUS_BRING_UP_OK && report.link_up &&
+                     report.transport == CHORUS_TRANSPORT_EMULATED,
+                 "the emulated link comes up: %s", report.detail);
+    chorus_check(strstr(report.detail, "link=emulated phy=openeth") != NULL &&
+                     strstr(report.detail, "w5500") == NULL,
+                 "and says which controller it is, not the W5500");
+    chorus_check(eth_log.inits == 1 && eth_log.starts == 1 && eth_log.waits == 1 &&
+                     eth_log.waited_ms == profiled.eth.address_timeout_ms &&
+                     report.ethernet_touched,
+                 "the bound controller was initialised, started and waited on once each, for the "
+                 "committed %u ms",
+                 eth_log.waited_ms);
+    chorus_check(radio_log.event_count == 0 && radio_log.joins == 0 && !report.radio_touched,
+                 "the radio saw nothing: %zu events, %zu joins", radio_log.event_count,
+                 radio_log.joins);
+    chorus_check(report.wifi.status == CHORUS_WIFI_NOT_WIRELESS && !report.wifi.bound_publishable,
+                 "and no wireless claim is made about an emulated endpoint (%s)",
+                 chorus_wifi_status_name(report.wifi.status));
+
+    /* Its failures carry the names a wired link's do. */
+    const struct {
+        int init, start, address;
+        chorus_bring_up_status_t want;
+    } cases[] = {
+        {1, 0, 0, CHORUS_BRING_UP_ETH_INIT_REFUSED},
+        {0, 1, 0, CHORUS_BRING_UP_ETH_START_REFUSED},
+        {0, 0, 1, CHORUS_BRING_UP_NO_ADDRESS},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        eth = fake_ethernet(&eth_log);
+        eth_log.init_refuses = cases[i].init;
+        eth_log.start_refuses = cases[i].start;
+        eth_log.address_never_arrives = cases[i].address;
+        status = chorus_link_bring_up(&profiled.link, &profiled.eth, &profiled.pins, &eth, &radio,
+                                      &report);
+        chorus_check(status == cases[i].want && !report.link_up &&
+                         strstr(report.detail, "link=emulated") != NULL,
+                     "emulated: %s is reported as itself, link down: %s",
+                     chorus_bring_up_status_name(cases[i].want), report.detail);
+    }
+
+    /* The one rule it has. */
+    chorus_eth_config_t no_time = profiled.eth;
+    no_time.address_timeout_ms = 0;
+    eth = fake_ethernet(&eth_log);
+    status = chorus_link_bring_up(&profiled.link, &no_time, &profiled.pins, &eth, &radio, &report);
+    chorus_check(status == CHORUS_BRING_UP_CONFIG_REFUSED && eth_log.inits == 0 &&
+                     strstr(report.detail, "link-address-timeout-is-zero") != NULL,
+                 "an address timeout of zero is refused, nothing touched: %s", report.detail);
+}
+
+static int has_rule(const chorus_finding_t *findings, size_t count, const char *rule)
+{
+    for (size_t i = 0; i < count; i++) {
+        if (strcmp(findings[i].rule, rule) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* No speaker's profile can switch its amplifier off, and the emulator cannot
+ * be asked to drive one. */
+static void only_the_emulated_board_plays_through_nothing(void)
+{
+    chorus_section("board_audio_output");
+    static chorus_finding_t findings[32];
+    size_t count = 0;
+    chorus_check(committed.board.audio_output == CHORUS_AUDIO_OUTPUT_AMPLIFIER,
+                 "the committed board plays through its %s",
+                 chorus_audio_output_name(committed.board.audio_output));
+
+    static chorus_endpoint_config_t config;
+    const chorus_transport_t speakers[] = {CHORUS_TRANSPORT_WIRED, CHORUS_TRANSPORT_WIRELESS};
+    for (size_t i = 0; i < 2; i++) {
+        config = committed;
+        config.link.transport = speakers[i];
+        config.board.audio_output = CHORUS_AUDIO_OUTPUT_NONE;
+        count = 0;
+        chorus_endpoint_config_validate(&config, findings, 32, &count);
+        chorus_check(has_rule(findings, count, "no-audio-output-on-a-speaker"),
+                     "a %s board that declares board_audio_output = none is refused by name",
+                     chorus_transport_name(speakers[i]));
+    }
+    config = committed;
+    config.link.transport = CHORUS_TRANSPORT_EMULATED;
+    count = 0;
+    chorus_endpoint_config_validate(&config, findings, 32, &count);
+    chorus_check(has_rule(findings, count, "emulated-link-with-an-amplifier"),
+                 "an emulated board that declares an amplifier is refused by name");
+
+    char detail[512];
+    static char base[32768];
+    FILE *file = fopen(chorus_endpoint_config_default_path(), "rb");
+    size_t read = file ? fread(base, 1, sizeof(base) - 1, file) : 0;
+    if (file) {
+        fclose(file);
+    }
+    base[read] = '\0';
+    chorus_check(chorus_endpoint_config_parse_profile(&config, "endpoint.conf", base, "odd",
+                                                      "board_profile = x\nboard_audio_output = "
+                                                      "loud\n",
+                                                      detail, sizeof(detail)) != 0 &&
+                     strstr(detail, "board_audio_output") != NULL,
+                 "a value that is neither is refused by name: %s", detail);
+}
+
+/* The emulated board's server: the gateway of its address lease, at the
+ * committed port. The addresses here are RFC 5737 documentation addresses. */
+static void the_emulated_server_is_the_gateway_at_the_configured_port(void)
+{
+    chorus_section("emulated: where the server is");
+    char out[64];
+    chorus_check(chorus_link_emulated_server("192.0.2.2", "127.0.0.1:4010", out, sizeof(out)) ==
+                         0 &&
+                     strcmp(out, "192.0.2.2:4010") == 0,
+                 "the gateway and the configured port: %s", out);
+    chorus_check(
+        chorus_link_emulated_server("192.0.2.2", committed.server_address, out, sizeof(out)) == 0 &&
+            strncmp(out, "192.0.2.2:", 10) == 0 &&
+            strcmp(out + 10, strrchr(committed.server_address, ':') + 1) == 0,
+        "from the committed server_address %s: %s", committed.server_address, out);
+    const struct {
+        const char *gateway;
+        const char *configured;
+        const char *what;
+    } bad[] = {
+        {"", "127.0.0.1:4010", "no gateway"},
+        {"0.0.0.0", "127.0.0.1:4010", "the unset address"},
+        {"gateway.example", "127.0.0.1:4010", "a name"},
+        {"192.0.2.2:80", "127.0.0.1:4010", "a gateway with a port in it"},
+        {"192.0.2.2", "127.0.0.1", "a configured address with no port"},
+        {"192.0.2.2", "127.0.0.1:", "an empty port"},
+        {"192.0.2.2", "127.0.0.1:http", "a port that is not a number"},
+    };
+    for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        snprintf(out, sizeof(out), "untouched");
+        chorus_check(
+            chorus_link_emulated_server(bad[i].gateway, bad[i].configured, out, sizeof(out)) != 0 &&
+                out[0] == '\0',
+            "%s is refused and names no server", bad[i].what);
+    }
+    char small[12];
+    chorus_check(chorus_link_emulated_server("192.0.2.2", "127.0.0.1:4010", small, sizeof(small)) !=
+                         0 &&
+                     small[0] == '\0',
+                 "a result that does not fit is refused, not cut short");
+    chorus_check(chorus_link_emulated_server(NULL, "127.0.0.1:4010", out, sizeof(out)) != 0 &&
+                     chorus_link_emulated_server("192.0.2.2", NULL, out, sizeof(out)) != 0,
+                 "a missing argument is refused");
 }
 
 static void refused(const char *what, chorus_eth_config_t eth, const char *rule)
@@ -375,6 +567,9 @@ int main(void)
         every_profile_reads_as_the_image_reads_it();
         a_wired_endpoint_never_touches_the_radio();
         a_wireless_endpoint_never_touches_the_w5500();
+        an_emulated_endpoint_touches_neither_the_radio_nor_a_w5500_rule();
+        only_the_emulated_board_plays_through_nothing();
+        the_emulated_server_is_the_gateway_at_the_configured_port();
         a_wired_pin_map_that_breaks_a_rule_is_refused_by_name();
         each_controller_failure_has_its_own_name();
     }
