@@ -160,7 +160,7 @@ void chorus_esp_link_ethernet(chorus_ethernet_t *ethernet)
 }
 
 /* The emulator's controller (goal 14, docs/decisions/0109-*). ESP-IDF v6.1
- * carries the driver in esp_eth itself: components/esp_eth/Kconfig:149-155,
+ * carries the driver in esp_eth itself: components/esp_eth/Kconfig:149-157,
  * ETH_USE_OPENETH, "OpenCores Ethernet MAC driver can be used when an ESP-IDF
  * application is executed in QEMU. This driver is not supported when running
  * on a real chip." (read 2026-10-02). Only firmware/sdkconfig.qemu-s3-openeth

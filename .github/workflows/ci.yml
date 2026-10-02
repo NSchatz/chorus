@@ -77,8 +77,9 @@ jobs:
         run: |
           echo "CHORUS_QEMU_HOME=$HOME/chorus-qemu" >> "$GITHUB_ENV"
           echo "CHORUS_QEMU_LIBS=$HOME/chorus-qemu-libs" >> "$GITHUB_ENV"
-          CHORUS_QEMU_HOME="$HOME/chorus-qemu" CHORUS_QEMU_LIBS="$HOME/chorus-qemu-libs" \
-            bash tools/qemu-env.sh install
+          export CHORUS_QEMU_HOME="$HOME/chorus-qemu"
+          export CHORUS_QEMU_LIBS="$HOME/chorus-qemu-libs"
+          bash tools/qemu-env.sh install
 
       # The identity step needs the private term list, which never exists on
       # a runner: with CI=true (set by GitHub) it prints SKIPPED and the

@@ -9,7 +9,7 @@
 
 # The emulator's Ethernet controller: "OpenCores Ethernet MAC driver can be
 # used when an ESP-IDF application is executed in QEMU. This driver is not
-# supported when running on a real chip." (components/esp_eth/Kconfig:149-155;
+# supported when running on a real chip." (components/esp_eth/Kconfig:149-157;
 # it defaults to n.) firmware/main/esp_link.c binds it for a profile whose
 # link is `emulated`, and refuses by name in an image built without it.
 CONFIG_ETH_USE_OPENETH=y

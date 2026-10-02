@@ -34,13 +34,19 @@ embedded in the image:
 ```
 boards/brick-s3-wired.conf    the default: the wired classes, W5500 on SPI2
 boards/compact-s3-wifi.conf   the compact speakers' Wi-Fi tier
+boards/qemu-s3-openeth.conf   not a speaker: the emulator's board (goal 14)
 ```
 
-Both name P1's bought reference board, the Esparagus Audio Brick (ESP32-S3), and
+The first two name P1's bought reference board, the Esparagus Audio Brick (ESP32-S3), and
 mark it **ASSUMED** until the owner's own boards are identified (the Needs item
 "Your ESP32-S3 boards: module markings and a read-only chip report").
 `CHORUS_BOARD_PROFILE=compact-s3-wifi make firmware-image` builds the Wi-Fi
-image; `make gate` builds both. The W5500 driver is the Component Registry's
+image; `make gate` builds every profile. The third is Espressif's QEMU `esp32s3`
+machine: its link is `emulated` (the emulator's OpenCores Ethernet), it plays
+through nothing (`board_audio_output = none`; the emulator has no I2C and no
+I2S), and `make qemu-boot` boots its image against a real server
+(`docs/decisions/0109-an-emulator-board-profile-and-the-pinned-emulator.md`);
+`tools/firmware-flash.sh` refuses to write that image to a device. The W5500 driver is the Component Registry's
 `espressif/w5500`, pinned in `main/idf_component.yml` and `dependencies.lock`.
 Why: `docs/decisions/0057-board-profiles-and-the-wired-link.md`.
 
