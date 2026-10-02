@@ -26,7 +26,8 @@ ceiling), `docs/decisions/0018-the-persisted-zone-state.md` (the state file),
 catalog v2 `docs/decisions/0075-control-catalog-v2.md` (the version policy, group
 volume's definition and its citation, take-the-room, the clamp rule, the bond
 layouts and the Wi-Fi refusal, state-file format 2), and for per-room sound
-`docs/decisions/0081-per-room-sound-in-the-catalog-and-on-the-wire.md`.
+`docs/decisions/0081-per-room-sound-in-the-catalog-and-on-the-wire.md`, and
+for the speakers `docs/decisions/0106-speakers-adopted-named-and-assigned-rooms.md`.
 
 ## The versions
 
@@ -140,6 +141,15 @@ Each formed group plays a **source** (v2): `stream` (the server's configured
 stream, the default), `none`, `chime:<name>` or `line-in:<endpoint>/<input>`.
 The spelling is the catalog's; which chimes exist and which inputs are offered
 is the server runtime's, and the state lists the offered ones as `inputs`.
+
+A **speaker** (v2, goal 14) is an endpoint this server has adopted: the id
+its audio sessions authenticate as, pinned to its key on its first handshake
+(`docs/protocol.md`, "Adoption: trust on first use"). The server keeps one
+record per adopted id: a `name` (`Speaker ` and the last four characters of
+the id until a person names it), whether it was `named`, and the `room` it
+was assigned, or none. Nobody has to do anything for a speaker to be listed:
+that is what "auto-adopt on the LAN, name it in the app" (K92) means here.
+See "Speakers: adoption, names and rooms" below.
 
 The set of zones is **configured, not commanded**. `--zone <id>` on the server's
 command line, one per room. A control message cannot create a zone, because the
@@ -476,6 +486,72 @@ The server's flags for it:
 With `--slots` the relay is one more thread (`tv-relay`), created with the
 rest before the scheduling report: the population is `6 + 2N + M + 1`.
 
+### Speakers: adoption, names and rooms (goal 14)
+
+`docs/decisions/0106-speakers-adopted-named-and-assigned-rooms.md` records the
+choices.
+
+**Adoption is automatic and is the handshake's.** The first audio session
+under an id pins that id's key (`adopted-endpoints`, the server's file) and,
+when the server runs a control plane, makes the speaker's record and logs
+`speaker listed id=<id> name="Speaker <tail>" named=0`. Every subscriber is
+sent the new state. A server that already holds pins when it starts (one
+upgraded from before goal 14) lists each of them, unnamed and in no room. Two
+kinds of id are adopted and play but are NOT listed, each logged `speaker not
+listed id=<id> reason=<name>`: one that is not a catalog identifier
+(`id-not-an-identifier`: no command could name it; the firmware's and the
+Linux client's ids are identifiers), and one past the bound of 64 records
+(`registry-full`; ASSUMED bound, there because any peer on the LAN can present
+a new id and the state message must not grow with each).
+
+**A changed key is never adopted.** A session under an adopted id with
+another key is refused `key_changed` and the pin does not move (goal 5:
+`an_endpoint_whose_key_changed_is_refused_and_surfaced`,
+`an_endpoint_whose_key_changed_is_refused_and_surfaced_by_the_server`). From
+goal 14 the refusal is also in the state, `key_changes`, the latest per id,
+until the speaker is forgotten or the server restarts.
+
+- **`speaker_name`** names a speaker: `name` is held to the rule a room's is,
+  and `named` becomes true.
+- **`speaker_room`** assigns a speaker to a room, or to none with `"room":null`
+  (a `room` left out is refused: no room is said out loud). The speaker
+  becomes a MEMBER of the room (its `endpoints`) and leaves every other. This
+  is how an endpoint with no control client gets a room at all: the firmware
+  never sends `attach`. From then on the room's stream, `room_volume` and
+  `sound` are its session's (`crates/server/src/conductor.rs`, in the session,
+  between two chunks), and its PRESENCE is its session's too: it is in the
+  room's `present` while a session of it is up and out of it when the last
+  one ends. `POST /api/leaving` does not make an assigned speaker absent
+  while its session is up.
+- **An explicit `speaker_room` wins over the endpoint's own `attach`.** A
+  Linux endpoint that attaches itself (`--zone`) and was never assigned works
+  exactly as before: `attach` makes it a member, `/api/leaving` makes it
+  absent, and its speaker record says `"room":null` (the room there is the
+  owner's assignment, not the endpoint's start-up flag). Once it is assigned a
+  room, an `attach` naming another room is accepted and attaches it to the
+  room it was assigned.
+- **`speaker_forget`** removes the record, the speaker's place in any room,
+  its link fact, any key change under its id, and the PIN: the next session
+  under that id is adopted afresh, unnamed and in no room. It is the owner's
+  only way past a changed key (a replaced board, a wiped one). A session of
+  the forgotten speaker that is still up is not cut; it plays on in no room
+  until it ends. If the pin file cannot be rewritten the command is refused
+  whole, naming `speaker`, and nothing is forgotten.
+- A speaker that plays in a room's bonded set is not moved or forgotten out
+  from under it: both are refused naming `speaker` until the room is
+  unbonded.
+
+```json
+{"v":2,"t":"speaker_name","speaker":"chorus-0123456789ab","name":"Kitchen left"}
+{"v":2,"t":"speaker_room","speaker":"chorus-0123456789ab","room":"kitchen"}
+{"v":2,"t":"speaker_room","speaker":"chorus-0123456789ab","room":null}
+{"v":2,"t":"speaker_forget","speaker":"chorus-0123456789ab"}
+```
+
+The end-to-end test is
+`crates/server/tests/adoption.rs::a_new_speaker_is_adopted_named_and_assigned_a_room`:
+the real server, the real C endpoint binaries and a Linux client.
+
 ### Take the room (K78)
 
 `take` moves every room of the target out of whatever group it is in and into
@@ -546,6 +622,16 @@ of each, `fixtures/control/v2/state-empty.json` the empty house):
 | `sleep[]` | the sleep timers asked for, sorted by target: `target`, `minutes` |
 | `autoplay[]` | sorted by input: `autoplay`'s fields |
 | `inputs[]` | the line-ins offered now, as `<endpoint>/<input>`, sorted |
+| `speakers[]` | (goal 14) **written only when there is at least one**: every adopted speaker, sorted by id: `id`, `name`, `named`, `room` (the assigned room, or `null`), then what is true now: `present` (a session of it is up), `software` (its latest `hello`'s, `""` before one), `link` (what it reported with `attach`, as in `endpoints[]`; `unknown` for an endpoint with no control client), `key` (the fingerprint of its pinned key), `roles` (its latest `hello`'s, by name) |
+| `key_changes[]` | (goal 14) **written only when there is at least one**: every handshake refused for a changed key since the server started, the latest per id, sorted by id: `id`, `pinned`, `offered` (fingerprints) |
+
+`speakers` and `key_changes` come after every member the v2 state already had
+and are absent, not empty, on a server that has adopted nothing, so
+`state-empty.json` and `state-rich.json` are the bytes they were;
+`fixtures/control/v2/state-speakers.json` pins both. A reader takes the
+members it knows by name and ignores the rest (the page and the Linux client
+do); a later goal's per-speaker facts are appended to a speaker's object
+after `roles`.
 
 ```json
 {"v":2,"t":"state","serial":0,"zones":[],"groups":[],"saved_groups":[],"endpoints":[],"alarms":[],"sleep":[],"autoplay":[],"inputs":[]}
@@ -582,6 +668,14 @@ field and the endpoint:
 
 ```json
 {"v":2,"t":"error","field":"members","detail":"endpoint 'endpoint-b' (FR) has a link that is wireless, not wired; a bonded set holds wired endpoints only (K91), because a stereo pair or a theater is held to the wired tier's bound and a radio is not"}
+```
+
+The speaker refusals name `speaker`, `name` or `room`, and say what there is
+(`error-speaker-*`):
+
+```json
+{"v":2,"t":"error","field":"speaker","detail":"there is no speaker 'chorus-ffffffffffff'; the speakers adopted on this server are chorus-0123456789ab"}
+{"v":2,"t":"error","field":"speaker","detail":"speaker 'chorus-0123456789ab' plays in room 'living''s bonded set; unbond room 'living' first"}
 ```
 
 ## How the messages travel
@@ -881,20 +975,24 @@ and anything about what is playing rather than where. Catalog v2 names a
 group's source and the inputs offered; choosing what a stream URL or a service
 plays is not here.
 
-## What survives a restart (state-file format 4)
+## What survives a restart (state-file format 5)
 
 The server persists, in `--state-file`, everything a person configured: each
 room's name, group, volume, mute, endpoints, `limit`, quiet-hours windows,
 bonded set, (format 3, goal 12) its sound, bass management and correction
 filters, and (format 4, goal 13) its `tv_upmix` and `av_trim_ms`; each
 endpoint's link; saved groups; alarms; autoplay rules (with, from format 4,
-`stop_on_standby` and `low_latency`). It does
+`stop_on_standby` and `low_latency`); and (format 5, goal 14) each adopted
+speaker's `name`, `named` and `room`, in a `[speaker <id>]` section. It does
 not persist what is a fact about now: which endpoints are present, which quiet
 window is active, which alarm is ringing, a running ramp, what a group is
-playing, a sleep timer, or which inputs are offered. A format 1 file (every build
+playing, a sleep timer, which inputs are offered, or a speaker's presence,
+software, roles, key fingerprint and refused key changes (the pins themselves
+are the server's `adopted-endpoints`, beside its key). A format 1 file (every build
 before catalog v2) loads unchanged with the v2 defaults, and a format 2 file
 (goal 11's builds) with the sound defaults, and a format 3 file (goal 12's
-builds) with no trim, the upmix off and every rule's TV fields true; the next
-write is format 4. A write goes to a temporary that is `fsync`ed, renamed over the file, and the
+builds) with no trim, the upmix off and every rule's TV fields true, and a
+format 4 file (goal 13's builds) with no speaker record (the server lists
+every id it has pinned when it starts); the next write is format 5. A write goes to a temporary that is `fsync`ed, renamed over the file, and the
 directory is `fsync`ed, and a render that would not read back as the same state
 is never installed (`crates/control/src/persist.rs`).

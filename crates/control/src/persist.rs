@@ -74,6 +74,17 @@
 //! `tv_upmix = off` and no trim and every rule at 1 for both (their
 //! defaults, `crate::theater` and `crate::rooms::Autoplay`); the next write is
 //! format 4.
+//!
+//! # Format 5 (goal 14: the adopted speakers)
+//!
+//! Format 5 adds one section kind, `[speaker <id>]`, with three fields, each
+//! required: `name`, `named` (0 or 1: whether a person named it) and `room`
+//! (a zone of this file, or empty for none). A format 1 to 4 file loads
+//! unchanged with no speaker record (the server makes one for every key it
+//! has pinned when it starts, unnamed and in no room); the next write is
+//! format 5. What is a fact about now stays out, as ever: whether a speaker's
+//! session is up, its software, its roles, its key's fingerprint (the pin
+//! file is the server's, `adopted-endpoints`), and the key changes refused.
 
 use std::fmt;
 use std::io::{self, Write};
@@ -87,14 +98,15 @@ use crate::rooms::{
 use crate::sound::{
     EqFilter, FixedPoint, Polarity, CROSSOVER_HZ, ROOM_EQ_MAX_FILTERS, SUB_LEVEL_CDB, TONE_DB,
 };
+use crate::speakers::Speaker;
 use crate::theater::{TvUpmix, AV_TRIM_MS};
 use crate::zones::{Zone, Zones};
 
 /// The version of this file format, which is what every write produces.
-pub const STATE_FORMAT: u32 = 4;
+pub const STATE_FORMAT: u32 = 5;
 
 /// Every format this build reads.
-pub const READ_FORMATS: &[u32] = &[1, 2, 3, 4];
+pub const READ_FORMATS: &[u32] = &[1, 2, 3, 4, 5];
 
 /// Why persisted state could not be read.
 #[derive(Debug)]
@@ -212,7 +224,8 @@ pub fn render(zones: &Zones) -> String {
     out.push_str("# Format 2 adds [endpoint], [saved-group], [alarm] and [autoplay] sections\n");
     out.push_str("# and a room's limit, quiet hours and bonded set (docs/control-plane.md);\n");
     out.push_str("# format 3 a room's sound, bass management and correction EQ; format 4\n");
-    out.push_str("# a room's TV upmix and A/V trim and an autoplay rule's TV behaviour.\n");
+    out.push_str("# a room's TV upmix and A/V trim and an autoplay rule's TV behaviour;\n");
+    out.push_str("# format 5 the adopted speakers ([speaker]: name, named, room).\n");
     out.push('\n');
     out.push_str(&format!("format = {}\n", STATE_FORMAT));
     out.push_str(&format!("serial = {}\n", zones.serial()));
@@ -306,6 +319,16 @@ pub fn render(zones: &Zones) -> String {
         ));
         out.push_str(&format!("low_latency = {}\n", u8::from(rule.low_latency)));
     }
+    for speaker in zones.speakers().all() {
+        out.push('\n');
+        out.push_str(&format!("[speaker {}]\n", escape(&speaker.id)));
+        out.push_str(&format!("name = {}\n", escape(&speaker.name)));
+        out.push_str(&format!("named = {}\n", u8::from(speaker.named)));
+        out.push_str(&format!(
+            "room = {}\n",
+            escape(speaker.room.as_deref().unwrap_or(""))
+        ));
+    }
     out
 }
 
@@ -356,10 +379,26 @@ impl Section {
 
 /// The section kinds each format has.
 fn kinds_of(format: u32) -> &'static [&'static str] {
-    if format == 1 {
-        &["zone"]
-    } else {
-        &["zone", "endpoint", "saved-group", "alarm", "autoplay"]
+    match format {
+        1 => &["zone"],
+        2..=4 => &["zone", "endpoint", "saved-group", "alarm", "autoplay"],
+        _ => &[
+            "zone",
+            "endpoint",
+            "saved-group",
+            "alarm",
+            "autoplay",
+            "speaker",
+        ],
+    }
+}
+
+/// The format a section kind was added in.
+fn added_in(kind: &str) -> u32 {
+    match kind {
+        "zone" => 1,
+        "speaker" => 5,
+        _ => 2,
     }
 }
 
@@ -510,8 +549,10 @@ pub fn load(text: &str, default_audio: &str) -> Result<Zones, StateError> {
         return Err(StateError::Malformed {
             line: section.line,
             detail: format!(
-                "a format {} file has no [{}] section; it was added in format 2",
-                format, section.kind
+                "a format {} file has no [{}] section; it was added in format {}",
+                format,
+                section.kind,
+                added_in(&section.kind)
             ),
         });
     }
@@ -624,6 +665,31 @@ pub fn load(text: &str, default_audio: &str) -> Result<Zones, StateError> {
                 line: 0,
                 detail: format!("zone '{}' has a bonded set this build refuses: {}", zone, e),
             })?;
+    }
+    // Speakers last of all: a speaker's room is one of this file's zones, and
+    // its membership of that room is made to agree with it.
+    for section in sections.iter().filter(|s| s.kind == "speaker") {
+        let name = section.get("name")?;
+        if !is_display_name(&name) {
+            return Err(section.fail(format!("'{}' is not a name", name)));
+        }
+        let named = section.flag("named")?;
+        let room = section.get("room")?;
+        let room = if room.is_empty() {
+            None
+        } else if zones.zone(&room).is_some() {
+            Some(room)
+        } else {
+            return Err(section.fail(format!(
+                "is assigned a room '{}' this file does not have",
+                room
+            )));
+        };
+        let mut speaker = Speaker::new(&section.id);
+        speaker.name = name;
+        speaker.named = named;
+        speaker.room = room;
+        zones.restore_speaker(speaker);
     }
     zones.set_serial(serial.unwrap_or(0));
     Ok(zones)
@@ -951,9 +1017,9 @@ mod tests {
 
     #[test]
     fn a_state_file_this_build_does_not_understand_is_refused_rather_than_guessed() {
-        // Format 4 is this build's own since goal 13; the next one is not.
-        let err = load("format = 5\nserial = 1\n", "x").unwrap_err();
-        assert!(err.to_string().contains("declares format 5"), "{}", err);
+        // Format 5 is this build's own since goal 14; the next one is not.
+        let err = load("format = 6\nserial = 1\n", "x").unwrap_err();
+        assert!(err.to_string().contains("declares format 6"), "{}", err);
         let err = load("serial = 1\n", "x").unwrap_err();
         assert!(err.to_string().contains("no format version"), "{}", err);
     }

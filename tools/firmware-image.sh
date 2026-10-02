@@ -91,6 +91,36 @@ if stale_idf; then
 fi
 
 mkdir -p "$OUT_DIR"
+
+# THE PROFILE'S OWN KCONFIG (goal 14). firmware/sdkconfig.defaults is every
+# profile's. A profile that needs options the others should not carry has a
+# fragment beside it, firmware/sdkconfig.<profile>, laid over the common file
+# (ESP-IDF v6.1 docs/en/api-guides/build-system.rst:1097-1137: SDKCONFIG_DEFAULTS
+# takes a list, later files win). It is passed on the command line here and not
+# set in CMake, which the safety scans refuse, and it is named sdkconfig.* under
+# firmware/ so the same scans read it for refused options. A profile with no
+# fragment builds from the common file alone, as before.
+DEFAULTS=("$REPO_ROOT/firmware/sdkconfig.defaults")
+if [ -f "$REPO_ROOT/firmware/sdkconfig.$PROFILE" ]; then
+    DEFAULTS+=("$REPO_ROOT/firmware/sdkconfig.$PROFILE")
+fi
+DEFAULTS_LIST="$(IFS=';'; printf '%s' "${DEFAULTS[*]}")"
+say "  kconfig:    ${DEFAULTS[*]#"$REPO_ROOT"/}"
+# The generated sdkconfig is a product of those files and of nothing else: nobody
+# edits it. ESP-IDF reads defaults only for options the existing sdkconfig does
+# not already hold, so a persistent build directory would keep yesterday's value
+# of an option whose default changed today. The directory therefore remembers
+# what its sdkconfig was generated from, and generates it afresh when that
+# changed.
+DEFAULTS_SUM="$(cat "${DEFAULTS[@]}" | sha256sum | cut -d' ' -f1) ${DEFAULTS[*]#"$REPO_ROOT"/}"
+if [ "$(cat "$OUT_DIR/sdkconfig.generated-from" 2> /dev/null)" != "$DEFAULTS_SUM" ]; then
+    if [ -f "$OUT_DIR/sdkconfig" ]; then
+        say "chorus: the committed Kconfig defaults changed; generating $OUT_DIR/sdkconfig afresh"
+        rm -f "$OUT_DIR/sdkconfig"
+    fi
+    printf '%s\n' "$DEFAULTS_SUM" > "$OUT_DIR/sdkconfig.generated-from"
+fi
+
 say "chorus: building"
 # The generated sdkconfig lives in the build directory, not in firmware/, so two
 # build directories never share one and the image guard reads the configuration
@@ -102,6 +132,7 @@ if [ "${CHORUS_IDF_CCACHE:-0}" = 1 ]; then
 fi
 say "  jobs:       IDF_PY_BUILD_JOBS=${IDF_PY_BUILD_JOBS:-<unset: the ninja default>}"
 (cd "$REPO_ROOT/firmware" && idf.py -B "$OUT_DIR" -D SDKCONFIG="$OUT_DIR/sdkconfig" \
+    -D SDKCONFIG_DEFAULTS="$DEFAULTS_LIST" \
     -D CHORUS_BOARD_PROFILE="$PROFILE" "${CCACHE_FLAG[@]}" build)
 
 # Guardrail 2 over what was just built: the generated configuration and both

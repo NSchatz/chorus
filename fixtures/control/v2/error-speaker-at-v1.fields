@@ -1,0 +1,20 @@
+# Canonical input for the catalog v2 error-speaker-at-v1 vector.
+#
+# `input` is refused, by the decoder or by the room state the commands below
+# built on a server configured with these zones (and, for the speakers, the
+# ids `adopted.N` says the session layer adopted, each with its key's
+# fingerprint), and encoding the refusal must produce exactly
+# error-speaker-at-v1.json. Nothing of it is applied.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# The speaker commands are catalog version 2's: at version 1 they are not
+# commands at all.
+
+message_type = error
+zones = living,kitchen
+adopted.0 = chorus-0123456789ab 1f0e:2d3c:4b5a:6978
+input = {"v":1,"t":"speaker_forget","speaker":"chorus-0123456789ab"}
+field = t
+ends_the_session = 0

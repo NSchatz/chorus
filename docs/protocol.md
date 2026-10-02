@@ -298,7 +298,10 @@ colon-separated groups of 4 hex digits, for example `1a2b:3c4d:5e6f:7081`.
 
 Only the owner changes a pin: forgetting an endpoint lets its next handshake
 adopt it afresh, which is how a replaced board or a re-flashed key is
-accepted. Nothing a peer sends changes a pin. The endpoint keeps the same kind
+accepted (the control plane's `speaker_forget`, goal 14: `docs/control-plane.md`,
+"Speakers: adoption, names and rooms", which is also where an adopted endpoint
+is listed, named and assigned a room, and where a refused key change is shown
+in the state as well as in the log). Nothing a peer sends changes a pin. The endpoint keeps the same kind
 of store for the server it talks to, pins the server on first use, and refuses
 a server whose key changed in the same way (it sends `session_refused`
 `key_changed` and stops). The vectors `v2/session_refused_key_changed.hex` and

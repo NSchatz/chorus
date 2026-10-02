@@ -35,6 +35,19 @@ endif()
 configure_file("${chorus_board_file}" "${CMAKE_CURRENT_BINARY_DIR}/board_profile.conf" COPYONLY)
 message(STATUS "chorus: board profile ${CHORUS_BOARD_PROFILE}")
 
+# Wi-Fi provisioning (goal 14, docs/decisions/0103-wifi-provisioning-over-softap.md):
+# the binding to the access point, the HTTP server and the pinned
+# espressif/network_provisioning manager is compiled only into an image whose
+# board profile is wireless. A wired speaker never provisions, and its image
+# carries none of it. The decision is read from the profile itself, so a
+# second wireless profile gets the binding without being named here.
+file(STRINGS "${chorus_board_file}" chorus_wireless_profile REGEX "^link_transport *= *wireless")
+set(chorus_profile_srcs "")
+if(chorus_wireless_profile)
+    list(APPEND chorus_profile_srcs "esp_provision.c")
+    message(STATUS "chorus: Wi-Fi provisioning is in this image")
+endif()
+
 idf_component_register(
     SRCS
         "app_main.c"
@@ -45,6 +58,7 @@ idf_component_register(
         "console_esp.c"
         "esp_ota.c"
         "esp_store.c"
+        ${chorus_profile_srcs}
         "esp_identity.c"
         "esp_discovery.c"
         "../src/conf.c"
@@ -78,6 +92,7 @@ idf_component_register(
         "../src/dsp_cost.c"
         "../src/ota.c"
         "../src/store.c"
+        "../src/provision.c"
         "../src/identity.c"
         "../src/discovery.c"
         "${CHORUS_THIRD_PARTY}/dr_flac/dr_flac.c"
@@ -116,6 +131,11 @@ idf_component_register(
         app_update
         esp_app_format
         esp_partition
+        # The join form's server (goal 14). Named for every profile because a
+        # component's requirements are fixed before the profile is known to
+        # CMake; only the Wi-Fi profile's binding calls it, and the linker
+        # leaves it out of the wired image.
+        esp_http_server
     EMBED_TXTFILES
         "../config/endpoint.conf"
         "${CMAKE_CURRENT_BINARY_DIR}/board_profile.conf"
@@ -136,6 +156,9 @@ idf_component_register(
 # firmware/src/monotonic.c. The endpoint's committed configuration is embedded
 # rather than read from a filesystem the board does not have.
 target_compile_definitions(${COMPONENT_LIB} PRIVATE CHORUS_TARGET_ESP32S3=1)
+if(chorus_wireless_profile)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE CHORUS_PROVISIONING=1)
+endif()
 
 # The vendored units are upstream's code, byte for byte: their own definitions,
 # the floating-point flags every C unit here gets, and no warnings (they are

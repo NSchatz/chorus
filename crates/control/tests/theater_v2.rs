@@ -179,8 +179,9 @@ fn everything_goal_13_holds_survives_the_state_file_as_format_4() {
         apply(&mut zones, text);
     }
     let text = render(&zones);
-    assert_eq!(STATE_FORMAT, 4);
-    assert!(text.contains("format = 4\n"));
+    // Format 5 (goal 14) still holds every format 4 field, in its place.
+    assert_eq!(STATE_FORMAT, 5);
+    assert!(text.contains("format = 5\n"));
     assert!(
         text.contains("tv_upmix = ambient\nav_trim_ms = -35\n"),
         "{}",
@@ -209,7 +210,7 @@ fn a_format_3_file_loads_unchanged_with_the_goal_13_defaults() {
     );
     let four = render(&zones);
     let three = four
-        .replace("format = 4\n", "format = 3\n")
+        .replace("format = 5\n", "format = 3\n")
         .replace("tv_upmix = off\n", "")
         .replace("av_trim_ms = 0\n", "")
         .replace("stop_on_standby = 1\n", "")
@@ -220,7 +221,7 @@ fn a_format_3_file_loads_unchanged_with_the_goal_13_defaults() {
     assert_eq!((z.av_trim_ms, z.sound.tv_upmix), (0, TvUpmix::Off));
     let rule = &back.autoplay_rules()[0];
     assert!(rule.stop_on_standby && rule.low_latency);
-    // The next write is format 4, and it is the same state.
+    // The next write is the current format, and it is the same state.
     assert_eq!(render(&back), four);
 }
 
