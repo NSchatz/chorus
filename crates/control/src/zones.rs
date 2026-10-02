@@ -1362,7 +1362,7 @@ impl Zones {
     pub fn restore_speaker(&mut self, speaker: Speaker) {
         if let Some(room) = &speaker.room {
             if let Some(zone) = self.zones.iter_mut().find(|z| z.id == *room) {
-                if !zone.endpoints.iter().any(|e| *e == speaker.id) {
+                if !zone.endpoints.contains(&speaker.id) {
                     zone.endpoints.push(speaker.id.clone());
                 }
             }
