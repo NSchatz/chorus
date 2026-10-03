@@ -546,7 +546,11 @@ fn a_stored_url_alarm_plays_its_stream(extra: &[&str], prefix: &str) {
         let (source, title, _) = playing(&server, "kitchen");
         source == "stream" && title.is_none() && !ringing(&server, "wake")
     });
-    server.wait_for(&format!("{} player p0 released for alarm:wake", prefix));
+    // Whoever notices first gives it back: the conductor on the alarm's end
+    // (`released for alarm:wake`), or, with the renderers running, their
+    // manager finding that the group plays something else (`released: its
+    // group plays something else`). Either way it is released, once.
+    server.wait_for(&format!("{} player p0 released", prefix));
     wait_for("the configured stream again", || {
         kitchen.last() == Some([SAMPLE, SAMPLE])
     });
