@@ -557,7 +557,7 @@ pub struct Renderers {
     settings: Settings,
     state: Arc<ControlState>,
     players: Arc<Players>,
-    sessions: PlayerSessions,
+    sessions: Arc<PlayerSessions>,
     inner: Mutex<Inner>,
     started: Instant,
     next_base: AtomicU64,
@@ -2098,14 +2098,17 @@ impl Upnp {
     ///
     /// `subnets` is what `--upnp-callback-subnet` gave, already parsed; empty
     /// takes the host's own ([`on_link_subnets`]). `server_id` is the stable
-    /// identity the UDNs rest on. `reports` is the players' one report
-    /// stream (`Players::take_reports`).
+    /// identity the UDNs rest on. `sessions` is the server's one table of
+    /// player sessions (goal 17: an alarm's stored stream URL plays through
+    /// the same one). `reports` is the players' one report stream
+    /// (`Players::take_reports`).
     pub fn new(
         sockets: Sockets,
         flags: &UpnpFlags,
         server_id: String,
         state: Arc<ControlState>,
         players: Arc<Players>,
+        sessions: Arc<PlayerSessions>,
         reports: Receiver<PlayerReport>,
         log: Box<dyn Fn(&str) + Send + Sync>,
     ) -> Upnp {
@@ -2119,14 +2122,6 @@ impl Upnp {
         }
         let (wake_events, wake) = mpsc::sync_channel(1);
         let session_log: Arc<dyn Fn(&str) + Send + Sync> = Arc::from(log);
-        let sessions = {
-            let log = Arc::clone(&session_log);
-            PlayerSessions::new(
-                Arc::clone(&state),
-                Arc::clone(&players),
-                Box::new(move |line: &str| log(&format!("upnp {}", line))),
-            )
-        };
         let shared = Arc::new(Renderers {
             settings: Settings {
                 http: sockets.http,

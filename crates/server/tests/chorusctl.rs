@@ -1,5 +1,6 @@
 //! chorusctl against the real `chorus-server` binary: at least one verb of
-//! each of its six nouns (rooms, groups, volume, inputs, endpoints, updates),
+//! each of its seven nouns (rooms, groups, volume, inputs, sources, endpoints,
+//! updates),
 //! through chorusctl's own entry point, with every answer checked against the
 //! server's state.
 //!
@@ -57,7 +58,7 @@ fn text<'a>(value: &'a Value, key: &str) -> &'a str {
 }
 
 #[test]
-fn chorusctl_drives_the_real_server_through_all_six_nouns() {
+fn chorusctl_drives_the_real_server_through_all_seven_nouns() {
     let firmware = std::env::temp_dir().join(common::fresh_id("chorusctl-firmware"));
     std::fs::create_dir_all(&firmware).expect("a firmware directory");
     let server = RunningServer::start(&[
@@ -176,6 +177,60 @@ fn chorusctl_drives_the_real_server_through_all_six_nouns() {
     let no_target = refused(&server, &["inputs", "select", "nobody/line-1", "attic"]);
     assert!(no_target.contains("attic"), "{}", no_target);
     ok(&server, &["groups", "take", "den", "--source", "stream"]);
+    // (goal 17) A label on an input, and its removal.
+    assert_eq!(ok(&server, &["inputs", "labels"]), "no labelled inputs\n");
+    let labelled = ok(
+        &server,
+        &[
+            "inputs",
+            "label",
+            "nobody/line-1",
+            "streamer",
+            "Den streamer",
+        ],
+    );
+    assert_eq!(
+        labelled,
+        "INPUT          ROLE      NAME\nnobody/line-1  streamer  Den streamer\n"
+    );
+    assert_eq!(
+        ok(&server, &["inputs", "labels", "--json"]),
+        "[{\"input\":\"nobody/line-1\",\"name\":\"Den streamer\",\"role\":\"streamer\"}]\n"
+    );
+    assert_eq!(
+        ok(&server, &["inputs", "unlabel", "nobody/line-1"]),
+        "no labelled inputs\n"
+    );
+
+    // sources (goal 17): store, list, the alarm-only rule, forget.
+    assert_eq!(ok(&server, &["sources", "list"]), "no stored sources\n");
+    let stored = ok(
+        &server,
+        &[
+            "sources",
+            "store",
+            "morning-radio",
+            "url",
+            "Morning radio",
+            "https://radio.example/stream.mp3",
+        ],
+    );
+    assert!(
+        stored.contains("morning-radio  url   Morning radio  https://radio.example/stream.mp3\n"),
+        "{}",
+        stored
+    );
+    let not_a_take = refused(
+        &server,
+        &["groups", "take", "den", "--source", "stored:morning-radio"],
+    );
+    assert!(not_a_take.contains("only an alarm plays"), "{}", not_a_take);
+    assert_eq!(
+        ok(&server, &["sources", "forget", "morning-radio"]),
+        "no stored sources\n"
+    );
+    let unknown = refused(&server, &["sources", "forget", "morning-radio"]);
+    assert!(unknown.contains("no stored source"), "{}", unknown);
 
     // endpoints: a real session is adopted; list, show, name, room, forget.
     let id = common::fresh_id("chorusctl-speaker");

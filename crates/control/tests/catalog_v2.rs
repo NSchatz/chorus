@@ -19,8 +19,8 @@ use chorus_control::catalog::{decode_command, decode_message, Command, Refusal, 
 use chorus_control::firmware::{Image, Report, SpeakerFirmware};
 use chorus_control::json;
 use chorus_control::rooms::{
-    Alarm, Autoplay, BondMember, CivilTime, ClockTime, Days, InputId, Link, NowPlaying, PlayState,
-    QuietWindow, Role, Source,
+    Alarm, Autoplay, BondMember, CivilTime, ClockTime, Days, InputId, InputLabel, InputRole, Link,
+    NowPlaying, PlayState, QuietWindow, Role, Source, StoredKind, StoredSource,
 };
 use chorus_control::sound::{EqFilter, FixedPoint, Polarity};
 use chorus_control::speakers::KeyChange;
@@ -62,6 +62,9 @@ const EVERY_V2_MESSAGE_TYPE: &[&str] = &[
     "firmware_install",
     "firmware_cancel",
     "firmware_rescan",
+    "source_store",
+    "source_forget",
+    "input_label",
     "state",
     "error",
     "refused",
@@ -500,6 +503,18 @@ fn command_from(fields: &Fields) -> Command {
             speaker: get("speaker"),
         },
         "firmware_rescan" => Command::FirmwareRescan,
+        "source_store" => Command::SourceStore(StoredSource {
+            id: get("id"),
+            kind: StoredKind::parse(&get("kind")).unwrap(),
+            value: get("value"),
+            name: get("name"),
+        }),
+        "source_forget" => Command::SourceForget { id: get("id") },
+        "input_label" => Command::InputLabel(InputLabel {
+            input: InputId::parse(&get("input")).unwrap(),
+            name: get("name"),
+            role: InputRole::parse(&get("role")).unwrap(),
+        }),
         "bass_management" => Command::BassManagement {
             zone: get("zone"),
             crossover_hz: fields

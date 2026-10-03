@@ -1,0 +1,17 @@
+# Canonical input for the catalog v2 error-take-stored vector.
+#
+# `input` is refused, by the decoder or by the room state the commands below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-take-stored.json. Nothing of it is applied.
+#
+# (goal 17) A stored source is an alarm's: no command plays a URL in a room.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+zones = kitchen
+command.0 = {"v":2,"t":"source_store","id":"morning-radio","kind":"url","value":"https://radio.example/stream.mp3","name":"Morning radio"}
+input = {"v":2,"t":"take","target":"kitchen","source":"stored:morning-radio"}
+field = source
+ends_the_session = 0

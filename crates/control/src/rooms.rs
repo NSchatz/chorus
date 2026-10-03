@@ -414,8 +414,12 @@ impl QuietWindow {
 ///
 /// The ids are the envelope's: `stream` is the server's configured stream,
 /// `none` is nothing, `chime:<name>` one of the generated chimes,
-/// `line-in:<endpoint>/<input>` an endpoint's offered line-in, and (goal 16)
-/// `player:<id>` one of the server's network media players. This crate
+/// `line-in:<endpoint>/<input>` an endpoint's offered line-in, (goal 16)
+/// `player:<id>` one of the server's network media players, and (goal 17)
+/// `stored:<id>` a stored source ([`StoredSource`]), which only an ALARM
+/// names: a formed group never plays `stored:<id>` itself (the runtime turns
+/// it into the player or the receiver that plays it), and a `take` naming one
+/// is refused by name. This crate
 /// validates the spelling; which chimes exist, which inputs are offered and
 /// which players the server runs is the runtime's to know, so a well-spelled
 /// source naming one that does not exist is the runtime's refusal, not the
@@ -436,6 +440,10 @@ pub enum Source {
     /// [`NowPlaying`]. A player plays in at most one group at a time
     /// (`crate::zones`).
     Player(String),
+    /// (goal 17) A stored source, by its id: an alarm's source only. What it
+    /// names (a stream URL, a Spotify URI) is in the room model's stored
+    /// sources ([`StoredSource`]); a group never plays this spelling.
+    Stored(String),
 }
 
 impl Source {
@@ -447,6 +455,7 @@ impl Source {
             Source::Chime(name) => format!("chime:{}", name),
             Source::LineIn(input) => format!("line-in:{}", input.literal()),
             Source::Player(id) => format!("player:{}", id),
+            Source::Stored(id) => format!("stored:{}", id),
         }
     }
 
@@ -466,13 +475,191 @@ impl Source {
         if let Some(id) = text.strip_prefix("player:") {
             return is_identifier(id).then(|| Source::Player(id.to_string()));
         }
+        if let Some(id) = text.strip_prefix("stored:") {
+            return is_identifier(id).then(|| Source::Stored(id.to_string()));
+        }
         None
+    }
+
+    /// (goal 17) Whether a group that plays this source carries a
+    /// now-playing record a runtime may set ([`NowPlaying`]): a player
+    /// source today. (A line-in labelled as a streamer carries one too, which
+    /// the room model writes itself.)
+    pub fn takes_now_playing(&self) -> bool {
+        matches!(self, Source::Player(_))
     }
 }
 
-/// What a refusal says a source is.
+/// What a refusal says a source a group may play is.
 pub const SOURCE_SPELLINGS: &str = "'stream', 'none', 'chime:<name>', \
      'line-in:<endpoint>/<input>' or 'player:<id>', each name an identifier";
+
+/// (goal 17) What a refusal says an alarm's source is: a group's sources and
+/// a stored source.
+pub const ALARM_SOURCE_SPELLINGS: &str = "'stream', 'none', 'chime:<name>', \
+     'line-in:<endpoint>/<input>', 'player:<id>' or 'stored:<id>', each name an identifier";
+
+/// Longest a stored source's value may be, in bytes. ASSUMED: 2048, the
+/// length every common HTTP client and server accepts in a request line
+/// (the bound [`MAX_ART_URL_LEN`] uses).
+pub const MAX_STORED_VALUE_LEN: usize = 2048;
+
+/// What kind of thing a stored source names (goal 17).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum StoredKind {
+    /// An `http` or `https` stream URL, played by a network media player
+    /// under the server's fetch policy.
+    Url,
+    /// A Spotify URI (`spotify:<track|album|playlist|episode>:<id>`), played
+    /// by a Soloist receiver when the server runs them.
+    Spotify,
+}
+
+impl StoredKind {
+    /// The catalog's word for it.
+    pub fn name(self) -> &'static str {
+        match self {
+            StoredKind::Url => "url",
+            StoredKind::Spotify => "spotify",
+        }
+    }
+
+    /// Read the catalog's word back.
+    pub fn parse(text: &str) -> Option<StoredKind> {
+        match text {
+            "url" => Some(StoredKind::Url),
+            "spotify" => Some(StoredKind::Spotify),
+            _ => None,
+        }
+    }
+}
+
+/// A stored source (goal 17, K80; brief section 4.8's "stored alarm stream
+/// URLs"): a named thing an alarm can play, entered once by `source_store`
+/// and referred to as `stored:<id>`. It is the ONLY way a URL reaches the
+/// server through the control API, and only an alarm plays it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredSource {
+    /// Its identifier.
+    pub id: String,
+    /// What kind of thing `value` is.
+    pub kind: StoredKind,
+    /// The URL or the URI.
+    pub value: String,
+    /// What a person sees, and the title a room shows while it plays.
+    pub name: String,
+}
+
+impl StoredSource {
+    /// Why `value` is not a value of `kind`, or `None` when it is one.
+    ///
+    /// A `url` is `http://` or `https://` followed by a host, holds no
+    /// control character, space, quote or backslash, and is at most
+    /// [`MAX_STORED_VALUE_LEN`] bytes. Whether the server may fetch it is the
+    /// fetch policy's to say when it is played, not here. A `spotify` value
+    /// is `spotify:<track|album|playlist|episode>:<id>`, the id 1 to 64
+    /// ASCII letters and digits (ASSUMED bound: Spotify's ids are 22 base-62
+    /// characters, P7).
+    pub fn value_problem(kind: StoredKind, value: &str) -> Option<String> {
+        if value.len() > MAX_STORED_VALUE_LEN {
+            return Some(format!(
+                "the value is {} bytes and a stored source holds at most {}",
+                value.len(),
+                MAX_STORED_VALUE_LEN
+            ));
+        }
+        match kind {
+            StoredKind::Url => {
+                let rest = value
+                    .strip_prefix("http://")
+                    .or_else(|| value.strip_prefix("https://"));
+                let Some(rest) = rest else {
+                    return Some(
+                        "a stored source of kind 'url' is an 'http://' or 'https://' URL"
+                            .to_string(),
+                    );
+                };
+                let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+                if host.is_empty() {
+                    return Some("the URL names no host".to_string());
+                }
+                if value
+                    .chars()
+                    .any(|c| c.is_control() || c == ' ' || c == '"' || c == '\\')
+                {
+                    return Some(
+                        "the URL holds a control character, a space, a quote or a backslash"
+                            .to_string(),
+                    );
+                }
+                None
+            }
+            StoredKind::Spotify => {
+                let mut parts = value.split(':');
+                let ok = parts.next() == Some("spotify")
+                    && matches!(
+                        parts.next(),
+                        Some("track" | "album" | "playlist" | "episode")
+                    )
+                    && parts.next().is_some_and(|id| {
+                        (1..=64).contains(&id.len())
+                            && id.bytes().all(|b| b.is_ascii_alphanumeric())
+                    })
+                    && parts.next().is_none();
+                (!ok).then(|| {
+                    "a stored source of kind 'spotify' is \
+                     'spotify:<track|album|playlist|episode>:<id>', the id letters and digits"
+                        .to_string()
+                })
+            }
+        }
+    }
+}
+
+/// What an endpoint's input is wired to (goal 17).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum InputRole {
+    /// A plain line-in: a turntable, a TV, anything.
+    LineIn,
+    /// A bought, certified network streamer (the box that carries the
+    /// licensed receivers chorus does not implement, K60): it plays into its
+    /// endpoint's room when its signal appears, and the room shows its name.
+    Streamer,
+}
+
+impl InputRole {
+    /// The catalog's word for it.
+    pub fn name(self) -> &'static str {
+        match self {
+            InputRole::LineIn => "line-in",
+            InputRole::Streamer => "streamer",
+        }
+    }
+
+    /// Read the catalog's word back.
+    pub fn parse(text: &str) -> Option<InputRole> {
+        match text {
+            "line-in" => Some(InputRole::LineIn),
+            "streamer" => Some(InputRole::Streamer),
+            _ => None,
+        }
+    }
+}
+
+/// A person's label on an input (goal 17): its name and what it is wired to.
+/// Configuration: it is kept whether or not the input is offered now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InputLabel {
+    /// The input.
+    pub input: InputId,
+    /// What a person sees; the title a room shows while a `streamer` plays.
+    pub name: String,
+    /// What it is wired to.
+    pub role: InputRole,
+}
+
+/// What a labelled streamer's now-playing record says drives it.
+pub const VIA_STREAMER: &str = "streamer";
 
 /// Whether what a player source plays is playing, paused or still filling its
 /// buffer (goal 16).

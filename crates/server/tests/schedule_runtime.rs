@@ -16,7 +16,10 @@
 //! with a line-in, and sleep timers, work with volume ramps; line-in autoplay
 //! works.
 
-use chorus_control::rooms::{Alarm, Autoplay, ClockTime, Days, InputId, QuietWindow, Source};
+use chorus_control::rooms::{
+    Alarm, Autoplay, ClockTime, Days, InputId, InputLabel, InputRole, QuietWindow, Source,
+    StoredKind, StoredSource,
+};
 use chorus_control::zones::Zone as Room;
 use chorus_control::{Command, Volume, Zones};
 use chorus_schedule::civil::days_from_civil;
@@ -1174,17 +1177,20 @@ fn line_in_autoplay_whose_endpoint_goes_stops_at_once_and_restores() {
     assert!(h.zones.inputs().is_empty());
 }
 
+/// (goal 17) An input plays in any number of groups: one a person already
+/// plays in the kitchen is autoplayed into its target too, and started once.
 #[test]
-fn line_in_autoplay_feeds_at_most_one_group() {
+fn line_in_autoplay_shares_an_input_another_group_already_plays() {
     let mut h = autoplay_house("lounge");
-    // A person already plays the input in the kitchen.
     h.command(Command::Take {
         target: "kitchen".into(),
         source: Some(Source::LineIn(input("turntable/line1"))),
     });
     let on = h.signal("turntable/line1", true);
-    assert!(!h.rt.is_autoplaying(&input("turntable/line1")));
-    assert_eq!(h.source_of("lounge"), Source::Stream);
+    assert!(h.rt.is_autoplaying(&input("turntable/line1")));
+    let line_in = Source::LineIn(input("turntable/line1"));
+    assert_eq!(h.source_of("lounge"), line_in);
+    assert_eq!(h.source_of("kitchen"), line_in);
     assert_eq!(
         on.iter()
             .filter(|e| **e == control("turntable/line1", InputAction::Start))
@@ -1192,7 +1198,379 @@ fn line_in_autoplay_feeds_at_most_one_group() {
         0,
         "started once already, for the kitchen"
     );
-    assert_eq!(h.logged("already plays in group=kitchen"), 1);
+    // The signal goes and the hold runs out: the target is restored, and
+    // the kitchen, which a person chose, keeps the input (still started).
+    h.signal("turntable/line1", false);
+    let end = h.run(AUTOPLAY_HOLD_MS + 1_000, 500);
+    assert_eq!(h.source_of("lounge"), Source::Stream);
+    assert_eq!(h.source_of("kitchen"), line_in);
+    assert!(!end.contains(&control("turntable/line1", InputAction::Stop)));
+}
+
+/// (goal 17) A target that already plays the input, exactly as the take
+/// would leave it, is left as the person made it: nothing held or restored.
+#[test]
+fn line_in_autoplay_leaves_a_target_that_already_plays_the_input() {
+    let mut h = autoplay_house("lounge");
+    h.command(Command::Take {
+        target: "lounge".into(),
+        source: Some(Source::LineIn(input("turntable/line1"))),
+    });
+    h.signal("turntable/line1", true);
+    assert!(!h.rt.is_autoplaying(&input("turntable/line1")));
+    assert!(!h.rt.is_held("lounge"));
+    assert_eq!(h.logged("already plays in its target=lounge"), 1);
+}
+
+/// (goal 17) An alarm whose line-in another group already plays plays it
+/// too: there is no `input-busy` fallback any more.
+#[test]
+fn alarm_with_a_line_in_another_group_plays_plays_it_too() {
+    let mut h = House::new(
+        Zone::utc(),
+        thursday(6, 59, 0),
+        &[("bedroom", 300), ("lounge", 500)],
+    );
+    h.signal("turntable/line1", true);
+    let started = h.command(Command::Take {
+        target: "lounge".into(),
+        source: Some(Source::LineIn(input("turntable/line1"))),
+    });
+    assert!(started.contains(&control("turntable/line1", InputAction::Start)));
+    h.command(Command::AlarmSet(alarm(
+        "radio",
+        "bedroom",
+        "07:00",
+        "line-in:turntable/line1",
+        400,
+        5,
+    )));
+    let fire = h.run(60_000, 100);
+    position(&fire, set_source("bedroom", "line-in:turntable/line1"));
+    assert_eq!(h.logged("fallback=chime"), 0);
+    assert_eq!(h.logged("input-busy"), 0);
+    assert!(
+        !fire.contains(&control("turntable/line1", InputAction::Start)),
+        "one start serves both groups"
+    );
+    // The alarm ends: the bedroom is restored, the lounge keeps the input.
+    h.command(Command::AlarmStop {
+        alarm: "radio".into(),
+    });
+    let end = h.run(3_000, 100);
+    assert_eq!(h.source_of("bedroom"), Source::Stream);
+    assert_eq!(
+        h.source_of("lounge"),
+        Source::LineIn(input("turntable/line1"))
+    );
+    assert!(!end.contains(&control("turntable/line1", InputAction::Stop)));
+}
+
+fn store(h: &mut House, id: &str, kind: StoredKind, value: &str, name: &str) {
+    h.command(Command::SourceStore(StoredSource {
+        id: id.into(),
+        kind,
+        value: value.into(),
+        name: name.into(),
+    }));
+}
+
+fn stored_house() -> House {
+    let mut h = House::new(
+        Zone::utc(),
+        thursday(6, 59, 0),
+        &[("bedroom", 300), ("lounge", 500)],
+    );
+    store(
+        &mut h,
+        "radio",
+        StoredKind::Url,
+        "https://radio.example/stream.mp3",
+        "Morning radio",
+    );
+    h.command(Command::AlarmSet(alarm(
+        "wake",
+        "bedroom",
+        "07:00",
+        "stored:radio",
+        400,
+        5,
+    )));
+    h
+}
+
+fn play_stored() -> Effect {
+    Effect::PlayStored {
+        alarm: "wake".into(),
+        target: "bedroom".into(),
+        stored: "radio".into(),
+        url: "https://radio.example/stream.mp3".into(),
+        name: "Morning radio".into(),
+    }
+}
+
+/// (goal 17) An alarm whose source is a stored stream URL fires in silence,
+/// asks for the play once, and plays the player it is told started; stop
+/// fades, restores, and gives the player back.
+#[test]
+fn alarm_with_a_stored_url_asks_for_the_play_and_plays_the_player_it_is_given() {
+    let mut h = stored_house();
+    let fire = h.run(60_000, 100);
+    assert_eq!(
+        fire.iter().filter(|e| **e == play_stored()).count(),
+        1,
+        "{fire:#?}"
+    );
+    position(&fire, set_source("bedroom", "none"));
+    assert!(h.zones.is_ringing("wake"));
+    assert_eq!(h.rt.alarm_stored("wake"), Some("radio"));
+    // The conductor's answer: the player plays.
+    let p0 = Source::Player("p0".into());
+    let (mono, _) = (h.mono, ());
+    let (took, out) =
+        h.rt.on_alarm_source_started("wake", p0.clone(), mono, &mut h.zones);
+    let out = h.check(out);
+    assert!(took);
+    position(&out, set_source("bedroom", "player:p0"));
+    assert_eq!(h.source_of("bedroom"), p0);
+    assert_eq!(
+        h.logged("alarm=wake started stored=radio plays=player:p0"),
+        1
+    );
+    // A second answer is not taken: the alarm no longer waits.
+    let (again, _) =
+        h.rt.on_alarm_source_started("wake", Source::Player("p1".into()), mono, &mut h.zones);
+    assert!(!again);
+    assert_eq!(h.source_of("bedroom"), p0);
+    // The ramp runs as for any source.
+    h.run(10_000, 100);
+    assert_eq!(h.volume("bedroom"), 400);
+    // Stop: the fade, then the restore, and the player is given back.
+    h.command(Command::AlarmStop {
+        alarm: "wake".into(),
+    });
+    let end = h.run(3_000, 100);
+    position(&end, |e| {
+        *e == Effect::StopStored {
+            alarm: "wake".into(),
+        }
+    });
+    assert_eq!(h.source_of("bedroom"), Source::Stream);
+    assert_eq!(h.volume("bedroom"), 300);
+    assert!(h.rt.ringing().is_empty());
+    assert_eq!(h.logged("fallback=chime"), 0);
+}
+
+/// (goal 17) Whatever stops the stream, at once or later, rings the
+/// fallback chime with the reason it was given, and the alarm keeps ringing.
+#[test]
+fn alarm_with_a_stored_url_that_fails_rings_the_chime_with_the_reason() {
+    for (after_start, reason, detail) in [
+        (
+            false,
+            "no-players",
+            "this server was started without --players",
+        ),
+        (
+            false,
+            "no-free-player",
+            "players: no free player: all 1 are in use",
+        ),
+        (true, "url-refused", "refused: loopback address 127.0.0.1"),
+        (true, "stream-failed", "http status 404"),
+        (true, "stream-ended", "the stream ended"),
+    ] {
+        let mut h = stored_house();
+        h.run(60_000, 100);
+        let mono = h.mono;
+        if after_start {
+            let (took, out) = h.rt.on_alarm_source_started(
+                "wake",
+                Source::Player("p0".into()),
+                mono,
+                &mut h.zones,
+            );
+            assert!(took);
+            h.check(out);
+        }
+        let out =
+            h.rt.on_alarm_source_failed("wake", reason, detail, mono, &mut h.zones);
+        let out = h.check(out);
+        position(&out, set_source("bedroom", "chime:bell"));
+        assert_eq!(
+            h.logged(&format!(
+                "alarm=wake fallback=chime reason={} wanted=stored:radio plays=chime:bell \
+                 detail=\"{}\"",
+                reason, detail
+            )),
+            1,
+            "{reason}"
+        );
+        assert!(
+            h.zones.is_ringing("wake"),
+            "{reason}: an alarm must still wake"
+        );
+        assert_eq!(h.rt.alarm_stored("wake"), None);
+        // A second failure report changes nothing.
+        let again =
+            h.rt.on_alarm_source_failed("wake", reason, detail, mono, &mut h.zones);
+        assert!(again.is_empty(), "{again:#?}");
+        h.run(10_000, 100);
+        assert_eq!(h.volume("bedroom"), 400, "{reason}: and it still ramps");
+        // It ends as a chime alarm does.
+        h.command(Command::AlarmStop {
+            alarm: "wake".into(),
+        });
+        let end = h.run(3_000, 100);
+        assert_eq!(h.source_of("bedroom"), Source::Stream);
+        assert!(
+            !end.iter().any(|e| matches!(e, Effect::StopStored { .. })),
+            "{reason}: nothing is held any more"
+        );
+    }
+}
+
+/// (goal 17) An answer for an alarm that already ended is not taken, so the
+/// caller gives the player back.
+#[test]
+fn a_stored_url_that_starts_after_the_alarm_was_stopped_is_not_taken() {
+    let mut h = stored_house();
+    h.run(60_000, 100);
+    h.command(Command::AlarmStop {
+        alarm: "wake".into(),
+    });
+    h.run(3_000, 100);
+    let mono = h.mono;
+    let (took, _) =
+        h.rt.on_alarm_source_started("wake", Source::Player("p0".into()), mono, &mut h.zones);
+    assert!(!took);
+    assert_eq!(h.source_of("bedroom"), Source::Stream);
+}
+
+/// (goal 17) The Spotify alarm source ships switched off: the chime rings
+/// with reason `soloist-off`. Switched on (the Soloist server track's flag),
+/// the alarm asks with `PlaySpotify` and takes the same two answers.
+#[test]
+fn a_stored_spotify_alarm_rings_the_chime_until_soloist_alarms_are_switched_on() {
+    let spotify = |on: bool| {
+        let mut h = House::new(Zone::utc(), thursday(6, 59, 0), &[("bedroom", 300)]);
+        h.rt.set_soloist_alarms(on);
+        store(
+            &mut h,
+            "wake-list",
+            StoredKind::Spotify,
+            "spotify:playlist:37i9dQZF1DXexample0000",
+            "Wake up",
+        );
+        h.command(Command::AlarmSet(alarm(
+            "wake",
+            "bedroom",
+            "07:00",
+            "stored:wake-list",
+            400,
+            5,
+        )));
+        let fire = h.run(60_000, 100);
+        (h, fire)
+    };
+    let (h, fire) = spotify(false);
+    position(&fire, set_source("bedroom", "chime:bell"));
+    assert_eq!(
+        h.logged("alarm=wake fallback=chime reason=soloist-off wanted=stored:wake-list"),
+        1
+    );
+    assert!(!fire.iter().any(|e| matches!(e, Effect::PlaySpotify { .. })));
+
+    let (mut h, fire) = spotify(true);
+    position(&fire, |e| {
+        *e == Effect::PlaySpotify {
+            alarm: "wake".into(),
+            target: "bedroom".into(),
+            stored: "wake-list".into(),
+            uri: "spotify:playlist:37i9dQZF1DXexample0000".into(),
+            name: "Wake up".into(),
+        }
+    });
+    assert_eq!(h.source_of("bedroom"), Source::None);
+    let mono = h.mono;
+    let out = h.rt.on_alarm_source_failed(
+        "wake",
+        "soloist-unavailable",
+        "this server runs no Soloist receiver",
+        mono,
+        &mut h.zones,
+    );
+    position(&out, set_source("bedroom", "chime:bell"));
+    assert!(h.zones.is_ringing("wake"));
+}
+
+/// (goal 17) A `streamer` input plays into its endpoint's own room when its
+/// signal appears, with no autoplay rule; a plain line-in does not; a
+/// disabled rule switches the streamer's default off.
+#[test]
+fn a_streamer_input_autoplays_into_its_endpoints_room() {
+    let label = |role: InputRole| {
+        Command::InputLabel(InputLabel {
+            input: input("amp/line1"),
+            name: "Lounge streamer".into(),
+            role,
+        })
+    };
+    let house = || {
+        let mut h = House::new(
+            Zone::utc(),
+            thursday(18, 0, 0),
+            &[("kitchen", 500), ("lounge", 400)],
+        );
+        h.command(Command::Attach {
+            zone: "lounge".into(),
+            endpoint: "amp".into(),
+            link: None,
+        });
+        h
+    };
+    let line_in = Source::LineIn(input("amp/line1"));
+
+    let mut h = house();
+    h.command(label(InputRole::Streamer));
+    h.signal("amp/line1", true);
+    assert!(h.rt.is_autoplaying(&input("amp/line1")));
+    assert_eq!(h.source_of("lounge"), line_in);
+    let playing = h.zones.now_playing("lounge").expect("the label is shown");
+    assert_eq!(playing.title.as_deref(), Some("Lounge streamer"));
+    assert_eq!(playing.via, "streamer");
+    // Shared to a second group like any line-in, with the label.
+    h.command(Command::Take {
+        target: "kitchen".into(),
+        source: Some(line_in.clone()),
+    });
+    assert_eq!(
+        h.zones.now_playing("kitchen").and_then(|p| p.title.clone()),
+        Some("Lounge streamer".to_string())
+    );
+    // The signal goes: after the hold the room is restored, record and all.
+    h.signal("amp/line1", false);
+    h.run(AUTOPLAY_HOLD_MS + 1_000, 500);
+    assert_eq!(h.source_of("lounge"), Source::Stream);
+    assert!(h.zones.now_playing("lounge").is_none());
+
+    let mut h = house();
+    h.command(label(InputRole::LineIn));
+    h.signal("amp/line1", true);
+    assert!(!h.rt.is_autoplaying(&input("amp/line1")));
+    assert_eq!(h.source_of("lounge"), Source::Stream);
+
+    let mut h = house();
+    h.command(label(InputRole::Streamer));
+    h.command(Command::Autoplay(Autoplay {
+        input: input("amp/line1"),
+        target: "lounge".into(),
+        enabled: false,
+        stop_on_standby: true,
+        low_latency: true,
+    }));
+    h.signal("amp/line1", true);
+    assert!(!h.rt.is_autoplaying(&input("amp/line1")));
 }
 
 #[test]

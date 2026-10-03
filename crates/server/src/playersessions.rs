@@ -14,11 +14,26 @@
 //! automation's media and TTS URLs from its own address, stored alarm stream
 //! URLs), so there is no command on the control API that plays a URL: the
 //! callers of [`PlayerSessions::play`] are those named paths, the first of
-//! them the UPnP renderer.
+//! them the UPnP renderer and (goal 17) the second an alarm whose source is
+//! a stored stream URL ([`PlayerSessions::play_held`], called by the
+//! conductor for the schedule runtime).
 //!
-//! It runs no thread. Its owner calls [`PlayerSessions::pump`] (or
-//! [`PlayerSessions::on_report`] and [`PlayerSessions::reconcile`]) from a
-//! thread it already has.
+//! One instance serves every caller (goal 17): the players have one report
+//! stream, so the sessions it feeds are one table. It runs no thread. With
+//! `--upnp` the renderers' manager thread takes the reports and calls
+//! [`PlayerSessions::on_report`] and [`PlayerSessions::reconcile`]; without
+//! it the conductor does, from the thread it already has.
+//!
+//! # Held sessions (goal 17)
+//!
+//! A session started with [`PlayerSessions::play`] sets its group's source
+//! itself, with `take` commands, as a person would: that is what a cast is.
+//! A HELD session ([`PlayerSessions::play_held`]) belongs to a caller that
+//! owns what its group plays (the schedule runtime, for a ringing alarm):
+//! the caller makes the group play the player, and when the track ends or
+//! fails the session touches no group; it gives the player back, leaves the
+//! end in [`PlayerSessions::take_ended`] and wakes the conductor, and the
+//! caller decides what the group plays next (an alarm: the fallback chime).
 //!
 //! Control code, off the audio path: `audio-path.conf` records it as
 //! excluded.
@@ -82,6 +97,48 @@ struct Session {
     found: Option<MediaInfo>,
     stream_title: Option<String>,
     state: PlayState,
+    /// (goal 17) A held session: what its group plays is its caller's.
+    held: bool,
+}
+
+/// Why a play did not start (goal 17: the callers that fall back need to
+/// tell these apart).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlayRefused {
+    /// The server runs no player (`--players`).
+    NoPlayers,
+    /// Every player is in use; how many there are.
+    NoFreePlayer(usize),
+    /// The target cannot be written into a command.
+    Target,
+    /// The group was not made to play the player: the room model's refusal,
+    /// or the caller's own.
+    Take(String),
+}
+
+impl std::fmt::Display for PlayRefused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PlayRefused::NoPlayers => {
+                write!(f, "players: this server was started without --players")
+            }
+            PlayRefused::NoFreePlayer(count) => {
+                write!(f, "players: no free player: all {} are in use", count)
+            }
+            PlayRefused::Target => write!(f, "target: not an identifier"),
+            PlayRefused::Take(refused) => write!(f, "{}", refused),
+        }
+    }
+}
+
+/// A held session that ended by itself (goal 17).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ended {
+    /// Who held it.
+    pub owner: String,
+    /// Why it failed (the fetcher's or the decoder's words), or `None` when
+    /// the media simply ended.
+    pub failure: Option<String>,
 }
 
 /// The sessions of a server's players. Plain data behind a mutex.
@@ -90,6 +147,9 @@ pub struct PlayerSessions {
     players: Arc<Players>,
     held: Mutex<Vec<Option<Session>>>,
     failures: Mutex<Vec<Option<String>>>,
+    /// (goal 17) Held sessions that ended by themselves, until their caller
+    /// takes them.
+    ended: Mutex<Vec<Ended>>,
     log: Box<dyn Fn(&str) + Send + Sync>,
 }
 
@@ -122,6 +182,7 @@ impl PlayerSessions {
             players,
             held: Mutex::new(vec![None; count]),
             failures: Mutex::new(vec![None; count]),
+            ended: Mutex::new(Vec::new()),
             log,
         }
     }
@@ -148,7 +209,23 @@ impl PlayerSessions {
     /// the server runs none, or when the `take` is refused (an unknown
     /// target, a player that plays elsewhere); a refusal changes nothing.
     pub fn play(&self, request: &PlayRequest) -> Result<usize, String> {
-        self.begin(request, true)
+        self.begin(request, true, None)
+            .map_err(|refused| refused.to_string())
+    }
+
+    /// (goal 17) [`PlayerSessions::play`] for a caller that owns what its
+    /// group plays (the schedule runtime, for an alarm whose source is a
+    /// stored stream URL): the same, except that no `take` is issued. `take`
+    /// is handed the player's source (`player:p<i>`) and makes
+    /// `request.target`'s group play it, or says why not; and when the track
+    /// ends or fails the session leaves the group alone, gives the player
+    /// back and reports the end through [`PlayerSessions::take_ended`].
+    pub fn play_held(
+        &self,
+        request: &PlayRequest,
+        take: &mut dyn FnMut(&str) -> Result<(), String>,
+    ) -> Result<usize, PlayRefused> {
+        self.begin(request, true, Some(take))
     }
 
     /// [`PlayerSessions::play`] for an owner whose player already has
@@ -156,29 +233,38 @@ impl PlayerSessions {
     /// at Play): the same, without the load, so what is open, and a next URI
     /// queued behind it, are kept.
     pub fn start_loaded(&self, request: &PlayRequest) -> Result<usize, String> {
-        self.begin(request, false)
+        self.begin(request, false, None)
+            .map_err(|refused| refused.to_string())
     }
 
-    fn begin(&self, request: &PlayRequest, load: bool) -> Result<usize, String> {
+    fn begin(
+        &self,
+        request: &PlayRequest,
+        load: bool,
+        held: Option<&mut dyn FnMut(&str) -> Result<(), String>>,
+    ) -> Result<usize, PlayRefused> {
         if self.players.is_empty() {
-            return Err("players: this server was started without --players".to_string());
+            return Err(PlayRefused::NoPlayers);
         }
         if !is_plain(&request.target) {
-            return Err("target: not an identifier".to_string());
+            return Err(PlayRefused::Target);
         }
         let had = self.players.held_by(&request.owner);
         let Some(index) = self.players.acquire(&request.owner) else {
-            return Err(format!(
-                "players: no free player: all {} are in use",
-                self.players.len()
-            ));
+            return Err(PlayRefused::NoFreePlayer(self.players.len()));
         };
         let id = player_id(index);
-        if let Err(refused) = self.take(&request.target, &format!("player:{id}")) {
+        let source = format!("player:{id}");
+        let is_held = held.is_some();
+        let taken = match held {
+            Some(take) => take(&source),
+            None => self.take(&request.target, &source),
+        };
+        if let Err(refused) = taken {
             if had.is_none() {
                 self.players.release(index);
             }
-            return Err(refused);
+            return Err(PlayRefused::Take(refused));
         }
         lock(&self.held)[index] = Some(Session {
             via: request.via.clone(),
@@ -187,6 +273,7 @@ impl PlayerSessions {
             found: None,
             stream_title: None,
             state: PlayState::Buffering,
+            held: is_held,
         });
         lock(&self.failures)[index] = None;
         if let Some(handle) = self.players.handle(index) {
@@ -292,6 +379,36 @@ impl PlayerSessions {
         true
     }
 
+    /// (goal 17) End a held session its caller no longer wants (an alarm
+    /// that ended): the player is unloaded and given back, and no group is
+    /// touched (what the group plays is the caller's). Returns whether the
+    /// owner had a session.
+    pub fn release_held(&self, owner: &str) -> bool {
+        let Some(index) = self.players.held_by(owner) else {
+            return false;
+        };
+        if lock(&self.held)[index].take().is_none() {
+            return false;
+        }
+        self.unload(index);
+        (self.log)(&format!("player {} released for {owner}", player_id(index)));
+        true
+    }
+
+    /// (goal 17) Every held session that ended by itself since the last
+    /// call, in order.
+    pub fn take_ended(&self) -> Vec<Ended> {
+        std::mem::take(&mut *lock(&self.ended))
+    }
+
+    /// (goal 17) Whether any held session is live: its caller pumps a little
+    /// faster while one is.
+    pub fn any_held(&self) -> bool {
+        lock(&self.held)
+            .iter()
+            .any(|s| s.as_ref().is_some_and(|s| s.held))
+    }
+
     /// The player `owner` holds.
     pub fn player_of(&self, owner: &str) -> Option<usize> {
         self.players.held_by(owner)
@@ -358,7 +475,11 @@ impl PlayerSessions {
             if self.state.player_group(&player_id(index)).is_some() {
                 continue;
             }
-            lock(&self.held)[index] = None;
+            // (goal 17) Two threads may reconcile (the renderers' manager and
+            // the conductor): the one that takes the session unloads.
+            if lock(&self.held)[index].take().is_none() {
+                continue;
+            }
             self.unload(index);
             (self.log)(&format!(
                 "player {} released: its group plays something else",
@@ -392,11 +513,19 @@ impl PlayerSessions {
     /// (which clears the now-playing record), the player is unloaded and
     /// given back.
     fn finish(&self, index: usize, failure: Option<String>) {
-        if lock(&self.held)[index].take().is_none() {
+        let Some(session) = lock(&self.held)[index].take() else {
             return;
-        }
+        };
         let id = player_id(index);
-        if let Some(group) = self.state.player_group(&id) {
+        if session.held {
+            // (goal 17) What the group plays next is the caller's to say.
+            if let Some(owner) = self.players.owner_of(index) {
+                lock(&self.ended).push(Ended {
+                    owner,
+                    failure: failure.clone(),
+                });
+            }
+        } else if let Some(group) = self.state.player_group(&id) {
             if let Err(refused) = self.take(&group, "none") {
                 (self.log)(&format!(
                     "player {id}: group {group} not stopped: {refused}"
@@ -404,6 +533,9 @@ impl PlayerSessions {
             }
         }
         self.unload(index);
+        if session.held {
+            self.state.wake_conductor();
+        }
         match failure {
             Some(reason) => {
                 (self.log)(&format!("player {id} failed: {reason}"));
