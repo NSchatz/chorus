@@ -203,6 +203,7 @@ dependencies = [
  "chorus-dsp",
  "chorus-hostctl",
  "chorus-measure",
+ "chorus-mqtt",
  "chorus-protocol",
  "chorus-schedule",
  "chorus-sync",

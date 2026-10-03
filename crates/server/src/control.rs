@@ -22,7 +22,9 @@
 //! concerns (`room_volume`, `controller_state`, which stream slot a session
 //! hears). The whole process is `6 + 2N + M` threads with the control plane
 //! on, against `3 + 2N` with it off, plus the TV relay's one with any
-//! `--slots` (goal 13, `crate::tvrelay`) whatever their number, and
+//! `--slots` (goal 13, `crate::tvrelay`) whatever their number, plus the MQTT
+//! publisher's one with `--mqtt-broker` and none without (goal 15,
+//! `crate::mqtt`), and
 //! `crates/server/tests/control_thread_population.rs` grades that against
 //! `/proc`.
 //!
@@ -241,6 +243,11 @@ pub struct ControlState {
     /// `firmware_install` starts a transfer here, inside the command's own
     /// commit, and nothing else in the control plane does.
     firmware: OnceLock<Arc<Firmware>>,
+    /// (goal 15) Where accepted controller commands are left for the MQTT
+    /// publisher, once the server has made one
+    /// ([`ControlState::publish_events_through`]); empty with the publisher
+    /// off, and then nothing is left anywhere.
+    mqtt_events: OnceLock<crate::mqtt::EventTap>,
 }
 
 /// The files the browser is served: the page, what it loads, and the document
@@ -299,7 +306,15 @@ impl ControlState {
             },
             adoptions: OnceLock::new(),
             firmware: OnceLock::new(),
+            mqtt_events: OnceLock::new(),
         }
+    }
+
+    /// (goal 15) Leave every accepted controller command at `tap` for the
+    /// MQTT publisher (`crate::mqtt`). Called once, before any session
+    /// exists.
+    pub fn publish_events_through(&self, tap: crate::mqtt::EventTap) {
+        let _ = self.mqtt_events.set(tap);
     }
 
     /// The fanout, for a caller that wants to report on it.
@@ -676,6 +691,22 @@ impl ControlState {
                 return Err(refusal);
             }
         };
+        // (goal 15) The MQTT publisher's event, left before the state is
+        // fanned out so the publisher is woken with it already waiting.
+        // Never blocks: this runs on a client reader thread.
+        if let Some(tap) = self.mqtt_events.get() {
+            tap.offer(
+                endpoint,
+                &applied.zone,
+                command.command.name(),
+                command.value,
+                &command.target,
+                match &applied.action {
+                    ControllerAction::Apply(_) => "applied",
+                    ControllerAction::Transport(_) => "waits-for-an-input",
+                },
+            );
+        }
         if let Some(state) = changed {
             self.applied.fetch_add(1, Ordering::Relaxed);
             self.publish(state);

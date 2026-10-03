@@ -67,11 +67,16 @@
 //!   with `--advertise` one **advertiser**;
 //! - with `--slots` (the line-ins) and the control plane, the **tv-relay**
 //!   (goal 13, `chorus_server::tvrelay`), which receives, restamps and sends
-//!   on the TV path's datagrams.
+//!   on the TV path's datagrams;
+//! - with `--mqtt-broker` (goal 15, and it needs the control plane), the
+//!   **mqtt-publisher** (`chorus_server::mqtt`), which connects to the
+//!   broker, publishes and reconnects, all on itself. Without the flag it
+//!   does not exist.
 //!
 //! So the population is `3 + 2N` without the control plane and
-//! `6 + 2N + M` with it, plus one for the advertiser and one for the TV
-//! relay with `--slots`, and NOT ONE of those
+//! `6 + 2N + M` with it, plus one for the advertiser, one for the TV
+//! relay with `--slots` and one for the MQTT publisher with
+//! `--mqtt-broker`, and NOT ONE of those
 //! numbers is a function of how many endpoints or browsers are switched on,
 //! nor of `--slots`: every stream slot is cut by the one audio thread
 //! (`chorus_server::slots`).
@@ -273,6 +278,18 @@ control plane:
                                 /etc/localtime, else UTC)
   --advertise --instance <label>  advertise by multicast DNS
 
+mqtt (goal 15; docs/mqtt.md; off unless --mqtt-broker is given; read-only: it publishes
+state and events, never subscribes, has no command topic and no Home Assistant discovery):
+  --mqtt-broker <host:port>     publish to this MQTT 3.1.1 broker over plain TCP (needs
+                                --control-listen); a broker that is down never stops the server
+  --mqtt-user <name>            the user name to connect with
+  --mqtt-password-file <path>   read the password from this file at start (needs --mqtt-user);
+                                there is no flag that takes the password itself
+  --mqtt-prefix <prefix>        the topic prefix (default chorus/v1)
+  --mqtt-client-id <id>         the client id, 1-23 of 0-9 a-z A-Z, one per server on a broker
+                                (default chorus)
+  --mqtt-keepalive-s <n>        MQTT keep alive in seconds, 1-65535 (default 60)
+
 health:
   --health-check <addr:port>  probe a running server's control plane (GET /api/state);
                               exit 0 on 200, 1 otherwise; starts nothing
@@ -390,6 +407,44 @@ fn main() -> ExitCode {
                 );
             }
             return ExitCode::from(EXIT_CONFIG);
+        }
+    };
+
+    // (goal 15) The MQTT publisher's settings, with the password read from
+    // its file now: a file that cannot be read is a configuration refused
+    // before anything is bound, and the password is in no argument and no
+    // line this process prints.
+    let mqtt_settings = match &config.mqtt.broker {
+        None => None,
+        Some(broker) => {
+            let password = match config.mqtt.password_file.as_deref() {
+                None => None,
+                Some(path) => match chorus_server::mqtt::read_password(path) {
+                    Ok(p) => Some(p),
+                    Err(e) => {
+                        report(
+                            "configuration refused",
+                            &format!("--mqtt-password-file {}", e),
+                        );
+                        return ExitCode::from(EXIT_CONFIG);
+                    }
+                },
+            };
+            let topics = match chorus_mqtt::topic::Topics::new(&config.mqtt.prefix) {
+                Ok(t) => t,
+                Err(e) => {
+                    report("configuration refused", &format!("--mqtt-prefix {}", e));
+                    return ExitCode::from(EXIT_CONFIG);
+                }
+            };
+            Some(chorus_server::mqtt::Settings {
+                broker: broker.clone(),
+                client_id: config.mqtt.client_id.clone(),
+                user: config.mqtt.user.clone(),
+                password,
+                topics,
+                keep_alive_s: config.mqtt.keepalive_s,
+            })
         }
     };
 
@@ -1130,6 +1185,35 @@ fn main() -> ExitCode {
         });
     }
 
+    // (goal 15) The MQTT publisher: one more ordinary thread, only with
+    // `--mqtt-broker`, created here with the rest and counted below. It
+    // connects from inside its own loop, after it has reported itself, so a
+    // broker that is down delays nothing. `_mqtt_farewell` is dropped when
+    // this function returns, however it returns: that stops the publisher
+    // and gives it a bounded moment to say `offline` and disconnect.
+    let mut mqtt_threads = 0usize;
+    let mut _mqtt_farewell = None;
+    if let (Some(settings), Some(state)) = (mqtt_settings, control_state.as_ref()) {
+        println!("chorus-server: {}", settings.describe());
+        mqtt_threads = 1;
+        let (tap, events) = chorus_server::mqtt::EventTap::pair();
+        state.publish_events_through(tap);
+        let (farewell, said) = chorus_server::mqtt::Farewell::pair(Arc::clone(&keep));
+        _mqtt_farewell = Some(farewell);
+        let state = Arc::clone(state);
+        let keep = Arc::clone(&keep);
+        let registry = Arc::clone(&registry);
+        let ready = ready.clone();
+        thread::spawn(move || {
+            register_ordinary_thread("mqtt-publisher", &registry);
+            if ready.send(()).is_err() {
+                return;
+            }
+            drop(ready);
+            chorus_server::mqtt::run(settings, state, events, keep, said);
+        });
+    }
+
     // The advertiser, which answers browses for as long as the run lasts.
     let mut advertiser_threads = 0usize;
     if let Some(advertiser) = advertiser.take() {
@@ -1153,7 +1237,8 @@ fn main() -> ExitCode {
     drop(ready);
 
     // The report is taken over the whole population or not at all.
-    let expected = 1 + client_threads + control_threads + advertiser_threads + relay_threads;
+    let expected =
+        1 + client_threads + control_threads + advertiser_threads + relay_threads + mqtt_threads;
     let mut up = 0usize;
     while came_up.recv().is_ok() {
         up += 1;

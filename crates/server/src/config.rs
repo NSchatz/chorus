@@ -176,6 +176,121 @@ pub struct ServerConfig {
     /// Never set in a deployment; the flag says so in its name's
     /// documentation and in `docs/control-plane.md`.
     pub udp_loss: Option<(u32, u64)>,
+    /// (goal 15) The MQTT publisher's flags (`crate::mqtt`, `docs/mqtt.md`).
+    /// Off unless `--mqtt-broker` is given.
+    pub mqtt: MqttFlags,
+}
+
+/// (goal 15) What the `--mqtt-*` flags said. The publisher is off unless
+/// `broker` is set, and every other flag here is refused without it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MqttFlags {
+    /// `--mqtt-broker <host:port>`: the broker to publish to. `None`: no
+    /// publisher, no thread, no connection.
+    pub broker: Option<String>,
+    /// `--mqtt-user <name>`.
+    pub user: Option<String>,
+    /// `--mqtt-password-file <path>`: where the password is read from at
+    /// start. The password itself is never an argument, so it is never in a
+    /// process list, and it is never printed.
+    pub password_file: Option<String>,
+    /// `--mqtt-prefix <topic prefix>`.
+    pub prefix: String,
+    /// `--mqtt-client-id <id>`.
+    pub client_id: String,
+    /// `--mqtt-keepalive-s <seconds>`.
+    pub keepalive_s: u16,
+    /// The first `--mqtt-*` flag given other than the broker, so a run that
+    /// set one and forgot the broker is told which.
+    given: Option<String>,
+}
+
+impl Default for MqttFlags {
+    fn default() -> Self {
+        MqttFlags {
+            broker: None,
+            user: None,
+            password_file: None,
+            prefix: chorus_mqtt::topic::DEFAULT_PREFIX.to_string(),
+            client_id: chorus_mqtt::topic::DEFAULT_CLIENT_ID.to_string(),
+            keepalive_s: crate::mqtt::DEFAULT_KEEP_ALIVE_S,
+            given: None,
+        }
+    }
+}
+
+impl MqttFlags {
+    /// Whether these flags are a publisher this server can run; `control`
+    /// says whether the control plane is on.
+    fn check(&self, control: bool) -> Result<(), ServerConfigError> {
+        let refused = |argument: &str, detail: String| {
+            Err(ServerConfigError::Mqtt {
+                argument: argument.to_string(),
+                detail,
+            })
+        };
+        let Some(broker) = &self.broker else {
+            return match &self.given {
+                Some(argument) => refused(
+                    argument,
+                    "it configures the MQTT publisher, which is off without --mqtt-broker \
+                     <host:port>"
+                        .to_string(),
+                ),
+                None => Ok(()),
+            };
+        };
+        if !control {
+            return refused(
+                "--mqtt-broker",
+                "the publisher publishes the control plane's state, and a server with no \
+                 --control-listen has none"
+                    .to_string(),
+            );
+        }
+        let port = broker
+            .rsplit_once(':')
+            .filter(|(host, _)| !host.is_empty())
+            .and_then(|(_, port)| port.parse::<u16>().ok());
+        if !matches!(port, Some(p) if p > 0) {
+            return refused(
+                "--mqtt-broker",
+                format!(
+                    "'{}' is not <host:port> with a port from 1 to 65535",
+                    broker
+                ),
+            );
+        }
+        if self.password_file.is_some() && self.user.is_none() {
+            return refused(
+                "--mqtt-password-file",
+                "MQTT carries a password only with a user name: give --mqtt-user too".to_string(),
+            );
+        }
+        if let Some(user) = &self.user {
+            if user.is_empty() || user.chars().any(char::is_control) {
+                return refused(
+                    "--mqtt-user",
+                    "the user name is empty or holds a control character".to_string(),
+                );
+            }
+        }
+        if let Err(why) = chorus_mqtt::topic::Topics::new(&self.prefix) {
+            return refused("--mqtt-prefix", why);
+        }
+        if let Err(why) = chorus_mqtt::topic::check_client_id(&self.client_id) {
+            return refused("--mqtt-client-id", why);
+        }
+        if self.keepalive_s == 0 {
+            return refused(
+                "--mqtt-keepalive-s",
+                "0 turns MQTT's keep alive off, and the broker would then never notice this \
+                 server gone; 1 to 65535"
+                    .to_string(),
+            );
+        }
+        Ok(())
+    }
 }
 
 impl Default for ServerConfig {
@@ -223,6 +338,7 @@ impl Default for ServerConfig {
             fec_k: chorus_protocol::v2::lowlat::DEFAULTS.fec_k,
             fec_depth: chorus_protocol::v2::lowlat::DEFAULTS.fec_depth,
             udp_loss: None,
+            mqtt: MqttFlags::default(),
         }
     }
 }
@@ -305,6 +421,13 @@ pub enum ServerConfigError {
         /// Every transport the committed configuration names.
         permitted: String,
     },
+    /// (goal 15) An `--mqtt-*` flag the publisher cannot run with.
+    Mqtt {
+        /// The argument as it was given.
+        argument: String,
+        /// Why.
+        detail: String,
+    },
     /// (goal 13) A low-latency flag the plan refuses: an `L_tv` out of range
     /// or below the floor, an FEC shape the offer cannot carry, a loss
     /// specification that is not `<ppm>,<seed>`.
@@ -320,7 +443,8 @@ impl fmt::Display for ServerConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ServerConfigError::Format(e) => write!(f, "{}", e),
-            ServerConfigError::LowLatency { argument, detail } => {
+            ServerConfigError::LowLatency { argument, detail }
+            | ServerConfigError::Mqtt { argument, detail } => {
                 write!(f, "argument '{}' refused: {}", argument, detail)
             }
             ServerConfigError::UnknownArgument { argument } => {
@@ -483,6 +607,30 @@ impl ServerConfig {
                 "--state-file" => config.state_file = Some(value()?),
                 "--identity-dir" => config.identity_dir = Some(value()?),
                 "--firmware-dir" => config.firmware_dir = Some(value()?),
+                "--mqtt-broker" => config.mqtt.broker = Some(value()?),
+                "--mqtt-user"
+                | "--mqtt-password-file"
+                | "--mqtt-prefix"
+                | "--mqtt-client-id"
+                | "--mqtt-keepalive-s" => {
+                    let text = value()?;
+                    config.mqtt.given.get_or_insert_with(|| arg.clone());
+                    match arg.as_str() {
+                        "--mqtt-user" => config.mqtt.user = Some(text),
+                        "--mqtt-password-file" => config.mqtt.password_file = Some(text),
+                        "--mqtt-prefix" => config.mqtt.prefix = text,
+                        "--mqtt-client-id" => config.mqtt.client_id = text,
+                        _ => {
+                            config.mqtt.keepalive_s =
+                                u16::try_from(number(&arg, &text)?).map_err(|_| {
+                                    ServerConfigError::Mqtt {
+                                        argument: arg.clone(),
+                                        detail: format!("{} is past 65535 seconds", text),
+                                    }
+                                })?
+                        }
+                    }
+                }
                 "--server-id" => config.server_id = value()?,
                 "--ephemeral-identity" => config.ephemeral_identity = true,
                 // `--zone <id>` or `--zone <id>=<transport>`. One declaration
@@ -624,6 +772,7 @@ impl ServerConfig {
         if config.slots > 0 && !config.group_audio.is_empty() {
             return Err(ServerConfigError::SlotsWithGroupAudio);
         }
+        config.mqtt.check(config.control_listen.is_some())?;
         if config.civil_time.is_some() && config.civil_time_from.is_some() {
             return Err(ServerConfigError::TwoCivilClocks);
         }
@@ -737,6 +886,103 @@ fn number(argument: &str, value: &str) -> Result<u64, ServerConfigError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_mqtt_publisher_is_off_by_default_and_its_flags_need_a_broker() {
+        let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let refused = |list: &[&str]| match ServerConfig::from_args(args(list)).unwrap_err() {
+            ServerConfigError::Mqtt { argument, .. } => argument,
+            other => panic!("{:?}: {:?}", list, other),
+        };
+        let default = ServerConfig::default();
+        assert_eq!(default.mqtt.broker, None, "off by default");
+        assert_eq!(default.mqtt.prefix, "chorus/v1");
+        assert_eq!(default.mqtt.client_id, "chorus");
+        assert_eq!(default.mqtt.keepalive_s, 60);
+        let control = ["--control-listen", "127.0.0.1:0"];
+        fn joined<'a>(parts: &[&[&'a str]]) -> Vec<&'a str> {
+            parts.concat()
+        }
+        let with = |extra: &[&'static str]| joined(&[&control, extra]);
+        // Every other flag is refused without the broker, by its own name.
+        for flag in [
+            "--mqtt-user",
+            "--mqtt-password-file",
+            "--mqtt-prefix",
+            "--mqtt-client-id",
+            "--mqtt-keepalive-s",
+        ] {
+            let value = if flag == "--mqtt-keepalive-s" {
+                "30"
+            } else {
+                "x"
+            };
+            assert_eq!(refused(&with(&[flag, value])), flag);
+        }
+        // The broker needs the control plane, and is a host and a port.
+        assert_eq!(
+            refused(&["--mqtt-broker", "127.0.0.1:1883"]),
+            "--mqtt-broker"
+        );
+        for broker in ["127.0.0.1", "127.0.0.1:0", ":1883", "127.0.0.1:port", ""] {
+            assert_eq!(refused(&with(&["--mqtt-broker", broker])), "--mqtt-broker");
+        }
+        let broker = ["--mqtt-broker", "127.0.0.1:1883"];
+        let on = |extra: &[&'static str]| joined(&[&control, &broker, extra]);
+        let c = ServerConfig::from_args(args(&on(&[]))).unwrap();
+        assert_eq!(c.mqtt.broker.as_deref(), Some("127.0.0.1:1883"));
+        assert_eq!((c.mqtt.user, c.mqtt.password_file), (None, None));
+        let c = ServerConfig::from_args(args(&on(&[
+            "--mqtt-user",
+            "chorus",
+            "--mqtt-password-file",
+            "/run/secrets/mqtt",
+            "--mqtt-prefix",
+            "house/audio",
+            "--mqtt-client-id",
+            "chorus2",
+            "--mqtt-keepalive-s",
+            "30",
+        ])))
+        .unwrap();
+        assert_eq!(c.mqtt.user.as_deref(), Some("chorus"));
+        assert_eq!(c.mqtt.password_file.as_deref(), Some("/run/secrets/mqtt"));
+        assert_eq!(c.mqtt.prefix, "house/audio");
+        assert_eq!(c.mqtt.client_id, "chorus2");
+        assert_eq!(c.mqtt.keepalive_s, 30);
+        // A password with no user, a prefix that is not one or that is Home
+        // Assistant's, a client id outside the portable set, no keep alive.
+        assert_eq!(
+            refused(&on(&["--mqtt-password-file", "/run/secrets/mqtt"])),
+            "--mqtt-password-file"
+        );
+        for prefix in [
+            "",
+            "chorus/#",
+            "/chorus",
+            "homeassistant",
+            "homeassistant/chorus",
+        ] {
+            assert_eq!(refused(&on(&["--mqtt-prefix", prefix])), "--mqtt-prefix");
+        }
+        assert_eq!(
+            refused(&on(&["--mqtt-client-id", "chorus-server"])),
+            "--mqtt-client-id"
+        );
+        for keepalive in ["0", "65536"] {
+            assert_eq!(
+                refused(&on(&["--mqtt-keepalive-s", keepalive])),
+                "--mqtt-keepalive-s"
+            );
+        }
+        // There is no flag that takes the password itself.
+        assert_eq!(
+            ServerConfig::from_args(args(&on(&["--mqtt-password", "x"]))).unwrap_err(),
+            ServerConfigError::UnknownArgument {
+                argument: "--mqtt-password".to_string()
+            }
+        );
+    }
 
     #[test]
     fn an_unknown_argument_is_an_error_and_not_a_default() {
