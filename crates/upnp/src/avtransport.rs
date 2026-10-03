@@ -218,6 +218,18 @@ impl AvTransport {
         self.last_failure.as_deref()
     }
 
+    /// The current media's duration in milliseconds, when one is known (the
+    /// decoder's, else what the control point's metadata claimed).
+    pub fn duration_ms(&self) -> Option<u64> {
+        self.duration_ms
+    }
+
+    /// The position last given by [`AvTransport::position`], or set by a
+    /// Seek, a Stop or a new URI.
+    pub fn position_ms(&self) -> u64 {
+        self.position_ms
+    }
+
     /// The epoch reports must carry (see the module documentation).
     pub fn epoch(&self) -> u64 {
         self.epoch
@@ -747,14 +759,14 @@ impl AvTransport {
     /// audible now, from the server's playout timeline (not what has been
     /// fetched or decoded). The server gives it before it answers
     /// GetPositionInfo and when it pauses. Never evented (AVT1 section
-    /// 2.3.1). Ignored while STOPPED or with no media, where the position is
-    /// 0 by definition.
+    /// 2.3.1). Taken only while PLAYING or PAUSED_PLAYBACK: STOPPED and no
+    /// media are position 0 by definition, and while TRANSITIONING nothing
+    /// is audible yet, so the position stays where the Play or the Seek put
+    /// it rather than at the player's last word from before.
     pub fn position(&mut self, played_ms: u64) {
         if matches!(
             self.state,
-            TransportState::Playing
-                | TransportState::Transitioning
-                | TransportState::PausedPlayback
+            TransportState::Playing | TransportState::PausedPlayback
         ) {
             self.position_ms = self.duration_ms.map_or(played_ms, |d| played_ms.min(d));
         }
@@ -814,15 +826,15 @@ impl AvTransport {
     /// and push the next one itself. All the changes are recorded together,
     /// so they leave in one LastChange event.
     ///
+    /// A boundary reported while PAUSED_PLAYBACK (the pause landed just
+    /// after the join) moves the variables the same way and stays paused.
+    ///
     /// Ignored (returns `false`) when no next URI is queued, in an old
-    /// epoch, or when nothing is playing.
+    /// epoch, or when STOPPED.
     pub fn track_boundary(&mut self, epoch: u64, duration_ms: Option<u64>, seekable: bool) -> bool {
         if !self.current_epoch(epoch)
             || self.next_uri.is_empty()
-            || !matches!(
-                self.state,
-                TransportState::Playing | TransportState::Transitioning
-            )
+            || self.state == TransportState::Stopped
         {
             return false;
         }
@@ -832,7 +844,9 @@ impl AvTransport {
         self.duration_ms = duration_ms.or_else(|| Self::duration_hint(&self.uri, &self.metadata));
         self.seekable = seekable;
         self.position_ms = 0;
-        self.state = TransportState::Playing;
+        if self.state == TransportState::Transitioning {
+            self.state = TransportState::Playing;
+        }
         self.commit();
         true
     }

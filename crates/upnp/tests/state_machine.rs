@@ -321,6 +321,9 @@ fn set_uri_play_pause_play_seek_stop() {
             Is("PLAYING", "OK", "Stop,Pause,Seek"),
             Does("Seek", &[("Unit", "REL_TIME"), ("Target", "0:00:02")], "SeekTo(2000)"),
             Evented("TransportState=TRANSITIONING;CurrentTransportActions=Stop"),
+            // Until audio is out again, the player's old position is not
+            // taken: the target stands.
+            Player(Position(1700), false),
             Out("GetPositionInfo", "RelTime", "0:00:02"),
             Player(Playing, true),
             Is("PLAYING", "OK", "Stop,Pause,Seek"),
@@ -598,6 +601,35 @@ fn a_next_uri_that_fails_stops_after_the_current_one() {
             Is("PLAYING", "OK", "Stop,Pause,Seek"),
         ],
     );
+}
+
+#[test]
+fn a_boundary_reported_while_paused_still_moves_the_variables() {
+    let mut rig = Rig::new();
+    rig.run(
+        "paused at the boundary",
+        &[
+            SET1,
+            PLAY,
+            Player(Playing, true),
+            SETNEXT2,
+            Does("Pause", &[], "Pause"),
+            Player(Boundary(None), true),
+            Is("PAUSED_PLAYBACK", "OK", "Play,Stop,Seek"),
+            Out("GetMediaInfo", "CurrentURI", U2),
+            Out("GetMediaInfo", "NextURI", ""),
+            Does("Play", &[("Speed", "1")], "Resume"),
+            Is("PLAYING", "OK", "Stop,Pause,Seek"),
+            // Stopped, a boundary is not one.
+            SETNEXT2,
+            Does("Stop", &[], "Stop"),
+            Player(Boundary(None), false),
+            Out("GetMediaInfo", "CurrentURI", U2),
+            Out("GetMediaInfo", "NextURI", U2),
+        ],
+    );
+    assert_eq!(rig.t.duration_ms(), Some(205_000));
+    assert_eq!(rig.t.position_ms(), 0);
 }
 
 #[test]
