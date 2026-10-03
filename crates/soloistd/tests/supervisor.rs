@@ -1060,3 +1060,116 @@ fn usage_errors_exit_2() {
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains("--soloist-dir DIR"));
 }
+
+/// The fake itself, without a supervisor: the behaviours the tests above
+/// lean on are the documented ones.
+#[test]
+fn the_fake_keeps_to_the_documented_exit_codes_and_files() {
+    let bench = Bench::new();
+    let data = bench.root.join("data");
+    let fake = |arguments: &[&str]| {
+        let mut command = Command::new(fake_soloist());
+        command
+            .args(arguments)
+            .env_remove("FAKE_SOLOIST_CONF")
+            .env_remove("FAKE_SOLOIST_CONTROL")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        command
+    };
+    // "-V, --version: Print version and exit." Exit code 0.
+    let version = fake(&["--version"])
+        .env(
+            "FAKE_SOLOIST_VERSION",
+            "Soloist 1.3.8.96, build 20260930, Linux/aarch64",
+        )
+        .output()
+        .unwrap();
+    assert_eq!(version.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&version.stdout),
+        "Soloist 1.3.8.96, build 20260930, Linux/aarch64\n"
+    );
+    // Exit code 1: "missing required options", "invalid arguments".
+    assert_eq!(
+        fake(&["-n", "Kitchen"]).output().unwrap().status.code(),
+        Some(1)
+    );
+    assert_eq!(
+        fake(&["-n", "K", "-k", "x", "-z", "50"])
+            .output()
+            .unwrap()
+            .status
+            .code(),
+        Some(1)
+    );
+    // Exit code 10: "Spotify Soloist build expired."
+    let expired = fake(&["-n", "K", "-k", "x", "-D", data.to_str().unwrap()])
+        .env("FAKE_SOLOIST_EXPIRED", "1")
+        .output()
+        .unwrap();
+    assert_eq!(expired.status.code(), Some(10));
+
+    // A daemon: it writes ws.addr, ws.port and soloist.pid ...
+    let run = [
+        "-n",
+        "Kitchen",
+        "-k",
+        "x",
+        "-D",
+        data.to_str().unwrap(),
+        "-w",
+        "127.0.0.1:0",
+    ];
+    let mut first = fake(&run)
+        .stderr(Stdio::null())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + PATIENCE;
+    while !data.join(WS_PORT_FILE).is_file() {
+        assert!(Instant::now() < deadline, "no ws.port");
+        thread::sleep(Duration::from_millis(5));
+    }
+    let port: u16 = fs::read_to_string(data.join("ws.port"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert_ne!(port, 0);
+    assert_eq!(
+        fs::read_to_string(data.join("ws.addr")).unwrap().trim(),
+        "127.0.0.1"
+    );
+    let pid: u32 = fs::read_to_string(data.join("soloist.pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert_eq!(pid, first.id());
+    // ... and a second one on the same data directory is exit code 1:
+    // "another Spotify Soloist process already using the data directory".
+    let second = fake(&run).output().unwrap();
+    assert_eq!(second.status.code(), Some(1));
+    assert!(
+        String::from_utf8_lossy(&second.stderr).contains("already using the data directory"),
+        "{second:?}"
+    );
+    // The first is untouched by that, and a normal shutdown is exit code 0
+    // with the files removed.
+    assert!(data.join(WS_PORT_FILE).is_file());
+    chorus_soloistd::sys::terminate(first.id()).unwrap();
+    let deadline = Instant::now() + PATIENCE;
+    let status = loop {
+        if let Some(status) = first.try_wait().unwrap() {
+            break status;
+        }
+        assert!(Instant::now() < deadline, "the fake did not stop");
+        thread::sleep(Duration::from_millis(5));
+    };
+    assert_eq!(status.code(), Some(0));
+    for file in ["ws.port", "ws.addr", "soloist.pid"] {
+        assert!(!data.join(file).exists(), "{file} survived the shutdown");
+    }
+}

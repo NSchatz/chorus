@@ -158,5 +158,5 @@ All on 2026-10-03.
 - Everything `docs/soloist.md` lists under "What is assumed" waits on the owner's build: the
   `--version` format, the shutdown signal, the output format, the endpoint files' format.
 - The integration tests add about 1 s of wall clock to the fast tier when run alone on the
-  development host (14 tests in parallel; every wait is bounded, two are fixed at 300 ms and
+  development host (15 tests in parallel; every wait is bounded, two are fixed at 300 ms and
   400 ms).
