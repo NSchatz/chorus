@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"t","detail":"no-receivers: this server was started without --soloist-receivers, so there is no Spotify receiver to tell"}

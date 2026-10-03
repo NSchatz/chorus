@@ -256,6 +256,11 @@ pub struct ControlState {
     /// (`--players`; [`ControlState::set_players`]): a `take` whose source
     /// names a player it does not run is refused by name.
     players: AtomicUsize,
+    /// (goal 17) The Soloist receivers' link ([`ControlState::soloist_through`]):
+    /// where `soloist_restart` and `playback` go, and whose numbers the
+    /// metrics endpoint prints. Unset on a server without
+    /// `--soloist-receivers`.
+    soloist: OnceLock<Arc<crate::soloist::Link>>,
 }
 
 /// The files the browser is served: the page, what it loads, and the document
@@ -317,7 +322,53 @@ impl ControlState {
             telemetry: crate::metrics::TelemetryStore::new(),
             mqtt_events: OnceLock::new(),
             players: AtomicUsize::new(0),
+            soloist: OnceLock::new(),
         }
+    }
+
+    /// (goal 17) This server runs Soloist receivers, reached through `link`:
+    /// the state lists them from now on (every one `absent` until its
+    /// supervisor connects), and `soloist_restart` and `playback` have
+    /// somewhere to go. Called once, at start, before any command is served.
+    pub fn soloist_through(&self, link: Arc<crate::soloist::Link>) {
+        self.set_soloist(Some(link.initial_state()));
+        let _ = self.soloist.set(link);
+    }
+
+    /// (goal 17) Say what the receivers are doing (`Zones::set_soloist`):
+    /// the receiver manager's hook. Fanned out only when something changed;
+    /// nothing is persisted.
+    pub fn set_soloist(&self, soloist: Option<chorus_control::rooms::SoloistState>) -> bool {
+        let state = {
+            let mut held = self.locked();
+            if !held.zones.set_soloist(soloist) {
+                return false;
+            }
+            held.zones.encode_state()
+        };
+        self.publish(state);
+        true
+    }
+
+    /// (goal 17) The server half of `soloist_restart` and `playback`, after
+    /// the room model agreed: hand the command to the receiver manager.
+    fn soloist_effects(&self, zones: &Zones, command: &Command) -> Result<(), Refusal> {
+        let Some(link) = self.soloist.get() else {
+            return Ok(());
+        };
+        match command {
+            Command::SoloistRestart => link.restart(),
+            Command::Playback { target, action } => {
+                let group = zones.playback_group(target)?;
+                if let Source::Soloist(id) = zones.source(&group) {
+                    if let Some(receiver) = chorus_soloist::receiver_index(&id) {
+                        link.playback(receiver, *action);
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
     /// (goal 16) Say how many network media players this server runs
@@ -677,6 +728,19 @@ impl ControlState {
     /// field a v1 state's do, under the same names.
     pub fn apply(&self, text: &str) -> Result<String, Refusal> {
         let (version, command) = decode_message(text)?;
+        self.apply_decoded(version, command)
+    }
+
+    /// (goal 17) Apply a command the server built itself, with everything
+    /// [`ControlState::apply`] does after decoding. This is how the Soloist
+    /// receiver manager gives a group its receiver as a source: the decoder
+    /// refuses `soloist:` in a client's `take` by name, because a receiver's
+    /// audio follows the Spotify app and not a command.
+    pub fn apply_command(&self, command: Command) -> Result<String, Refusal> {
+        self.apply_decoded(chorus_control::catalog::CATALOG_VERSION, command)
+    }
+
+    fn apply_decoded(&self, version: i64, command: Command) -> Result<String, Refusal> {
         let state = {
             let mut held = self.locked();
             Self::commit(&mut held, |zones| {
@@ -694,6 +758,7 @@ impl ControlState {
                 // file changed since it was verified) refuses the command
                 // whole and nothing is installed or marked.
                 self.firmware_effects(zones, &command)?;
+                self.soloist_effects(zones, &command)?;
                 Ok(())
             })
             .map_err(|r| r.at(version))?;
@@ -1009,12 +1074,17 @@ impl ControlState {
                     .unwrap_or_else(|| s.now.software.clone()),
             })
             .collect();
-        crate::metrics::render(
+        let mut text = crate::metrics::render(
             env!("CARGO_PKG_VERSION"),
             &speakers,
             &self.telemetry.snapshot(),
             Instant::now(),
-        )
+        );
+        // (goal 17) The Soloist receivers, on a server that runs them.
+        if let Some(link) = self.soloist.get() {
+            text.push_str(&link.metrics());
+        }
+        text
     }
 }
 

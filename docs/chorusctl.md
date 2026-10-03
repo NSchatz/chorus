@@ -1,7 +1,7 @@
 # chorusctl
 
 `chorusctl` is the command line over the chorus control API (`docs/control-plane.md`): rooms,
-groups, volume, inputs, endpoints and firmware updates, from a terminal or a script. It is a thin
+groups, volume, inputs, stored sources, Spotify receivers, endpoints and firmware updates, from a terminal or a script. It is a thin
 client. It keeps no state, decides nothing the server decides, and every command it sends is one
 message of the control catalog, byte for byte the vector under `fixtures/control` for the same
 arguments (`crates/ctl/tests/commands.rs` holds it to that).
@@ -82,8 +82,16 @@ volume: volume, mute and limit of a room, or the volume of a group
   limit <room> <limit>                     set a room's maximum volume, written as a volume
 
 inputs: the line inputs endpoints offer
-  list                     every input offered now, and the groups playing it
-  select <input> <target>  play an input (<endpoint>/<input>) in a room or a group
+  list                         every input offered now, and the groups playing it
+  select <input> <target>      play an input (<endpoint>/<input>) in a room or a group
+  labels                       every labelled input: its name and its role
+  label <input> <role> <name>  name an input and say what is wired to it: line-in or streamer
+  unlabel <input>              remove an input's label
+
+sources: the stored sources an alarm can play (stored:<id>)
+  list                              every stored source: kind, name, value
+  store <id> <kind> <name> <value>  store a stream URL (kind url) or a Spotify URI (kind spotify)
+  forget <id>                       forget a stored source no alarm plays
 
 endpoints: the adopted speakers and the endpoints attached to rooms
   list                              every speaker and endpoint, and any changed key
@@ -91,6 +99,14 @@ endpoints: the adopted speakers and the endpoints attached to rooms
   name <speaker> <name>             name an adopted speaker
   room <speaker> (<room> | --none)  assign a speaker to a room, or to none
   forget <speaker>                  forget a speaker and its pinned key; it is adopted afresh
+
+soloist: the Spotify Soloist receivers: their build's expiry, and playback
+  status                    every receiver, the build, its expiry warning, targets with no receiver
+  restart                   have every receiver read its Soloist binary again and start again
+  pause <room or group>     pause what the room's or group's Spotify receiver is playing
+  resume <room or group>    carry on after a pause
+  next <room or group>      the next track
+  previous <room or group>  the previous track, or the start of this one
 
 updates: firmware images staged on the server, and installs
   list                                           the staged images and the server's verdict on each
@@ -179,10 +195,58 @@ group mute.
 |---|---|---|
 | `inputs list` | (reads) | the state's `inputs` array |
 | `inputs select <input> <target>` | `take` with `source` `line-in:<input>` | the state message |
+| `inputs labels` | (reads) | the state's `input_labels` array (empty when none) |
+| `inputs label <input> <role> <name>` | `input_label` | the state message |
+| `inputs unlabel <input>` | `input_label` with an empty `name` and `role` `line-in` | the state message |
 
 An input is `<endpoint>/<input>`, as `inputs list` prints it. `inputs select` is
 `groups take <target> --source line-in:<input>` under the noun a person looks for it under.
-`groups take <target> --source stream` goes back to the configured stream.
+`groups take <target> --source stream` goes back to the configured stream. An input may play in
+any number of groups at once (goal 17): selecting it for a second target shares it, and
+`inputs list` shows every group playing it.
+
+A label (goal 17, `docs/inputs.md`) names an input and says what is wired to it. The role is
+`line-in` or `streamer`: a `streamer` is a bought network streamer on that input, which plays
+into its endpoint's room when its signal appears and shows its name as what the room is playing.
+A label is kept whether or not the input is offered now.
+
+### sources
+
+| Command | Sends | `--json` prints |
+|---|---|---|
+| `sources list` | (reads) | the state's `stored_sources` array (empty when none) |
+| `sources store <id> <kind> <name> <value>` | `source_store` | the state message |
+| `sources forget <id>` | `source_forget` | the state message |
+
+A stored source (goal 17, `docs/inputs.md`) is something an ALARM can play, named once and
+referred to as `stored:<id>` in an alarm's `source`. The kind is `url` (an `http://` or
+`https://` stream URL, at most 2048 bytes) or `spotify`
+(`spotify:<track|album|playlist|episode>:<id>`). chorusctl refuses a value that is not one of
+those before sending anything (usage, exit 2); whether the server may fetch a URL is its fetch
+policy's to say when the alarm rings. There is no verb that plays a stored source in a room: only
+an alarm does (brief section 4.8), and a `groups take --source stored:<id>` is the server's
+refusal. `sources forget` is refused while an alarm plays the source.
+
+### soloist
+
+| Command | Sends | `--json` prints |
+|---|---|---|
+| `soloist status` | (reads) | the state's `soloist` member (`null` on a server that runs no receiver) |
+| `soloist restart` | `soloist_restart` | the state message |
+| `soloist pause <room or group>` | `playback` | the state message |
+| `soloist resume <room or group>` | `playback` | the state message |
+| `soloist next <room or group>` | `playback` | the state message |
+| `soloist previous <room or group>` | `playback` | the state message |
+
+The Spotify Soloist receivers (goal 17, `docs/soloist.md`). `soloist status` prints the expiry
+warning first when there is one (`warning: Soloist build expires in 10 days`, or `warning: Soloist
+build expired`), then the build and its days left, every receiver with its state, target and
+Spotify Connect device name, and the targets the pool had no receiver for. `soloist restart` is
+what the owner runs after replacing the Soloist binary: every receiver's supervisor reads the
+binary again, clears `expired` and starts again. The four playback verbs go to the receiver the
+room's or group's formed group is playing now, and are the server's refusal for a room that plays
+anything else. On a server started without `--soloist-receivers`, `status` says so and the others
+are refused (`no-receivers`).
 
 ### endpoints
 
@@ -280,8 +344,9 @@ none) and `status` is the HTTP status it answered with.
 - `crates/ctl/tests/output.rs`: the listings and the `--json` output, from the state vectors.
 - `crates/ctl/tests/exit_codes.rs`: each exit code, against an in-process fake server on loopback
   replaying the vectors' bytes.
-- `crates/server/tests/chorusctl.rs`: the real `chorus-server` binary driven through all six
-  nouns.
+- `crates/server/tests/chorusctl.rs`: the real `chorus-server` binary driven through all eight
+  nouns; `crates/server/tests/soloist_receivers.rs` drives the `soloist` verbs against real
+  receiver supervisors and the fake Soloist.
 
 ```sh
 cargo test -p chorus-ctl

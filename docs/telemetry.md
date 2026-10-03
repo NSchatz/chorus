@@ -52,6 +52,25 @@ value 1.
 | `chorus_server_build_info{version}` | gauge, 1 | the chorus-server build that answered | the build |
 | `chorus_speakers` | gauge | adopted speakers, connected or not | the room model |
 
+On a server started with `--soloist-receivers` (goal 17, `docs/soloist.md`), and on no other:
+
+| Metric | Type | What | From |
+|---|---|---|---|
+| `chorus_soloist_build_expires_seconds` | gauge | seconds until the Soloist build expires, negative once it has; no sample while the build time is unknown | the supervisors' `build` report and the wall clock at the scrape |
+| `chorus_soloist_build_expired` | gauge | 1 when a receiver's Soloist exited as expired (exit code 10) or the build time has passed | the receiver manager |
+| `chorus_soloist_receiver_connected{receiver}` | gauge | 1 while the server holds a connection to that receiver's supervisor | the receiver manager |
+| `chorus_soloist_frames_read_total{receiver}` | counter | frames read from the receiver's FIFO, played or not | the reader thread |
+| `chorus_soloist_frames_written_total{receiver}` | counter | converted frames written into the receiver's port | the port |
+| `chorus_soloist_frames_played_total{receiver}` | counter | frames the audio thread took | the port |
+| `chorus_soloist_frames_dropped_total{receiver}` | counter | frames dropped because the port's ring was full | the port |
+| `chorus_soloist_frames_discarded_total{receiver}` | counter | frames discarded because no group played the receiver | the port |
+| `chorus_soloist_underruns_total{receiver}` | counter | times the port ran dry in the middle of a stream (a dry spell under 500 ms) | the port |
+| `chorus_soloist_frames_padded_total{receiver}` | counter | frames of silence played in place of audio the port did not hold | the port |
+
+An alert on `chorus_soloist_build_expires_seconds < 14 * 86400` is the warning without a page
+open; `chorus_soloist_underruns_total` rising while a receiver plays is the reader or the
+receiver container not keeping up.
+
 The two counters restart at 0 when a speaker reconnects (they are "since the
 session began" on the wire); `rate()` and `increase()` treat that as the
 counter reset it is.

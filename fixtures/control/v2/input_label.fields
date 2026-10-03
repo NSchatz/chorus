@@ -1,0 +1,14 @@
+# Canonical input for the catalog v2 input_label vector.
+#
+# Encoding these field values must produce exactly input_label.json, and decoding
+# input_label.json must recover exactly these field values.
+#
+# (goal 17) Label an input as a certified streamer wired to it.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = input_label
+input = endpoint-c/line-1
+name = Living room streamer
+role = streamer

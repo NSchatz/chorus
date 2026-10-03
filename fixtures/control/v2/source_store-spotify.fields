@@ -1,0 +1,16 @@
+# Canonical input for the catalog v2 source_store-spotify vector.
+#
+# Encoding these field values must produce exactly source_store-spotify.json, and decoding
+# source_store-spotify.json must recover exactly these field values.
+#
+# (goal 17) Store a Spotify playlist URI; a Soloist receiver plays it, and only
+# when the server runs them with alarms switched on (off by default).
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = source_store
+id = wake-playlist
+kind = spotify
+value = spotify:playlist:37i9dQZF1DXexample0000
+name = Wake up

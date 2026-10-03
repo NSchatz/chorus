@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"role","detail":"'microphone' is not an input's role: the catalog declares 'line-in' and 'streamer'"}

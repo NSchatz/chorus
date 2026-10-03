@@ -102,14 +102,16 @@
 //! `requested`, and that is all.
 
 use crate::catalog::{
-    alarm_value, autoplay_value, centi_db_value, filters_value, is_display_name, is_identifier,
-    members_value, texts, window_value, Command, Refusal, Volume, MAX_IDENTIFIER_LEN, VOLUME_SCALE,
+    alarm_value, autoplay_value, centi_db_value, filters_value, input_label_value, is_display_name,
+    is_identifier, members_value, soloist_value, stored_source_value, texts, window_value, Command,
+    Refusal, Volume, MAX_IDENTIFIER_LEN, VOLUME_SCALE,
 };
 use crate::firmware::{self, image_value, Image};
 use crate::json::{self, Value};
 use crate::rooms::{
-    Alarm, Autoplay, BondMember, CivilTime, InputId, Link, NowPlaying, QuietWindow, Role,
-    SavedGroup, SleepTimer, Source, MAX_DEFINITIONS,
+    Alarm, Autoplay, BondMember, CivilTime, InputId, InputLabel, InputRole, Link, NowPlaying,
+    PlayState, QuietWindow, Role, SavedGroup, SleepTimer, SoloistState, Source, StoredSource,
+    MAX_DEFINITIONS, VIA_STREAMER,
 };
 use crate::sound::{BassManagement, RoomEq, SoundSettings};
 use crate::speakers::{key_change_value, speaker_value, KeyChange, NotListed, Speaker, Speakers};
@@ -294,6 +296,10 @@ pub struct Zones {
     autoplay: Vec<Autoplay>,
     /// (v2) Inputs offered now, sorted. Never persisted.
     inputs: Vec<InputId>,
+    /// (v2, goal 17) Stored sources, sorted by id.
+    stored: Vec<StoredSource>,
+    /// (v2, goal 17) Input labels, sorted by input.
+    labels: Vec<InputLabel>,
     /// (v2) The civil time the quiet-hours flags were last set for.
     now: Option<CivilTime>,
     /// (v2, goal 14) The adopted speakers and the key changes refused.
@@ -302,6 +308,10 @@ pub struct Zones {
     /// server last graded them; `None` when it has no such directory. Never
     /// persisted: the directory is.
     firmware_images: Option<Vec<Image>>,
+    /// (v2, goal 17) The Soloist receivers, their build and its expiry
+    /// warning, as the server's receiver manager last said; `None` on a
+    /// server without `--soloist-receivers`. Never persisted.
+    soloist: Option<SoloistState>,
 }
 
 /// What a target names.
@@ -449,6 +459,51 @@ impl Zones {
     /// Install a persisted alarm, which loading persisted state does.
     pub fn restore_alarm(&mut self, alarm: Alarm) {
         upsert(&mut self.alarms, alarm, |a| a.id.clone());
+    }
+
+    /// (goal 17) Every stored source, sorted by id.
+    pub fn stored_sources(&self) -> &[StoredSource] {
+        &self.stored
+    }
+
+    /// (goal 17) The stored source with this id.
+    pub fn stored_source(&self, id: &str) -> Option<&StoredSource> {
+        self.stored.iter().find(|s| s.id == id)
+    }
+
+    /// (goal 17) Every input label, sorted by input.
+    pub fn input_labels(&self) -> &[InputLabel] {
+        &self.labels
+    }
+
+    /// (goal 17) An input's label, when a person gave it one.
+    pub fn input_label(&self, input: &InputId) -> Option<&InputLabel> {
+        self.labels.iter().find(|l| l.input == *input)
+    }
+
+    /// (goal 17) The room an input's endpoint plays in: the one whose
+    /// present endpoints, else whose membership, names it. A `streamer`
+    /// input autoplays there.
+    pub fn room_of_endpoint(&self, endpoint: &str) -> Option<&str> {
+        self.zones
+            .iter()
+            .find(|z| z.present.iter().any(|e| e == endpoint))
+            .or_else(|| {
+                self.zones
+                    .iter()
+                    .find(|z| z.endpoints.iter().any(|e| e == endpoint))
+            })
+            .map(|z| z.id.as_str())
+    }
+
+    /// Install a persisted stored source, which loading persisted state does.
+    pub fn restore_stored_source(&mut self, stored: StoredSource) {
+        upsert(&mut self.stored, stored, |s| s.id.clone());
+    }
+
+    /// Install a persisted input label, which loading persisted state does.
+    pub fn restore_input_label(&mut self, label: InputLabel) {
+        upsert(&mut self.labels, label, |l| l.input.literal());
     }
 
     /// Install a persisted autoplay rule, which loading persisted state does.
@@ -695,6 +750,9 @@ impl Zones {
             }
             Command::AlarmSet(alarm) => {
                 self.persistent_target(&alarm.target)?;
+                if let Source::Stored(id) = &alarm.source {
+                    self.stored_exists(id, "source")?;
+                }
                 self.within_bound(
                     self.alarms.iter().any(|a| a.id == alarm.id),
                     self.alarms.len(),
@@ -733,6 +791,51 @@ impl Zones {
                     self.autoplay.len(),
                 )?;
                 upsert(&mut self.autoplay, rule.clone(), |r| r.input.literal());
+            }
+            Command::SourceStore(stored) => {
+                self.within_bound(
+                    self.stored.iter().any(|s| s.id == stored.id),
+                    self.stored.len(),
+                )?;
+                upsert(&mut self.stored, stored.clone(), |s| s.id.clone());
+            }
+            Command::SourceForget { id } => {
+                self.stored_exists(id, "id")?;
+                let users: Vec<String> = self
+                    .alarms
+                    .iter()
+                    .filter(|a| a.source == Source::Stored(id.clone()))
+                    .map(|a| a.id.clone())
+                    .collect();
+                if !users.is_empty() {
+                    return Err(Refusal::rejected(
+                        "id",
+                        format!(
+                            "stored source '{}' is what alarm {} plays; give the alarm another \
+                             source or delete it first",
+                            id,
+                            users
+                                .iter()
+                                .map(|a| format!("'{}'", a))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ),
+                    ));
+                }
+                self.stored.retain(|s| s.id != *id);
+            }
+            Command::InputLabel(label) => {
+                if label.name.is_empty() {
+                    // The role is 'line-in' (the decoder's rule): no label.
+                    self.labels.retain(|l| l.input != label.input);
+                } else {
+                    self.within_bound(
+                        self.labels.iter().any(|l| l.input == label.input),
+                        self.labels.len(),
+                    )?;
+                    upsert(&mut self.labels, label.clone(), |l| l.input.literal());
+                }
+                self.relabel(&label.input);
             }
             Command::Sound {
                 bass,
@@ -873,6 +976,15 @@ impl Zones {
                         ),
                     ));
                 }
+            }
+            Command::SoloistRestart => {
+                self.has_receivers()?;
+                // The supervisors are the server's to tell
+                // (crates/server/src/control.rs).
+            }
+            Command::Playback { target, .. } => {
+                self.has_receivers()?;
+                self.playback_group(target)?;
             }
             Command::FirmwareRescan => {
                 if self.firmware_images.is_none() {
@@ -1070,6 +1182,36 @@ impl Zones {
                 list_or_none(self.alarms.iter().map(|a| a.id.clone()))
             ),
         ))
+    }
+
+    fn stored_exists(&self, id: &str, field: &str) -> Result<(), Refusal> {
+        if self.stored.iter().any(|s| s.id == id) {
+            return Ok(());
+        }
+        Err(Refusal::rejected(
+            field,
+            format!(
+                "there is no stored source '{}'; the stored sources are {}",
+                id,
+                list_or_none(self.stored.iter().map(|s| s.id.clone()))
+            ),
+        ))
+    }
+
+    /// (goal 17) Refuse a source no group plays: `stored:<id>` is an alarm's
+    /// spelling, never a group's.
+    fn group_source(source: &Source) -> Result<(), Refusal> {
+        match source {
+            Source::Stored(id) => Err(Refusal::rejected(
+                "source",
+                format!(
+                    "'stored:{}' is a stored source, which only an alarm plays; a group plays \
+                     the player or the receiver the runtime gives it",
+                    id
+                ),
+            )),
+            _ => Ok(()),
+        }
     }
 
     /// A target that outlives a restart: a room or a saved group. A live group
@@ -1308,11 +1450,12 @@ impl Zones {
             };
             match self.source_of(&group) {
                 // (goal 16) A player plays in one group, so it cannot be
-                // copied as any other source is. It stays with the target,
-                // and the rooms pushed out play nothing; unless this take
-                // gives the target something else to play, when the player
-                // (and what it is playing) goes with the rooms pushed out.
-                Some(s @ Source::Player(_)) => {
+                // copied as any other source is, and (goal 17) neither can
+                // a Soloist receiver. It stays with the target, and the
+                // rooms pushed out play nothing; unless this take gives the
+                // target something else to play, when the source (and what
+                // it is playing) goes with the rooms pushed out.
+                Some(s) if s.is_exclusive() => {
                     if source.is_none_or(|new| *new == s) {
                         self.set_source(&home, Source::None);
                     } else {
@@ -1338,6 +1481,7 @@ impl Zones {
             self.dissolve_if_alone(&from);
         }
         if let Some(source) = source {
+            Zones::group_source(source)?;
             self.player_is_free(&group, source)?;
             self.set_source(&group, source.clone());
         }
@@ -1347,22 +1491,42 @@ impl Zones {
     /// (goal 16) Refuse to give `group` a player source another formed group
     /// is playing: a player is one stream of decoded audio, and two groups
     /// playing it would be two listeners of one position nobody chose.
+    /// (goal 17) The same for a Soloist receiver.
     fn player_is_free(&self, group: &str, source: &Source) -> Result<(), Refusal> {
-        let Source::Player(id) = source else {
-            return Ok(());
-        };
-        match self.player_group(id) {
-            Some(other) if other != group => Err(Refusal::rejected(
-                "source",
-                format!(
-                    "player '{}' is playing in group '{}', and a player plays in one group at \
-                     a time; take '{}' instead, or stop it there first (take '{}' with source \
-                     'none')",
-                    id, other, other, other
-                ),
-            )),
+        match source {
+            Source::Player(id) => match self.player_group(id) {
+                Some(other) if other != group => Err(Refusal::rejected(
+                    "source",
+                    format!(
+                        "player '{}' is playing in group '{}', and a player plays in one group \
+                         at a time; take '{}' instead, or stop it there first (take '{}' with \
+                         source 'none')",
+                        id, other, other, other
+                    ),
+                )),
+                _ => Ok(()),
+            },
+            Source::Soloist(id) => match self.source_group(source) {
+                Some(other) if other != group => Err(Refusal::rejected(
+                    "source",
+                    format!(
+                        "receiver '{}' is playing in group '{}', and a receiver plays in one \
+                         group at a time",
+                        id, other
+                    ),
+                )),
+                _ => Ok(()),
+            },
             _ => Ok(()),
         }
+    }
+
+    /// (goal 17) The formed group playing exactly `source`, if one is.
+    pub fn source_group(&self, source: &Source) -> Option<String> {
+        self.sources
+            .iter()
+            .find(|(g, s)| s == source && !self.members(g).is_empty())
+            .map(|(g, _)| g.clone())
     }
 
     /// (goal 16) The formed group playing `player:<id>`, if one is.
@@ -1423,16 +1587,66 @@ impl Zones {
     }
 
     /// Every change of what a group plays goes through here, which is what
-    /// keeps a now-playing record only where a player source is.
+    /// keeps a now-playing record only where a player source is, or (goal
+    /// 17) a line-in labelled as a streamer, whose record the model writes
+    /// itself: the label's name as the title, `via` `streamer`.
     fn set_source(&mut self, group: &str, source: Source) {
-        if !matches!(source, Source::Player(_)) {
+        // A record goes with a player source; one a streamer's label wrote
+        // does not outlive the line-in it described.
+        if !source.takes_now_playing() || !self.source(group).takes_now_playing() {
             self.now_playing.retain(|(g, _)| g != group);
+        }
+        if let Some(record) = self.streamer_record(&source) {
+            self.now_playing.push((group.to_string(), record));
+            self.now_playing.sort_by(|a, b| a.0.cmp(&b.0));
         }
         self.sources.retain(|(g, _)| g != group);
         if source != Source::Stream {
             self.sources.push((group.to_string(), source));
             self.sources.sort();
         }
+    }
+
+    /// (goal 17) The now-playing record of a line-in labelled as a streamer:
+    /// what it plays is the streamer's own business (it reaches chorus as
+    /// analogue or S/PDIF audio), so the room shows the label.
+    fn streamer_record(&self, source: &Source) -> Option<NowPlaying> {
+        let Source::LineIn(input) = source else {
+            return None;
+        };
+        let label = self.input_label(input)?;
+        (label.role == InputRole::Streamer).then(|| {
+            NowPlaying {
+                title: Some(label.name.clone()),
+                artist: None,
+                album: None,
+                art_url: None,
+                duration_ms: None,
+                state: PlayState::Playing,
+                via: VIA_STREAMER.to_string(),
+            }
+            .bounded()
+        })
+    }
+
+    /// (goal 17) An input's label changed: every group playing the input
+    /// shows the new label, or none.
+    fn relabel(&mut self, input: &InputId) {
+        let source = Source::LineIn(input.clone());
+        let groups: Vec<String> = self
+            .sources
+            .iter()
+            .filter(|(_, s)| *s == source)
+            .map(|(g, _)| g.clone())
+            .collect();
+        let record = self.streamer_record(&source);
+        for group in groups {
+            self.now_playing.retain(|(g, _)| *g != group);
+            if let Some(record) = &record {
+                self.now_playing.push((group, record.clone()));
+            }
+        }
+        self.now_playing.sort_by(|a, b| a.0.cmp(&b.0));
     }
 
     /// Group `to` plays what `from` played, and `from` no longer does; what
@@ -1546,6 +1760,7 @@ impl Zones {
     /// source clears the group's now-playing record.
     pub fn set_group_source(&mut self, group: &str, source: Source) -> Result<(), Refusal> {
         self.formed_members(group)?;
+        Zones::group_source(&source)?;
         self.player_is_free(group, &source)?;
         self.set_source(group, source);
         self.serial += 1;
@@ -1570,7 +1785,7 @@ impl Zones {
             None => None,
             Some(record) => {
                 let source = self.source(group);
-                if !matches!(source, Source::Player(_)) {
+                if !source.takes_now_playing() {
                     return Err(Refusal::rejected(
                         "group",
                         format!(
@@ -1778,6 +1993,65 @@ impl Zones {
         true
     }
 
+    /// (goal 17) The Soloist receivers, their build and its warning, or
+    /// `None` on a server that runs no receiver. Whether anything changed;
+    /// the serial moves only when it did.
+    pub fn set_soloist(&mut self, soloist: Option<SoloistState>) -> bool {
+        if self.soloist == soloist {
+            return false;
+        }
+        self.soloist = soloist;
+        self.serial += 1;
+        true
+    }
+
+    /// (goal 17) What the receiver manager last said, if this server runs
+    /// receivers.
+    pub fn soloist(&self) -> Option<&SoloistState> {
+        self.soloist.as_ref()
+    }
+
+    fn has_receivers(&self) -> Result<(), Refusal> {
+        if self.soloist.is_some() {
+            return Ok(());
+        }
+        Err(Refusal::rejected(
+            "t",
+            "no-receivers: this server was started without --soloist-receivers, so there is \
+             no Spotify receiver to tell"
+                .to_string(),
+        ))
+    }
+
+    /// (goal 17) The formed group a `playback` command naming `target`
+    /// reaches: the group the room is in, the saved group when it is active,
+    /// or the formed group itself. Refused by name for a target that is
+    /// none of those and for a group that does not play a Spotify receiver.
+    pub fn playback_group(&self, target: &str) -> Result<String, Refusal> {
+        let group = match self.resolve(target) {
+            None => return Err(self.no_target(target, "a room, a saved group or a formed group")),
+            Some(Target::Room(i)) => self.zones[i].group.clone(),
+            Some(Target::Saved(id)) | Some(Target::Formed(id)) => id,
+        };
+        let source = if self.members(&group).is_empty() {
+            Source::None
+        } else {
+            self.source(&group)
+        };
+        if source.is_soloist() {
+            return Ok(group);
+        }
+        Err(Refusal::rejected(
+            "target",
+            format!(
+                "'{}' plays '{}', which is not a Spotify receiver; a playback command (pause, \
+                 resume, next, previous) goes to the receiver a group is playing",
+                target,
+                source.literal()
+            ),
+        ))
+    }
+
     /// The staged firmware images, or `None` when the server has no firmware
     /// directory.
     pub fn firmware_images(&self) -> Option<&[Image]> {
@@ -1932,6 +2206,21 @@ impl Zones {
                 ),
             ),
         ];
+        // (goal 17) Written only when there is something to say, so a server
+        // with no stored source and no labelled input sends the bytes it sent
+        // before goal 17 and the committed state vectors did not move.
+        if !self.stored.is_empty() {
+            state.push((
+                "stored_sources".to_string(),
+                Value::Arr(self.stored.iter().map(stored_source_value).collect()),
+            ));
+        }
+        if !self.labels.is_empty() {
+            state.push((
+                "input_labels".to_string(),
+                Value::Arr(self.labels.iter().map(input_label_value).collect()),
+            ));
+        }
         // (goal 14) Written only when there is something to say, so a server
         // that has adopted nothing sends the bytes it sent before goal 14 and
         // the committed state vectors did not move.
@@ -1975,6 +2264,11 @@ impl Zones {
                     Value::Arr(images.iter().map(image_value).collect()),
                 )]),
             ));
+        }
+        // (goal 17) The Soloist receivers, written only by a server that
+        // runs them, after everything else for the same reason.
+        if let Some(soloist) = &self.soloist {
+            state.push(("soloist".to_string(), soloist_value(soloist)));
         }
         Value::Obj(state)
     }

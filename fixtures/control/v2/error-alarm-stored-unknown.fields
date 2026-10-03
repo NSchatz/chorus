@@ -1,0 +1,16 @@
+# Canonical input for the catalog v2 error-alarm-stored-unknown vector.
+#
+# `input` is refused, by the decoder or by the room state the commands below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-alarm-stored-unknown.json. Nothing of it is applied.
+#
+# (goal 17) An alarm names a stored source that exists.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+zones = bedroom
+input = {"v":2,"t":"alarm_set","alarm":"radio","target":"bedroom","time":"06:45","days":[],"source":"stored:morning-radio","volume":0.300,"ramp_s":30,"duration_min":60,"enabled":true}
+field = source
+ends_the_session = 0

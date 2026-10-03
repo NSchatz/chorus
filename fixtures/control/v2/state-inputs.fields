@@ -1,0 +1,22 @@
+# Canonical input for the catalog v2 state-inputs vector.
+#
+# The state a server configured with these zones sends after the commands
+# below, and encoding it must produce exactly state-inputs.json.
+#
+# (goal 17) Stored sources, a labelled streamer playing in two groups at once
+# (the kitchen took it, then the study did: an input may play in any number
+# of groups), and an alarm whose source is a stored source.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = state
+default_audio = 127.0.0.1:4010
+zones = kitchen,study,bedroom
+command.0 = {"v":2,"t":"source_store","id":"morning-radio","kind":"url","value":"https://radio.example/stream.mp3","name":"Morning radio"}
+command.1 = {"v":2,"t":"source_store","id":"wake-playlist","kind":"spotify","value":"spotify:playlist:37i9dQZF1DXexample0000","name":"Wake up"}
+command.2 = {"v":2,"t":"input_label","input":"endpoint-c/line-1","name":"Kitchen streamer","role":"streamer"}
+command.3 = {"v":2,"t":"take","target":"kitchen","source":"line-in:endpoint-c/line-1"}
+command.4 = {"v":2,"t":"take","target":"study","source":"line-in:endpoint-c/line-1"}
+command.5 = {"v":2,"t":"alarm_set","alarm":"radio","target":"bedroom","time":"06:45","days":["mon"],"source":"stored:morning-radio","volume":0.300,"ramp_s":30,"duration_min":60,"enabled":true}
+offer_input = endpoint-c/line-1

@@ -72,6 +72,7 @@
   var zonesEl = document.querySelector("[data-zones]");
   var connectionEl = document.querySelector("[data-connection]");
   var serialEl = document.querySelector("[data-serial]");
+  var warningEl = document.querySelector("[data-warning]");
   var footerFreshnessEl = document.querySelector('[data-freshness="footer"]');
 
   /// The last state message this page could read, and nothing else. Every
@@ -718,6 +719,18 @@
     serialEl.textContent = text;
   }
 
+  /// The server's one standing warning: a Spotify Soloist build that is about
+  /// to expire, or has (goal 17). The state carries it only while it holds,
+  /// so the line is empty, and hidden by its own style, at every other time.
+  function paintWarning(raw) {
+    var soloist = raw.soloist;
+    var warning =
+      soloist && typeof soloist === "object" && typeof soloist.warning === "string"
+        ? soloist.warning
+        : "";
+    warningEl.textContent = warning;
+  }
+
   /// One state message, applied. Everything the page shows is repainted from
   /// it, so there is no path by which a figure keeps a value the state no
   /// longer carries.
@@ -738,11 +751,13 @@
     lastState = { serial: raw.serial, v: raw.v, zones: zones };
     paintZones(false);
     paintSerial(raw);
+    paintWarning(raw);
     paintFreshness();
   }
 
   function fail() {
     lastState = null;
+    warningEl.textContent = "";
     show("error", errorNotice);
     paintConnection("Connection lost");
     serialEl.textContent = "No state";

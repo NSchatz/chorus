@@ -49,6 +49,11 @@ chorus-fetch = { path = "../fetch" }
 # no thread, no third-party dependency; src/upnp.rs is the sockets and the threads. The scripted
 # control point (tests/upnp_control_point.rs) is written with its `client` module.
 chorus-upnp = { path = "../upnp" }
+# The Soloist receivers' pure half (goal 17, docs/soloist.md, ADR 0130): the supervisor protocol,
+# the Soloist WebSocket API model, the receiver pool and the build-expiry arithmetic. No socket, no
+# thread; src/soloist.rs is the manager thread and src/soloistreader.rs the FIFO readers. Soloist
+# itself is never linked, shipped or run by this crate.
+chorus-soloist = { path = "../soloist" }
 
 [dev-dependencies]
 # The end-to-end tests decode what the server put on a real socket with the
@@ -69,10 +74,28 @@ chorus-cec = { path = "../cec" }
 # entry point (`chorus_ctl::run_with`): the server's binary path exists only
 # for the server's own integration tests, so the test lives here.
 chorus-ctl = { path = "../ctl" }
+# tests/soloist_receivers.rs runs this crate's real binary against the real receiver supervisor
+# and the fake Soloist (goal 17). Both are DEV dependencies and both programs are EXAMPLES of this
+# crate (examples/), which `cargo build --bins` never builds: no image and no release carries
+# either from here.
+chorus-soloistd = { path = "../soloistd" }
+chorus-soloist-fake = { path = "../soloist-fake" }
 
 [[bin]]
 name = "chorus-server"
 path = "src/main.rs"
+
+# The two programs tests/soloist_receivers.rs runs beside the server (goal 17): the receiver
+# supervisor and the fake Soloist, each one line over its library. EXAMPLES on purpose, as in
+# crates/soloistd: `cargo test` builds them beside the test, and nothing that builds an image or
+# a release does.
+[[example]]
+name = "server-test-soloistd"
+path = "examples/server-test-soloistd.rs"
+
+[[example]]
+name = "server-test-fake-soloist"
+path = "examples/server-test-fake-soloist.rs"
 
 [lints]
 workspace = true

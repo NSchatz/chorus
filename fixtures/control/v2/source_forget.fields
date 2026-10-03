@@ -1,0 +1,12 @@
+# Canonical input for the catalog v2 source_forget vector.
+#
+# Encoding these field values must produce exactly source_forget.json, and decoding
+# source_forget.json must recover exactly these field values.
+#
+# (goal 17) Forget a stored source.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = source_forget
+id = morning-radio

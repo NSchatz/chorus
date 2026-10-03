@@ -11,11 +11,16 @@
 //!    `inputs`, autoplay).
 //! 2. When some group plays the input, the runtime asks for a start; the
 //!    conductor takes a free [`Port`] for it ([`LineIns::start`]) and sends
-//!    `source_control` start, sealed to the input's own session.
+//!    `source_control` start, sealed to the input's own session. (goal 17)
+//!    Any number of groups may play one input: it is started once, has one
+//!    port, and every slot whose group plays it cuts that port's chunks.
 //! 3. The endpoint answers with `stream_format`. It must be this server's own
 //!    format (rate, channels, sample format, PCM) or the start is refused:
 //!    the conductor sends `stop` and logs `line-in refused
-//!    reason=format-mismatch` (a conversion is a follow-up).
+//!    reason=format-mismatch` (a conversion is a follow-up). An endpoint
+//!    that refuses the start itself sends nothing (ADR 0066), and nothing
+//!    is added for it: ADR 0129 says why, and names the bound on an
+//!    unanswered start as the follow-up.
 //! 4. Every upstream `audio_chunk` after that is written into the port's
 //!    ring ([`Port::write_pcm`]), on the session's reader thread, as samples
 //!    at full scale 1.0. A full ring drops the chunk and counts it.
@@ -160,9 +165,10 @@ pub fn input_name(offer: &SourceOffer) -> String {
 }
 
 impl LineIns {
-    /// `ports` ports (at most that many inputs stream at once: one input
-    /// feeds at most one slot, so the slot count is enough), each holding
-    /// [`RING_MS`] of `format`; `wake` pokes the conductor.
+    /// `ports` ports, each holding [`RING_MS`] of `format`; `wake` pokes the
+    /// conductor. At most that many inputs stream at once. A port is one
+    /// INPUT's, however many groups play it (goal 17): every group playing an
+    /// input holds a stream slot, so the slot count is enough ports.
     pub fn new(format: PcmFormat, ports: usize, wake: Box<dyn Fn() + Send + Sync>) -> LineIns {
         let frames = (u64::from(format.sample_rate_hz) * RING_MS / 1_000) as usize;
         LineIns {

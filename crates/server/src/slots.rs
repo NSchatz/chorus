@@ -83,6 +83,7 @@ use crate::linein::{decode_sample, encode_sample, Port};
 use crate::playerport::PlayerPort;
 use crate::router::Router;
 use crate::serve::{ServeError, ServeParams};
+use crate::soloistport::SoloistPort;
 use crate::source::PcmSource;
 use crate::stream::Outbound;
 
@@ -110,6 +111,12 @@ pub enum SlotInput {
     /// ([`SlotMedia::players`], `crate::playerport`): one chunk of its
     /// decoded audio a tick, silence for whatever it lacks.
     Player(u8),
+    /// (goal 17) A Spotify Soloist receiver, by its port
+    /// ([`SlotMedia::soloists`], `crate::soloistport`): one chunk of what
+    /// the receiver's reader thread converted a tick, silence for whatever
+    /// it lacks. Like a player it has no latency plan: its chunks go out on
+    /// the grid like the stream's.
+    Soloist(u8),
 }
 
 impl SlotInput {
@@ -121,6 +128,7 @@ impl SlotInput {
             SlotInput::Chime(_) => "chime",
             SlotInput::LineIn(_) => "line-in",
             SlotInput::Player(_) => "player",
+            SlotInput::Soloist(_) => "soloist",
         }
     }
 }
@@ -184,6 +192,9 @@ pub struct SlotMedia {
     /// (goal 16) The player ports (`crate::playerport`), `--players` of
     /// them: player `p<i>` is `players[i]`.
     pub players: Vec<Arc<PlayerPort>>,
+    /// (goal 17) The Soloist receivers' ports (`crate::soloistport`),
+    /// `--soloist-receivers` of them: receiver `r<i>` is `soloists[i]`.
+    pub soloists: Vec<Arc<SoloistPort>>,
 }
 
 /// What a slot's line-in is doing, on the audio thread. One per slot,
@@ -325,6 +336,10 @@ pub fn serve_slots(
     let player_ports = media.players.len();
     let mut player_pcm = vec![vec![0u8; bytes_per_chunk]; player_ports];
     let mut player_played = vec![false; player_ports];
+    // (goal 17) The same for the Soloist receivers' ports.
+    let soloist_ports = media.soloists.len();
+    let mut soloist_pcm = vec![vec![0u8; bytes_per_chunk]; soloist_ports];
+    let mut soloist_played = vec![false; soloist_ports];
     let chunk_ns = params.chunk_us * 1_000;
     let interval_ns = params.emit_interval_ns();
     let origin_ns = timeline.now_ns();
@@ -414,6 +429,7 @@ pub fn serve_slots(
             // per port however many slots play it.
             port_played.fill(false);
             player_played.fill(false);
+            soloist_played.fill(false);
             for slot in 0..slots {
                 match inputs[slot] {
                     SlotInput::Chime(c) => match media.chimes.get(usize::from(c)) {
@@ -449,6 +465,15 @@ pub fn serve_slots(
                             }
                         }
                     }
+                    SlotInput::Soloist(p) => {
+                        let p = usize::from(p);
+                        if let Some(port) = media.soloists.get(p) {
+                            if !soloist_played[p] {
+                                port.play(frames, params.format.sample_format, &mut soloist_pcm[p]);
+                                soloist_played[p] = true;
+                            }
+                        }
+                    }
                     SlotInput::Silence | SlotInput::Stream => {}
                 }
             }
@@ -465,6 +490,11 @@ pub fn serve_slots(
                         if player_played.get(usize::from(*p)) == Some(&true) =>
                     {
                         cut(&player_pcm[usize::from(*p)])?
+                    }
+                    (SlotInput::Soloist(p), _)
+                        if soloist_played.get(usize::from(*p)) == Some(&true) =>
+                    {
+                        cut(&soloist_pcm[usize::from(*p)])?
                     }
                     _ => quiet.clone(),
                 };
@@ -489,6 +519,9 @@ pub fn serve_slots(
                 }
                 SlotInput::Player(p) if player_played.get(usize::from(*p)) == Some(&true) => {
                     &player_pcm[usize::from(*p)]
+                }
+                SlotInput::Soloist(p) if soloist_played.get(usize::from(*p)) == Some(&true) => {
+                    &soloist_pcm[usize::from(*p)]
                 }
                 _ => &silence,
             };

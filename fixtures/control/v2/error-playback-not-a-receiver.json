@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"target","detail":"'kitchen' plays 'stream', which is not a Spotify receiver; a playback command (pause, resume, next, previous) goes to the receiver a group is playing"}

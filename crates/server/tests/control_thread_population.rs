@@ -1142,6 +1142,99 @@ fn the_upnp_renderers_are_declared_threads_with_their_flag_and_none_without() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// (goal 17) `--soloist-receivers R` is `R + 1` more declared, ordinary
+/// threads, `soloist-reader-0` to `soloist-reader-<R-1>` and
+/// `soloist-manager`, created with the rest whether or not any receiver
+/// container runs (none does here: the receiver directory is empty), and
+/// none without the flag: `6 + 2N + M + 1 + R + 1` against `6 + 2N + M + 1`.
+/// A session hearing a room makes no thread. What receivers that come,
+/// are assigned and play do to the population (nothing) is
+/// `soloist_receivers.rs`'s, which runs real supervisors.
+#[test]
+fn the_soloist_receivers_are_declared_threads_with_their_flag_and_none_without() {
+    let dir = std::env::temp_dir().join(common::fresh_id("chorus-population-soloist"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let shape = |receivers: usize| {
+        let mut extra = vec![
+            "--max-clients".to_string(),
+            MAX_CLIENTS.to_string(),
+            "--control-workers".to_string(),
+            "2".to_string(),
+            "--slots".to_string(),
+            "2".to_string(),
+            "--zone".to_string(),
+            "kitchen".to_string(),
+        ];
+        if receivers > 0 {
+            extra.extend([
+                "--soloist-dir".to_string(),
+                dir.display().to_string(),
+                "--soloist-receivers".to_string(),
+                receivers.to_string(),
+            ]);
+        }
+        let (server, pid, _rest, startup) = start(&extra);
+        let rows = reported(&startup);
+        assert_roles(&rows, 2, &startup);
+        let threads = kernel_threads(pid);
+        let declared: BTreeSet<u32> = rows.iter().map(|r| r.tid).collect();
+        assert_eq!(declared, threads, "receivers={}: {:?}", receivers, rows);
+        let named: BTreeSet<String> = rows
+            .iter()
+            .filter(|r| r.role.starts_with("soloist"))
+            .map(|r| r.role.clone())
+            .collect();
+        let mut wanted: BTreeSet<String> = (0..receivers)
+            .map(|i| format!("soloist-reader-{}", i))
+            .collect();
+        if receivers > 0 {
+            wanted.insert("soloist-manager".to_string());
+        }
+        assert_eq!(named, wanted, "receivers={}: {:?}", receivers, rows);
+        assert_eq!(
+            threads.len(),
+            population(MAX_CLIENTS, 2) + 1 + wanted.len(),
+            "receivers={} runs {} threads: {:?}",
+            receivers,
+            threads.len(),
+            rows
+        );
+        assert_eq!(
+            startup
+                .iter()
+                .any(|l| l.contains("chorus-server: soloist ")),
+            receivers > 0,
+            "the receivers line is said only with the flag: {:?}",
+            startup
+        );
+        let mut client = common::v2_client(audio_address(&startup).as_str(), READ_TIMEOUT);
+        let mut scratch = vec![0u8; 65_536];
+        assert!(client.reader.read(&mut scratch).expect("audio comes down") > 0);
+        thread::sleep(SETTLE);
+        assert_eq!(
+            kernel_threads(pid),
+            threads,
+            "receivers={}: waiting for receivers that are not there made a thread",
+            receivers
+        );
+        drop(server);
+        threads.len()
+    };
+    let (off, on) = (shape(0), shape(3));
+    assert_eq!(on, off + 4);
+    assert_eq!(
+        std::fs::read_dir(&dir).unwrap().count(),
+        0,
+        "the server made nothing in the receiver directory"
+    );
+    println!(
+        "population without --soloist-receivers: {} threads (6 + 2N + M + 1, N={}, M=2); with \
+         --soloist-receivers 3: {}",
+        off, MAX_CLIENTS, on
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// (goal 16) `--players P` is P more declared, ordinary threads, `player-0`
 /// to `player-<P-1>`, created with the rest whether or not anything plays,
 /// and none without the flag: `6 + 2N + M + 1 + P` against `6 + 2N + M + 1`
