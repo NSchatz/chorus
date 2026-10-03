@@ -1,0 +1,51 @@
+# The gate's runner of the workspace tests (tools/gate.sh; pinned in mise.toml).
+# docs/decisions/0000-a-faster-gate-with-the-same-checks.md says why nextest and
+# why these groups. Every test runs in its own process; `cargo test --doc` runs
+# the documentation tests, which nextest does not.
+
+[profile.default]
+# A red test is red: never run again to see whether it goes green.
+retries = 0
+# Every test runs even after one fails, so a red run names every failing test.
+fail-fast = false
+# How many tests run at once. NEXTEST_TEST_THREADS overrides it for one run.
+test-threads = 8
+# Said, never enforced: a test running past a minute is named in the log and
+# left to finish.
+slow-timeout = { period = "60s" }
+# The slow and failing tests are listed again at the end of the run.
+final-status-level = "slow"
+
+[profile.default.junit]
+# Every test's own duration, written to target/nextest/default/junit.xml.
+path = "junit.xml"
+
+[test-groups]
+# The tests whose verdict depends on the wall clock: a real server, client or
+# hub paced in real time, graded on underruns, inserted zeros, latency or loss.
+# Under `cargo test` each of their binaries ran with nothing else of the suite
+# beside it; here they run one test at a time, so no two of them ever share the
+# host's CPUs, and they start first so the longest chain starts at once.
+wall-clock = { max-threads = 1 }
+# The tests that run `make -f firmware/Makefile` into firmware/build (each also
+# takes the file lock firmware/build/.chorus-endpoint-session.lock).
+firmware-build = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = '''
+package(chorus-server) & (
+    binary(tv_low_latency) | binary(tv_capture_rate_match) | binary(alarms_sleep_autoplay)
+    | binary(regress_0031_f1) | binary(dsp_end_to_end) | binary(front_panel)
+    | binary(cec_tv) | binary(fifo_source)
+)
+'''
+test-group = "wall-clock"
+priority = 100
+
+[[profile.default.overrides]]
+filter = '''
+(package(chorus-server) & (binary(adoption) | binary(firmware_install)))
+| (package(chorus-protocol) & binary(firmware_session))
+'''
+test-group = "firmware-build"
+priority = 50

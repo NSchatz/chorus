@@ -10,7 +10,8 @@
 #   the emulator (goal 14): tools/qemu/pins.conf names an exact release, its archive's URL and
 #   sha256, the program's sha256 and micromamba's version, URL and sha256; every package of
 #   tools/qemu/libs.explicit.txt is a conda-forge linux-64 build held to its sha256
-#   the gate builds with --locked; any package.json pins exact versions beside a lockfile
+#   the gate builds and tests with --locked (cargo build, test, clippy and nextest run); any
+#   package.json pins exact versions beside a lockfile
 . "$(dirname "$0")/lib.sh"
 rc=0
 bad() { fail "Pins" "$1"; rc=1; }
@@ -103,7 +104,7 @@ done < <(command grep -v -E '^(#|@EXPLICIT$|[[:space:]]*$)' tools/qemu/libs.expl
 [ "$libs" -gt 0 ] || bad "tools/qemu/libs.explicit.txt lists no package"
 echo "emulator: QEMU $qver, micromamba $mver, $libs library packages, each with a sha256"
 
-for s in build test clippy; do
+for s in build test clippy 'nextest run'; do
     command grep -E "cargo $s .*--locked" tools/gate.sh > /dev/null || bad "the gate's cargo $s does not pass --locked"
 done
 
