@@ -46,6 +46,7 @@ umbrella's section, its specs, stages and pointers, is removed.)
   is the conventions checks alone. Tiers: `make tier-fast` (conventions, fmt,
   clippy, the workspace tests) on every PR, `make tier-full` (= `make gate`) at a
   goal's end and nightly on main, except where a goal file names its gate.
+- Heavy jobs and the disk (request #230 from the goals program, 2026-10-03: the container's disk is its bottleneck): every cargo build, test or clippy of the workspace, every gate tier and every image build (`make image`, `make soloist-image`) runs under `goals lock goals-heavy -- goals lock chorus-heavy -- ...`, subagents' runs included; only a single crate's focused test on a built tree runs outside it. A throwaway build (an image, a one-off worktree) sets `CARGO_TARGET_DIR` to a directory under `/scratch` when it fits, else the lane's shared `/cache/wt/chorus/target`, never a private directory of its own on the disk.
 - Flashing, eFuses, deploys to the homelab and OTA installs on installed speakers are the owner's actions (K4, K28, K93); nothing in this repo sets `CHORUS_OWNER_AT_BENCH`. Each one is an issue in the owner's queue (NSchatz/goals: `goals needs add`, `/goals:needs`), and a request to another program is a `from:chorus` issue (`goals request add`).
 - BRIEF.md is kept current by the program: verified corrections and the owner's
   decisions are written into it, each dated with its decision IDs. Its section

@@ -39,6 +39,12 @@ while IFS= read -r f; do
     # On main, a record from the rule on must carry the number of the squash-merged PR that added it.
     if [ "$n10" -ge "$first_pr_numbered" ] && [ "$shallow" = 0 ]; then
         pr="$(git log --diff-filter=A --format=%s -- "$f" | sed -n 's/.*(#\([0-9]*\))$/\1/p' | tail -n 1)"
+        # A record whose own PR landed inside another PR's squash keeps its own PR's number; the
+        # list names each one with the squash that carried it (goal 17, D8: PR #129's branch
+        # was merged into PR #132's and landed with it; #129 was closed with a pointer).
+        case "$num:$pr" in
+        0129:132) pr=129 ;;
+        esac
         [ -z "$pr" ] || [ "$((10#$num))" = "$pr" ] || bad "$f: numbered $num but added by PR #$pr"
     fi
 done < <(git ls-files 'docs/decisions/[0-9]*.md')
