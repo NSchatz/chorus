@@ -16,6 +16,7 @@ mod vectors;
 use std::collections::BTreeSet;
 
 use chorus_control::catalog::{decode_command, decode_message, Command, Refusal, Volume};
+use chorus_control::firmware::{Image, Report, SpeakerFirmware};
 use chorus_control::json;
 use chorus_control::rooms::{
     Alarm, Autoplay, BondMember, CivilTime, ClockTime, Days, InputId, Link, QuietWindow, Role,
@@ -58,6 +59,9 @@ const EVERY_V2_MESSAGE_TYPE: &[&str] = &[
     "speaker_name",
     "speaker_room",
     "speaker_forget",
+    "firmware_install",
+    "firmware_cancel",
+    "firmware_rescan",
     "state",
     "error",
     "refused",
@@ -189,6 +193,58 @@ fn server_from(fields: &Fields) -> Zones {
         let line = fields.get(&format!("adopted.{}", n));
         let (id, key) = line.split_once(' ').unwrap();
         zones.speaker_adopted(id, key).unwrap();
+        n += 1;
+    }
+    // (goal 14, firmware) The images the server staged (`image.N = <name> |
+    // <version> | <board> | <size> | <sha256> | verified` or the refusal's
+    // reason; `firmware_dir = 1` alone is a directory with nothing in it),
+    // then the sessions up before the commands (`up.N = <id> | <software> |
+    // <roles>`) and what each speaker reported (`report.N = <id> | <state> |
+    // <reason> | <transfer> | <received> | <version> | <board> | <slot> |
+    // <image_version> | <carried>`).
+    let mut images = Vec::new();
+    let mut n = 0;
+    while fields.has(&format!("image.{}", n)) {
+        let line = fields.get(&format!("image.{}", n));
+        let p: Vec<&str> = line.split('|').map(str::trim).collect();
+        images.push(Image {
+            name: p[0].to_string(),
+            version: p[1].to_string(),
+            board: p[2].to_string(),
+            size: p[3].parse().unwrap(),
+            sha256: p[4].to_string(),
+            refused: (p[5] != "verified").then(|| p[5].to_string()),
+        });
+        n += 1;
+    }
+    if n > 0 || fields.has("firmware_dir") {
+        zones.set_firmware_images(Some(images));
+    }
+    let mut n = 0;
+    while fields.has(&format!("up.{}", n)) {
+        let line = fields.get(&format!("up.{}", n));
+        let parts: Vec<&str> = line.split('|').map(str::trim).collect();
+        zones.speaker_session_up(parts[0], parts[1], &list(parts[2]));
+        n += 1;
+    }
+    let mut n = 0;
+    while fields.has(&format!("report.{}", n)) {
+        let line = fields.get(&format!("report.{}", n));
+        let p: Vec<&str> = line.split('|').map(str::trim).collect();
+        let report = Report {
+            state: p[1].to_string(),
+            reason: p[2].to_string(),
+            transfer: p[3].parse().unwrap(),
+            received: p[4].parse().unwrap(),
+            version: p[5].to_string(),
+            board: p[6].to_string(),
+            slot: (p[7] != "none").then(|| p[7].parse().unwrap()),
+            image_version: p[8].to_string(),
+            carried: p[9] == "1",
+        };
+        zones.speaker_now(p[0], |now| {
+            SpeakerFirmware::absorb(&mut now.firmware, &report)
+        });
         n += 1;
     }
     let mut n = 0;
@@ -409,6 +465,16 @@ fn command_from(fields: &Fields) -> Command {
         "speaker_forget" => Command::SpeakerForget {
             speaker: get("speaker"),
         },
+        "firmware_install" => Command::FirmwareInstall {
+            // No `speaker` line is the wire's `"all": true`.
+            speaker: fields.has("speaker").then(|| get("speaker")),
+            image: get("image"),
+            force: fields.has("force") && flag("force"),
+        },
+        "firmware_cancel" => Command::FirmwareCancel {
+            speaker: get("speaker"),
+        },
+        "firmware_rescan" => Command::FirmwareRescan,
         "bass_management" => Command::BassManagement {
             zone: get("zone"),
             crossover_hz: fields

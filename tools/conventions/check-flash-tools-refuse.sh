@@ -5,7 +5,11 @@
 #
 # 1. The tools. Every tracked file outside docs/ that reads the guard, and every one that calls
 #    esptool, espefuse or `idf.py ... flash`, must be a flashing tool listed below (so a new
-#    device-writing tool cannot join the repository without joining this test).
+#    device-writing tool cannot join the repository without joining this test), or a guard
+#    reader listed below: a unit of a program that is not a shell tool (goal 14: the server's
+#    firmware sender, which refuses a transfer to a real address). A reader names the test that
+#    grades its refusal; the test must be in the file, and `make gate`'s test step runs it. A
+#    reader that calls a flashing program is not a reader: it has to be a listed tool.
 # 2. Refusal. With shims for idf.py, esptool, esptool.py, espefuse, espefuse.py, python and
 #    python3 first on PATH, each recording any call, every tool is run against a complete
 #    fixture image and an existing port, so the guard is the only thing that can stop it, with
@@ -29,6 +33,11 @@ tools=(
     "tools/firmware-flash.sh"
 )
 
+# guard reader | the test in it that grades the refusal without the owner at the bench
+readers=(
+    "crates/server/src/firmware.rs|a_transfer_to_a_peer_that_is_not_loopback_is_refused_without_the_owner_at_the_bench"
+)
+
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
 rc=0
@@ -37,13 +46,39 @@ bad() {
     rc=1
 }
 
-# 1. Every guard reader and every device writer is a listed tool.
+# 1. Every guard reader and every device writer is a listed tool or a listed reader. (xargs
+#    runs the grep program itself: `command` is a shell builtin xargs cannot run, and until goal
+#    14 this search was handed to it, failed unseen and found nothing.)
 listed=" ${tools[*]} "
+read_only=" "
+for r in "${readers[@]}"; do
+    read_only+="${r%%|*} "
+done
+writers="$(git ls-files -z | xargs -0 grep -l -I -E "\\besptool|\\bespefuse|idf\\.py[^#]*\\bflash\\b" -- 2> /dev/null || true)"
+found=0
 while IFS= read -r f; do
-    [[ "$listed" == *" $f "* ]] || bad "$f reads the owner-at-bench guard or calls a flashing program but is not a flashing tool this test runs"
-done < <(git ls-files -z | xargs -0 command grep -l -I -E "\\\$\\{$name:-\\}|env::var\\(\"$name\"\\)|getenv\\(\"$name\"\\)|\\besptool|\\bespefuse|idf\\.py[^#]*\\bflash\\b" -- 2> /dev/null |
-    command grep -v -E '^(docs/|\.claude/goals/|tools/conventions/fixtures/|tools/conventions/check-flash-tools-refuse\.sh$|tools/conventions/check-flash-guard\.sh$)' |
+    found=$((found + 1))
+    [[ "$listed" == *" $f "* ]] && continue
+    if [[ "$read_only" == *" $f "* ]] && ! printf '%s\n' "$writers" | command grep -q -x -F "$f"; then
+        continue
+    fi
+    bad "$f reads the owner-at-bench guard or calls a flashing program but is not a flashing tool this test runs nor a listed guard reader"
+done < <(git ls-files -z | xargs -0 grep -l -I -E "\\\$\\{$name:-\\}|env::var\\(\"$name\"\\)|getenv\\(\"$name\"\\)|\\besptool|\\bespefuse|idf\\.py[^#]*\\bflash\\b" -- 2> /dev/null |
+    command grep -v -E '^(docs/|\.claude/goals/|tools/conventions/fixtures/|tools/conventions/check-flash-tools-refuse\.sh$|tools/conventions/check-flash-guard\.sh$|firmware/check/endpoint_scan\.c$)' |
     command grep -v -E '\.md$')
+# (firmware/check/endpoint_scan.c is the endpoint safety scanner: it names the eFuse tool in the
+# list of names it refuses in the endpoint tree, as these checks name the variable.)
+# The search itself is checked: the one listed tool reads the guard, so finding nothing means
+# the search did not run.
+[ "$found" -ge "${#tools[@]}" ] || bad "the search for guard readers found $found file(s), fewer than the ${#tools[@]} listed tool(s): it did not run"
+for r in "${readers[@]}"; do
+    f="${r%%|*}"
+    t="${r#*|}"
+    [ -f "$f" ] || bad "$f is listed as a guard reader but is not a file"
+    command grep -q -E "fn $t\(\)" "$f" 2> /dev/null || bad "$f is listed as a guard reader but holds no test named $t"
+    command grep -q -E "env::var\\(\"$name\"\\)" "$f" 2> /dev/null || bad "$f is listed as a guard reader but does not read the guard"
+    echo "$f: a guard reader; its refusal is graded by $t (cargo test, make gate's test step)"
+done
 for t in "${tools[@]}"; do
     [ -x "$t" ] || bad "$t is listed as a flashing tool but is not an executable file"
 done

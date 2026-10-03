@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"speaker","detail":"already-running: speaker 'chorus-0123456789ab' already runs version 1.0.0; add \"force\": true to install it again"}

@@ -306,7 +306,14 @@ run time) is why `check-flash-tools-refuse.sh` runs every flashing tool: every t
 reads the guard or calls esptool, espefuse or `idf.py flash` must be on its list, and each is run
 against a complete fixture image and port with shims for those programs, with the variable unset,
 empty, `0`, `true`, `yes`, ` 1`, `1 ` and `01`; each must exit non-zero naming the owner-at-bench
-variable with no shim called. The guarded tool is `tools/firmware-flash.sh` (ADR 0062).
+variable with no shim called. The guarded tool is `tools/firmware-flash.sh` (ADR 0062). A
+program that is not a shell tool can be a listed **guard reader** instead (goal 14: the server's
+firmware sender, `crates/server/src/firmware.rs`, which refuses a transfer to a peer that is not
+loopback as `owner-not-at-bench`): it names the test in it that grades the refusal without the
+variable, the check holds the file to holding that test and reading the guard, and `make gate`'s
+test step runs it. A reader that calls a flashing program is not a reader; it must be a listed
+tool. The search for readers and writers is itself checked to have found the listed tool (until
+goal 14 it was handed to a shell builtin through `xargs` and found nothing).
 
 ## 21. Commits
 

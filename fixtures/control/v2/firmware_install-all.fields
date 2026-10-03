@@ -1,0 +1,13 @@
+# Canonical input for the catalog v2 firmware_install-all vector.
+#
+# Encoding these field values must produce exactly firmware_install-all.json, and decoding
+# firmware_install-all.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# Goal 14: install on every present speaker of the image's board that does not
+# run its version. No `speaker` line here: an absent line is the wire's "all": true.
+
+message_type = firmware_install
+image = brick-2-0-0

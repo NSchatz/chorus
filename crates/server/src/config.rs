@@ -113,6 +113,11 @@ pub struct ServerConfig {
     /// `state_file`; with neither, the server refuses to start unless
     /// `ephemeral_identity` is set.
     pub identity_dir: Option<String>,
+    /// (goal 14) Where firmware images are staged (`<name>.bin` and
+    /// `<name>.manifest`; `crate::firmware`). `None`: nothing is staged and
+    /// nothing can be installed. Needs the control plane, whose
+    /// `firmware_install` is the only thing that starts a transfer.
+    pub firmware_dir: Option<String>,
     /// The id this server presents in the protocol v2 handshake.
     pub server_id: String,
     /// Use a key made for this process alone and keep adoptions in memory:
@@ -203,6 +208,7 @@ impl Default for ServerConfig {
             advertise: false,
             instance: "chorus".to_string(),
             identity_dir: None,
+            firmware_dir: None,
             server_id: crate::session::DEFAULT_SERVER_ID.to_string(),
             ephemeral_identity: false,
             slots: 0,
@@ -251,6 +257,8 @@ pub enum ServerConfigError {
     NoControlWorkersAllowed,
     /// Stream slots without the room model that routes them.
     SlotsNeedTheControlPlane,
+    /// (goal 14) A firmware directory with no control plane to install from.
+    FirmwareNeedsTheControlPlane,
     /// Stream slots and the legacy one-process-per-group shape together.
     SlotsWithGroupAudio,
     /// More stream slots than this server serves.
@@ -345,6 +353,12 @@ impl fmt::Display for ServerConfigError {
                 f,
                 "--slots needs --control-listen: the room model is what routes each session to \
                  its group's stream, and a server with no control plane has none"
+            ),
+            ServerConfigError::FirmwareNeedsTheControlPlane => write!(
+                f,
+                "--firmware-dir needs --control-listen: an image is installed only by the \
+                 control plane's firmware_install command, and a server with no control plane \
+                 has no way to say it"
             ),
             ServerConfigError::SlotsWithGroupAudio => write!(
                 f,
@@ -468,6 +482,7 @@ impl ServerConfig {
                 "--control-workers" => config.control_workers = number(&arg, &value()?)? as usize,
                 "--state-file" => config.state_file = Some(value()?),
                 "--identity-dir" => config.identity_dir = Some(value()?),
+                "--firmware-dir" => config.firmware_dir = Some(value()?),
                 "--server-id" => config.server_id = value()?,
                 "--ephemeral-identity" => config.ephemeral_identity = true,
                 // `--zone <id>` or `--zone <id>=<transport>`. One declaration
@@ -602,6 +617,9 @@ impl ServerConfig {
         }
         if config.slots > 0 && config.control_listen.is_none() {
             return Err(ServerConfigError::SlotsNeedTheControlPlane);
+        }
+        if config.firmware_dir.is_some() && config.control_listen.is_none() {
+            return Err(ServerConfigError::FirmwareNeedsTheControlPlane);
         }
         if config.slots > 0 && !config.group_audio.is_empty() {
             return Err(ServerConfigError::SlotsWithGroupAudio);
@@ -891,6 +909,19 @@ mod tests {
             ServerConfig::from_args(args(&["--slots", "2"])).unwrap_err(),
             ServerConfigError::SlotsNeedTheControlPlane
         );
+        assert_eq!(
+            ServerConfig::from_args(args(&["--firmware-dir", "/srv/firmware"])).unwrap_err(),
+            ServerConfigError::FirmwareNeedsTheControlPlane
+        );
+        let c = ServerConfig::from_args(args(&[
+            "--firmware-dir",
+            "/srv/firmware",
+            "--control-listen",
+            "127.0.0.1:0",
+        ]))
+        .unwrap();
+        assert_eq!(c.firmware_dir.as_deref(), Some("/srv/firmware"));
+        assert_eq!(ServerConfig::default().firmware_dir, None);
         assert_eq!(
             ServerConfig::from_args(args(&[
                 "--slots",

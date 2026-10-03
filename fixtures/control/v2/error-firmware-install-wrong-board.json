@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"speaker","detail":"wrong-board: speaker 'chorus-0123456789ab' is board 'brick-s3-wired' and image 'compact-2-0-0' was built for board 'compact-s3-wifi'"}

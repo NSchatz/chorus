@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"all","detail":"nothing-to-install: no present speaker of board 'brick-s3-wired' takes image 'brick-1-0-0' (each is absent, busy, of another board, or runs version 1.0.0)"}
