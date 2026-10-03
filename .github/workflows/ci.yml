@@ -1,33 +1,41 @@
 ---
 name: ci
 
-# The gate is `make gate` (tools/gate.sh): this job installs what the gate
-# needs on a fresh runner and calls it, nothing more, so CI and a local run
-# cannot drift apart. It is an informational signal: the merge rule is the
-# local gate run pasted in the pull request
-# (docs/decisions/0002-repository-layout-and-ci.md, R12).
+# This job IS the merge gate (the owner, 2026-10-03: "Holdfast and chorus
+# NEED to use the public CI and nothing local";
+# docs/decisions/0000-ci-is-the-gate.md).
+# It installs what `make gate` (tools/gate.sh) needs on a fresh runner and
+# calls it, nothing more, so the gate has one definition. No tier runs on the
+# development host: a pull request merges when this check is green on its
+# branch with main merged in, and main is gated again on every push and
+# nightly. The repository is public, so its runs cost no minutes.
 #
-# Started by hand only. GitHub Actions does not start jobs on this account
-# (its minutes are spent: on 2026-10-01 this workflow ran 246 times, 1,995
-# minutes, on every push AND every pull_request event, and every run went red
-# on the runner-only failures), so the local gate is the merge gate and a run
-# on every push buys nothing. If the triggers come back, take `pull_request`
-# plus `push` to main only; the concurrency group below is the branch's name
-# for both events, so a push and its pull request share one group and never
-# run twice.
+# Triggers: `pull_request`, `push` to main only, a nightly run on main (the
+# full tier the supervisor used to run on the host) and by hand. A push to a
+# pull request's branch starts only the `pull_request` run, and the
+# concurrency group is the branch's name, so a branch never runs twice; the
+# nightly run has a group of its own so a merge never cancels it.
 on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '41 7 * * *'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.head_ref || github.ref_name }}
+  group: >-
+    ci-${{ github.event_name == 'schedule' && 'nightly'
+    || github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
   gate:
     name: make gate
+    timeout-minutes: 120
     runs-on: ubuntu-24.04
     env:
       CARGO_BUILD_JOBS: "2"
@@ -89,8 +97,37 @@ jobs:
           export CHORUS_QEMU_LIBS="$HOME/chorus-qemu-libs"
           bash tools/qemu-env.sh install
 
-      # The identity step needs the private term list, which never exists on
-      # a runner: with CI=true (set by GitHub) it prints SKIPPED and the
-      # reason; everywhere else its absence fails the gate.
+      # The identity step's private term list comes from the repository
+      # secret CHORUS_IDENTITY_TERMS_LIST, written to the runner's temp
+      # directory and never into the workspace. Each term is masked before
+      # anything else runs, and check-identity.sh prints where a term is,
+      # never what. A fork's pull request gets no secrets, so there (and only
+      # there) the identity step prints SKIPPED; on this repository's own
+      # events an empty secret fails the job rather than skipping the check.
+      - name: Identity term list
+        env:
+          TERMS: ${{ secrets.CHORUS_IDENTITY_TERMS_LIST }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$TERMS" ]; then
+            if [ -n "$HEAD_REPO" ] && [ "$HEAD_REPO" != "$THIS_REPO" ]; then
+              echo "a fork's pull request has no secrets:" \
+                "the identity step prints SKIPPED"
+              exit 0
+            fi
+            echo "::error::the CHORUS_IDENTITY_TERMS_LIST secret is empty;" \
+              "the identity scan cannot run"
+            exit 1
+          fi
+          f="$RUNNER_TEMP/identity-terms.txt"
+          printf '%s\n' "$TERMS" > "$f"
+          while IFS= read -r t; do
+            if [ -n "$t" ]; then echo "::add-mask::$t"; fi
+          done < "$f"
+          echo "CHORUS_IDENTITY_TERMS=$f" >> "$GITHUB_ENV"
+          n="$(grep -c . "$f")"
+          echo "identity term list: $n term(s) from the repository secret"
+
       - name: make gate
         run: make gate
