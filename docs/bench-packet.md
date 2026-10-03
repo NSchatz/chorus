@@ -876,6 +876,53 @@ What changes: `docs/telemetry.md`'s table of what the firmware fills is confirme
 the ASSUMED heap floor and Wi-Fi level of the homelab's `chorus` alert rules get measured
 replacements; a report under `docs/measurements/` (Source: hardware) records the four scrapes.
 
+### S12. A real control point casts to a room and a group (goal 16; after S1, or S7.1 for a board)
+
+Needs: a chorus server on the house network started with `--upnp` (`docs/upnp.md`, "Turning it
+on"; a build from a commit that has ADR 0125), at least two rooms that play (the endpoints of S1
+or S7), a phone or computer on the same network with a UPnP AV control point application of the
+owner's choice, and a few music files the application can serve (FLAC or MP3; an album whose
+tracks run into each other for S12.3). `curl` on the bench machine. No bought part.
+
+This is goal 16's hardware step. The renderers are graded in the gate by a scripted control
+point over loopback (`crates/server/tests/upnp_control_point.rs`): no control point application
+has been run against them, no discovery datagram of that test crosses a multicast group, and the
+join is compared in samples, never heard. What is not known: whether the applications people
+use find the renderers, like their descriptions and play through them.
+
+```
+ss -lun | grep ':1900 '
+curl -s http://<server>:<control port>/api/state
+```
+
+**S12.1 Is the discovery port free.** On the host that will run the server, before starting it:
+the `ss` line above. Expected: nothing. A line means another program already answers discovery
+there; note which, and start the server as `docs/upnp.md`, "A host that already runs an SSDP
+program", says.
+
+**S12.2 Discovery and one track.** Open the control point application. Expected: one renderer
+per room, per saved group and per live group, each under its room's or group's name. Play one track to one room. Expected: sound in that room; the
+`curl` line shows that room's `now_playing` with the track's title and artist and `"via":"upnp"`.
+
+**S12.3 Gapless.** Play the album to the room and listen at two track changes. Expected: no
+silence and no click at a change (applications differ: some send the next track ahead, which is
+what makes the join gapless; one that does not is worth naming in the answer).
+
+**S12.4 A group takes its rooms.** While room A plays something else, play a track to a saved
+group that holds A and B. Expected: both rooms play the group's track together (K78).
+
+**S12.5 The volume limit.** Set a limit on room A (`chorusctl volume limit <room> <limit>`), then
+raise the volume to full from the control point application. Expected: the room stays at the
+limit and the application's slider shows the limited value after a moment.
+
+Paste into the Needs item: the application's name and version, the `ss` output, what S12.2 to
+S12.5 showed, and the server's log lines starting `chorus-server: upnp` (delete any LAN address,
+K27).
+
+What changes: `docs/upnp.md` gains a list of control points tried and what each did; an
+application that fails to find or play becomes a fix in the goal that reads the answer; the
+port answer decides whether the homelab deploy needs `--upnp-ssdp-port`.
+
 ## 4. Order and what each session unblocks
 
 S0 first; S1 needs one Pi; S2 needs both and the interface; S3 needs S2's rig trusted; S4 after
@@ -887,7 +934,8 @@ follows S5 on a board whose amplifier bring-up reaches Play, flashed with the co
 profile; it needs a phone and the house's 2.4 GHz network and no chorus server, and it unblocks
 WIFI-7's characterization run (section 6). S10 follows S5 (and S7.1, so the board is known to
 play) on the wired profile with a chorus server on the audio network. S11 follows S10 on the
-same board and server (its Wi-Fi half follows S9). None
+same board and server (its Wi-Fi half follows S9). S12 needs only a server with `--upnp` and two
+rooms that play (S1 or S7.1) and a phone. None
 of these blocks a chorus
 goal (K7): each goal that can use a result re-checks for its pull request.
 
