@@ -46,3 +46,29 @@ todo = "warn"
 # shared host. chorus's own crates stay at the debug level.
 [profile.dev.package."*"]
 opt-level = 2
+
+# Debug and test builds carry line tables, not full debug info (docs/decisions/0000-a-faster-gate-with-the-same-checks.md).
+# A panic, a backtrace and a debugger's breakpoint still name the file and line; what goes is
+# variable and type information, which nothing in the gate reads. Full debug info made about
+# 85% of every test executable (a chorus-server test binary is 50 to 57 MB), and the gate builds
+# about 140 of them. The code itself does not change: debug info is not an optimisation input.
+[profile.dev]
+debug = "line-tables-only"
+
+# `cargo test` and nextest build with the test profile, which inherits dev; named so the setting
+# is not lost if the test profile is ever given settings of its own.
+[profile.test]
+debug = "line-tables-only"
+
+# The proc-macro toolchain runs only at compile time, to expand curve25519-dalek's derive macro
+# (curve25519-dalek-derive), and the `"*"` rule above would optimise it like a runtime
+# dependency. Unoptimised, it builds several times faster and expands the same code: what a
+# macro emits does not depend on the macro's own optimisation level.
+[profile.dev.package.syn]
+opt-level = 0
+
+[profile.dev.package.proc-macro2]
+opt-level = 0
+
+[profile.dev.package.quote]
+opt-level = 0
