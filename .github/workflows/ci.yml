@@ -1,20 +1,28 @@
 ---
 name: ci
 
-# The gate is `make gate` (tools/gate.sh): this job installs what the gate needs
-# on a fresh runner and calls it, nothing more, so CI and a local run cannot
-# drift apart. It is an informational signal: GitHub Actions jobs do not start
-# on this private repository, and the merge rule is the local gate run pasted in
-# the pull request (docs/decisions/0002-repository-layout-and-ci.md, R12).
+# The gate is `make gate` (tools/gate.sh): this job installs what the gate
+# needs on a fresh runner and calls it, nothing more, so CI and a local run
+# cannot drift apart. It is an informational signal: the merge rule is the
+# local gate run pasted in the pull request
+# (docs/decisions/0002-repository-layout-and-ci.md, R12).
+#
+# Started by hand only. GitHub Actions does not start jobs on this account
+# (its minutes are spent: on 2026-10-01 this workflow ran 246 times, 1,995
+# minutes, on every push AND every pull_request event, and every run went red
+# on the runner-only failures), so the local gate is the merge gate and a run
+# on every push buys nothing. If the triggers come back, take `pull_request`
+# plus `push` to main only; the concurrency group below is the branch's name
+# for both events, so a push and its pull request share one group and never
+# run twice.
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
