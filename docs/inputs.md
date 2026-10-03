@@ -165,7 +165,10 @@ chorusctl inputs label kitchen-amp/line-1 streamer "Kitchen streamer"
   `--upnp` off and on, each fallback reason, the endless stream stopped by the alarm's stop.
 - `crates/server/tests/line_in_sharing.rs`: the real binary, sharing, the latency through a
   share and a leave, an alarm on a shared input, the streamer.
+- `crates/server/tests/tv_low_latency.rs`: a TV input a second group plays leaves low-latency
+  mode and returns to it, on the real binary and the real client code.
 - `crates/server/tests/schedule_runtime.rs`: the runtime's rules on modelled time, the Spotify
   seam included.
 - `crates/control/tests/catalog_v2.rs` and `fixtures/control/v2/`: the commands, their
-  refusals and the state, byte for byte.
+  refusals and the state, byte for byte; `crates/control/tests/inputs_v2.rs`: the room model's
+  rules and state-file format 6.

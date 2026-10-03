@@ -8,8 +8,9 @@
   `crates/server/src/schedule_runtime.rs`, `conductor.rs`, `playersessions.rs`, `linein.rs`,
   `main.rs`, `upnp.rs` (three small edits: the sessions are handed in, not made there);
   `crates/ctl/src/grammar.rs`, `parse.rs`, `render.rs`; `fixtures/control/v2/` (thirteen new
-  vectors); `crates/server/tests/alarm_stored_sources.rs`, `line_in_sharing.rs`,
-  `common/line_in.rs`, `schedule_runtime.rs`, `chorusctl.rs`; `.config/nextest.toml`;
+  vectors); `crates/control/tests/inputs_v2.rs`;
+  `crates/server/tests/alarm_stored_sources.rs`, `line_in_sharing.rs`, `common/line_in.rs`,
+  `schedule_runtime.rs`, `tv_low_latency.rs`, `chorusctl.rs`; `.config/nextest.toml`;
   `docs/inputs.md`, `docs/control-plane.md`, `docs/chorusctl.md`
 - Builds on: ADR 0066 (the source role), ADR 0071 (latency growth), ADR 0075 (catalog v2),
   ADR 0076 and 0079 (the schedule runtime and its wiring), ADR 0119 (player sources and
@@ -185,7 +186,8 @@ says `tv-path mode=slot reason=shared` when more than one group plays the input,
 ends its play, the hub goes back to its upstream, every group hears the slot path in sync at
 the shared latency, and the TV's room loses lip sync for as long as it is shared. When one
 group is left the TV's room returns to low-latency mode by itself. `docs/inputs.md` says the
-price in a person's words. Not chosen: a hub that sends both (a wire and firmware change, and
+price in a person's words, and `tv_low_latency.rs` holds it on the real binary and the real
+client code (`a_tv_input_a_second_group_plays_leaves_low_latency_mode_until_it_is_alone_again`). Not chosen: a hub that sends both (a wire and firmware change, and
 two encodes on the hub); a follow-up if a house wants TV sound elsewhere with lip sync kept.
 
 ### 6. An endpoint that refuses a start sends no wire message (ADR 0066's follow-up)
@@ -278,7 +280,10 @@ whatever the machine does; the fourth grades continuity through a share and a le
 the wall-clock group one at a time (about 14 s on that chain), and refuses by name a run in
 which its own scripted source woke more than 15 ms late, making it again at most three
 times (the analogue, for a source that must keep real time, of ADR 0020's retry past a busy
-worker). Nothing here is timing evidence.
+worker). The shared TV input test joins `tv_low_latency.rs`, which is in the wall-clock group
+already and runs its tests one at a time (about 4 s more on that chain). The catalog's and the
+runtime's own tests (`inputs_v2.rs`, ten; `schedule_runtime.rs`, seven more) are modelled and
+run in milliseconds. Nothing here is timing evidence.
 
 ## Follow-ups
 
