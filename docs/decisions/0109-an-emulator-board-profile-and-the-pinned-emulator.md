@@ -83,10 +83,29 @@ All read 2026-10-02.
 gate, built by `tools/firmware-image.sh`, and held to the same safety scans and image guard. Its
 model status is `confirmed`: the board is exactly the pinned emulator, so no owner's answer is
 waited on. Its own Kconfig fragment (`firmware/sdkconfig.qemu-s3-openeth`, the mechanism of ADR
-0103) sets two options and nothing else: the OpenCores controller on, and PSRAM off (the
-emulator is started without any, and nothing the endpoint runs lives in external RAM). The
-partition table, the flash size and everything the firmware update will add stay
-`sdkconfig.defaults`', so the layout the emulator boots is a speaker's.
+0103) sets what the emulator forces and nothing else; the partition table, the flash size and
+every option of the firmware update stay `sdkconfig.defaults`', so the layout the emulator
+boots is a speaker's (8 MB, two OTA slots, `otadata`, rollback on, anti-rollback off). What it
+sets, each found by booting:
+
+- `CONFIG_ETH_USE_OPENETH=y`, the emulator's controller.
+- PSRAM in quad mode (`CONFIG_SPIRAM_MODE_QUAD=y`, `board_octal_psram = no`) where a speaker's
+  is octal. The endpoint needs PSRAM: the configuration reader takes one 128 KiB block and the
+  largest internal block is about 90 KiB; on a speaker `malloc()` puts that block in PSRAM (the
+  generated sdkconfig has `CONFIG_SPIRAM_USE_MALLOC=y`). Without PSRAM the image stopped with
+  "no memory to read firmware/config/endpoint.conf and the embedded board profile". With the
+  octal part emulated (`-global driver=ssi_psram,property=is_octal,value=true`, the option
+  ESP-IDF's launcher uses) the pinned emulator itself died, `Segmentation fault`, right after
+  the bootloader's `Loaded app from partition at offset 0x20000`, at `-m 8M` and `-m 32M`; the
+  octal image on the default (quad) part looped on "PSRAM chip is not connected, or wrong PSRAM
+  line mode". So this board's PSRAM is quad, 8 MB (`-m 8M`): with ESP-IDF's launcher's 32 MB
+  the application had no virtual address range left to map a partition
+  (`esp_mmu_map_virt(522): no such vaddr range`, NVS refused, then an assert).
+- `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0` and `CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536`.
+  The session task's 32 KiB stack is internal RAM in one piece. With the defaults the board
+  had 86715 bytes of internal RAM free when `app_main` made the task, the largest block 31744
+  bytes, and refused "the session task could not be started"; with the two options it had a
+  45056-byte block and the session ran.
 
 **2. A third transport, `emulated`.** `link_transport` takes `wired`, `wireless` or `emulated`.
 `chorus_link_bring_up` runs the same three calls for it as for a wired link (init, start, wait
@@ -157,7 +176,35 @@ and key.
 
 Source: simulation. Nothing below is timing evidence, and nothing below says a board works.
 
-EVIDENCE_PLACEHOLDER
+`make qemu-boot` at the branch's head after merging main (the OTA layout of ADR 0108 and the
+server of ADR 0106 included), 2026-10-03, its tail:
+
+```
+pass boot-1-the-link-came-up-with-an-address: link=emulated phy=openeth status=up
+pass boot-1-the-board-reached-the-server: emulated link: the server is the gateway, session event=link-up on the console
+pass boot-1-the-board-made-an-identity-and-kept-it: identity id=chorus-<id> key=<fp> id_made_this_boot=1 key_made_this_boot=1
+pass boot-1-the-server-adopted-it-under-that-id-and-key: id=chorus-<id> key=<fp> verdict=adopted
+pass boot-1-the-servers-state-lists-the-speaker-present: /api/state speakers: chorus-<id> present <fp>
+pass the-server-saw-the-speaker-leave: /api/state speakers: chorus-<id> absent <fp>
+pass boot-2-the-board-read-the-same-identity-back: identity id=chorus-<id> key=<fp> id_made_this_boot=0 key_made_this_boot=0
+pass boot-2-the-server-knows-it: id=chorus-<id> key=<fp> verdict=known
+pass no-key-change-was-ever-seen: neither the server's log nor the board's console names a changed key
+pass the-efuse-file-is-byte-identical: sha256 before 2054600a...ac09c8, after 2054600a...ac09c8
+qemu-boot: adopted, identity kept across a reboot: PASS
+```
+
+The image guard passed on the emulated image as on the other two ("neither the app nor the
+bootloader links an eFuse writer"). The id and key above are the emulator's, made from its
+random source in that run; they name no board. `chorus-<id>` stands for the id the board made (`chorus-` and 12 hex digits) and `<fp>` for the key's fingerprint, the same
+in every line (written out, the repository's secret scan reads it as a key).
+
+**A finding about the speakers, not shown and not ruled out.** A speaker's image has the same
+static RAM as this one (about 200 KiB of `.bss`) and allocates more internal RAM before the
+session task (the 73 KB sound chain, the jitter buffer, two more task stacks), with the default
+32 KiB internal pool. The emulated board, with less allocated, could not find a 32 KiB block
+for the session's stack until its pool was enlarged. Whether a speaker can is the bench's
+question; `app_main`'s refusal now says how much internal RAM was free and the largest block, so
+the bench's log answers it.
 
 ## Licences
 
@@ -191,6 +238,9 @@ libraries are loaded by it.
 
 - The emulated PHY's address 1 and its 100 ms autonegotiation wait: the values the spike ran
   with; not from a datasheet (there is no part).
+- The emulated PSRAM's 8 MB (`-m 8M`): the reference board's part, as ASSUMED as the board.
+- The 64 KiB internal pool and `ALWAYSINTERNAL=0`: the smallest change found that let the
+  session task start in the emulator; not a speaker's setting.
 - `BOOT_SECONDS` 120 and `WAIT_SECONDS` 60 in `tools/qemu-boot-run.sh`: bounds on a run, not
   measurements.
 - The board's flash size (8 MB, `board_flash_size_mb`) stays ASSUMED for the speakers; the
@@ -216,8 +266,7 @@ libraries are loaded by it.
   and is the precedent `tools/lib.sh` already has for ALSA.
 - **`idf.py qemu`.** It wraps the same command line, creates the flash file with the flashing
   program, and attaches a monitor; the run needs neither.
-- **Emulating the octal PSRAM.** Possible behind another machine option, and nothing the
-  endpoint runs would use it.
+- **Emulating the octal PSRAM.** Tried: the pinned emulator crashed (Decision 1).
 - **Skipping the amplifier by transport alone.** A key says what is skipped where a reader of
   the profile looks, and the validation ties the two together.
 
