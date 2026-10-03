@@ -121,7 +121,7 @@ of audio:
 
 ## Result: K independent streams through the whole server
 
-**Opus and ALAC through the whole server are not in this table yet**: their run was still waiting for the heavy locks when this draft was committed; their decoders alone are above, and the rows are added in the second half from the same build.
+**Opus and ALAC through the whole server are not in this table yet**: their run waited 30 minutes for the heavy locks on 2026-10-03 and was not granted them; their decoders alone are above, and the rows are added in the second half from the same build.
 
 Sixteen rooms, sixteen connected endpoints, K streams. Every table is one row per format (one
 server per format) and one column per K.
