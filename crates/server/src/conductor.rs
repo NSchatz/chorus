@@ -262,8 +262,12 @@ pub struct Conductor {
     slots: Option<SyncSender<SlotCommand>>,
     /// What each slot was last told to play.
     inputs: Vec<SlotInput>,
-    /// The latency each slot's line-in was last told to grow to.
+    /// The latency each line-in port was last told to grow to.
     targets: Vec<Option<i64>>,
+    /// (goal 17) The groups last said to listen to each line-in port, for
+    /// the log: a listener joining or leaving is one line even when the
+    /// target does not move.
+    listeners: Vec<String>,
     schedule: Option<Schedule>,
     /// Each room's declared tier, for the visualizer's heard latency.
     transports: ZoneTransports,
@@ -301,12 +305,14 @@ impl Conductor {
     ) -> Conductor {
         let inputs = vec![SlotInput::Silence; router.slots()];
         let targets = vec![None; router.slots()];
+        let listeners = vec![String::new(); router.slots()];
         Conductor {
             state,
             router,
             slots,
             inputs,
             targets,
+            listeners,
             schedule: None,
             transports: ZoneTransports::default(),
             tv_relay: None,
@@ -974,29 +980,37 @@ impl Conductor {
                 .map(|g| self.latency_for(snapshot, &g.rooms, &g.source, sole))
                 .max()
                 .unwrap_or(LOCAL_LATENCY_NS);
-            if self.targets.get(port).copied().flatten() == Some(latency_ns) {
-                continue;
-            }
-            match slots.try_send(SlotCommand::LatencyTarget { port, latency_ns }) {
-                Ok(()) => {
-                    println!(
-                        "chorus-server: line-in latency port={} listeners={} groups={} \
-                         target_ms={}",
-                        port,
-                        groups.len(),
-                        groups
-                            .iter()
-                            .map(|g| g.group.as_str())
-                            .collect::<Vec<_>>()
-                            .join(","),
-                        latency_ns / 1_000_000
-                    );
-                    if let Some(t) = self.targets.get_mut(port) {
-                        *t = Some(latency_ns);
+            let names = groups
+                .iter()
+                .map(|g| g.group.as_str())
+                .collect::<Vec<_>>()
+                .join(",");
+            let moved = self.targets.get(port).copied().flatten() != Some(latency_ns);
+            if moved {
+                match slots.try_send(SlotCommand::LatencyTarget { port, latency_ns }) {
+                    Ok(()) => {
+                        if let Some(t) = self.targets.get_mut(port) {
+                            *t = Some(latency_ns);
+                        }
                     }
+                    Err(TrySendError::Full(_)) => {
+                        report.owed += 1;
+                        continue;
+                    }
+                    Err(TrySendError::Disconnected(_)) => continue,
                 }
-                Err(TrySendError::Full(_)) => report.owed += 1,
-                Err(TrySendError::Disconnected(_)) => {}
+            }
+            if moved || self.listeners.get(port) != Some(&names) {
+                println!(
+                    "chorus-server: line-in latency port={} listeners={} groups={} target_ms={}",
+                    port,
+                    groups.len(),
+                    names,
+                    latency_ns / 1_000_000
+                );
+                if let Some(l) = self.listeners.get_mut(port) {
+                    *l = names;
+                }
             }
         }
     }
