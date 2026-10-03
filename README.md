@@ -133,6 +133,10 @@ endpoint back to playing after a server restart with nobody doing anything.
   here for the same reason `crates/protocol` is (`docs/decisions/0016`).
   `docs/control-plane.md` is the contract and `fixtures/control/` pins its
   bytes.
+- `crates/ctl` - `chorusctl`, the command line over that control API: rooms,
+  groups, volume, inputs, endpoints and updates, with `--json` and documented
+  exit codes. It sends the catalog's own bytes (held to `fixtures/control/`)
+  and depends on `crates/control` alone. `docs/chorusctl.md` is its page.
 - `crates/discovery` - multicast DNS and DNS-SD, enough of both for a server to
   say where it is and an endpoint to hear it, with `fixtures/discovery/` pinning
   the query and response packets so a second implementation is graded against
