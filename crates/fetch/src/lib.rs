@@ -21,7 +21,7 @@
 //! (TLS certificate validity is checked by rustls against the system time;
 //! see [`tls`](mod@crate::tls).)
 //!
-//! The decision record is `docs/decisions/0000-the-media-fetcher.md`; the
+//! The decision record is `docs/decisions/0120-the-media-fetcher.md`; the
 //! owner's page is `docs/streams.md`.
 
 #![forbid(unsafe_code)]

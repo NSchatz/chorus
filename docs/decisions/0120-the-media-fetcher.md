@@ -1,4 +1,4 @@
-# 0000: media is fetched by a hand-written blocking HTTP/1.1 client under a resolved-address policy, with TLS from rustls and ring over the system's root bundle, ICY metadata taken out of the audio, and HLS only as packed MP3 with every other kind refused by name
+# 0120: media is fetched by a hand-written blocking HTTP/1.1 client under a resolved-address policy, with TLS from rustls and ring over the system's root bundle, ICY metadata taken out of the audio, and HLS only as packed MP3 with every other kind refused by name
 
 - Status: proposed (goal 16, 2026-10-03)
 - Decided by: the goal (program section 20) inside the coordinator's goal-16 design envelope

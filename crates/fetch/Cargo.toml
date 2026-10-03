@@ -8,7 +8,7 @@ publish.workspace = true
 license.workspace = true
 
 [dependencies]
-# TLS for https URLs (docs/decisions/0000-the-media-fetcher.md). rustls 0.23.45, released
+# TLS for https URLs (docs/decisions/0120-the-media-fetcher.md). rustls 0.23.45, released
 # 2026-09-14, "Apache-2.0 OR ISC OR MIT" (https://crates.io/crates/rustls/0.23.45, read
 # 2026-10-03). The ring provider only: no aws-lc-rs, no logging, no process-default provider.
 rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
@@ -17,7 +17,7 @@ rustls = { version = "=0.23.45", default-features = false, features = ["ring", "
 # The tests sign their own throwaway CA and server certificates at run time, so no key is
 # committed. ring 0.17.14, "Apache-2.0 AND ISC" (https://crates.io/crates/ring/0.17.14, read
 # 2026-10-03): the version rustls's ring provider already locks, named here only so the
-# tests can call its Ed25519 signer (docs/decisions/0000-the-media-fetcher.md).
+# tests can call its Ed25519 signer (docs/decisions/0120-the-media-fetcher.md).
 ring = "=0.17.14"
 
 [lints]

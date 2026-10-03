@@ -3,7 +3,7 @@
 chorus fetches media by URL when something hands it one: the UPnP renderer of goal 16
 first, stored alarm streams later. This page says which URLs play, which are
 refused, and the exact words of each refusal. The decision record is
-`docs/decisions/0000-the-media-fetcher.md`; the code is `crates/fetch`.
+`docs/decisions/0120-the-media-fetcher.md`; the code is `crates/fetch`.
 
 ## What plays
 
