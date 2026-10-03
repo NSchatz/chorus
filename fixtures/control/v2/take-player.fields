@@ -1,0 +1,15 @@
+# Canonical input for the catalog v2 take-player vector.
+#
+# Encoding these field values must produce exactly take-player.json, and decoding
+# take-player.json must recover exactly these field values.
+#
+# Take a room and play one of the server's network media players in it (goal
+# 16). The catalog checks the spelling; whether the server has a player `p0`
+# is the server's to say.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = take
+target = kitchen
+source = player:p0

@@ -915,6 +915,9 @@ impl Runtime {
             }
             Source::Stream => (Source::Stream, None),
             Source::None => (fallback, Some("source-none")),
+            // (goal 16) What a player plays is its control point's to say;
+            // an alarm has no media to hand it, so it rings the bell.
+            Source::Player(_) => (fallback, Some("player-source")),
         }
     }
 

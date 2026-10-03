@@ -1,1 +1,1 @@
-{"v":2,"t":"error","field":"source","detail":"'radio' is not a source: the catalog declares 'stream', 'none', 'chime:<name>' or 'line-in:<endpoint>/<input>', each name an identifier"}
+{"v":2,"t":"error","field":"source","detail":"'radio' is not a source: the catalog declares 'stream', 'none', 'chime:<name>', 'line-in:<endpoint>/<input>' or 'player:<id>', each name an identifier"}
