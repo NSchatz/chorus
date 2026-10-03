@@ -33,6 +33,10 @@
 //!   not. The message names what failed. Refusing is the point: a server
 //!   that quietly did not advertise looks exactly like one whose
 //!   endpoints have not asked yet.
+//! - `10` this server was told to be UPnP AV media renderers (`--upnp`) and
+//!   could not open their sockets: the HTTP port or the SSDP port is held by
+//!   another program, or the multicast group could not be joined. The
+//!   message names which. Before any thread exists, like `8` and `9`.
 //!
 //! `--health-check <addr:port>` is a separate mode for container healthchecks
 //! (`chorus_server::health`): it starts nothing, probes a running server's
@@ -77,12 +81,17 @@
 //!   (`chorus_server::player`), each the one writer of its player port. They
 //!   exist from the start whether or not anything plays, because a thread
 //!   made when a stream starts would be a thread the report never saw.
+//!   Without the flag there is none;
+//! - with `--upnp` (goal 16, and it needs the control plane, `--slots` and
+//!   `--players`), the UPnP AV media renderers' `4 + W` threads
+//!   (`chorus_server::upnp`): `upnp-ssdp`, `upnp-acceptor`, `upnp-events`,
+//!   `upnp-manager` and one `upnp-worker-<i>` per `--upnp-workers` W.
 //!   Without the flag there is none.
 //!
 //! So the population is `3 + 2N` without the control plane and
 //! `6 + 2N + M` with it, plus one for the advertiser, one for the TV
 //! relay with `--slots`, one for the MQTT publisher with
-//! `--mqtt-broker` and P for `--players P`, and NOT ONE of those
+//! `--mqtt-broker`, P for `--players P` and `4 + W` for `--upnp`, and NOT ONE of those
 //! numbers is a function of how many endpoints or browsers are switched on,
 //! of how many streams are playing, nor of `--slots`: every stream slot is
 //! cut by the one audio thread (`chorus_server::slots`).
@@ -145,6 +154,7 @@ const EXIT_UNDECLARED_THREAD: u8 = 6;
 const EXIT_INCOMPLETE_INVENTORY: u8 = 7;
 const EXIT_CONTROL: u8 = 8;
 const EXIT_ADVERTISE: u8 = 9;
+const EXIT_UPNP: u8 = 10;
 
 /// Every status line carries the contract phrases, so a run that is missing
 /// part of the contract says so every time it says anything.
@@ -286,7 +296,27 @@ control plane:
   --players <n>                 network media players, 0-16 (default 0: none): n player
                                 threads and n player ports, made at start; a group plays one
                                 as the source player:p<i> (needs --slots of at least 1)
+  --media-allow-loopback        let the players fetch media from this machine's loopback
+                                (tests and development only, never a deployment; needs
+                                --players; the server's own ports stay refused)
   --advertise --instance <label>  advertise by multicast DNS
+
+upnp (goal 16; docs/upnp.md; off unless --upnp is given: every room, saved group and live
+group is a UPnP AV media renderer a control point can play to):
+  --upnp                        turn the renderers on (needs --control-listen, --slots and
+                                --players of at least 1 each, and a persisted identity:
+                                --identity-dir or --state-file, not --ephemeral-identity)
+  --upnp-listen <addr:port>     the renderers' one HTTP port: descriptions, control and
+                                eventing (default 0.0.0.0:4030; open it in the host firewall)
+  --upnp-workers <n>            HTTP worker threads, 1-16 (default 4)
+  --upnp-callback-subnet <cidr> where event callbacks may point (repeatable; default: the
+                                subnets this host is attached to). A callback on loopback is
+                                allowed only when --upnp-listen is itself a loopback address
+  --upnp-ssdp-port <port>       the UDP port of the discovery socket. 1900 is the standard;
+                                anything else is for tests, or for a host where another
+                                program holds 1900 (docs/upnp.md says what is lost then)
+  --upnp-ssdp-group <addr:port> where discovery notifications are sent. The standard is
+                                239.255.255.250:1900; anything else is for tests
 
 mqtt (goal 15; docs/mqtt.md; off unless --mqtt-broker is given; read-only: it publishes
 state and events, never subscribes, has no command topic and no Home Assistant discovery):
@@ -664,6 +694,13 @@ fn main() -> ExitCode {
         report_zone_tiers(&transports, &[], &config.zone_transports);
     }
 
+    // (goal 16) The control port as it was bound (a configured port 0 has a
+    // number by now): one of the server's own listeners for the players'
+    // fetch policy.
+    let control_port = control
+        .as_ref()
+        .map_or(0, |(plane, _)| port_of(plane.address()));
+
     // The multicast socket, opened before any thread too, and for the same
     // reason: a server told to advertise and unable to must say so rather than
     // start and be quietly undiscoverable.
@@ -706,6 +743,21 @@ fn main() -> ExitCode {
                 report("this server could not advertise itself", &e.to_string());
                 println!("chorus-server: stopped reason=advertise-refused chunks_sent=0 played=0");
                 return ExitCode::from(EXIT_ADVERTISE);
+            }
+        }
+    }
+
+    // (goal 16) The UPnP AV media renderers' sockets, bound before any thread
+    // too: a server told to be renderers and unable to listen says which
+    // port it could not have rather than starting without them.
+    let mut upnp_sockets = None;
+    if config.upnp.on {
+        match chorus_server::upnp::Sockets::bind(&config.upnp) {
+            Ok(sockets) => upnp_sockets = Some(sockets),
+            Err(e) => {
+                report("the UPnP AV media renderers could not start", &e);
+                println!("chorus-server: stopped reason=upnp-refused chunks_sent=0 played=0");
+                return ExitCode::from(EXIT_UPNP);
             }
         }
     }
@@ -969,6 +1021,10 @@ fn main() -> ExitCode {
             IdentitySource::Directory(dir) => dir.display().to_string(),
         }
     ));
+    // (goal 16) What the renderers' UDNs are derived from: the fingerprint
+    // of the persisted public key, which a restart keeps and no other server
+    // shares (`--upnp` refuses `--ephemeral-identity`, config.rs).
+    let upnp_identity = chorus_protocol::v2::noise::fingerprint(&identity.keypair.public);
 
     // One unit per client whose session is up goes down `arrivals`, which is
     // how the supervisor waits for somebody to play to without owning the
@@ -1281,22 +1337,56 @@ fn main() -> ExitCode {
     // waits otherwise. The fetch policy is built here, once, from this
     // server's own listeners (brief section 4.8): a media URL may never name
     // this machine's loopback or the ports this server listens on. A later
-    // listener (the renderer's HTTP port) is one more entry in the list,
-    // added before this call.
+    // The renderers' HTTP port, when there is one, is one more entry in the
+    // list. `--media-allow-loopback` (tests and development) lets a URL name
+    // loopback; the server's own ports stay refused either way.
     let media_policy = chorus_server::mediaplayer::fetch_policy(
         &[
             port_of(&config.listen),
-            config.control_listen.as_deref().map_or(0, port_of),
+            control_port,
+            upnp_sockets.as_ref().map_or(0, |s| s.http_port()),
         ],
-        false,
+        config.media_allow_loopback,
     );
+    if config.media_allow_loopback {
+        status.say(
+            "note media-allow-loopback: the players may fetch from this machine's loopback \
+             (tests and development only)",
+        );
+    }
     let (players, player_drivers) =
         chorus_server::mediaplayer::Players::new(player_ports.len(), media_policy);
-    // Nothing in this build sends a player an action yet: the renderer takes
-    // the registry (and the sessions over it, `playersessions`) from here.
-    let _players = Arc::new(players);
+    let players = Arc::new(players);
     let player_threads =
         chorus_server::player::spawn(&player_ports, player_drivers, &keep, &registry, &ready);
+
+    // (goal 16) The UPnP AV media renderers: `4 + W` more ordinary threads,
+    // only with `--upnp`, created here with the rest and counted below.
+    // `_upnp_farewell` is dropped when this function returns, however it
+    // returns: that stops them and gives the discovery thread a bounded
+    // moment to say byebye for every renderer.
+    let mut upnp_threads = 0usize;
+    let mut _upnp_farewell = None;
+    if let (Some(sockets), Some(state)) = (upnp_sockets.take(), control_state.as_ref()) {
+        if let Some(reports) = players.take_reports() {
+            let upnp = chorus_server::upnp::Upnp::new(
+                sockets,
+                &config.upnp,
+                upnp_identity,
+                Arc::clone(state),
+                Arc::clone(&players),
+                reports,
+                {
+                    let status = status.clone();
+                    Box::new(move |line: &str| status.say(line))
+                },
+            );
+            println!("chorus-server: {}", upnp.describe());
+            let (threads, farewell) = upnp.spawn(&keep, &registry, &ready);
+            upnp_threads = threads;
+            _upnp_farewell = Some(farewell);
+        }
+    }
 
     // The advertiser, which answers browses for as long as the run lasts.
     let mut advertiser_threads = 0usize;
@@ -1327,7 +1417,8 @@ fn main() -> ExitCode {
         + advertiser_threads
         + relay_threads
         + mqtt_threads
-        + player_threads;
+        + player_threads
+        + upnp_threads;
     let mut up = 0usize;
     while came_up.recv().is_ok() {
         up += 1;

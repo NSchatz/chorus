@@ -148,6 +148,18 @@ impl PlayerSessions {
     /// the server runs none, or when the `take` is refused (an unknown
     /// target, a player that plays elsewhere); a refusal changes nothing.
     pub fn play(&self, request: &PlayRequest) -> Result<usize, String> {
+        self.begin(request, true)
+    }
+
+    /// [`PlayerSessions::play`] for an owner whose player already has
+    /// `request.uri` loaded (a renderer loads at SetAVTransportURI and starts
+    /// at Play): the same, without the load, so what is open, and a next URI
+    /// queued behind it, are kept.
+    pub fn start_loaded(&self, request: &PlayRequest) -> Result<usize, String> {
+        self.begin(request, false)
+    }
+
+    fn begin(&self, request: &PlayRequest, load: bool) -> Result<usize, String> {
         if self.players.is_empty() {
             return Err("players: this server was started without --players".to_string());
         }
@@ -178,13 +190,15 @@ impl PlayerSessions {
         });
         lock(&self.failures)[index] = None;
         if let Some(handle) = self.players.handle(index) {
-            handle.send(
-                request.epoch,
-                Action::Load {
-                    uri: request.uri.clone(),
-                    mime: request.mime.clone(),
-                },
-            );
+            if load {
+                handle.send(
+                    request.epoch,
+                    Action::Load {
+                        uri: request.uri.clone(),
+                        mime: request.mime.clone(),
+                    },
+                );
+            }
             handle.send(request.epoch, Action::Start);
         }
         self.show(index);
@@ -193,6 +207,40 @@ impl PlayerSessions {
             id, request.owner, request.target, request.via
         ));
         Ok(index)
+    }
+
+    /// End the owner's session and keep its player: the group that plays the
+    /// player gets the source `none` (which clears its now-playing record)
+    /// and the player stays the owner's, loaded, for the owner to stop and
+    /// start again. For a renderer's Stop, which is often followed by a Play
+    /// at once: a player given back would have to be unloaded first, and one
+    /// that is still unloading cannot be taken. Returns whether the owner had
+    /// a session.
+    pub fn suspend(&self, owner: &str) -> bool {
+        let Some(index) = self.players.held_by(owner) else {
+            return false;
+        };
+        if lock(&self.held)[index].take().is_none() {
+            return false;
+        }
+        let id = player_id(index);
+        if let Some(group) = self.state.player_group(&id) {
+            if let Err(refused) = self.take(&group, "none") {
+                (self.log)(&format!(
+                    "player {id}: group {group} not stopped: {refused}"
+                ));
+            }
+        }
+        (self.log)(&format!("player {id} stopped for {owner}"));
+        true
+    }
+
+    /// Whether the owner's player is in a session (its group plays it and
+    /// its now-playing record is kept).
+    pub fn in_session(&self, owner: &str) -> bool {
+        self.players
+            .held_by(owner)
+            .is_some_and(|index| lock(&self.held)[index].is_some())
     }
 
     /// Replace what the caller knows about the audible track (a renderer at

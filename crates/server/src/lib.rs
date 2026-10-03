@@ -32,6 +32,8 @@
 //! `--players N` (goal 16) a slot can also play one of N network media
 //! players: [`playerport`] is the ring a player's decoded audio crosses to
 //! the audio thread in, and [`player`] the fixed threads that fill them.
+//! With `--upnp` every room, saved group and live group is a UPnP AV media
+//! renderer ([`upnp`]) that plays through those players.
 //!
 //! **The control half** ([`control`]) is the second, separate catalog: zones
 //! with names, groups, volume and mute, changed by a versioned JSON message and
@@ -90,6 +92,7 @@ pub mod slots;
 pub mod source;
 pub mod stream;
 pub mod tvrelay;
+pub mod upnp;
 
 pub use clients::ClientPool;
 pub use config::{ServerConfig, ServerConfigError};

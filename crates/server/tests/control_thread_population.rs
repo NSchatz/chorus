@@ -181,6 +181,14 @@ fn pump<R: Read + Send + 'static>(
 /// the server prints about them, so this process never hands over a port it is
 /// not holding. See the module note on ports.
 fn start(extra: &[String]) -> (Server, u32, mpsc::Receiver<String>, Vec<String>) {
+    let mut args = vec!["--ephemeral-identity".to_string()];
+    args.extend(extra.iter().cloned());
+    start_with_identity(&args)
+}
+
+/// [`start`] with the identity flags left to `extra`: for `--upnp`, which
+/// needs a persisted identity (`--identity-dir`) and refuses a throwaway one.
+fn start_with_identity(extra: &[String]) -> (Server, u32, mpsc::Receiver<String>, Vec<String>) {
     let mut args = vec![
         "--source".to_string(),
         "tone".to_string(),
@@ -188,7 +196,6 @@ fn start(extra: &[String]) -> (Server, u32, mpsc::Receiver<String>, Vec<String>)
         "30000".to_string(),
         "--allow-non-realtime".to_string(),
         "--allow-unlocked-memory".to_string(),
-        "--ephemeral-identity".to_string(),
         "--listen".to_string(),
         EPHEMERAL.to_string(),
         "--control-listen".to_string(),
@@ -977,6 +984,162 @@ fn the_mqtt_publisher_is_one_declared_thread_with_its_flag_and_none_without() {
         "population without --mqtt-broker: {} threads (6 + 2N + M, N={}, M=2); with it: {}",
         off, MAX_CLIENTS, on
     );
+}
+
+/// (goal 16) `--upnp` is `4 + W` more declared, ordinary threads (`upnp-ssdp`,
+/// `upnp-acceptor`, `upnp-events`, `upnp-manager` and one `upnp-worker-<i>`
+/// per `--upnp-workers` W), created with the rest, and none without the flag.
+/// A control point that searches, reads a description, calls an action and
+/// subscribes makes no thread: the event to its listener goes out on
+/// `upnp-events`, which exists already.
+#[test]
+fn the_upnp_renderers_are_declared_threads_with_their_flag_and_none_without() {
+    const WORKERS: usize = 3;
+    let dir = std::env::temp_dir().join(format!("chorus-upnp-threads-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("a directory for the identity");
+    let notify = std::net::UdpSocket::bind(EPHEMERAL).expect("a loopback port");
+    let group = notify.local_addr().unwrap().to_string();
+    let shape = |upnp: bool| {
+        let mut extra: Vec<String> = [
+            "--max-clients",
+            &MAX_CLIENTS.to_string(),
+            "--control-workers",
+            "2",
+            "--slots",
+            "2",
+            "--players",
+            "1",
+            "--zone",
+            "kitchen",
+            "--zone",
+            "study",
+            "--identity-dir",
+            &dir.display().to_string(),
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        if upnp {
+            extra.extend(
+                [
+                    "--upnp",
+                    "--upnp-listen",
+                    "127.0.0.1:0",
+                    "--upnp-workers",
+                    &WORKERS.to_string(),
+                    "--upnp-ssdp-port",
+                    "0",
+                    "--upnp-ssdp-group",
+                    &group,
+                ]
+                .iter()
+                .map(|s| s.to_string()),
+            );
+        }
+        let (server, pid, _rest, startup) = start_with_identity(&extra);
+        let rows = reported(&startup);
+        assert_roles(&rows, 2, &startup);
+        let threads = kernel_threads(pid);
+        let declared: BTreeSet<u32> = rows.iter().map(|r| r.tid).collect();
+        assert_eq!(declared, threads, "upnp={}: {:?}", upnp, rows);
+        let roles: Vec<&str> = rows
+            .iter()
+            .map(|r| r.role.as_str())
+            .filter(|r| r.starts_with("upnp-"))
+            .collect();
+        if upnp {
+            let mut wanted = vec!["upnp-acceptor", "upnp-events", "upnp-manager", "upnp-ssdp"];
+            let workers: Vec<String> = (0..WORKERS).map(|i| format!("upnp-worker-{i}")).collect();
+            wanted.extend(workers.iter().map(String::as_str));
+            let mut got = roles.clone();
+            got.sort_unstable();
+            wanted.sort_unstable();
+            assert_eq!(got, wanted);
+        } else {
+            assert!(roles.is_empty(), "{:?}", roles);
+        }
+        // 1 for the TV relay (`--slots`), 1 for the player.
+        assert_eq!(
+            threads.len(),
+            population(MAX_CLIENTS, 2) + 2 + if upnp { 4 + WORKERS } else { 0 },
+            "upnp={} runs {} threads: {:?}",
+            upnp,
+            threads.len(),
+            rows
+        );
+        if upnp {
+            // A control point's whole first contact: a description, an
+            // action and a subscription whose initial event is delivered.
+            let line = startup
+                .iter()
+                .find(|l| l.contains("upnp renderers listening on="))
+                .expect("the renderers' line");
+            let http = line
+                .split("listening on=")
+                .nth(1)
+                .and_then(|r| r.split_whitespace().next())
+                .unwrap()
+                .to_string();
+            // The kitchen's UDN, made the way the server makes it: from the
+            // fingerprint of its key and the target's name.
+            let key = startup
+                .iter()
+                .find_map(|l| l.split(" key=").nth(1))
+                .and_then(|r| r.split_whitespace().next())
+                .expect("the identity line");
+            let udn = chorus_upnp::uuid::udn(
+                &chorus_upnp::uuid::CHORUS_NAMESPACE,
+                key,
+                &chorus_upnp::uuid::Target::Room("kitchen"),
+            );
+            let ask = |request: String| {
+                let mut socket = TcpStream::connect(&http).expect("the renderers listen");
+                let _ = socket.set_read_timeout(Some(READ_TIMEOUT));
+                socket.write_all(request.as_bytes()).unwrap();
+                let mut answer = String::new();
+                let _ = socket.read_to_string(&mut answer);
+                answer
+            };
+            // The manager makes the renderers once it runs: ask until the
+            // kitchen's is there.
+            let deadline = Instant::now() + SERVICE_DEADLINE;
+            let description = loop {
+                let answer = ask(format!(
+                    "GET /upnp/{udn}/desc.xml HTTP/1.1\r\nHOST: x\r\n\r\n"
+                ));
+                if answer.contains("200 OK") || Instant::now() >= deadline {
+                    break answer;
+                }
+                thread::sleep(RETRY_PAUSE);
+            };
+            assert!(description.contains("MediaRenderer:1"), "{}", description);
+            let listener = std::net::TcpListener::bind(EPHEMERAL).unwrap();
+            let subscribed = ask(format!(
+                "SUBSCRIBE /upnp/{udn}/rcs/event HTTP/1.1\r\nHOST: x\r\nCALLBACK: <http://{}/cb>\r\nNT: upnp:event\r\n\r\n",
+                listener.local_addr().unwrap()
+            ));
+            assert!(subscribed.contains("200 OK"), "{}", subscribed);
+            let (mut event, _) = listener.accept().expect("the initial event arrives");
+            let mut scratch = [0u8; 16];
+            assert!(event.read(&mut scratch).expect("a NOTIFY") > 0);
+        }
+        thread::sleep(SETTLE);
+        assert_eq!(
+            kernel_threads(pid),
+            threads,
+            "upnp={}: a control point made a thread",
+            upnp
+        );
+        drop(server);
+        threads.len()
+    };
+    let (off, on) = (shape(false), shape(true));
+    assert_eq!(on, off + 4 + WORKERS);
+    println!(
+        "population without --upnp: {} threads; with it and --upnp-workers {}: {} (4 + W more)",
+        off, WORKERS, on
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// (goal 16) `--players P` is P more declared, ordinary threads, `player-0`

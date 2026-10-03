@@ -898,6 +898,18 @@ the rest before the scheduling report whether or not anything ever plays:
 Without the flag there is none. Each is the one writer of its player port; a
 stream starting, ending or changing makes no thread, because a thread made
 when a stream starts would be one the report never saw.
+With `--upnp` (goal 16, `docs/upnp.md`; it needs the control plane, `--slots`
+and `--players` of at least 1 each, and a persisted identity) there are
+`4 + W` threads more, W being `--upnp-workers` (default 4, at most 16):
+`upnp-ssdp`, `upnp-acceptor`, `upnp-events`, `upnp-manager` and
+`upnp-worker-0` to `upnp-worker-<W-1>`, created with the rest before the
+scheduling report: `6 + 2N + M + 1 + P + 4 + W`. Without the flag there is
+none. A control point that searches, reads a description, calls an action or
+subscribes makes no thread, and neither does a renderer appearing or
+vanishing: a connection that arrives with every worker busy is answered 503,
+and every event to every subscriber leaves from `upnp-events`. The renderers
+have their own HTTP port (`--upnp-listen`, default 4030) and their own
+workers, so a control point never holds a control worker.
 
 This is a safety property and not a style. `std::thread::spawn` inherits the
 creating thread's scheduling policy, and `deploy/run-server.sh` runs the server
