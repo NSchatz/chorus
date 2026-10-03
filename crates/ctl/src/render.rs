@@ -294,6 +294,48 @@ fn input_labels(state: &Value) -> String {
     table(&["INPUT", "ROLE", "NAME"], &rows)
 }
 
+/// The Soloist receivers: the warning first (it is what the owner must act
+/// on), then the build, the receivers and the targets left without one.
+fn soloist(state: &Value) -> String {
+    let Some(soloist) = state.get("soloist") else {
+        return "this server runs no Soloist receiver (--soloist-receivers)\n".to_string();
+    };
+    let mut text = String::new();
+    if let Some(warning) = soloist.get("warning").and_then(Value::as_str) {
+        text.push_str(&format!("warning: {}\n", warning));
+    }
+    match soloist.get("build") {
+        Some(build) => {
+            let days = build
+                .get("expires_in_days")
+                .and_then(Value::as_num)
+                .map_or("expiry unknown".to_string(), |d| {
+                    format!("expires in {} days", d)
+                });
+            text.push_str(&format!("build: {} ({})\n", cell(build, "version"), days));
+        }
+        None => text.push_str("build: not reported yet\n"),
+    }
+    let rows: Vec<Vec<String>> = items(soloist, "receivers")
+        .iter()
+        .map(|r| {
+            vec![
+                cell(r, "id"),
+                cell(r, "state"),
+                cell(r, "target"),
+                cell(r, "name"),
+            ]
+        })
+        .collect();
+    text.push_str(&table(&["RECEIVER", "STATE", "TARGET", "NAME"], &rows));
+    let exhausted = items(soloist, "exhausted");
+    if !exhausted.is_empty() {
+        let names: Vec<&str> = exhausted.iter().filter_map(Value::as_str).collect();
+        text.push_str(&format!("no receiver left for: {}\n", names.join(", ")));
+    }
+    text
+}
+
 fn sources(state: &Value) -> String {
     let stored = items(state, "stored_sources");
     if stored.is_empty() {
@@ -513,6 +555,10 @@ pub fn render(state: &Value, view: &View, as_json: bool) -> Result<String, Strin
                 text,
             )
         }
+        View::Soloist => either(
+            state.get("soloist").cloned().unwrap_or(Value::Null),
+            soloist(state),
+        ),
         View::Images => either(array(images(state)), image_table(images(state))),
         View::Updates => {
             let reporting: Vec<Value> = items(state, "speakers")

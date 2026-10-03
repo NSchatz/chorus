@@ -67,7 +67,9 @@
 //! the order accepted: its name, then its `uri` or `volume`), and `FAKE_SOLOIST_CONTROL`: a
 //! Unix socket on which a test plays "the Spotify app", one command a line
 //! (`login`, `logout`, `play <uri>`, `pause`, `resume`, `volume <n>`,
-//! `drop-ws`, `exit <code>`), each answered `ok` or `error: <why>`.
+//! `drop-ws`, `exit <code>`, and `stall`: from then on a WebSocket `play`
+//! is accepted and answered and nothing starts playing), each answered `ok`
+//! or `error: <why>`.
 
 #![warn(missing_docs)]
 
@@ -250,6 +252,8 @@ struct Player {
     /// `FAKE_SOLOIST_COMMAND_LOG`: where every accepted control command is
     /// written, one a line, in the order it was accepted.
     command_log: Option<PathBuf>,
+    /// The test control `stall`: a `play` is accepted and nothing plays.
+    stalled: bool,
 }
 
 type Shared = Arc<Mutex<Player>>;
@@ -654,6 +658,10 @@ fn queue_changed() -> Value {
 
 fn apply(player: &mut Player, effect: Effect) {
     match effect {
+        // "command_result means the command was accepted and dispatched. It
+        // does not guarantee that playback state has already changed": a
+        // stalled fake accepts the play and never plays.
+        Effect::Play(_) if player.stalled => {}
         Effect::Play(uri) => player.play(uri.as_deref()),
         Effect::Pause => player.set_status("paused"),
         Effect::Skip => player.seek(0),
@@ -826,6 +834,7 @@ fn control(shared: &Shared, line: &str) -> Result<(), String> {
                 .ok_or("volume needs 0 to 100")?;
             player.set_volume(volume);
         }
+        "stall" => player.stalled = true,
         "drop-ws" => {
             for (_, stream) in player.clients.drain(..) {
                 let _ = stream.shutdown(std::net::Shutdown::Both);
@@ -975,6 +984,7 @@ pub fn run(arguments: Vec<String>) -> i32 {
         next_client: 0,
         session_file,
         command_log: settings.get("FAKE_SOLOIST_COMMAND_LOG").map(PathBuf::from),
+        stalled: false,
     }));
     if let Err(e) = sys::catch_termination() {
         return fail(&format!("signals: {e}"));
@@ -1093,6 +1103,7 @@ mod tests {
             next_client: 0,
             session_file: PathBuf::from("/nonexistent/fake-session"),
             command_log: None,
+            stalled: false,
         }
     }
 

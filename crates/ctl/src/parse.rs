@@ -11,7 +11,9 @@
 
 use std::time::Duration;
 
-use chorus_control::rooms::{InputId, InputLabel, InputRole, Source, StoredKind, StoredSource};
+use chorus_control::rooms::{
+    InputId, InputLabel, InputRole, PlaybackAction, Source, StoredKind, StoredSource,
+};
 use chorus_control::{Command, Volume};
 
 use crate::grammar::{
@@ -52,6 +54,8 @@ pub enum View {
     Images,
     /// Each speaker's firmware.
     Updates,
+    /// The Soloist receivers.
+    Soloist,
 }
 
 /// What one invocation does.
@@ -482,6 +486,16 @@ fn build(
         ("endpoints", "forget") => {
             let [speaker] = exactly(operands, line)?;
             send(Command::SpeakerForget { speaker }, View::Endpoints)
+        }
+        ("soloist", "status") => exactly::<0>(operands, line).map(|_| Action::Read(View::Soloist)),
+        ("soloist", "restart") => {
+            exactly::<0>(operands, line)?;
+            send(Command::SoloistRestart, View::Soloist)
+        }
+        ("soloist", "pause" | "resume" | "next" | "previous") => {
+            let [target] = exactly(operands, line)?;
+            let action = PlaybackAction::parse(verb.name).expect("the verbs are the actions");
+            send(Command::Playback { target, action }, View::Soloist)
         }
         ("updates", "list") => exactly::<0>(operands, line).map(|_| Action::Read(View::Images)),
         ("updates", "status") => exactly::<0>(operands, line).map(|_| Action::Read(View::Updates)),

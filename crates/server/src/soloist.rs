@@ -730,10 +730,14 @@ impl Manager {
             serial: i64::MIN,
             exhausted: Vec::new(),
             pool_deadline: None,
-            // Above any generation an earlier run of this server sent, so a
-            // supervisor that outlived a restart never takes a new target's
-            // events for an old one's.
-            generation: wall_clock().saturating_mul(1_000),
+            // Above any generation an earlier run of this server sent (the
+            // wall clock in nanoseconds: two runs never start in the same
+            // one), so a supervisor that outlived a restart never takes a
+            // new target's events for an old one's, and never finds a new
+            // assignment equal to the one it already reported.
+            generation: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |d| u64::try_from(d.as_nanos()).unwrap_or(u64::MAX / 2)),
             shown: None,
             warned: None,
             dirty: true,
@@ -889,11 +893,6 @@ impl Manager {
                 rx.status = Some(status);
                 if !running {
                     rx.forget_session();
-                } else if !rx.asked_auth {
-                    // Events sent while this server was not connected, or
-                    // under a generation it did not know, were not kept.
-                    rx.asked_auth = true;
-                    rx.command(&Api::GetAuthState, now);
                 }
                 self.dirty = true;
             }
@@ -940,7 +939,9 @@ impl Manager {
                     self.status(index, status);
                 }
                 if let Some(volume) = snapshot.volume {
-                    self.volume_from_receiver(index, volume, now);
+                    // A snapshot says what the volume IS, not that a person
+                    // moved it.
+                    self.volume_from_receiver(index, volume, false, now);
                 }
             }
             Event::TrackChanged { item } => rx.item = item,
@@ -949,7 +950,7 @@ impl Manager {
             } => self.status(index, status),
             Event::VolumeChanged {
                 volume: Some(volume),
-            } => self.volume_from_receiver(index, volume, now),
+            } => self.volume_from_receiver(index, volume, true, now),
             Event::DeviceChanged { is_active, .. } => rx.active = is_active.unwrap_or(rx.active),
             Event::CommandResult { command } => {
                 // A `play` on a receiver that was already playing may change
@@ -984,6 +985,18 @@ impl Manager {
         rx.playing = Some(status);
     }
 
+    /// Events sent while this server was not connected, or under a
+    /// generation it did not know, were not kept: a receiver that runs for
+    /// this server's assignment is asked who is logged in, once.
+    fn ask(&mut self, now: Instant) {
+        for rx in &mut self.receivers {
+            if rx.running() && !rx.asked_auth {
+                rx.asked_auth = true;
+                rx.command(&Api::GetAuthState, now);
+            }
+        }
+    }
+
     // --- volume ---
 
     fn set_target_volume(&self, spec: &Spec, thousandths: u16) -> Result<(), String> {
@@ -1015,8 +1028,12 @@ impl Manager {
         self.facts.spec(key).cloned()
     }
 
-    /// The Spotify app (or Soloist itself) changed the receiver's volume.
-    fn volume_from_receiver(&mut self, index: usize, volume: u8, now: Instant) {
+    /// The receiver's volume, as it reports it: `changed` when the Spotify
+    /// app (or Soloist itself) moved it, not when a snapshot merely states
+    /// it. Under the `chorus` mapping only a change becomes the target's
+    /// volume (a snapshot's value is corrected by `follow_volume`); under
+    /// the `receiver` mapping either is clamped to the target's limit.
+    fn volume_from_receiver(&mut self, index: usize, volume: u8, changed: bool, now: Instant) {
         let volume = volume.min(100);
         let rx = &mut self.receivers[index];
         rx.volume = Some(volume);
@@ -1029,6 +1046,7 @@ impl Manager {
             return;
         };
         match self.settings.volume {
+            VolumeMapping::Chorus if !changed => {}
             VolumeMapping::Chorus => {
                 let id = receiver_id(index);
                 match self.set_target_volume(&spec, u16::from(volume) * 10) {
@@ -1132,6 +1150,9 @@ impl Manager {
                     spec.key
                 );
                 self.receivers[other].pause(true, now);
+                // Told already: the rule for a receiver no group plays any
+                // more must not tell it again when the take lands.
+                self.receivers[other].was_played = false;
             }
             let taken = self.state.apply_command(Command::Take {
                 target: spec.take.clone(),
@@ -1484,6 +1505,7 @@ impl Manager {
             if self.dirty || deadline {
                 self.assign(now);
             }
+            self.ask(now);
             self.requests(now);
             self.take_rooms(now);
             self.alarms(now);

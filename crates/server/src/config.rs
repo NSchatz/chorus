@@ -200,12 +200,17 @@ pub struct ServerConfig {
 }
 
 /// (goal 17) What the `--soloist-*` flags said. The server runs no Soloist
-/// code, and no thread of it exists, unless `receivers` is above 0; every
-/// other flag here is refused without it.
+/// code, and no thread of it exists, unless `receivers` is above 0. The
+/// other flags are refused when `--soloist-receivers` is absent (a flag
+/// about something this server was never told to have), and are inert
+/// beside an explicit `--soloist-receivers 0`, which is how a deployment
+/// switches the receivers off without rewriting its command line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SoloistFlags {
     /// `--soloist-receivers <N>`: how many receivers, `r0` to `r<N-1>`.
     pub receivers: usize,
+    /// Whether `--soloist-receivers` was given at all.
+    pub receivers_given: bool,
     /// `--soloist-dir <dir>`: the receiver directory, shared with the
     /// receiver containers.
     pub dir: Option<String>,
@@ -228,6 +233,7 @@ impl Default for SoloistFlags {
     fn default() -> SoloistFlags {
         SoloistFlags {
             receivers: 0,
+            receivers_given: false,
             dir: None,
             alarms: false,
             grace_s: crate::soloist::DEFAULT_GRACE.as_secs(),
@@ -249,6 +255,7 @@ impl SoloistFlags {
         };
         if self.receivers == 0 {
             return match &self.given {
+                Some(_) if self.receivers_given => Ok(()),
                 Some(flag) => refused(
                     flag,
                     "it is about the Soloist receivers, and this server runs none: give \
@@ -1004,6 +1011,7 @@ impl ServerConfig {
                 }
                 "--media-allow-loopback" => config.media_allow_loopback = true,
                 "--soloist-receivers" => {
+                    config.soloist.receivers_given = true;
                     config.soloist.receivers =
                         usize::try_from(number(&arg, &value()?)?).unwrap_or(usize::MAX)
                 }
@@ -1923,6 +1931,17 @@ mod tests {
             assert!(said.contains(flags[0]) && said.contains("--soloist-receivers"), "{}", said);
         }
         assert!(refused(&["--soloist-receivers", "2"]).contains("--soloist-dir"));
+        // Switched off out loud: the other flags stay and do nothing.
+        let off = ServerConfig::from_args(args(&[
+            "--soloist-receivers",
+            "0",
+            "--soloist-dir",
+            "/run/chorus",
+            "--soloist-alarms",
+        ]))
+        .unwrap()
+        .soloist;
+        assert_eq!(off.receivers, 0);
         assert!(
             refused(&["--soloist-receivers", "2", "--soloist-dir", "/run/chorus"])
                 .contains("--slots")

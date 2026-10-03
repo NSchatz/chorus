@@ -28,7 +28,10 @@
 //!   chunk the ring cannot fill is padded with silence. A dry spell that
 //!   ends within [`STREAM_GAP`] was an underrun and is counted; a longer one
 //!   was the music stopping (a pause, the end of a queue: an idle sink
-//!   writes nothing at all) and is not.
+//!   writes nothing at all) and is not. A stream that starts after such a
+//!   stop starts on an empty ring: a tail the old stream left unplayed
+//!   (shorter than the fill target, arrived after the ring ran dry) is
+//!   forgotten, not played in front of the new one.
 //!
 //! # What the lock costs the audio thread
 //!
@@ -244,6 +247,15 @@ impl SoloistPort {
                     .fetch_add((frames - done) as u64, Ordering::Relaxed);
                 return done;
             }
+            if done == 0 && quiet >= STREAM_GAP {
+                // A new stream. What an old one left behind (a tail shorter
+                // than the fill target, which arrived after the ring ran
+                // dry and was never played) is not this stream's start.
+                ring.start = 0;
+                ring.len = 0;
+                ring.primed = false;
+                ring.ran_dry = false;
+            }
             if ring.ran_dry {
                 ring.ran_dry = false;
                 if quiet < STREAM_GAP {
@@ -422,6 +434,24 @@ mod tests {
         port.write(&signal(2, 4), Duration::from_secs(3));
         assert_eq!(port.counters().underruns, 0);
         assert_eq!(port.play(4, S16, &mut out), 4);
+    }
+
+    #[test]
+    fn a_tail_left_unplayed_is_not_played_in_front_of_the_next_stream() {
+        let port = SoloistPort::new(44_100, 2, 100, 4);
+        port.select(true);
+        port.write(&signal(0, 4), NOW);
+        let mut out = [0u8; 32];
+        assert_eq!(port.play(8, S16, &mut out), 4, "ran dry");
+        // Two more frames arrive, under the fill target, and the stream
+        // stops: they are never played.
+        port.write(&signal(4, 2), NOW);
+        assert_eq!(port.play(8, S16, &mut out), 0);
+        assert_eq!(port.queued(), 2);
+        // The next stream, seconds later.
+        port.write(&signal(500, 4), Duration::from_secs(2));
+        assert_eq!(port.play(4, S16, &mut out[..16]), 4);
+        assert_eq!(left(&out[..16]), [501, 502, 503, 504]);
     }
 
     #[test]

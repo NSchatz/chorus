@@ -20,7 +20,8 @@ use chorus_control::firmware::{Image, Report, SpeakerFirmware};
 use chorus_control::json;
 use chorus_control::rooms::{
     Alarm, Autoplay, BondMember, CivilTime, ClockTime, Days, InputId, InputLabel, InputRole, Link,
-    NowPlaying, PlayState, QuietWindow, Role, Source, StoredKind, StoredSource,
+    NowPlaying, PlayState, PlaybackAction, QuietWindow, Role, SoloistBuild, SoloistReceiver,
+    SoloistState, Source, StoredKind, StoredSource,
 };
 use chorus_control::sound::{EqFilter, FixedPoint, Polarity};
 use chorus_control::speakers::KeyChange;
