@@ -61,6 +61,36 @@ bedroom  bedroom      live-1      0.200   no     0.200  1/1
 }
 
 #[test]
+fn rooms_list_says_what_each_room_is_playing_when_some_room_does() {
+    assert_eq!(
+        printed("v2/state-playing", &["rooms", "list"]),
+        "\
+ROOM     NAME     GROUP       VOLUME  MUTED  LIMIT  PRESENT  PLAYING
+living   living   downstairs  1.000   no     1.000  0/0      So What - Miles Davis
+kitchen  kitchen  downstairs  1.000   no     1.000  0/0      So What - Miles Davis
+study    study    study       1.000   no     1.000  0/0      Evening news (paused)
+bedroom  bedroom  bedroom     1.000   no     1.000  0/0      -
+hall     hall     hall        1.000   no     1.000  0/0      -
+"
+    );
+    let shown = printed("v2/state-playing", &["rooms", "show", "study"]);
+    assert!(
+        shown.ends_with(
+            "source: player:p1\nnow_playing: {\"title\":\"Evening news\",\"artist\":null,\
+             \"album\":null,\"art_url\":null,\"duration_ms\":null,\"state\":\"paused\",\
+             \"via\":\"upnp\"}\n"
+        ),
+        "{}",
+        shown
+    );
+    // A room's JSON is still the server's own bytes, what plays included.
+    let one = cut_out_of("v2/state-playing", &["rooms", "show", "living"]);
+    assert!(one.contains(r#""source":"player:p0","now_playing":{"title":"So What","#));
+    let groups = printed("v2/state-playing", &["groups", "list"]);
+    assert!(groups.contains("player:p2"), "{}", groups);
+}
+
+#[test]
 fn rooms_json_is_the_servers_zones() {
     let all = cut_out_of("v2/state-rich", &["rooms", "list"]);
     assert!(all.starts_with(r#"[{"id":"living","name":"Living Room","#));

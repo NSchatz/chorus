@@ -36,7 +36,7 @@ filter = '''
 package(chorus-server) & (
     binary(tv_low_latency) | binary(tv_capture_rate_match) | binary(alarms_sleep_autoplay)
     | binary(regress_0031_f1) | binary(dsp_end_to_end) | binary(front_panel)
-    | binary(cec_tv) | binary(fifo_source)
+    | binary(cec_tv) | binary(fifo_source) | binary(player_port)
 )
 '''
 test-group = "wall-clock"

@@ -46,7 +46,7 @@ This is the whole list. `<prefix>` is `chorus/v1` unless `--mqtt-prefix` says ot
 | Topic | Retained | QoS | Payload |
 |---|---|---|---|
 | `<prefix>/server/status` | yes | 1 | `online` while the server is connected; `offline` otherwise (the last will, and what a clean stop publishes itself) |
-| `<prefix>/rooms/<room id>/state` | yes | 1 | the room's object from the control state message: its `zones[]` entry, byte for byte |
+| `<prefix>/rooms/<room id>/state` | yes | 1 | the room's object from the control state message: its `zones[]` entry, byte for byte (with what the room is playing, when the state says: "What a room is playing" below) |
 | `<prefix>/groups/<saved group id>/state` | yes | 1 | the saved group's object: its `saved_groups[]` entry, byte for byte |
 | `<prefix>/speakers/<endpoint id>/event` | **no** | 1 | one JSON object for each controller command the server accepted |
 
@@ -127,14 +127,37 @@ packet it was sent.
 - **No artwork, no audio, no telemetry.** Per-speaker telemetry is goal 15's Prometheus
   endpoint on the control listener, not MQTT.
 - **No TLS.** The connection is plain TCP (see the notes below).
-- **Not yet: what a room is playing.** P10's option text lists a room's state as "playing,
-  input, volume, group membership, now-playing title and artist". A room's topic carries the
-  control state's room object, which today holds volume, mute, limit and group membership and
-  nothing about the source. What a live group plays is in the control state's `groups[].source`,
-  and live groups are not published; a title and an artist exist nowhere in chorus before the
-  inputs of goals 16 and 17. When the control state's room object gains them, the room topic
-  carries them with no change here (one schema); until then a consumer that needs the source
-  reads `GET /api/state`.
+
+## What a room is playing
+
+P10's option text lists a room's state as "playing, input, volume, group membership,
+now-playing title and artist". Since goal 16 the control state's room object carries what the
+room's group is playing from one of the server's network media players, and the room topic is
+that object, so it carries it too, with no change to the publisher (one schema;
+`docs/decisions/0119-player-sources-player-ports-and-now-playing.md`).
+
+While the room's group has a now-playing record, the room's object ends with two more members:
+`source`, the group's source (`player:<id>`), and `now_playing`: `title`, `artist`, `album`,
+`art_url` (each a string or `null`), `duration_ms` (a whole number or `null`), `state`
+(`playing`, `paused` or `buffering`) and `via` (what drives the player: `upnp`). Every member is
+always there; `null` means not known. `docs/control-plane.md` ("The state message") gives the
+bounds. This is the `study` room of `fixtures/control/v2/state-playing.json`, paused on a
+stream that has a title and nothing else:
+
+```json
+{"id":"study","name":"study","group":"study","volume":1.000,"muted":false,"endpoints":[],"present":[],"audio":"127.0.0.1:4010","transport":"wired","limit":1.000,"effective_limit":1.000,"quiet":[],"bond":[],"ramp":null,"sound":{"bass":0,"treble":0,"loudness":true,"night":false,"speech":false,"tv_upmix":"off"},"av_trim_ms":0,"bass_management":{"crossover_hz":80,"sub_level_db":0.00,"sub_polarity":"normal","active":false},"room_eq":{"enabled":true,"filters":[]},"source":"player:p1","now_playing":{"title":"Evening news","artist":null,"album":null,"art_url":null,"duration_ms":null,"state":"paused","via":"upnp"}}
+```
+
+- The two members are **absent**, not `null`, when there is no record: a room playing the
+  configured stream, a line-in, a chime or nothing has the payload it had before goal 16, and so
+  does a room whose player has been told nothing yet. A consumer reads "nothing known is
+  playing" from their absence.
+- Every room of the group carries the same record. A change of title, or a pause, republishes
+  the topics of the rooms that play it and no other (only what changed is published).
+- `art_url` is a URL the consumer fetches itself; the artwork is not published.
+- Still not carried: the source of a room with no record (the group's `source` is in the
+  control state's `groups[]`, and formed groups are not published; a consumer that needs it
+  reads `GET /api/state`), and what plays through later inputs (goal 17).
 
 ## When the broker is away
 
@@ -251,7 +274,10 @@ in chorus's output.
 
 `crates/mqtt/tests/` holds the packets to bytes worked out from the standard (the CONNECT, each
 PUBLISH flag, the remaining length at every boundary, the three packets read back), the topic
-and prefix rules, and the payload cuts over every state vector in `fixtures/control`.
+and prefix rules, and the payload cuts over every state vector in `fixtures/control`
+(`state-playing` among them: `a_room_playing_a_player_carries_its_source_and_what_it_plays`).
+`crates/server/src/mqtt.rs` holds the publisher's own topic map to the same thing
+(`a_rooms_retained_payload_carries_what_it_is_playing_when_the_state_does`).
 `crates/server/tests/mqtt_publisher.rs` starts the real server against a fake broker that lives
 in the test (loopback, a port the kernel chose, its own decoder), and asserts what this page
 says: `mqtt_publishes_what_p10_settled_against_a_fake_broker` and its neighbours. To see the

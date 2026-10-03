@@ -77,6 +77,12 @@ than into an absent state.
 
 **`stream`.** Where that group's audio is served from.
 
+**`playing`, `paused`, `buffering`.** (goal 16) What the room's group is playing
+from one of the server's network media players, with the title and the artist
+where they are known. It is in the meta line only while the state carries a
+`now_playing` record for the room; a room playing anything else says nothing
+here.
+
 **The endpoint figure.** This is the aggregate on the card, and it says which
 rows it counted. `1 of 2 endpoints attached, 1 away` means: this zone has two
 endpoints in its persisted list, one of them is attached and playing right now,

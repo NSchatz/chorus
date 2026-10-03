@@ -134,10 +134,13 @@ fn rooms(state: &Value) -> String {
         Some(Value::Arr(items)) => items.len(),
         _ => 0,
     };
+    // (goal 16) What each room is playing, a column that exists only when
+    // some room says: a house with no player prints the table it always did.
+    let any_playing = zones.iter().any(|z| z.get("now_playing").is_some());
     let rows: Vec<Vec<String>> = zones
         .iter()
         .map(|z| {
-            vec![
+            let mut row = vec![
                 cell(z, "id"),
                 cell(z, "name"),
                 cell(z, "group"),
@@ -146,15 +149,38 @@ fn rooms(state: &Value) -> String {
                 // A v1 state has no limit; the cell says so rather than guess.
                 cell(z, "effective_limit"),
                 format!("{}/{}", count(z, "present"), count(z, "endpoints")),
-            ]
+            ];
+            if any_playing {
+                row.push(
+                    z.get("now_playing")
+                        .map_or_else(|| "-".to_string(), playing),
+                );
+            }
+            row
         })
         .collect();
-    table(
-        &[
-            "ROOM", "NAME", "GROUP", "VOLUME", "MUTED", "LIMIT", "PRESENT",
-        ],
-        &rows,
-    )
+    let mut head = vec![
+        "ROOM", "NAME", "GROUP", "VOLUME", "MUTED", "LIMIT", "PRESENT",
+    ];
+    if any_playing {
+        head.push("PLAYING");
+    }
+    table(&head, &rows)
+}
+
+/// A now-playing record as one cell: the title and the artist where they are
+/// known, and the state when it is not `playing`.
+fn playing(record: &Value) -> String {
+    let text = |key: &str| record.get(key).and_then(Value::as_str);
+    let what = match (text("title"), text("artist")) {
+        (Some(title), Some(artist)) => format!("{} - {}", title, artist),
+        (Some(one), None) | (None, Some(one)) => one.to_string(),
+        (None, None) => "-".to_string(),
+    };
+    match text("state") {
+        Some("playing") | None => what,
+        Some(state) => format!("{} ({})", what, state),
+    }
 }
 
 fn groups(state: &Value) -> String {

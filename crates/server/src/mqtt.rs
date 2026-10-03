@@ -674,3 +674,67 @@ pub fn run(
     }
     let _ = done.send(());
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use chorus_control::rooms::{NowPlaying, PlayState, Source};
+    use chorus_control::zones::{Zone, Zones};
+
+    /// (goal 16) What a room is playing reaches its retained topic with no
+    /// change to the publisher: the room topic's payload is the control
+    /// state's room object, and the room object is where the model puts
+    /// `source` and `now_playing`. A change of what plays changes the topics
+    /// of the rooms that play it and no other.
+    #[test]
+    fn a_rooms_retained_payload_carries_what_it_is_playing_when_the_state_does() {
+        let topics = Topics::new("chorus/v1").unwrap();
+        let mut zones = Zones::new("127.0.0.1:4010");
+        for id in ["kitchen", "study"] {
+            zones.add(Zone::new(id)).unwrap();
+        }
+        let before = wanted_of(&topics, &zones.encode_state()).unwrap();
+        let kitchen = topics.room("kitchen");
+        let study = topics.room("study");
+        assert!(!before[&kitchen].contains("now_playing"));
+
+        zones
+            .set_group_source("kitchen", Source::Player("p0".to_string()))
+            .unwrap();
+        zones
+            .set_now_playing(
+                "kitchen",
+                Some(NowPlaying {
+                    title: Some("So What".to_string()),
+                    artist: Some("Miles Davis".to_string()),
+                    album: None,
+                    art_url: None,
+                    duration_ms: Some(215_000),
+                    state: PlayState::Playing,
+                    via: "upnp".to_string(),
+                }),
+            )
+            .unwrap();
+        let playing = wanted_of(&topics, &zones.encode_state()).unwrap();
+        assert!(
+            playing[&kitchen].ends_with(concat!(
+                r#","source":"player:p0","now_playing":{"title":"So What","#,
+                r#""artist":"Miles Davis","album":null,"art_url":null,"#,
+                r#""duration_ms":215000,"state":"playing","via":"upnp"}}"#
+            )),
+            "{}",
+            playing[&kitchen]
+        );
+        // The payload is still the state's own bytes for that room.
+        assert!(zones.encode_state().contains(playing[&kitchen].as_str()));
+        // Only the room that plays it is published again.
+        assert_ne!(playing[&kitchen], before[&kitchen]);
+        assert_eq!(playing[&study], before[&study]);
+
+        // Stopped: the room's payload is what it was before anything played.
+        zones.set_group_source("kitchen", Source::Stream).unwrap();
+        let after = wanted_of(&topics, &zones.encode_state()).unwrap();
+        assert_eq!(after[&kitchen], before[&kitchen]);
+    }
+}
