@@ -5,7 +5,7 @@ Source: host
 Build measured: `891c5b760bd9aea30b5ece2046ab4f6f2bbc06a8`
 Build note: two builds, both commits of `main`. The decoders alone, the idle servers and the
 stream rows for `wav48`, `wav`, `flac`, `mp3` and `vorbis` were measured on `891c5b7`, the
-commit named above. The Soloist receivers' section and the stream rows for `opus` and `alac`
+commit named above. The Soloist receivers' section and the stream row for `opus`
 were measured later the same day on `856411c64f9d4876e9deb348bd39043bdcda4892` (the merge of
 the receivers' server side, PR #132): the release build was made in this report's branch at a
 commit whose `crates/`, `Cargo.toml`, `Cargo.lock`, `config/`, `third_party/` and
@@ -19,7 +19,7 @@ P11 (`docs/proposals/P11-concurrent-streams.md`, decision K76) rests on, and the
 planning-time ffmpeg proxy figures of `research-casting-decoders.md` section 5.
 
 **Shared host, upper bound.** The container runs on the homelab's class of host, shared with other
-tenants, and the one-minute load average stood between 29 and 65 over four
+tenants, and the one-minute load average stood between 17 and 65 over four
 visible CPUs during every window below (each window's own figure is in its table). CPU figures
 are therefore upper bounds for this processor: a busy neighbour costs cache and clock frequency,
 never the reverse. Memory figures do not depend on the load.
@@ -36,7 +36,7 @@ build      891c5b760bd9aea30b5ece2046ab4f6f2bbc06a8 (origin/main), no change und
            Cargo.lock, config/ or third_party/; chorus-server sha256
            e4c531bac27fe2e173e0343e6035047fd8e58a30c493a23752d2d708bbafcfff
 build 2    856411c64f9d4876e9deb348bd39043bdcda4892 (main), the same toolchain and profile; chorus-server
-           sha256 TO FILL
+           sha256 `02bf71923cbd7a349ba5def298b6b75beff96bd4dcc0f61bfcebdb164ec7258a`
 limits     RLIMIT_RTPRIO 0 and RLIMIT_MEMLOCK 8 MiB, so the server ran with
            --allow-non-realtime --allow-unlocked-memory: the audio thread was an ordinary
            thread and no memory was locked (see "What this does not show")
@@ -137,8 +137,11 @@ of audio:
 ## Result: K independent streams through the whole server
 
 Sixteen rooms, sixteen connected endpoints, K streams. Every table is one row per format (one
-server per format) and one column per K. The `opus` and `alac` rows are from the second build
-(`856411c`), run without K = 2; every other row is from `891c5b7`. The second build's server
+server per format) and one column per K. The `opus` row is from the second build
+(`856411c`), run without K = 2; every other row is from `891c5b7`. **ALAC through the whole
+server is not measured**: its first run was not granted the locks, its second ended before its
+first window on a busy control plane's 503 (the control point now tries again), and its third
+was not granted the locks either. Its decoder alone is in the table above. The second build's server
 also holds the code of PR #132, switched off here (no `--soloist-receivers`).
 
 Player threads, % of one core per playing stream (the mean of the K busiest player threads):
@@ -150,6 +153,7 @@ Player threads, % of one core per playing stream (the mean of the K busiest play
 | flac | 3.82 | 3.87 | 3.92 | 3.81 | 3.89 |
 | mp3 | 4.46 | 4.29 | 4.28 | 4.27 | 4.27 |
 | vorbis | 4.49 | 4.45 | 4.32 | 4.76 | 4.72 |
+| opus | 1.52 | - | 1.32 | 1.35 | 1.36 |
 
 The idlest and the busiest of those K threads in each window, % of one core:
 
@@ -160,6 +164,7 @@ The idlest and the busiest of those K threads in each window, % of one core:
 | flac | 3.82 to 3.82 | 3.80 to 3.93 | 3.88 to 3.99 | 3.63 to 4.00 | 3.74 to 4.06 |
 | mp3 | 4.46 to 4.46 | 4.28 to 4.31 | 4.16 to 4.50 | 4.21 to 4.32 | 4.18 to 4.35 |
 | vorbis | 4.49 to 4.49 | 4.43 to 4.47 | 4.20 to 4.44 | 4.65 to 4.87 | 4.56 to 4.90 |
+| opus | 1.52 to 1.52 | - | 1.29 to 1.35 | 1.27 to 1.41 | 1.32 to 1.39 |
 
 The audio thread, % of one core:
 
@@ -170,6 +175,7 @@ The audio thread, % of one core:
 | flac | 0.66 | 0.80 | 0.92 | 1.21 | 1.71 | 2.79 |
 | mp3 | 0.66 | 0.88 | 0.97 | 1.25 | 1.80 | 2.92 |
 | vorbis | 0.70 | 0.86 | 0.99 | 1.26 | 2.05 | 3.22 |
+| opus | 0.53 | 0.66 | - | 1.11 | 1.84 | 3.13 |
 
 The client threads (two per endpoint slot, 16 endpoints connected), % of one core, sum:
 
@@ -180,6 +186,7 @@ The client threads (two per endpoint slot, 16 endpoints connected), % of one cor
 | flac | 8.24 | 8.08 | 8.16 | 8.03 | 8.19 | 8.04 |
 | mp3 | 8.73 | 8.07 | 8.07 | 8.11 | 8.02 | 8.05 |
 | vorbis | 8.29 | 8.37 | 8.05 | 8.22 | 7.74 | 7.48 |
+| opus | 9.68 | 9.77 | - | 8.82 | 8.98 | 9.38 |
 
 The renderers' threads (`upnp-*`), % of one core, sum:
 
@@ -190,6 +197,7 @@ The renderers' threads (`upnp-*`), % of one core, sum:
 | flac | 0.52 | 0.54 | 0.55 | 0.55 | 0.58 | 0.64 |
 | mp3 | 0.52 | 0.59 | 0.56 | 0.59 | 0.60 | 0.65 |
 | vorbis | 0.53 | 0.58 | 0.56 | 0.56 | 0.64 | 0.68 |
+| opus | 0.75 | 0.78 | - | 0.69 | 0.72 | 0.78 |
 
 Every other thread, % of one core, sum:
 
@@ -200,6 +208,7 @@ Every other thread, % of one core, sum:
 | flac | 0.34 | 0.33 | 0.34 | 0.33 | 0.33 | 0.33 |
 | mp3 | 0.33 | 0.35 | 0.33 | 0.31 | 0.32 | 0.33 |
 | vorbis | 0.35 | 0.32 | 0.32 | 0.32 | 0.35 | 0.35 |
+| opus | 0.41 | 0.41 | - | 0.36 | 0.37 | 0.36 |
 
 The whole process, % of one core:
 
@@ -210,6 +219,7 @@ The whole process, % of one core:
 | flac | 10.04 | 13.82 | 17.96 | 26.01 | 41.47 | 74.06 |
 | mp3 | 10.54 | 14.65 | 18.79 | 27.61 | 45.03 | 80.35 |
 | vorbis | 10.18 | 14.91 | 19.09 | 27.87 | 49.07 | 87.29 |
+| opus | 11.78 | 13.52 | - | 16.54 | 22.89 | 35.35 |
 
 The whole process by clock ticks (utime + stime), % of one core:
 
@@ -220,6 +230,7 @@ The whole process by clock ticks (utime + stime), % of one core:
 | flac | 10.03 | 13.82 | 17.96 | 26.00 | 41.48 | 74.07 |
 | mp3 | 10.53 | 14.65 | 18.80 | 27.60 | 45.03 | 80.33 |
 | vorbis | 10.18 | 14.91 | 19.08 | 27.86 | 49.07 | 87.28 |
+| opus | 11.78 | 13.51 | - | 16.55 | 22.88 | 35.33 |
 
 VmRSS at the window's end, kB:
 
@@ -230,6 +241,7 @@ VmRSS at the window's end, kB:
 | flac | 20468 | 22128 | 23360 | 24964 | 28224 | 34692 |
 | mp3 | 20552 | 22392 | 23548 | 24792 | 27380 | 32532 |
 | vorbis | 20396 | 23716 | 26476 | 30932 | 39856 | 58156 |
+| opus | 21824 | 23604 | - | 25724 | 28476 | 33528 |
 
 RssAnon at the window's end, kB:
 
@@ -240,6 +252,7 @@ RssAnon at the window's end, kB:
 | flac | 15028 | 16048 | 17280 | 18884 | 22144 | 28612 |
 | mp3 | 15148 | 16284 | 17440 | 18684 | 21272 | 26424 |
 | vorbis | 15012 | 17372 | 20132 | 24588 | 33512 | 51812 |
+| opus | 16004 | 16824 | - | 18944 | 21696 | 26748 |
 
 Pss (smaps_rollup) at the window's end, kB:
 
@@ -250,6 +263,7 @@ Pss (smaps_rollup) at the window's end, kB:
 | flac | 18283 | 19944 | 21175 | 22779 | 26039 | 32508 |
 | mp3 | 18344 | 20182 | 21339 | 22583 | 25171 | 30323 |
 | vorbis | 18234 | 21556 | 24316 | 28774 | 37689 | 55995 |
+| opus | 19671 | 21451 | - | 23570 | 26322 | 31376 |
 
 VmHWM at the window's end, kB:
 
@@ -260,6 +274,7 @@ VmHWM at the window's end, kB:
 | flac | 20468 | 22128 | 23360 | 24964 | 28224 | 34692 |
 | mp3 | 20552 | 22392 | 23548 | 24792 | 27380 | 32532 |
 | vorbis | 20396 | 23716 | 26476 | 30932 | 39856 | 58156 |
+| opus | 21824 | 23604 | - | 25724 | 28476 | 33528 |
 
 VmSize at the window's end, kB:
 
@@ -270,6 +285,7 @@ VmSize at the window's end, kB:
 | flac | 4785972 | 4785980 | 4785980 | 4785980 | 4785980 | 4785980 |
 | mp3 | 4785972 | 4785980 | 4785980 | 4785980 | 4785980 | 4785980 |
 | vorbis | 4785972 | 4785980 | 4785980 | 4785980 | 4785980 | 4785980 |
+| opus | 4786520 | 4786528 | - | 4786528 | 4786528 | 4786528 |
 
 Mapped with any access (what locking memory would make resident), kB:
 
@@ -280,6 +296,7 @@ Mapped with any access (what locking memory would make resident), kB:
 | flac | 210804 | 211336 | 211924 | 212880 | 214864 | 218716 |
 | mp3 | 210924 | 211580 | 212012 | 212496 | 213576 | 215796 |
 | vorbis | 210796 | 212848 | 215028 | 219064 | 227040 | 243568 |
+| opus | 212152 | 212464 | - | 213284 | 214464 | 216612 |
 
 Threads:
 
@@ -290,6 +307,7 @@ Threads:
 | flac | 71 | 71 | 71 | 71 | 71 | 71 |
 | mp3 | 71 | 71 | 71 | 71 | 71 | 71 |
 | vorbis | 71 | 71 | 71 | 71 | 71 | 71 |
+| opus | 71 | 71 | - | 71 | 71 | 71 |
 
 Load average (1 min) at the window's start and end:
 
@@ -300,6 +318,7 @@ Load average (1 min) at the window's start and end:
 | flac | 36.21 to 38.45 | 38.53 to 34.03 | 42.14 to 41.26 | 39.35 to 41.04 | 42.35 to 35.74 | 38.17 to 42.61 |
 | mp3 | 42.77 to 44.28 | 43.93 to 54.41 | 54.74 to 50.34 | 43.72 to 40.99 | 41.09 to 33.22 | 36.63 to 44.51 |
 | vorbis | 39.44 to 41.18 | 40.54 to 38.46 | 32.92 to 38.23 | 36.61 to 29.15 | 33.92 to 49.45 | 56.84 to 51.32 |
+| opus | 17.99 to 17.05 | 17.13 to 17.46 | - | 18.20 to 17.56 | 17.23 to 16.96 | 18.36 to 20.20 |
 
 Steady (every renderer PLAYING at the end and its position advanced by the window, within 3 s):
 
@@ -310,6 +329,7 @@ Steady (every renderer PLAYING at the end and its position advanced by the windo
 | flac | yes | yes | yes | yes | yes | yes |
 | mp3 | yes | yes | yes | yes | yes | yes |
 | vorbis | yes | yes | yes | yes | yes | yes |
+| opus | yes | yes | - | yes | yes | yes |
 
 RssAnon growth per playing stream against the same server's K = 0, kB:
 
@@ -320,6 +340,7 @@ RssAnon growth per playing stream against the same server's K = 0, kB:
 | flac | 1020 | 1126 | 964 | 890 | 849 |
 | mp3 | 1136 | 1146 | 884 | 766 | 705 |
 | vorbis | 2360 | 2560 | 2394 | 2312 | 2300 |
+| opus | 820 | - | 735 | 712 | 672 |
 
 What the tables say:
 
@@ -327,9 +348,9 @@ What the tables say:
   its player thread 0.4 to 0.5 % of one core; the same signal at 44.1 kHz costs 3.8 to 4.0 %.
   The difference, about 3.5 % of one core, is the resampler (96 zero crossings a side, `f64`
   accumulation: `docs/measurements/resampler-quality.md`). The decoders add what the first
-  table says they do alone: FLAC nothing visible, MP3 about 0.4, Vorbis about 0.8, ALAC
-  TO FILL. Opus decodes at 48 kHz, so it pays its decoder (the dearest of the six) and no
-  resampler: TO FILL % of one core a stream. Most
+  table says they do alone: FLAC nothing visible, MP3 about 0.4, Vorbis 0.4 to 0.8. ALAC is not measured here; its decoder alone costs
+  what Opus's does, so beside the resampler it should sit near Vorbis (an estimate). Opus decodes at 48 kHz, so it pays its decoder (the dearest of the six) and no
+  resampler: 1.3 to 1.5 % of one core a stream. Most
   music is 44.1 kHz and the server runs at 48 kHz, so the resampled figure is the one a house
   pays.
 - **It is linear.** Per stream the figure is the same from K = 1 to K = 16, and the K threads
@@ -406,19 +427,186 @@ is a figure for Soloist or for PipeWire. `chorus-soloistd` is the real superviso
 supervised the fake: what it costs relaying a real Soloist's events is the same code on other
 input.
 
-TO FILL (after the locked run)
+Reader threads (`soloist-reader-<i>`), % of one core per playing receiver (the mean of the K busiest; at K = 0 the mean of all 16, idle):
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 0.405 | 4.49 | 4.30 | 5.12 | 5.05 |
+| 44100 Hz | 0.409 | 0.47 | 0.48 | 0.48 | 0.49 |
+
+The idlest and the busiest of those K reader threads:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | - | 4.49 to 4.49 | 4.15 to 4.38 | 4.99 to 5.26 | 4.80 to 5.34 |
+| 44100 Hz | - | 0.47 to 0.47 | 0.47 to 0.49 | 0.46 to 0.49 | 0.47 to 0.51 |
+
+All 16 reader threads, % of one core, sum:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 6.48 | 9.69 | 21.40 | 44.13 | 80.87 |
+| 44100 Hz | 6.54 | 6.62 | 6.98 | 7.12 | 7.84 |
+
+The `soloist-manager` thread, % of one core:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 0.850 | 0.899 | 0.979 | 1.319 | 1.599 |
+| 44100 Hz | 0.935 | 1.055 | 1.200 | 1.349 | 1.825 |
+
+The audio thread, % of one core:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 0.82 | 0.98 | 1.40 | 2.29 | 3.37 |
+| 44100 Hz | 0.74 | 0.88 | 1.36 | 2.05 | 3.22 |
+
+The client threads (16 endpoints), % of one core, sum:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 9.48 | 8.80 | 8.69 | 9.55 | 9.25 |
+| 44100 Hz | 9.41 | 9.54 | 9.52 | 9.33 | 9.50 |
+
+The whole server process, % of one core:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 18.02 | 20.71 | 32.81 | 57.71 | 95.47 |
+| 44100 Hz | 18.03 | 18.49 | 19.46 | 20.25 | 22.79 |
+
+Server VmRSS at the window's end, kB:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 23736 | 26276 | 28608 | 32056 | 39612 |
+| 44100 Hz | 22192 | 22724 | 24284 | 26308 | 30188 |
+
+Server RssAnon at the window's end, kB:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 17832 | 20372 | 22704 | 26152 | 33708 |
+| 44100 Hz | 16244 | 16776 | 18336 | 20360 | 24240 |
+
+Server RssAnon growth per playing receiver against K = 0, kB:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | - | 2540 | 1218 | 1040 | 992 |
+| 44100 Hz | - | 532 | 523 | 514 | 500 |
+
+Server threads:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 64 | 64 | 64 | 64 | 64 |
+| 44100 Hz | 64 | 64 | 64 | 64 | 64 |
+
+Server mappings with any access, kB:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 197760 | 198348 | 200784 | 203304 | 209560 |
+| 44100 Hz | 192912 | 193160 | 193888 | 194976 | 196696 |
+
+One `chorus-soloistd` whose receiver plays, % of one core, mean:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | - | 0.368 | 0.357 | 0.392 | 0.367 |
+| 44100 Hz | - | 0.387 | 0.387 | 0.381 | 0.392 |
+
+One `chorus-soloistd` whose receiver is idle, % of one core, mean:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 0.392 | 0.354 | 0.351 | 0.391 | - |
+| 44100 Hz | 0.385 | 0.386 | 0.386 | 0.380 | - |
+
+One `chorus-soloistd`, VmRSS kB, mean of all 16:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 2694 | 2695 | 2697 | 2701 | 2708 |
+| 44100 Hz | 2682 | 2682 | 2685 | 2689 | 2697 |
+
+One `chorus-soloistd`, RssAnon kB, mean of all 16:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 275 | 276 | 278 | 282 | 289 |
+| 44100 Hz | 274 | 275 | 277 | 282 | 290 |
+
+One `chorus-soloistd`, Pss kB, mean of all 16:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 333 | 333 | 335 | 340 | 346 |
+| 44100 Hz | 331 | 332 | 334 | 338 | 347 |
+
+One `chorus-soloistd`, Pss_Anon kB, mean of all 16:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 275 | 276 | 278 | 282 | 289 |
+| 44100 Hz | 274 | 275 | 277 | 282 | 290 |
+
+One `chorus-soloistd`, threads:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 8 | 8 | 8 | 8 | 8 |
+| 44100 Hz | 8 | 8 | 8 | 8 | 8 |
+
+Underruns counted by the receivers' ports in the window, all receivers:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 0 | 0 | 0 | 0 | 5 |
+| 44100 Hz | 0 | 1 | 2 | 2 | 32 |
+
+Frames dropped by the receivers' ports in the window, all receivers:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 0 | 0 | 0 | 0 | 0 |
+| 44100 Hz | 0 | 0 | 0 | 0 | 0 |
+
+Load average (1 min) at the window's start and end:
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | 19.60 to 20.49 | 19.94 to 21.20 | 20.67 to 19.61 | 18.67 to 18.78 | 18.51 to 18.51 |
+| 44100 Hz | 17.86 to 19.90 | 20.63 to 21.11 | 20.49 to 20.04 | 20.10 to 19.89 | 19.57 to 18.56 |
+
+Steady (every playing receiver's port played the window's frames within 3 %):
+
+| server | K = 0 | K = 1 | K = 4 | K = 8 | K = 16 |
+|---|---|---|---|---|---|
+| 48000 Hz | yes | yes | NO | NO | yes |
+| 44100 Hz | yes | NO | NO | NO | yes |
 
 What the tables say:
 
-- **A playing receiver costs chorus-server what a 44.1 kHz file does**: TO FILL % of one core
-  on its reader thread at 48 kHz, against TO FILL % at 44.1 kHz where nothing is resampled.
-  The resampler is TO FILL % of one core per playing receiver.
-- **An idle receiver costs almost nothing**: TO FILL % of one core per idle reader thread (it
-  polls an empty FIFO), and TO FILL % for the one manager thread whatever plays.
-- **Memory**: about TO FILL kB of anonymous memory per playing receiver in the server; the
+- **A playing receiver costs chorus-server what a 44.1 kHz file does**: 4.3 to 5.1 % of one core
+  on its reader thread at 48 kHz, against 0.5 % at 44.1 kHz where nothing is resampled.
+  The resampler is about 4.3 % of one core per playing receiver.
+- **An idle receiver is not free**: 0.38 to 0.43 % of one core per idle reader thread (it polls an
+  empty FIFO), so sixteen idle receivers cost 6.5 % between them, and the one manager
+  thread 0.85 to 1.82 %, rising with what plays.
+- **The "steady" row says NO in 5 of the 8 playing windows, and that is not
+  explained.** The ports' `frames_played` counters advanced by 86 to 99 %
+  of the window's frames, the same shortfall for every receiver of a window, with no frame
+  dropped and 42 underruns counted in all 8 windows. Either the fake Soloist
+  delivered less than real time in those windows or the counters are published in steps; this
+  run cannot tell which. The CPU figures are per receiver as it ran: if the fake ran slow, a
+  full-rate receiver costs more by up to that ratio (at most 10 % more at 48 kHz).
+- **Memory**: about 1.0 to 2.5 kB of anonymous memory per playing receiver in the server; the
   `N + 1` threads add their stacks to what locking memory would hold (the mappings row).
-- **`chorus-soloistd`** is small: about TO FILL MB resident (TO FILL MB proportional,
-  TO FILL MB unshareable), TO FILL threads, TO FILL % of one core, playing or idle.
+- **`chorus-soloistd`** is small: about 2.6 MB resident (0.3 MB proportional,
+  0.3 MB unshareable), 8 threads, 0.34 to 0.40 % of one core, playing or idle.
 
 ## What this does not show
 
@@ -452,7 +640,7 @@ The files the tables are made from are committed beside this report, under
 `docs/measurements/raw/concurrent-streams-host-2026-10-03/`, with their own `SHA256SUMS`:
 each run's `windows.jsonl` (one reduced window a line), `params` and `media.tsv`, the decoder
 run's `probe-media.tsv`, and the PipeWire probe's `res-summary.txt`. `receivers-*` and
-`opus-alac-*` are the second build's.
+`opus-alac-*` are the second build's (the `opus-alac` run holds Opus's windows only).
 
 | file | bytes | sha256 |
 |---|---|---|
@@ -465,7 +653,11 @@ run's `probe-media.tsv`, and the PipeWire probe's `res-summary.txt`. `receivers-
 | media.tsv | 995 | `cdc47d5d73f070a008514484a36f578fd72fd2a6dbac281c374e7ce59fc3a14b` |
 | mp3-vorbis-params | 678 | `71dfb3a3b78ab9ff5371d0a48a7423025664e8dd903621bb7d33d278b432faf2` |
 | mp3-vorbis-windows.jsonl | 22323 | `02e1da2b5da4fce5f1fcf96071452f5cf4def7dbe18112a7738cd37c5cccb760` |
+| opus-alac-params | 625 | `cdf316a2fd4acd3224c83096857b46aa9a5e9f4a398e4f8f6b70a3c6ea5c5cf6` |
+| opus-alac-windows.jsonl | 9363 | `6c5cdc33527e80e5025bc80a6e848c3256a1e3b3ae72448278f777679bf9ffaf` |
 | pipewire-res-summary.txt | 3507 | `256dfe44515c4956e82407128bfacb9126e1578a673771af0a457ef7d6debb2f` |
+| receivers-params | 720 | `d59ea15c5735e02b1dfdfcd0fff2efcb269030bd3be25b6a58e2194a3af2a98f` |
+| receivers-windows.jsonl | 38073 | `15e745a45e9d5538a82f04e8136df9eb1310cd9b61aa45bac379b64e6e778ab1` |
 | wav-flac-params | 676 | `ffdbfc1b0e0a6e192ce22a9af199b14e3b8a9e277dd9f17f9d52840d7ce042d6` |
 | wav-flac-windows.jsonl | 22325 | `b34b45b237807ee0e3ba7279b5810b4a3634d20849d95bc6848a367d2c0b8e91` |
 | wav48-params | 673 | `fb02fa3778d4c36c29ff564b805583e918393d84a292a29e8564e2ff4e187791` |
@@ -473,7 +665,7 @@ run's `probe-media.tsv`, and the PipeWire probe's `res-summary.txt`. `receivers-
 
 The full run directories (every `/proc` sample per thread, the servers' and endpoints' logs,
 the control plane's report at each window's end) are kept at `/cache/tmp/chorus-g17/p11/`, not
-committed, indexed by `/cache/tmp/chorus-g17/p11/SHA256SUMS` (sha256 `5367a96be7a90beb502210747713b64addf3671354956c5b6318a93dad82487d`). The
+committed, indexed by `/cache/tmp/chorus-g17/p11/SHA256SUMS` (sha256 `d8bc4bb0db961d55d5295b0a7ac0904d4d726aaab3189bf3ecf6d92b2368960c`). The
 PipeWire probe's files are at `/cache/tmp/chorus-g17/pw-probe/`, indexed by its `SHA256SUMS`
 (104 files; sha256 of the index
 `4b517e0c89657288aaafce72af1bc8b578e4e922b05832a1ce46054e880285ac`); its method and its other

@@ -42,7 +42,7 @@ playing one album is one stream.
   carries `mem_limit`, `pids_limit` and `cpus`; chorus proposes changes to them by PR and
   never merges one (K28).
 - **The host.** Intel Xeon E5-2680 v4, shared with every other homelab service and, during
-  these measurements, with other tenants' builds (one-minute load average 29 to
+  these measurements, with other tenants' builds (one-minute load average 17 to
   65 on four visible CPUs). Every CPU figure below is an upper bound.
 - **Rule 8.** The choice is argued on what chorus needs, not on what this container holds.
 - **No Soloist here.** Soloist is proprietary; chorus never downloads or runs it. Its own cost
@@ -59,8 +59,8 @@ sampled per thread over 60 s. CPU is a percentage of one core of this host under
 |---|---|---|
 | A decoder alone, per stream (`--probe-media`) | WAV 0.08 to 0.10, FLAC 0.22, MP3 0.29, Vorbis 0.30, Opus 0.62, ALAC 0.60 | not measured alone |
 | One stream at the server's rate (48 kHz WAV), its player thread | 0.4 to 0.5 | 0.5 to 0.8 MB |
-| One Opus stream (48 kHz, no resampling), its player thread | TO FILL | TO FILL MB |
-| One stream at 44.1 kHz, its player thread: fetch, decode, resample, write | WAV 3.9 to 4.0, FLAC 3.8 to 3.9, MP3 4.3 to 4.5, Vorbis 4.6 to 4.8, ALAC TO FILL | 0.7 to 1.7 MB; Vorbis 2.3 to 2.6 MB; ALAC TO FILL MB |
+| One Opus stream (48 kHz, no resampling), its player thread | 1.3 to 1.5 | 0.7 to 0.8 MB |
+| One stream at 44.1 kHz, its player thread: fetch, decode, resample, write | WAV 3.9 to 4.0, FLAC 3.8 to 3.9, MP3 4.3 to 4.5, Vorbis 4.3 to 4.8; ALAC not measured through the server (its decoder alone costs what Opus's does, so near Vorbis: an estimate) | 0.7 to 1.7 MB; Vorbis 2.3 to 2.6 MB |
 | The resampler's share of that | about 3.5 | - |
 | The audio thread | 0.7 with nothing playing, about 0.15 more per stream, 2.7 to 3.2 at 16 | - |
 | One connected endpoint (its two client threads), playing or silent | about 0.5 (7.5 to 8.7 for 16) | - |
@@ -70,19 +70,19 @@ sampled per thread over 60 s. CPU is a percentage of one core of this host under
 | The whole server, 8 streams at 44.1 kHz | 41.5 (FLAC) to 49.1 (Vorbis) | 27 to 40 MB resident |
 | The whole server, 16 streams at 44.1 kHz | 73.2 (WAV) to 87.3 (Vorbis) | 33 to 58 MB resident |
 | PipeWire and WirePlumber per Soloist receiver (the probe) | 0.20 to 0.25 playing, under a clock tick idle | 19 MB resident, 3.8 MB unshareable |
-| A playing Soloist receiver in chorus-server (its `soloist-reader` thread: FIFO read, resample 44.1 to 48 kHz, port) | TO FILL; TO FILL on a 44.1 kHz server, where nothing is resampled | TO FILL MB |
-| An idle receiver in chorus-server; the one `soloist-manager` thread | TO FILL per reader; TO FILL | 17 more threads' stacks if memory is locked |
-| `chorus-soloistd`, one per receiver (supervising the fake Soloist) | TO FILL | TO FILL MB resident, TO FILL MB proportional; TO FILL threads |
+| A playing Soloist receiver in chorus-server (its `soloist-reader` thread: FIFO read, resample 44.1 to 48 kHz, port) | 4.3 to 5.1 (up to a tenth more if the fake Soloist ran slow: the report's unexplained shortfall); 0.5 on a 44.1 kHz server, where nothing is resampled | 1.0 to 2.5 MB |
+| An idle receiver in chorus-server; the one `soloist-manager` thread | 0.38 to 0.43 per reader (6.5 for 16); 0.85 to 1.82 | 17 more threads' stacks if memory is locked |
+| `chorus-soloistd`, one per receiver (supervising the fake Soloist) | 0.34 to 0.40 | 2.6 MB resident, 0.3 MB proportional; 8 threads |
 | Soloist itself | not measurable here; P7's `ASSUMED` 1 to 3 while playing | P7's `ASSUMED` 50 to 100 MB |
 
 Three things the numbers say that the planning figures did not:
 
 1. **The resampler, not the decoder, is the cost of a stream.** The planning estimate was
    "about 3 % of one core worst case" per stream with a wire encoder; without any encoder a
-   44.1 kHz stream measures 3.8 to 4.8 %, nine tenths of it the 44.1 to 48 kHz resampler. The
+   44.1 kHz stream measures 3.8 to 4.8 %, about nine tenths of it the 44.1 to 48 kHz resampler. The
    decoders alone are within the planning proxy's range (0.1 to 0.6 %). A receiver's audio
-   arrives at 44.1 kHz too, and a playing Soloist receiver measures TO FILL % on its reader
-   thread, a WAV stream's cost. This is a cost driver, not something this proposal fixes: the
+   arrives at 44.1 kHz too, and a playing Soloist receiver measures 4.3 to 5.1 % on its reader
+   thread, a 44.1 kHz stream's cost. This is a cost driver, not something this proposal fixes: the
    follow-up is named under Open inputs.
 2. **Everything is linear and nothing saturates** up to the code's ceiling of 16 players.
 3. **Memory is not the constraint unlocked, and may be the constraint locked.** The server's
@@ -105,23 +105,23 @@ endpoints than the 16 measured (0.55 % each):
 | 16 (the code's ceiling) | about 90 | nine tenths |
 
 A 48 kHz PCM stream, which needs no resampling, costs about a ninth of a resampled one, and an
-Opus stream (TO FILL %) about a quarter.
+Opus stream (1.3 to 1.5 %) about a third.
 
 A room plays one source at a time (K78), so a stream is a player's or a receiver's, never
 both: eight rooms hear at most eight of them together, and a playing receiver costs what a
-playing file does (TO FILL % against 3.9 to 4.8 %). The table therefore holds for any mix.
-The receivers add, beside the streams, 16 idle reader threads and the manager: TO FILL %
+playing file does (4.3 to 5.1 % against 3.9 to 4.8 %). The table therefore holds for any mix.
+The receivers add, beside the streams, 16 idle reader threads and the manager: 7.3 %
 of one core in all.
 
 Threads: 71 at 16 endpoints, 16 players and 4 renderer workers; the same 71 for 20 endpoints
 and 8 players; 17 more for 16 receivers (`N + 1`): 88, against `pids_limit: 128`. Mapped with
 access, which is what a locked process would hold: 151 MB at 47 threads, 210 MB at 71,
-TO FILL MB at the 64 threads of the receivers' run; about 2.2 to 3 MB a thread, so about
-TO FILL MB for the 88 threads of the recommended deployment (an extrapolation).
+198 MB at the 64 threads of the receivers' run; about 2.2 to 3 MB a thread, so about
+257 MB for the 88 threads of the recommended deployment (an extrapolation).
 
 The receiver containers, with P7's pool of 16: PipeWire and WirePlumber take 16 x 19 MB = about
-300 MB resident and, if all 16 played, about 4 % of one core; `chorus-soloistd` 16 x TO FILL MB
-and TO FILL % each; Soloist itself is `ASSUMED` at
+300 MB resident and, if all 16 played, about 4 % of one core; `chorus-soloistd` 16 x 2.6 MB
+and 0.34 to 0.40 % each; Soloist itself is `ASSUMED` at
 0.8 to 1.6 GB and 16 to 48 % of one core for 16 instances playing (P7's figures, unmeasured).
 Only as many receivers as there are rooms can be heard at once.
 
@@ -154,7 +154,7 @@ moving by the minute.
 | Criterion | A: one per room (8) | B: fixed cap of 4 | C: the ceiling (16) | D: admission by headroom |
 |---|---|---|---|---|
 | Every room can play its own thing (K75) | Yes | No: the fifth is refused (501) | Yes | Not promised |
-| Worst case, chorus-server CPU, % of one core (upper bound) | about 51 | about 30 | about 90 | as its ceiling |
+| Worst case, chorus-server CPU, % of one core (upper bound; the receivers' threads add about 7 to each) | about 51 | about 30 | about 90 | as its ceiling |
 | Margin under `cpus: 1.0` | 2 times | 3 times | 1.1 times | as its ceiling, less the rule's own error |
 | Player threads kept ready | 8 | 4 | 16 | as its ceiling |
 | A refusal is predictable | Yes: the ninth different stream, which 8 rooms cannot ask for | Yes | Yes | No: depends on the host's other tenants |
@@ -163,7 +163,7 @@ moving by the minute.
 
 ## Recommendation
 
-**Recommendation:** Option A, one independent stream per room: 8 players for 8 rooms (`--players 8`), because every figure is linear, eight rooms cannot hear a ninth stream, and the worst case measured (every room its own resampled Vorbis stream, 20 speakers) is about half of one core as an upper bound on a loaded host.
+**Recommendation:** Option A, one independent stream per room: 8 players for 8 rooms (`--players 8`), because every figure is linear, eight rooms cannot hear a ninth stream, and the worst case measured (every room its own resampled Vorbis stream, 20 speakers) is about six tenths of one core, the receivers' idle threads included, as an upper bound on a loaded host.
 
 In numbers, all PROPOSED:
 
@@ -173,18 +173,18 @@ In numbers, all PROPOSED:
 - **UPnP renderers: one per target, no cap.** Sixteen idle renderers cost 0.56 % of one core
   and under 1 MB between them; a renderer costs a stream only while it plays.
 - **Soloist receivers: a pool of 16** (`--soloist-receivers 16`, P7's count: targets, K59),
-  of which at most 8 are heard at once. An idle receiver costs chorus-server TO FILL % of one
+  of which at most 8 are heard at once. An idle receiver costs chorus-server about 0.4 % of one
   core and a thread; a playing one is one of the 8 streams.
 - **chorus-server's container** (the homelab receivers PR carries these, PROPOSED):
   `cpus: 2.0`, `mem_limit: 512m`, `ulimits.memlock` 384 MiB (402653184), `pids_limit: 192`.
-  - CPU: the worst case measured is about TO FILL % of one core (8 resampled Vorbis
+  - CPU: the worst case measured is about 59 % of one core (8 resampled Vorbis
     streams, 20 speakers, 16 receivers, renderers), an upper bound on a loaded host. That is
-    TO FILL times inside `cpus: 1.0` and TO FILL times inside `cpus: 2.0`; chorus
+    1.7 times inside `cpus: 1.0` and 3.4 times inside `cpus: 2.0`; chorus
     proposes 2.0 because the bound is of a host that was not quiet and a throttled audio
     thread is an audible fault, not a slow page.
   - Locked memory: PR #237 grants 64 MiB and the server locks everything it maps. The
     mappings with access are 151 MB with no players or renderers, 210 MB with them, and about
-    TO FILL MB with the receivers' 17 threads: every one of them above 64 MiB.
+    257 MB with the receivers' 17 threads: every one of them above 64 MiB.
     384 MiB is that figure with a margin of about a half; `mem_limit: 512m` sits above it so
     the lock limit, which the server reports by name, is met before the kernel's. Both are
     read from `/proc/<pid>/maps` on an unlocked process, so both are PROPOSED pending the
@@ -192,13 +192,13 @@ In numbers, all PROPOSED:
   - `pids_limit`: 88 threads; 192 leaves room for a `--max-clients` above 20.
 - **Each receiver container** (P7's `ASSUMED` limits, kept): `mem_limit: 192m`, `cpus: 0.25`,
   `pids_limit: 64`. Measured of it: PipeWire and WirePlumber, 19 MB resident and 0.25 % of
-  one core playing, 6 threads with a stand-in client; `chorus-soloistd`, TO FILL MB,
-  TO FILL % and TO FILL threads. That is about TO FILL MB and 0.3 % of one
+  one core playing, 6 threads with a stand-in client; `chorus-soloistd`, 2.6 MB,
+  0.34 to 0.40 % and 8 threads. That is about 22 MB and 0.3 % of one
   core measured. Soloist's own half is `ASSUMED` from P7 (50 to 100 MB, 1 to 3 % of one core
-  playing): at its top the container holds about TO FILL MB of its 192 and about 3.3 % of
+  playing): at its top the container holds about 122 MB of its 192 and about 3.3 % of
   one core of its 25. The owner's measurement of one Soloist instance (Open inputs) is what
   makes these final; a figure above about 150 MB would raise `mem_limit`, nothing else.
-- **The pool's total**: 16 receiver containers at about TO FILL MB measured plus
+- **The pool's total**: 16 receiver containers at about 22 MB measured plus
   Soloist's `ASSUMED` 50 to 100 MB each is 1.2 to 2.0 GB resident, 3.1 GB if every container
   reached its limit.
 
@@ -247,6 +247,9 @@ below the code's ceilings and nothing is promised about them.
   default 2 MiB stack of each of its 88 threads. Sized stacks would bring the locked set near
   the resident set measured here; until that is built and measured, the memory limits above
   are sized for the stacks as they are.
+- **ALAC through the whole server**: not measured (its runs were not granted the locks, and
+  one ended on a busy control plane); `CHORUS_STREAMS_FORMATS=alac make concurrent-streams`
+  under the locks adds the row. Its decoder alone is measured.
 - **Wire encoders and DSP.** The server sends PCM and applied no EQ or room correction in
   these runs. Goal 12's DSP and any coded wire format add to the audio thread and are
   measured where they are built.
