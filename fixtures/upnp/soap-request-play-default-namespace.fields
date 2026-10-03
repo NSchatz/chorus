@@ -1,0 +1,9 @@
+# Default namespaces instead of prefixes, and no XML declaration.
+soapaction = "urn:schemas-upnp-org:service:AVTransport:1#Play"
+service = avt
+parse = ok
+service_type = urn:schemas-upnp-org:service:AVTransport:1
+action = Play
+arg.0 = InstanceID=0
+arg.1 = Speed=1
+validate = ok

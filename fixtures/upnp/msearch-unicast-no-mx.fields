@@ -1,0 +1,5 @@
+multicast = false
+result = ok
+st = upnp:rootdevice
+window_ms = 1000
+responses = 1

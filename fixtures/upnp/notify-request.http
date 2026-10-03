@@ -1,0 +1,11 @@
+NOTIFY /cb HTTP/1.1
+HOST: 192.0.2.50:49152
+CONTENT-TYPE: text/xml; charset="utf-8"
+NT: upnp:event
+NTS: upnp:propchange
+SID: uuid:abababab-abab-4bab-abab-abababababab
+SEQ: 3
+CONTENT-LENGTH: 342
+
+<?xml version="1.0"?>
+<e:propertyset xmlns:e="urn:schemas-upnp-org:event-1-0"><e:property><LastChange>&lt;Event xmlns="urn:schemas-upnp-org:metadata-1-0/RCS/"&gt;&lt;InstanceID val="0"&gt;&lt;Volume channel="Master" val="60"/&gt;&lt;Mute channel="Master" val="1"/&gt;&lt;/InstanceID&gt;&lt;/Event&gt;</LastChange></e:property></e:propertyset>

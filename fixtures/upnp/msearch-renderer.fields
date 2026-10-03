@@ -1,0 +1,5 @@
+multicast = true
+result = ok
+st = urn:schemas-upnp-org:device:MediaRenderer:1
+window_ms = 1000
+responses = 1

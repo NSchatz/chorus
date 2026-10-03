@@ -1,0 +1,3 @@
+service = rcs
+action = GetVolume
+out.0 = CurrentVolume=20

@@ -1,0 +1,4 @@
+# The UPnP 1.0 keyword is silently ignored (UDA 1.1 section 4.1.2).
+method = SUBSCRIBE
+result = new
+callback.0 = http://192.0.2.50:49152/cb

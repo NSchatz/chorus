@@ -10,6 +10,9 @@
 # server (crates/dsp/src/roomfit.rs); an endpoint only runs the filters it is sent.
 # fixtures/cec (goal 13) is Rust-only by declaration: CEC runs on the Linux hub alone (crates/cec,
 # read by crates/cec/tests/fixtures.rs); there is no C implementation of it.
+# fixtures/upnp (goal 16) is Rust-only by declaration: the UPnP AV media renderer runs in
+# chorus-server alone (crates/upnp, read by crates/upnp/tests/fixtures.rs, which also fails on a
+# file no test reads); no endpoint speaks UPnP and there is no C implementation of it.
 # fixtures/protocol/v2 is read by firmware/tests/test_protocol_v2.c (every vector, both
 # assertions) and its noise/ directory by firmware/tests/test_noise.c (the published vector in
 # both roles), since the endpoint moved to protocol v2 (goal 6), and its rejected/ directory

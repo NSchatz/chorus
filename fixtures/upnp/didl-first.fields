@@ -1,0 +1,10 @@
+result = metadata
+title = First
+class = object.item.audioItem.musicTrack
+res.count = 1
+res.0.uri = http://192.0.2.50:8000/track1.flac
+res.0.protocol = http-get
+res.0.network = *
+res.0.content_format = audio/flac
+res.0.additional_info = *
+res.0.duration_ms = 3000

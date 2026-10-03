@@ -1,0 +1,3 @@
+# A DOCTYPE with nested entities and an external one: no metadata, and the action that carried
+# it still succeeds.
+result = none

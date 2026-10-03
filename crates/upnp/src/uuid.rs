@@ -38,13 +38,13 @@ pub fn sha1(data: &[u8]) -> [u8; 20] {
     let tail_len = if rest < 56 { 64 } else { 128 };
     tail[tail_len - 8..tail_len].copy_from_slice(&bits.to_be_bytes());
 
-    let blocks = data[..whole]
-        .chunks_exact(64)
-        .chain(tail[..tail_len].chunks_exact(64));
-    for block in blocks {
+    let (whole_blocks, _) = data[..whole].as_chunks::<64>();
+    let (tail_blocks, _) = tail[..tail_len].as_chunks::<64>();
+    for block in whole_blocks.iter().chain(tail_blocks) {
         let mut w = [0u32; 80];
-        for (t, word) in block.chunks_exact(4).enumerate() {
-            w[t] = u32::from_be_bytes([word[0], word[1], word[2], word[3]]);
+        let (words, _) = block.as_chunks::<4>();
+        for (t, word) in words.iter().enumerate() {
+            w[t] = u32::from_be_bytes(*word);
         }
         for t in 16..80 {
             w[t] = (w[t - 3] ^ w[t - 8] ^ w[t - 14] ^ w[t - 16]).rotate_left(1);

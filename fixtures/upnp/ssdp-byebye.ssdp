@@ -1,0 +1,48 @@
+NOTIFY * HTTP/1.1
+HOST: 239.255.255.250:1900
+NT: upnp:rootdevice
+NTS: ssdp:byebye
+USN: uuid:3b8fa6e6-bb30-5005-b768-3e87f0af9a9a::upnp:rootdevice
+BOOTID.UPNP.ORG: 1790934000
+CONFIGID.UPNP.ORG: 1234567
+
+NOTIFY * HTTP/1.1
+HOST: 239.255.255.250:1900
+NT: uuid:3b8fa6e6-bb30-5005-b768-3e87f0af9a9a
+NTS: ssdp:byebye
+USN: uuid:3b8fa6e6-bb30-5005-b768-3e87f0af9a9a
+BOOTID.UPNP.ORG: 1790934000
+CONFIGID.UPNP.ORG: 1234567
+
+NOTIFY * HTTP/1.1
+HOST: 239.255.255.250:1900
+NT: urn:schemas-upnp-org:device:MediaRenderer:1
+NTS: ssdp:byebye
+USN: uuid:3b8fa6e6-bb30-5005-b768-3e87f0af9a9a::urn:schemas-upnp-org:device:MediaRenderer:1
+BOOTID.UPNP.ORG: 1790934000
+CONFIGID.UPNP.ORG: 1234567
+
+NOTIFY * HTTP/1.1
+HOST: 239.255.255.250:1900
+NT: urn:schemas-upnp-org:service:AVTransport:1
+NTS: ssdp:byebye
+USN: uuid:3b8fa6e6-bb30-5005-b768-3e87f0af9a9a::urn:schemas-upnp-org:service:AVTransport:1
+BOOTID.UPNP.ORG: 1790934000
+CONFIGID.UPNP.ORG: 1234567
+
+NOTIFY * HTTP/1.1
+HOST: 239.255.255.250:1900
+NT: urn:schemas-upnp-org:service:RenderingControl:1
+NTS: ssdp:byebye
+USN: uuid:3b8fa6e6-bb30-5005-b768-3e87f0af9a9a::urn:schemas-upnp-org:service:RenderingControl:1
+BOOTID.UPNP.ORG: 1790934000
+CONFIGID.UPNP.ORG: 1234567
+
+NOTIFY * HTTP/1.1
+HOST: 239.255.255.250:1900
+NT: urn:schemas-upnp-org:service:ConnectionManager:1
+NTS: ssdp:byebye
+USN: uuid:3b8fa6e6-bb30-5005-b768-3e87f0af9a9a::urn:schemas-upnp-org:service:ConnectionManager:1
+BOOTID.UPNP.ORG: 1790934000
+CONFIGID.UPNP.ORG: 1234567
+

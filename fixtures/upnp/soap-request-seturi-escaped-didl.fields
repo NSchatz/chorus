@@ -1,0 +1,11 @@
+# Escaped DIDL-Lite metadata (UDA 1.1 section 3.2.1): unescaped once, the argument is the
+# document of didl-track.xml; its title unescapes once more to A & B <"x"> é.
+soapaction = "urn:schemas-upnp-org:service:AVTransport:1#SetAVTransportURI"
+service = avt
+parse = ok
+service_type = urn:schemas-upnp-org:service:AVTransport:1
+action = SetAVTransportURI
+arg.0 = InstanceID=0
+arg.1 = CurrentURI=http://192.0.2.50:8000/track2.flac?a=1&b=2
+arg.2 = CurrentURIMetaData=<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"><item id="2" parentID="0" restricted="1"><dc:title>A &amp; B &lt;"x"&gt; é</dc:title><dc:creator>The Creator</dc:creator><upnp:artist role="Performer">The Artist</upnp:artist><upnp:album>The Album</upnp:album><upnp:albumArtURI>http://192.0.2.50:8000/art.jpg?a=1&amp;b=2</upnp:albumArtURI><upnp:class>object.item.audioItem.musicTrack</upnp:class><res protocolInfo="http-get:*:audio/flac:*" duration="0:03:25.000" size="23456789" sampleFrequency="44100" nrAudioChannels="2">http://192.0.2.50:8000/track2.flac</res></item></DIDL-Lite>
+validate = ok

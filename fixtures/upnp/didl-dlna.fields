@@ -1,0 +1,20 @@
+# A control point's DIDL-Lite with DLNA fields in protocolInfo and vendor namespaces: read, the
+# fourth protocolInfo field kept as opaque text.
+result = metadata
+title = Radio Track
+artist = Creator Only
+class = object.item.audioItem.musicTrack
+res.count = 2
+res.0.uri = http://192.0.2.50:8200/MediaItems/22.mp3
+res.0.protocol = http-get
+res.0.network = *
+res.0.content_format = audio/mpeg
+res.0.additional_info = DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000
+res.0.duration_ms = 250500
+res.0.sample_frequency = 48000
+res.0.nr_audio_channels = 2
+res.1.uri = http://192.0.2.50:8200/MediaItems/22.pcm
+res.1.protocol = http-get
+res.1.network = *
+res.1.content_format = audio/L16;rate=44100;channels=2
+res.1.additional_info = DLNA.ORG_PN=LPCM

@@ -1,0 +1,1 @@
+<Envelope xmlns="http://schemas.xmlsoap.org/soap/envelope/"><Body><Play xmlns="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID xmlns="">0</InstanceID><Speed xmlns="">1</Speed></Play></Body></Envelope>

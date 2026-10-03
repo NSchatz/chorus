@@ -1,0 +1,5 @@
+# GetMediaInfo after SetAVTransportURI(track2, didl-track.xml): the metadata comes back byte for
+# byte after one unescape.
+service = avt
+action = GetMediaInfo
+from = avtransport-after-seturi-track

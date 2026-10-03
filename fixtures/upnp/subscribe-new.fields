@@ -1,0 +1,5 @@
+# UDA 1.1 section 4.1.2's template.
+method = SUBSCRIBE
+result = new
+callback.0 = http://192.0.2.50:49152/cb
+timeout_s = 1800

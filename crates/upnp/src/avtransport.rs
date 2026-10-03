@@ -670,6 +670,7 @@ impl AvTransport {
     ///
     /// No media: 701. PAUSED_PLAYBACK and TRANSITIONING: 701 (section
     /// 2.4.13.2: "allowed in the STOPPED and PLAYING transport states").
+    #[allow(clippy::should_implement_trait)] // the action is named Next
     pub fn next(&mut self) -> Result<Vec<Effect>, UpnpError> {
         if !self.has_media() {
             return Err(error::AVT_TRANSITION_NOT_AVAILABLE);

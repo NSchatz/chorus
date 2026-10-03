@@ -1,0 +1,4 @@
+method = SUBSCRIBE
+result = new
+callback.0 = http://192.0.2.50:49152/a
+callback.1 = http://192.0.2.50:49153/b

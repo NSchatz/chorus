@@ -1,0 +1,6 @@
+SUBSCRIBE /upnp/3b8fa6e6-bb30-5005-b768-3e87f0af9a9a/avt/event HTTP/1.1
+HOST: 192.0.2.10:49200
+CALLBACK: <http://192.0.2.50:49152/cb>
+NT: upnp:event
+TIMEOUT: Second-1800
+
