@@ -17,7 +17,6 @@ use std::collections::BTreeMap;
 use chorus_control::json::{self, Value};
 use chorus_upnp::uuid::Target;
 
-
 /// What a target is.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {

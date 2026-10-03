@@ -42,7 +42,7 @@ an alarm must still wake.
 | A chime | `chime:<name>` | the chime rendered at start, repeated with a gap (`docs/chimes.md`) | the name is not a chime (`unknown-chime`) |
 | A line-in | `line-in:<endpoint>/<input>` | the input's port, shared with any group already playing it | it is not offered when the alarm fires (`not-offered`); its endpoint goes while it rings (`input-gone`) |
 | A stored stream URL | `stored:<id>`, kind `url` | a network media player (`--players`), fetched under the fetch policy | below |
-| A Spotify playlist | `stored:<id>`, kind `spotify` | a Soloist receiver, built by the Soloist server track | below; **off by default** |
+| A Spotify URI (a playlist, album, track or episode) | `stored:<id>`, kind `spotify` | the Soloist receiver of the alarm's room or saved group (`--soloist-receivers`, `docs/soloist.md`) | below; **off by default** (`--soloist-alarms`) |
 
 Also accepted and never played: `none` (`source-none`), `player:<id>` (`player-source`: an
 alarm has no media to hand a player), and a stored source that was edited out of the state file
@@ -97,12 +97,35 @@ so an alarm firing in a room that is casting, on a server with one player, rings
 ### The Spotify playlist source
 
 `chorusctl sources store wake-list spotify "Wake up" spotify:playlist:<id>` stores and validates
-the URI. Playing it is the Soloist server track's (Soloist is proprietary; chorus never ships
-or downloads it). It ships **switched off**: with the switch off (every server today) the alarm
-rings the chime with reason `soloist-off`. The seam is in the schedule runtime
-(`Effect::PlaySpotify`, `Runtime::set_soloist_alarms`, and the two answers every stored source
-uses, `on_alarm_source_started` and `on_alarm_source_failed`); with the switch on and no
-receiver, the answer is `soloist-unavailable`.
+the URI. It is played by the Spotify Soloist receiver of the alarm's target (Soloist is
+proprietary: chorus never ships or downloads it, the owner installs it; `docs/soloist.md`).
+
+It ships **switched off**. Without `--soloist-alarms` the alarm rings the chime with reason
+`soloist-off`, whether or not the server runs receivers. The switch is the owner's to turn
+after reading the alarm clause of Spotify's Developer Policy in their own developer dashboard
+(proposal P7, "Alarms"): the API allows the play, and whether a household alarm is a use the
+policy allows is not chorus's to decide.
+
+With `--soloist-alarms`, when the alarm fires the room is held silent, the receiver of the
+alarm's target is sent `play` with the stored URI, and when it reports `playing` the alarm's
+group plays it (`soloist:r<i>`) through the alarm's ramp. It plays in whichever household
+account last selected that room's device in the Spotify app. Each way it cannot start rings the
+chime instead, with its reason in the log:
+
+| Reason | When |
+|---|---|
+| `soloist-off` | the server was started without `--soloist-alarms` |
+| `soloist-unavailable` | the server runs no receiver, the target has none (the pool is too small), or its receiver is not running (no supervisor connected, starting, failed, no binary) |
+| `soloist-expired` | the Soloist build has expired (exit code 10), or has less than a day left |
+| `soloist-logged-out` | nobody has selected the device in the Spotify app, so Soloist has no session to play in |
+| `soloist-timeout` | `play` was sent and no `playing` came within 10 s |
+
+Stopping the alarm (or its duration ending) restores what the room played, and the receiver,
+which no group plays any more, is paused. The seam is `Effect::PlaySpotify` and the two answers
+every stored source uses, `Runtime::on_alarm_source_started` and `on_alarm_source_failed`; the
+receiver manager (`crates/server/src/soloist.rs`) does the checking, the play and the wait.
+Tested on the real binary with the real supervisor and the fake Soloist:
+`crates/server/tests/soloist_receivers.rs`, five tests, one per row above and one that plays.
 
 ## Line-in sharing
 

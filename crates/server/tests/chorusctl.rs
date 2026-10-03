@@ -1,6 +1,7 @@
 //! chorusctl against the real `chorus-server` binary: at least one verb of
-//! each of its seven nouns (rooms, groups, volume, inputs, sources, endpoints,
-//! updates),
+//! each of its eight nouns (rooms, groups, volume, inputs, sources, soloist,
+//! endpoints, updates; the soloist verbs against real receivers are
+//! `soloist_receivers.rs`'s),
 //! through chorusctl's own entry point, with every answer checked against the
 //! server's state.
 //!
@@ -58,7 +59,7 @@ fn text<'a>(value: &'a Value, key: &str) -> &'a str {
 }
 
 #[test]
-fn chorusctl_drives_the_real_server_through_all_seven_nouns() {
+fn chorusctl_drives_the_real_server_through_all_eight_nouns() {
     let firmware = std::env::temp_dir().join(common::fresh_id("chorusctl-firmware"));
     std::fs::create_dir_all(&firmware).expect("a firmware directory");
     let server = RunningServer::start(&[
@@ -231,6 +232,17 @@ fn chorusctl_drives_the_real_server_through_all_seven_nouns() {
     );
     let unknown = refused(&server, &["sources", "forget", "morning-radio"]);
     assert!(unknown.contains("no stored source"), "{}", unknown);
+
+    // soloist (goal 17): this server runs no receiver, and says so.
+    assert_eq!(
+        ok(&server, &["soloist", "status"]),
+        "this server runs no Soloist receiver (--soloist-receivers)\n"
+    );
+    assert_eq!(ok(&server, &["soloist", "status", "--json"]), "null\n");
+    let none = refused(&server, &["soloist", "restart"]);
+    assert!(none.contains("no-receivers"), "{}", none);
+    let none = refused(&server, &["soloist", "pause", "kitchen"]);
+    assert!(none.contains("no-receivers"), "{}", none);
 
     // endpoints: a real session is adopted; list, show, name, room, forget.
     let id = common::fresh_id("chorusctl-speaker");

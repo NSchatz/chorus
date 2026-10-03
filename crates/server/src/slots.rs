@@ -81,9 +81,9 @@ use chorus_sync::latency_grow::{
 
 use crate::linein::{decode_sample, encode_sample, Port};
 use crate::playerport::PlayerPort;
-use crate::soloistport::SoloistPort;
 use crate::router::Router;
 use crate::serve::{ServeError, ServeParams};
+use crate::soloistport::SoloistPort;
 use crate::source::PcmSource;
 use crate::stream::Outbound;
 

@@ -562,7 +562,10 @@ fn signal_heard(room: &Recorder, from: usize, uri: &str) -> Vec<u64> {
 /// the fake itself does when its pipe is full, as PipeWire's sink does: a
 /// whole write of 512 frames dropped. Returns how many frames were heard.
 fn assert_sample_for_sample(indices: &[u64], what: &str) -> usize {
-    assert!(!indices.is_empty(), "{what}: nothing of the signal was heard");
+    assert!(
+        !indices.is_empty(),
+        "{what}: nothing of the signal was heard"
+    );
     for pair in indices.windows(2) {
         let step = pair[1].wrapping_sub(pair[0]);
         assert!(
@@ -630,7 +633,12 @@ fn receivers_follow_the_rooms_the_saved_groups_and_the_live_groups_under_their_n
     );
     let _supervisors = bench.supervisors(6);
     running(&server, &["r0", "r1", "r2", "r3"]);
-    for (id, room) in [("r0", "kitchen"), ("r1", "den"), ("r2", "study"), ("r3", "hall")] {
+    for (id, room) in [
+        ("r0", "kitchen"),
+        ("r1", "den"),
+        ("r2", "study"),
+        ("r3", "hall"),
+    ] {
         assert_eq!(
             receiver(&server, id),
             ("running".into(), format!("room:{room}"), room.to_string())
@@ -701,13 +709,17 @@ fn receivers_follow_the_rooms_the_saved_groups_and_the_live_groups_under_their_n
 
     // One target more than receivers: it has none, and the state says so.
     server.applied(r#"{"v":2,"t":"join","zone":"kitchen","target":"den"}"#);
-    wait_for("the newest live group is listed as having no receiver", || {
-        list(&soloist(&server), "exhausted")
-            .iter()
-            .any(|t| t.as_str() == Some("live:den+kitchen"))
-    });
-    assert!(ctl_ok(&server, &["soloist", "status"])
-        .contains("no receiver left for: live:den+kitchen"));
+    wait_for(
+        "the newest live group is listed as having no receiver",
+        || {
+            list(&soloist(&server), "exhausted")
+                .iter()
+                .any(|t| t.as_str() == Some("live:den+kitchen"))
+        },
+    );
+    assert!(
+        ctl_ok(&server, &["soloist", "status"]).contains("no receiver left for: live:den+kitchen")
+    );
 }
 
 /// Line B's first half: the Spotify app plays on a room's device, the room
@@ -764,15 +776,27 @@ fn the_spotify_app_playing_on_a_rooms_receiver_is_heard_in_the_room_sample_for_s
     });
 
     // The reader's counters are in the metrics endpoint.
-    let played = metric(&server, "chorus_soloist_frames_played_total{receiver=\"r0\"}").unwrap();
+    let played = metric(
+        &server,
+        "chorus_soloist_frames_played_total{receiver=\"r0\"}",
+    )
+    .unwrap();
     assert!(played >= 2 * i64::from(RATE), "{played}");
-    assert!(metric(&server, "chorus_soloist_frames_read_total{receiver=\"r0\"}").unwrap() >= played);
+    assert!(
+        metric(&server, "chorus_soloist_frames_read_total{receiver=\"r0\"}").unwrap() >= played
+    );
     assert_eq!(
-        metric(&server, "chorus_soloist_frames_dropped_total{receiver=\"r0\"}"),
+        metric(
+            &server,
+            "chorus_soloist_frames_dropped_total{receiver=\"r0\"}"
+        ),
         Some(0)
     );
     assert_eq!(
-        metric(&server, "chorus_soloist_receiver_connected{receiver=\"r0\"}"),
+        metric(
+            &server,
+            "chorus_soloist_receiver_connected{receiver=\"r0\"}"
+        ),
         Some(1)
     );
 }
@@ -858,7 +882,11 @@ fn playing_on_a_groups_receiver_takes_its_rooms_and_playing_on_a_rooms_takes_it_
         1,
         "the kitchen went from its own receiver to the group's, once"
     );
-    assert_eq!(switches(&den.chunks(), "the den"), 0, "the den heard only B");
+    assert_eq!(
+        switches(&den.chunks(), "the den"),
+        0,
+        "the den heard only B"
+    );
     assert!(
         in_den[0] < 2 * u64::from(RATE),
         "the den's first frame is frame {} of the track",
@@ -874,7 +902,11 @@ fn playing_on_a_groups_receiver_takes_its_rooms_and_playing_on_a_rooms_takes_it_
         .chunks()
         .iter()
         .skip(den_from)
-        .filter(|c| frames(c).iter().any(|f| matches!(classify(*f), Heard::Signal(_))))
+        .filter(|c| {
+            frames(c)
+                .iter()
+                .any(|f| matches!(classify(*f), Heard::Signal(_)))
+        })
         .filter(|c| {
             in_kitchen
                 .iter()
@@ -1129,7 +1161,9 @@ fn with_soloist_alarms_an_alarm_plays_its_stored_uri_and_the_room_hears_it() {
     running(&server, &["r0"]);
     bench.app(0, "login");
     wait_for("the alarm rings", || ringing(&server, "wake"));
-    server.wait_for(&format!("soloist receiver=r0 alarm=wake play uri={PLAYLIST}"));
+    server.wait_for(&format!(
+        "soloist receiver=r0 alarm=wake play uri={PLAYLIST}"
+    ));
     wait_for("the kitchen plays the receiver", || {
         playing_in(&server, "kitchen").1 == "soloist:r0"
     });
@@ -1252,7 +1286,10 @@ fn a_build_near_expiry_warns_an_expired_one_says_so_and_restart_after_an_update_
         "{status}"
     );
     assert!(status.contains("(expires in 10 days)"), "{status}");
-    assert!(status.contains("r0") && status.contains("room:kitchen"), "{status}");
+    assert!(
+        status.contains("r0") && status.contains("room:kitchen"),
+        "{status}"
+    );
     let left = metric(&server, "chorus_soloist_build_expires_seconds").unwrap();
     assert!(
         (10 * 86_400..=10 * 86_400 + 3_600).contains(&left),
@@ -1265,7 +1302,10 @@ fn a_build_near_expiry_warns_an_expired_one_says_so_and_restart_after_an_update_
     bench.fake(
         0,
         &[
-            ("FAKE_SOLOIST_VERSION", &format!("Soloist 9.9.9, build {old}, Linux/test")),
+            (
+                "FAKE_SOLOIST_VERSION",
+                &format!("Soloist 9.9.9, build {old}, Linux/test"),
+            ),
             ("FAKE_SOLOIST_EXPIRED", "1"),
         ],
     );
@@ -1275,7 +1315,10 @@ fn a_build_near_expiry_warns_an_expired_one_says_so_and_restart_after_an_update_
             && text(&soloist(&server), "warning") == "Soloist build expired"
     });
     let status = ctl_ok(&server, &["soloist", "status"]);
-    assert!(status.starts_with("warning: Soloist build expired\n"), "{status}");
+    assert!(
+        status.starts_with("warning: Soloist build expired\n"),
+        "{status}"
+    );
     assert!(status.contains("expired"), "{status}");
     assert_eq!(metric(&server, "chorus_soloist_build_expired"), Some(1));
     assert!(metric(&server, "chorus_soloist_build_expires_seconds").unwrap() < 0);
@@ -1283,7 +1326,11 @@ fn a_build_near_expiry_warns_an_expired_one_says_so_and_restart_after_an_update_
     // fixed wait, to show nothing happens.)
     let starts = bench.starts(0).len();
     thread::sleep(Duration::from_millis(500));
-    assert_eq!(bench.starts(0).len(), starts, "an expired build is not retried");
+    assert_eq!(
+        bench.starts(0).len(),
+        starts,
+        "an expired build is not retried"
+    );
 
     // The owner installs a new build and runs `chorusctl soloist restart`.
     bench.fake(0, &[("FAKE_SOLOIST_VERSION", &version_expiring_in(89))]);
@@ -1310,7 +1357,13 @@ fn soloist_or_its_supervisor_restarted_mid_play_is_reconnected_and_the_room_play
     running(&server, &["r0"]);
     bench.app(0, "login");
     bench.app(0, &format!("play {TRACK_A}"));
-    let heard = hears(&kitchen, 0, TRACK_A, RATE as usize / 2, "the kitchen hears A");
+    let heard = hears(
+        &kitchen,
+        0,
+        TRACK_A,
+        RATE as usize / 2,
+        "the kitchen hears A",
+    );
     assert_sample_for_sample(&heard, "the kitchen, before");
 
     // Soloist dies (a crash: exit code 1). The supervisor starts it again;
@@ -1337,7 +1390,10 @@ fn soloist_or_its_supervisor_restarted_mid_play_is_reconnected_and_the_room_play
         receiver(&server, "r0").0 == "absent"
     });
     assert_eq!(
-        metric(&server, "chorus_soloist_receiver_connected{receiver=\"r0\"}"),
+        metric(
+            &server,
+            "chorus_soloist_receiver_connected{receiver=\"r0\"}"
+        ),
         Some(0)
     );
     supervisors[0] = bench.supervisor(0, 1);
@@ -1514,7 +1570,11 @@ fn the_receivers_threads_are_fixed_at_start_and_absent_without_the_flag() {
     thread::sleep(Duration::from_millis(300));
     let mut back = [0u8; 8192];
     let n = pipe.read(&mut back).unwrap();
-    assert_eq!((n, &back[..n]), (4096, &[7u8; 4096][..]), "nothing drained it");
+    assert_eq!(
+        (n, &back[..n]),
+        (4096, &[7u8; 4096][..]),
+        "nothing drained it"
+    );
     let entries: Vec<String> = fs::read_dir(quiet.dir())
         .unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())

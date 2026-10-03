@@ -195,7 +195,9 @@ fn run(path: PathBuf, port: Arc<SoloistPort>, stats: Arc<ReaderStats>, keep: Arc
                     converter.reset();
                 }
                 let (frames, samples) = converter.feed(&scratch[..n]);
-                stats.frames_read.fetch_add(frames as u64, Ordering::Relaxed);
+                stats
+                    .frames_read
+                    .fetch_add(frames as u64, Ordering::Relaxed);
                 port.write(samples, quiet);
             }
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => thread::sleep(POLL),

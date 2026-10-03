@@ -1,7 +1,7 @@
 # chorusctl
 
 `chorusctl` is the command line over the chorus control API (`docs/control-plane.md`): rooms,
-groups, volume, inputs, stored sources, endpoints and firmware updates, from a terminal or a script. It is a thin
+groups, volume, inputs, stored sources, Spotify receivers, endpoints and firmware updates, from a terminal or a script. It is a thin
 client. It keeps no state, decides nothing the server decides, and every command it sends is one
 message of the control catalog, byte for byte the vector under `fixtures/control` for the same
 arguments (`crates/ctl/tests/commands.rs` holds it to that).
@@ -99,6 +99,14 @@ endpoints: the adopted speakers and the endpoints attached to rooms
   name <speaker> <name>             name an adopted speaker
   room <speaker> (<room> | --none)  assign a speaker to a room, or to none
   forget <speaker>                  forget a speaker and its pinned key; it is adopted afresh
+
+soloist: the Spotify Soloist receivers: their build's expiry, and playback
+  status                    every receiver, the build, its expiry warning, targets with no receiver
+  restart                   have every receiver read its Soloist binary again and start again
+  pause <room or group>     pause what the room's or group's Spotify receiver is playing
+  resume <room or group>    carry on after a pause
+  next <room or group>      the next track
+  previous <room or group>  the previous track, or the start of this one
 
 updates: firmware images staged on the server, and installs
   list                                           the staged images and the server's verdict on each
@@ -219,6 +227,27 @@ policy's to say when the alarm rings. There is no verb that plays a stored sourc
 an alarm does (brief section 4.8), and a `groups take --source stored:<id>` is the server's
 refusal. `sources forget` is refused while an alarm plays the source.
 
+### soloist
+
+| Command | Sends | `--json` prints |
+|---|---|---|
+| `soloist status` | (reads) | the state's `soloist` member (`null` on a server that runs no receiver) |
+| `soloist restart` | `soloist_restart` | the state message |
+| `soloist pause <room or group>` | `playback` | the state message |
+| `soloist resume <room or group>` | `playback` | the state message |
+| `soloist next <room or group>` | `playback` | the state message |
+| `soloist previous <room or group>` | `playback` | the state message |
+
+The Spotify Soloist receivers (goal 17, `docs/soloist.md`). `soloist status` prints the expiry
+warning first when there is one (`warning: Soloist build expires in 10 days`, or `warning: Soloist
+build expired`), then the build and its days left, every receiver with its state, target and
+Spotify Connect device name, and the targets the pool had no receiver for. `soloist restart` is
+what the owner runs after replacing the Soloist binary: every receiver's supervisor reads the
+binary again, clears `expired` and starts again. The four playback verbs go to the receiver the
+room's or group's formed group is playing now, and are the server's refusal for a room that plays
+anything else. On a server started without `--soloist-receivers`, `status` says so and the others
+are refused (`no-receivers`).
+
 ### endpoints
 
 | Command | Sends | `--json` prints |
@@ -315,8 +344,9 @@ none) and `status` is the HTTP status it answered with.
 - `crates/ctl/tests/output.rs`: the listings and the `--json` output, from the state vectors.
 - `crates/ctl/tests/exit_codes.rs`: each exit code, against an in-process fake server on loopback
   replaying the vectors' bytes.
-- `crates/server/tests/chorusctl.rs`: the real `chorus-server` binary driven through all seven
-  nouns.
+- `crates/server/tests/chorusctl.rs`: the real `chorus-server` binary driven through all eight
+  nouns; `crates/server/tests/soloist_receivers.rs` drives the `soloist` verbs against real
+  receiver supervisors and the fake Soloist.
 
 ```sh
 cargo test -p chorus-ctl

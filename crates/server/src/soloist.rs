@@ -313,7 +313,10 @@ impl Link {
         let view = lock(&self.view).clone();
         let mut out = String::new();
         let family = |name: &str, kind: &str, help: &str, out: &mut String| {
-            out.push_str(&format!("# HELP {} {}\n# TYPE {} {}\n", name, help, name, kind));
+            out.push_str(&format!(
+                "# HELP {} {}\n# TYPE {} {}\n",
+                name, help, name, kind
+            ));
         };
         family(
             "chorus_soloist_build_expires_seconds",
@@ -1223,7 +1226,9 @@ impl Manager {
     }
 
     fn expired(&self, rx: &Receiver) -> bool {
-        rx.status.as_ref().is_some_and(|s| s.state == State::Expired)
+        rx.status
+            .as_ref()
+            .is_some_and(|s| s.state == State::Expired)
             || rx.build.as_ref().is_some_and(|b| {
                 matches!(
                     Expiry::at(b.expires_epoch, wall_clock()),
@@ -1253,7 +1258,10 @@ impl Manager {
         let rx = &self.receivers[index];
         let id = rx.id();
         let refusal = if self.expired(rx) {
-            Some(("soloist-expired", format!("{}: the Soloist build expired", id)))
+            Some((
+                "soloist-expired",
+                format!("{}: the Soloist build expired", id),
+            ))
         } else if !rx.running() {
             let state = rx
                 .status
@@ -1397,10 +1405,11 @@ impl Manager {
             .min_by_key(|b| b.expires_epoch)
             .or(builds.first())
             .copied();
-        let exited_expired = self
-            .receivers
-            .iter()
-            .any(|rx| rx.status.as_ref().is_some_and(|s| s.state == State::Expired));
+        let exited_expired = self.receivers.iter().any(|rx| {
+            rx.status
+                .as_ref()
+                .is_some_and(|s| s.state == State::Expired)
+        });
         let expiry = if exited_expired {
             Expiry::Expired
         } else {
@@ -1576,7 +1585,10 @@ mod tests {
         let kitchen = facts.spec("room:kitchen").unwrap();
         assert_eq!(facts.heard_in(kitchen, 0), [3], "its group's receiver");
         let saved = facts.spec("group:downstairs").unwrap();
-        assert!(facts.heard_in(saved, 3).is_empty(), "its own is not another");
+        assert!(
+            facts.heard_in(saved, 3).is_empty(),
+            "its own is not another"
+        );
         assert_eq!(facts.heard_in(saved, 1), [3]);
     }
 
@@ -1602,7 +1614,10 @@ mod tests {
         assert_eq!(record.album.as_deref(), Some("Album Name"));
         assert_eq!(record.art_url.as_deref(), Some("https://i.example/l.jpg"));
         assert_eq!(record.duration_ms, Some(210_000));
-        assert_eq!((record.state, record.via.as_str()), (PlayState::Playing, "spotify"));
+        assert_eq!(
+            (record.state, record.via.as_str()),
+            (PlayState::Playing, "spotify")
+        );
         let paused = record_of(item.as_ref(), Some(&Status::Paused)).unwrap();
         assert_eq!(paused.state, PlayState::Paused);
         assert_eq!(record_of(None, Some(&Status::Playing)), None);
@@ -1611,7 +1626,10 @@ mod tests {
     #[test]
     fn the_volume_mappings_are_two_words() {
         assert_eq!(VolumeMapping::parse("chorus"), Some(VolumeMapping::Chorus));
-        assert_eq!(VolumeMapping::parse("receiver"), Some(VolumeMapping::Receiver));
+        assert_eq!(
+            VolumeMapping::parse("receiver"),
+            Some(VolumeMapping::Receiver)
+        );
         assert_eq!(VolumeMapping::parse("both"), None);
         assert_eq!(VolumeMapping::default().name(), "chorus");
     }
@@ -1622,7 +1640,10 @@ mod tests {
         let link = Link::new(ports, vec![Arc::new(ReaderStats::default())]);
         let text = link.metrics();
         assert!(text.contains("# TYPE chorus_soloist_build_expires_seconds gauge\n"));
-        assert!(!text.contains("\nchorus_soloist_build_expires_seconds "), "unknown: no sample");
+        assert!(
+            !text.contains("\nchorus_soloist_build_expires_seconds "),
+            "unknown: no sample"
+        );
         assert!(text.contains("chorus_soloist_receiver_connected{receiver=\"r0\"} 0\n"));
         assert!(text.contains("chorus_soloist_underruns_total{receiver=\"r0\"} 0\n"));
         lock(&link.view).expires_epoch = Some(wall_clock() + 1_000);

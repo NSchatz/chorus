@@ -420,8 +420,10 @@ limit's own event; the AVTransport takeover both ways; a source change made
 in the control plane; standby; and `--upnp-openhome off`. On a room's
 renderer; the group renderers run the same code and were not walked again.
 The line-in in that test is selected and streams no audio, and the `NetAux`
-Spotify source is held by a unit of the source list only, because no source
-spelled `soloist:` exists in the control catalog yet.
+Spotify source is held by a unit of the source list only: when that test was
+written no source spelled `soloist:` existed. It does now (`docs/soloist.md`:
+the server's receiver manager gives a group that source when the Spotify app
+plays on its device), and the two have not been run together.
 
 **Not tested: any control point application.** No BubbleUPnP, Kazoo, Lumin,
 Linn or Home Assistant was run against the OpenHome services either: whether

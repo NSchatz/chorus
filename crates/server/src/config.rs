@@ -1928,7 +1928,11 @@ mod tests {
             &["--soloist-volume", "receiver"][..],
         ] {
             let said = refused(flags);
-            assert!(said.contains(flags[0]) && said.contains("--soloist-receivers"), "{}", said);
+            assert!(
+                said.contains(flags[0]) && said.contains("--soloist-receivers"),
+                "{}",
+                said
+            );
         }
         assert!(refused(&["--soloist-receivers", "2"]).contains("--soloist-dir"));
         // Switched off out loud: the other flags stay and do nothing.
@@ -1957,8 +1961,9 @@ mod tests {
             "33"
         ])
         .contains("ceiling of 32"));
-        assert!(refused(&["--soloist-receivers", "1", "--soloist-volume", "loud"])
-            .contains("'chorus'"));
+        assert!(
+            refused(&["--soloist-receivers", "1", "--soloist-volume", "loud"]).contains("'chorus'")
+        );
         let on = ServerConfig::from_args(args(&[
             "--control-listen",
             "127.0.0.1:0",

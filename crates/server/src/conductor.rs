@@ -1028,10 +1028,7 @@ impl Conductor {
         // nothing that arrived before it did.
         if let Some(link) = &self.soloist {
             for (index, port) in link.ports().iter().enumerate() {
-                let played = self
-                    .inputs
-                    .iter()
-                    .any(|i| *i == SlotInput::Soloist(index as u8));
+                let played = self.inputs.contains(&SlotInput::Soloist(index as u8));
                 if port.is_selected() != played {
                     port.select(played);
                 }

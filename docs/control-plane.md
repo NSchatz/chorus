@@ -378,6 +378,8 @@ give them.
 | `source_store` | `id`, `kind` (`"url"` or `"spotify"`), `value`, `name` | (goal 17) stores or replaces a stored source, which an alarm names as `stored:<id>`; below |
 | `source_forget` | `id` | (goal 17) forgets a stored source; refused while an alarm plays it |
 | `input_label` | `input` (`<endpoint>/<input>`), `name`, `role` (`"line-in"` or `"streamer"`) | (goal 17) names an input and says what is wired to it; an empty `name` with `role` `line-in` removes the label; below |
+| `soloist_restart` | none | (goal 17) every Spotify Soloist receiver's supervisor reads its binary again and starts again; refused (`no-receivers`) on a server started without `--soloist-receivers`; below |
+| `playback` | `target` (a room, a saved group or a formed group), `action` (`"pause"`, `"resume"`, `"next"` or `"previous"`) | (goal 17) forwarded to the Spotify receiver the target's group is playing; refused for a group that plays anything else; below |
 
 ```json
 {"v":2,"t":"bond","zone":"living","members":[{"endpoint":"endpoint-a","role":"FL"},{"endpoint":"endpoint-b","role":"FR"}]}
@@ -695,6 +697,35 @@ group like any line-in. There is no microphone role (brief section 4.8). A
 label is configuration: it is kept whether or not the input is offered now,
 and at most 32 are held. The state lists them as `input_labels`.
 
+### Spotify receivers: the `soloist:` source, playback and restart (goal 17)
+
+```json
+{"v":2,"t":"playback","target":"kitchen","action":"pause"}
+{"v":2,"t":"soloist_restart"}
+```
+
+A server started with `--soloist-receivers` (`docs/soloist.md`) gives every
+room, saved group and live group a Spotify Connect device, and a group whose
+device is playing has the source `soloist:r<i>`, receiver `i`'s audio. It is
+a source like `player:<id>`: it plays in one group at a time, a `take` moves
+it and never copies it, and the group carries a now-playing record with `via`
+`spotify`. **No command names it.** A receiver plays where the Spotify app
+plays it, so a `take` (or an alarm) with a `soloist:` source is refused by
+name, and the only thing that gives a group that source is the server's own
+receiver manager, when the device starts playing (take the room, below, done
+by the server).
+
+`playback` is the catalog's one transport command. It existed in no form
+before goal 17 (a UPnP cast is controlled by its control point, not by this
+catalog), so it is new, and it reaches a Spotify receiver only: the target's
+formed group must be playing one. `pause`, `resume`, `next` and `previous`
+become Soloist's `pause`, `play`, `skip_next` and `skip_prev`. The state does
+not change when the command is applied; it changes when Soloist reports what
+it did (the now-playing record's `state`).
+
+`soloist_restart` is what the owner sends, as `chorusctl soloist restart`,
+after replacing an expired Soloist binary.
+
 ### Take the room (K78)
 
 `take` moves every room of the target out of whatever group it is in and into
@@ -745,6 +776,24 @@ subscriber that has one message needs nothing else.
 | `serial` | changes applied since the state was created or loaded. A subscriber can tell a message it has seen from one it has not without comparing the whole thing |
 | `zones` | every zone, in the order they were configured or loaded |
 | `zones[].audio` | where this zone's group's stream is served, from `--group-audio <group>=<address>` or the server's own listen address |
+
+(goal 17) A server started with `--soloist-receivers` adds one member after
+everything else, `soloist`, and a server without the flag writes none, which
+is why no earlier state vector moved (`fixtures/control/v2/state-soloist.json`
+pins it):
+
+```json
+"soloist":{"receivers":[{"id":"r0","state":"running","target":"room:kitchen","name":"kitchen"},{"id":"r1","state":"absent","target":"","name":""}],"build":{"version":"Soloist 1.3.8.96, build 20260930, Linux/aarch64","expires_in_days":10},"warning":"Soloist build expires in 10 days","exhausted":["room:den"]}
+```
+
+| field | notes |
+|---|---|
+| `receivers[]` | every receiver, in order: `id`; `state` (`absent` while the server holds no connection to its supervisor, else the supervisor's word: `idle`, `starting`, `running`, `expired`, `failed`, `no-binary`); the `target` it is assigned to (`room:<id>`, `group:<id>`, `live:<a>+<b>`) and the Spotify Connect device `name`, both empty for none |
+| `build` | written once a supervisor has reported a binary: the first line of `soloist --version`, and `expires_in_days` (whole days, negative once expired) when that line names a build time |
+| `warning` | written only while it holds: `Soloist build expires in N days` from 14 days before, `Soloist build expired` after |
+| `exhausted` | written only when not empty: the targets the pool had no receiver for |
+
+It is a fact about now, set by the server and never persisted.
 
 A server with no zone configured serves `{"v":1,"t":"state","serial":0,
 "zones":[]}`. That is a state and not an error, and
@@ -962,6 +1011,13 @@ the rest before the scheduling report whether or not anything ever plays:
 Without the flag there is none. Each is the one writer of its player port; a
 stream starting, ending or changing makes no thread, because a thread made
 when a stream starts would be one the report never saw.
+With `--soloist-receivers R` (goal 17, `docs/soloist.md`; it needs the control
+plane and `--slots`, and R is at most 32) there are `R + 1` threads more,
+`soloist-reader-0` to `soloist-reader-<R-1>` and `soloist-manager`, created
+with the rest before the scheduling report whether or not any receiver
+container is running. Without the flag, or with `--soloist-receivers 0`,
+there is none. A receiver being assigned, a Spotify session starting and a
+group taking a receiver make no thread.
 With `--upnp` (goal 16, `docs/upnp.md`; it needs the control plane, `--slots`
 and `--players` of at least 1 each, and a persisted identity) there are
 `4 + W` threads more, W being `--upnp-workers` (default 4, at most 16):
@@ -1223,7 +1279,9 @@ player plays (a stream URL, a service) is not a control message: it is said to
 the player by what drives it (a UPnP AV control point, `docs/upnp.md` once the
 renderer lands). (goal 17) `source_store` stores a URL and plays nothing: the
 one thing that plays a stored source is an alarm ringing, and a `take` naming
-one is refused.
+one is refused. What a Spotify receiver plays is chosen in the Spotify app;
+the catalog can pause, resume and skip it (`playback`) and nothing else: no
+message plays a Spotify URI in a room, searches or queues.
 
 No firmware image travels over this channel (goal 14): a request is at most
 16 KiB and an image is megabytes. Images are staged as files in

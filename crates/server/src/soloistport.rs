@@ -15,9 +15,8 @@
 //!   the loss into the pipe. What does not fit is dropped and counted.
 //! - **Selected or discarded.** A receiver no group plays is drained all the
 //!   same (a full pipe would otherwise hold 64 KiB of stale audio for the
-//!   next listener, `/cache/tmp` research: the PipeWire probe's section 4a,
-//!   recorded in `docs/soloist.md`), and what is read is discarded here and
-//!   counted. Selecting and deselecting both empty the ring, so a group that
+//!   next listener: goal 17's PipeWire probe, recorded in
+//!   `docs/soloist.md`), and what is read is discarded here and counted. Selecting and deselecting both empty the ring, so a group that
 //!   takes the receiver hears only what arrived after it did.
 //! - **A fill target before the first chunk.** The FIFO is written in whole
 //!   quanta of 1024 to 2048 frames (23 to 46 ms) in bursts, and on a loaded
@@ -480,7 +479,12 @@ mod tests {
         };
         let port = SoloistPort::for_format(&format);
         assert_eq!(
-            (port.capacity(), port.target(), port.channels(), port.rate_hz()),
+            (
+                port.capacity(),
+                port.target(),
+                port.channels(),
+                port.rate_hz()
+            ),
             (48_000, 5_760, 2, 48_000)
         );
     }

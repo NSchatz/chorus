@@ -78,6 +78,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use crate::targets::{specs_of, Kind, Playing, Spec};
 use chorus_hostctl::ThreadRegistry;
 use chorus_upnp::avtransport::{AvTransport, Effect, TransportState};
 use chorus_upnp::description::{self, DeviceInfo, Resource};
@@ -88,7 +89,6 @@ use chorus_upnp::openhome::playlist::{Playlist, ID_ARRAY_HOLD_MS};
 use chorus_upnp::openhome::product::{self, Product};
 use chorus_upnp::openhome::time::Time;
 use chorus_upnp::openhome::volume::Volume;
-use crate::targets::{specs_of, Kind, Playing, Spec};
 use chorus_upnp::openhome::{Property, Tracker};
 use chorus_upnp::rendering::{self, RenderingControl};
 use chorus_upnp::soap::{self, Invocation};

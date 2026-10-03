@@ -103,17 +103,15 @@
 
 use crate::catalog::{
     alarm_value, autoplay_value, centi_db_value, filters_value, input_label_value, is_display_name,
-    is_identifier, members_value, soloist_value, stored_source_value, texts, window_value,
-    Command, Refusal,
-    Volume, MAX_IDENTIFIER_LEN, VOLUME_SCALE,
+    is_identifier, members_value, soloist_value, stored_source_value, texts, window_value, Command,
+    Refusal, Volume, MAX_IDENTIFIER_LEN, VOLUME_SCALE,
 };
 use crate::firmware::{self, image_value, Image};
 use crate::json::{self, Value};
 use crate::rooms::{
     Alarm, Autoplay, BondMember, CivilTime, InputId, InputLabel, InputRole, Link, NowPlaying,
     PlayState, QuietWindow, Role, SavedGroup, SleepTimer, SoloistState, Source, StoredSource,
-    MAX_DEFINITIONS,
-    VIA_STREAMER,
+    MAX_DEFINITIONS, VIA_STREAMER,
 };
 use crate::sound::{BassManagement, RoomEq, SoundSettings};
 use crate::speakers::{key_change_value, speaker_value, KeyChange, NotListed, Speaker, Speakers};
@@ -2031,9 +2029,7 @@ impl Zones {
     /// none of those and for a group that does not play a Spotify receiver.
     pub fn playback_group(&self, target: &str) -> Result<String, Refusal> {
         let group = match self.resolve(target) {
-            None => {
-                return Err(self.no_target(target, "a room, a saved group or a formed group"))
-            }
+            None => return Err(self.no_target(target, "a room, a saved group or a formed group")),
             Some(Target::Room(i)) => self.zones[i].group.clone(),
             Some(Target::Saved(id)) | Some(Target::Formed(id)) => id,
         };
