@@ -187,8 +187,9 @@ determinism run, the endpoint's host checks, the refusal paths, the ESP32-S3
 image compile (ESP-IDF v6.1 through ccache) and the daemonless server image,
 each step timed. `make gate-fast` runs the docs checks alone. The toolchain is
 pinned in `rust-toolchain.toml`. CI (`.github/workflows/ci.yml`) calls
-`make gate`, but GitHub Actions does not run on this private repository, so the
-local run is the gate.
+`make gate` on every pull request, every push to main and nightly, and that
+run is the gate: nothing gates on a developer's machine
+(`docs/decisions/0135-ci-is-the-gate.md`).
 
 The server and the Linux client speak protocol v2 on the audio connection:
 every session is encrypted, and each side keeps a long-term key. The server

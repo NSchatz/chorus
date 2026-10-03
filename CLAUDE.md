@@ -41,12 +41,14 @@ umbrella's section, its specs, stages and pointers, is removed.)
   `.claude/goals/2026-09-chorus-g<n>.status.md`). A phase's acceptance comes from
   BRIEF.md section 8's "success looks like" and the program's done-when lines.
 - Conventions and the rule-to-check table: `docs/conventions.md`. The gate is
-  `make gate` (a caller holds `goals-heavy`, then `chorus-heavy`:
-  `goals lock goals-heavy -- goals lock chorus-heavy -- make gate`); `make gate-fast`
-  is the conventions checks alone. Tiers: `make tier-fast` (conventions, fmt,
-  clippy, the workspace tests) on every PR, `make tier-full` (= `make gate`) at a
-  goal's end and nightly on main, except where a goal file names its gate.
-- Heavy jobs and the disk (request #230 from the goals program, 2026-10-03: the development container's disk is its bottleneck): every cargo build, test or clippy of the workspace, every gate tier and every image build runs under `goals lock goals-heavy -- goals lock chorus-heavy -- ...`, subagents' runs included; only a single crate's focused test on a built tree runs outside it. A throwaway build (an image's, a one-off worktree's) keeps its cargo target directory where `tools/build-dir.sh` says: under `/scratch` (tmpfs) when it fits, else the lane's one shared `/cache/wt/chorus/target/shared`, never a private directory of its own on the disk.
+  `make gate`, and it runs on CI only (the owner, 2026-10-03: "Holdfast and chorus NEED to use the
+  public CI and nothing local"; `docs/decisions/0135-ci-is-the-gate.md`): `.github/workflows/ci.yml`
+  runs it on every pull request, every push to main and nightly. A PR merges when that check is green
+  on its branch with main merged in, its link in the PR body. No gate, tier, whole-workspace cargo
+  build or test, or ESP-IDF image build runs on the development host; one crate's focused test on a
+  built tree is the inner loop. A throwaway build keeps its cargo target directory where
+  `tools/build-dir.sh` says, and heavy work that stays here (a QEMU run, a soak, a browser test) holds
+  `goals lock goals-heavy -- goals lock chorus-heavy -- ...`.
 - Flashing, eFuses, deploys to the homelab and OTA installs on installed speakers are the owner's actions (K4, K28, K93); nothing in this repo sets `CHORUS_OWNER_AT_BENCH`. Each one is an issue in the owner's queue (NSchatz/goals: `goals needs add`, `/goals:needs`), and a request to another program is a `from:chorus` issue (`goals request add`).
 - BRIEF.md is kept current by the program: verified corrections and the owner's
   decisions are written into it, each dated with its decision IDs. Its section

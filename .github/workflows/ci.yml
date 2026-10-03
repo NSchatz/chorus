@@ -131,3 +131,15 @@ jobs:
 
       - name: make gate
         run: make gate
+
+      # Nothing gates on a developer's machine, so a red run must explain
+      # itself: each step's whole log (the job log shows only its last 15
+      # lines). check-identity.sh never writes a term into them.
+      - name: Gate logs
+        if: failure()
+        # actions/upload-artifact v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: gate-logs
+          path: target/gate/*.log
+          retention-days: 7
