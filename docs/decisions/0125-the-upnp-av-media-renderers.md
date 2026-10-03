@@ -1,4 +1,4 @@
-# 0000: every room, saved group and live group is a UPnP AV media renderer on one HTTP port and a fixed set of threads; targets follow the control fanout; identities are UUID version 5 over the server's persisted key; play takes the room through a pooled player; the gapless boundary stays PLAYING; volume goes through the control plane's clamps
+# 0125: every room, saved group and live group is a UPnP AV media renderer on one HTTP port and a fixed set of threads; targets follow the control fanout; identities are UUID version 5 over the server's persisted key; play takes the room through a pooled player; the gapless boundary stays PLAYING; volume goes through the control plane's clamps
 
 - Status: accepted (goal 16, 2026-10-03)
 - Decided by: the goal (program section 20, acceptance line C) inside the coordinator's goal-16
@@ -267,7 +267,8 @@ captured by a real client session and compared sample for sample for the gapless
 What was not tested: any third-party control point (none was run); multicast (searches are sent
 to the server's port and notifications received on a loopback socket, so the group join and the
 multicast send are not exercised); a second host; a subscription expiring; the late
-SetNextAVTransportURI race; the SEARCHPORT route with a real control point.
+SetNextAVTransportURI race; the 30 s hold of a stopped renderer's player running out; the
+SEARCHPORT route with a real control point.
 
 ## Options not chosen
 

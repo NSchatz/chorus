@@ -2248,6 +2248,23 @@ fn casting_to_a_group_takes_its_rooms() {
         .applied(r#"{"v":2,"t":"take","target":"downstairs","source":"stream"}"#);
     events.until(&group_sid, group_at, "TransportState", "STOPPED");
     assert_eq!(home.transport(&downstairs).0, "STOPPED");
+    // Its player went back to the pool with the rooms. Play again takes one
+    // anew, loads the URI again and takes the rooms back.
+    let stopped_at = events.of(&group_sid).len();
+    wait("a player again", || {
+        matches!(
+            home.call(
+                &downstairs,
+                AVT,
+                "Play",
+                &[("InstanceID", "0"), ("Speed", "1")]
+            ),
+            SoapReply::Response { .. }
+        )
+        .then_some(())
+    });
+    events.until(&group_sid, stopped_at, "TransportState", "PLAYING");
+    assert!(home.room("den").contains(r#""title":"Ferry""#));
     println!(
         "control-point: K78: casting to the saved group Downstairs took kitchen and den into it; \
          the kitchen's own renderer evented STOPPED; with 2 of 2 players held a third renderer \
