@@ -1,0 +1,20 @@
+[package]
+name = "chorus-upnp"
+description = "the pure half of chorus's UPnP AV media renderer: SSDP messages, the device and service descriptions, SOAP control, GENA eventing, LastChange, DIDL-Lite and the AVTransport state machine, as text in and text out"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# No dependencies, chorus's own included: the XML reader, SHA-1 and UUID
+# version 5 are written here from their specifications (the decision record
+# of goal 16's track U says why).
+[dependencies]
+
+[[bin]]
+name = "chorus-upnp-vectors"
+path = "src/bin/chorus-upnp-vectors.rs"
+
+[lints]
+workspace = true

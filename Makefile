@@ -204,6 +204,16 @@ sim-house:
 discovery-vectors:
 	cargo run --quiet -p chorus-discovery --bin chorus-discovery-vectors
 
+# Regenerate the generated UPnP golden vectors (fixtures/README.md, upnp/): the
+# device description and the three service descriptions, written from the
+# tables in crates/upnp/src/description.rs. `cargo test -p chorus-upnp` asserts
+# the result is byte-identical to what is committed; the hand-written vectors
+# beside them are not touched.
+upnp-vectors:
+	cargo run --quiet --locked -p chorus-upnp --bin chorus-upnp-vectors -- fixtures/upnp
+
+.PHONY: upnp-vectors
+
 # Regenerate the committed time zone fixtures from the host's tz database
 # (fixtures/README.md, schedule/). A different tzdata is a reviewed diff:
 # `cargo test -p chorus-schedule` must still agree with the zdump listing the
