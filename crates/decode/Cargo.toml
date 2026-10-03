@@ -1,0 +1,27 @@
+[package]
+name = "chorus-decode"
+description = "the server's decoders: compressed media bytes in, PCM out (MP3, FLAC, Ogg Vorbis, Ogg Opus, ALAC in MP4, WAV and raw L16), a resampler and a channel remix; no sockets, no threads"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+# Symphonia 0.6.1 (MPL-2.0, crates.io, published 2026-08-13; checked 2026-10-03 at
+# https://crates.io/api/v1/crates/symphonia/0.6.1): the demuxers and decoders of proposal P9,
+# Option A. `default-features = false` keeps AAC, MKV, ADPCM and CAF out of the build: AAC is
+# never compiled (P9, K79). MPL-2.0 is admitted for these crates by
+# docs/decisions/0000-the-server-decoders.md.
+symphonia = { version = "=0.6.1", default-features = false, features = ["mp3", "flac", "vorbis", "alac", "pcm", "wav", "ogg", "isomp4", "id3v1", "id3v2"] }
+# Ogg Opus: Symphonia's Ogg demuxer hands the packets to the vendored libopus 1.6.1, the same
+# code the endpoints run (ADR 0044).
+chorus-opus-sys = { path = "../opus-sys" }
+
+[dev-dependencies]
+# The reference decodes are held by their sha256 (tests/reference_decodes.rs). The version the
+# protocol crate already pins (ADR 0039; MIT OR Apache-2.0), so nothing new enters the lockfile.
+sha2 = { version = "=0.11.0", default-features = false }
+
+[lints]
+workspace = true

@@ -1,0 +1,15 @@
+# wav-sweep48-s24: 24-bit stereo at 48000 Hz, written by Python's `wave` module.
+# Reference: the samples themselves; reference_sha256 is their sha256 as interleaved
+# little-endian 24-bit samples.
+# Written by tools/decode-fixtures/generate.py (`make decode-fixtures`); do not edit by hand.
+file = wav-sweep48-s24.wav
+file_sha256 = f00855505b70dfb5f28440b88f9b0f23e234a4eed3aa9f5cd094675a27dd940e
+codec = pcm
+container = wav
+sample_rate_hz = 48000
+channels = 2
+bits = 24
+frames = 14400
+match = bit-exact
+reference_sha256 = 84700b17a5e85221eb2dfc3b1c0a5c6e5b660e4914f11dc60d1f46ba698dea59
+decode_f32_fnv1a64 = 3ab389d54a952505

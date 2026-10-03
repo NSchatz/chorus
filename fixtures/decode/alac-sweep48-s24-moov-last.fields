@@ -1,0 +1,19 @@
+# alac-sweep48-s24-moov-last: ALAC, 24-bit stereo at 48000 Hz, in MP4 with the moov box last (after mdat); ffmpeg 9.0.2's
+# ALAC encoder. Reference: ffmpeg's own ALAC decode, equal to the input signal;
+# reference_sha256 is its sha256 as interleaved little-endian 24-bit samples.
+# Written by tools/decode-fixtures/generate.py (`make decode-fixtures`); do not edit by hand.
+file = alac-sweep48-s24-moov-last.m4a
+file_sha256 = c045ea1c34cfd62e3bf60ecc6eef7a8b158df663d2c040d94df7b0ea3648c45a
+codec = alac
+container = mp4
+sample_rate_hz = 48000
+channels = 2
+bits = 24
+frames = 14400
+match = bit-exact
+reference_sha256 = 84700b17a5e85221eb2dfc3b1c0a5c6e5b660e4914f11dc60d1f46ba698dea59
+decode_f32_fnv1a64 = 3ab389d54a952505
+title = chorus fixture alac-sweep48-s24-moov-last
+artist = the generator
+album = fixtures/decode
+moov = last

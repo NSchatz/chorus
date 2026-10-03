@@ -37,6 +37,19 @@ exceptions = [
     { crate = "symphonia-common", allow = ["MPL-2.0"] },
     { crate = "symphonia-metadata", allow = ["MPL-2.0"] },
     { crate = "symphonia-bundle-flac", allow = ["MPL-2.0"] },
+    # The server's decoders (goal 16): the Symphonia crates for MP3, Vorbis, ALAC, WAV/PCM, Ogg
+    # and MP4, and the `symphonia` crate that ties them to one probe. Each is MPL-2.0, 0.6.1,
+    # unmodified from crates.io (https://crates.io/api/v1/crates/symphonia/0.6.1, read
+    # 2026-10-03). Allowed for these eight crates only by
+    # docs/decisions/0000-the-server-decoders.md (proposal P9, Option A; K26, K95).
+    { crate = "symphonia", allow = ["MPL-2.0"] },
+    { crate = "symphonia-bundle-mp3", allow = ["MPL-2.0"] },
+    { crate = "symphonia-codec-alac", allow = ["MPL-2.0"] },
+    { crate = "symphonia-codec-pcm", allow = ["MPL-2.0"] },
+    { crate = "symphonia-codec-vorbis", allow = ["MPL-2.0"] },
+    { crate = "symphonia-format-isomp4", allow = ["MPL-2.0"] },
+    { crate = "symphonia-format-ogg", allow = ["MPL-2.0"] },
+    { crate = "symphonia-format-riff", allow = ["MPL-2.0"] },
 ]
 # The allowlist is policy, not a record of what is in use today.
 unused-allowed-license = "allow"
