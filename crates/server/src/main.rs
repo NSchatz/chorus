@@ -294,6 +294,13 @@ health:
   --health-check <addr:port>  probe a running server's control plane (GET /api/state);
                               exit 0 on 200, 1 otherwise; starts nothing
 
+decoders (goal 16; docs/decoders.md):
+  --probe-media <path>        decode one local file (MP3, FLAC, Ogg Vorbis, Ogg Opus, ALAC in
+                              MP4, WAV) and print one line: codec, rate, channels, bits, frames,
+                              tags and a hash of the decoded samples; exit 0. A file this build
+                              does not decode exits 1 naming why (AAC: `unsupported: aac`).
+                              Starts nothing: no thread, no socket
+
   -h, --help                  print this and exit 0
 ";
 
@@ -388,6 +395,26 @@ fn main() -> ExitCode {
             }
             Err(e) => {
                 println!("chorus-server: unhealthy: {e}");
+                ExitCode::from(1)
+            }
+        };
+    }
+    if args.first().map(String::as_str) == Some("--probe-media") {
+        // A diagnostic that runs to its end here, before any thread or socket.
+        let Some(path) = args.get(1).filter(|_| args.len() == 2) else {
+            report(
+                "configuration refused",
+                "--probe-media takes exactly one <path>",
+            );
+            return ExitCode::from(1);
+        };
+        return match chorus_server::probe_media::probe(path) {
+            Ok(line) => {
+                println!("chorus-server: {line}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                report("probe-media refused", &e);
                 ExitCode::from(1)
             }
         };

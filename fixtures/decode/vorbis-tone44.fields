@@ -1,0 +1,16 @@
+# vorbis-tone44: Vorbis in Ogg, quality 4, stereo at 44100 Hz, libvorbis 1.3.7 through `ffmpeg -c:a libvorbis`.
+# Reference: libvorbis 1.3.7's decode through `sndfile-convert -pcm32` (libsndfile 1.2.2),
+# rounded to 24 bits; reference_sha256 is its sha256 as interleaved little-endian 24-bit samples, and NAME.ref is those bytes.
+# Written by tools/decode-fixtures/generate.py (`make decode-fixtures`); do not edit by hand.
+file = vorbis-tone44.ogg
+file_sha256 = f342b1480253bb2e803fae6cd7781a228ba7da5d6a4e8e2a429e8d714f526e2e
+codec = vorbis
+container = ogg
+sample_rate_hz = 44100
+channels = 2
+frames = 13230
+match = iso-11172-4-full-accuracy
+reference_sha256 = 2985fe820ffa382bc97ac63a7cda4d257e7b72e989b683ea9d1cd988ad12786e
+title = chorus fixture vorbis-tone44
+artist = the generator
+album = fixtures/decode

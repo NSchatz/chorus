@@ -31,6 +31,17 @@ tier-full: gate
 image: tools-executable
 	bash tools/image.sh
 
+# Regenerate fixtures/decode (goal 16): one short file per settled input format with what a
+# reference decoder made of it. Never run by the gate. REFDEC is a conda-forge prefix holding
+# the pinned reference programs (ffmpeg, lame, mpg123, flac, opusdec, sndfile-convert);
+# fixtures/README.md has the install command and the pins, and the script refuses a prefix
+# that does not match them.
+REFDEC ?= /cache/opt/chorus-refdec
+decode-fixtures:
+	python3 tools/decode-fixtures/generate.py --prefix "$(REFDEC)"
+
+.PHONY: decode-fixtures
+
 # The Linux endpoint package: one .deb per architecture (arm64, amd64), cross-built
 # rootless with zig and cargo-zigbuild at the glibc floor, and checked (readelf,
 # dpkg-deb, systemd-analyze verify of the unit). ARCHES="amd64" builds one

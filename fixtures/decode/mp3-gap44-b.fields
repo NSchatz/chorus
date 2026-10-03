@@ -1,0 +1,17 @@
+# mp3-gap44-b: MPEG-1 Layer III, 128 kbit/s stereo at 44100 Hz, `lame -b 128 --noreplaygain` (LAME 4.0),
+# with LAME's Xing/LAME header (encoder delay and padding) and an ID3v2 tag.
+# Reference: `mpg123 -e f32 -w` (mpg123 1.33.7, gapless on), rounded to 24 bits;
+# reference_sha256 is its sha256 as interleaved little-endian 24-bit samples (3 bytes each).
+# Written by tools/decode-fixtures/generate.py (`make decode-fixtures`); do not edit by hand.
+file = mp3-gap44-b.mp3
+file_sha256 = 7b4733cf622517032c100d572907b30d9f9bdf8295d0b25e5bbc1e3706e29044
+codec = mp3
+container = mp3
+sample_rate_hz = 44100
+channels = 2
+frames = 22050
+match = frames-and-join
+reference_sha256 = 063446e98579e4c58a7de7b8398b5bbcae2903ae9c4d6c6f7f666ec54498a50d
+title = chorus fixture mp3-gap44-b
+artist = the generator
+album = fixtures/decode

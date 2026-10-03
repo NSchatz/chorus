@@ -29,6 +29,9 @@
 # query and response packets: crates/discovery/tests/dnssd_vectors.rs and
 # firmware/tests/test_discovery.c both walk it, produce every query vector byte for byte and
 # resolve every response vector to its .expected, so the Rust and C resolvers cannot drift apart.
+# fixtures/decode (goal 16) is Rust-only by declaration: the server decodes every input format
+# (crates/decode, read by crates/decode/tests/reference_decodes.rs, which fails on a fixture no
+# test reads); an endpoint only ever receives PCM, FLAC or Opus, which fixtures/codec covers.
 . "$(dirname "$0")/lib.sh"
 # directory | extensions both sides read | where Rust reads it | where C reads it
 shared=(

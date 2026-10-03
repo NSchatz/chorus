@@ -27,8 +27,10 @@ COPY Cargo.lock ./
 COPY crates ./crates
 COPY fixtures ./fixtures
 COPY audio-path.conf ./
-# The Linux client's Opus decoder compiles the vendored libopus
-# (crates/opus-sys, docs/decisions/0044-the-vendored-decoders.md).
+# The server's and the Linux client's Opus decoders compile the vendored libopus
+# (crates/opus-sys; docs/decisions/0044-the-vendored-decoders.md and
+# 0122-the-server-decoders.md). This is a glibc build: the base image's own C
+# compiler builds it, and nothing here targets musl.
 COPY third_party/opus ./third_party/opus
 # The server compiles the control page's documentation into itself
 # (crates/server/src/control.rs includes docs/control-page.md), so the build
@@ -53,6 +55,10 @@ COPY --from=build /src/target/release/chorus-rt-spin /usr/local/bin/chorus-rt-sp
 # (docs/measurements/host-wakeup-jitter.md, "Next"). It never runs unless invoked.
 COPY --from=build /src/target/release/chorus-wakeup-probe /usr/local/bin/chorus-wakeup-probe
 COPY config/verification.conf /etc/chorus/verification.conf
+# The notices the binary's third-party code asks for: libopus's licence text
+# (BSD-3-Clause) and where Symphonia's MPL-2.0 source is.
+COPY third_party/opus/COPYING /usr/share/doc/chorus/libopus-COPYING
+COPY deploy/THIRD-PARTY-NOTICES.md /usr/share/doc/chorus/THIRD-PARTY-NOTICES.md
 
 RUN mkdir -p /var/lib/chorus && chown chorus /var/lib/chorus
 VOLUME /var/lib/chorus

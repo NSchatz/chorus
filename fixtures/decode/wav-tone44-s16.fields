@@ -1,0 +1,15 @@
+# wav-tone44-s16: 16-bit stereo at 44100 Hz, written by Python's `wave` module.
+# Reference: the samples themselves; reference_sha256 is their sha256 as interleaved
+# little-endian 16-bit samples.
+# Written by tools/decode-fixtures/generate.py (`make decode-fixtures`); do not edit by hand.
+file = wav-tone44-s16.wav
+file_sha256 = d825e773a9a6e903246ab28d7cdb6511a1fc59e6423e1f45fbe07f34cdda41bd
+codec = pcm
+container = wav
+sample_rate_hz = 44100
+channels = 2
+bits = 16
+frames = 13230
+match = bit-exact
+reference_sha256 = 4672360407b9641a22de280b36fa3b5a9a35df97f758a506ea83344a19c8f94d
+decode_f32_fnv1a64 = da9dc4ae6edcf30e

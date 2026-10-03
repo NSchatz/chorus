@@ -49,5 +49,12 @@ fn main() {
         .define("main", "chorus_opus_compare_main")
         .warnings(false)
         .compile("chorus_opus_compare");
-    println!("cargo:rustc-link-lib=m");
+    // libopus calls the C math library. On glibc that is a separate libm; musl
+    // keeps the math functions in libc itself, and rustc's self-contained musl
+    // has no libm to offer, so asking for one there makes the link driver pick
+    // up the host's glibc libm.a and fail (goal 16's image build,
+    // docs/decisions/0122-the-server-decoders.md).
+    if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() != Ok("musl") {
+        println!("cargo:rustc-link-lib=m");
+    }
 }

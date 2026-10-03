@@ -1,0 +1,17 @@
+# mp3-tone44: MPEG-1 Layer III, 128 kbit/s stereo at 44100 Hz, `lame -b 128 --noreplaygain` (LAME 4.0),
+# with LAME's Xing/LAME header (encoder delay and padding) and an ID3v2 tag.
+# Reference: `mpg123 -e f32 -w` (mpg123 1.33.7, gapless on), rounded to 24 bits;
+# reference_sha256 is its sha256 as interleaved little-endian 24-bit samples (3 bytes each), and NAME.ref is those bytes.
+# Written by tools/decode-fixtures/generate.py (`make decode-fixtures`); do not edit by hand.
+file = mp3-tone44.mp3
+file_sha256 = eed9311bbc5d3530ca5a64f887487a47d89bd5d9a995d8869806699cc1fb8982
+codec = mp3
+container = mp3
+sample_rate_hz = 44100
+channels = 2
+frames = 13230
+match = iso-11172-4-full-accuracy
+reference_sha256 = 9dd431e08e34c782433b02822dfcaf505b670de6c4033f17c420b2bcf339db8c
+title = chorus fixture mp3-tone44
+artist = the generator
+album = fixtures/decode
