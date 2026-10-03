@@ -51,6 +51,10 @@ chorus-dsp = { path = "../dsp" }
 # tests/cec_tv.rs drives the hub's CEC role on the fake bus with a scripted
 # TV (goal 13).
 chorus-cec = { path = "../cec" }
+# tests/chorusctl.rs drives this crate's real binary through chorusctl's own
+# entry point (`chorus_ctl::run_with`): the server's binary path exists only
+# for the server's own integration tests, so the test lives here.
+chorus-ctl = { path = "../ctl" }
 
 [[bin]]
 name = "chorus-server"

@@ -132,6 +132,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "chorus-ctl"
+version = "0.1.0"
+dependencies = [
+ "chorus-control",
+]
+
+[[package]]
 name = "chorus-discovery"
 version = "0.1.0"
 
@@ -199,6 +206,7 @@ dependencies = [
  "chorus-cec",
  "chorus-client-linux",
  "chorus-control",
+ "chorus-ctl",
  "chorus-discovery",
  "chorus-dsp",
  "chorus-hostctl",
