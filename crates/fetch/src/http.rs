@@ -16,7 +16,7 @@
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::error::FetchError;
 use crate::policy::{check_address, is_own_address, Policy};
@@ -48,13 +48,51 @@ const BUFFER_BYTES: usize = 16 * 1024;
 pub(crate) struct Ctx {
     pub policy: Policy,
     tls: Option<Arc<rustls::ClientConfig>>,
+    /// The caller's way to give a fetch up; `None` for a fetch nobody cancels.
+    cancel: Option<Cancel>,
 }
 
+/// Asked by a cancellable fetch at least every [`CANCEL_SLICE`] while it
+/// waits for the network: `true` gives the fetch up.
+pub type Cancel = Arc<dyn Fn() -> bool + Send + Sync>;
+
+/// The longest a cancellable fetch waits on a connected socket (or sleeps
+/// before an HLS playlist reload) between two looks at its [`Cancel`].
+/// ASSUMED: 100 ms, short against anything a listener would call a delay
+/// after pressing stop, long against the cost of one more `recv` call.
+pub const CANCEL_SLICE: Duration = Duration::from_millis(100);
+
 impl Ctx {
-    pub fn new(policy: &Policy) -> Ctx {
+    pub fn new(policy: &Policy, cancel: Option<Cancel>) -> Ctx {
         Ctx {
             policy: policy.clone(),
             tls: None,
+            cancel,
+        }
+    }
+
+    /// Whether the caller gave the fetch up.
+    pub fn cancelled(&self) -> bool {
+        self.cancel.as_ref().is_some_and(|asked| asked())
+    }
+
+    /// Sleeps until `due`, in slices when the fetch can be cancelled.
+    /// Returns `false` when it was cancelled first.
+    pub fn sleep_until(&self, due: Instant) -> bool {
+        loop {
+            if self.cancelled() {
+                return false;
+            }
+            let now = Instant::now();
+            if due <= now {
+                return true;
+            }
+            let left = due - now;
+            std::thread::sleep(if self.cancel.is_some() {
+                left.min(CANCEL_SLICE)
+            } else {
+                left
+            });
         }
     }
 
@@ -68,10 +106,86 @@ impl Ctx {
     }
 }
 
+/// The words of the error a cancelled fetch ends with. Its kind is
+/// `TimedOut`; a caller that cancelled knows it did and needs no more.
+pub(crate) const CANCELLED: &str = "the fetch was cancelled";
+
+/// A connected socket whose reads and writes wait at most the policy's read
+/// timeout, and, when the fetch can be cancelled, look at the [`Cancel`]
+/// every [`CANCEL_SLICE`] while they wait. It sits under TLS, so a wait that
+/// spans several slices is invisible to rustls: it sees bytes, or one final
+/// timeout.
+pub(crate) struct Sock {
+    inner: TcpStream,
+    cancel: Option<Cancel>,
+    patience: Duration,
+}
+
+impl Sock {
+    fn new(inner: TcpStream, patience: Duration, cancel: Option<Cancel>) -> io::Result<Sock> {
+        let slice = if cancel.is_some() {
+            patience.min(CANCEL_SLICE)
+        } else {
+            patience
+        };
+        inner.set_read_timeout(Some(slice))?;
+        inner.set_write_timeout(Some(slice))?;
+        inner.set_nodelay(true)?;
+        Ok(Sock {
+            inner,
+            cancel,
+            patience,
+        })
+    }
+
+    /// Runs `op` until it does something other than time out, the policy's
+    /// patience runs out, or the fetch is cancelled.
+    fn patiently<T>(
+        &mut self,
+        mut op: impl FnMut(&mut TcpStream) -> io::Result<T>,
+    ) -> io::Result<T> {
+        let began = Instant::now();
+        loop {
+            match op(&mut self.inner) {
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    if self.cancel.as_ref().is_some_and(|asked| asked()) {
+                        return Err(io::Error::new(io::ErrorKind::TimedOut, CANCELLED));
+                    }
+                    if self.cancel.is_none() || began.elapsed() >= self.patience {
+                        return Err(e);
+                    }
+                }
+                other => return other,
+            }
+        }
+    }
+}
+
+impl Read for Sock {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.patiently(|sock| sock.read(buf))
+    }
+}
+
+impl Write for Sock {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.patiently(|sock| sock.write(buf))
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 /// The socket, plain or under TLS.
 pub(crate) enum Transport {
-    Plain(TcpStream),
-    Tls(Box<rustls::StreamOwned<rustls::ClientConnection, TcpStream>>),
+    Plain(Sock),
+    Tls(Box<rustls::StreamOwned<rustls::ClientConnection, Sock>>),
 }
 
 impl Read for Transport {
@@ -110,6 +224,11 @@ impl Write for Transport {
 
 /// A socket timeout surfaces as `WouldBlock` on Linux; callers see `TimedOut`.
 fn timeout_named(e: io::Error) -> io::Error {
+    if e.kind() == io::ErrorKind::TimedOut
+        && e.get_ref().is_some_and(|m| m.to_string() == CANCELLED)
+    {
+        return e;
+    }
     match e.kind() {
         io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => io::Error::new(
             io::ErrorKind::TimedOut,
@@ -603,11 +722,15 @@ fn connect(ctx: &mut Ctx, url: &Url) -> Result<Transport, FetchError> {
     };
     let mut failure = None;
     for addr in allowed.into_iter().take(MAX_CONNECT_ATTEMPTS) {
+        if ctx.cancelled() {
+            return Err(FetchError::Io(io::Error::new(
+                io::ErrorKind::TimedOut,
+                CANCELLED,
+            )));
+        }
         match TcpStream::connect_timeout(&addr, ctx.policy.connect_timeout) {
             Ok(sock) => {
-                sock.set_read_timeout(Some(ctx.policy.read_timeout))?;
-                sock.set_write_timeout(Some(ctx.policy.read_timeout))?;
-                sock.set_nodelay(true)?;
+                let sock = Sock::new(sock, ctx.policy.read_timeout, ctx.cancel.clone())?;
                 return match tls_config {
                     None => Ok(Transport::Plain(sock)),
                     Some(config) => {

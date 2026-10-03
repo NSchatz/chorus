@@ -47,6 +47,21 @@ with the new link's tags.
 | MPEG Layer I and II, AC-3, E-AC-3, anything else | `unsupported: <what>` | Outside the settled set. |
 | A seek on media that cannot seek | `unsupported: seek on a non-seekable source` | |
 
+## How it plays
+
+A file is decoded on a player's own thread (`crates/server/src/mediaplayer.rs`, ADR 0124) and
+written into the group's stream as PCM at the server's rate and channel count:
+
+- At the server's own rate the samples are the file's samples. At another rate they go through
+  the resampler (`docs/measurements/resampler-quality.md`), and a track keeps its exact length:
+  n frames become ceil(n * to / from).
+- Gapless: when a next track is queued, its first frame follows the last frame of the current
+  one with nothing between. Two tracks at the same rate pass through one resampler, so an
+  album cut into tracks plays as it was before the cut (`docs/measurements/gapless-join-host.md`).
+  Two tracks at different rates still join with no gap, but each is filtered on its own.
+- Seeking needs a server that honours range requests; the first frame out is the frame asked
+  for. A stream that cannot seek says so (`unsupported: seek on a non-seekable source`).
+
 ## Asking a build what it decodes
 
 ```

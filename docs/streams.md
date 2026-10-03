@@ -75,3 +75,20 @@ There is no setting that turns certificate checking off.
 | `http status <n>` | the server answered with an error (404: no such file; 403: not allowed) |
 | `io: ...` | the network: no such host, connection refused, or nothing arrived within the timeout (10 s to connect, 15 s of silence) |
 | `malformed: ...` | the URL, the response or a playlist does not parse |
+
+## How it plays
+
+A network stream is played by one of the server's players (`--players N`; ADR 0124). The
+player's own thread opens the URL under the policy above, decodes it, converts it to the
+server's rate and channels and feeds the group that plays it. What that means for a listener:
+
+- A start is heard after about a quarter of a second of the stream has arrived.
+- A stream with no length (radio) plays until it is stopped or the station closes it. If the
+  station stops sending, the room is silent until data returns; after 15 s without any the
+  stream is reported failed (`io: the server sent nothing within the read timeout`).
+- A stop is acted on within about a tenth of a second even when the station has stalled. The
+  exception is a server that does not answer the connection at all: that takes up to 10 s.
+- The title a station sends (ICY `StreamTitle`) is shown as what is playing, and changes when
+  the station changes it.
+- Nothing on the control API plays a URL: a URL reaches a player only through the input paths
+  the program names (the UPnP renderer first).

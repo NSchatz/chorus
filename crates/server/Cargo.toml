@@ -38,8 +38,12 @@ chorus-mqtt = { path = "../mqtt" }
 # The decoders (goal 16, docs/decoders.md, docs/decisions/0122-the-server-decoders.md): MP3, FLAC,
 # Vorbis, ALAC and WAV through Symphonia 0.6.1 (MPL-2.0 by that record), Ogg Opus through the
 # vendored libopus (crates/opus-sys). Linked here first for `--probe-media` (src/probe_media.rs);
-# the players that feed a stream from them come with the renderer.
+# the players that feed a stream from them are src/mediaplayer.rs.
 chorus-decode = { path = "../decode" }
+# The media fetcher (goal 16, docs/streams.md, docs/decisions/0120-the-media-fetcher.md): the
+# player threads open the URLs they are given through it, under the fetch policy main.rs builds
+# (src/mediaplayer.rs). It brings rustls and ring into the server binary.
+chorus-fetch = { path = "../fetch" }
 
 [dev-dependencies]
 # The end-to-end tests decode what the server put on a real socket with the

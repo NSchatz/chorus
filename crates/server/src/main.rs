@@ -1276,15 +1276,27 @@ fn main() -> ExitCode {
 
     // (goal 16) The player threads: one ordinary thread per `--players`
     // port, created here with the rest and counted below, whether or not
-    // anything ever plays. What each does is its driver's; this build's are
-    // idle (the renderer hands its own to the same call).
-    let player_threads = chorus_server::player::spawn(
-        &player_ports,
-        chorus_server::player::idle_drivers(player_ports.len()),
-        &keep,
-        &registry,
-        &ready,
+    // anything ever plays. Each runs a media player (`mediaplayer`): it
+    // fetches, decodes and writes into its port when it is told to, and
+    // waits otherwise. The fetch policy is built here, once, from this
+    // server's own listeners (brief section 4.8): a media URL may never name
+    // this machine's loopback or the ports this server listens on. A later
+    // listener (the renderer's HTTP port) is one more entry in the list,
+    // added before this call.
+    let media_policy = chorus_server::mediaplayer::fetch_policy(
+        &[
+            port_of(&config.listen),
+            config.control_listen.as_deref().map_or(0, port_of),
+        ],
+        false,
     );
+    let (players, player_drivers) =
+        chorus_server::mediaplayer::Players::new(player_ports.len(), media_policy);
+    // Nothing in this build sends a player an action yet: the renderer takes
+    // the registry (and the sessions over it, `playersessions`) from here.
+    let _players = Arc::new(players);
+    let player_threads =
+        chorus_server::player::spawn(&player_ports, player_drivers, &keep, &registry, &ready);
 
     // The advertiser, which answers browses for as long as the run lasts.
     let mut advertiser_threads = 0usize;
