@@ -1,0 +1,15 @@
+{
+  "uri": "spotify:track:2JRo0gjbX4GrCqBYdRohoo",
+  "entity_type": "track",
+  "decorations": {
+    "identity": { "name": "My Song" },
+    "visual_identity": {
+      "cover": [ { "url": "https://i.scdn.co/image/ab67616d00001e02...", "size": "large" } ]
+    },
+    "parent": { "entity": { "uri": "spotify:album:4aawyAB9vmqN3uQ7FjRGTy", "entity_type": "album",
+                            "decorations": { "identity": { "name": "Album Name" } } } },
+    "creators": [ { "entity": { "uri": "spotify:artist:...", "entity_type": "artist",
+                                "decorations": { "identity": { "name": "Artist Name" } } } } ],
+    "playback": { "duration_ms": 210000, "content_ratings": [] }
+  }
+}

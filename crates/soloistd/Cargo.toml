@@ -1,0 +1,36 @@
+[package]
+name = "chorus-soloistd"
+description = "the supervisor of one Spotify Soloist receiver: claims a receiver index, makes its FIFO, runs PipeWire and the owner's Soloist binary, and relays Soloist's WebSocket API over a Unix socket to chorus-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lib]
+name = "chorus_soloistd"
+path = "src/lib.rs"
+
+[[bin]]
+name = "chorus-soloistd"
+path = "src/main.rs"
+
+# The fake Soloist the tests run this supervisor against. It is an EXAMPLE on
+# purpose: `cargo build --bins` (deploy/Dockerfile, tools/image.sh,
+# tools/release.sh) never builds an example, so no image and no release can
+# pick it up; `cargo test` builds it beside the tests that run it.
+[[example]]
+name = "chorus-fake-soloist"
+path = "examples/chorus-fake-soloist.rs"
+
+# std, threads and blocking I/O with timeouts: no async runtime, no external
+# crate (ADR 0130).
+[dependencies]
+chorus-soloist = { path = "../soloist" }
+chorus-control = { path = "../control" }
+
+[dev-dependencies]
+chorus-soloist-fake = { path = "../soloist-fake" }
+
+[lints]
+workspace = true

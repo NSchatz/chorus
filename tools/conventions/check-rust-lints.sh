@@ -12,6 +12,7 @@ allowed=(
     "crates/hostprobe/src/net.rs|1|the receive-stamp check's socket FFI: setsockopt, recvmsg and a ping socket (docs/decisions/0047-host-probes.md)"
     "crates/opus-sys/src/lib.rs|1|the crate is the FFI binding to the vendored libopus (docs/decisions/0044-the-vendored-decoders.md)"
     "crates/cec/src/kernel.rs|1|the ioctl binding to /dev/cecN: CEC_TRANSMIT, CEC_RECEIVE, CEC_DQEVENT, the log-address ioctls and poll (docs/cec.md)"
+    "crates/soloistd/src/sys.rs|1|the receiver supervisor's three libc calls: mkfifo, kill with SIGTERM, and signal to catch its own SIGTERM and SIGINT (docs/soloist.md)"
 )
 rc=0
 bad() { fail "Rust lints and unsafe" "$1"; rc=1; }
