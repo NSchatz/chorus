@@ -256,6 +256,9 @@ NO_QEMU="$(mktemp -d "${TMPDIR:-/tmp}/chorus-no-qemu.XXXXXX")"
 expect_missing_prerequisite "qemu-boot-run.sh" \
     env CHORUS_SKIP_BUILD=1 CHORUS_QEMU_HOME="$NO_QEMU" CHORUS_QEMU_LIBS="$NO_QEMU/libs" \
     bash "$REPO_ROOT/tools/qemu-boot-run.sh"
+expect_missing_prerequisite "ota-qemu-run.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_QEMU_HOME="$NO_QEMU" CHORUS_QEMU_LIBS="$NO_QEMU/libs" \
+    bash "$REPO_ROOT/tools/ota-qemu-run.sh"
 rm -rf "$NO_QEMU"
 
 # --- and the list above is the whole list ------------------------------------

@@ -187,6 +187,18 @@ firmware_qemu_boot() {
         bash tools/qemu-boot-run.sh
 }
 
+# The firmware update under the emulator (goal 14, line B): tools/ota-qemu-run.sh,
+# image A from the directory the firmware-esp32s3-qemu step built, GOOD and BAD
+# in directories of their own. Refuses by name like qemu-boot. Source: simulation.
+firmware_ota_qemu() {
+    firmware_env || return 1
+    CHORUS_IDF_CCACHE=1 \
+        CHORUS_IMAGE_OUT="$ROOT/firmware/build/gate-esp32s3-qemu-s3-openeth" \
+        CHORUS_QEMU_OUT="$LOG/ota-qemu" \
+        IDF_PY_BUILD_JOBS="${IDF_PY_BUILD_JOBS:-2}" \
+        bash tools/ota-qemu-run.sh
+}
+
 # The profiles the image steps built and scanned in THIS run (each step's log
 # ends with `firmware image: target esp32s3, board profile <p>` and carries the
 # guard's `safety scan: <p>: ... pass` line) against firmware/boards/*.conf.
@@ -239,7 +251,7 @@ if [ "$MODE" = full ]; then
     step clippy           cargo clippy --workspace --all-targets --locked -- -D warnings
     stop_if_cheap_steps_failed build test determinism firmware-check verify alsa-null \
         firmware-esp32s3-wired firmware-esp32s3-wifi firmware-esp32s3-qemu firmware-profiles \
-        qemu-boot image endpoint-packages
+        qemu-boot ota-qemu image endpoint-packages
     step build            cargo build --workspace --all-targets --locked
     step test             workspace_tests
     step determinism      make --no-print-directory verify-control-determinism
@@ -267,6 +279,10 @@ if [ "$MODE" = full ]; then
     # speaker after a reboot. The run prints its own wall-clock.
     step qemu-boot        firmware_qemu_boot
     sed -n -e 's/^qemu-boot: \(.*\)/gate: qemu-boot \1/p' "$LOG/qemu-boot.log" | tee -a "$LOG/summary.txt"
+    # A good image installed and confirmed, a bad one rolled back by the
+    # bootloader, both by the server's explicit install (line B).
+    step ota-qemu         firmware_ota_qemu
+    sed -n -e 's/^ota-qemu: \(.*\)/gate: ota-qemu \1/p' "$LOG/ota-qemu.log" | tee -a "$LOG/summary.txt"
     step image            make --no-print-directory image
     # Both architectures: the two cross builds and their checks take about 45 s
     # cold and 9 s warm here (measured 2026-09-30), inside the gate's budget.

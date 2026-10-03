@@ -124,3 +124,12 @@ or, for a run by hand, `CHORUS_OWNER_AT_BENCH=1 chorus-server --firmware-dir ...
 set, the install commands above still have to be sent: the variable allows an install, it
 never starts one. Without it, everything else on this page works (staging, verification,
 `update_available`), and only the transfer is refused.
+
+## Under the emulator
+
+`make ota-qemu` (a gate step) runs an install end to end with no board: the real image of the
+emulator's board profile (`qemu-s3-openeth`, ADR 0109), a real server, an explicit install of a
+good image, which is confirmed, and of a bad one built never to confirm, which ESP-IDF's
+bootloader rolls back. It is simulation, not timing evidence; the report is
+`docs/measurements/ota-qemu-rollback.md` and the record
+`docs/decisions/0111-ota-under-the-emulator.md`.

@@ -32,8 +32,18 @@ set(chorus_board_file "${CMAKE_CURRENT_LIST_DIR}/../boards/${CHORUS_BOARD_PROFIL
 if(NOT EXISTS "${chorus_board_file}")
     message(FATAL_ERROR "chorus: no board profile ${chorus_board_file}")
 endif()
-configure_file("${chorus_board_file}" "${CMAKE_CURRENT_BINARY_DIR}/board_profile.conf" COPYONLY)
-message(STATUS "chorus: board profile ${CHORUS_BOARD_PROFILE}")
+# Not during ESP-IDF's early expansion, which runs this file in script mode to
+# learn its requirements, with the build directory's root as its binary
+# directory and without the -D values (docs/en/api-guides/build-system.rst:1684
+# in the pinned v6.1): there the copy landed at <build>/board_profile.conf and
+# named the DEFAULT profile whatever was built, and that is the file
+# tools/firmware-flash.sh and tools/firmware-stage.sh read as "the profile the
+# build recorded" (found by the emulator run, goal 14). tools/firmware-image.sh
+# now puts the real copy there after the build.
+if(NOT CMAKE_BUILD_EARLY_EXPANSION)
+    configure_file("${chorus_board_file}" "${CMAKE_CURRENT_BINARY_DIR}/board_profile.conf" COPYONLY)
+    message(STATUS "chorus: board profile ${CHORUS_BOARD_PROFILE}")
+endif()
 
 # Wi-Fi provisioning (goal 14, docs/decisions/0103-wifi-provisioning-over-softap.md):
 # the binding to the access point, the HTTP server and the pinned
@@ -158,6 +168,19 @@ idf_component_register(
 target_compile_definitions(${COMPONENT_LIB} PRIVATE CHORUS_TARGET_ESP32S3=1)
 if(chorus_wireless_profile)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE CHORUS_PROVISIONING=1)
+endif()
+# The emulator run's bad image (goal 14, docs/decisions/0111-*): the update
+# unit built never to confirm its trial (firmware/main/esp_ota.c), so the
+# bootloader's rollback is exercised. tools/firmware-image.sh passes
+# CHORUS_OTA_NEVER_CONFIRM=0 or 1; only the emulator's profile may be 1.
+if(CHORUS_OTA_NEVER_CONFIRM)
+    file(STRINGS "${chorus_board_file}" chorus_emulated_profile REGEX "^link_transport *= *emulated")
+    if(NOT chorus_emulated_profile)
+        message(FATAL_ERROR "chorus: CHORUS_OTA_NEVER_CONFIRM is for the emulator's board only, "
+            "and ${CHORUS_BOARD_PROFILE} is not it")
+    endif()
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE CHORUS_OTA_NEVER_CONFIRM=1)
+    message(STATUS "chorus: this image never confirms its trial (the emulator run's bad image)")
 endif()
 
 # The vendored units are upstream's code, byte for byte: their own definitions,
