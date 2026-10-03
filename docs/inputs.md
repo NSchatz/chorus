@@ -1,7 +1,7 @@
 # Inputs: alarm sources, line-in sharing and streamers
 
 What a room can play that is not the server's configured stream, as it stands after goal 17
-(decided in `docs/decisions/0000-inputs.md`): the four alarm sources of K80, a line-in shared to
+(decided in `docs/decisions/0129-stored-alarm-sources-line-in-sharing-and-streamer-inputs.md`): the four alarm sources of K80, a line-in shared to
 any number of groups, and a network streamer wired to a line-in. The commands are the control
 catalog's (`docs/control-plane.md`); the command line is `chorusctl` (`docs/chorusctl.md`).
 

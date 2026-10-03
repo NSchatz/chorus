@@ -1,4 +1,4 @@
-# 0000: a stored source is an alarm's only, played by a held player session the conductor starts and answers for; a line-in plays in any number of groups on one port with one latency, the largest any listener needs; a shared TV input leaves low-latency mode; a refused line-in start gets no wire message; and a streamer is a labelled line-in that plays into its room
+# 0129: a stored source is an alarm's only, played by a held player session the conductor starts and answers for; a line-in plays in any number of groups on one port with one latency, the largest any listener needs; a shared TV input leaves low-latency mode; a refused line-in start gets no wire message; and a streamer is a labelled line-in that plays into its room
 
 - Status: accepted (goal 17, 2026-10-03)
 - Decided by: the goal (program section 21, item 3; K80, K94, K60) inside the coordinator's

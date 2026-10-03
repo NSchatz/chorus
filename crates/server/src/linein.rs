@@ -19,7 +19,7 @@
 //!    the conductor sends `stop` and logs `line-in refused
 //!    reason=format-mismatch` (a conversion is a follow-up). The `stop` IS
 //!    the refusal on the wire: there is no message of its own for it (the
-//!    inputs ADR of goal 17 says why not).
+//!    ADR 0129 says why not).
 //! 4. Every upstream `audio_chunk` after that is written into the port's
 //!    ring ([`Port::write_pcm`]), on the session's reader thread, as samples
 //!    at full scale 1.0. A full ring drops the chunk and counts it.

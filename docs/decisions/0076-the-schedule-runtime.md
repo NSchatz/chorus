@@ -113,7 +113,9 @@ The same applies to a person's `limit`.
   tick from 0 to the alarm's volume clamped by `start_ramp` over `ramp_s` (0 = at once). The alarm
   is marked ringing.
 - **Fallback.** A line-in that is not offered (no signal), already played by another group (one
-  input feeds at most one group), a chime name that does not exist, or a source of `none` plays
+  input feeds at most one group; **retired by ADR 0129, goal 17**: a line-in plays in any number
+  of groups and an alarm plays one another group plays), a chime name that does not exist, or a
+  source of `none` plays
   `FALLBACK_CHIME` = `bell` (ASSUMED) instead, logged `fallback=chime reason=...`. A line-in
   whose endpoint goes while the alarm rings falls back the same way (`reason=input-gone`): an
   alarm must still wake.
