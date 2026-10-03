@@ -30,6 +30,18 @@ The development host's disk was the gates' bottleneck: one degraded HDD, 100% bu
 2026-10-03. The private repository's Actions quota ran out on 2026-10-01, which is why R12 made the
 local run the gate; public, the quota no longer applies.
 
+## What was read
+
+All on 2026-10-03.
+
+- GitHub's Actions billing page,
+  https://docs.github.com/en/billing/concepts/product-billing/github-actions: standard runners are
+  free in public repositories and self-hosted runners are free; private repositories have a monthly
+  quota.
+- This repository's Actions runs 36846006728 (2026-10-01, `make gate` red on the runner) and
+  37099956670 (failed with no step: the quota), and the run on this pull request's branch.
+- The goals program's lock log on the development host, summed per repository, and its ADR 0036.
+
 ## Before going public
 
 Scanned 2026-10-03: gitleaks over the whole history found nothing; the house term list matched only
