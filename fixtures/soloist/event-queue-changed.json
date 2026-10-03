@@ -1,0 +1,8 @@
+{
+  "type": "queue_changed",
+  "previous": [ { "uid": "spotify:track:previous", "source": "context",
+      "item": { "uri": "spotify:track:previous", "entity_type": "track", "decorations": {} } } ],
+  "upcoming": [ { "uid": "spotify:track:upcoming", "source": "queue",
+      "item": { "uri": "spotify:track:upcoming", "entity_type": "track",
+                "decorations": { "identity": { "name": "Next Song" } } } } ]
+}

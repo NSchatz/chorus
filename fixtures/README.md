@@ -529,3 +529,23 @@ fields. A `.fields` file is `key = value` lines (`#` starts a comment) as elsewh
   `album`, `album_art_uri`, `class` and each `res.<n>.*`, or `none`): a plain track, one with
   DLNA fields in `protocolInfo` and vendor namespaces, one hostile with a DOCTYPE and nested
   entities, and garbage.
+
+## `soloist/`
+
+Spotify Soloist vectors (goal 17), Rust-only by declaration (`check-shared-fixtures.sh`: only
+`chorus-soloistd` and chorus-server speak them, there is no C implementation).
+`crates/soloist/tests/fixtures.rs` walks every kind below and then fails if any file in the
+directory was read by none of it. `docs/soloist.md` cites the pages.
+
+- `command-<name>.json` are the command examples of Soloist's WebSocket API reference page
+  (read 2026-10-03), typed from it verbatim; `chorus_soloist::api::Command` must build each,
+  member for member in the page's order, and the fake Soloist must accept each.
+- `event-<name>.json` and `entity.json` are the page's event and entity examples, verbatim;
+  the parser must read each into the model the test states. `composed-<name>.json` are the two
+  events the page gives only as a schema (`context_changed`, `options_changed`), composed from
+  the page's own entity and options examples: they are chorus's composition, not a quotation.
+- `version-issue-<n>.txt` are the `soloist --version` shapes users transcribed in issue reports
+  (LEADs: the literal output is not documented), and `version-garbage.txt` a text with no
+  build time; the test states the build time each gives, or that it gives none.
+- `protocol-<name>.line` are the supervisor protocol's messages, one line each, byte for byte:
+  `encode` must write them and `decode` must read them.

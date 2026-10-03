@@ -1,0 +1,18 @@
+[package]
+name = "chorus-soloist"
+description = "the pure half of chorus's Spotify Soloist support: the Soloist WebSocket API model, RFC 6455 client framing, the supervisor protocol, the build-expiry arithmetic, the receiver pool and the receiver directory's names"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# One dependency, chorus's own: the hand-written JSON reader and writer of the
+# control catalog, so the server and the sidecar read one JSON dialect
+# (the decision record of goal 17's track S1 says why). SHA-1 and base64 for
+# the WebSocket handshake are written here from their specifications.
+[dependencies]
+chorus-control = { path = "../control" }
+
+[lints]
+workspace = true

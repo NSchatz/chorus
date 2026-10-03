@@ -1,0 +1,4 @@
+{ "type": "context_changed", "context": {
+    "uri": "spotify:playlist:37i9dQZF1DXcBWIGoYBM5M",
+    "entity_type": "playlist",
+    "decorations": { "identity": { "name": "Today's Top Hits" } } } }
