@@ -43,7 +43,7 @@ playing one album is one stream.
   never merges one (K28).
 - **The host.** Intel Xeon E5-2680 v4, shared with every other homelab service and, during
   these measurements, with other tenants' builds (one-minute load average 29 to
-  57 on four visible CPUs). Every CPU figure below is an upper bound.
+  65 on four visible CPUs). Every CPU figure below is an upper bound.
 - **Rule 8.** The choice is argued on what chorus needs, not on what this container holds.
 - **No Soloist here.** Soloist is proprietary; chorus never downloads or runs it. Its own cost
   can only be measured by the owner, on the owner's build.

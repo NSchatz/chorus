@@ -10,7 +10,7 @@ P11 (`docs/proposals/P11-concurrent-streams.md`, decision K76) rests on, and the
 planning-time ffmpeg proxy figures of `research-casting-decoders.md` section 5.
 
 **Shared host, upper bound.** The container runs on the homelab's class of host, shared with other
-tenants, and the one-minute load average stood between 29 and 57 over four
+tenants, and the one-minute load average stood between 29 and 65 over four
 visible CPUs during every window below (each window's own figure is in its table). CPU figures
 are therefore upper bounds for this processor: a busy neighbour costs cache and clock frequency,
 never the reverse. Memory figures do not depend on the load.
@@ -331,13 +331,18 @@ What the tables say:
 The same server with no endpoint connected, three ways, and the last also with one control
 point subscribed to all three services of all sixteen renderers (48 subscriptions, events
 received on a loopback callback). 60 s windows.
+The table is the second idle run of the day (`idle2`), made after the sampler learned to read
+the mappings; the first (`idle`, in the raw files) gave the same CPU and memory within about a
+tenth of a percent of one core and 0.1 MB. Its `params` names the harness's commit as `head`; the
+server is the same binary (the same `server_sha256`). The last column grows by about 2.2 to
+2.6 MB a thread, a thread's stack.
 
 | configuration | window | threads | upnp threads | player threads | audio | process | VmRSS | RssAnon | Pss | Pss_Anon | VmSize | mapped with any access | load 1 min |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 16 rooms, 16 slots, control plane; no players, no renderers | idle-no-control-point | 47 | 0.000 | 0.000 | 0.439 | 0.858 | 12276 | 7136 | 10072 | 7136 | 3157408 | - | 46.37 to 40.36 |
-| the same with --players 16 | idle-no-control-point | 63 | 0.000 | 0.304 | 0.431 | 1.087 | 14612 | 9596 | 12425 | 9596 | 4245172 | - | 41.45 to 51.50 |
-| the same with --players 16 --upnp (16 renderers) | idle-no-control-point | 71 | 0.562 | 0.281 | 0.428 | 1.618 | 15484 | 9988 | 13231 | 9988 | 4785960 | - | 51.50 to 41.24 |
-| the same with --players 16 --upnp (16 renderers) | idle-one-subscribed-control-point | 71 | 0.579 | 0.353 | 0.440 | 1.747 | 15700 | 10204 | 13439 | 10204 | 4785960 | - | 47.93 to 45.77 |
+| 16 rooms, 16 slots, control plane; no players, no renderers | idle-no-control-point | 47 | 0.000 | 0.000 | 0.454 | 0.865 | 12276 | 7136 | 10056 | 7136 | 3157408 | 150720 | 61.34 to 65.13 |
+| the same with --players 16 | idle-no-control-point | 63 | 0.000 | 0.333 | 0.442 | 1.157 | 14624 | 9596 | 12436 | 9596 | 4245172 | 191952 | 65.13 to 53.57 |
+| the same with --players 16 --upnp (16 renderers) | idle-no-control-point | 71 | 0.569 | 0.310 | 0.426 | 1.674 | 15380 | 9992 | 13160 | 9992 | 4785960 | 209536 | 53.57 to 55.62 |
+| the same with --players 16 --upnp (16 renderers) | idle-one-subscribed-control-point | 71 | 0.543 | 0.325 | 0.415 | 1.632 | 15604 | 10216 | 13409 | 10216 | 4785960 | 209536 | 60.17 to 48.94 |
 
 ## Result: PipeWire and WirePlumber per Soloist receiver
 
@@ -411,6 +416,8 @@ run's `probe-media.tsv`, and the PipeWire probe's `res-summary.txt`.
 | decoders-probe-media.tsv | 3989 | `0e767fa143401bcf60677e48913450e78974e700b4a72b65e7513ddec7a67004` |
 | idle-params | 700 | `ccd9f0749da8e1bc6f0b624e22c85fab78ecf1bd1810c129ecfec549a59ac4a6` |
 | idle-windows.jsonl | 6103 | `cdd634df328b9f7bb59380ec3c1cbfee23c119355f64668afa920a017f5a3423` |
+| idle2-params | 700 | `dc4b8f5e7f0442bcf9a3eb57e07378b699870f05899b9e39b036b88e67ef17a3` |
+| idle2-windows.jsonl | 6291 | `a8461be1afeec3e685f4a9be10fd858a20195b1f0ec9b53d01a36478b104b95b` |
 | media.tsv | 995 | `cdc47d5d73f070a008514484a36f578fd72fd2a6dbac281c374e7ce59fc3a14b` |
 | mp3-vorbis-params | 678 | `71dfb3a3b78ab9ff5371d0a48a7423025664e8dd903621bb7d33d278b432faf2` |
 | mp3-vorbis-windows.jsonl | 22323 | `02e1da2b5da4fce5f1fcf96071452f5cf4def7dbe18112a7738cd37c5cccb760` |
@@ -422,7 +429,7 @@ run's `probe-media.tsv`, and the PipeWire probe's `res-summary.txt`.
 
 The full run directories (every `/proc` sample per thread, the servers' and endpoints' logs,
 the control plane's report at each window's end) are kept at `/cache/tmp/chorus-g17/p11/`, not
-committed, indexed by `/cache/tmp/chorus-g17/p11/SHA256SUMS` (sha256 `4f8ac4de791673a48487130ed9bbec2955c5c4a965bbef466f926ad87cd10113`). The
+committed, indexed by `/cache/tmp/chorus-g17/p11/SHA256SUMS` (sha256 `553536b4039284adc31502cfe4c6054d13384029405dc458e152b4a927d576de`). The
 PipeWire probe's files are at `/cache/tmp/chorus-g17/pw-probe/`, indexed by its `SHA256SUMS`
 (104 files; sha256 of the index
 `4b517e0c89657288aaafce72af1bc8b578e4e922b05832a1ce46054e880285ac`); its method and its other
