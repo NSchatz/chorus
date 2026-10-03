@@ -256,7 +256,8 @@ def main():
         return 1
     print("soloist-lists: self-test: 11 planted trees, 3 release names and 2 tracked files each refused by name")
 
-    td = os.environ.get("CARGO_TARGET_DIR", os.path.join(ROOT, "target"))
+    # The image builds keep what they write where tools/build-dir.sh says (request #230).
+    td = out(["bash", "-c", ". tools/build-dir.sh && throwaway_build_dir image"]).strip()
     built = os.path.join(td, TARGET, "release")
     trees = {
         "server": os.path.join(td, "image/work/stage"),

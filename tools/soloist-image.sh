@@ -58,7 +58,15 @@ RUN_UID=65532
 
 TD="${CARGO_TARGET_DIR:-$ROOT/target}"
 OUT="${CHORUS_SOLOIST_IMAGE_OUT:-$TD/image/chorus-soloist-oci.tar}"
-WORK="$TD/image/soloist-work"
+# What the build writes and nothing reads again (the musl target directory, the staged trees,
+# the unpacked test bundle) goes where tools/build-dir.sh says, the server image's own build
+# directory, so the two share their compiled dependencies; the tarball stays under $TD.
+# shellcheck source=tools/build-dir.sh
+. "$ROOT/tools/build-dir.sh"
+BD="$(throwaway_build_dir image)"
+mkdir -p "$BD"
+echo "soloist-image: build directory $BD"
+WORK="$BD/image/soloist-work"
 CACHE="${CHORUS_SOLOIST_IMAGE_CACHE:-/cache/chorus-soloist-image}"
 mkdir -p "$CACHE/debs" 2>/dev/null || { CACHE="$TD/image/soloist-cache"; mkdir -p "$CACHE/debs"; }
 BASE_CACHE="$CACHE/base-${BASE_DIGEST#sha256:}"
@@ -79,7 +87,7 @@ export SOURCE_DATE_EPOCH="$EPOCH"
 # chorus-soloistd is static (musl), like chorus-server: it links no C, so the
 # target's own self-contained linker is the whole toolchain.
 echo "soloist-image: building chorus-soloistd for $TARGET"
-cargo build --release --locked --target "$TARGET" -p chorus-soloistd --bins
+CARGO_TARGET_DIR="$BD" cargo build --release --locked --target "$TARGET" -p chorus-soloistd --bins
 
 # --- the pinned inputs ---------------------------------------------------------
 
@@ -151,7 +159,7 @@ done
 # 2. What chorus adds.
 ADD="$WORK/stage-chorus"
 mkdir -p "$ADD/usr/local/bin" "$ADD/etc" "$ADD/usr/share/doc/chorus"
-install -m 0755 "$TD/$TARGET/release/chorus-soloistd" "$ADD/usr/local/bin/chorus-soloistd"
+install -m 0755 "$BD/$TARGET/release/chorus-soloistd" "$ADD/usr/local/bin/chorus-soloistd"
 { cat "$BASEFS/etc/passwd"; echo "chorus:x:$RUN_UID:$RUN_UID:chorus receiver:/nonexistent:/usr/sbin/nologin"; } > "$ADD/etc/passwd"
 { cat "$BASEFS/etc/group"; echo "chorus:x:$RUN_UID:"; } > "$ADD/etc/group"
 chmod 0644 "$ADD/etc/passwd" "$ADD/etc/group"
@@ -322,8 +330,8 @@ WP_VERSION="$(pins | awk '$1 == "wireplumber" {sub(/-.*/, "", $2); print $2}')"
 echo "soloist-image test: the image's pipewire $PW_VERSION and wireplumber $WP_VERSION run on the image's loader and libraries"
 
 # The fake Soloist: an example of crates/soloistd, built here and never staged.
-cargo build --release --locked -p chorus-soloistd --example chorus-fake-soloist
-FAKE="$TD/release/examples/chorus-fake-soloist"
+CARGO_TARGET_DIR="$BD" cargo build --release --locked -p chorus-soloistd --example chorus-fake-soloist
+FAKE="$BD/release/examples/chorus-fake-soloist"
 printf 'not-a-real-key\n' > "$S/key"
 FAKE_SOLOIST_CONTROL="$S/app.sock" FAKE_SOLOIST_VERSION="Soloist 0.0.0 (chorus fake), build 20260930" \
     "$BIN" --soloist-dir "$S/recv" --receivers 2 --api-key-file "$S/key" \
