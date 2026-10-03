@@ -248,7 +248,7 @@ the sink, with a signal in which every frame names its URI and its index
 control socket: `login`, `logout`, `play <uri>`, `pause`, `resume`, `volume <n>`, `drop-ws`,
 `exit <code>`.
 
-`crates/soloistd/tests/supervisor.rs` runs the real `chorus-soloistd` against it: 14 tests,
+`crates/soloistd/tests/supervisor.rs` runs the real `chorus-soloistd` against it: 15 tests,
 about 1 s in all on the development host when run alone (they run in parallel; the two fixed
 waits are 300 ms and 400 ms, every other wait ends when the awaited message arrives).
 
