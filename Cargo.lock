@@ -233,6 +233,9 @@ dependencies = [
  "chorus-mqtt",
  "chorus-protocol",
  "chorus-schedule",
+ "chorus-soloist",
+ "chorus-soloist-fake",
+ "chorus-soloistd",
  "chorus-sync",
  "chorus-upnp",
 ]

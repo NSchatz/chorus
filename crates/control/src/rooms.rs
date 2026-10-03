@@ -444,6 +444,14 @@ pub enum Source {
     /// names (a stream URL, a Spotify URI) is in the room model's stored
     /// sources ([`StoredSource`]); a group never plays this spelling.
     Stored(String),
+    /// (goal 17) One of the server's Spotify Soloist receivers, by its id
+    /// (the server's are `r0`, `r1`, ...): what the Spotify app plays on the
+    /// Connect device of a room or group. Like a player it plays in at most
+    /// one group at a time, and what it plays is said in the group's
+    /// [`NowPlaying`]. Only the server's own receiver manager gives a group
+    /// this source: a receiver's audio follows Spotify, not a command, so a
+    /// `take` naming it is refused by name.
+    Soloist(String),
 }
 
 impl Source {
@@ -456,6 +464,7 @@ impl Source {
             Source::LineIn(input) => format!("line-in:{}", input.literal()),
             Source::Player(id) => format!("player:{}", id),
             Source::Stored(id) => format!("stored:{}", id),
+            Source::Soloist(id) => format!("soloist:{}", id),
         }
     }
 
@@ -478,15 +487,33 @@ impl Source {
         if let Some(id) = text.strip_prefix("stored:") {
             return is_identifier(id).then(|| Source::Stored(id.to_string()));
         }
+        if let Some(id) = text.strip_prefix("soloist:") {
+            return is_identifier(id).then(|| Source::Soloist(id.to_string()));
+        }
         None
     }
 
     /// (goal 17) Whether a group that plays this source carries a
     /// now-playing record a runtime may set ([`NowPlaying`]): a player
-    /// source today. (A line-in labelled as a streamer carries one too, which
-    /// the room model writes itself.)
+    /// source, or a Soloist receiver. (A line-in labelled as a streamer
+    /// carries one too, which the room model writes itself.)
     pub fn takes_now_playing(&self) -> bool {
-        matches!(self, Source::Player(_))
+        matches!(self, Source::Player(_) | Source::Soloist(_))
+    }
+
+    /// (goal 17) Whether this is a Spotify Soloist receiver. The rule it is
+    /// here for: a room playing one is PAUSED for an announcement and
+    /// resumed after it, never ducked, and a switch to or from one cuts and
+    /// never overlaps (proposal P7: the Developer Policy's overlap clause).
+    pub fn is_soloist(&self) -> bool {
+        matches!(self, Source::Soloist(_))
+    }
+
+    /// (goal 17) Whether this source plays in at most one group at a time:
+    /// a player or a Soloist receiver, each one stream of audio with one
+    /// position. A `take` moves such a source and never copies it.
+    pub fn is_exclusive(&self) -> bool {
+        matches!(self, Source::Player(_) | Source::Soloist(_))
     }
 }
 
@@ -1044,4 +1071,87 @@ mod tests {
         assert!(QuietWindow::from_persisted("mon 22:00-22:00 0.300").is_err());
         assert!(QuietWindow::from_persisted(" 22:00-07:00 0.300").is_err());
     }
+}
+
+/// What a `playback` command asks of the Spotify receiver a group plays
+/// (goal 17, K65).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaybackAction {
+    /// Pause.
+    Pause,
+    /// Carry on after a pause.
+    Resume,
+    /// The next track.
+    Next,
+    /// The previous track, or the start of this one.
+    Previous,
+}
+
+impl PlaybackAction {
+    /// Every action, in the catalog's order.
+    pub const ALL: [PlaybackAction; 4] = [
+        PlaybackAction::Pause,
+        PlaybackAction::Resume,
+        PlaybackAction::Next,
+        PlaybackAction::Previous,
+    ];
+
+    /// The one spelling.
+    pub fn name(self) -> &'static str {
+        match self {
+            PlaybackAction::Pause => "pause",
+            PlaybackAction::Resume => "resume",
+            PlaybackAction::Next => "next",
+            PlaybackAction::Previous => "previous",
+        }
+    }
+
+    /// Read the one spelling back.
+    pub fn parse(text: &str) -> Option<PlaybackAction> {
+        PlaybackAction::ALL.into_iter().find(|a| a.name() == text)
+    }
+}
+
+/// One Spotify Soloist receiver, as the state lists it (goal 17).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SoloistReceiver {
+    /// `r0`, `r1`, ...
+    pub id: String,
+    /// What its supervisor says it is doing (`idle`, `starting`, `running`,
+    /// `expired`, `failed`, `no-binary`), or `absent` while the server has
+    /// no connection to it.
+    pub state: String,
+    /// The target it is assigned to (`room:<id>`, `group:<id>`,
+    /// `live:<a>+<b>`), or empty.
+    pub target: String,
+    /// The Spotify Connect device name it runs under, or empty.
+    pub name: String,
+}
+
+/// The Soloist build the receivers run (goal 17).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SoloistBuild {
+    /// The first line of `soloist --version`.
+    pub version: String,
+    /// Whole days until the build expires (negative once it has), when the
+    /// version names a build time.
+    pub expires_in_days: Option<i64>,
+}
+
+/// The state's `soloist` member (goal 17): the receivers, the build and its
+/// expiry warning. A fact about now, set by the server's receiver manager
+/// (`crate::zones::Zones::set_soloist`), never by a command and never
+/// persisted; a server without `--soloist-receivers` has none and writes no
+/// such member.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SoloistState {
+    /// Every receiver, in order.
+    pub receivers: Vec<SoloistReceiver>,
+    /// The build, once a supervisor has reported one.
+    pub build: Option<SoloistBuild>,
+    /// "Soloist build expires in N days" from 14 days before, "Soloist
+    /// build expired" after.
+    pub warning: Option<String>,
+    /// The targets that have no receiver because the pool is too small.
+    pub exhausted: Vec<String>,
 }

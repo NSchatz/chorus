@@ -280,6 +280,8 @@ pub struct Conductor {
     /// (goal 17) What plays an alarm's stored stream URL; `None` on a
     /// server without `--players`.
     stored: Option<StoredStreams>,
+    /// (goal 17) The Soloist receivers, on a server that runs them.
+    soloist: Option<Arc<crate::soloist::Link>>,
 }
 
 /// When an endpoint of a room on `transport` plays audio stamped `t` on the
@@ -319,7 +321,17 @@ impl Conductor {
             tv_modes: Vec::new(),
             players: 0,
             stored: None,
+            soloist: None,
         }
+    }
+
+    /// (goal 17) This server runs Soloist receivers, reached through `link`
+    /// (`crate::soloist`): a group whose source is `soloist:r<i>` plays port
+    /// `i`, a port is told whether any group plays it, and an alarm's
+    /// stored Spotify URI is played by its target's receiver.
+    pub fn with_soloist(mut self, link: Arc<crate::soloist::Link>) -> Conductor {
+        self.soloist = Some(link);
+        self
     }
 
     /// (goal 17) Play alarms' stored stream URLs through `streams`.
@@ -384,6 +396,7 @@ impl Conductor {
     /// and make every session agree with it.
     pub fn pass(&mut self) -> PassReport {
         let mut effects = self.player_events();
+        effects.extend(self.soloist_events());
         effects.extend(self.run_schedule());
         let answers = self.stored_requests(&effects);
         effects.extend(answers);
@@ -608,6 +621,45 @@ impl Conductor {
         effects
     }
 
+    /// (goal 17) The receiver manager's answers to the alarms' Spotify
+    /// requests: a receiver that plays becomes its alarm's source (and the
+    /// manager is told whether the alarm still wanted it), and every way it
+    /// did not start rings the fallback chime with its reason.
+    fn soloist_events(&mut self) -> Vec<Effect> {
+        let Some(link) = self.soloist.clone() else {
+            return Vec::new();
+        };
+        let mut effects = Vec::new();
+        for answer in link.take_answers() {
+            match answer {
+                crate::soloist::AlarmAnswer::Started {
+                    alarm,
+                    receiver,
+                    source,
+                } => {
+                    let mut took = false;
+                    if let Some(schedule) = self.schedule.as_mut() {
+                        let (mono, _) = schedule.clocks.now();
+                        let runtime = &mut schedule.runtime;
+                        effects.extend(self.state.runtime(|zones| {
+                            let (ok, out) =
+                                runtime.on_alarm_source_started(&alarm, source, mono, zones);
+                            took = ok;
+                            out
+                        }));
+                    }
+                    link.alarm_taken(receiver, took);
+                }
+                crate::soloist::AlarmAnswer::Failed {
+                    alarm,
+                    reason,
+                    detail,
+                } => effects.extend(self.alarm_source_failed(&alarm, reason, &detail)),
+            }
+        }
+        effects
+    }
+
     /// Tell the schedule runtime an alarm's stored source failed.
     fn alarm_source_failed(&mut self, alarm: &str, reason: &str, detail: &str) -> Vec<Effect> {
         let Some(schedule) = self.schedule.as_mut() else {
@@ -632,14 +684,20 @@ impl Conductor {
                     url,
                     name,
                 } => answers.extend(self.play_stored(alarm, target, url, name)),
-                // THE SEAM FOR THE SPOTIFY ALARM SOURCE, filled by the
-                // Soloist server track: this server runs no receiver, so
-                // the answer is the failure, at once.
-                Effect::PlaySpotify { alarm, .. } => answers.extend(self.alarm_source_failed(
-                    alarm,
-                    "soloist-unavailable",
-                    "this server runs no Soloist receiver",
-                )),
+                // The Spotify alarm source: the receiver manager checks the
+                // target's receiver, sends `play` and answers later
+                // ([`Conductor::soloist_events`]). A server that runs no
+                // receiver answers the failure at once.
+                Effect::PlaySpotify {
+                    alarm, target, uri, ..
+                } => match &self.soloist {
+                    Some(link) => link.play_alarm(alarm, target, uri),
+                    None => answers.extend(self.alarm_source_failed(
+                        alarm,
+                        "soloist-unavailable",
+                        "this server runs no Soloist receiver (--soloist-receivers)",
+                    )),
+                },
                 Effect::StopStored { alarm } => {
                     if let Some(streams) = &self.stored {
                         streams.sessions.release_held(&format!("alarm:{}", alarm));
@@ -893,6 +951,13 @@ impl Conductor {
             // (goal 17) Never a group's source (the room model refuses it):
             // an alarm's stored source plays as the player it is given.
             Source::Stored(_) => SlotInput::Silence,
+            // (goal 17) A receiver this server does not run plays silence.
+            Source::Soloist(id) => {
+                let receivers = self.soloist.as_ref().map_or(0, |l| l.receivers());
+                chorus_soloist::receiver_index(id)
+                    .filter(|r| *r < receivers)
+                    .map_or(SlotInput::Silence, |r| SlotInput::Soloist(r as u8))
+            }
         }
     }
 
@@ -954,6 +1019,21 @@ impl Conductor {
                         continue;
                     }
                     Err(TrySendError::Disconnected(_)) => continue,
+                }
+            }
+        }
+        // (goal 17) A Soloist receiver's port is told whether any slot plays
+        // it: its reader discards what nobody hears, and a change either
+        // way empties the port, so a group that takes a receiver hears
+        // nothing that arrived before it did.
+        if let Some(link) = &self.soloist {
+            for (index, port) in link.ports().iter().enumerate() {
+                let played = self
+                    .inputs
+                    .iter()
+                    .any(|i| *i == SlotInput::Soloist(index as u8));
+                if port.is_selected() != played {
+                    port.select(played);
                 }
             }
         }

@@ -194,6 +194,99 @@ pub struct ServerConfig {
     /// (goal 16) The UPnP AV media renderers' flags (`crate::upnp`,
     /// `docs/upnp.md`). Off unless `--upnp` is given.
     pub upnp: UpnpFlags,
+    /// (goal 17) The Soloist receivers' flags (`crate::soloist`,
+    /// `docs/soloist.md`). Off unless `--soloist-receivers` is above 0.
+    pub soloist: SoloistFlags,
+}
+
+/// (goal 17) What the `--soloist-*` flags said. The server runs no Soloist
+/// code, and no thread of it exists, unless `receivers` is above 0; every
+/// other flag here is refused without it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SoloistFlags {
+    /// `--soloist-receivers <N>`: how many receivers, `r0` to `r<N-1>`.
+    pub receivers: usize,
+    /// `--soloist-dir <dir>`: the receiver directory, shared with the
+    /// receiver containers.
+    pub dir: Option<String>,
+    /// `--soloist-alarms`: let an alarm play a stored Spotify URI. Off by
+    /// default (P7: the Developer Policy's alarm clause is the owner's to
+    /// read first).
+    pub alarms: bool,
+    /// `--soloist-grace <seconds>`: how long a dissolved, idle live group
+    /// keeps its receiver.
+    pub grace_s: u64,
+    /// `--soloist-volume <chorus|receiver>`: which gain stage a Spotify
+    /// volume drives.
+    pub volume: crate::soloist::VolumeMapping,
+    /// The first `--soloist-*` flag other than `--soloist-receivers` that
+    /// was given, to name in a refusal.
+    pub given: Option<String>,
+}
+
+impl Default for SoloistFlags {
+    fn default() -> SoloistFlags {
+        SoloistFlags {
+            receivers: 0,
+            dir: None,
+            alarms: false,
+            grace_s: crate::soloist::DEFAULT_GRACE.as_secs(),
+            volume: crate::soloist::VolumeMapping::default(),
+            given: None,
+        }
+    }
+}
+
+impl SoloistFlags {
+    /// Whether these flags are something a server with `slots` stream slots
+    /// and (`control`) a control plane can run.
+    fn check(&self, control: bool, slots: usize) -> Result<(), ServerConfigError> {
+        let refused = |argument: &str, detail: String| {
+            Err(ServerConfigError::Soloist {
+                argument: argument.to_string(),
+                detail,
+            })
+        };
+        if self.receivers == 0 {
+            return match &self.given {
+                Some(flag) => refused(
+                    flag,
+                    "it is about the Soloist receivers, and this server runs none: give \
+                     --soloist-receivers <N> of at least 1"
+                        .to_string(),
+                ),
+                None => Ok(()),
+            };
+        }
+        if self.receivers > crate::soloist::MAX_RECEIVERS {
+            return refused(
+                "--soloist-receivers",
+                format!(
+                    "{} receivers is past the ceiling of {}: each is a thread and a ring of \
+                     audio held for the life of the process",
+                    self.receivers,
+                    crate::soloist::MAX_RECEIVERS
+                ),
+            );
+        }
+        if self.dir.is_none() {
+            return refused(
+                "--soloist-receivers",
+                "the receivers are reached through one shared directory: give --soloist-dir \
+                 <dir>"
+                    .to_string(),
+            );
+        }
+        if !control || slots == 0 {
+            return refused(
+                "--soloist-receivers",
+                "a receiver is heard as a stream slot's input and follows the rooms and \
+                 groups: give --control-listen and --slots <S> of at least 1"
+                    .to_string(),
+            );
+        }
+        Ok(())
+    }
 }
 
 /// (goal 16) What the `--upnp*` flags said. The renderers are off unless
@@ -544,6 +637,7 @@ impl Default for ServerConfig {
             players: 0,
             media_allow_loopback: false,
             upnp: UpnpFlags::default(),
+            soloist: SoloistFlags::default(),
         }
     }
 }
@@ -640,6 +734,13 @@ pub enum ServerConfigError {
         /// Why.
         detail: String,
     },
+    /// (goal 17) A `--soloist-*` flag the receivers cannot run with.
+    Soloist {
+        /// The argument as it was given.
+        argument: String,
+        /// Why.
+        detail: String,
+    },
     /// (goal 16) An `--upnp*` flag the renderers cannot run with.
     Upnp {
         /// The argument as it was given.
@@ -664,6 +765,7 @@ impl fmt::Display for ServerConfigError {
             ServerConfigError::Format(e) => write!(f, "{}", e),
             ServerConfigError::LowLatency { argument, detail }
             | ServerConfigError::Players { argument, detail }
+            | ServerConfigError::Soloist { argument, detail }
             | ServerConfigError::Upnp { argument, detail }
             | ServerConfigError::Mqtt { argument, detail } => {
                 write!(f, "argument '{}' refused: {}", argument, detail)
@@ -901,6 +1003,36 @@ impl ServerConfig {
                     config.players = usize::try_from(number(&arg, &value()?)?).unwrap_or(usize::MAX)
                 }
                 "--media-allow-loopback" => config.media_allow_loopback = true,
+                "--soloist-receivers" => {
+                    config.soloist.receivers =
+                        usize::try_from(number(&arg, &value()?)?).unwrap_or(usize::MAX)
+                }
+                "--soloist-dir" => {
+                    config.soloist.given.get_or_insert_with(|| arg.clone());
+                    config.soloist.dir = Some(value()?);
+                }
+                "--soloist-alarms" => {
+                    config.soloist.given.get_or_insert_with(|| arg.clone());
+                    config.soloist.alarms = true;
+                }
+                "--soloist-grace" => {
+                    config.soloist.given.get_or_insert_with(|| arg.clone());
+                    config.soloist.grace_s = number(&arg, &value()?)?;
+                }
+                "--soloist-volume" => {
+                    config.soloist.given.get_or_insert_with(|| arg.clone());
+                    let text = value()?;
+                    config.soloist.volume = crate::soloist::VolumeMapping::parse(&text)
+                        .ok_or_else(|| ServerConfigError::Soloist {
+                            argument: arg.clone(),
+                            detail: format!(
+                                "'{}' is not a volume mapping: 'chorus' (a Spotify volume sets \
+                                 the room's or group's volume in chorus) or 'receiver' \
+                                 (Soloist's own volume is the group gain and chorus only clamps)",
+                                text
+                            ),
+                        })?;
+                }
                 "--upnp" => config.upnp.on = true,
                 "--upnp-listen"
                 | "--upnp-workers"
@@ -1047,6 +1179,9 @@ impl ServerConfig {
             ephemeral_identity: config.ephemeral_identity,
         })?;
         check_players(config.players, config.slots)?;
+        config
+            .soloist
+            .check(config.control_listen.is_some(), config.slots)?;
         if config.media_allow_loopback && config.players == 0 {
             return Err(ServerConfigError::Players {
                 argument: "--media-allow-loopback".to_string(),
@@ -1766,5 +1901,64 @@ mod tests {
             .unwrap_err(),
             ServerConfigError::TwoCivilClocks
         );
+    }
+
+    #[test]
+    fn the_soloist_receivers_are_off_by_default_and_every_flag_needs_them() {
+        let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<String>>();
+        let d = ServerConfig::default().soloist;
+        assert_eq!((d.receivers, d.alarms, d.grace_s), (0, false, 60));
+        assert_eq!(d.volume, crate::soloist::VolumeMapping::Chorus);
+        let refused = |a: &[&str]| match ServerConfig::from_args(args(a)) {
+            Err(e @ ServerConfigError::Soloist { .. }) => e.to_string(),
+            other => panic!("{:?}", other),
+        };
+        for flags in [
+            &["--soloist-dir", "/run/chorus"][..],
+            &["--soloist-alarms"][..],
+            &["--soloist-grace", "5"][..],
+            &["--soloist-volume", "receiver"][..],
+        ] {
+            let said = refused(flags);
+            assert!(said.contains(flags[0]) && said.contains("--soloist-receivers"), "{}", said);
+        }
+        assert!(refused(&["--soloist-receivers", "2"]).contains("--soloist-dir"));
+        assert!(
+            refused(&["--soloist-receivers", "2", "--soloist-dir", "/run/chorus"])
+                .contains("--slots")
+        );
+        assert!(refused(&[
+            "--control-listen",
+            "127.0.0.1:0",
+            "--slots",
+            "2",
+            "--soloist-dir",
+            "/run/chorus",
+            "--soloist-receivers",
+            "33"
+        ])
+        .contains("ceiling of 32"));
+        assert!(refused(&["--soloist-receivers", "1", "--soloist-volume", "loud"])
+            .contains("'chorus'"));
+        let on = ServerConfig::from_args(args(&[
+            "--control-listen",
+            "127.0.0.1:0",
+            "--slots",
+            "2",
+            "--soloist-dir",
+            "/run/chorus",
+            "--soloist-receivers",
+            "3",
+            "--soloist-alarms",
+            "--soloist-grace",
+            "5",
+            "--soloist-volume",
+            "receiver",
+        ]))
+        .unwrap()
+        .soloist;
+        assert_eq!((on.receivers, on.alarms, on.grace_s), (3, true, 5));
+        assert_eq!(on.dir.as_deref(), Some("/run/chorus"));
+        assert_eq!(on.volume, crate::soloist::VolumeMapping::Receiver);
     }
 }

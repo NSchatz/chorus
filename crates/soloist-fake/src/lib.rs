@@ -62,7 +62,9 @@
 //! `FAKE_SOLOIST_VERSION`, `FAKE_SOLOIST_EXPIRED=1` (exit 10),
 //! `FAKE_SOLOIST_FAIL=1` (exit 1), `FAKE_SOLOIST_NO_WS=1`,
 //! `FAKE_SOLOIST_PIPE_DIR`, `FAKE_SOLOIST_ARGV_LOG` (a file that gets one
-//! JSON array of the arguments per start), and `FAKE_SOLOIST_CONTROL`: a
+//! JSON array of the arguments per start), `FAKE_SOLOIST_COMMAND_LOG` (a
+//! file that gets every accepted WebSocket control command, one a line in
+//! the order accepted: its name, then its `uri` or `volume`), and `FAKE_SOLOIST_CONTROL`: a
 //! Unix socket on which a test plays "the Spotify app", one command a line
 //! (`login`, `logout`, `play <uri>`, `pause`, `resume`, `volume <n>`,
 //! `drop-ws`, `exit <code>`), each answered `ok` or `error: <why>`.
@@ -245,6 +247,9 @@ struct Player {
     clients: Vec<(u64, TcpStream)>,
     next_client: u64,
     session_file: PathBuf,
+    /// `FAKE_SOLOIST_COMMAND_LOG`: where every accepted control command is
+    /// written, one a line, in the order it was accepted.
+    command_log: Option<PathBuf>,
 }
 
 type Shared = Arc<Mutex<Player>>;
@@ -280,6 +285,75 @@ fn entity(uri: &str) -> Value {
                         "identity",
                         obj(vec![("name", Value::text(&format!("Fake {uri}")))]),
                     ),
+                    // The documented decorations a now-playing record is
+                    // made of, each named after the URI so a test can tell
+                    // one item's from another's: two covers (the `large`
+                    // one second, so a reader that takes the first is
+                    // caught), a parent and two creators.
+                    (
+                        "visual_identity",
+                        obj(vec![(
+                            "cover",
+                            Value::Arr(
+                                ["small", "large"]
+                                    .iter()
+                                    .map(|size| {
+                                        obj(vec![
+                                            (
+                                                "url",
+                                                Value::text(&format!(
+                                                    "https://covers.example/{size}/{uri}"
+                                                )),
+                                            ),
+                                            ("size", Value::text(size)),
+                                        ])
+                                    })
+                                    .collect(),
+                            ),
+                        )]),
+                    ),
+                    (
+                        "parent",
+                        obj(vec![(
+                            "entity",
+                            obj(vec![
+                                ("entity_type", Value::text("album")),
+                                (
+                                    "decorations",
+                                    obj(vec![(
+                                        "identity",
+                                        obj(vec![(
+                                            "name",
+                                            Value::text(&format!("Fake album of {uri}")),
+                                        )]),
+                                    )]),
+                                ),
+                            ]),
+                        )]),
+                    ),
+                    (
+                        "creators",
+                        Value::Arr(
+                            ["Fake artist", "Fake guest"]
+                                .iter()
+                                .map(|name| {
+                                    obj(vec![(
+                                        "entity",
+                                        obj(vec![
+                                            ("entity_type", Value::text("artist")),
+                                            (
+                                                "decorations",
+                                                obj(vec![(
+                                                    "identity",
+                                                    obj(vec![("name", Value::text(name))]),
+                                                )]),
+                                            ),
+                                        ]),
+                                    )])
+                                })
+                                .collect(),
+                        ),
+                    ),
                     (
                         "playback",
                         obj(vec![
@@ -294,6 +368,30 @@ fn entity(uri: &str) -> Value {
 }
 
 impl Player {
+    /// One accepted control command into the command log: its name, then
+    /// its `uri` or `volume` when it has one.
+    fn log_command(&self, text: &str) {
+        let (Some(path), Ok(value)) = (&self.command_log, json::parse(text)) else {
+            return;
+        };
+        let mut line = value
+            .get("command")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        if let Some(uri) = value.get("uri").and_then(Value::as_str) {
+            line.push(' ');
+            line.push_str(uri);
+        }
+        if let Some(volume) = value.get("volume").and_then(Value::as_num) {
+            line.push(' ');
+            line.push_str(volume);
+        }
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+            let _ = writeln!(file, "{line}");
+        }
+    }
+
     fn position(&self) -> Value {
         let position_ms = self.frame * 1000 / u64::from(PCM_RATE);
         let now_ms = SystemTime::now()
@@ -652,6 +750,7 @@ fn serve_client(mut stream: TcpStream, shared: &Shared) {
                             break 'connection;
                         }
                         if let Some(effect) = effect {
+                            player.log_command(&text);
                             apply(&mut player, effect);
                         }
                     }
@@ -875,6 +974,7 @@ pub fn run(arguments: Vec<String>) -> i32 {
         clients: Vec::new(),
         next_client: 0,
         session_file,
+        command_log: settings.get("FAKE_SOLOIST_COMMAND_LOG").map(PathBuf::from),
     }));
     if let Err(e) = sys::catch_termination() {
         return fail(&format!("signals: {e}"));
@@ -992,6 +1092,7 @@ mod tests {
             clients: Vec::new(),
             next_client: 0,
             session_file: PathBuf::from("/nonexistent/fake-session"),
+            command_log: None,
         }
     }
 

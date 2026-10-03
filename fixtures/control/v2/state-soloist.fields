@@ -1,0 +1,23 @@
+# Canonical input for the catalog v2 state-soloist vector.
+#
+# A server configured with these zones, then the runtime hook below, must
+# produce exactly state-soloist.json.
+#
+# Goal 17: a server that runs Spotify Soloist receivers says so in a `soloist`
+# member after everything else: every receiver (`soloist.N = <id> | <state> |
+# <target> | <name>`), the build with the whole days until it expires
+# (`soloist_build = <version> | <days>`), the warning from 14 days before, and
+# the targets the pool had no receiver for. A server that runs none writes no
+# such member, which is why no other state vector moved.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = state
+default_audio = 127.0.0.1:4010
+zones = kitchen,den
+soloist.0 = r0 | running | room:kitchen | kitchen
+soloist.1 = r1 | absent | |
+soloist_build = Soloist 1.3.8.96, build 20260930, Linux/aarch64 | 10
+soloist_warning = Soloist build expires in 10 days
+soloist_exhausted = room:den

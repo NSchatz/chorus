@@ -1119,6 +1119,11 @@ impl Runtime {
             // (goal 16) What a player plays is its control point's to say;
             // an alarm has no media to hand it, so it rings the bell.
             Source::Player(_) => Plan::Fallback("player-source"),
+            // (goal 17) Nor can an alarm name a receiver: what it plays is
+            // the Spotify app's to say. An alarm's Spotify source is a
+            // stored URI, below. (The catalog refuses this spelling in an
+            // alarm; the arm is for a model built without it.)
+            Source::Soloist(_) => Plan::Fallback("receiver-source"),
             // (goal 17) A stored source: a stream URL is played by a player
             // the conductor starts; a Spotify URI by a Soloist receiver, and
             // only when the server was told to (off by default, P7).

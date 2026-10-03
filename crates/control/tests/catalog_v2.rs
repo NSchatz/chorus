@@ -65,6 +65,8 @@ const EVERY_V2_MESSAGE_TYPE: &[&str] = &[
     "source_store",
     "source_forget",
     "input_label",
+    "soloist_restart",
+    "playback",
     "state",
     "error",
     "refused",
@@ -283,6 +285,44 @@ fn server_from(fields: &Fields) -> Zones {
     zones
 }
 
+/// (goal 17) What the receiver manager said: `soloist.N = <id> | <state> |
+/// <target> | <name>`, `soloist_build = <version> | <days or empty>`,
+/// `soloist_warning`, `soloist_exhausted = <target>,<target>`. A vector with
+/// none of them is a server that runs no receiver.
+fn soloist_from(fields: &Fields, zones: &mut Zones) {
+    if !fields.has("soloist.0") {
+        return;
+    }
+    let mut state = SoloistState::default();
+    let mut n = 0;
+    while fields.has(&format!("soloist.{}", n)) {
+        let line = fields.get(&format!("soloist.{}", n));
+        let p: Vec<&str> = line.split('|').map(str::trim).collect();
+        state.receivers.push(SoloistReceiver {
+            id: p[0].to_string(),
+            state: p[1].to_string(),
+            target: p[2].to_string(),
+            name: p[3].to_string(),
+        });
+        n += 1;
+    }
+    if fields.has("soloist_build") {
+        let line = fields.get("soloist_build");
+        let (version, days) = line.split_once('|').unwrap();
+        state.build = Some(SoloistBuild {
+            version: version.trim().to_string(),
+            expires_in_days: days.trim().parse().ok(),
+        });
+    }
+    if fields.has("soloist_warning") {
+        state.warning = Some(fields.get("soloist_warning"));
+    }
+    if fields.has("soloist_exhausted") {
+        state.exhausted = list(&fields.get("soloist_exhausted"));
+    }
+    zones.set_soloist(Some(state));
+}
+
 fn encode_from(fields: &Fields) -> String {
     match fields.get("message_type").as_str() {
         "state" => {
@@ -329,10 +369,12 @@ fn encode_from(fields: &Fields) -> String {
                     .unwrap_or_else(|e| panic!("{}: {}", line, e));
                 n += 1;
             }
+            soloist_from(fields, &mut zones);
             zones.encode_state()
         }
         "error" | "refused" => {
             let mut zones = server_from(fields);
+            soloist_from(fields, &mut zones);
             let refusal = match decode_message(&fields.get("input")) {
                 Err(refusal) => refusal,
                 Ok((version, command)) => {
@@ -503,6 +545,11 @@ fn command_from(fields: &Fields) -> Command {
             speaker: get("speaker"),
         },
         "firmware_rescan" => Command::FirmwareRescan,
+        "soloist_restart" => Command::SoloistRestart,
+        "playback" => Command::Playback {
+            target: get("target"),
+            action: PlaybackAction::parse(&get("action")).unwrap(),
+        },
         "source_store" => Command::SourceStore(StoredSource {
             id: get("id"),
             kind: StoredKind::parse(&get("kind")).unwrap(),

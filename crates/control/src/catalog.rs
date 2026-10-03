@@ -42,7 +42,8 @@ use std::fmt;
 use crate::json::{self, Value};
 use crate::rooms::{
     validate_layout, Alarm, Autoplay, BondMember, ClockTime, Days, InputId, InputLabel, InputRole,
-    Link, QuietWindow, Role, Source, StoredKind, StoredSource, ALARM_SOURCE_SPELLINGS,
+    Link, PlaybackAction, QuietWindow, Role, SoloistState, Source, StoredKind, StoredSource,
+    ALARM_SOURCE_SPELLINGS,
     MAX_DEFINITIONS, MAX_DURATION_MIN, MAX_QUIET_WINDOWS, MAX_RAMP_S, MAX_SLEEP_MIN,
     SOURCE_SPELLINGS,
 };
@@ -407,6 +408,19 @@ pub enum Command {
     /// (v2, goal 17) Label an input: its name and what it is wired to. An
     /// empty name with the role `line-in` removes the label.
     InputLabel(InputLabel),
+    /// (v2, goal 17) Tell every Soloist receiver's supervisor to read its
+    /// binary again and start again: what the owner runs after replacing an
+    /// expired build.
+    SoloistRestart,
+    /// (v2, goal 17) Pause, resume or skip what the Spotify receiver of a
+    /// target's group is playing. Refused for a group that plays anything
+    /// else.
+    Playback {
+        /// A room, a saved group or a formed group.
+        target: String,
+        /// What to do.
+        action: PlaybackAction,
+    },
 }
 
 impl Command {
@@ -449,6 +463,8 @@ impl Command {
             Command::SourceStore(_) => "source_store",
             Command::SourceForget { .. } => "source_forget",
             Command::InputLabel(_) => "input_label",
+            Command::SoloistRestart => "soloist_restart",
+            Command::Playback { .. } => "playback",
         }
     }
 
@@ -692,6 +708,11 @@ impl Command {
                 text("name", &label.name);
                 text("role", label.role.name());
             }
+            Command::SoloistRestart => {}
+            Command::Playback { target, action } => {
+                text("target", target);
+                text("action", action.name());
+            }
         }
         Value::Obj(m)
     }
@@ -777,6 +798,42 @@ pub fn input_label_value(l: &InputLabel) -> Value {
         ("name".to_string(), Value::text(&l.name)),
         ("role".to_string(), Value::text(l.role.name())),
     ])
+}
+
+/// The state's `soloist` member (goal 17), in the declared order: the
+/// receivers always, the build once a supervisor reported one, the warning
+/// and the exhausted targets only when there is something to say.
+pub fn soloist_value(s: &SoloistState) -> Value {
+    let mut m = vec![(
+        "receivers".to_string(),
+        Value::Arr(
+            s.receivers
+                .iter()
+                .map(|r| {
+                    Value::Obj(vec![
+                        ("id".to_string(), Value::text(&r.id)),
+                        ("state".to_string(), Value::text(&r.state)),
+                        ("target".to_string(), Value::text(&r.target)),
+                        ("name".to_string(), Value::text(&r.name)),
+                    ])
+                })
+                .collect(),
+        ),
+    )];
+    if let Some(build) = &s.build {
+        let mut b = vec![("version".to_string(), Value::text(&build.version))];
+        if let Some(days) = build.expires_in_days {
+            b.push(("expires_in_days".to_string(), Value::int(days)));
+        }
+        m.push(("build".to_string(), Value::Obj(b)));
+    }
+    if let Some(warning) = &s.warning {
+        m.push(("warning".to_string(), Value::text(warning)));
+    }
+    if !s.exhausted.is_empty() {
+        m.push(("exhausted".to_string(), texts(&s.exhausted)));
+    }
+    Value::Obj(m)
 }
 
 /// A value in hundredths of a dB, as the catalog writes it: two places.
@@ -1469,6 +1526,26 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
             fields(&["v", "t"], &[])?;
             Command::FirmwareRescan
         }
+        "soloist_restart" => {
+            fields(&["v", "t"], &[])?;
+            Command::SoloistRestart
+        }
+        "playback" => {
+            fields(&["v", "t", "target", "action"], &[])?;
+            let target = id("target")?;
+            let word = value.get("action").and_then(Value::as_str).unwrap_or("");
+            let action = PlaybackAction::parse(word).ok_or_else(|| {
+                at(Refusal::rejected(
+                    "action",
+                    format!(
+                        "'{}' is not a playback action: the catalog declares 'pause', 'resume', \
+                         'next' and 'previous'",
+                        word.escape_debug()
+                    ),
+                ))
+            })?;
+            Command::Playback { target, action }
+        }
         "source_store" => {
             fields(&["v", "t", "id", "kind", "value", "name"], &[])?;
             let id = id("id")?;
@@ -1837,29 +1914,53 @@ fn days_field(value: &Value, field: &str) -> Result<Days, Refusal> {
 
 fn source_field(value: &Value, field: &str) -> Result<Source, Refusal> {
     let text = value.get(field).and_then(Value::as_str).unwrap_or("");
-    Source::parse(text).ok_or_else(|| {
-        Refusal::rejected(
-            field,
-            format!(
-                "'{}' is not a source: the catalog declares {}",
-                text, SOURCE_SPELLINGS
-            ),
-        )
-    })
+    not_a_receiver(
+        field,
+        Source::parse(text).ok_or_else(|| {
+            Refusal::rejected(
+                field,
+                format!(
+                    "'{}' is not a source: the catalog declares {}",
+                    text, SOURCE_SPELLINGS
+                ),
+            )
+        })?,
+    )
 }
 
 /// (goal 17) An alarm's source: a group's sources and `stored:<id>`.
 fn alarm_source_field(value: &Value, field: &str) -> Result<Source, Refusal> {
     let text = value.get(field).and_then(Value::as_str).unwrap_or("");
-    Source::parse(text).ok_or_else(|| {
-        Refusal::rejected(
+    not_a_receiver(
+        field,
+        Source::parse(text).ok_or_else(|| {
+            Refusal::rejected(
+                field,
+                format!(
+                    "'{}' is not a source: the catalog declares {}",
+                    text, ALARM_SOURCE_SPELLINGS
+                ),
+            )
+        })?,
+    )
+}
+
+/// (goal 17) No command names a Soloist receiver as a source: a receiver's
+/// audio follows the Spotify app, and the server's receiver manager is the
+/// only one that gives a group that source (design: take the room, K78).
+fn not_a_receiver(field: &str, source: Source) -> Result<Source, Refusal> {
+    match source {
+        Source::Soloist(id) => Err(Refusal::rejected(
             field,
             format!(
-                "'{}' is not a source: the catalog declares {}",
-                text, ALARM_SOURCE_SPELLINGS
+                "'soloist:{}' is a Spotify receiver, which plays where the Spotify app plays \
+                 it: choose the room or group as the device in the Spotify app; a command \
+                 cannot name one",
+                id
             ),
-        )
-    })
+        )),
+        other => Ok(other),
+    }
 }
 
 fn identifier_list(value: &Value, field: &str) -> Result<Vec<String>, Refusal> {

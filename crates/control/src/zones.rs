@@ -103,14 +103,16 @@
 
 use crate::catalog::{
     alarm_value, autoplay_value, centi_db_value, filters_value, input_label_value, is_display_name,
-    is_identifier, members_value, stored_source_value, texts, window_value, Command, Refusal,
+    is_identifier, members_value, soloist_value, stored_source_value, texts, window_value,
+    Command, Refusal,
     Volume, MAX_IDENTIFIER_LEN, VOLUME_SCALE,
 };
 use crate::firmware::{self, image_value, Image};
 use crate::json::{self, Value};
 use crate::rooms::{
     Alarm, Autoplay, BondMember, CivilTime, InputId, InputLabel, InputRole, Link, NowPlaying,
-    PlayState, QuietWindow, Role, SavedGroup, SleepTimer, Source, StoredSource, MAX_DEFINITIONS,
+    PlayState, QuietWindow, Role, SavedGroup, SleepTimer, SoloistState, Source, StoredSource,
+    MAX_DEFINITIONS,
     VIA_STREAMER,
 };
 use crate::sound::{BassManagement, RoomEq, SoundSettings};
@@ -308,6 +310,10 @@ pub struct Zones {
     /// server last graded them; `None` when it has no such directory. Never
     /// persisted: the directory is.
     firmware_images: Option<Vec<Image>>,
+    /// (v2, goal 17) The Soloist receivers, their build and its expiry
+    /// warning, as the server's receiver manager last said; `None` on a
+    /// server without `--soloist-receivers`. Never persisted.
+    soloist: Option<SoloistState>,
 }
 
 /// What a target names.
@@ -973,6 +979,15 @@ impl Zones {
                     ));
                 }
             }
+            Command::SoloistRestart => {
+                self.has_receivers()?;
+                // The supervisors are the server's to tell
+                // (crates/server/src/control.rs).
+            }
+            Command::Playback { target, .. } => {
+                self.has_receivers()?;
+                self.playback_group(target)?;
+            }
             Command::FirmwareRescan => {
                 if self.firmware_images.is_none() {
                     return Err(Refusal::rejected(
@@ -1437,11 +1452,12 @@ impl Zones {
             };
             match self.source_of(&group) {
                 // (goal 16) A player plays in one group, so it cannot be
-                // copied as any other source is. It stays with the target,
-                // and the rooms pushed out play nothing; unless this take
-                // gives the target something else to play, when the player
-                // (and what it is playing) goes with the rooms pushed out.
-                Some(s @ Source::Player(_)) => {
+                // copied as any other source is, and (goal 17) neither can
+                // a Soloist receiver. It stays with the target, and the
+                // rooms pushed out play nothing; unless this take gives the
+                // target something else to play, when the source (and what
+                // it is playing) goes with the rooms pushed out.
+                Some(s) if s.is_exclusive() => {
                     if source.is_none_or(|new| *new == s) {
                         self.set_source(&home, Source::None);
                     } else {
@@ -1477,22 +1493,42 @@ impl Zones {
     /// (goal 16) Refuse to give `group` a player source another formed group
     /// is playing: a player is one stream of decoded audio, and two groups
     /// playing it would be two listeners of one position nobody chose.
+    /// (goal 17) The same for a Soloist receiver.
     fn player_is_free(&self, group: &str, source: &Source) -> Result<(), Refusal> {
-        let Source::Player(id) = source else {
-            return Ok(());
-        };
-        match self.player_group(id) {
-            Some(other) if other != group => Err(Refusal::rejected(
-                "source",
-                format!(
-                    "player '{}' is playing in group '{}', and a player plays in one group at \
-                     a time; take '{}' instead, or stop it there first (take '{}' with source \
-                     'none')",
-                    id, other, other, other
-                ),
-            )),
+        match source {
+            Source::Player(id) => match self.player_group(id) {
+                Some(other) if other != group => Err(Refusal::rejected(
+                    "source",
+                    format!(
+                        "player '{}' is playing in group '{}', and a player plays in one group \
+                         at a time; take '{}' instead, or stop it there first (take '{}' with \
+                         source 'none')",
+                        id, other, other, other
+                    ),
+                )),
+                _ => Ok(()),
+            },
+            Source::Soloist(id) => match self.source_group(source) {
+                Some(other) if other != group => Err(Refusal::rejected(
+                    "source",
+                    format!(
+                        "receiver '{}' is playing in group '{}', and a receiver plays in one \
+                         group at a time",
+                        id, other
+                    ),
+                )),
+                _ => Ok(()),
+            },
             _ => Ok(()),
         }
+    }
+
+    /// (goal 17) The formed group playing exactly `source`, if one is.
+    pub fn source_group(&self, source: &Source) -> Option<String> {
+        self.sources
+            .iter()
+            .find(|(g, s)| s == source && !self.members(g).is_empty())
+            .map(|(g, _)| g.clone())
     }
 
     /// (goal 16) The formed group playing `player:<id>`, if one is.
@@ -1959,6 +1995,67 @@ impl Zones {
         true
     }
 
+    /// (goal 17) The Soloist receivers, their build and its warning, or
+    /// `None` on a server that runs no receiver. Whether anything changed;
+    /// the serial moves only when it did.
+    pub fn set_soloist(&mut self, soloist: Option<SoloistState>) -> bool {
+        if self.soloist == soloist {
+            return false;
+        }
+        self.soloist = soloist;
+        self.serial += 1;
+        true
+    }
+
+    /// (goal 17) What the receiver manager last said, if this server runs
+    /// receivers.
+    pub fn soloist(&self) -> Option<&SoloistState> {
+        self.soloist.as_ref()
+    }
+
+    fn has_receivers(&self) -> Result<(), Refusal> {
+        if self.soloist.is_some() {
+            return Ok(());
+        }
+        Err(Refusal::rejected(
+            "t",
+            "no-receivers: this server was started without --soloist-receivers, so there is \
+             no Spotify receiver to tell"
+                .to_string(),
+        ))
+    }
+
+    /// (goal 17) The formed group a `playback` command naming `target`
+    /// reaches: the group the room is in, the saved group when it is active,
+    /// or the formed group itself. Refused by name for a target that is
+    /// none of those and for a group that does not play a Spotify receiver.
+    pub fn playback_group(&self, target: &str) -> Result<String, Refusal> {
+        let group = match self.resolve(target) {
+            None => {
+                return Err(self.no_target(target, "a room, a saved group or a formed group"))
+            }
+            Some(Target::Room(i)) => self.zones[i].group.clone(),
+            Some(Target::Saved(id)) | Some(Target::Formed(id)) => id,
+        };
+        let source = if self.members(&group).is_empty() {
+            Source::None
+        } else {
+            self.source(&group)
+        };
+        if source.is_soloist() {
+            return Ok(group);
+        }
+        Err(Refusal::rejected(
+            "target",
+            format!(
+                "'{}' plays '{}', which is not a Spotify receiver; a playback command (pause, \
+                 resume, next, previous) goes to the receiver a group is playing",
+                target,
+                source.literal()
+            ),
+        ))
+    }
+
     /// The staged firmware images, or `None` when the server has no firmware
     /// directory.
     pub fn firmware_images(&self) -> Option<&[Image]> {
@@ -2171,6 +2268,11 @@ impl Zones {
                     Value::Arr(images.iter().map(image_value).collect()),
                 )]),
             ));
+        }
+        // (goal 17) The Soloist receivers, written only by a server that
+        // runs them, after everything else for the same reason.
+        if let Some(soloist) = &self.soloist {
+            state.push(("soloist".to_string(), soloist_value(soloist)));
         }
         Value::Obj(state)
     }

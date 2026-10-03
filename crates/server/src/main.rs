@@ -37,6 +37,12 @@
 //!   could not open their sockets: the HTTP port or the SSDP port is held by
 //!   another program, or the multicast group could not be joined. The
 //!   message names which. Before any thread exists, like `8` and `9`.
+//! - `11` this server was told to run Soloist receivers
+//!   (`--soloist-receivers`) and cannot read the receiver directory
+//!   (`--soloist-dir`): it is not there, or is not a directory this user may
+//!   list. The message names it. Before any thread exists, like `8` to `10`.
+//!   (A receiver whose supervisor has not started yet is NOT this: its FIFO
+//!   and socket are looked for again for as long as the server runs.)
 //!
 //! `--health-check <addr:port>` is a separate mode for container healthchecks
 //! (`chorus_server::health`): it starts nothing, probes a running server's
@@ -89,12 +95,20 @@
 //!   `--players`), the UPnP AV media renderers' `4 + W` threads
 //!   (`chorus_server::upnp`): `upnp-ssdp`, `upnp-acceptor`, `upnp-events`,
 //!   `upnp-manager` and one `upnp-worker-<i>` per `--upnp-workers` W.
-//!   Without the flag there is none.
+//!   Without the flag there is none;
+//! - with `--soloist-receivers R` (goal 17, and it needs the control plane
+//!   and `--slots`), `R + 1` threads: one **soloist-reader-<i>** per
+//!   receiver (`chorus_server::soloistreader`), the one reader of that
+//!   receiver's FIFO and the one writer of its port, and one
+//!   **soloist-manager** (`chorus_server::soloist`), which holds every
+//!   receiver's supervisor socket. They exist from the start whether or not
+//!   any receiver container is running. Without the flag there is none.
 //!
 //! So the population is `3 + 2N` without the control plane and
 //! `6 + 2N + M` with it, plus one for the advertiser, one for the TV
 //! relay with `--slots`, one for the MQTT publisher with
-//! `--mqtt-broker`, P for `--players P` and `4 + W` for `--upnp`, and NOT ONE of those
+//! `--mqtt-broker`, P for `--players P`, `4 + W` for `--upnp` and `R + 1` for
+//! `--soloist-receivers R`, and NOT ONE of those
 //! numbers is a function of how many endpoints or browsers are switched on,
 //! of how many streams are playing, nor of `--slots`: every stream slot is
 //! cut by the one audio thread (`chorus_server::slots`).
@@ -158,6 +172,7 @@ const EXIT_INCOMPLETE_INVENTORY: u8 = 7;
 const EXIT_CONTROL: u8 = 8;
 const EXIT_ADVERTISE: u8 = 9;
 const EXIT_UPNP: u8 = 10;
+const EXIT_SOLOIST: u8 = 11;
 
 /// Every status line carries the contract phrases, so a run that is missing
 /// part of the contract says so every time it says anything.
@@ -303,6 +318,24 @@ control plane:
                                 (tests and development only, never a deployment; needs
                                 --players; the server's own ports stay refused)
   --advertise --instance <label>  advertise by multicast DNS
+
+soloist (goal 17; docs/soloist.md; off unless --soloist-receivers is above 0: Spotify Connect
+through the owner's own Spotify Soloist binary, which runs in receiver containers and is never
+part of this program):
+  --soloist-receivers <n>       receivers, 0-32 (default 0: none): n reader threads, n ports
+                                and one manager thread, made at start; a group plays one as
+                                the source soloist:r<i> (needs --control-listen, --slots and
+                                --soloist-dir)
+  --soloist-dir <dir>           the receiver directory shared with the receiver containers:
+                                r<i>.pcm (a FIFO) and r<i>.sock (the supervisor's socket)
+  --soloist-grace <seconds>     how long a dissolved, idle live group keeps its receiver
+                                (default 60)
+  --soloist-volume <chorus|receiver>
+                                which gain stage a Spotify volume drives (default chorus: it
+                                sets the room's or group's volume; receiver: Soloist's own
+                                volume is the gain and chorus only clamps it to the limits)
+  --soloist-alarms              let an alarm play a stored Spotify URI on its room's receiver
+                                (off by default: read docs/soloist.md first)
 
 upnp (goal 16; docs/upnp.md; off unless --upnp is given: every room, saved group and live
 group is a UPnP AV media renderer a control point can play to):
@@ -768,6 +801,25 @@ fn main() -> ExitCode {
         }
     }
 
+    // (goal 17) The receiver directory, read before any thread too: a server
+    // told to run receivers through a directory it cannot list says so
+    // rather than waiting for ever for sockets that cannot appear.
+    if config.soloist.receivers > 0 {
+        let dir = config.soloist.dir.as_deref().unwrap_or("");
+        if let Err(e) = std::fs::read_dir(dir) {
+            report(
+                "the Soloist receivers could not start",
+                &format!(
+                    "the receiver directory '{}' cannot be read ({}); it is the directory this \
+                     server shares with the receiver containers (--soloist-dir)",
+                    dir, e
+                ),
+            );
+            println!("chorus-server: stopped reason=soloist-refused chunks_sent=0 played=0");
+            return ExitCode::from(EXIT_SOLOIST);
+        }
+    }
+
     // Every thread registers itself, from inside itself, exactly once. This one
     // does it here: it supervises, it does no audio work, and it asks for no
     // real-time policy, and a report with no row for a running thread is a
@@ -845,6 +897,12 @@ fn main() -> ExitCode {
         media.players = (0..config.players)
             .map(|_| Arc::new(PlayerPort::for_format(&format)))
             .collect();
+        // (goal 17) The Soloist receivers' ports, `--soloist-receivers` of
+        // them, allocated here like the player ports. None without the
+        // flag.
+        media.soloists = (0..config.soloist.receivers)
+            .map(|_| Arc::new(chorus_server::soloistport::SoloistPort::for_format(&format)))
+            .collect();
         println!(
             "chorus-server: slot-media chimes={} rendered_bytes={} line_in_ports={}",
             media.chimes.len(),
@@ -866,6 +924,34 @@ fn main() -> ExitCode {
     let player_ports = media.players.clone();
     if let Some((_, state)) = &control {
         state.set_players(player_ports.len());
+    }
+    // (goal 17) The Soloist receivers: what the conductor, the control plane
+    // and the manager thread share. `None` without `--soloist-receivers`,
+    // and then no Soloist code runs.
+    let soloist_readers: Vec<Arc<chorus_server::soloistreader::ReaderStats>> = media
+        .soloists
+        .iter()
+        .map(|_| Arc::new(chorus_server::soloistreader::ReaderStats::default()))
+        .collect();
+    let soloist_link = (!media.soloists.is_empty()).then(|| {
+        Arc::new(chorus_server::soloist::Link::new(
+            media.soloists.clone(),
+            soloist_readers.clone(),
+        ))
+    });
+    if let (Some((_, state)), Some(link)) = (&control, &soloist_link) {
+        state.soloist_through(Arc::clone(link));
+        println!(
+            "chorus-server: soloist receivers={} dir={} grace_s={} volume={} alarms={} \
+             ring_ms={} fill_target_ms={}",
+            link.receivers(),
+            config.soloist.dir.as_deref().unwrap_or(""),
+            config.soloist.grace_s,
+            config.soloist.volume.name(),
+            if config.soloist.alarms { "on" } else { "off" },
+            chorus_server::soloistport::RING_MS,
+            chorus_server::soloistport::FILL_TARGET_MS
+        );
     }
     let params = ServeParams {
         format,
@@ -1335,14 +1421,21 @@ fn main() -> ExitCode {
             if let Some(relay) = &tv_relay {
                 conductor = conductor.with_tv_relay(Arc::clone(relay));
             }
+            if let Some(link) = &soloist_link {
+                conductor = conductor.with_soloist(Arc::clone(link));
+            }
             if let Some(zone) = schedule_zone.take() {
                 let civil = match (config.civil_time, config.civil_time_from) {
                     (Some(at), _) => CivilClock::Fixed(fixed_civil_instant(&zone, at)),
                     (None, Some(from)) => CivilClock::From(i128::from(from) * 1_000_000_000),
                     (None, None) => CivilClock::Live,
                 };
+                // (goal 17) The Spotify alarm source ships switched off
+                // (P7): only `--soloist-alarms` lets an alarm ask for it.
+                let mut runtime = Runtime::new(zone);
+                runtime.set_soloist_alarms(config.soloist.alarms);
                 conductor = conductor.with_schedule(Schedule::new(
-                    Runtime::new(zone),
+                    runtime,
                     Clocks::new(civil, config.schedule_time_scale),
                     line_ins.clone(),
                     transports.clone(),
@@ -1408,6 +1501,40 @@ fn main() -> ExitCode {
     // above, before the conductor (goal 17).
     let player_threads =
         chorus_server::player::spawn(&player_ports, player_drivers, &keep, &registry, &ready);
+
+    // (goal 17) The Soloist receivers' threads: one reader per receiver and
+    // the manager, only with `--soloist-receivers`, created here with the
+    // rest and counted below, whether or not any receiver container runs.
+    let mut soloist_threads = 0usize;
+    if let (Some(link), Some(state), Some(dir)) = (
+        soloist_link.as_ref(),
+        control_state.as_ref(),
+        config.soloist.dir.as_deref(),
+    ) {
+        let dir = std::path::Path::new(dir);
+        soloist_threads += chorus_server::soloistreader::spawn(
+            dir,
+            link.ports(),
+            &soloist_readers,
+            &keep,
+            &registry,
+            &ready,
+        );
+        soloist_threads += chorus_server::soloist::spawn(
+            chorus_server::soloist::Settings {
+                dir: dir.to_path_buf(),
+                receivers: link.receivers(),
+                grace: Duration::from_secs(config.soloist.grace_s),
+                volume: config.soloist.volume,
+                alarm_wait: chorus_server::soloist::ALARM_WAIT,
+            },
+            Arc::clone(state),
+            Arc::clone(link),
+            &keep,
+            &registry,
+            &ready,
+        );
+    }
 
     // (goal 16) The UPnP AV media renderers: `4 + W` more ordinary threads,
     // only with `--upnp`, created here with the rest and counted below.
@@ -1483,6 +1610,7 @@ fn main() -> ExitCode {
         + relay_threads
         + mqtt_threads
         + player_threads
+        + soloist_threads
         + upnp_threads;
     let mut up = 0usize;
     while came_up.recv().is_ok() {
