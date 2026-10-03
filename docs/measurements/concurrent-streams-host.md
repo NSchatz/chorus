@@ -3,6 +3,15 @@
 Date: 2026-10-03
 Source: host
 Build measured: `891c5b760bd9aea30b5ece2046ab4f6f2bbc06a8`
+Build note: two builds, both commits of `main`. The decoders alone, the idle servers and the
+stream rows for `wav48`, `wav`, `flac`, `mp3` and `vorbis` were measured on `891c5b7`, the
+commit named above. The Soloist receivers' section and the stream rows for `opus` and `alac`
+were measured later the same day on `856411c64f9d4876e9deb348bd39043bdcda4892` (the merge of
+the receivers' server side, PR #132): the release build was made in this report's branch at a
+commit whose `crates/`, `Cargo.toml`, `Cargo.lock`, `config/`, `third_party/` and
+`rust-toolchain.toml` are those of `856411c` (`git diff 856411c <that commit>` over them is
+empty; each run's `params` names the commit and the server binary's sha256). Each table says
+which build its rows are from where both appear.
 Timing evidence: none. These are CPU-time and memory figures of processes on a shared
 development container; nothing here says when a sample reaches a speaker, and only a `hardware`
 report is timing evidence (BRIEF.md section 3.1 rule 3). They are the measured numbers proposal
@@ -26,6 +35,8 @@ compiler   rustc 1.98.1 (48a229cea 2026-09-01), the release profile, --locked
 build      891c5b760bd9aea30b5ece2046ab4f6f2bbc06a8 (origin/main), no change under crates/, Cargo.toml,
            Cargo.lock, config/ or third_party/; chorus-server sha256
            e4c531bac27fe2e173e0343e6035047fd8e58a30c493a23752d2d708bbafcfff
+build 2    856411c64f9d4876e9deb348bd39043bdcda4892 (main), the same toolchain and profile; chorus-server
+           sha256 TO FILL
 limits     RLIMIT_RTPRIO 0 and RLIMIT_MEMLOCK 8 MiB, so the server ran with
            --allow-non-realtime --allow-unlocked-memory: the audio thread was an ordinary
            thread and no memory was locked (see "What this does not show")
@@ -40,6 +51,10 @@ cargo build --release --locked -p chorus-server -p chorus-client-linux      # at
 CHORUS_SKIP_BUILD=1 CHORUS_STREAMS_MODE=decoders make concurrent-streams
 CHORUS_SKIP_BUILD=1 CHORUS_STREAMS_MODE=idle make concurrent-streams
 CHORUS_SKIP_BUILD=1 CHORUS_STREAMS_FORMATS="wav48" make concurrent-streams   # then "wav flac", "mp3 vorbis", "opus alac"
+# the second build, at 856411c's crates, with the test examples (the supervisor and the fake Soloist):
+cargo build --release --locked -p chorus-server -p chorus-client-linux --bins --examples
+CHORUS_SKIP_BUILD=1 CHORUS_STREAMS_MODE=receivers CHORUS_STREAMS_KS=1,4,8,16 CHORUS_STREAMS_WINDOW=45 CHORUS_STREAMS_SETTLE=6 make concurrent-streams
+CHORUS_SKIP_BUILD=1 CHORUS_STREAMS_FORMATS="opus alac" CHORUS_STREAMS_KS=1,4,8,16 CHORUS_STREAMS_SETTLE=6 make concurrent-streams
 python3 tools/concurrent-streams/harness.py summary <each run's windows.jsonl and probe-media.tsv>
 ```
 
@@ -121,10 +136,10 @@ of audio:
 
 ## Result: K independent streams through the whole server
 
-**Opus and ALAC through the whole server are not in this table yet**: their run waited 30 minutes for the heavy locks on 2026-10-03 and was not granted them; their decoders alone are above, and the rows are added in the second half from the same build.
-
 Sixteen rooms, sixteen connected endpoints, K streams. Every table is one row per format (one
-server per format) and one column per K.
+server per format) and one column per K. The `opus` and `alac` rows are from the second build
+(`856411c`), run without K = 2; every other row is from `891c5b7`. The second build's server
+also holds the code of PR #132, switched off here (no `--soloist-receivers`).
 
 Player threads, % of one core per playing stream (the mean of the K busiest player threads):
 
@@ -312,7 +327,9 @@ What the tables say:
   its player thread 0.4 to 0.5 % of one core; the same signal at 44.1 kHz costs 3.8 to 4.0 %.
   The difference, about 3.5 % of one core, is the resampler (96 zero crossings a side, `f64`
   accumulation: `docs/measurements/resampler-quality.md`). The decoders add what the first
-  table says they do alone: FLAC nothing visible, MP3 about 0.4, Vorbis about 0.8. Most
+  table says they do alone: FLAC nothing visible, MP3 about 0.4, Vorbis about 0.8, ALAC
+  TO FILL. Opus decodes at 48 kHz, so it pays its decoder (the dearest of the six) and no
+  resampler: TO FILL % of one core a stream. Most
   music is 44.1 kHz and the server runs at 48 kHz, so the resampled figure is the one a house
   pays.
 - **It is linear.** Per stream the figure is the same from K = 1 to K = 16, and the K threads
@@ -367,15 +384,41 @@ which about 3.8 MB cannot be shared between receivers (`Pss_Anon`); six threads 
 stand-in client. Linear from one to eight. The stand-in client itself (0.11 to 0.13 % of one
 core, 7.6 to 7.8 MB) is not a figure for Soloist.
 
-## Soloist receivers on chorus's side (reader thread, supervisor)
+## Result: the Soloist receivers on chorus's side (reader threads, manager, supervisor)
 
-TO FILL (second half of goal 17's track P, when the server-side receiver code is on `main`): the
-reader thread of one receiver (the FIFO read, the conversion and the resampling from Soloist's
-rate to the server's) idle and playing, for 1, 2, 4, 8 and 16 receivers; `chorus-soloistd`'s CPU
-and resident set against the fake Soloist the tests use; and the server's resident set with the
-receivers' threads. Until then the only figure for this side is the resampler's, which the
-tables above bound: a receiver's audio arrives at 44.1 kHz and takes the same resampler a
-44.1 kHz file does.
+Build `856411c`. The server with `--soloist-receivers 16` and no players or renderers, sixteen
+rooms and sixteen connected endpoints; sixteen real `chorus-soloistd` supervisors with
+`--pipewire none`, each running the tests' fake Soloist (`crates/soloist-fake`, through the
+examples `server-test-soloistd` and `server-test-fake-soloist` of `crates/server`, as
+`crates/server/tests/soloist_receivers.rs` starts them). Every receiver is assigned to its
+room and logged in. "The Spotify app" (the fake's test control socket) plays on K receivers;
+each takes its own room (K78), so K reader threads each read their FIFO's float32 44.1 kHz
+stereo, convert it to the server's rate and write their port, and K rooms hear K receivers.
+45 s windows after a 6 s settle; a window is steady when every playing receiver's port played
+the window's frames within 3 % (`chorus_soloist_frames_played_total`).
+
+Two servers: one at 48 kHz, the rate a deployment runs at, where every reader resamples; one at
+44.1 kHz, the FIFO's own rate, where none does. The difference is the resampler again.
+
+**The fake Soloist is not Soloist.** It writes a ramp into the FIFO itself, standing in for
+Soloist, PipeWire and the sink together; its CPU and memory were not sampled and nothing here
+is a figure for Soloist or for PipeWire. `chorus-soloistd` is the real supervisor, but it
+supervised the fake: what it costs relaying a real Soloist's events is the same code on other
+input.
+
+TO FILL (after the locked run)
+
+What the tables say:
+
+- **A playing receiver costs chorus-server what a 44.1 kHz file does**: TO FILL % of one core
+  on its reader thread at 48 kHz, against TO FILL % at 44.1 kHz where nothing is resampled.
+  The resampler is TO FILL % of one core per playing receiver.
+- **An idle receiver costs almost nothing**: TO FILL % of one core per idle reader thread (it
+  polls an empty FIFO), and TO FILL % for the one manager thread whatever plays.
+- **Memory**: about TO FILL kB of anonymous memory per playing receiver in the server; the
+  `N + 1` threads add their stacks to what locking memory would hold (the mappings row).
+- **`chorus-soloistd`** is small: about TO FILL MB resident (TO FILL MB proportional,
+  TO FILL MB unshareable), TO FILL threads, TO FILL % of one core, playing or idle.
 
 ## What this does not show
 
@@ -408,7 +451,8 @@ tables above bound: a receiver's audio arrives at 44.1 kHz and takes the same re
 The files the tables are made from are committed beside this report, under
 `docs/measurements/raw/concurrent-streams-host-2026-10-03/`, with their own `SHA256SUMS`:
 each run's `windows.jsonl` (one reduced window a line), `params` and `media.tsv`, the decoder
-run's `probe-media.tsv`, and the PipeWire probe's `res-summary.txt`.
+run's `probe-media.tsv`, and the PipeWire probe's `res-summary.txt`. `receivers-*` and
+`opus-alac-*` are the second build's.
 
 | file | bytes | sha256 |
 |---|---|---|
@@ -429,7 +473,7 @@ run's `probe-media.tsv`, and the PipeWire probe's `res-summary.txt`.
 
 The full run directories (every `/proc` sample per thread, the servers' and endpoints' logs,
 the control plane's report at each window's end) are kept at `/cache/tmp/chorus-g17/p11/`, not
-committed, indexed by `/cache/tmp/chorus-g17/p11/SHA256SUMS` (sha256 `553536b4039284adc31502cfe4c6054d13384029405dc458e152b4a927d576de`). The
+committed, indexed by `/cache/tmp/chorus-g17/p11/SHA256SUMS` (sha256 `5367a96be7a90beb502210747713b64addf3671354956c5b6318a93dad82487d`). The
 PipeWire probe's files are at `/cache/tmp/chorus-g17/pw-probe/`, indexed by its `SHA256SUMS`
 (104 files; sha256 of the index
 `4b517e0c89657288aaafce72af1bc8b578e4e922b05832a1ce46054e880285ac`); its method and its other

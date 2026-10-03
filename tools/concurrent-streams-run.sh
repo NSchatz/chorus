@@ -40,13 +40,26 @@
 #            --upnp (16 renderers), the last also with one control point
 #            subscribed to every service of every renderer.
 #
+#   receivers what the Spotify Soloist receivers cost on chorus's side (goal
+#            17, docs/soloist.md): the server with --soloist-receivers 16 and
+#            no players or renderers, sixteen real chorus-soloistd supervisors
+#            (--pipewire none) each running the tests' FAKE Soloist (the
+#            examples server-test-soloistd and server-test-fake-soloist of
+#            crates/server; no Soloist exists here and none is ever run), and
+#            sixteen endpoints; "the Spotify app" plays on K receivers, each
+#            taking its own room. Once per rate of CHORUS_STREAMS_RATES: at
+#            48000 the reader threads resample the FIFO's 44.1 kHz, as in a
+#            deployment; at 44100 they do not. The fake's own cost is NOT
+#            Soloist's and no table reports it as such.
 #   decoders the decoders alone: `chorus-server --probe-media` on each file,
 #            three times (no fetch, no resampler, no stream, no thread).
 #
 # Parameters (environment, each recorded in the run's `params`):
-#   CHORUS_STREAMS_MODE      formats | idle | decoders (default formats)
+#   CHORUS_STREAMS_MODE      formats | idle | decoders | receivers (default formats)
 #   CHORUS_STREAMS_FORMATS   default "wav48 wav flac mp3 vorbis opus alac"
 #   CHORUS_STREAMS_KS        default 1,2,4,8,16
+#   CHORUS_STREAMS_RATES     the server's rates for the receivers mode (default "48000 44100")
+#   CHORUS_STREAMS_PROFILE   release (default; the only one a report may use) or debug (a harness check)
 #   CHORUS_STREAMS_WINDOW    the sampled window, seconds (default 60)
 #   CHORUS_STREAMS_SETTLE    seconds between PLAYING and the window (default 10)
 #   CHORUS_STREAMS_DIR       the run directory (default $TMPDIR/chorus-concurrent-streams/<UTC stamp>)
@@ -72,9 +85,9 @@ HARNESS="$REPO_ROOT/tools/concurrent-streams/harness.py"
 CRITERION="the CPU and memory K concurrent independent streams cost chorus-server on this host (P11, K76): a measurement, not a check"
 
 case "$MODE" in
-    formats | idle | decoders) ;;
+    formats | idle | decoders | receivers) ;;
     *)
-        say "chorus: CHORUS_STREAMS_MODE must be formats, idle or decoders, not '$MODE'"
+        say "chorus: CHORUS_STREAMS_MODE must be formats, idle, decoders or receivers, not '$MODE'"
         exit 2
         ;;
 esac
@@ -93,10 +106,12 @@ fi
 
 # The measurement is of the release build: the debug profile's decoders cost
 # several times as much and would say nothing about a deployment.
-BIN_DIR="$TARGET_DIR/release"
+PROFILE="${CHORUS_STREAMS_PROFILE:-release}"
+RATES="${CHORUS_STREAMS_RATES:-48000 44100}"
+BIN_DIR="$TARGET_DIR/$PROFILE"
 export BIN_DIR
 if [ "${CHORUS_SKIP_BUILD:-0}" != 1 ]; then
-    (cd "$REPO_ROOT" && cargo build --quiet --release --locked -p chorus-server -p chorus-client-linux)
+    (cd "$REPO_ROOT" && cargo build --quiet --release --locked -p chorus-server -p chorus-client-linux --bins --examples)
 fi
 for BIN in chorus-server chorus-client; do
     if [ ! -x "$BIN_DIR/$BIN" ]; then
@@ -106,7 +121,15 @@ for BIN in chorus-server chorus-client; do
 done
 
 export CHORUS_CLIENT_DEVICE="${CHORUS_CLIENT_DEVICE:-null}"
-if [ "$MODE" = formats ]; then
+if [ "$MODE" = receivers ]; then
+    for BIN in server-test-soloistd server-test-fake-soloist; do
+        if [ ! -x "$BIN_DIR/examples/$BIN" ]; then
+            missing_prerequisite "$CRITERION" "$BIN_DIR/examples/$BIN, the supervisor and the fake Soloist the tests run" \
+                "cargo build --release --locked -p chorus-server --examples"
+        fi
+    done
+fi
+if [ "$MODE" = formats ] || [ "$MODE" = receivers ]; then
     if ! use_rootless_alsa; then
         missing_prerequisite "$CRITERION" \
             "libasound.so.2: the system has none and $(alsa_prefix)/lib holds none" \
@@ -114,7 +137,7 @@ if [ "$MODE" = formats ]; then
     fi
     require_audio_device "$CRITERION"
 fi
-if [ "$MODE" != idle ]; then
+if [ "$MODE" = formats ] || [ "$MODE" = decoders ]; then
     if [ ! -x "$REFDEC/bin/ffmpeg" ] && [ ! -e "$MEDIA_DIR/media.tsv" ]; then
         missing_prerequisite "$CRITERION" \
             "the pinned reference encoders at $REFDEC (ffmpeg, lame, flac), to make the test signals" \
@@ -137,7 +160,8 @@ read -r -a CONTRACT_ARGS <<< "$(server_contract_args)"
     printf 'rooms=%s\n' "$ROOMS"
     printf 'head=%s\n' "$(git -C "$REPO_ROOT" rev-parse HEAD)"
     printf 'dirty=%s\n' "$([ -z "$(git -C "$REPO_ROOT" status --porcelain -- crates Cargo.toml Cargo.lock config third_party)" ] && echo no || echo yes)"
-    printf 'profile=release\n'
+    printf 'profile=%s\n' "$PROFILE"
+    printf 'rates=%s\n' "$RATES"
     printf 'server_sha256=%s\n' "$(sha256sum "$BIN_DIR/chorus-server" | cut -d ' ' -f 1)"
     printf 'rustc=%s\n' "$(cd "$REPO_ROOT" && rustc --version)"
     printf 'contract_args=%s\n' "${CONTRACT_ARGS[*]:-none}"
@@ -193,7 +217,7 @@ start_server() {
         --identity-dir "$SERVER_DIR/identity" \
         --state-file "$SERVER_DIR/state" \
         --listen "127.0.0.1:$AUDIO" \
-        --rate "$(conf sample_rate_hz)" \
+        --rate "${RATE_HZ:-$(conf sample_rate_hz)}" \
         --channels "$(conf channels)" \
         --format "$(conf sample_format)" \
         --chunk-us "$(conf chunk_us)" \
@@ -235,6 +259,45 @@ start_server() {
             SSDP_PORT="$(sed -n 's/.*upnp renderers listening on=.*ssdp_port=\([0-9]*\).*/\1/p' "$SERVER_DIR/server.log" | head -n 1)"
             ;;
     esac
+}
+
+# One chorus-client on the ALSA `null` device per room of the running server,
+# their pids in CLIENTS; returns when every one has a session.
+start_endpoints() {
+    CLIENTS=()
+    for ROOM in "${ROOM_NAMES[@]}"; do
+        "$BIN_DIR/chorus-client" \
+            --ephemeral-identity \
+            --server "127.0.0.1:$AUDIO" \
+            --control "$CONTROL" \
+            --zone "$ROOM" \
+            --endpoint "speaker-$ROOM" \
+            --rejoin \
+            --run-seconds 3600 \
+            --device "$CHORUS_CLIENT_DEVICE" \
+            --no-delay-log \
+            --sync-interval-ms "$(sync_conf sync_interval_ms)" \
+            >"$SERVER_DIR/endpoint-$ROOM.out" 2>&1 &
+        CLIENTS+=("$!")
+        PIDS+=("$!")
+    done
+    local waited=0
+    until [ "$(sed -n 's/.*client session peer=[^ ]* id=\([^ ]*\) .*/\1/p' "$SERVER_DIR/server.log" | sort -u | wc -l)" -ge "$ROOMS" ]; do
+        waited=$((waited + 1))
+        if [ "$waited" -gt 300 ]; then
+            say "FAIL not every endpoint opened a session within 60 s"
+            tail -n 5 "$SERVER_DIR"/endpoint-room-01.out | sed 's/^/    /'
+            exit 1
+        fi
+        sleep 0.2
+    done
+}
+
+stop_endpoints() {
+    local pid
+    for pid in "${CLIENTS[@]:-}"; do
+        kill "$pid" 2>/dev/null || true
+    done
 }
 
 stop_server() {
@@ -290,43 +353,61 @@ elif [ "$MODE" = formats ]; then
 
     for FORMAT in $FORMATS; do
         start_server "server-$FORMAT" --players "$ROOMS" "${UPNP_ARGS[@]}"
-        CLIENTS=()
-        for ROOM in "${ROOM_NAMES[@]}"; do
-            "$BIN_DIR/chorus-client" \
-                --ephemeral-identity \
-                --server "127.0.0.1:$AUDIO" \
-                --control "$CONTROL" \
-                --zone "$ROOM" \
-                --endpoint "speaker-$ROOM" \
-                --rejoin \
-                --run-seconds 3600 \
-                --device "$CHORUS_CLIENT_DEVICE" \
-                --no-delay-log \
-                --sync-interval-ms "$(sync_conf sync_interval_ms)" \
-                >"$SERVER_DIR/endpoint-$ROOM.out" 2>&1 &
-            CLIENTS+=("$!")
-            PIDS+=("$!")
-        done
-        waited=0
-        until [ "$(sed -n 's/.*client session peer=[^ ]* id=\([^ ]*\) .*/\1/p' "$SERVER_DIR/server.log" | sort -u | wc -l)" -ge "$ROOMS" ]; do
-            waited=$((waited + 1))
-            if [ "$waited" -gt 300 ]; then
-                say "FAIL not every endpoint opened a session within 60 s"
-                tail -n 5 "$SERVER_DIR"/endpoint-room-01.out | sed 's/^/    /'
-                exit 1
-            fi
-            sleep 0.2
-        done
+        start_endpoints
         python3 "$HARNESS" measure --pid "$SERVER_REAL" --server-log "$SERVER_DIR/server.log" --out "$RUN_DIR" \
             --config "16 rooms, 16 endpoints, --players 16 --upnp" \
             --format "$FORMAT" --ks "$KS" --window "$WINDOW" --settle "$SETTLE" \
             --ssdp-port "$SSDP_PORT" --renderers "$ROOMS" --control "$CONTROL" \
             --rooms "$(IFS=,; printf '%s' "${ROOM_NAMES[*]}")" --media-port "$MEDIA_PORT"
-        for PID in "${CLIENTS[@]}"; do
-            kill "$PID" 2>/dev/null || true
-        done
+        stop_endpoints
         stop_server
     done
+elif [ "$MODE" = receivers ]; then
+    for RATE_HZ in $RATES; do
+        NAME="recv-$RATE_HZ"
+        # Short paths: a Unix socket's path is at most 107 bytes.
+        RECV="$RUN_DIR/$NAME/r"
+        mkdir -p "$RECV" "$RUN_DIR/$NAME/soloist-state" "$RUN_DIR/$NAME/soloist-cache"
+        printf 'not-a-real-key-chorus-measurement\n' > "$RUN_DIR/$NAME/key"
+        RATE_ARGS=()
+        # The TV path's latency plan has a floor that depends on the chunk's
+        # frame count; at 44.1 kHz it is just above the default (the receiver
+        # tests give the same flag). No TV plays here.
+        [ "$RATE_HZ" = 44100 ] && RATE_ARGS=(--tv-latency-ms 40)
+        start_server "$NAME" --soloist-dir "$RECV" --soloist-receivers "$ROOMS" "${RATE_ARGS[@]}"
+        : > "$SERVER_DIR/supervisor-pids"
+        for i in $(seq 0 $((ROOMS - 1))); do
+            : > "$SERVER_DIR/fake$i.conf"
+            FAKE_SOLOIST_CONF="$SERVER_DIR/fake$i.conf" \
+                FAKE_SOLOIST_ARGV_LOG="$SERVER_DIR/argv$i.log" \
+                FAKE_SOLOIST_COMMAND_LOG="$SERVER_DIR/commands$i.log" \
+                FAKE_SOLOIST_CONTROL="$SERVER_DIR/app$i.sock" \
+                FAKE_SOLOIST_PIPE_DIR="$RECV" \
+                "$BIN_DIR/examples/server-test-soloistd" \
+                --soloist-dir "$RECV" \
+                --api-key-file "$SERVER_DIR/key" \
+                --state-dir "$SERVER_DIR/soloist-state" \
+                --cache-dir "$SERVER_DIR/soloist-cache" \
+                --soloist-bin "$BIN_DIR/examples/server-test-fake-soloist" \
+                --receivers "$ROOMS" --receiver "$i" --pipewire none \
+                </dev/null >"$SERVER_DIR/supervisor-$i.log" 2>&1 &
+            PIDS+=("$!")
+            printf '%s\n' "$!" >> "$SERVER_DIR/supervisor-pids"
+        done
+        start_endpoints
+        python3 "$HARNESS" measure --pid "$SERVER_REAL" --server-log "$SERVER_DIR/server.log" --out "$RUN_DIR" \
+            --config "$RATE_HZ Hz server, 16 rooms, 16 endpoints, --soloist-receivers 16" \
+            --format "receivers-$RATE_HZ" --ks "$KS" --window "$WINDOW" --settle "$SETTLE" \
+            --control "$CONTROL" --receivers "$ROOMS" --apps "$SERVER_DIR" \
+            --supervisor-pids "$SERVER_DIR/supervisor-pids"
+        stop_endpoints
+        while read -r PID; do
+            kill "$PID" 2>/dev/null || true
+        done < "$SERVER_DIR/supervisor-pids"
+        sleep 1
+        stop_server
+    done
+    unset RATE_HZ
 fi
 
 {

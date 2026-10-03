@@ -28,6 +28,10 @@ Standard library only, plus the pinned reference programs for `media`. Subcomman
   server does not name its threads for the kernel, and needs no change for this.
   With `--subscribe` it first subscribes, as one control point, to every service of every
   renderer and receives the events on a loopback callback.
+  With `--receivers N` it measures the Spotify Soloist receivers on chorus's side
+  instead: "the Spotify app" (the FAKE Soloist's test control socket) plays on K receivers,
+  and the window also samples each `chorus-soloistd` process. The fake's own cost is not
+  sampled: it is not Soloist's.
 - `probe`: the decoders alone: `chorus-server --probe-media` on each file (it decodes the
   file to its end and starts nothing else), the child's own CPU time from wait4. The
   `maxrss_kb` column it also writes is NOT the decoder's memory: it came out the same for
@@ -280,6 +284,10 @@ def roles_of(server_log):
 def group_of(role):
     if role.startswith("player-"):
         return "players"
+    if role.startswith("soloist-reader-"):
+        return "readers"
+    if role == "soloist-manager":
+        return "soloist-manager"
     if role.startswith("upnp-"):
         return "upnp"
     if role == "audio":
@@ -446,7 +454,7 @@ def window(pid, roles, seconds, between_s=10):
 def reduce_window(start, end, rss, extra):
     wall_ns = end["mono_ns"] - start["mono_ns"]
     tick_hz = os.sysconf("SC_CLK_TCK")
-    groups, per_player = {}, {}
+    groups, per_player, per_reader = {}, {}, {}
     for tid, e in end["threads"].items():
         s = start["threads"].get(tid)
         if s is None:
@@ -458,6 +466,8 @@ def reduce_window(start, end, rss, extra):
         acc["threads"] += 1
         if g == "players":
             per_player[e["role"]] = {"ticks": e["ticks"] - s["ticks"], "run_ns": e["run_ns"] - s["run_ns"]}
+        if g == "readers":
+            per_reader[e["role"]] = {"ticks": e["ticks"] - s["ticks"], "run_ns": e["run_ns"] - s["run_ns"]}
     pct = lambda ns: round(100.0 * ns / wall_ns, 4)  # noqa: E731
     row = dict(extra)
     row.update({
@@ -469,12 +479,110 @@ def reduce_window(start, end, rss, extra):
         "groups": {name: {"threads": g["threads"], "ticks": g["ticks"], "pct": pct(g["run_ns"])}
                    for name, g in sorted(groups.items())},
         "players": {role: {"ticks": p["ticks"], "pct": pct(p["run_ns"])} for role, p in sorted(per_player.items())},
+        "readers": {role: {"ticks": p["ticks"], "pct": pct(p["run_ns"])} for role, p in sorted(per_reader.items())},
         "status_start": start["status"], "status_end": end["status"],
         "smaps_start": start["smaps_rollup"], "smaps_end": end["smaps_rollup"],
         "rss_kb_max_in_window": max(rss + [end["status"].get("VmRSS", 0)]),
         "loadavg_start": start["loadavg"], "loadavg_end": end["loadavg"],
     })
     return row
+
+
+def process_sample(pid):
+    """One other process (a receiver's supervisor): its threads' run time, ticks, memory."""
+    run_ns = 0
+    for tid in os.listdir(f"/proc/{pid}/task"):
+        try:
+            run_ns += int(open(f"/proc/{pid}/task/{tid}/schedstat").read().split()[0])
+        except (FileNotFoundError, ProcessLookupError):
+            pass
+    out = {"run_ns": run_ns, "ticks": stat_ticks(f"/proc/{pid}/stat")}
+    out.update(kb_fields(f"/proc/{pid}/status", {"VmRSS", "RssAnon", "Threads"}))
+    out.update(kb_fields(f"/proc/{pid}/smaps_rollup", {"Pss", "Pss_Anon"}))
+    return out
+
+
+def app(apps, index, line, limit_s=60):
+    """One line to receiver `index`'s FAKE Soloist as "the Spotify app" would act on it
+    (the fake's test control socket; it is started when the receiver is assigned)."""
+    until = time.monotonic() + limit_s
+    answer = ""
+    while time.monotonic() < until:
+        try:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sock.settimeout(10)
+            sock.connect(os.path.join(apps, f"app{index}.sock"))
+            sock.sendall(f"{line}\n".encode())
+            answer = sock.makefile().readline()
+            sock.close()
+            if answer == "ok\n":
+                return
+        except OSError:
+            pass
+        time.sleep(0.2)
+    die(f"the fake of r{index} did not take {line!r} within {limit_s} s (last answer {answer!r})")
+
+
+def soloist_metrics(control):
+    """receiver id -> {played, underruns, dropped, read} from GET /metrics."""
+    _, _, text = http_once(control, "GET", "/metrics", {"Host": "chorus"})
+    out = {}
+    for name, key in (("frames_played_total", "played"), ("underruns_total", "underruns"),
+                      ("frames_dropped_total", "dropped"), ("frames_read_total", "read")):
+        for m in re.finditer(rf'(?m)^chorus_soloist_{name}\{{receiver="(r\d+)"\}} (\d+)', text):
+            out.setdefault(m.group(1), {})[key] = int(m.group(2))
+    return out
+
+
+def measure_receivers(args, pid, roles, record):
+    n = args.receivers
+    supervisors = [int(line) for line in open(args.supervisor_pids).read().split()]
+
+    def states():
+        _, _, text = http_once(args.control, "GET", "/api/state", {"Host": "chorus"})
+        return json.loads(text)
+
+    wait_for(f"{n} receivers running Soloist's stand-in",
+             lambda: sum(1 for r in states().get("soloist", {}).get("receivers", []) if r.get("state") == "running") >= n, 120)
+    for i in range(n):
+        app(args.apps, i, "login")
+    rate = int(args.format.rsplit("-", 1)[1])
+
+    def one(label, k):
+        before, sup0 = soloist_metrics(args.control), [process_sample(p) for p in supervisors]
+        start, end, rss = window(pid, roles, args.window)
+        after, sup1 = soloist_metrics(args.control), [process_sample(p) for p in supervisors]
+        wall_ns = end["mono_ns"] - start["mono_ns"]
+        played = [after.get(f"r{i}", {}).get("played", 0) - before.get(f"r{i}", {}).get("played", 0) for i in range(k)]
+        delta = lambda key: sum(after.get(f"r{i}", {}).get(key, 0) - before.get(f"r{i}", {}).get(key, 0)  # noqa: E731
+                                for i in range(n))
+        want = rate * wall_ns / 1e9
+        steady = all(abs(p - want) <= 0.03 * want for p in played)
+        sups = [{"pct": round(100.0 * (b["run_ns"] - a["run_ns"]) / wall_ns, 4), "ticks": b["ticks"] - a["ticks"],
+                 "VmRSS": b.get("VmRSS"), "RssAnon": b.get("RssAnon"), "Pss": b.get("Pss"),
+                 "Pss_Anon": b.get("Pss_Anon"), "Threads": b.get("Threads")} for a, b in zip(sup0, sup1)]
+        record(label, k, start, end, rss,
+               {"frames_played": played, "frames_wanted": round(want), "underruns": delta("underruns"),
+                "frames_dropped": delta("dropped"), "steady": steady, "supervisors": sups})
+        if not steady:
+            print(f"NOT STEADY k={k}: frames played {played}, wanted about {want:.0f} each", flush=True)
+
+    time.sleep(args.settle)
+    one("receivers-idle", 0)
+    for k in [int(x) for x in args.ks.split(",") if x]:
+        for i in range(k):
+            app(args.apps, i, f"play spotify:track:p11measure{i:02d}k{k:02d}")
+
+        def taken():
+            groups = {g.get("id"): g.get("source") for g in states().get("groups", [])}
+            return sum(1 for src in groups.values() if str(src).startswith("soloist:r")) >= k
+
+        wait_for(f"{k} rooms play their receivers", taken, 60)
+        time.sleep(args.settle)
+        one("receivers-playing", k)
+        for i in range(k):
+            app(args.apps, i, "pause")
+        time.sleep(3)
 
 
 def measure(args):
@@ -505,6 +613,9 @@ def measure(args):
               + f"; VmRSS {row['status_end'].get('VmRSS')} kB, load {row['loadavg_start'][0]} to {row['loadavg_end'][0]}",
               flush=True)
 
+    if args.receivers:
+        measure_receivers(args, pid, roles, record)
+        return
     if args.idle_bare:
         # No control point at all: nothing is searched, described or subscribed.
         start, end, rss = window(pid, roles, args.window)
@@ -674,6 +785,71 @@ def summary(args):
             print(f"| {f} | " + " | ".join(
                 cell(f, k, lambda r: f"{(r['status_end'].get('RssAnon', 0) - base) / r['k']:.0f}") for k in ks) + " |")
         print()
+    recv = [r for r in rows if r["label"].startswith("receivers-")]
+    if recv:
+        configs = []
+        for r in recv:
+            if r["format"] not in configs:
+                configs.append(r["format"])
+        rby = {(r["format"], r["k"]): r for r in recv}
+        rks = sorted({k for (_, k) in rby})
+        rhead = "| server | " + " | ".join(f"K = {k}" for k in rks) + " |"
+        rrule = "|---|" + "---|" * len(rks)
+        rcell = lambda f, k, fn: fn(rby[(f, k)]) if (f, k) in rby else "-"  # noqa: E731
+
+        def reader_mean(r):
+            if not r["k"]:
+                return f"{sum(p['pct'] for p in r['readers'].values()) / max(1, len(r['readers'])):.3f}"
+            busy = sorted(p["pct"] for p in r["readers"].values())[-r["k"]:]
+            return f"{sum(busy) / r['k']:.2f}"
+
+        def reader_spread(r):
+            if not r["k"]:
+                return "-"
+            busy = sorted(p["pct"] for p in r["readers"].values())[-r["k"]:]
+            return f"{busy[0]:.2f} to {busy[-1]:.2f}"
+
+        def sup(r, key, playing):
+            sups = r["supervisors"][:r["k"]] if playing else r["supervisors"][r["k"]:]
+            if not sups:
+                return "-"
+            values = [x[key] for x in sups]
+            return f"{sum(values) / len(values):.3f}" if key == "pct" else f"{sum(values) / len(values):.0f}"
+
+        base = lambda f: rby[(f, 0)]["status_end"].get("RssAnon", 0) if (f, 0) in rby else 0  # noqa: E731
+        for title, fn in (
+            ("Reader threads (`soloist-reader-<i>`), % of one core per playing receiver (the mean of the K busiest; "
+             "at K = 0 the mean of all 16, idle)", reader_mean),
+            ("The idlest and the busiest of those K reader threads", reader_spread),
+            ("All 16 reader threads, % of one core, sum", lambda r: f"{g(r, 'readers'):.2f}"),
+            ("The `soloist-manager` thread, % of one core", lambda r: f"{g(r, 'soloist-manager'):.3f}"),
+            ("The audio thread, % of one core", lambda r: f"{g(r, 'audio'):.2f}"),
+            ("The client threads (16 endpoints), % of one core, sum", lambda r: f"{g(r, 'clients'):.2f}"),
+            ("The whole server process, % of one core", lambda r: f"{r['process_pct']:.2f}"),
+            ("Server VmRSS at the window's end, kB", lambda r: str(r["status_end"].get("VmRSS"))),
+            ("Server RssAnon at the window's end, kB", lambda r: str(r["status_end"].get("RssAnon"))),
+            ("Server RssAnon growth per playing receiver against K = 0, kB",
+             lambda r: f"{(r['status_end'].get('RssAnon', 0) - base(r['format'])) / r['k']:.0f}" if r["k"] else "-"),
+            ("Server threads", lambda r: str(r["status_end"].get("Threads"))),
+            ("Server mappings with any access, kB", lambda r: str(r["status_end"].get("AccessibleKb", "-"))),
+            ("One `chorus-soloistd` whose receiver plays, % of one core, mean", lambda r: sup(r, "pct", True)),
+            ("One `chorus-soloistd` whose receiver is idle, % of one core, mean", lambda r: sup(r, "pct", False)),
+            ("One `chorus-soloistd`, VmRSS kB, mean of all 16", lambda r: f"{sum(x['VmRSS'] for x in r['supervisors']) / len(r['supervisors']):.0f}"),
+            ("One `chorus-soloistd`, RssAnon kB, mean of all 16", lambda r: f"{sum(x['RssAnon'] for x in r['supervisors']) / len(r['supervisors']):.0f}"),
+            ("One `chorus-soloistd`, Pss kB, mean of all 16", lambda r: f"{sum(x['Pss'] for x in r['supervisors']) / len(r['supervisors']):.0f}"),
+            ("One `chorus-soloistd`, Pss_Anon kB, mean of all 16", lambda r: f"{sum(x['Pss_Anon'] for x in r['supervisors']) / len(r['supervisors']):.0f}"),
+            ("One `chorus-soloistd`, threads", lambda r: str(max(x["Threads"] for x in r["supervisors"]))),
+            ("Underruns counted by the receivers' ports in the window, all receivers", lambda r: str(r.get("underruns"))),
+            ("Frames dropped by the receivers' ports in the window, all receivers", lambda r: str(r.get("frames_dropped"))),
+            ("Load average (1 min) at the window's start and end", lambda r: f"{r['loadavg_start'][0]} to {r['loadavg_end'][0]}"),
+            ("Steady (every playing receiver's port played the window's frames within 3 %)",
+             lambda r: "yes" if r.get("steady", True) else "NO"),
+        ):
+            print(f"{title}:\n")
+            print(rhead + "\n" + rrule)
+            for f in configs:
+                print(f"| {f.replace('receivers-', '')} Hz | " + " | ".join(rcell(f, k, fn) for k in rks) + " |")
+            print()
     idle = [r for r in rows if r["label"].startswith("idle-")]
     if idle:
         print("Idle servers, no endpoint connected (% of one core; kB):\n")
@@ -712,6 +888,9 @@ def main():
     x.add_argument("--rooms", default="")
     x.add_argument("--media-port", type=int, default=0)
     x.add_argument("--idle-bare", action="store_true")
+    x.add_argument("--receivers", type=int, default=0)
+    x.add_argument("--apps", default="")
+    x.add_argument("--supervisor-pids", default="")
     x.add_argument("--subscribe", action="store_true")
     p = sub.add_parser("probe")
     p.add_argument("--server", required=True)
