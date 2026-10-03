@@ -139,6 +139,17 @@ verify-soak: tools-executable
 verify-house-soak: tools-executable
 	bash tools/house-soak-run.sh
 
+# What K concurrent independent streams cost chorus-server in CPU and memory on this host
+# (P11, K76): the release server with 16 rooms, 16 players and its UPnP renderers, a
+# scripted control point playing each settled format on K of them, and a /proc sampler.
+# A host measurement that prints its report's inputs
+# (docs/measurements/concurrent-streams-host.md), not a check and not in `make gate`;
+# callers hold the heavy locks. CHORUS_STREAMS_MODE picks formats, idle or decoders.
+concurrent-streams: tools-executable
+	bash tools/concurrent-streams-run.sh
+
+.PHONY: concurrent-streams
+
 # The live multicast half of AC-2. Whether multicast reaches a container and
 # crosses this network's VLANs is an open question, which is why the endpoint
 # has a static fallback; this runs the live exchange where it can and refuses
