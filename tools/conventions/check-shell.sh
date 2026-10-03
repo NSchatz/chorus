@@ -26,7 +26,10 @@ for f in "${files[@]}"; do
     [ "$mode" = 100755 ] || { fail "Shell scripts" "$p is committed $mode, not executable (git update-index --chmod=+x)"; rc=1; }
     [ "$(head -n 1 "$p")" = '#!/usr/bin/env bash' ] || { fail "Shell scripts" "$p does not start with #!/usr/bin/env bash"; rc=1; }
 done
-if ! out="$(shellcheck -f gcc "${paths[@]}" 2>&1)"; then
+# One shellcheck per script, eight at a time. shellcheck analyses every script it is given on its
+# own (a sourced file is read again for each script that sources it), so splitting the list
+# changes how long it takes and not what is found; xargs exits non-zero when any one of them did.
+if ! out="$(printf '%s\0' "${paths[@]}" | xargs -0 -n 1 -P 8 shellcheck -f gcc 2>&1)"; then
     printf '%s\n' "$out" | head -n 30
     fail "Shell scripts" "shellcheck found $(printf '%s\n' "$out" | wc -l) note(s)"
     rc=1
