@@ -1,5 +1,5 @@
 # The gate's runner of the workspace tests (tools/gate.sh; pinned in mise.toml).
-# docs/decisions/0000-a-faster-gate-with-the-same-checks.md says why nextest and
+# docs/decisions/0112-a-faster-gate-with-the-same-checks.md says why nextest and
 # why these groups. Every test runs in its own process; `cargo test --doc` runs
 # the documentation tests, which nextest does not.
 

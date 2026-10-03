@@ -26,7 +26,7 @@
 #   cargo-zigbuild 0.23.4 MIT     https://github.com/rust-cross/cargo-zigbuild/releases/tag/v0.23.4 (2026-09-02)
 #   cargo-nextest 0.9.146 Apache-2.0 OR MIT https://github.com/nextest-rs/nextest/releases/tag/cargo-nextest-0.9.146 (2026-09-21)
 #   cargo-nextest is the gate's runner of the workspace tests (tools/gate.sh, .config/nextest.toml;
-#   docs/decisions/0111-the-gate-runs-the-tests-with-nextest.md says why it).
+#   docs/decisions/0112-a-faster-gate-with-the-same-checks.md says why it).
 #   zig and cargo-zigbuild are the C compiler and linker of the Linux endpoint package's cross
 #   builds at a glibc floor (tools/endpoint-package.sh; the package's ADR says why them).
 # The GPL-3.0 tools run as unmodified binaries; their source is never read (brief section 0.9).

@@ -1,4 +1,4 @@
-# 0000: the gate runs the workspace tests under nextest with the wall-clock tests one at a time, builds the firmware objects once and in parallel with header dependencies, lints in parallel, builds lighter, and stops after a failed cheap step; CI is started by hand
+# 0112: the gate runs the workspace tests under nextest with the wall-clock tests one at a time, builds the firmware objects once and in parallel with header dependencies, lints in parallel, builds lighter, and stops after a failed cheap step; CI is started by hand
 
 - Status: accepted (2026-10-03)
 - Decided by: the owner (2026-10-03, in the goals program's main session: "Implement all of your

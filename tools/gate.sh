@@ -15,7 +15,7 @@
 # .config/nextest.toml): every test in its own process, several at once, the
 # wall-clock-sensitive ones one at a time, no retries. The documentation tests,
 # which nextest does not run, run after them with `cargo test --doc`.
-# docs/decisions/0000-a-faster-gate-with-the-same-checks.md says why.
+# docs/decisions/0112-a-faster-gate-with-the-same-checks.md says why.
 #
 # The gate never takes chorus-heavy.lock itself; callers do (the merge rule in
 # .claude/goals/2026-09-chorus.md, section 0.3).

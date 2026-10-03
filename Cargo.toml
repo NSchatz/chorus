@@ -47,7 +47,7 @@ todo = "warn"
 [profile.dev.package."*"]
 opt-level = 2
 
-# Debug and test builds carry line tables, not full debug info (docs/decisions/0000-a-faster-gate-with-the-same-checks.md).
+# Debug and test builds carry line tables, not full debug info (docs/decisions/0112-a-faster-gate-with-the-same-checks.md).
 # A panic, a backtrace and a debugger's breakpoint still name the file and line; what goes is
 # variable and type information, which nothing in the gate reads. Full debug info made about
 # 85% of every test executable (a chorus-server test binary is 50 to 57 MB), and the gate builds
