@@ -230,7 +230,13 @@ volume-sequence:
 # Needs a C compiler and this workspace's own cargo; no ESP-IDF, no ESP32-S3,
 # no amplifier, no privilege. What genuinely needs hardware lives behind
 # tools/endpoint-rig-run.sh and refuses by name.
+#
+# Every binary is built first, CHORUS_FIRMWARE_JOBS compiles at a time (each
+# unit is its own object, so they do not depend on one another); the checks then
+# run one after another, exactly as before, against binaries that are current.
+CHORUS_FIRMWARE_JOBS ?= 8
 firmware-check: tools-executable
+	$(MAKE) -j$(CHORUS_FIRMWARE_JOBS) -f firmware/Makefile all
 	$(MAKE) -f firmware/Makefile check
 
 # The image build. Refuses by name without the ESP-IDF toolchain and the
