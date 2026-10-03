@@ -241,6 +241,10 @@ pub struct ControlState {
     /// `firmware_install` starts a transfer here, inside the command's own
     /// commit, and nothing else in the control plane does.
     firmware: OnceLock<Arc<Firmware>>,
+    /// (goal 15) Each speaker's latest `telemetry`, for `GET /metrics`
+    /// (`crate::metrics`). Under its own lock and outside the room model: a
+    /// report about once a second per speaker never fans a state out.
+    telemetry: crate::metrics::TelemetryStore,
 }
 
 /// The files the browser is served: the page, what it loads, and the document
@@ -299,6 +303,7 @@ impl ControlState {
             },
             adoptions: OnceLock::new(),
             firmware: OnceLock::new(),
+            telemetry: crate::metrics::TelemetryStore::new(),
         }
     }
 
@@ -798,14 +803,27 @@ impl ControlState {
 
     /// A session of `id` has ended.
     pub fn speaker_session_down(&self, id: &str) {
-        let state = {
+        let (changed, present) = {
             let mut held = self.locked();
-            if !held.zones.speaker_session_down(id) {
-                return;
-            }
-            held.zones.encode_state()
+            let changed = held
+                .zones
+                .speaker_session_down(id)
+                .then(|| held.zones.encode_state());
+            let present = held
+                .zones
+                .speakers()
+                .get(id)
+                .is_some_and(|s| s.now.present());
+            (changed, present)
         };
-        self.publish(state);
+        // Its last session took its telemetry with it (`GET /metrics`
+        // exposes a report only "this session").
+        if !present {
+            self.telemetry.forget(id);
+        }
+        if let Some(state) = changed {
+            self.publish(state);
+        }
     }
 
     /// A handshake under an adopted id offered another key and was refused:
@@ -840,6 +858,53 @@ impl ControlState {
         };
         self.publish(state);
         true
+    }
+}
+
+/// The exporter (goal 15): what a speaker's `telemetry` leaves behind and
+/// the scrape made of it. Neither changes the room model nor publishes a
+/// state: a scrape reads, and a report is kept beside the model.
+impl ControlState {
+    /// Speaker `id` sent a `telemetry`: keep it as its latest, stamped with
+    /// the server's monotonic clock. A report from an id that is not a
+    /// listed speaker is not kept, so the store is bounded as the list is.
+    pub fn telemetry_reported(&self, id: &str, report: &chorus_protocol::v2::Telemetry) {
+        let listed = self.locked().zones.speakers().get(id).is_some();
+        if listed {
+            self.telemetry.keep(id, *report, Instant::now());
+        }
+    }
+
+    /// The text `GET /metrics` answers with (`crate::metrics::render`).
+    pub fn metrics(&self) -> String {
+        let speakers: Vec<crate::metrics::SpeakerRow> = self
+            .locked()
+            .zones
+            .speakers()
+            .all()
+            .iter()
+            .map(|s| crate::metrics::SpeakerRow {
+                id: s.id.clone(),
+                name: s.name.clone(),
+                room: s.room.clone().unwrap_or_default(),
+                connected: s.now.present(),
+                // What its `firmware_status` says it runs, else its
+                // `hello`'s software string; empty until it has said either.
+                version: s
+                    .now
+                    .firmware
+                    .as_ref()
+                    .map(|f| f.version.clone())
+                    .filter(|v| !v.is_empty())
+                    .unwrap_or_else(|| s.now.software.clone()),
+            })
+            .collect();
+        crate::metrics::render(
+            env!("CARGO_PKG_VERSION"),
+            &speakers,
+            &self.telemetry.snapshot(),
+            Instant::now(),
+        )
     }
 }
 
@@ -1719,6 +1784,14 @@ fn serve_connection(connection: TcpStream, state: &Arc<ControlState>) {
             "200 OK",
             "text/plain; charset=utf-8",
             &format!("{}\n", state.report()),
+        ),
+        // The Prometheus exporter (goal 15, `crate::metrics`): one more
+        // route on this listener, served by this worker; no thread, no port.
+        ("GET", "/metrics") => respond(
+            &mut connection,
+            "200 OK",
+            crate::metrics::CONTENT_TYPE,
+            &state.metrics(),
         ),
         ("GET", "/api/events") => serve_events(connection, state, version),
         ("POST", "/api/command") => {

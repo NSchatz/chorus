@@ -44,7 +44,7 @@ priority = 100
 
 [[profile.default.overrides]]
 filter = '''
-(package(chorus-server) & (binary(adoption) | binary(firmware_install)))
+(package(chorus-server) & (binary(adoption) | binary(firmware_install) | binary(metrics_scrape)))
 | (package(chorus-protocol) & binary(firmware_session))
 '''
 test-group = "firmware-build"
