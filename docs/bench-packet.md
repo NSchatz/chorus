@@ -757,6 +757,81 @@ one-second reply grace, the HTTP server's default header limit against this phon
 replaced or confirmed; and WIFI-7's characterization run (section 6) has the provisioning path it
 was waiting for.
 
+### S10. OTA on the board: identity kept, adopted, a good install, a bad image rolled back (goal 14; after S5; the wired profile)
+
+Needs: the board of S5 and S7 (a TAS5825M board that reached Play; the default `brick-s3-wired`
+profile, its W5500 on the audio network), 8 MB of flash or more (S5 says), its USB cable and
+serial console, ESP-IDF v6.1, and a chorus server on the audio network that the owner runs with
+the bench variable in its environment for this session only (`docs/firmware-updates.md`, "The
+bench variable"). No bought part.
+
+This is goal 14's hardware step for OTA (K93): the board keeps its id and key across power
+cycles (ADR 0104), is adopted and named, installs a newer image only when the install command is
+sent (ADR 0110), confirms it after it rejoins the server, and rolls back a deliberately bad image
+through the real bootloader (ADR 0108). The host build grades every decision (`test_ota`, the
+`firmware_install` tests) and the emulator ran the same flow (`make ota-qemu`, ADR 0111,
+`docs/measurements/ota-qemu-rollback.md`, simulation); this session is the first run on silicon.
+Three images are built from one commit, each with its own version, the bad one with the define
+that makes it never confirm (`-DCHORUS_OTA_NEVER_CONFIRM`, ADR 0108); the first is flashed over
+USB with the guarded tool, the other two travel over the network:
+
+```
+. <esp-idf v6.1>/export.sh
+make firmware-image                                            # image A, flashed below
+tools/firmware-flash.sh --print --port /dev/ttyACM0            # shows the esptool command, runs nothing
+CHORUS_OWNER_AT_BENCH=1 tools/firmware-flash.sh --port /dev/ttyACM0
+cd firmware && idf.py -B build/image -p /dev/ttyACM0 monitor
+```
+
+The good and bad images are built into their own build directories the way
+`tools/ota-qemu-run.sh` builds them for the emulator (with the board profile `brick-s3-wired`
+in place of the emulator's), then staged on the server with `tools/firmware-stage.sh <build-dir>
+<firmware-dir> good` and `... bad` and a `firmware_rescan` (`docs/firmware-updates.md`).
+
+Never run `espefuse` or any eFuse command (BRIEF.md section 3.1 rule 2): the image guard in
+`make gate` proves no image burns one, and anti-rollback, Secure Boot and Flash Encryption are
+off in every build.
+
+**S10.1 Boot and identity.** Expected on the console: `chorus-ota: running slot=0 state=valid
+version=<A's version>`, `chorus-identity: identity id=chorus-<12 hex> key=<fingerprint>
+id_made_this_boot=1 key_made_this_boot=1`, then the session reaching the server; on the server
+`endpoint adopted id=chorus-<12 hex>`. If instead `the session task could not be started` appears,
+paste that line whole: it names the internal RAM free and the largest block (the emulator needed
+a larger internal pool, ADR 0109, and whether the board does is this session's question).
+Power-cycle the board. Expected: the same id and key with `id_made_this_boot=0
+key_made_this_boot=0`, and the server reports the session `verdict=known`, not adopted again.
+
+**S10.2 Name and room.** Send `speaker_name` and `speaker_room` for the id
+(`docs/control-plane.md`). Expected: the state's `speakers` lists it named and in the room, and
+it plays that room's stream.
+
+**S10.3 Nothing installs by itself.** Stage the good image. Expected: the speaker's
+`firmware.update_available` is true, its console shows no transfer, and a power cycle of the
+board and a restart of the server change neither.
+
+**S10.4 The good install.** Send `firmware_install` naming the speaker and `good`. Expected:
+the state goes `receiving`, `verified`, `pending_verify`, `confirmed`; the console shows
+`rebooting into the new image`, then `running slot=1 state=pending_verify version=<good>`,
+then, after the session rejoins, the slot confirmed. Note the seconds from the command to
+`confirmed`.
+
+**S10.5 The bad image.** Stage the bad image, send `firmware_install` with `bad`. Expected: it
+installs and reboots into slot 0 on trial, never confirms, and within the trial window
+(`ota_confirm_seconds`, ASSUMED 60 s) `this image did not confirm in time; marking it invalid and
+rebooting`; the bootloader starts the good image again (`running slot=1 state=valid
+version=<good>`), and the state shows `rolled_back` with reason `not_confirmed`, `image_version`
+the bad one and `version` the good one.
+
+Paste into the Needs item: the console lines containing `chorus-ota:`, `chorus-identity:`,
+`chorus-discovery:` or `chorus-endpoint:`, the server's `endpoint adopted` and `firmware` lines, and the speaker's
+`firmware` object from the state after S10.4 and after S10.5, with any `MAC:` line and any LAN
+address deleted (K27), plus the seconds of S10.4. Afterwards remove the bench variable from the
+server's environment again.
+
+What changes: goal 14's OTA, explicit-install and adoption lines gain their hardware evidence or
+a named fault to fix; the ASSUMED 8 MB layout, the 60 s trial, the chunk window and the board's
+internal RAM for the session stack are confirmed or replaced.
+
 ## 4. Order and what each session unblocks
 
 S0 first; S1 needs one Pi; S2 needs both and the interface; S3 needs S2's rig trusted; S4 after
@@ -766,7 +841,8 @@ S7.5 whenever a logic analyzer and a free pin exist. S8 needs the three TVs' ans
 one Pi as the hub (S0) and a receiver HAT (T1 or T2); S8.5 and S8.7 also need S1's endpoint. S9
 follows S5 on a board whose amplifier bring-up reaches Play, flashed with the compact Wi-Fi
 profile; it needs a phone and the house's 2.4 GHz network and no chorus server, and it unblocks
-WIFI-7's characterization run (section 6). None
+WIFI-7's characterization run (section 6). S10 follows S5 (and S7.1, so the board is known to
+play) on the wired profile with a chorus server on the audio network. None
 of these blocks a chorus
 goal (K7): each goal that can use a result re-checks for its pull request.
 
@@ -775,7 +851,7 @@ goal (K7): each goal that can use a result re-checks for its pull request.
 Each evidence run (S1-S4, S6, S7.3, S7.4) commits its report on `bench/<date>-<topic>` and opens a pull request
 from endpoint A (`docs/bench.md`); the owner does nothing else. If the report or pull-request half
 fails after a measurement, nothing is lost: fix the cause and run the same script with
-`--report-from <run directory>` (printed at the start) from the same commit. S0, S5 and S9 are
+`--report-from <run directory>` (printed at the start) from the same commit. S0, S5, S9 and S10 are
 answered in their Needs items; S9's answer is console lines only, chosen so that no network name,
 passphrase or address is pasted.
 
