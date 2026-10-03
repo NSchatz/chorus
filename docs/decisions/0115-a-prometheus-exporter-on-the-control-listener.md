@@ -1,4 +1,4 @@
-# 0000: the server keeps each speaker's latest telemetry beside the room model and serves it as Prometheus text on the control listener's `GET /metrics`; heap rides on `telemetry` as an optional trailing block; both endpoints fill what they know and say unknown for the rest
+# 0115: the server keeps each speaker's latest telemetry beside the room model and serves it as Prometheus text on the control listener's `GET /metrics`; heap rides on `telemetry` as an optional trailing block; both endpoints fill what they know and say unknown for the rest
 
 - Status: accepted (goal 15, 2026-10-03)
 - Decided by: the goal (program line A; BRIEF.md section 5.9's "per-client telemetry ...

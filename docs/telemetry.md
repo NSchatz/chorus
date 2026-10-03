@@ -2,7 +2,7 @@
 
 What every speaker reports about itself, what the server keeps of it, and the
 text `GET /metrics` answers a Prometheus scrape with (goal 15). The decision
-record is `docs/decisions/0000-a-prometheus-exporter-on-the-control-listener.md`;
+record is `docs/decisions/0115-a-prometheus-exporter-on-the-control-listener.md`;
 the wire message is `docs/protocol.md`, "Telemetry".
 
 ## The path
