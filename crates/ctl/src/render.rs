@@ -282,6 +282,37 @@ fn inputs(state: &Value) -> String {
     table(&["INPUT", "PLAYING IN"], &rows)
 }
 
+fn input_labels(state: &Value) -> String {
+    let labels = items(state, "input_labels");
+    if labels.is_empty() {
+        return "no labelled inputs\n".to_string();
+    }
+    let rows: Vec<Vec<String>> = labels
+        .iter()
+        .map(|l| vec![cell(l, "input"), cell(l, "role"), cell(l, "name")])
+        .collect();
+    table(&["INPUT", "ROLE", "NAME"], &rows)
+}
+
+fn sources(state: &Value) -> String {
+    let stored = items(state, "stored_sources");
+    if stored.is_empty() {
+        return "no stored sources\n".to_string();
+    }
+    let rows: Vec<Vec<String>> = stored
+        .iter()
+        .map(|s| {
+            vec![
+                cell(s, "id"),
+                cell(s, "kind"),
+                cell(s, "name"),
+                cell(s, "value"),
+            ]
+        })
+        .collect();
+    table(&["ID", "KIND", "NAME", "VALUE"], &rows)
+}
+
 /// The rooms that list `id` among their endpoints.
 fn rooms_of(state: &Value, id: &str) -> Value {
     Value::Arr(
@@ -448,6 +479,8 @@ pub fn render(state: &Value, view: &View, as_json: bool) -> Result<String, Strin
             either(value.clone(), line)
         }
         View::Inputs => either(array(items(state, "inputs")), inputs(state)),
+        View::InputLabels => either(array(items(state, "input_labels")), input_labels(state)),
+        View::Sources => either(array(items(state, "stored_sources")), sources(state)),
         View::Endpoints => either(
             object(vec![
                 ("endpoints", array(items(state, "endpoints"))),

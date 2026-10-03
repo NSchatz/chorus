@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"value","detail":"a stored source of kind 'spotify' is 'spotify:<track|album|playlist|episode>:<id>', the id letters and digits"}

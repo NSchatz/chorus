@@ -11,7 +11,7 @@
 
 use std::time::Duration;
 
-use chorus_control::rooms::{InputId, Source};
+use chorus_control::rooms::{InputId, InputLabel, InputRole, Source, StoredKind, StoredSource};
 use chorus_control::{Command, Volume};
 
 use crate::grammar::{
@@ -40,6 +40,10 @@ pub enum View {
     Volume(Target),
     /// The inputs.
     Inputs,
+    /// The labelled inputs.
+    InputLabels,
+    /// The stored sources.
+    Sources,
     /// The speakers and the endpoints.
     Endpoints,
     /// One speaker or endpoint.
@@ -381,6 +385,73 @@ fn build(
             let source = Some(Source::LineIn(input));
             send(Command::Take { target, source }, View::Groups)
         }
+        ("inputs", "labels") => {
+            exactly::<0>(operands, line).map(|_| Action::Read(View::InputLabels))
+        }
+        ("inputs", "label") | ("inputs", "unlabel") => {
+            let (input, role, name) = if verb.name == "label" {
+                let [input, role, name] = exactly(operands, line)?;
+                let role = InputRole::parse(&role).ok_or_else(|| {
+                    usage(
+                        format!("'{}' is not a role: it is line-in or streamer", role),
+                        line.to_string(),
+                    )
+                })?;
+                if name.is_empty() {
+                    return Err(usage(
+                        "a label has a name; 'chorusctl inputs unlabel' removes one".to_string(),
+                        line.to_string(),
+                    ));
+                }
+                (input, role, name)
+            } else {
+                let [input] = exactly(operands, line)?;
+                (input, InputRole::LineIn, String::new())
+            };
+            let input = InputId::parse(&input).ok_or_else(|| {
+                usage(
+                    format!(
+                        "'{}' is not an input: it is <endpoint>/<input>, as 'chorusctl inputs \
+                         list' prints it",
+                        input
+                    ),
+                    line.to_string(),
+                )
+            })?;
+            send(
+                Command::InputLabel(InputLabel { input, name, role }),
+                View::InputLabels,
+            )
+        }
+        ("sources", "list") => exactly::<0>(operands, line).map(|_| Action::Read(View::Sources)),
+        ("sources", "store") => {
+            let [id, kind, name, value] = exactly(operands, line)?;
+            let kind = StoredKind::parse(&kind).ok_or_else(|| {
+                usage(
+                    format!(
+                        "'{}' is not a kind of stored source: it is url or spotify",
+                        kind
+                    ),
+                    line.to_string(),
+                )
+            })?;
+            if let Some(problem) = StoredSource::value_problem(kind, &value) {
+                return Err(usage(problem, line.to_string()));
+            }
+            send(
+                Command::SourceStore(StoredSource {
+                    id,
+                    kind,
+                    value,
+                    name,
+                }),
+                View::Sources,
+            )
+        }
+        ("sources", "forget") => {
+            let [id] = exactly(operands, line)?;
+            send(Command::SourceForget { id }, View::Sources)
+        }
         ("endpoints", "list") => {
             exactly::<0>(operands, line).map(|_| Action::Read(View::Endpoints))
         }
@@ -678,6 +749,13 @@ mod tests {
             "volume mute --group downstairs",
             "volume limit kitchen",
             "inputs select line-1 kitchen",
+            "inputs label line-1 streamer Streamer",
+            "inputs label endpoint-c/line-1 microphone Mic",
+            "inputs unlabel endpoint-c/line-1 now",
+            "sources store radio ftp Radio ftp://radio.example/a",
+            "sources store radio url Radio file:///etc/passwd",
+            "sources store wake spotify Wake https://open.spotify.example/playlist/a",
+            "sources forget",
             "endpoints room chorus-0123456789ab",
             "endpoints room chorus-0123456789ab kitchen --none",
             "updates install brick-2-0-0",

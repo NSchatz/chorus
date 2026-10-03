@@ -1,7 +1,7 @@
 # Streams: what URLs chorus plays
 
 chorus fetches media by URL when something hands it one: the UPnP renderer of goal 16
-first, stored alarm streams later. This page says which URLs play, which are
+first, and since goal 17 an alarm whose source is a stored stream URL (`docs/inputs.md`). This page says which URLs play, which are
 refused, and the exact words of each refusal. The decision record is
 `docs/decisions/0120-the-media-fetcher.md`; the code is `crates/fetch`.
 

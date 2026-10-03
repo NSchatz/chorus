@@ -13,7 +13,7 @@
 //! chorusctl [--server <host:port>] [--json] [--timeout <seconds>] <noun> <verb> [args]
 //! ```
 //!
-//! Six nouns, one per area: `rooms`, `groups`, `volume`, `inputs`,
+//! Seven nouns, one per area: `rooms`, `groups`, `volume`, `inputs`, `sources`,
 //! `endpoints`, `updates`. [`grammar`] is the one table of them, their verbs,
 //! the flags and the exit codes; the parser, `--help` (global and per noun)
 //! and the tests all read it. `docs/chorusctl.md` is the page for a person.

@@ -30,7 +30,11 @@
 //! - (d) autoplay on the fake CEC bus: the TV's power-on plays the theater
 //!   room in low-latency mode, out of its group; the standby stops it and
 //!   restores the room;
-//! - (e) a target that is grouped falls back to the slot path, by name.
+//! - (e) a target that is grouped falls back to the slot path, by name;
+//! - (f) (goal 17, ADR 0129) a TV input a second GROUP plays leaves
+//!   low-latency mode for as long as it is shared (`reason=shared`): both
+//!   groups hear it on the slot path, and the TV's room goes back to
+//!   low-latency mode by itself once it is the only listener again.
 //!
 //! Nothing here is timing evidence (BRIEF.md 3.1 rule 3): every process
 //! shares one host clock, the TV and the devices are modelled, and the
@@ -1193,6 +1197,131 @@ fn tv_power_on_the_cec_bus_plays_the_theater_in_low_latency_mode_and_standby_res
     println!("summary (d) cec: {} | {} | {}", mode, stopped, end);
     cec.disconnect();
     cec.stop();
+    drop(hub);
+    drop(server);
+    let _ = std::fs::remove_file(&source);
+}
+
+/// (f) Sharing a TV input (goal 17, ADR 0129). A hub in low-latency mode
+/// sends datagrams to the relay INSTEAD of its upstream, so there is nothing
+/// on the slot path for a second group to play: while two groups play the
+/// input, every one of them plays the slot path, and the TV's own room
+/// returns to low-latency mode when it is alone again.
+#[test]
+fn a_tv_input_a_second_group_plays_leaves_low_latency_mode_until_it_is_alone_again() {
+    let _serial = one_at_a_time();
+    let dir = scratch("shared");
+    let (mut server, source) = server(&["--test-tv-latency-ms", TEST_L_TV_MS]);
+    let ids = [fresh_id("sh-fl"), fresh_id("sh-fr")];
+    let (hub_id, den_id) = (fresh_id("sh-hub"), fresh_id("sh-den"));
+    attach_and_bond(
+        &server,
+        &[(ids[0].as_str(), "FL"), (ids[1].as_str(), "FR")],
+        &hub_id,
+    );
+    server.applied(&format!(
+        r#"{{"v":2,"t":"attach","zone":"den","endpoint":"{}","link":"wired"}}"#,
+        den_id
+    ));
+    let players: Vec<Endpoint> = ids
+        .iter()
+        .map(|id| spawn_player(&server.audio, id, &dir))
+        .collect();
+    let den = spawn_player(&server.audio, &den_id, &dir);
+    server.applied(&format!(
+        r#"{{"v":2,"t":"autoplay","input":"{}/tv","target":"theater","enabled":true}}"#,
+        hub_id
+    ));
+    let hub = spawn_hub(
+        &server.audio,
+        &hub_id,
+        &dir,
+        Arc::new(AtomicBool::new(true)),
+        None,
+    );
+    let said = |server: &mut RunningServer, what: &str| {
+        server.drain();
+        server.seen.iter().filter(|l| l.contains(what)).count()
+    };
+
+    // Alone: the theater plays the TV in low-latency mode; the den, which
+    // plays the (silent) configured stream, hears none of it.
+    let mode = server.wait_for("tv-path mode=low-latency");
+    assert!(mode.contains("room=theater"), "{mode}");
+    let all: Vec<&Endpoint> = players.iter().collect();
+    until_low_latency(&all, 200, 200);
+    wait_for("the den's device runs", Duration::from_secs(10), || {
+        den.frames() > WINDOW
+    });
+    let quiet = level_db(&den.last_window(), L_HZ);
+    assert!(
+        quiet < -60.0,
+        "the den hears the TV before it asked: {quiet:.1} dB"
+    );
+
+    // The den takes the same input: a second group. Every group plays the
+    // slot path from now, and the relay's play ends.
+    server.applied(&format!(
+        r#"{{"v":2,"t":"take","target":"den","source":"line-in:{}/tv"}}"#,
+        hub_id
+    ));
+    let slot = server.wait_for("tv-path mode=slot");
+    assert!(slot.contains("reason=shared"), "{slot}");
+    let end = server.wait_for("tv-relay end");
+    wait_for(
+        "the theater's players leave the low-latency stream",
+        Duration::from_secs(5),
+        || players.iter().all(|p| !p.player().active()),
+    );
+    server.wait_for("listeners=2");
+    // Both hear the TV now: the left tone is on the den's device (its one
+    // endpoint plays the downmix) and on the theater's front left, in a
+    // window that began after the low-latency stream had ended.
+    let after_end = players[0].frames();
+    let heard = |e: &Endpoint| e.frames() > WINDOW && level_db(&e.last_window(), L_HZ) > -35.0;
+    wait_for(
+        "the den and the theater hear the TV on the slot path",
+        Duration::from_secs(30),
+        || players[0].frames() > after_end + 2 * WINDOW && heard(&den) && heard(&players[0]),
+    );
+    let shared_db = (
+        level_db(&den.last_window(), L_HZ),
+        level_db(&players[0].last_window(), L_HZ),
+    );
+    assert_eq!(
+        said(&mut server, "tv-path mode=low-latency"),
+        1,
+        "not low-latency while shared"
+    );
+
+    // The den plays something else: the theater is the only listener again
+    // and returns to low-latency mode with no command of anybody's.
+    let received = players[0].received.lock().unwrap().len();
+    server.applied(r#"{"v":2,"t":"take","target":"den","source":"stream"}"#);
+    wait_for(
+        "the theater returns to low-latency mode",
+        Duration::from_secs(15),
+        || said(&mut server, "tv-path mode=low-latency") == 2,
+    );
+    wait_for(
+        "the theater's players play the low-latency stream again",
+        Duration::from_secs(45),
+        || {
+            players.iter().all(|p| p.player().active())
+                && players[0].received.lock().unwrap().len() > received + 200
+        },
+    );
+    wait_for(
+        "the den hears the TV no more",
+        Duration::from_secs(15),
+        || level_db(&den.last_window(), L_HZ) < -60.0,
+    );
+    println!("relay: {}", end);
+    println!(
+        "summary (f) shared: {}; the left tone at the den {:+.1} dB and at the theater's FL \
+         {:+.1} dB on the slot path; low-latency again once the den left",
+        slot, shared_db.0, shared_db.1
+    );
     drop(hub);
     drop(server);
     let _ = std::fs::remove_file(&source);

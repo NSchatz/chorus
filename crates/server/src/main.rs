@@ -81,7 +81,10 @@
 //!   (`chorus_server::player`), each the one writer of its player port. They
 //!   exist from the start whether or not anything plays, because a thread
 //!   made when a stream starts would be a thread the report never saw.
-//!   Without the flag there is none;
+//!   Without the flag there is none. (goal 17) An alarm whose source is a
+//!   stored stream URL plays through one of them and adds no thread: the
+//!   players' reports are taken by the conductor, on the thread it already
+//!   is, when there is no `--upnp`, and by `upnp-manager` when there is;
 //! - with `--upnp` (goal 16, and it needs the control plane, `--slots` and
 //!   `--players`), the UPnP AV media renderers' `4 + W` threads
 //!   (`chorus_server::upnp`): `upnp-ssdp`, `upnp-acceptor`, `upnp-events`,
@@ -809,7 +812,10 @@ fn main() -> ExitCode {
     let keep = Arc::new(AtomicBool::new(true));
     // What the slots' own inputs are made of, before the audio thread
     // exists: every chime rendered at this server's format, and one line-in
-    // port per slot (one input feeds at most one slot).
+    // port per slot. (goal 17) An input may play in any number of groups,
+    // and every group that plays one holds a slot, so at most S inputs play
+    // at once and S ports are enough; a port is one input's, however many
+    // slots cut it.
     let mut media = SlotMedia::default();
     let mut line_ins = None;
     if config.slots > 0 {
@@ -1229,6 +1235,57 @@ fn main() -> ExitCode {
             }
         });
     }
+    // (goal 16) The players, `--players` of them. Each player thread (made
+    // further down, with the rest) runs a media player (`mediaplayer`): it
+    // fetches, decodes and writes into its port when it is told to, and
+    // waits otherwise. The fetch policy is built here, once, from this
+    // server's own listeners (brief section 4.8): a media URL may never name
+    // this machine's loopback or the ports this server listens on.
+    // The renderers' HTTP port, when there is one, is one more entry in the
+    // list. `--media-allow-loopback` (tests and development) lets a URL name
+    // loopback; the server's own ports stay refused either way.
+    let media_policy = chorus_server::mediaplayer::fetch_policy(
+        &[
+            port_of(&config.listen),
+            control_port,
+            upnp_sockets.as_ref().map_or(0, |s| s.http_port()),
+        ],
+        config.media_allow_loopback,
+    );
+    if config.media_allow_loopback {
+        status.say(
+            "note media-allow-loopback: the players may fetch from this machine's loopback \
+             (tests and development only)",
+        );
+    }
+    let (players, player_drivers) =
+        chorus_server::mediaplayer::Players::new(player_ports.len(), media_policy);
+    let players = Arc::new(players);
+    // (goal 17) The player sessions: ONE table for every caller that plays a
+    // URL in a room (the UPnP renderers, and an alarm whose source is a
+    // stored stream URL), made here, before the conductor, so the alarm path
+    // works with `--upnp` off. The players have one report stream: with
+    // `--upnp` the renderers' manager takes it (below); without, the
+    // conductor does, on the thread it already is. No thread is added.
+    let player_sessions = match (control.as_ref(), players.is_empty()) {
+        (Some((_, state)), false) => {
+            let status = status.clone();
+            let prefix = if upnp_sockets.is_some() {
+                "upnp"
+            } else {
+                "media"
+            };
+            Some(Arc::new(
+                chorus_server::playersessions::PlayerSessions::new(
+                    Arc::clone(state),
+                    Arc::clone(&players),
+                    Box::new(move |line: &str| status.say(&format!("{} {}", prefix, line))),
+                ),
+            ))
+        }
+        _ => None,
+    };
+
     // The control plane's whole thread population, created here, on this
     // thread, which holds no real-time policy for any of them to inherit, and
     // before the scheduling report below. Nothing a subscriber does creates a
@@ -1263,6 +1320,18 @@ fn main() -> ExitCode {
             )
             .with_transports(transports.clone())
             .with_players(player_ports.len());
+            if let Some(sessions) = &player_sessions {
+                // The reports are this thread's only when no renderer will
+                // take them.
+                let reports = if upnp_sockets.is_some() {
+                    None
+                } else {
+                    players.take_reports()
+                };
+                conductor = conductor.with_stored_streams(
+                    chorus_server::conductor::StoredStreams::new(Arc::clone(sessions), reports),
+                );
+            }
             if let Some(relay) = &tv_relay {
                 conductor = conductor.with_tv_relay(Arc::clone(relay));
             }
@@ -1335,31 +1404,8 @@ fn main() -> ExitCode {
 
     // (goal 16) The player threads: one ordinary thread per `--players`
     // port, created here with the rest and counted below, whether or not
-    // anything ever plays. Each runs a media player (`mediaplayer`): it
-    // fetches, decodes and writes into its port when it is told to, and
-    // waits otherwise. The fetch policy is built here, once, from this
-    // server's own listeners (brief section 4.8): a media URL may never name
-    // this machine's loopback or the ports this server listens on. A later
-    // The renderers' HTTP port, when there is one, is one more entry in the
-    // list. `--media-allow-loopback` (tests and development) lets a URL name
-    // loopback; the server's own ports stay refused either way.
-    let media_policy = chorus_server::mediaplayer::fetch_policy(
-        &[
-            port_of(&config.listen),
-            control_port,
-            upnp_sockets.as_ref().map_or(0, |s| s.http_port()),
-        ],
-        config.media_allow_loopback,
-    );
-    if config.media_allow_loopback {
-        status.say(
-            "note media-allow-loopback: the players may fetch from this machine's loopback \
-             (tests and development only)",
-        );
-    }
-    let (players, player_drivers) =
-        chorus_server::mediaplayer::Players::new(player_ports.len(), media_policy);
-    let players = Arc::new(players);
+    // anything ever plays. Their players and the fetch policy were made
+    // above, before the conductor (goal 17).
     let player_threads =
         chorus_server::player::spawn(&player_ports, player_drivers, &keep, &registry, &ready);
 
@@ -1370,14 +1416,18 @@ fn main() -> ExitCode {
     // moment to say byebye for every renderer.
     let mut upnp_threads = 0usize;
     let mut _upnp_farewell = None;
-    if let (Some(sockets), Some(state)) = (upnp_sockets.take(), control_state.as_ref()) {
+    if let (Some(sockets), Some(state), Some(sessions)) = (
+        upnp_sockets.take(),
+        control_state.as_ref(),
+        player_sessions.as_ref(),
+    ) {
         if let Some(reports) = players.take_reports() {
             let upnp = chorus_server::upnp::Upnp::new(
                 sockets,
                 &config.upnp,
                 upnp_identity,
                 Arc::clone(state),
-                Arc::clone(&players),
+                Arc::clone(sessions),
                 reports,
                 chorus_server::upnp::Hooks {
                     // (goal 17) What kind each offered input is, for the

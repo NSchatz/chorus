@@ -38,6 +38,7 @@ package(chorus-server) & (
     | binary(regress_0031_f1) | binary(dsp_end_to_end) | binary(front_panel)
     | binary(cec_tv) | binary(fifo_source) | binary(player_port) | binary(media_player)
     | binary(upnp_control_point) | binary(openhome_control_point)
+    | (binary(line_in_sharing) & test(~a_second_group_sharing))
 )
 '''
 test-group = "wall-clock"

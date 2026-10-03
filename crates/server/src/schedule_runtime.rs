@@ -36,6 +36,16 @@
 //!   [`AUTOPLAY_HOLD_MS`], and restores what its rooms played; otherwise it is
 //!   a signal gone, hold and all. TV on is an ordinary signal: autoplay's
 //!   `take` already takes the target room out of any group it was in.
+//! - [`Runtime::on_alarm_source_started`] and
+//!   [`Runtime::on_alarm_source_failed`] (goal 17): the answers to
+//!   [`Effect::PlayStored`] and [`Effect::PlaySpotify`]. An alarm whose
+//!   source is a stored source (`stored:<id>`) cannot be played by the room
+//!   model alone: something outside this module (a network media player, a
+//!   Soloist receiver) has to start, and it can fail at once or minutes
+//!   later. The alarm fires in silence, asks for the play with an effect,
+//!   and is told either which source its group plays now (the player, the
+//!   receiver) or that it failed, when it rings the fallback chime with the
+//!   reason given: an alarm must still wake.
 //!
 //! # The effects, and the order they come in
 //!
@@ -53,6 +63,11 @@
 //! 6. [`Effect::Persist`]: a persisted fact changed (membership, a volume at
 //!    rest, a one-shot alarm disabled); write the state file. Ramp steps do not
 //!    ask for it; the end of a ramp does.
+//!
+//! (goal 17) [`Effect::PlayStored`], [`Effect::PlaySpotify`] and
+//! [`Effect::StopStored`] come with the log lines, first: they are requests
+//! to the conductor, which answers a play through the two entry points above
+//! after it has carried out the rest.
 //!
 //! Quieter first and louder last is what keeps a source change from being
 //! heard at the wrong level: an alarm firing in a room playing music at half
@@ -76,7 +91,9 @@
 
 use std::collections::BTreeMap;
 
-use chorus_control::rooms::{Alarm as AlarmConfig, CivilTime, ClockTime, InputId, Source};
+use chorus_control::rooms::{
+    Alarm as AlarmConfig, CivilTime, ClockTime, InputId, InputRole, Source, StoredKind,
+};
 use chorus_control::{Command, Volume, Zones};
 use chorus_schedule::{
     due_between, Alarm as AlarmSchedule, Chime, Days, Ramp, SleepTimer, TimeOfDay, Zone,
@@ -168,6 +185,53 @@ pub enum Effect {
     },
     /// A persisted fact changed: write the state file.
     Persist,
+    /// (goal 17) A ringing alarm's source is a stored stream URL: play it on
+    /// a network media player (`PlayerSessions::play_held`, owner
+    /// `alarm:<alarm>`, via `alarm`). The conductor answers with
+    /// [`Runtime::on_alarm_source_started`] naming the player source, or
+    /// [`Runtime::on_alarm_source_failed`] with a reason (no player, a
+    /// refused URL, a fetch or decode failure, at once or later).
+    PlayStored {
+        /// The alarm.
+        alarm: String,
+        /// The alarm's target: the group that rings.
+        target: String,
+        /// The stored source's id.
+        stored: String,
+        /// The `http` or `https` URL.
+        url: String,
+        /// The stored source's name: the title the room shows.
+        name: String,
+    },
+    /// (goal 17) THE SEAM FOR THE SPOTIFY ALARM SOURCE, filled by the
+    /// Soloist server track. A ringing alarm's source is a stored Spotify
+    /// URI and Soloist alarms are switched on
+    /// ([`Runtime::set_soloist_alarms`]): play it on the target's receiver.
+    /// Whoever carries it out answers exactly as for [`Effect::PlayStored`]:
+    /// [`Runtime::on_alarm_source_started`] with the receiver's source once
+    /// it plays, or [`Runtime::on_alarm_source_failed`] with one of
+    /// `soloist-unavailable`, `soloist-logged-out`, `soloist-expired`,
+    /// `soloist-timeout`. Until that track lands the conductor answers
+    /// `soloist-unavailable` at once, and the switch is off, so the runtime
+    /// never emits this and rings the chime with reason `soloist-off`.
+    PlaySpotify {
+        /// The alarm.
+        alarm: String,
+        /// The alarm's target: the group that rings.
+        target: String,
+        /// The stored source's id.
+        stored: String,
+        /// The Spotify URI.
+        uri: String,
+        /// The stored source's name.
+        name: String,
+    },
+    /// (goal 17) The alarm no longer plays what was started for it (it
+    /// ended, or its rooms were taken): stop it and give it back.
+    StopStored {
+        /// The alarm.
+        alarm: String,
+    },
 }
 
 /// What a room was doing before the runtime took it, to put it back.
@@ -223,6 +287,22 @@ struct Ringing {
     end_ns: Option<u64>,
     /// Set once it is ending: when the end fade is over.
     ending_until: Option<u64>,
+    /// (goal 17) The stored source it plays or waits for, by id.
+    stored: Option<String>,
+    /// (goal 17) Whether it still waits to be told its stored source
+    /// started ([`Runtime::on_alarm_source_started`]); its group plays
+    /// nothing until then.
+    waiting: bool,
+}
+
+/// What an alarm plays when it fires.
+enum Plan {
+    /// A source the room model plays itself.
+    Plays(Source),
+    /// The fallback chime, and why.
+    Fallback(&'static str),
+    /// (goal 17) A stored source something outside has to start.
+    Stored(chorus_control::rooms::StoredSource),
 }
 
 /// A line-in autoplay started.
@@ -279,6 +359,9 @@ pub struct Runtime {
     hint: BTreeMap<String, u16>,
     persist: bool,
     logs: Vec<Effect>,
+    /// (goal 17) Whether a stored Spotify URI is played at all
+    /// (`--soloist-alarms`; off by default, P7).
+    soloist_alarms: bool,
 }
 
 fn vol(thousandths: u16) -> Volume {
@@ -325,7 +408,114 @@ impl Runtime {
             hint: BTreeMap::new(),
             persist: false,
             logs: Vec::new(),
+            soloist_alarms: false,
         }
+    }
+
+    /// (goal 17) THE SEAM FOR THE SPOTIFY ALARM SOURCE, filled by the
+    /// Soloist server track: switch stored Spotify URIs on as alarm sources
+    /// (`--soloist-alarms`). Off, which is how every server starts, an alarm
+    /// whose source is one rings the fallback chime with reason
+    /// `soloist-off`; on, it fires in silence and asks with
+    /// [`Effect::PlaySpotify`].
+    pub fn set_soloist_alarms(&mut self, on: bool) {
+        self.soloist_alarms = on;
+    }
+
+    /// (goal 17) The stored source a ringing alarm plays or waits for.
+    pub fn alarm_stored(&self, alarm: &str) -> Option<&str> {
+        self.ringing
+            .iter()
+            .find(|r| r.id == alarm)
+            .and_then(|r| r.stored.as_deref())
+    }
+
+    /// (goal 17) The answer to [`Effect::PlayStored`] or
+    /// [`Effect::PlaySpotify`]: what was asked for is ready, and `source`
+    /// (`player:<id>` today; the receiver's source when the Soloist server
+    /// track lands) is what the alarm's group plays from now. Returns whether
+    /// the alarm took it: `false` when it no longer rings, is ending, was
+    /// not waiting, or the room model refused the source (the alarm then
+    /// rings the fallback chime, reason `source-refused`); the caller then
+    /// gives the player or the receiver back.
+    pub fn on_alarm_source_started(
+        &mut self,
+        alarm: &str,
+        source: Source,
+        now_mono_ns: u64,
+        zones: &mut Zones,
+    ) -> (bool, Vec<Effect>) {
+        let at = self
+            .ringing
+            .iter()
+            .position(|r| r.id == alarm && r.waiting && r.ending_until.is_none());
+        let Some(at) = at else {
+            return (false, self.finish(now_mono_ns, zones));
+        };
+        let group = self.ringing[at].group.clone();
+        if members(&group, zones).is_empty() || zones.source(&group) != self.ringing[at].source {
+            // Its group plays something else now: a person chose.
+            return (false, self.finish(now_mono_ns, zones));
+        }
+        if let Err(refusal) = zones.set_group_source(&group, source.clone()) {
+            self.fall_back(at, "source-refused", &refusal.detail, zones);
+            return (false, self.finish(now_mono_ns, zones));
+        }
+        self.ringing[at].source = source.clone();
+        self.ringing[at].waiting = false;
+        let line = format!(
+            "schedule alarm={} started stored={} plays={}",
+            alarm,
+            self.ringing[at].stored.as_deref().unwrap_or("-"),
+            source.literal()
+        );
+        self.log(line);
+        (true, self.finish(now_mono_ns, zones))
+    }
+
+    /// (goal 17) The other answer: what the alarm's stored source needed
+    /// could not start, or stopped (`reason` is one word for the log,
+    /// `detail` the fetcher's, the decoder's or the receiver's own). The
+    /// alarm rings the fallback chime from now. Nothing happens for an alarm
+    /// that no longer rings, is ending, or plays no stored source.
+    pub fn on_alarm_source_failed(
+        &mut self,
+        alarm: &str,
+        reason: &str,
+        detail: &str,
+        now_mono_ns: u64,
+        zones: &mut Zones,
+    ) -> Vec<Effect> {
+        let at = self
+            .ringing
+            .iter()
+            .position(|r| r.id == alarm && r.stored.is_some() && r.ending_until.is_none());
+        if let Some(at) = at {
+            self.fall_back(at, reason, detail, zones);
+        }
+        self.finish(now_mono_ns, zones)
+    }
+
+    /// Ringing alarm `at` plays the fallback chime instead of its stored
+    /// source, when its group still plays what the alarm gave it.
+    fn fall_back(&mut self, at: usize, reason: &str, detail: &str, zones: &mut Zones) {
+        let fallback = Source::Chime(FALLBACK_CHIME.name().to_string());
+        let group = self.ringing[at].group.clone();
+        if !members(&group, zones).is_empty() && zones.source(&group) == self.ringing[at].source {
+            let _ = zones.set_group_source(&group, fallback.clone());
+        }
+        let wanted = self.ringing[at].stored.take().unwrap_or_default();
+        self.ringing[at].source = fallback.clone();
+        self.ringing[at].waiting = false;
+        let line = format!(
+            "schedule alarm={} fallback=chime reason={} wanted=stored:{} plays={} detail=\"{}\"",
+            self.ringing[at].id,
+            reason,
+            wanted,
+            fallback.literal(),
+            detail.replace('"', "'")
+        );
+        self.log(line);
     }
 
     /// The alarms ringing now, ending ones included, by id.
@@ -408,6 +598,19 @@ impl Runtime {
             Command::AlarmDelete { alarm } => {
                 self.end_alarm(alarm, &[], now_mono_ns, "deleted", zones)
             }
+            // (goal 17) An input labelled a streamer while its signal is
+            // present plays now, as its signal appearing would: the label is
+            // the rule.
+            Command::InputLabel(label)
+                if label.role == InputRole::Streamer
+                    && zones.inputs().contains(&label.input)
+                    && !self.playing.iter().any(|p| p.input == label.input) =>
+            {
+                let input = label.input.clone();
+                if let Some(target) = self.autoplay_target(&input, zones) {
+                    self.start_autoplay(&input, &target, zones);
+                }
+            }
             Command::Sleep { target, minutes } => {
                 let reason = if *minutes == 0 { "sleep-0" } else { "replaced" };
                 self.cancel_sleep(target, &[], reason, zones);
@@ -461,13 +664,8 @@ impl Runtime {
                     );
                     self.log(line);
                 }
-            } else if let Some(rule) = zones
-                .autoplay_rules()
-                .iter()
-                .find(|r| r.input == *input && r.enabled)
-                .cloned()
-            {
-                self.start_autoplay(input, &rule.target, zones);
+            } else if let Some(target) = self.autoplay_target(input, zones) {
+                self.start_autoplay(input, &target, zones);
             }
         } else {
             zones.withdraw_input(input);
@@ -903,33 +1101,60 @@ impl Runtime {
         self.last_utc = Some(utc);
     }
 
-    /// What the alarm will actually play, and why not its own source.
-    fn alarm_source(config: &AlarmConfig, zones: &Zones) -> (Source, Option<&'static str>) {
-        let fallback = Source::Chime(FALLBACK_CHIME.name().to_string());
+    /// What the alarm will actually play, or why not its own source.
+    fn alarm_plan(&self, config: &AlarmConfig, zones: &Zones) -> Plan {
         match &config.source {
             Source::Chime(name) if Chime::from_name(name).is_some() => {
-                (config.source.clone(), None)
+                Plan::Plays(config.source.clone())
             }
-            Source::Chime(_) => (fallback, Some("unknown-chime")),
-            Source::LineIn(input) => {
-                let busy = zones
-                    .formed_groups()
-                    .iter()
-                    .any(|g| g.id != config.target && zones.source(&g.id) == config.source);
-                if !zones.inputs().contains(input) {
-                    (fallback, Some("not-offered"))
-                } else if busy {
-                    // One input feeds at most one group.
-                    (fallback, Some("input-busy"))
-                } else {
-                    (config.source.clone(), None)
-                }
+            Source::Chime(_) => Plan::Fallback("unknown-chime"),
+            // (goal 17) An input plays in any number of groups: one another
+            // group already plays is played here too.
+            Source::LineIn(input) if zones.inputs().contains(input) => {
+                Plan::Plays(config.source.clone())
             }
-            Source::Stream => (Source::Stream, None),
-            Source::None => (fallback, Some("source-none")),
+            Source::LineIn(_) => Plan::Fallback("not-offered"),
+            Source::Stream => Plan::Plays(Source::Stream),
+            Source::None => Plan::Fallback("source-none"),
             // (goal 16) What a player plays is its control point's to say;
             // an alarm has no media to hand it, so it rings the bell.
-            Source::Player(_) => (fallback, Some("player-source")),
+            Source::Player(_) => Plan::Fallback("player-source"),
+            // (goal 17) A stored source: a stream URL is played by a player
+            // the conductor starts; a Spotify URI by a Soloist receiver, and
+            // only when the server was told to (off by default, P7).
+            Source::Stored(id) => match zones.stored_source(id) {
+                None => Plan::Fallback("not-stored"),
+                Some(stored) => match stored.kind {
+                    StoredKind::Url => Plan::Stored(stored.clone()),
+                    StoredKind::Spotify if self.soloist_alarms => Plan::Stored(stored.clone()),
+                    StoredKind::Spotify => Plan::Fallback("soloist-off"),
+                },
+            },
+        }
+    }
+
+    /// (goal 17) Where an input with a signal autoplays: its rule's target
+    /// when it has an enabled rule; nowhere when its rule is disabled; and
+    /// with no rule at all, a `streamer` plays into its endpoint's own room
+    /// (the role's default), any other input nowhere.
+    fn autoplay_target(&mut self, input: &InputId, zones: &Zones) -> Option<String> {
+        if let Some(rule) = zones.autoplay_rules().iter().find(|r| r.input == *input) {
+            return rule.enabled.then(|| rule.target.clone());
+        }
+        let label = zones.input_label(input)?;
+        if label.role != InputRole::Streamer {
+            return None;
+        }
+        match zones.room_of_endpoint(&input.endpoint) {
+            Some(room) => Some(room.to_string()),
+            None => {
+                self.log(format!(
+                    "schedule autoplay input={} role=streamer: its endpoint is in no room; \
+                     not played",
+                    input.literal()
+                ));
+                None
+            }
         }
     }
 
@@ -942,16 +1167,23 @@ impl Runtime {
             ));
             return;
         }
-        let (source, fallback) = Runtime::alarm_source(config, zones);
-        if let Some(reason) = fallback {
-            self.log(format!(
-                "schedule alarm={} fallback=chime reason={} wanted={} plays={}",
-                config.id,
-                reason,
-                config.source.literal(),
-                source.literal()
-            ));
-        }
+        let chime = Source::Chime(FALLBACK_CHIME.name().to_string());
+        let (source, stored) = match self.alarm_plan(config, zones) {
+            Plan::Plays(source) => (source, None),
+            Plan::Fallback(reason) => {
+                self.log(format!(
+                    "schedule alarm={} fallback=chime reason={} wanted={} plays={}",
+                    config.id,
+                    reason,
+                    config.source.literal(),
+                    chime.literal()
+                ));
+                (chime, None)
+            }
+            // Silence until the conductor says the player (or the receiver)
+            // plays; the ramp runs meanwhile.
+            Plan::Stored(stored) => (Source::None, Some(stored)),
+        };
         let owner = Owner::Alarm(config.id.clone());
         self.hold(&owner, &rooms, zones);
         let take = Command::Take {
@@ -1000,6 +1232,8 @@ impl Runtime {
             end_ns: (config.duration_min > 0)
                 .then(|| now + u64::from(config.duration_min) * 60 * NS_PER_S),
             ending_until: None,
+            stored: stored.as_ref().map(|s| s.id.clone()),
+            waiting: stored.is_some(),
         });
         self.persist = true;
         self.log(format!(
@@ -1007,10 +1241,33 @@ impl Runtime {
             config.id,
             at,
             rooms.join(","),
-            source.literal(),
+            if stored.is_some() {
+                config.source.literal()
+            } else {
+                source.literal()
+            },
             config.volume.literal(),
             config.ramp_s
         ));
+        if let Some(stored) = stored {
+            let (alarm, target) = (config.id.clone(), config.target.clone());
+            self.logs.push(match stored.kind {
+                StoredKind::Url => Effect::PlayStored {
+                    alarm,
+                    target,
+                    stored: stored.id,
+                    url: stored.value,
+                    name: stored.name,
+                },
+                StoredKind::Spotify => Effect::PlaySpotify {
+                    alarm,
+                    target,
+                    stored: stored.id,
+                    uri: stored.value,
+                    name: stored.name,
+                },
+            });
+        }
     }
 
     fn step_alarms(&mut self, now: u64, zones: &mut Zones) {
@@ -1098,6 +1355,11 @@ impl Runtime {
         let _ = zones.set_alarm_ringing(id, false);
         if !members(&ring.group, zones).is_empty() && zones.source(&ring.group) == ring.source {
             let _ = zones.set_group_source(&ring.group, Source::None);
+        }
+        if ring.stored.is_some() {
+            self.logs.push(Effect::StopStored {
+                alarm: ring.id.clone(),
+            });
         }
         let rooms = self.release(&Owner::Alarm(ring.id.clone()), zones);
         let names: Vec<String> = rooms.iter().map(|(r, _)| r.clone()).collect();
@@ -1221,20 +1483,21 @@ impl Runtime {
 
     fn start_autoplay(&mut self, input: &InputId, target: &str, zones: &mut Zones) {
         let line_in = Source::LineIn(input.clone());
-        if let Some(g) = zones
-            .formed_groups()
-            .into_iter()
-            .find(|g| zones.source(&g.id) == line_in)
-        {
-            self.log(format!(
-                "schedule autoplay input={} already plays in group={}; not taken",
-                input.literal(),
-                g.id
-            ));
-            return;
-        }
         let rooms = Runtime::target_rooms(target, zones);
         if rooms.is_empty() {
+            return;
+        }
+        // (goal 17) An input plays in any number of groups, so another
+        // group playing it is no reason to hold back; only a target that
+        // already plays it, exactly as the take would leave it, is left as
+        // the person who chose it made it (nothing to hold, nothing to
+        // restore).
+        if members(target, zones) == rooms && zones.source(target) == line_in {
+            self.log(format!(
+                "schedule autoplay input={} already plays in its target={}; not taken",
+                input.literal(),
+                target
+            ));
             return;
         }
         let owner = Owner::Autoplay(input.clone());
@@ -1418,18 +1681,25 @@ impl Runtime {
             .map(|r| r.id.clone())
             .collect();
         for id in orphaned {
+            if self
+                .ringing
+                .iter()
+                .any(|r| r.id == id && r.stored.is_some())
+            {
+                self.logs.push(Effect::StopStored { alarm: id.clone() });
+            }
             self.ringing.retain(|r| r.id != id);
             let _ = zones.set_alarm_ringing(&id, false);
             self.log(format!("schedule alarm={} ended: its rooms were taken", id));
         }
-        let groups = zones.formed_groups();
+        // (goal 17) Its own group, not any group: another group sharing the
+        // input does not keep an autoplay whose target stopped playing it.
         let silent: Vec<InputId> = self
             .playing
             .iter()
             .filter(|p| {
-                !groups
-                    .iter()
-                    .any(|g| zones.source(&g.id) == Source::LineIn(p.input.clone()))
+                members(&p.group, zones).is_empty()
+                    || zones.source(&p.group) != Source::LineIn(p.input.clone())
             })
             .map(|p| p.input.clone())
             .collect();
@@ -1438,7 +1708,7 @@ impl Runtime {
             let owner = Owner::Autoplay(input.clone());
             self.holds.retain(|_, h| h.owner != owner);
             self.log(format!(
-                "schedule autoplay input={} ended: no group plays it",
+                "schedule autoplay input={} ended: its target no longer plays it",
                 input.literal()
             ));
         }

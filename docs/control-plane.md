@@ -146,6 +146,19 @@ The spelling is the catalog's; which chimes exist, which inputs are offered and
 which players the server runs is the server runtime's, and the state lists the
 offered inputs as `inputs`.
 
+**A line-in plays in any number of groups** (goal 17). `take` with a
+`line-in:` source that another formed group already plays is not refused and
+moves nothing: both groups play it, from the one start of the input, and each
+shows it as its `source`. It stays started while any group plays it.
+
+**`stored:<id>` is an alarm's source, never a group's** (goal 17). It names a
+stored source (below): a stream URL or a Spotify URI a person entered once.
+An `alarm_set` may carry it; a `take` that does is refused, field `source`
+(`'stored:morning-radio' is a stored source, which only an alarm plays
+(alarm_set with this source); a take cannot name one`). There is no command
+that plays a URL in a room (brief section 4.8, ADR 0124): the group of a
+ringing alarm plays the `player:<id>` the server gave it, and says so.
+
 **A player plays in at most one group** (goal 16). A `take` that names a player
 another formed group is playing is refused, field `source`, naming that group;
 so is one naming a player the server does not run (`there is no player 'p7' on
@@ -162,7 +175,10 @@ or buffering, and what is driving the player (`via`). It is a fact about now:
 the server's runtime sets it, no command does, and it is never persisted. A
 group has one only while its source is a player source; it moves with the
 source when groups re-form and is gone the moment the group plays anything
-else or is no longer formed.
+else or is no longer formed. (goal 17) One more group has a record, which
+the room model writes itself: a group playing a line-in labelled as a
+`streamer` (below) shows the label's name as `title`, `state` `playing` and
+`via` `streamer`, for as long as it plays that input.
 
 A **speaker** (v2, goal 14) is an endpoint this server has adopted: the id
 its audio sessions authenticate as, pinned to its key on its first handshake
@@ -359,6 +375,9 @@ give them.
 | `sound` | `zone`, optional `bass`, `treble` (whole dB, -10 to 10), `loudness`, `night`, `speech` (booleans) | changes the fields it carries; an absent one keeps what the room had |
 | `bass_management` | `zone`, optional `crossover_hz` (40 to 200), `sub_level_db` (-12.00 to 6.00, two places), `sub_polarity` (`"normal"` or `"inverted"`) | the same, partial |
 | `room_eq` | `zone`, optional `filters`: `[{"freq_hz","gain_db","q"}]` at most 8, optional `enabled` | `filters` replaces the room's (`[]` clears them); `enabled` turns them on or off and keeps them |
+| `source_store` | `id`, `kind` (`"url"` or `"spotify"`), `value`, `name` | (goal 17) stores or replaces a stored source, which an alarm names as `stored:<id>`; below |
+| `source_forget` | `id` | (goal 17) forgets a stored source; refused while an alarm plays it |
+| `input_label` | `input` (`<endpoint>/<input>`), `name`, `role` (`"line-in"` or `"streamer"`) | (goal 17) names an input and says what is wired to it; an empty `name` with `role` `line-in` removes the label; below |
 
 ```json
 {"v":2,"t":"bond","zone":"living","members":[{"endpoint":"endpoint-a","role":"FL"},{"endpoint":"endpoint-b","role":"FR"}]}
@@ -637,6 +656,45 @@ restart, so a rollback is still shown after the speaker's next `idle`.
 The end-to-end tests are `crates/server/tests/firmware_install.rs`, the first
 of them `nothing_installs_until_the_explicit_install_action`.
 
+### Stored sources and input labels (goal 17)
+
+```json
+{"v":2,"t":"source_store","id":"morning-radio","kind":"url","value":"https://radio.example/stream.mp3","name":"Morning radio"}
+{"v":2,"t":"source_store","id":"wake-playlist","kind":"spotify","value":"spotify:playlist:37i9dQZF1DXexample0000","name":"Wake up"}
+{"v":2,"t":"source_forget","id":"morning-radio"}
+{"v":2,"t":"input_label","input":"endpoint-c/line-1","name":"Living room streamer","role":"streamer"}
+```
+
+A **stored source** is the one way a URL enters the server through this
+catalog, and only an alarm plays it (`"source":"stored:<id>"` in `alarm_set`;
+`docs/inputs.md` says how it is played and what happens when it cannot be).
+`kind` `url`: `value` is `http://` or `https://` followed by a host, holds no
+control character, space, quote or backslash, and is at most 2048 bytes
+(ASSUMED bound, the art URL's). The scheme and the shape are checked when it
+is stored, field `value`; whether the server may fetch it is the fetch
+policy's to say when the alarm rings (`docs/streams.md`), not when it is
+stored, because the answer depends on where the name resolves that morning.
+`kind` `spotify`: `value` is `spotify:<track|album|playlist|episode>:<id>`,
+the id 1 to 64 ASCII letters and digits; it is stored and validated here and
+played by a Soloist receiver, which ships switched off. `name` is a display
+name. At most 32 are held. An `alarm_set` naming a stored source that does
+not exist is refused, field `source`, listing the ones that do; a
+`source_forget` of one an alarm plays is refused, field `id`, naming the
+alarms. The state lists them, values and all, as `stored_sources`: whoever
+can read the state can read a stored URL, so a URL with a credential in it
+is a credential every subscriber sees.
+
+An **input label** is a person's name for an input and what is wired to it.
+The role `line-in` is any input; `streamer` says a bought network streamer
+(the box that carries the licensed receivers chorus does not implement, K60)
+is wired to it. A `streamer` input plays into its endpoint's own room when
+its signal appears, with no `autoplay` rule (an `autoplay` rule for the
+input, enabled or not, is the person's word and wins); the groups playing it
+show the label (`now_playing`, `via` `streamer`); and it is shared to any
+group like any line-in. There is no microphone role (brief section 4.8). A
+label is configuration: it is kept whether or not the input is offered now,
+and at most 32 are held. The state lists them as `input_labels`.
+
 ### Take the room (K78)
 
 `take` moves every room of the target out of whatever group it is in and into
@@ -709,6 +767,8 @@ of each, `fixtures/control/v2/state-empty.json` the empty house):
 | `sleep[]` | the sleep timers asked for, sorted by target: `target`, `minutes` |
 | `autoplay[]` | sorted by input: `autoplay`'s fields |
 | `inputs[]` | the line-ins offered now, as `<endpoint>/<input>`, sorted |
+| `stored_sources[]` | (goal 17) **written only when there is at least one**, after `inputs`: every stored source, sorted by id: `id`, `kind`, `value`, `name` |
+| `input_labels[]` | (goal 17) **written only when there is at least one**, after `stored_sources`: every label, sorted by input: `input`, `name`, `role` |
 | `speakers[]` | (goal 14) **written only when there is at least one**: every adopted speaker, sorted by id: `id`, `name`, `named`, `room` (the assigned room, or `null`), then what is true now: `present` (a session of it is up), `software` (its latest `hello`'s, `""` before one), `link` (what it reported with `attach`, as in `endpoints[]`; `unknown` for an endpoint with no control client), `key` (the fingerprint of its pinned key), `roles` (its latest `hello`'s, by name) |
 | `key_changes[]` | (goal 14) **written only when there is at least one**: every handshake refused for a changed key since the server started, the latest per id, sorted by id: `id`, `pinned`, `offered` (fingerprints) |
 | `speakers[].firmware` | (goal 14) **written only once the speaker has reported** (its session declared `ota` and sent a `firmware_status`), after `roles`: `version`, `board`, `slot` (0, 1 or `null`) it runs, `state`, `reason` (`none` or the reason by name), `update_available` (a verified staged image for its board with another version; derived, never stored), and the install the state is about: `image` (the staged name, `null` when none or when this server did not start it), `image_version`, `received` and `size` (bytes; the progress). Never persisted |
@@ -724,6 +784,10 @@ record carry neither `now_playing` nor, on the room, `source`, so every vector
 committed before it is the bytes it was, and
 `fixtures/control/v2/state-playing.json` pins a house where two groups have a
 record, one plays a player nothing was said about, and one plays the stream.
+And for goal 17's two members, which come after `inputs` and before
+`speakers`: `fixtures/control/v2/state-inputs.json` pins a house with two
+stored sources, an alarm that plays one, and a labelled streamer two groups
+play at once, each showing its label.
 
 **The now-playing record's bounds.** The server holds what it is told to
 these, and the state never carries more: a title, artist or album has every
@@ -1002,8 +1066,14 @@ rules the catalog configures (ADR 0079 wires it):
   60 s late (a server that was down). A ringing alarm takes its target (K78)
   with its source, sets its rooms to 0 and ramps them to its volume over
   `ramp_s`, clamped to each room's effective limit all the way; a source that
-  cannot play (a line-in not offered, or played by another group) plays the
-  `bell` chime instead. It ends after `duration_min`, on `alarm_stop` or
+  cannot play (a line-in not offered, a chime that does not exist, `none`, a
+  `player:<id>`, a stored source that cannot be played) plays the `bell`
+  chime instead, with the reason in the log (`schedule alarm=<id>
+  fallback=chime reason=<why>`). A line-in another group already plays is
+  played here too (goal 17: there is no `input-busy` any more). A stored
+  source (`stored:<id>`, goal 17) fires in silence while the server starts
+  what plays it, then the group plays that (`docs/inputs.md`, "An alarm with
+  a stored source"). It ends after `duration_min`, on `alarm_stop` or
   `alarm_delete`, or when a person changes one of its rooms; then it fades
   out and the rooms go back to what they were (their group, volume, mute and
   source).
@@ -1014,7 +1084,11 @@ rules the catalog configures (ADR 0079 wires it):
   volume down to its cap (and holds an alarm's rise under it); a window ending
   raises nothing.
 - **Line-in autoplay**: an input whose signal arrives with an enabled rule
-  takes the rule's target and plays the input; when the signal goes it is held
+  takes the rule's target and plays the input (goal 17: whether or not
+  another group already plays it; only a target that already plays it,
+  exactly as the take would leave it, is left alone, with nothing held and
+  nothing to restore; and an input labelled `streamer` with no rule at all
+  plays into its endpoint's own room); when the signal goes it is held
   30 s (on top of the endpoint's own 2 s), then stopped and the target
   restored; the signal coming back within the hold cancels the stop. A
   person's command that changes what a held room plays or where it is
@@ -1043,18 +1117,29 @@ an endpoint's own session. The server starts it (`source_control` start, PCM,
 in that session) while some group plays it and stops it when none does; the
 input's `stream_format` must be the server's own format or it is stopped and
 refused by name (`line-in refused reason=format-mismatch`). Its chunks go into
-one of S fixed ports (at most S line-ins stream at once), each holding one
-second; the audio thread plays a port through the latency-growth plan and the
+one of S fixed ports, each holding one second. (goal 17) A port is one
+INPUT's, however many groups play it: every slot whose group plays the input
+cuts the same port's chunk at each tick, so the groups hear the same samples
+on the same grid, and since every group playing an input holds a slot, at
+most S inputs stream at once and S ports are enough; the audio thread plays a port through the latency-growth plan and the
 cubic resampler (`crates/sync/src/latency_grow.rs`, ADR 0071) once it holds
 two chunks. The chunks go out on the slots' ONE grid (the same sequence and
 timestamp as every other slot), so moving into or out of a line-in's group is
 no timestamp jump; what the plan moves is which source frames each chunk
-carries. While the group is only the source endpoint's own room the line-in
-plays at L_local (30 ms, ASSUMED); once another room joins, the plan grows the
-offset to the group's latency (180 ms wired, the wireless tier's 500 ms) by a
-bounded, smooth time stretch (500 ppm at most), with no frame dropped,
-repeated or zero-inserted for the room already playing, and shrinks it back
-the same way when the room is alone again (K94). A tick that finds too little
+carries. A port has ONE plan and so one latency target (goal 17): the
+largest any group listening to it needs. While the only listener is the
+source endpoint's own room, alone in its group, the line-in plays at L_local
+(30 ms, ASSUMED); once another room joins that group, or another group
+plays the input, the plan grows the offset to the largest listening group's
+latency (180 ms wired, the wireless tier's 500 ms) by a bounded, smooth time
+stretch (500 ppm at most), with no frame dropped, repeated or zero-inserted
+for the room already playing, and shrinks it back the same way when the room
+is the sole listener again (K94). A target asked for while a transition runs
+waits for it to end (ADR 0071), so a listener that comes and goes within a
+transition leaves the first room on the latency that transition reaches
+before it comes back down. The server says each change of target or of
+listeners (`line-in latency port=<p> listeners=<n> groups=<ids>
+target_ms=<ms>`). A tick that finds too little
 of the input plays silence and the plan waits (counted, `underruns=` in the
 `line-in` lines). The latency is the stamp offset on the wire; today's
 endpoints add their own playout latency on top of every stamp, so a line-in
@@ -1136,13 +1221,15 @@ phases: presets. Catalog v2 names a group's source and the inputs offered, and
 (goal 16) the state says what a player source is playing; choosing what a
 player plays (a stream URL, a service) is not a control message: it is said to
 the player by what drives it (a UPnP AV control point, `docs/upnp.md` once the
-renderer lands).
+renderer lands). (goal 17) `source_store` stores a URL and plays nothing: the
+one thing that plays a stored source is an alarm ringing, and a `take` naming
+one is refused.
 
 No firmware image travels over this channel (goal 14): a request is at most
 16 KiB and an image is megabytes. Images are staged as files in
 `--firmware-dir`, and the bytes go to a speaker inside its own audio session.
 
-## What survives a restart (state-file format 5)
+## What survives a restart (state-file format 6)
 
 The server persists, in `--state-file`, everything a person configured: each
 room's name, group, volume, mute, endpoints, `limit`, quiet-hours windows,
@@ -1150,7 +1237,10 @@ bonded set, (format 3, goal 12) its sound, bass management and correction
 filters, and (format 4, goal 13) its `tv_upmix` and `av_trim_ms`; each
 endpoint's link; saved groups; alarms; autoplay rules (with, from format 4,
 `stop_on_standby` and `low_latency`); and (format 5, goal 14) each adopted
-speaker's `name`, `named` and `room`, in a `[speaker <id>]` section. It does
+speaker's `name`, `named` and `room`, in a `[speaker <id>]` section; and
+(format 6, goal 17) each stored source (`[stored-source <id>]`: `kind`,
+`value`, `name`) and each input label (`[input-label <endpoint>/<input>]`:
+`name`, `role`). It does
 not persist what is a fact about now: which endpoints are present, which quiet
 window is active, which alarm is ringing, a running ramp, what a group is
 playing (its source and, goal 16, its now-playing record), a sleep timer,
@@ -1164,6 +1254,7 @@ before catalog v2) loads unchanged with the v2 defaults, and a format 2 file
 (goal 11's builds) with the sound defaults, and a format 3 file (goal 12's
 builds) with no trim, the upmix off and every rule's TV fields true, and a
 format 4 file (goal 13's builds) with no speaker record (the server lists
-every id it has pinned when it starts); the next write is format 5. A write goes to a temporary that is `fsync`ed, renamed over the file, and the
+every id it has pinned when it starts), and a format 5 file (goal 14 to 16's
+builds) with no stored source and no input label; the next write is format 6. A write goes to a temporary that is `fsync`ed, renamed over the file, and the
 directory is `fsync`ed, and a render that would not read back as the same state
 is never installed (`crates/control/src/persist.rs`).
