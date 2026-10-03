@@ -1,0 +1,16 @@
+# Canonical input for the catalog v2 source_store vector.
+#
+# Encoding these field values must produce exactly source_store.json, and decoding
+# source_store.json must recover exactly these field values.
+#
+# (goal 17) Store a stream URL an alarm can play as 'stored:morning-radio'.
+# The host is an RFC 2606 example name.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = source_store
+id = morning-radio
+kind = url
+value = https://radio.example/stream.mp3
+name = Morning radio

@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"source","detail":"'soloist:r0' is a Spotify receiver, which plays where the Spotify app plays it: choose the room or group as the device in the Spotify app; a command cannot name one"}

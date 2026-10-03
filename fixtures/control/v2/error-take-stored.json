@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"source","detail":"'stored:morning-radio' is a stored source, which only an alarm plays (alarm_set with this source); a take cannot name one"}

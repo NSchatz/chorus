@@ -86,7 +86,9 @@ source; no number here rests on one.
 6. **Line-ins from endpoints** (`crate::linein`, on the path). A session that declared the source
    role and sends `source_offer` offers `<endpoint>/<name>` (the name when it is a catalog
    identifier, else `line-<source_id>`, ASSUMED). The conductor starts an input by taking one of
-   S ports (one input feeds at most one group, so S is enough) and sends `start`; the input's
+   S ports (one input feeds at most one group, so S is enough; **since ADR 0129, goal 17**, an
+   input plays in any number of groups on its one port, and S is enough because every group
+   playing an input holds a slot) and sends `start`; the input's
    `stream_format` must be the server's (PCM, rate, channels, sample format) or it is stopped and
    logged `line-in refused reason=format-mismatch`; its chunks are written, converted to full
    scale 1.0, into the port's ring (`RING_MS` = 1000 ms, ASSUMED; a chunk that does not fit is

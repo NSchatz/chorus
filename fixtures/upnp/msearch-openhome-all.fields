@@ -1,0 +1,6 @@
+multicast = true
+openhome = true
+result = ok
+st = ssdp:all
+window_ms = 2000
+responses = 11

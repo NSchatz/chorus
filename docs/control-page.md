@@ -50,6 +50,14 @@ answering, and a figure reads as current only when the stream is up **and** that
 ask came back. The answer to the ask is thrown away: it is the coming back that
 is the measurement, and every figure on the page still comes from the stream.
 
+**The warning line** (goal 17). A server that runs Spotify Soloist receivers
+(`docs/soloist.md`) says in its state when the Soloist build is about to expire
+or has: `Soloist build expires in 10 days` from 14 days before, `Soloist build
+expired` after. The page shows those words beside the connection word for as
+long as the state carries them, and nothing at every other time. What to do
+about it is in `docs/soloist.md` ("When the build expires"): replace the binary,
+then `chorusctl soloist restart`.
+
 A page whose feed has dropped or stopped is not a page with nothing to say, so
 the last figures stay on screen. What changes is that they stop claiming to be
 current. The page does not need to be reloaded when the server comes back; the

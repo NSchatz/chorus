@@ -10,6 +10,13 @@
 //! (`crate::linein`), when the schedule runtime has something due, and at
 //! least every [`IDLE`]. Each pass:
 //!
+//! 0. **The players' reports** (goal 17), on a server that runs players
+//!    (`--players`) and no UPnP renderers: the conductor is then the one
+//!    that takes them (`PlayerSessions::on_report`, `reconcile`); with
+//!    `--upnp` the renderers' manager thread does. Either way a HELD session
+//!    that ended by itself (an alarm's stored stream URL that failed or ran
+//!    out, `PlayerSessions::take_ended`) is handed to the schedule runtime
+//!    here (`on_alarm_source_failed`), which rings the fallback chime.
 //! 1. **The schedule runtime** (`crate::schedule_runtime`, ADR 0076), when
 //!    this server has a control plane: every line-in event
 //!    (`on_input_signal`, `on_input_gone`), every person's command applied
@@ -19,11 +26,18 @@
 //!    `ControlState::runtime`, which plans the slots, persists and fans out
 //!    as a command does. Its effects are applied here: `Log` to the log,
 //!    `SourceControl` to the input's own session, a ramp step's
-//!    `RoomVolume` to every player of the room with its `ramp_ms`.
+//!    `RoomVolume` to every player of the room with its `ramp_ms`, and
+//!    (goal 17) `PlayStored`, `PlaySpotify` and `StopStored`: an alarm's
+//!    stored stream URL is played by an in-process
+//!    `PlayerSessions::play_held` (owner `alarm:<id>`, via `alarm`), and
+//!    whatever stops it from starting is answered to the runtime with a
+//!    reason (`no-players`, `no-free-player`, `not-started`), as a later
+//!    failure is (`url-refused`, `stream-failed`, `stream-ended`).
 //! 2. **Routing** (`--slots S`): what each stream slot plays
 //!    ([`SlotCommand`] to the audio thread, at its next chunk boundary: the
 //!    configured stream, a rendered chime, a line-in's port, a player's
-//!    port (goal 16), silence, and a line-in's latency target), and which
+//!    port (goal 16), silence, and a line-in's latency target: one per
+//!    port, the largest any group listening to it needs, goal 17), and which
 //!    slot each session hears
 //!    (`Router::move_to`, between two ticks).
 //! 3. **`room_volume`** to every player session of a room whose gain or
@@ -39,7 +53,11 @@
 //!    (`crate::router`, `docs/visualizer.md`).
 //! 6. **The TV path** (goal 13, `crate::tvrelay`): which TV inputs play in
 //!    low-latency mode, handed to the relay as a list of [`TvPlay`]s; every
-//!    other TV input stays on its slot (ADR 0079). A change of mode is one
+//!    other TV input stays on its slot (ADR 0079), and so does one that more
+//!    than one group plays (`reason=shared`, goal 17: its hub sends either
+//!    datagrams to the relay or chunks to the slots, never both, so a shared
+//!    TV input plays on the slot path for every group, the TV's own room
+//!    included, until one group is left). A change of mode is one
 //!    line, `tv-path mode=low-latency` or `tv-path mode=slot reason=<why>`.
 //!
 //! Each push is deduped against what the session was last sent
@@ -77,6 +95,8 @@ use chorus_schedule::chime::CHIMES;
 
 use crate::control::{ControlState, Snapshot};
 use crate::linein::{InputEvent, LineIns};
+use crate::mediaplayer::PlayerReport;
+use crate::playersessions::{Metadata, PlayRefused, PlayRequest, PlayerSessions};
 use crate::router::Router;
 use crate::schedule_runtime::{Effect, InputAction, Runtime};
 use crate::slots::{SlotCommand, SlotInput, LOCAL_LATENCY_NS};
@@ -100,6 +120,37 @@ pub const TICK: Duration = Duration::from_secs(1);
 /// latency, `config/sync.conf` `playout_latency_us` (ADR 0071's L_group for
 /// the wired tier); a test holds the two equal.
 pub const WIRED_GROUP_LATENCY_NS: i64 = 180_000_000;
+
+/// The epochs of an alarm's plays: above every renderer's (a renderer's
+/// epoch is its base, counted from 1, in the high half), so a report left
+/// over from a renderer's play of the same player is older than an alarm's
+/// session and ignored, and never one a renderer takes for its own.
+const ALARM_EPOCH_BASE: u64 = 0xffff_ffff_0000_0000;
+
+/// (goal 17) What plays an alarm's stored stream URL: the server's player
+/// sessions, and the players' reports when this thread is the one that
+/// takes them (a server without `--upnp`).
+pub struct StoredStreams {
+    sessions: Arc<PlayerSessions>,
+    reports: Option<Receiver<PlayerReport>>,
+    plays: u64,
+}
+
+impl StoredStreams {
+    /// Over `sessions`. `reports` is the players' one report stream
+    /// (`Players::take_reports`) when nothing else takes it; `None` when the
+    /// UPnP renderers' manager does.
+    pub fn new(
+        sessions: Arc<PlayerSessions>,
+        reports: Option<Receiver<PlayerReport>>,
+    ) -> StoredStreams {
+        StoredStreams {
+            sessions,
+            reports,
+            plays: 0,
+        }
+    }
+}
 
 /// What one pass did, for the tests and a status line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -211,8 +262,12 @@ pub struct Conductor {
     slots: Option<SyncSender<SlotCommand>>,
     /// What each slot was last told to play.
     inputs: Vec<SlotInput>,
-    /// The latency each slot's line-in was last told to grow to.
+    /// The latency each line-in port was last told to grow to.
     targets: Vec<Option<i64>>,
+    /// (goal 17) The groups last said to listen to each line-in port, for
+    /// the log: a listener joining or leaving is one line even when the
+    /// target does not move.
+    listeners: Vec<String>,
     schedule: Option<Schedule>,
     /// Each room's declared tier, for the visualizer's heard latency.
     transports: ZoneTransports,
@@ -222,6 +277,11 @@ pub struct Conductor {
     tv_modes: Vec<(chorus_control::rooms::InputId, String)>,
     /// (goal 16) How many players this server runs (`--players`).
     players: usize,
+    /// (goal 17) What plays an alarm's stored stream URL; `None` on a
+    /// server without `--players`.
+    stored: Option<StoredStreams>,
+    /// (goal 17) The Soloist receivers, on a server that runs them.
+    soloist: Option<Arc<crate::soloist::Link>>,
 }
 
 /// When an endpoint of a room on `transport` plays audio stamped `t` on the
@@ -247,18 +307,37 @@ impl Conductor {
     ) -> Conductor {
         let inputs = vec![SlotInput::Silence; router.slots()];
         let targets = vec![None; router.slots()];
+        let listeners = vec![String::new(); router.slots()];
         Conductor {
             state,
             router,
             slots,
             inputs,
             targets,
+            listeners,
             schedule: None,
             transports: ZoneTransports::default(),
             tv_relay: None,
             tv_modes: Vec::new(),
             players: 0,
+            stored: None,
+            soloist: None,
         }
+    }
+
+    /// (goal 17) This server runs Soloist receivers, reached through `link`
+    /// (`crate::soloist`): a group whose source is `soloist:r<i>` plays port
+    /// `i`, a port is told whether any group plays it, and an alarm's
+    /// stored Spotify URI is played by its target's receiver.
+    pub fn with_soloist(mut self, link: Arc<crate::soloist::Link>) -> Conductor {
+        self.soloist = Some(link);
+        self
+    }
+
+    /// (goal 17) Play alarms' stored stream URLs through `streams`.
+    pub fn with_stored_streams(mut self, streams: StoredStreams) -> Conductor {
+        self.stored = Some(streams);
+        self
     }
 
     /// (goal 16) This server runs `players` network media players
@@ -294,6 +373,16 @@ impl Conductor {
     /// runtime is next due.
     pub fn wait(&self, woken: &Receiver<()>, owed: bool, keep: &AtomicBool) -> bool {
         let mut timeout = if owed { RETRY } else { IDLE };
+        // (goal 17) While this thread takes the players' reports and an
+        // alarm's stream is live, look for them at the retry pace: a report
+        // does not wake the conductor.
+        if self
+            .stored
+            .as_ref()
+            .is_some_and(|s| s.reports.is_some() && s.sessions.any_held())
+        {
+            timeout = RETRY;
+        }
         if let Some(s) = &self.schedule {
             timeout = timeout.min(s.clocks.until(s.next_tick_ns));
         }
@@ -306,7 +395,11 @@ impl Conductor {
     /// One pass: the schedule runtime's work, then read the room model once
     /// and make every session agree with it.
     pub fn pass(&mut self) -> PassReport {
-        let effects = self.run_schedule();
+        let mut effects = self.player_events();
+        effects.extend(self.soloist_events());
+        effects.extend(self.run_schedule());
+        let answers = self.stored_requests(&effects);
+        effects.extend(answers);
         let snapshot = self.state.snapshot();
         let mut report = PassReport::default();
         self.apply_effects(&effects, &snapshot, &mut report);
@@ -394,6 +487,14 @@ impl Conductor {
             let Source::LineIn(input) = &group.source else {
                 continue;
             };
+            // (goal 17) How many groups play this input: more than one, and
+            // every one of them hears the slot path.
+            let listeners = snapshot
+                .slots
+                .iter()
+                .flatten()
+                .filter(|g| g.source == group.source)
+                .count();
             let Some((hub, _)) = line_ins.tv_source(input) else {
                 continue;
             };
@@ -418,6 +519,8 @@ impl Conductor {
                 .map_or(0, |r| r.av_trim_ms);
             let why = if !group.low_latency {
                 Some("rule")
+            } else if listeners > 1 {
+                Some("shared")
             } else if group.rooms.len() != 1 {
                 Some("grouped")
             } else if self.transports.of(&room) == Transport::Wireless {
@@ -471,6 +574,15 @@ impl Conductor {
                 (input, mode)
             })
             .collect();
+        // (goal 17) One line per input: a shared input's groups all say the
+        // same mode (`reason=shared`), so the first stands for them.
+        let mut modes = modes;
+        let mut seen: Vec<chorus_control::rooms::InputId> = Vec::new();
+        modes.retain(|(input, _)| {
+            let first = !seen.contains(input);
+            seen.push(input.clone());
+            first
+        });
         for (input, mode) in &modes {
             let known = self.tv_modes.iter().find(|(i, _)| i == input);
             if known.map(|(_, m)| m) != Some(mode) {
@@ -478,6 +590,185 @@ impl Conductor {
             }
         }
         self.tv_modes = modes;
+    }
+
+    /// (goal 17) The players' side of a pass: take their reports when this
+    /// thread is the one that does, and tell the schedule runtime of every
+    /// alarm's stream that ended by itself.
+    fn player_events(&mut self) -> Vec<Effect> {
+        let Some(streams) = self.stored.as_ref() else {
+            return Vec::new();
+        };
+        if let Some(reports) = &streams.reports {
+            while let Ok(report) = reports.try_recv() {
+                streams.sessions.on_report(&report);
+            }
+            streams.sessions.reconcile();
+        }
+        let ended = streams.sessions.take_ended();
+        let mut effects = Vec::new();
+        for end in ended {
+            let Some(alarm) = end.owner.strip_prefix("alarm:") else {
+                continue;
+            };
+            let (reason, detail) = match &end.failure {
+                None => ("stream-ended", "the stream ended"),
+                Some(why) if why.starts_with("refused:") => ("url-refused", why.as_str()),
+                Some(why) => ("stream-failed", why.as_str()),
+            };
+            effects.extend(self.alarm_source_failed(alarm, reason, detail));
+        }
+        effects
+    }
+
+    /// (goal 17) The receiver manager's answers to the alarms' Spotify
+    /// requests: a receiver that plays becomes its alarm's source (and the
+    /// manager is told whether the alarm still wanted it), and every way it
+    /// did not start rings the fallback chime with its reason.
+    fn soloist_events(&mut self) -> Vec<Effect> {
+        let Some(link) = self.soloist.clone() else {
+            return Vec::new();
+        };
+        let mut effects = Vec::new();
+        for answer in link.take_answers() {
+            match answer {
+                crate::soloist::AlarmAnswer::Started {
+                    alarm,
+                    receiver,
+                    source,
+                } => {
+                    let mut took = false;
+                    if let Some(schedule) = self.schedule.as_mut() {
+                        let (mono, _) = schedule.clocks.now();
+                        let runtime = &mut schedule.runtime;
+                        effects.extend(self.state.runtime(|zones| {
+                            let (ok, out) =
+                                runtime.on_alarm_source_started(&alarm, source, mono, zones);
+                            took = ok;
+                            out
+                        }));
+                    }
+                    link.alarm_taken(receiver, took);
+                }
+                crate::soloist::AlarmAnswer::Failed {
+                    alarm,
+                    reason,
+                    detail,
+                } => effects.extend(self.alarm_source_failed(&alarm, reason, &detail)),
+            }
+        }
+        effects
+    }
+
+    /// Tell the schedule runtime an alarm's stored source failed.
+    fn alarm_source_failed(&mut self, alarm: &str, reason: &str, detail: &str) -> Vec<Effect> {
+        let Some(schedule) = self.schedule.as_mut() else {
+            return Vec::new();
+        };
+        let (mono, _) = schedule.clocks.now();
+        let runtime = &mut schedule.runtime;
+        self.state
+            .runtime(|zones| runtime.on_alarm_source_failed(alarm, reason, detail, mono, zones))
+    }
+
+    /// (goal 17) Carry out the runtime's requests about stored sources and
+    /// answer each: what comes back is the runtime's effects for the answers.
+    fn stored_requests(&mut self, effects: &[Effect]) -> Vec<Effect> {
+        let mut answers = Vec::new();
+        for effect in effects {
+            match effect {
+                Effect::PlayStored {
+                    alarm,
+                    target,
+                    stored: _,
+                    url,
+                    name,
+                } => answers.extend(self.play_stored(alarm, target, url, name)),
+                // The Spotify alarm source: the receiver manager checks the
+                // target's receiver, sends `play` and answers later
+                // ([`Conductor::soloist_events`]). A server that runs no
+                // receiver answers the failure at once.
+                Effect::PlaySpotify {
+                    alarm, target, uri, ..
+                } => match &self.soloist {
+                    Some(link) => link.play_alarm(alarm, target, uri),
+                    None => answers.extend(self.alarm_source_failed(
+                        alarm,
+                        "soloist-unavailable",
+                        "this server runs no Soloist receiver (--soloist-receivers)",
+                    )),
+                },
+                Effect::StopStored { alarm } => {
+                    if let Some(streams) = &self.stored {
+                        streams.sessions.release_held(&format!("alarm:{}", alarm));
+                    }
+                }
+                _ => {}
+            }
+        }
+        answers
+    }
+
+    /// (goal 17) Play an alarm's stored stream URL on a player: the alarm's
+    /// group plays the player once the runtime has taken it
+    /// (`on_alarm_source_started`), and every way it cannot start is
+    /// answered with a reason, which rings the fallback chime.
+    fn play_stored(&mut self, alarm: &str, target: &str, url: &str, name: &str) -> Vec<Effect> {
+        let Some(streams) = self.stored.as_mut() else {
+            return self.alarm_source_failed(
+                alarm,
+                "no-players",
+                "this server was started without --players",
+            );
+        };
+        let Some(schedule) = self.schedule.as_mut() else {
+            return Vec::new();
+        };
+        streams.plays += 1;
+        let request = PlayRequest {
+            owner: format!("alarm:{}", alarm),
+            target: target.to_string(),
+            uri: url.to_string(),
+            mime: None,
+            via: "alarm".to_string(),
+            epoch: ALARM_EPOCH_BASE | (streams.plays & 0xffff_ffff),
+            metadata: Metadata {
+                title: Some(name.to_string()),
+                ..Metadata::default()
+            },
+        };
+        let (mono, _) = schedule.clocks.now();
+        let runtime = &mut schedule.runtime;
+        let state = &self.state;
+        let mut effects = Vec::new();
+        let played = streams.sessions.play_held(&request, &mut |source| {
+            let Some(source) = Source::parse(source) else {
+                return Err(format!("'{}' is not a source", source));
+            };
+            let mut took = false;
+            effects.extend(state.runtime(|zones| {
+                let (ok, out) = runtime.on_alarm_source_started(alarm, source, mono, zones);
+                took = ok;
+                out
+            }));
+            if took {
+                Ok(())
+            } else {
+                Err("the alarm did not take the player".to_string())
+            }
+        });
+        let failed = match played {
+            Ok(_) => None,
+            Err(PlayRefused::NoPlayers) => Some(("no-players", PlayRefused::NoPlayers.to_string())),
+            Err(refused @ PlayRefused::NoFreePlayer(_)) => {
+                Some(("no-free-player", refused.to_string()))
+            }
+            Err(refused) => Some(("not-started", refused.to_string())),
+        };
+        if let Some((reason, detail)) = failed {
+            effects.extend(self.alarm_source_failed(alarm, reason, &detail));
+        }
+        effects
     }
 
     /// The schedule runtime's entry points, in order: what the line-ins said,
@@ -558,6 +849,11 @@ impl Conductor {
             match effect {
                 Effect::Log(line) => println!("chorus-server: {}", line),
                 Effect::SetSource { .. } | Effect::Persist => {}
+                // (goal 17) Carried out and answered before this, in
+                // `stored_requests`.
+                Effect::PlayStored { .. }
+                | Effect::PlaySpotify { .. }
+                | Effect::StopStored { .. } => {}
                 Effect::SourceControl { input, action } => self.source_control(input, *action),
                 Effect::RoomVolume {
                     zone,
@@ -652,17 +948,37 @@ impl Conductor {
             // by name, `ControlState::apply`).
             Source::Player(id) => crate::player::player_index(id, self.players)
                 .map_or(SlotInput::Silence, |p| SlotInput::Player(p as u8)),
+            // (goal 17) Never a group's source (the room model refuses it):
+            // an alarm's stored source plays as the player it is given.
+            Source::Stored(_) => SlotInput::Silence,
+            // (goal 17) A receiver this server does not run plays silence.
+            Source::Soloist(id) => {
+                let receivers = self.soloist.as_ref().map_or(0, |l| l.receivers());
+                chorus_soloist::receiver_index(id)
+                    .filter(|r| *r < receivers)
+                    .map_or(SlotInput::Silence, |r| SlotInput::Soloist(r as u8))
+            }
         }
     }
 
-    /// The latency a slot's line-in plays at: L_local while its group is the
-    /// source endpoint's own room alone, else the group's tier latency.
-    fn latency_for(&self, snapshot: &Snapshot, rooms: &[String], source: &Source) -> i64 {
+    /// The latency one group needs of a line-in: L_local while it is the
+    /// source endpoint's own room alone AND the input's only listener
+    /// (`sole`), else the group's tier latency. (goal 17) A port has one
+    /// plan, so every group listening to it plays at the largest of these
+    /// ([`Conductor::route_inputs`]); the source's own room is on the local
+    /// latency only while nobody else listens.
+    fn latency_for(
+        &self,
+        snapshot: &Snapshot,
+        rooms: &[String],
+        source: &Source,
+        sole: bool,
+    ) -> i64 {
         let Source::LineIn(input) = source else {
             return LOCAL_LATENCY_NS;
         };
         let own = snapshot.room_of(&input.endpoint).map(|r| r.id.as_str());
-        if rooms.len() == 1 && own == Some(rooms[0].as_str()) {
+        if sole && rooms.len() == 1 && own == Some(rooms[0].as_str()) {
             return LOCAL_LATENCY_NS;
         }
         let wireless = self.schedule.as_ref().is_some_and(|s| {
@@ -705,27 +1021,72 @@ impl Conductor {
                     Err(TrySendError::Disconnected(_)) => continue,
                 }
             }
-            if let (SlotInput::LineIn(port), Some(g)) = (wanted, group) {
-                let port = usize::from(port);
-                let latency_ns = self.latency_for(snapshot, &g.rooms, &g.source);
-                if self.targets.get(port).copied().flatten() != Some(latency_ns) {
-                    match slots.try_send(SlotCommand::LatencyTarget { port, latency_ns }) {
-                        Ok(()) => {
-                            println!(
-                                "chorus-server: line-in latency port={} slot={} group={} \
-                                 target_ms={}",
-                                port,
-                                slot,
-                                g.group,
-                                latency_ns / 1_000_000
-                            );
-                            if let Some(t) = self.targets.get_mut(port) {
-                                *t = Some(latency_ns);
-                            }
+        }
+        // (goal 17) A Soloist receiver's port is told whether any slot plays
+        // it: its reader discards what nobody hears, and a change either
+        // way empties the port, so a group that takes a receiver hears
+        // nothing that arrived before it did.
+        if let Some(link) = &self.soloist {
+            for (index, port) in link.ports().iter().enumerate() {
+                let played = self.inputs.contains(&SlotInput::Soloist(index as u8));
+                if port.is_selected() != played {
+                    port.select(played);
+                }
+            }
+        }
+        // (goal 17) One latency target per line-in PORT, not per slot: an
+        // input may play in any number of groups, every one of them cuts
+        // the same port's chunks, and the port has one plan. Its target is
+        // the largest any listening group needs, so the group that needs
+        // the most is served and the others simply play that much later.
+        let mut ports: Vec<(usize, Vec<&crate::control::SlotGroup>)> = Vec::new();
+        for g in snapshot.slots.iter().flatten() {
+            let SlotInput::LineIn(port) = self.input_for(&g.source) else {
+                continue;
+            };
+            let port = usize::from(port);
+            match ports.iter_mut().find(|(p, _)| *p == port) {
+                Some((_, groups)) => groups.push(g),
+                None => ports.push((port, vec![g])),
+            }
+        }
+        for (port, groups) in ports {
+            let sole = groups.len() == 1;
+            let latency_ns = groups
+                .iter()
+                .map(|g| self.latency_for(snapshot, &g.rooms, &g.source, sole))
+                .max()
+                .unwrap_or(LOCAL_LATENCY_NS);
+            let names = groups
+                .iter()
+                .map(|g| g.group.as_str())
+                .collect::<Vec<_>>()
+                .join(",");
+            let moved = self.targets.get(port).copied().flatten() != Some(latency_ns);
+            if moved {
+                match slots.try_send(SlotCommand::LatencyTarget { port, latency_ns }) {
+                    Ok(()) => {
+                        if let Some(t) = self.targets.get_mut(port) {
+                            *t = Some(latency_ns);
                         }
-                        Err(TrySendError::Full(_)) => report.owed += 1,
-                        Err(TrySendError::Disconnected(_)) => {}
                     }
+                    Err(TrySendError::Full(_)) => {
+                        report.owed += 1;
+                        continue;
+                    }
+                    Err(TrySendError::Disconnected(_)) => continue,
+                }
+            }
+            if moved || self.listeners.get(port) != Some(&names) {
+                println!(
+                    "chorus-server: line-in latency port={} listeners={} groups={} target_ms={}",
+                    port,
+                    groups.len(),
+                    names,
+                    latency_ns / 1_000_000
+                );
+                if let Some(l) = self.listeners.get_mut(port) {
+                    *l = names;
                 }
             }
         }

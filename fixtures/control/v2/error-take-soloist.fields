@@ -1,0 +1,16 @@
+# Canonical input for the catalog v2 error-take-soloist vector.
+#
+# `input` is refused, by the decoder or by the room state the lines below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-take-soloist.json. Nothing of it is applied.
+#
+# (goal 17) A receiver's audio follows the Spotify app: no command names one as a source.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+zones = kitchen
+input = {"v":2,"t":"take","target":"kitchen","source":"soloist:r0"}
+field = source
+ends_the_session = 0

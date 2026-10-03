@@ -233,8 +233,36 @@ dependencies = [
  "chorus-mqtt",
  "chorus-protocol",
  "chorus-schedule",
+ "chorus-soloist",
+ "chorus-soloist-fake",
+ "chorus-soloistd",
  "chorus-sync",
  "chorus-upnp",
+]
+
+[[package]]
+name = "chorus-soloist"
+version = "0.1.0"
+dependencies = [
+ "chorus-control",
+]
+
+[[package]]
+name = "chorus-soloist-fake"
+version = "0.1.0"
+dependencies = [
+ "chorus-control",
+ "chorus-soloist",
+ "chorus-soloistd",
+]
+
+[[package]]
+name = "chorus-soloistd"
+version = "0.1.0"
+dependencies = [
+ "chorus-control",
+ "chorus-soloist",
+ "chorus-soloist-fake",
 ]
 
 [[package]]

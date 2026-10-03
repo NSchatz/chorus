@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"action","detail":"'stop' is not a playback action: the catalog declares 'pause', 'resume', 'next' and 'previous'"}

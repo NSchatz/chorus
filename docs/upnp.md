@@ -15,6 +15,10 @@ The record of why it is built this way is
 `docs/decisions/0125-the-upnp-av-media-renderers.md`; the protocol half is
 `crates/upnp` (`docs/decisions/0121-a-pure-upnp-av-core-written-from-the-specifications.md`).
 
+Since goal 17 every renderer also offers the **OpenHome** services, so a
+control point can hand over a whole queue and go to sleep: see "OpenHome"
+below (`docs/decisions/0128-openhome-services.md`).
+
 ## What appears on the network
 
 One device per target, each a root device of type `MediaRenderer:1` with
@@ -66,6 +70,7 @@ player, and refuses to start without each, naming it.
 | `--upnp-callback-subnet <cidr>` | this host's own subnets | where event callbacks may point; repeatable. See "What is refused" |
 | `--upnp-ssdp-port <port>` | 1900 | the UDP port of the discovery socket. 1900 is the standard; anything else is for tests, or for a host where another program holds 1900 (below) |
 | `--upnp-ssdp-group <addr:port>` | `239.255.255.250:1900` | where discovery notifications are sent. Anything else is for tests |
+| `--upnp-openhome <on\|off>` | `on` | whether every renderer also offers the OpenHome services ("OpenHome" below). `off` leaves the UPnP AV device exactly as goal 16 made it |
 | `--players <n>` | 0 | how many things can play at once (below) |
 | `--media-allow-loopback` | off | lets the players fetch from this machine's loopback. For tests and development only, never a deployment: it would let anybody on the network make the server fetch from its own host |
 
@@ -126,6 +131,190 @@ player`. A house that plays three things at once in different rooms wants
 - **Stop, Pause, Seek, Next.** Seek is by time (`REL_TIME`) where the media
   server supports range requests; Next skips to the next URI when one was
   given, and is refused otherwise.
+
+## OpenHome
+
+UPnP AV has no queue: the control point holds the playlist and pushes one URI
+and the next, so the music stops when the phone sleeps. OpenHome is the open
+answer to that: the device holds the queue. With `--upnp-openhome on` (the
+default when `--upnp` is given) every renderer, a room's, a saved group's and
+a live group's, also offers five OpenHome services, and a control point that
+speaks OpenHome (`docs/proposals/P6-casting-receivers.md`, Option B) inserts
+tracks into the renderer's Playlist, says Play, and can leave. chorus walks
+the list itself and joins each track to the next without a gap.
+
+OpenHome has no specification document. Its definition is the service XMLs
+and the reference implementation, both MIT: ohPipeline
+(`github.com/openhome/ohPipeline` at commit
+`cccd06dd49ab154f43e1f24e009fe066a14bf15f`) and ohNet
+(`github.com/openhome/ohNet` at `b16816876a88e5f1783225114470025458eb1b61`),
+read 2026-10-03. Every rule below cites a file of one of them at those
+commits; `crates/upnp/src/openhome/` cites line numbers.
+
+### What is offered
+
+| Service | Announced as | What it does |
+|---|---|---|
+| Product | `urn:av-openhome-org:service:Product:2` | the device's names, its sources and which is selected, standby |
+| Volume | `urn:av-openhome-org:service:Volume:2` | volume, mute, and `VolumeLimit` |
+| Info | `urn:av-openhome-org:service:Info:1` | what plays now: URI, metadata, codec details |
+| Time | `urn:av-openhome-org:service:Time:1` | the track's duration and the position in seconds |
+| Playlist | `urn:av-openhome-org:service:Playlist:1` | the queue the device holds |
+
+The service ids are `urn:av-openhome-org:serviceId:<Name>` (ohNet
+`OpenHome/Net/Service.cpp`), the tables are ohPipeline's
+`OpenHome/Av/ServiceXml/OpenHome/{Product2,Volume2,Info1,Time1,Playlist1}.xml`,
+transcribed in `crates/upnp/src/openhome/tables.rs`.
+
+**Why these versions.** ohPipeline today implements Product 4, Volume 4 and
+Playlist 2 (`OpenHome/Av/ProviderProduct.cpp`, `ProviderVolume.cpp`,
+`Playlist/ProviderPlaylist.cpp`). chorus announces the lowest version whose
+every action it really performs: Product 3 adds `StandbyTransitioning` and
+Product 4 image URIs and a changed `Product` response, Volume 3 and 4 add
+per-channel offsets, trims and the no-unmute trio, and Playlist 2 adds
+`DeleteMultiple` and `Move`; chorus has none of the first group and has not
+built the last two. A higher version is a superset, so raising one later is
+data plus the added actions. **Which versions BubbleUPnP, Kazoo, Lumin or
+Linn's application bind is `ASSUMED`** (older control points Product 1,
+current ones 2 or higher): nothing read says, and no application was run.
+
+**A lower version is served.** A search for `...:service:Product:1` is
+answered, with `Product:1` in `ST` and `USN` (UDA 1.1 section 1.3.3: the
+response carries the version of the search; ohNet does the same,
+`OpenHome/Net/Device/Upnp/DviProtocolUpnp.cpp`), and an action sent in the
+`Product:1` namespace is performed and answered in it. A search for a higher
+version than the announced one is not answered.
+
+### The layout: one device
+
+The five services are listed behind the three AV ones in the same
+`MediaRenderer:1` device, with the same UDN: eight services in the
+description, eleven discovery messages a set instead of six. This is P6's
+"on the same devices".
+
+It is not what ohPipeline's own player does: that announces two root devices
+with different UDNs, a `urn:av-openhome-org:device:Source:1` carrying the
+OpenHome services and a `MediaRenderer:1` carrying the AV ones
+(`OpenHome/Av/Tests/TestMediaPlayer.cpp`). **Whether control point
+applications accept the OpenHome services on a `MediaRenderer:1` device is
+not established**; they are believed to find products by the Product service
+type, not by device type (`ASSUMED`). The fallback is recorded, not built: a
+second root device per target of type `urn:av-openhome-org:device:Source:1`,
+with a UDN of its own derived from the same target key, carrying only the
+five services. The layout is one switch in the description builder
+(`DeviceInfo.openhome`, `Advert.openhome` in `crates/upnp`), so the fallback
+is a contained change if a bench run with a real application shows the
+single device is listed twice, or not as OpenHome.
+
+### The Playlist
+
+- A track is a URI and its metadata (DIDL-Lite), which is kept and handed
+  back verbatim. `Insert(AfterId, Uri, Metadata)` returns the new track's id;
+  ids count up from 1 and are never used twice in a run. At most 1000 tracks
+  (`TracksMax`, ohPipeline's own number), then 801.
+- `IdArray` is the ids in list order, each a big-endian 32-bit number,
+  concatenated, in base64; a change of it is evented at most once in 300 ms,
+  so a burst of inserts is one event. `IdArray()` returns it with a token and
+  `IdArrayChanged(Token)` says whether the list changed since. `Read` and
+  `ReadList` return tracks.
+- `Play` plays the current track (`Id`), then every following one, **with no
+  control point connected**: ahead of each boundary the renderer gives its
+  player the following track, the same join `SetNextAVTransportURI` gets, so
+  the files' samples follow each other with no gap and no overlap. At the end
+  of the list it stops with the first track cued; with `SetRepeat(1)` it
+  wraps and plays on. `SetShuffle(1)` plays every track once in an order
+  drawn when it is switched on (804 with fewer than two tracks).
+- `Next`, `Previous`, `SeekId`, `SeekIndex` play another track from its
+  start; `SeekSecondAbsolute` and `SeekSecondRelative` move inside the
+  current one; `Pause`, `Stop`. `DeleteId` of the track that plays moves on
+  to the next; `DeleteAll` empties and stops. The faults are OpenHome's: 800
+  id not found, 801 playlist full, 802 index not found, 803 seek failed, 804
+  shuffle not possible.
+- `TransportState` is `Stopped`, `Buffering`, `Playing` or `Paused`. It stays
+  `Playing` across a gapless boundary; `Id` changes there.
+- **URIs** are `http` and `https` only (anything else is refused at `Insert`
+  with 600) and are fetched only by the server's players under the same fetch
+  policy as every renderer URI ("What is refused"); the Playlist adds no
+  fetcher. The Product's URL and image fields are empty: chorus fetches and
+  serves none.
+- The list lives in the server's memory. A restart, and a renderer that
+  vanishes (a live group that dissolves), lose it.
+
+### Product: the sources
+
+`SourceXml` lists, in order:
+
+| Source | `Type` | Visible | Selecting it |
+|---|---|---|---|
+| Playlist | `Playlist` | yes | this renderer's queue |
+| UPnP AV | `UpnpAv` | no (as in ohPipeline, `OpenHome/Av/UpnpAv/UpnpAv.cpp`) | what AVTransport plays |
+| each line-in or TV input the target's rooms offer | `Analog` (a line-in), `Digital` (optical), `Hdmi` (HDMI ARC) | yes | makes the target's rooms play it: the room model's `take` (K78) |
+| Spotify | `NetAux` | yes | listed only while the target's group plays a Spotify receiver (a source spelled `soloist:`); selecting it changes nothing |
+
+An input is listed while the control state lists it, which is while its
+signal is present; its `SystemName` is `<endpoint>/<input>` and its `Name`
+the input's own name (or its label, once inputs carry labels).
+`SetSourceIndex`, `SetSourceIndexByName` and `SetSourceBySystemName` select;
+an unknown one is 801. `SourceIndex` follows what the rooms really play, so a
+source chosen in the app, by an alarm or by a speaker's button is evented to
+OpenHome control points too. `Attributes` is `Info Time Volume`: no Radio, no
+Credentials, no Pins, no Transport (K64; "What is not offered").
+
+**Standby** is a flag and nothing more: chorus has no power state.
+`SetStandby(1)` stops what this renderer plays and reads back `1`; Play, a
+source selection and an AVTransport URI clear it. It exists because Product
+requires the action and control points call it.
+
+### Playlist and AVTransport on one renderer
+
+A renderer has one player and two transports, of which one at a time drives
+it. `SetAVTransportURI` or AVTransport `Play` makes UPnP AV the source: the
+Playlist goes `Stopped` (its list and `Id` are kept), `SourceIndex` is
+evented. Playlist `Play`, `SeekId` or `SeekIndex` takes it back: AVTransport
+goes STOPPED. The transport that does not have the player answers its
+queries and changes nothing that plays. This is ohPipeline's rule
+(`OpenHome/Av/Source.cpp`, `UpnpAv/UpnpAv.cpp`,
+`Playlist/SourcePlaylist.cpp`).
+
+### Volume, Info, Time
+
+- **Volume** is the same volume RenderingControl sets, on the same 0 to 100
+  scale, through the same control plane commands, so each service events
+  what the other changed. `VolumeLimit` is the room's limit in the same units
+  (a quiet hour's while one is active), rounded down, so a control point
+  draws the ceiling (K81); for a group it is the average of its rooms'
+  limits, which is the most the group volume (an average of rooms each under
+  its own limit) can be. Above the limit ohPipeline's rule holds
+  (`OpenHome/Av/VolumeManager.cpp`): the request is clamped to the limit and
+  succeeds while the volume is below it, and is refused (811) when the
+  volume already is there; above 100 it is always 811. `VolumeLimit` is
+  evented when the owner changes the limit. There is no balance and no fade
+  (`BalanceMax` and `FadeMax` are 0, the setters answer 801), and
+  `VolumeMilliDbPerStep` is 0: chorus's volume law is not linear in decibels.
+- **Info** says what the target plays, whichever source: a Playlist track or
+  an AVTransport URI with the metadata the control point gave and the
+  decoder's sample rate, bit depth and codec name (`BitRate` is the decoded
+  stream's for a lossless source and 0 for a lossy one); for a line-in, the
+  TV or another holder's player, the source's spelling as `Uri` and the
+  room's now-playing record as DIDL-Lite.
+- **Time** is the duration and the position in whole seconds. `Seconds` is
+  evented once a second while playing, not while paused or stopped, and the
+  position is read only while somebody subscribes to Time.
+
+### Events
+
+Plain GENA property sets, one property per variable, no `LastChange` (ohNet
+`OpenHome/Net/Device/DviSubscription.cpp`): the initial event carries every
+evented variable, each later event only the ones that changed. Booleans are
+`1` and `0`. The events leave from the one `upnp-events` thread; no thread
+was added for OpenHome.
+
+### What is not offered
+
+**Radio** (and with it no station directory and no library: K64),
+Credentials, OAuth, Pins, Transport, Sender and Receiver (Songcast). The
+`Attributes` name none of them, and no search for them is answered.
+Playlist 2's `DeleteMultiple` and `Move` are not offered either.
 
 ## Formats
 
@@ -217,7 +406,30 @@ metadata into the control state of every such room, K78, volume clamping, every 
 the refusals above, identities across a restart, byebye, and sixteen
 renderers at once.
 
-**Not tested: any control point application.** The control point in that test
+The OpenHome services (`crates/server/tests/openhome_control_point.rs`, the
+same way): the description with eight services and their SCPDs; searches by
+version; an action in `Product:1`; each service's initial event; a three-track
+Playlist played through with no action from the script after Play, the room's
+captured audio being the three files joined sample for sample with both joins
+inside a chunk, `TransportState` unbroken, and `Id`, Info and Time following
+each track; Next, Previous, the seeks, Pause, DeleteId, Repeat, DeleteAll and
+their faults; Time's event once a second; the source list with a line-in as
+`Analog` and an optical input as `Digital`, and a source switch that takes
+the room off the Playlist; Volume against a room limit of 0.600 and the
+limit's own event; the AVTransport takeover both ways; a source change made
+in the control plane; standby; and `--upnp-openhome off`. On a room's
+renderer; the group renderers run the same code and were not walked again.
+The line-in in that test is selected and streams no audio, and the `NetAux`
+Spotify source is held by a unit of the source list only: when that test was
+written no source spelled `soloist:` existed. It does now (`docs/soloist.md`:
+the server's receiver manager gives a group that source when the Spotify app
+plays on its device), and the two have not been run together.
+
+**Not tested: any control point application.** No BubbleUPnP, Kazoo, Lumin,
+Linn or Home Assistant was run against the OpenHome services either: whether
+they list a chorus renderer as an OpenHome device in the single-device
+layout, and which service versions they bind, is open until a bench run with
+one (the owner's queue). The control point in that test
 is a script. No phone app, no desktop player and no Home Assistant was run
 against these renderers; that is goal 17's work. Also not tested: multicast
 on a real interface (the test sends its searches to the server's port and

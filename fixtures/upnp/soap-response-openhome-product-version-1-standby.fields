@@ -1,0 +1,4 @@
+service = ohp
+version = 1
+action = Standby
+out.0 = Value=0

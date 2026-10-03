@@ -89,8 +89,12 @@ pub mod serve;
 pub mod session;
 pub mod slot_table;
 pub mod slots;
+pub mod soloist;
+pub mod soloistport;
+pub mod soloistreader;
 pub mod source;
 pub mod stream;
+pub mod targets;
 pub mod tvrelay;
 pub mod upnp;
 

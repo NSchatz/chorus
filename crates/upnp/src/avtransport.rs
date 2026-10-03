@@ -751,7 +751,7 @@ impl AvTransport {
 
     // ----- reports from the player -----
 
-    fn current_epoch(&self, epoch: u64) -> bool {
+    pub(crate) fn current_epoch(&self, epoch: u64) -> bool {
         epoch == self.epoch && self.has_media()
     }
 

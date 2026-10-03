@@ -35,6 +35,10 @@
 # fixtures/decode (goal 16) is Rust-only by declaration: the server decodes every input format
 # (crates/decode, read by crates/decode/tests/reference_decodes.rs, which fails on a fixture no
 # test reads); an endpoint only ever receives PCM, FLAC or Opus, which fixtures/codec covers.
+# fixtures/soloist (goal 17) is Rust-only by declaration: the Soloist WebSocket API model, the
+# supervisor protocol and the --version shapes are spoken by chorus-soloistd and chorus-server
+# alone (crates/soloist, read by crates/soloist/tests/fixtures.rs, which also fails on a file no
+# test reads); no endpoint speaks them and there is no C implementation.
 . "$(dirname "$0")/lib.sh"
 # directory | extensions both sides read | where Rust reads it | where C reads it
 shared=(

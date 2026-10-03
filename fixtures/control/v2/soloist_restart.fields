@@ -1,0 +1,11 @@
+# Canonical input for the catalog v2 soloist_restart vector.
+#
+# Encoding these field values must produce exactly soloist_restart.json, and decoding
+# soloist_restart.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# Goal 17: tell every Soloist receiver's supervisor to read its binary again and start again.
+
+message_type = soloist_restart

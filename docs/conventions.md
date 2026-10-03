@@ -77,6 +77,7 @@ has to learn or argue about. Formatting-only changes land as their own commit.
   | `crates/hostctl` | seven functions | libc wrappers for getrlimit, setrlimit, `sched_*` (taking a policy and leaving it, the second for the Linux endpoint's playout thread, ADR 0069), mlockall and gettid; the rest of the crate stays denied |
   | `crates/hostprobe/src/sys.rs`, `crates/hostprobe/src/net.rs` | two modules | the host probes' FFI: clock_nanosleep, prctl timer slack, setsockopt and recvmsg for kernel receive stamps (ADR 0047) |
   | `crates/server/tests/regress_0031_f6.rs` | one test | sets SCHED_BATCH through raw libc, which no chorus wrapper offers |
+  | `crates/soloistd/src/sys.rs` | one module | the receiver supervisor's three libc calls: mkfifo, kill with SIGTERM, and signal to catch its own SIGTERM and SIGINT, so a container stop ends Soloist the normal way (`docs/soloist.md`) |
 
   `protocol`, `sync`, `audio`, `audio-path` and `measure` go further with
   `#![forbid(unsafe_code)]`.
@@ -155,6 +156,10 @@ regenerated only by `make decode-fixtures`.
 `fixtures/upnp` (goal 16) is Rust-only by declaration too: the UPnP AV media renderer runs in
 chorus-server alone, and `crates/upnp/tests/fixtures.rs` reads every vector and fails on a file
 it does not read.
+`fixtures/soloist` (goal 17) is Rust-only by declaration too: the Soloist WebSocket API model,
+the supervisor protocol and the `--version` shapes are spoken by `chorus-soloistd` and
+chorus-server alone, and `crates/soloist/tests/fixtures.rs` reads every vector and fails on a
+file it does not read.
 `fixtures/protocol/v2` (protocol v2, goal 5) and `fixtures/protocol/v2/noise` are shared like the
 rest: since the endpoint moved to v2 (goal 6) the check holds them to their Rust readers and to
 `firmware/tests/test_protocol_v2.c` and `firmware/tests/test_noise.c`.
