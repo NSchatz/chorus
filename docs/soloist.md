@@ -110,6 +110,11 @@ What it does:
 8. Stops Soloist with SIGTERM, then SIGKILL after `--stop-timeout-ms`: on `release`, on an
    `assign` of another target or name, and on its own SIGTERM (a container stop).
 
+It reaps its own children (PipeWire, WirePlumber, Soloist) and no others: as PID 1 of a
+container it does not adopt and reap processes those leave behind, so the receiver container
+runs it under an init (compose `init: true`) or as PID 1 knowing that; the image track decides
+which. It handles SIGTERM and SIGINT itself either way.
+
 The API key: Soloist accepts it only as a command-line argument (`-k, --api-key KEY`: "Treat
 this value as a secret"; the reference lists no key file and no environment variable, and says
 "Spotify Soloist does not currently read a configuration file"), so it is visible in `/proc/<pid>/cmdline` inside the
