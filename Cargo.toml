@@ -19,6 +19,7 @@ members = [
     "crates/dsp",
     "crates/cec",
     "crates/ctl",
+    "crates/mqtt",
 ]
 
 [workspace.package]

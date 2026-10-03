@@ -31,6 +31,10 @@ chorus-dsp = { path = "../dsp" }
 # the lag analyser looks for. A pure library with no third-party dependency; its
 # device half binds ALSA at run time, so nothing is added to this build.
 chorus-measure = { path = "../measure" }
+# The MQTT publisher's pure half (goal 15, src/mqtt.rs): the packets, the
+# topics and the payloads cut out of the control state message. No third-party
+# dependency.
+chorus-mqtt = { path = "../mqtt" }
 
 [dev-dependencies]
 # The end-to-end tests decode what the server put on a real socket with the
