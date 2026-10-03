@@ -93,6 +93,10 @@ typedef struct {
      * from and written as: here and not on the task's stack. */
     chorus_pins_t pins;
     char pins_text[CHORUS_PINS_TEXT_MAX];
+    /* The playout path's underrun and resync counts when this session began
+     * (telemetry reports both since then). */
+    uint32_t underruns_at_session;
+    uint32_t resyncs_at_session;
 } session_state_t;
 
 /* The console's `status` reads what the run last published (audit A-13). */
@@ -874,16 +878,40 @@ static int send_time_sync_request(session_state_t *state, int fd, chorus_noise_c
     return send_sealed(state, fd, cipher, frame, written);
 }
 
-/* The endpoint's periodic report. What it does not know (a playout error before
- * the loop has formed one, the link, the radio, the temperature) it says it
- * does not know, rather than reporting zero. */
-static int send_telemetry(session_state_t *state, int fd, chorus_noise_cipher_t *cipher)
+void chorus_session_health_unknown(chorus_session_health_t *health)
 {
-    chorus_v2_message_t m;
-    memset(&m, 0, sizeof(m));
-    m.type = CHORUS_V2_TELEMETRY;
-    m.as.telemetry.taken_ns = chorus_monotonic_now_ns();
-    m.as.telemetry.sync_error_ns = INT64_MIN;
+    health->link = 0;
+    health->rssi_dbm = INT8_MIN;
+    health->temperature_centi_c = INT16_MIN;
+    health->heap_free_bytes = CHORUS_V2_TELEMETRY_HEAP_UNKNOWN;
+    health->heap_min_free_bytes = CHORUS_V2_TELEMETRY_HEAP_UNKNOWN;
+}
+
+/* Where the playout path's two counters stood when this session began:
+ * telemetry's `underruns` and `resyncs` are "since the session began"
+ * (docs/protocol.md), and the playout path counts since boot. */
+static void telemetry_baseline(session_state_t *state)
+{
+    state->underruns_at_session = 0;
+    state->resyncs_at_session = 0;
+    if (state->config->playout != NULL) {
+        chorus_playout_stats_t st;
+        chorus_playout_stats(state->config->playout, &st);
+        state->underruns_at_session = st.underruns;
+        state->resyncs_at_session = st.hard_resyncs;
+    }
+}
+
+/* The endpoint's periodic report (docs/telemetry.md says which field has which
+ * source). What it does not know (a playout error before the loop has formed
+ * one; the link, the radio, a temperature and the heap where the board's
+ * `health` seam does not say) it says it does not know, rather than reporting
+ * zero. The four playout figures have no "unknown" on the wire: an endpoint
+ * with no playout path (the host session program) reports them as 0. */
+static void fill_telemetry(session_state_t *state, chorus_v2_telemetry_t *t)
+{
+    t->taken_ns = chorus_monotonic_now_ns();
+    t->sync_error_ns = INT64_MIN;
     if (state->config->playout != NULL) {
         chorus_playout_stats_t st;
         chorus_playout_stats(state->config->playout, &st);
@@ -891,12 +919,41 @@ static int send_telemetry(session_state_t *state, int fd, chorus_noise_cipher_t 
             /* The last error the playout loop formed from DMA-consumed frames
              * (firmware/src/playout.c): this endpoint's own view of its playout
              * against the timeline, not a measured inter-device error. */
-            m.as.telemetry.sync_error_ns = (int64_t)st.last_error_ns;
+            t->sync_error_ns = (int64_t)st.last_error_ns;
         }
+        /* The jitter buffer: frames queued ahead of the writer, as time at
+         * the stream's rate. Not the FIFO after the writer. */
+        uint32_t rate_hz = state->config->playout->config.rate_hz;
+        if (rate_hz != 0) {
+            uint64_t fill_us = (uint64_t)st.queued_frames * 1000000ull / rate_hz;
+            t->buffer_fill_us = (fill_us > UINT32_MAX) ? UINT32_MAX : (uint32_t)fill_us;
+        }
+        t->underruns = st.underruns - state->underruns_at_session;
+        t->resyncs = st.hard_resyncs - state->resyncs_at_session;
+        /* The rate correction in force, ppm to ppb, rounded half away from
+         * zero. The servo clamps it to a few hundred ppm, far inside i32. */
+        double ppb = st.correction_ppm * 1000.0;
+        t->correction_ppb = (int32_t)(ppb >= 0.0 ? ppb + 0.5 : ppb - 0.5);
     }
-    m.as.telemetry.link = 0; /* unknown */
-    m.as.telemetry.rssi_dbm = INT8_MIN;
-    m.as.telemetry.temperature_centi_c = INT16_MIN;
+    chorus_session_health_t health;
+    chorus_session_health_unknown(&health);
+    if (state->config->health != NULL) {
+        state->config->health(state->config->health_ctx, &health);
+    }
+    t->link = (health.link <= 2u) ? health.link : 0u;
+    /* A signal strength is a wireless link's: anything else reports none. */
+    t->rssi_dbm = (t->link == 2u) ? health.rssi_dbm : INT8_MIN;
+    t->temperature_centi_c = health.temperature_centi_c;
+    t->heap_free_bytes = health.heap_free_bytes;
+    t->heap_min_free_bytes = health.heap_min_free_bytes;
+}
+
+static int send_telemetry(session_state_t *state, int fd, chorus_noise_cipher_t *cipher)
+{
+    chorus_v2_message_t m;
+    memset(&m, 0, sizeof(m));
+    m.type = CHORUS_V2_TELEMETRY;
+    fill_telemetry(state, &m.as.telemetry);
     uint8_t frame[64];
     size_t len = 0;
     if (chorus_v2_encode(&m, frame, sizeof(frame), &len, NULL) != CHORUS_ENCODE_OK) {
@@ -1432,6 +1489,7 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
         stream.filter = &filter;
         stream.next_exchange_ns = chorus_monotonic_now_ns();
         uint64_t next_telemetry_ns = chorus_monotonic_now_ns();
+        telemetry_baseline(&state);
 
         while (why == NULL) {
             uint64_t now_ns = chorus_monotonic_now_ns();

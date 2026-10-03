@@ -477,6 +477,7 @@ void chorus_playout_reset_stream(chorus_playout_t *p)
     p->have_highwater = 0;
     p->have_playout_ts = 0;
     p->has_offset = 0;
+    p->underrunning = 0;
     p->correction_ppm = 0.0;
     p->pending_frames = 0.0;
     p->mute_frames = 0;
@@ -598,6 +599,10 @@ uint32_t chorus_playout_fill(chorus_playout_t *p, uint8_t *out, uint32_t frames)
             }
             if (p->have_playout_ts) {
                 p->stats.underrun_frames += room;
+                if (!p->underrunning) {
+                    p->underrunning = 1;
+                    p->stats.underruns++;
+                }
             }
             produced += room;
             break;
@@ -641,6 +646,7 @@ uint32_t chorus_playout_fill(chorus_playout_t *p, uint8_t *out, uint32_t frames)
             p->stats.muted_frames += silence;
         }
         consume_front(p, n);
+        p->underrunning = 0;
         produced += n;
         audio += n;
     }

@@ -415,6 +415,12 @@ void app_main(void)
      * from here (firmware/main/esp_ota.c is the only unit that names the
      * calls). */
     session->ota = chorus_esp_ota_unit(config.board.profile, config.ota_confirm_seconds);
+    /* What the speaker reports about itself in telemetry (goal 15): the link
+     * it was built for, the radio's signal, the heap. */
+    static chorus_transport_t health_transport;
+    health_transport = config.link.transport;
+    session->health = chorus_esp_hal_health;
+    session->health_ctx = &health_transport;
     task.controller = &controller;
     task.stage = &stage;
     /* NULL on a board that plays through nothing: the session task then has no

@@ -8,6 +8,7 @@
 #include "driver/i2s_std.h"
 #include "esp_err.h"
 #include "esp_event.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -486,4 +487,29 @@ void chorus_esp_hal_radio(chorus_radio_t *radio)
     radio->get_power_save = hal_radio_get_power_save;
     radio->coexistence_active = hal_radio_coexistence_active;
     radio->join = hal_radio_join;
+}
+
+void chorus_esp_hal_health(void *ctx, chorus_session_health_t *health)
+{
+    const chorus_transport_t *transport = ctx;
+    if (transport != NULL && *transport == CHORUS_TRANSPORT_WIRED) {
+        health->link = 1;
+    } else if (transport != NULL && *transport == CHORUS_TRANSPORT_WIRELESS) {
+        health->link = 2;
+        /* The signal of the access point the station is associated with
+         * (esp_wifi.h, esp_wifi_sta_get_rssi, in the pinned v6.1). Not
+         * associated, or a value outside an i8: unknown. */
+        int rssi = 0;
+        if (esp_wifi_sta_get_rssi(&rssi) == ESP_OK && rssi > INT8_MIN && rssi <= 0) {
+            health->rssi_dbm = (int8_t)rssi;
+        }
+    }
+    /* The internal 8-bit heap, as the console's `resources` reads it
+     * (console_esp.c): what the session, the network stack and the decoders
+     * allocate from. PSRAM is not in this figure. */
+    health->heap_free_bytes =
+        (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    health->heap_min_free_bytes =
+        (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    /* temperature_centi_c stays unknown: see esp_hal.h. */
 }

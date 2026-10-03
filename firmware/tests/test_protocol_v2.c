@@ -268,6 +268,17 @@ static int build(const char *stem, const char *fields_text, chorus_v2_message_t 
         t->link = named(&f, "link", CHORUS_V2_ENUM_LINK);
         t->rssi_dbm = (int8_t)number(&f, "rssi_dbm");
         t->temperature_centi_c = (int16_t)number(&f, "temperature_centi_c");
+        /* Optional (goal 15): a vector made before the heap block has
+         * neither, which is how "not reported" is written. */
+        char heap[32];
+        t->heap_free_bytes = CHORUS_V2_TELEMETRY_HEAP_UNKNOWN;
+        t->heap_min_free_bytes = CHORUS_V2_TELEMETRY_HEAP_UNKNOWN;
+        if (fixture_field(fields_text, "heap_free_bytes", heap, sizeof(heap)) != NULL) {
+            t->heap_free_bytes = (uint32_t)strtoul(heap, NULL, 10);
+        }
+        if (fixture_field(fields_text, "heap_min_free_bytes", heap, sizeof(heap)) != NULL) {
+            t->heap_min_free_bytes = (uint32_t)strtoul(heap, NULL, 10);
+        }
         break;
     }
     case CHORUS_V2_LOW_LATENCY_OFFER: {
@@ -1140,6 +1151,55 @@ static void the_v1_types_are_v1s_own(void)
     }
 }
 
+/* Goal 15: telemetry's heap block. Optional and trailing, so an endpoint that
+ * reports no heap sends exactly the 36 bytes it always did (the committed
+ * `telemetry` vector), a block is there whole or not at all, and a tail
+ * shorter than the block is excess. */
+static void telemetry_carries_heap_only_when_it_is_known(void)
+{
+    chorus_section("telemetry: the optional heap block");
+    chorus_v2_message_t m;
+    memset(&m, 0, sizeof(m));
+    m.type = CHORUS_V2_TELEMETRY;
+    m.as.telemetry.sync_error_ns = INT64_MIN;
+    m.as.telemetry.rssi_dbm = INT8_MIN;
+    m.as.telemetry.temperature_centi_c = INT16_MIN;
+    m.as.telemetry.heap_free_bytes = CHORUS_V2_TELEMETRY_HEAP_UNKNOWN;
+    m.as.telemetry.heap_min_free_bytes = CHORUS_V2_TELEMETRY_HEAP_UNKNOWN;
+    static uint8_t without[64];
+    static uint8_t with[64];
+    size_t without_len = 0;
+    size_t with_len = 0;
+    chorus_check(chorus_v2_encode(&m, without, sizeof(without), &without_len, NULL) ==
+                         CHORUS_ENCODE_OK &&
+                     without_len == CHORUS_FRAME_HEADER_LEN + 36u,
+                 "a telemetry with no heap known is 36 bytes of payload, as before the block");
+    m.as.telemetry.heap_free_bytes = 187432u;
+    chorus_check(
+        chorus_v2_encode(&m, with, sizeof(with), &with_len, NULL) == CHORUS_ENCODE_OK &&
+            with_len == without_len + CHORUS_V2_TELEMETRY_HEAP_BLOCK_LEN &&
+            memcmp(with + CHORUS_FRAME_HEADER_LEN, without + CHORUS_FRAME_HEADER_LEN, 36) == 0,
+        "one figure known writes the whole 8-byte block after the same 36 bytes");
+    chorus_v2_frame_t d = chorus_v2_decode_frame(with, with_len);
+    chorus_check(d.outcome == CHORUS_FRAME_DECODED &&
+                     d.message.as.telemetry.heap_free_bytes == 187432u &&
+                     d.message.as.telemetry.heap_min_free_bytes == CHORUS_V2_TELEMETRY_HEAP_UNKNOWN,
+                 "the block decodes, and the figure not known stays unknown");
+    d = chorus_v2_decode_frame(without, without_len);
+    chorus_check(d.outcome == CHORUS_FRAME_DECODED &&
+                     d.message.as.telemetry.heap_free_bytes == CHORUS_V2_TELEMETRY_HEAP_UNKNOWN &&
+                     d.message.as.telemetry.heap_min_free_bytes == CHORUS_V2_TELEMETRY_HEAP_UNKNOWN,
+                 "no block reads as heap unknown, never as zero");
+    /* A tail of 4 bytes is not a block: excess, ignored. */
+    static uint8_t partial[64];
+    memcpy(partial, with, with_len - 4u);
+    partial[2] = (uint8_t)(36u + 4u);
+    d = chorus_v2_decode_frame(partial, with_len - 4u);
+    chorus_check(d.outcome == CHORUS_FRAME_DECODED && d.consumed == with_len - 4u &&
+                     d.message.as.telemetry.heap_free_bytes == CHORUS_V2_TELEMETRY_HEAP_UNKNOWN,
+                 "a tail shorter than the block is excess and reads as heap unknown");
+}
+
 /* Goal 12, phase A: the session keeps the last `sound` it decoded and a
  * getter reads it back, which is what the endpoint DSP track builds on. The
  * committed vectors are decoded and handed to the session's own store, in
@@ -1187,5 +1247,6 @@ int main(void)
     the_encoder_refuses_rather_than_truncating();
     the_v1_types_are_v1s_own();
     the_session_keeps_the_last_sound_it_decoded();
+    telemetry_carries_heap_only_when_it_is_known();
     return chorus_test_report("test_protocol_v2");
 }

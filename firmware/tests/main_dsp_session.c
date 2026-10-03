@@ -26,6 +26,17 @@
  * `capture_start_ns`, the monotonic instant the capture's first frame started
  * at the pins, so a script can turn a monotonic time into a capture frame.
  *
+ * THE HEALTH SEAM (goal 15). A host has no radio, no board temperature and no
+ * heap_caps, so by default this program reports all of them unknown, as the
+ * session does with no `health` seam. The five options below hand the seam
+ * STATED FAKE values, through the same callback the board binds
+ * (chorus/session.h `health`), so a test can see every telemetry field cross
+ * the wire; they are a test's numbers and never a measurement:
+ *
+ *   --health-link wired|wireless      --health-rssi-dbm <n>
+ *   --health-temperature-centi-c <n>  --health-heap-free-bytes <n>
+ *   --health-heap-min-free-bytes <n>
+ *
  * Every constant it is not given comes from firmware/config/endpoint.conf and
  * config/sync.conf. Host only: pthreads and clock_nanosleep. Nothing here is
  * timing evidence; what dsp-session.sh grades is the content of the frames. */
@@ -117,11 +128,25 @@ static void *writer_main(void *arg)
     return NULL;
 }
 
+/* The health seam's stated fakes: what the command line named, nothing else. */
+static chorus_session_health_t stated_health;
+
+static void stated_health_report(void *ctx, chorus_session_health_t *health)
+{
+    (void)ctx;
+    *health = stated_health;
+}
+
 static void usage(void)
 {
     fprintf(stderr, "usage: chorus-endpoint-dsp-session --capture path [--server host:port]\n"
                     "                                   [--endpoint-id id] [--run-seconds n]\n"
-                    "                                   [--two-way on|off] [--log path]\n");
+                    "                                   [--two-way on|off] [--log path]\n"
+                    "                                   [--health-link wired|wireless]\n"
+                    "                                   [--health-rssi-dbm n]\n"
+                    "                                   [--health-temperature-centi-c n]\n"
+                    "                                   [--health-heap-free-bytes n]\n"
+                    "                                   [--health-heap-min-free-bytes n]\n");
 }
 
 int main(int argc, char **argv)
@@ -152,6 +177,7 @@ int main(int argc, char **argv)
     config.smoothing_alpha = sync.smoothing_alpha;
     const char *capture_path = NULL;
     chorus_endpoint_two_way_t two_way = committed.two_way;
+    chorus_session_health_unknown(&stated_health);
 
     for (int i = 1; i < argc; i++) {
         const char *arg = argv[i];
@@ -174,6 +200,28 @@ int main(int argc, char **argv)
             capture_path = value;
         } else if (strcmp(arg, "--log") == 0) {
             config.event_log_path = value;
+        } else if (strcmp(arg, "--health-link") == 0) {
+            if (strcmp(value, "wired") == 0) {
+                stated_health.link = 1;
+            } else if (strcmp(value, "wireless") == 0) {
+                stated_health.link = 2;
+            } else {
+                usage();
+                return 2;
+            }
+            config.health = stated_health_report;
+        } else if (strcmp(arg, "--health-rssi-dbm") == 0) {
+            stated_health.rssi_dbm = (int8_t)strtol(value, NULL, 10);
+            config.health = stated_health_report;
+        } else if (strcmp(arg, "--health-temperature-centi-c") == 0) {
+            stated_health.temperature_centi_c = (int16_t)strtol(value, NULL, 10);
+            config.health = stated_health_report;
+        } else if (strcmp(arg, "--health-heap-free-bytes") == 0) {
+            stated_health.heap_free_bytes = (uint32_t)strtoul(value, NULL, 10);
+            config.health = stated_health_report;
+        } else if (strcmp(arg, "--health-heap-min-free-bytes") == 0) {
+            stated_health.heap_min_free_bytes = (uint32_t)strtoul(value, NULL, 10);
+            config.health = stated_health_report;
         } else if (strcmp(arg, "--two-way") == 0) {
             /* The committed file's crossover and slots, switched on or off:
              * the two-way is the speaker's, and the test runs one speaker of
