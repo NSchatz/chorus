@@ -26,11 +26,13 @@
 #      as it reads otadata), the session confirms it (`state=valid` at the next
 #      boot report is not needed: the server's state says `confirmed` and the
 #      board runs GOOD on slot 1);
-#   4. `firmware_install` BAD: the board writes slot 0, reboots into BAD on
+#   4. the emulator is stopped and started on the same flash file (a power
+#      cycle): the board boots GOOD, valid, on slot 1;
+#   5. `firmware_install` BAD: the board writes slot 0, reboots into BAD on
 #      trial, does not confirm, marks it invalid and reboots; the bootloader
 #      boots GOOD on slot 1 again; the server's state says `rolled_back`,
 #      reason `not_confirmed`, running GOOD, the image tried BAD;
-#   5. the eFuse file is byte for byte what it was.
+#   6. the eFuse file is byte for byte what it was; no panic on either console.
 #
 # Source: simulation. Nothing here is timing evidence; the hardware rollback
 # is the owner's bench session.
@@ -263,7 +265,31 @@ check "good-is-confirmed" \
     "$([ "$(state 'fw.get("state")')" = confirmed ] && [ "$(state 'fw.get("version")')" = "$GOOD_VERSION" ] && [ "$(state 'fw.get("slot")')" = 1 ] && echo 1 || echo 0)" \
     "$(state "$FW"); server: $(command grep -o -E 'firmware confirmed [^"]*' "$OUT/server.log" | head -n 1)"
 
-# --- 4. the bad image, and the bootloader's rollback -------------------------------
+# --- 4. the power goes away, and comes back on GOOD ------------------------------
+#
+# Why the emulator is stopped and started here, and not only because a board
+# loses power: in one emulator process, an image written over a slot that
+# process had already executed (image A's slot 0) crashed the moment the
+# bootloader jumped to it, `Guru Meditation Error: Core 0 panic'ed
+# (IllegalInstruction)` with the program counter in the image's read-only data,
+# while the same bytes booted cleanly in a fresh process and an image written
+# to a never-executed slot (GOOD's slot 1) always did. The emulator appears to
+# keep code it translated from the old flash contents. A real chip's cache does
+# not survive its reset. So the bad image is installed into a process that has
+# only ever run GOOD (docs/decisions/0111-*).
+
+qemu_stop
+SERIAL="$OUT/serial-2.log"
+say ""
+say "chorus: the power goes away and comes back: GOOD on slot 1 (serial: $SERIAL)"
+qemu_boot "$OUT/flash.bin" "$OUT/efuse.bin" "$SERIAL" "$EMULATOR_SECONDS"
+wait_for_line "$SERIAL" "$WAIT_SECONDS" 'chorus-ota: running slot=' || true
+check "good-is-valid-after-a-power-cycle" \
+    "$(command grep -a -q "running slot=1 state=valid version=$GOOD_VERSION" "$SERIAL" && echo 1 || echo 0)" \
+    "$({ command grep -a -o -E 'running slot=[01] state=[a-z-]+ version=[^ ]+' "$SERIAL" | head -n 1 | tr -d '\r'; } || true)"
+wait_for_state "speaker.get(\"present\") and fw.get(\"state\") == \"idle\" and fw.get(\"version\") == \"$GOOD_VERSION\"" "$WAIT_SECONDS" || true
+
+# --- 5. the bad image, and the bootloader's rollback -------------------------------
 
 say ""
 say "chorus: firmware_install bad"
@@ -281,8 +307,8 @@ check "bad-does-not-confirm-and-gives-itself-up" \
     "$(command grep -a -q 'did not confirm in time' "$SERIAL" && echo 1 || echo 0)" \
     "$(command grep -a -o -E 'this image did not confirm in time[^.;]*' "$SERIAL" | head -n 1 | tr -d '\r')"
 wait_for_state "fw.get(\"state\") == \"rolled_back\"" "$WAIT_SECONDS" || true
-ROLLED="$(command grep -a -n -E "running slot=1 state=valid version=$GOOD_VERSION" "$SERIAL" | tail -n 1 | cut -d: -f1)"
-GAVE_UP="$(command grep -a -n 'did not confirm in time' "$SERIAL" | head -n 1 | cut -d: -f1)"
+ROLLED="$({ command grep -a -n -E "running slot=1 state=valid version=$GOOD_VERSION" "$SERIAL" | tail -n 1 | cut -d: -f1; } || true)"
+GAVE_UP="$({ command grep -a -n 'did not confirm in time' "$SERIAL" | head -n 1 | cut -d: -f1; } || true)"
 check "the-bootloader-rolled-back-to-good" \
     "$([ -n "$ROLLED" ] && [ -n "$GAVE_UP" ] && [ "$ROLLED" -gt "$GAVE_UP" ] && echo 1 || echo 0)" \
     "after the trial, the board reads otadata: $(command grep -a -o -E "running slot=1 state=valid version=$GOOD_VERSION" "$SERIAL" | tail -n 1 | tr -d '\r')"
@@ -290,11 +316,11 @@ check "the-server-says-rolled-back" \
     "$([ "$(state 'fw.get("state")')" = rolled_back ] && [ "$(state 'fw.get("reason")')" = not_confirmed ] &&
         [ "$(state 'fw.get("version")')" = "$GOOD_VERSION" ] && [ "$(state 'fw.get("image_version")')" = "$BAD_VERSION" ] && echo 1 || echo 0)" \
     "$(state "$FW")"
-check "nothing-crashed" \
-    "$([ "$(command grep -a -c -E 'Guru Meditation|abort\(\) was called|Backtrace:' "$SERIAL" || true)" = 0 ] && echo 1 || echo 0)" \
-    "$(command grep -a -c -E 'Guru Meditation|abort\(\) was called|Backtrace:' "$SERIAL" || true) panic or abort lines on the console"
+CRASHES="$(cat "$OUT/serial.log" "$OUT/serial-2.log" | command grep -a -c -E 'Guru Meditation|abort\(\) was called|Backtrace:' || true)"
+check "nothing-crashed" "$([ "$CRASHES" = 0 ] && echo 1 || echo 0)" \
+    "$CRASHES panic or abort lines on the two consoles: the rollback is the trial's, not a crash's"
 
-# --- 5. no eFuse was written ------------------------------------------------------
+# --- 6. no eFuse was written ------------------------------------------------------
 
 stop_everything
 EFUSES_AFTER="$(sha256sum "$OUT/efuse.bin" | cut -d' ' -f1)"
@@ -305,7 +331,7 @@ ENDED=$(date +%s)
 say ""
 say "ota-qemu: wall-clock $((ENDED - STARTED)) s (three images and the server $((BUILT - STARTED)) s, the emulator $((ENDED - BUILT)) s); logs in $OUT"
 if [ "$FAILURES" -ne 0 ]; then
-    for f in "$SERIAL" "$OUT/server.log"; do
+    for f in "$OUT/serial.log" "$OUT/serial-2.log" "$OUT/server.log"; do
         [ -f "$f" ] && { say "--- the last lines of $f"; tail -n 30 "$f" | tr -d '\r'; }
     done
     say "ota-qemu: $FAILURES check(s) failed: FAIL"
