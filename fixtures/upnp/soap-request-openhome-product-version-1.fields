@@ -1,0 +1,6 @@
+soapaction = "urn:av-openhome-org:service:Product:1#SourceXml"
+service = ohp
+parse = ok
+service_type = urn:av-openhome-org:service:Product:1
+action = SourceXml
+validate = ok

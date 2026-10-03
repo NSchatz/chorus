@@ -1,0 +1,5 @@
+# Inserted in this order, each after the one before.
+track.0 = http://192.0.2.9/a.flac?x=1&y=2|<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/"><item id="1"><dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">A &amp; B</dc:title></item></DIDL-Lite>
+track.1 = http://192.0.2.9/b.flac|
+track.2 = http://192.0.2.9/c.flac|<DIDL-Lite/>
+read_list = 3 nine 1 99 2

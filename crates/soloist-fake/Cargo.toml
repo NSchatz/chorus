@@ -1,0 +1,20 @@
+[package]
+name = "chorus-soloist-fake"
+description = "a fake of Spotify Soloist's documented behaviour, for tests of chorus-soloistd and the server: never built into an image or a release"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# A library with no binary target, on purpose: `cargo build --bins` builds
+# nothing from this crate, so no image and no release can carry it. The tests
+# that need a program run it as the example `chorus-fake-soloist` of
+# crates/soloistd, which only `cargo test` builds.
+[dependencies]
+chorus-soloist = { path = "../soloist" }
+chorus-soloistd = { path = "../soloistd" }
+chorus-control = { path = "../control" }
+
+[lints]
+workspace = true

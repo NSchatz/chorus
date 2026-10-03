@@ -238,6 +238,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "chorus-soloist"
+version = "0.1.0"
+dependencies = [
+ "chorus-control",
+]
+
+[[package]]
+name = "chorus-soloist-fake"
+version = "0.1.0"
+dependencies = [
+ "chorus-control",
+ "chorus-soloist",
+ "chorus-soloistd",
+]
+
+[[package]]
+name = "chorus-soloistd"
+version = "0.1.0"
+dependencies = [
+ "chorus-control",
+ "chorus-soloist",
+ "chorus-soloist-fake",
+]
+
+[[package]]
 name = "chorus-sync"
 version = "0.1.0"
 dependencies = [

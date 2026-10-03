@@ -13,6 +13,26 @@
 //! that plays a URL on one makes its rooms play it (K78, "take the room"),
 //! through one of the server's network media players (`--players`).
 //!
+//! # The OpenHome services (goal 17; P6, Option B)
+//!
+//! With `--upnp-openhome on`, the default, each of those devices also offers
+//! OpenHome's Product:2, Volume:2, Info:1, Time:1 and Playlist:1
+//! (`chorus_upnp::openhome`; `docs/upnp.md`, "OpenHome";
+//! `docs/decisions/0128-openhome-services.md`). A renderer then has
+//! two **decks**, of which one at a time drives its player: AVTransport's
+//! (the Product source `UpnpAv`) and the Playlist's. An AVTransport
+//! `SetAVTransportURI` or `Play` takes the player for the first, a Playlist
+//! `Play`, `SeekId` or `SeekIndex` for the second, and the deck that lost it
+//! goes STOPPED. The Playlist is held here and walked here: the following
+//! track is handed to the player ahead of each boundary, the same next-URI
+//! join a control point's `SetNextAVTransportURI` gets, so a list plays
+//! through gapless with no control point connected. Its URIs reach the
+//! network only through the players' fetch policy, as every renderer URI
+//! does (brief section 4.8). No thread is added: the manager applies the
+//! player's reports to whichever deck holds the player, and the event thread
+//! sends the plain property-set events, the once-a-second Time event among
+//! them.
+//!
 //! # The threads, fixed and made at start
 //!
 //! `4 + W` ordinary threads, created with the rest of the population before
@@ -64,16 +84,23 @@ use chorus_upnp::avtransport::{AvTransport, Effect, TransportState};
 use chorus_upnp::description::{self, DeviceInfo, Resource};
 use chorus_upnp::gena::{self, CallbackUrl, Cidr, Subscribe, Subscriptions};
 use chorus_upnp::lastchange::{self, AVT_NS, RCS_NS};
+use chorus_upnp::openhome::info::{Details, Info};
+use chorus_upnp::openhome::playlist::{Playlist, ID_ARRAY_HOLD_MS};
+use chorus_upnp::openhome::product::{self, Product};
+use chorus_upnp::openhome::time::Time;
+use chorus_upnp::openhome::volume::Volume;
+use chorus_upnp::openhome::{Property, Tracker};
 use chorus_upnp::rendering::{self, RenderingControl};
 use chorus_upnp::soap::{self, Invocation};
 use chorus_upnp::ssdp::{self, Advert, Announcer, SearchLimiter, SeededJitter};
 use chorus_upnp::uuid::{udn, Target, Uuid, CHORUS_NAMESPACE};
+use chorus_upnp::xml::escape_text;
 use chorus_upnp::{connmgr, didl, error, Headers, Outputs, Service, UpnpError};
 
 use crate::config::UpnpFlags;
 use crate::control::ControlState;
 use crate::hostreport::register_ordinary_thread;
-use crate::mediaplayer::{Action, Event, PlayerHandle, PlayerReport, Players};
+use crate::mediaplayer::{Action, Event, MediaInfo, PlayerHandle, PlayerReport, Players};
 use crate::player::player_id;
 use crate::playersessions::{Metadata, PlayRequest, PlayerSessions};
 
@@ -316,6 +343,32 @@ struct Spec {
     /// Volume in thousandths and mute, as the control state holds them.
     volume: u16,
     mute: bool,
+    /// The ceiling of `volume` now, in thousandths: a room's effective limit
+    /// (its limit, or a quiet hour's when one is active); for a group the
+    /// average of its rooms' effective limits, which is the most the control
+    /// plane's group volume (an average of rooms each clamped to its own
+    /// limit) can reach.
+    limit: u16,
+    /// What the target's rooms play now, as the control state spells it
+    /// (`stream`, `none`, `line-in:<endpoint>/<input>`, `player:<id>`, ...),
+    /// when they are one formed group; empty for a saved group that is not
+    /// formed.
+    source: String,
+    /// That group's now-playing record, when it has one.
+    playing: Option<Playing>,
+    /// The inputs the endpoints of the target's rooms offer, as
+    /// `<endpoint>/<input>` with a label when the state gives one.
+    inputs: Vec<(String, Option<String>)>,
+}
+
+/// A group's now-playing record, as far as Info and Time tell it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Playing {
+    title: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
+    art_url: Option<String>,
+    duration_ms: Option<u64>,
 }
 
 fn thousandths(v: Option<&Value>) -> u16 {
@@ -341,6 +394,63 @@ fn items<'a>(state: &'a Value, key: &str) -> &'a [Value] {
     }
 }
 
+fn playing_of(group: &Value) -> Option<Playing> {
+    let record = group.get("now_playing")?;
+    let text = |key: &str| record.get(key).and_then(Value::as_str).map(str::to_string);
+    Some(Playing {
+        title: text("title"),
+        artist: text("artist"),
+        album: text("album"),
+        art_url: text("art_url"),
+        duration_ms: record
+            .get("duration_ms")
+            .and_then(Value::as_num)
+            .and_then(|n| n.parse().ok()),
+    })
+}
+
+/// The inputs the state lists, each `<endpoint>/<input>` with its label when
+/// there is one. An item is the input's literal, or (once inputs carry
+/// labels) an object naming it in `id` or `input` with a `name`.
+fn inputs_of(state: &Value) -> Vec<(String, Option<String>)> {
+    items(state, "inputs")
+        .iter()
+        .filter_map(|item| match item {
+            Value::Obj(_) => {
+                let id = item
+                    .get("id")
+                    .or_else(|| item.get("input"))
+                    .and_then(Value::as_str)?;
+                let name = item
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .filter(|n| !n.is_empty());
+                Some((id.to_string(), name.map(str::to_string)))
+            }
+            other => other.as_str().map(|id| (id.to_string(), None)),
+        })
+        .collect()
+}
+
+/// One room of the state, as the targets need it.
+struct RoomFacts {
+    name: String,
+    volume: u16,
+    mute: bool,
+    limit: u16,
+    group: String,
+    endpoints: Vec<String>,
+}
+
+/// One formed group of the state.
+struct GroupFacts {
+    kind: String,
+    members: Vec<String>,
+    volume: u16,
+    source: String,
+    playing: Option<Playing>,
+}
+
 /// The state's serial and its targets: one per room, per saved group and per
 /// live group.
 fn specs_of(state: &str) -> Option<(i64, Vec<Spec>)> {
@@ -350,95 +460,148 @@ fn specs_of(state: &str) -> Option<(i64, Vec<Spec>)> {
         .and_then(Value::as_num)
         .and_then(|n| n.parse().ok())?;
     let text = |v: &Value, key: &str| v.get(key).and_then(Value::as_str).map(str::to_string);
-    // id -> (name, volume, muted)
-    let mut rooms: BTreeMap<String, (String, u16, bool)> = BTreeMap::new();
-    let mut specs = Vec::new();
+    let offered = inputs_of(&state);
+    let mut rooms: BTreeMap<String, RoomFacts> = BTreeMap::new();
+    let mut order: Vec<String> = Vec::new();
     for zone in items(&state, "zones") {
         let id = text(zone, "id")?;
-        let name = text(zone, "name").unwrap_or_else(|| id.clone());
-        let volume = thousandths(zone.get("volume"));
-        let mute = zone.get("muted").and_then(Value::as_bool).unwrap_or(false);
-        rooms.insert(id.clone(), (name.clone(), volume, mute));
-        specs.push(Spec {
-            key: Target::Room(&id).name(),
-            kind: Kind::Room,
-            name,
-            rooms: vec![id.clone()],
-            take: id,
-            group: None,
-            volume,
-            mute,
-        });
+        let limit = zone
+            .get("effective_limit")
+            .or_else(|| zone.get("limit"))
+            .map_or(1000, |v| thousandths(Some(v)));
+        order.push(id.clone());
+        rooms.insert(
+            id.clone(),
+            RoomFacts {
+                name: text(zone, "name").unwrap_or_else(|| id.clone()),
+                volume: thousandths(zone.get("volume")),
+                mute: zone.get("muted").and_then(Value::as_bool).unwrap_or(false),
+                limit,
+                group: text(zone, "group").unwrap_or_else(|| id.clone()),
+                endpoints: strings(zone.get("endpoints")),
+            },
+        );
     }
-    let all_muted = |members: &[String]| {
-        !members.is_empty()
-            && members
-                .iter()
-                .all(|m| rooms.get(m).is_some_and(|(_, _, muted)| *muted))
-    };
-    // id -> (kind, members, volume) of every formed group.
-    let mut formed: BTreeMap<String, (String, Vec<String>, u16)> = BTreeMap::new();
+    let mut formed: BTreeMap<String, GroupFacts> = BTreeMap::new();
     for group in items(&state, "groups") {
         let id = text(group, "id")?;
         formed.insert(
             id,
-            (
-                text(group, "kind").unwrap_or_default(),
-                strings(group.get("zones")),
-                thousandths(group.get("volume")),
-            ),
+            GroupFacts {
+                kind: text(group, "kind").unwrap_or_default(),
+                members: strings(group.get("zones")),
+                volume: thousandths(group.get("volume")),
+                source: text(group, "source").unwrap_or_default(),
+                playing: playing_of(group),
+            },
         );
+    }
+    let all_muted = |members: &[String]| {
+        !members.is_empty() && members.iter().all(|m| rooms.get(m).is_some_and(|r| r.mute))
+    };
+    // The average of the members' values, rounded half up: the control
+    // plane's group volume, and so the group's ceiling too.
+    let average = |members: &[String], of: &dyn Fn(&RoomFacts) -> u16| {
+        let sum: u32 = members
+            .iter()
+            .filter_map(|m| rooms.get(m).map(|r| u32::from(of(r))))
+            .sum();
+        let n = members.len().max(1) as u32;
+        ((2 * sum + n) / (2 * n)) as u16
+    };
+    // The inputs the endpoints of these rooms offer, in the state's order.
+    let inputs_for = |members: &[String]| -> Vec<(String, Option<String>)> {
+        offered
+            .iter()
+            .filter(|(id, _)| {
+                id.split_once('/').is_some_and(|(endpoint, _)| {
+                    members.iter().any(|m| {
+                        rooms
+                            .get(m)
+                            .is_some_and(|r| r.endpoints.iter().any(|e| e == endpoint))
+                    })
+                })
+            })
+            .cloned()
+            .collect()
+    };
+    let playing_in = |group: &str| {
+        formed
+            .get(group)
+            .map(|g| (g.source.clone(), g.playing.clone()))
+    };
+    let mut specs = Vec::new();
+    for id in &order {
+        let room = &rooms[id];
+        let (source, playing) = playing_in(&room.group).unwrap_or_default();
+        let members = vec![id.clone()];
+        specs.push(Spec {
+            key: Target::Room(id).name(),
+            kind: Kind::Room,
+            name: room.name.clone(),
+            inputs: inputs_for(&members),
+            rooms: members,
+            take: id.clone(),
+            group: None,
+            volume: room.volume,
+            mute: room.mute,
+            limit: room.limit,
+            source,
+            playing,
+        });
     }
     for saved in items(&state, "saved_groups") {
         let id = text(saved, "id")?;
         let members = strings(saved.get("zones"));
         let (group, volume, mute) = match formed.get(&id) {
-            Some((_, in_it, volume)) => (Some(id.clone()), *volume, all_muted(in_it)),
-            None => {
-                // Not formed: the average of its rooms, as the group volume
-                // would be (rounded half up).
-                let sum: u32 = members
-                    .iter()
-                    .filter_map(|m| rooms.get(m).map(|(_, v, _)| u32::from(*v)))
-                    .sum();
-                let n = members.len().max(1) as u32;
-                (None, ((2 * sum + n) / (2 * n)) as u16, all_muted(&members))
-            }
+            Some(g) => (Some(id.clone()), g.volume, all_muted(&g.members)),
+            // Not formed: the average of its rooms, as the group volume
+            // would be.
+            None => (None, average(&members, &|r| r.volume), all_muted(&members)),
         };
+        let (source, playing) = playing_in(&id).unwrap_or_default();
         specs.push(Spec {
             key: Target::Group(&id).name(),
             kind: Kind::Saved,
             name: text(saved, "name").unwrap_or_else(|| id.clone()),
+            limit: average(&members, &|r| r.limit),
+            inputs: inputs_for(&members),
             rooms: members,
             take: id,
             group,
             volume,
             mute,
+            source,
+            playing,
         });
     }
-    for (id, (kind, members, volume)) in &formed {
-        if kind != "live" {
+    for (id, g) in &formed {
+        if g.kind != "live" {
             continue;
         }
-        let mut sorted: Vec<&str> = members.iter().map(String::as_str).collect();
+        let mut sorted: Vec<&str> = g.members.iter().map(String::as_str).collect();
         sorted.sort_unstable();
         sorted.dedup();
         // A live group is called by its rooms: their display names in the
         // order of their ids, joined by " + ".
         let name = sorted
             .iter()
-            .map(|m| rooms.get(*m).map_or(*m, |(name, _, _)| name.as_str()))
+            .map(|m| rooms.get(*m).map_or(*m, |r| r.name.as_str()))
             .collect::<Vec<_>>()
             .join(" + ");
         specs.push(Spec {
             key: Target::Live(&sorted).name(),
             kind: Kind::Live,
             name,
-            rooms: members.clone(),
+            limit: average(&g.members, &|r| r.limit),
+            inputs: inputs_for(&g.members),
+            rooms: g.members.clone(),
             take: id.clone(),
             group: Some(id.clone()),
-            volume: *volume,
-            mute: all_muted(members),
+            volume: g.volume,
+            mute: all_muted(&g.members),
+            source: g.source.clone(),
+            playing: g.playing.clone(),
         });
     }
     Some((serial, specs))
@@ -454,9 +617,12 @@ struct Renderer {
     description: String,
     avt: AvTransport,
     rcs: RenderingControl,
-    /// The subscriptions of AVTransport, RenderingControl and
-    /// ConnectionManager, in [`Service::ALL`]'s order.
-    subs: [Subscriptions; 3],
+    /// The subscriptions of every service, in [`Service::ALL`]'s order
+    /// ([`Service::index`]); those of the OpenHome services stay empty when
+    /// they are switched off.
+    subs: [Subscriptions; 8],
+    /// The OpenHome services' state.
+    oh: OpenHome,
     /// The player this renderer holds.
     player: Option<usize>,
     /// Whether the player has the current URI loaded.
@@ -472,10 +638,156 @@ struct Renderer {
 }
 
 fn service_index(service: Service) -> usize {
-    match service {
-        Service::AvTransport => 0,
-        Service::RenderingControl => 1,
-        Service::ConnectionManager => 2,
+    service.index()
+}
+
+/// Which of a renderer's two transports drives its player.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Deck {
+    /// AVTransport: a control point pushes one URI and the next (the Product
+    /// source `UpnpAv`).
+    UpnpAv,
+    /// The OpenHome Playlist, which the renderer walks itself.
+    Playlist,
+}
+
+/// The OpenHome state of one renderer (`chorus_upnp::openhome`).
+struct OpenHome {
+    product: Product,
+    volume: Volume,
+    info: Info,
+    time: Time,
+    playlist: Playlist,
+    /// What each service last evented, in [`Service::OPENHOME`]'s order.
+    trackers: [Tracker; 5],
+    /// The deck that drives the player. Always [`Deck::UpnpAv`] when the
+    /// OpenHome services are off.
+    deck: Deck,
+    /// A track start is awaited: a Load or a Start went to the player, and
+    /// its `Started` report is the start of a track for Info and Time.
+    fresh: bool,
+    /// What the player last opened.
+    media: Option<MediaInfo>,
+}
+
+/// The Product `Type` of an input of that kind.
+fn source_type(kind: Option<chorus_protocol::v2::SourceKind>) -> &'static str {
+    use chorus_protocol::v2::SourceKind;
+    match kind {
+        Some(SourceKind::Optical) => product::TYPE_DIGITAL,
+        Some(SourceKind::HdmiArc) => product::TYPE_HDMI,
+        Some(SourceKind::LineIn) | None => product::TYPE_ANALOG,
+    }
+}
+
+/// The source spelling of a Spotify receiver (goal 17's Soloist track; the
+/// spelling may not exist yet in a given build, and then no group plays it).
+const SOLOIST_PREFIX: &str = "soloist:";
+const LINE_IN_PREFIX: &str = "line-in:";
+
+/// The Product sources of a target, in order: the Playlist, UPnP AV (not
+/// visible, as in the reference: ohPipeline `OpenHome/Av/UpnpAv/UpnpAv.cpp:37`),
+/// every input the target's rooms offer (and the one the target plays now,
+/// should another room's endpoint offer it), and a `NetAux` source named
+/// Spotify while the target's group plays a Spotify receiver.
+fn sources_of(
+    spec: &Spec,
+    kind_of: &dyn Fn(&str) -> Option<chorus_protocol::v2::SourceKind>,
+) -> Vec<product::Source> {
+    let mut sources = vec![
+        product::Source {
+            system_name: "Playlist".to_string(),
+            name: "Playlist".to_string(),
+            kind: product::TYPE_PLAYLIST,
+            visible: true,
+        },
+        product::Source {
+            system_name: "UpnpAv".to_string(),
+            name: "UPnP AV".to_string(),
+            kind: product::TYPE_UPNP_AV,
+            visible: false,
+        },
+    ];
+    let mut inputs = spec.inputs.clone();
+    if let Some(playing) = spec.source.strip_prefix(LINE_IN_PREFIX) {
+        if !inputs.iter().any(|(id, _)| id == playing) {
+            inputs.push((playing.to_string(), None));
+        }
+    }
+    for (id, label) in &inputs {
+        let short = id.split_once('/').map_or(id.as_str(), |(_, input)| input);
+        // The input's own name where no other input of the target has it,
+        // else the whole literal.
+        let unique = inputs
+            .iter()
+            .filter(|(other, _)| other.split_once('/').map_or(other.as_str(), |(_, i)| i) == short)
+            .count()
+            == 1;
+        sources.push(product::Source {
+            system_name: id.clone(),
+            name: label.clone().unwrap_or_else(|| {
+                if unique {
+                    short.to_string()
+                } else {
+                    id.clone()
+                }
+            }),
+            kind: source_type(kind_of(id)),
+            visible: true,
+        });
+    }
+    if spec.source.starts_with(SOLOIST_PREFIX) {
+        sources.push(product::Source {
+            system_name: "Spotify".to_string(),
+            name: "Spotify".to_string(),
+            kind: product::TYPE_NET_AUX,
+            visible: true,
+        });
+    }
+    sources
+}
+
+/// A DIDL-Lite item for a now-playing record: what Info's `Metadata` says
+/// about something that is not a track a control point gave (a line-in, the
+/// TV, another protocol's source).
+fn didl_of(playing: &Playing) -> String {
+    let mut x = String::from(concat!(
+        r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" "#,
+        r#"xmlns:dc="http://purl.org/dc/elements/1.1/" "#,
+        r#"xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">"#,
+        r#"<item id="0" parentID="0" restricted="1">"#
+    ));
+    let mut tag = |name: &str, value: &Option<String>| {
+        if let Some(v) = value {
+            x.push_str(&format!("<{name}>{}</{name}>", escape_text(v)));
+        }
+    };
+    tag("dc:title", &playing.title);
+    tag("upnp:artist", &playing.artist);
+    tag("upnp:album", &playing.album);
+    tag("upnp:albumArtURI", &playing.art_url);
+    x.push_str("<upnp:class>object.item.audioItem</upnp:class></item></DIDL-Lite>");
+    x
+}
+
+/// What Info's `Details` says about what the player opened. `BitRate` is the
+/// decoded stream's for a lossless source (rate x channels x bits) and 0 for
+/// a lossy one: the decoder does not report a compressed bit rate.
+fn details_of(info: &MediaInfo) -> Details {
+    let bits = u32::from(info.format.bits.unwrap_or(0));
+    Details {
+        duration_s: info
+            .duration_ms
+            .map_or(0, |ms| (ms / 1000).min(u64::from(u32::MAX)) as u32),
+        bit_rate: info
+            .format
+            .rate
+            .saturating_mul(u32::from(info.format.channels))
+            .saturating_mul(bits),
+        bit_depth: bits,
+        sample_rate: info.format.rate,
+        lossless: info.format.bits.is_some(),
+        codec_name: info.format.codec.name().to_string(),
     }
 }
 
@@ -550,6 +862,8 @@ pub struct Settings {
     /// The stable identity the UDNs are derived from: the fingerprint of the
     /// server's persisted public key.
     pub server_id: String,
+    /// Whether the OpenHome services are offered (`--upnp-openhome`).
+    pub openhome: bool,
 }
 
 /// The renderers of a server: the table, and everything the threads share.
@@ -563,7 +877,21 @@ pub struct Renderers {
     next_base: AtomicU64,
     server: String,
     wake_events: SyncSender<()>,
+    /// What kind an offered input (`<endpoint>/<input>`) is.
+    input_kind: InputKinds,
     log: Box<dyn Fn(&str) + Send + Sync>,
+}
+
+/// Says what kind an offered input, named `<endpoint>/<input>`, is; `None`
+/// when it is not offered or nobody knows.
+pub type InputKinds = Box<dyn Fn(&str) -> Option<chorus_protocol::v2::SourceKind> + Send + Sync>;
+
+/// What the renderers ask of the rest of the server.
+pub struct Hooks {
+    /// What kind each offered input is, for the OpenHome source list.
+    pub input_kind: InputKinds,
+    /// Where the renderers' log lines go.
+    pub log: Box<dyn Fn(&str) + Send + Sync>,
 }
 
 /// What an HTTP worker answers with.
@@ -631,8 +959,149 @@ impl Renderers {
         r.player.and_then(|i| self.players.handle(i)).cloned()
     }
 
+    /// The transport that drives the renderer's player now.
+    fn deck(r: &Renderer) -> &AvTransport {
+        match r.oh.deck {
+            Deck::UpnpAv => &r.avt,
+            Deck::Playlist => r.oh.playlist.deck(),
+        }
+    }
+
     fn tag(r: &Renderer) -> u64 {
-        (r.base << 32) | (r.avt.epoch() & 0xffff_ffff)
+        (r.base << 32) | (Self::deck(r).epoch() & 0xffff_ffff)
+    }
+
+    /// Tell the driving deck that its play could not start.
+    fn fail(r: &mut Renderer, reason: &str) {
+        let epoch = Self::deck(r).epoch();
+        match r.oh.deck {
+            Deck::UpnpAv => {
+                r.avt.failed(epoch, reason);
+            }
+            Deck::Playlist => {
+                r.oh.playlist.failed(epoch, reason);
+            }
+        }
+    }
+
+    /// Stop the driving deck's state machine without touching the player
+    /// (the player is gone, or about to be told by the caller).
+    fn halt(r: &mut Renderer) -> Vec<Effect> {
+        r.oh.time.stopped();
+        match r.oh.deck {
+            Deck::UpnpAv => r.avt.stop().unwrap_or_default(),
+            Deck::Playlist => r.oh.playlist.halt(),
+        }
+    }
+
+    /// Give the player to the other deck. The deck that had it goes STOPPED
+    /// (ohPipeline: the source that is deactivated stops and events it,
+    /// `OpenHome/Av/Playlist/SourcePlaylist.cpp:244-252`,
+    /// `OpenHome/Av/UpnpAv/UpnpAv.cpp:100-107`), what it was playing stops,
+    /// and the reports still on their way from it are dropped by a new epoch
+    /// base. The list, and AVTransport's URIs, are kept.
+    fn switch_deck(&self, r: &mut Renderer, to: Deck) {
+        if r.oh.deck == to {
+            return;
+        }
+        let engaged = !matches!(
+            Self::deck(r).state(),
+            TransportState::Stopped | TransportState::NoMediaPresent
+        );
+        if engaged {
+            if let Some(handle) = self.handle_of(r) {
+                handle.send(Self::tag(r), Action::Stop);
+            }
+            self.sessions.suspend(&r.spec.key);
+        }
+        match r.oh.deck {
+            Deck::UpnpAv => {
+                let _ = r.avt.stop();
+            }
+            Deck::Playlist => {
+                r.oh.playlist.deactivate();
+            }
+        }
+        r.oh.deck = to;
+        if to == Deck::Playlist {
+            r.oh.playlist.activate();
+        }
+        r.oh.fresh = false;
+        r.oh.time.stopped();
+        r.loaded = false;
+        r.queued.clear();
+        if r.player.is_some() {
+            r.base = self.next_base.fetch_add(1, Ordering::SeqCst) & 0x7fff_ffff;
+        }
+        r.idle_since_ms = self.now_ms();
+        (self.log)(&format!(
+            "upnp renderer source target={} source={}",
+            r.spec.key,
+            match to {
+                Deck::UpnpAv => "UpnpAv",
+                Deck::Playlist => "Playlist",
+            }
+        ));
+    }
+
+    /// Whether the target's rooms play something that is not this renderer's
+    /// own player: a line-in, the TV, a Spotify receiver, another holder's
+    /// player.
+    fn plays_elsewhere(r: &Renderer) -> bool {
+        let source = r.spec.source.as_str();
+        if matches!(source, "" | "stream" | "none") {
+            return false;
+        }
+        match (source.strip_prefix("player:"), r.player) {
+            (Some(id), Some(index)) => id != player_id(index),
+            _ => true,
+        }
+    }
+
+    /// Bring the OpenHome state in line with the target as the control state
+    /// has it: the volume and its limit, the name, the source list, which
+    /// source is current, and what Info says of a source that is not a track
+    /// of this renderer's.
+    fn refresh_openhome(&self, r: &mut Renderer) {
+        r.oh.volume.report(r.spec.volume, r.spec.mute, r.spec.limit);
+        r.oh.product.set_room(&r.spec.name);
+        r.oh.product
+            .set_sources(sources_of(&r.spec, &*self.input_kind));
+        let source = r.spec.source.as_str();
+        let by_input = source
+            .strip_prefix(LINE_IN_PREFIX)
+            .and_then(|input| r.oh.product.index_of_system_name(input));
+        let by_receiver = source
+            .starts_with(SOLOIST_PREFIX)
+            .then(|| r.oh.product.index_of_kind(product::TYPE_NET_AUX))
+            .flatten();
+        let index = by_input.or(by_receiver).unwrap_or(match r.oh.deck {
+            Deck::Playlist => 0,
+            Deck::UpnpAv => 1,
+        });
+        r.oh.product.set_index(index);
+        if Self::plays_elsewhere(r) {
+            let metadata = r.spec.playing.as_ref().map_or_else(String::new, didl_of);
+            if r.oh.info.follow(source, &metadata) {
+                r.oh.time
+                    .track(r.spec.playing.as_ref().and_then(|p| p.duration_ms));
+            }
+        }
+    }
+
+    /// A track of the driving deck starts: Info and Time count it.
+    fn track_started(r: &mut Renderer) {
+        let (uri, metadata) = {
+            let (u, m) = Self::deck(r).current();
+            (u.to_string(), m.to_string())
+        };
+        let duration = Self::deck(r).duration_ms();
+        r.oh.info.track(&uri, &metadata);
+        if let Some(media) = r.oh.media.as_ref().filter(|m| m.uri == uri) {
+            r.oh.info.details(details_of(media));
+        }
+        r.oh.time.track(duration);
+        r.oh.fresh = false;
     }
 
     /// Unload and give back the renderer's player, ending its session.
@@ -702,6 +1171,7 @@ impl Renderers {
                 friendly_name: spec.name.clone(),
                 model_name: model_name(&spec.kind).to_string(),
                 model_number: env!("CARGO_PKG_VERSION").to_string(),
+                openhome: self.settings.openhome,
             };
             let config_id = description::device_config_id(&info);
             if let Some(r) = inner.renderers.get_mut(&key) {
@@ -724,6 +1194,7 @@ impl Renderers {
                 }
                 r.rcs.report(spec.volume, spec.mute);
                 r.spec = spec;
+                self.refresh_openhome(r);
                 continue;
             }
             let boot_id = ssdp::boot_id(unix_s(), inner.last_boot.get(&key).copied());
@@ -732,28 +1203,44 @@ impl Renderers {
                 "upnp renderer appeared target={} udn={} name=\"{}\" bootid={} configid={}",
                 spec.key, key, spec.name, boot_id, config_id
             ));
-            inner.renderers.insert(
-                key,
-                Renderer {
-                    udn: target,
-                    config_id,
-                    boot_id,
-                    description: description::device_description(&info, config_id),
-                    avt: AvTransport::new(),
-                    rcs: RenderingControl::new(spec.volume, spec.mute),
-                    subs: [
-                        Subscriptions::standard(),
-                        Subscriptions::standard(),
-                        Subscriptions::standard(),
-                    ],
-                    player: None,
-                    loaded: false,
-                    base: 0,
-                    idle_since_ms: now,
-                    queued: Vec::new(),
-                    spec,
+            let mut renderer = Renderer {
+                udn: target,
+                config_id,
+                boot_id,
+                description: description::device_description(&info, config_id),
+                avt: AvTransport::new(),
+                rcs: RenderingControl::new(spec.volume, spec.mute),
+                subs: std::array::from_fn(|_| Subscriptions::standard()),
+                oh: OpenHome {
+                    product: Product::new(
+                        &spec.name,
+                        model_name(&spec.kind),
+                        sources_of(&spec, &*self.input_kind),
+                    ),
+                    volume: Volume::new(spec.volume, spec.mute, spec.limit),
+                    info: Info::new(),
+                    time: Time::new(),
+                    playlist: Playlist::new(),
+                    trackers: std::array::from_fn(|_| Tracker::new()),
+                    // The Playlist is the source a new OpenHome device
+                    // starts on; without the services there is one deck.
+                    deck: if self.settings.openhome {
+                        Deck::Playlist
+                    } else {
+                        Deck::UpnpAv
+                    },
+                    fresh: false,
+                    media: None,
                 },
-            );
+                player: None,
+                loaded: false,
+                base: 0,
+                idle_since_ms: now,
+                queued: Vec::new(),
+                spec,
+            };
+            self.refresh_openhome(&mut renderer);
+            inner.renderers.insert(key, renderer);
         }
         let gone: Vec<String> = inner
             .renderers
@@ -849,7 +1336,7 @@ impl Renderers {
     ) -> Result<(), UpnpError> {
         let tag = Self::tag(r);
         let (uri, metadata) = {
-            let (u, m) = r.avt.current();
+            let (u, m) = Self::deck(r).current();
             (u.to_string(), m.to_string())
         };
         let (hints, mime) = hints_of(&uri, &metadata);
@@ -863,7 +1350,7 @@ impl Renderers {
             );
             r.loaded = true;
             let (next, next_metadata) = {
-                let (u, m) = r.avt.next_queued();
+                let (u, m) = Self::deck(r).next_queued();
                 (u.to_string(), m.to_string())
             };
             if !next.is_empty() {
@@ -900,15 +1387,14 @@ impl Renderers {
                 "upnp play refused target={} reason=\"{}\"",
                 r.spec.key, reason
             ));
-            let epoch = r.avt.epoch();
-            r.avt.failed(epoch, &reason);
+            Self::fail(r, &reason);
             return Err(error::ACTION_FAILED);
         }
         Ok(())
     }
 
-    /// Turn the effects of an AVTransport input into player actions and
-    /// control commands.
+    /// Turn the effects of an input to the driving deck (AVTransport's or the
+    /// Playlist's) into player actions and control commands.
     fn apply_effects(&self, r: &mut Renderer, effects: Vec<Effect>) -> Result<(), UpnpError> {
         let mut outcome = Ok(());
         if let (Some(index), Some(handle)) = (r.player, self.handle_of(r)) {
@@ -919,10 +1405,12 @@ impl Renderers {
                         let (_, mime) = hints_of(&uri, &metadata);
                         r.queued.clear();
                         r.loaded = true;
+                        r.oh.fresh = true;
                         r.idle_since_ms = self.now_ms();
                         handle.send(tag, Action::Load { uri, mime });
                     }
                     Effect::Start => {
+                        r.oh.fresh = true;
                         if let Err(e) = self.start(r, &handle, index) {
                             outcome = Err(e);
                             break;
@@ -937,6 +1425,7 @@ impl Renderers {
                     Effect::Stop => {
                         handle.send(tag, Action::Stop);
                         self.sessions.suspend(&r.spec.key);
+                        r.oh.time.stopped();
                         r.idle_since_ms = self.now_ms();
                     }
                     Effect::SeekTo { ms } => {
@@ -961,7 +1450,7 @@ impl Renderers {
                 }
             }
         }
-        if r.avt.state() == TransportState::NoMediaPresent {
+        if Self::deck(r).state() == TransportState::NoMediaPresent {
             self.unload(r);
         }
         outcome
@@ -1021,8 +1510,10 @@ impl Renderers {
             }
             Service::AvTransport => {
                 let r = inner.renderers.get_mut(key).ok_or(error::ACTION_FAILED)?;
-                if let Some(handle) = self.handle_of(r) {
-                    r.avt.position(handle.position_ms());
+                if r.oh.deck == Deck::UpnpAv {
+                    if let Some(handle) = self.handle_of(r) {
+                        r.avt.position(handle.position_ms());
+                    }
                 }
                 // A trial on a copy says whether the action is accepted and
                 // whether it needs a player, before anything changes.
@@ -1045,14 +1536,201 @@ impl Renderers {
                     ));
                     return Err(error::ACTION_FAILED);
                 }
+                if needs_player {
+                    // The AVTransport takeover: a URI or a Play makes UPnP AV
+                    // the device's source and stops the Playlist (ohPipeline
+                    // `OpenHome/Av/UpnpAv/UpnpAv.cpp:128-130`, `:162`).
+                    self.switch_deck(r, Deck::UpnpAv);
+                    r.oh.product.set_standby(false);
+                }
                 let (out, effects) = r.avt.invoke(invocation)?;
-                self.apply_effects(r, effects)?;
+                if r.oh.deck == Deck::UpnpAv {
+                    self.apply_effects(r, effects)?;
+                }
+                // While the Playlist has the player, AVTransport's other
+                // actions change its own variables and nothing that plays
+                // (`UpnpAv.cpp:183-266`: `if (IsActive())`).
+                self.refresh_openhome(r);
                 out
+            }
+            Service::Playlist => {
+                let r = inner.renderers.get_mut(key).ok_or(error::ACTION_FAILED)?;
+                if r.oh.deck == Deck::Playlist {
+                    if let Some(handle) = self.handle_of(r) {
+                        r.oh.playlist.position(handle.position_ms());
+                    }
+                }
+                let seed = crate::session::random_32().map_or(1, |b| {
+                    u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])
+                });
+                let name = invocation.action.name;
+                let takes_over = Playlist::activates(name);
+                // A trial on a copy, as the source it would be.
+                let mut trial = r.oh.playlist.clone();
+                trial.activate();
+                let (_, wanted) = trial.invoke(invocation, seed)?;
+                let needs_player = (takes_over || r.oh.deck == Deck::Playlist)
+                    && wanted
+                        .iter()
+                        .any(|e| matches!(e, Effect::Load { .. } | Effect::Start));
+                if needs_player && !self.take_player(r) {
+                    (self.log)(&format!(
+                        "upnp action refused target={} action=Playlist.{} reason=\"no free player: \
+                         all {} are in use\"",
+                        r.spec.key,
+                        name,
+                        self.players.len()
+                    ));
+                    return Err(error::ACTION_FAILED);
+                }
+                if takes_over {
+                    // Play, SeekId and SeekIndex make the Playlist the
+                    // device's source and stop UPnP AV (ohPipeline
+                    // `OpenHome/Av/Playlist/SourcePlaylist.cpp:273-276`,
+                    // `:394-396`).
+                    self.switch_deck(r, Deck::Playlist);
+                    r.oh.product.set_standby(false);
+                }
+                let (out, effects) = r.oh.playlist.invoke(invocation, seed)?;
+                if r.oh.deck == Deck::Playlist {
+                    self.apply_effects(r, effects)?;
+                }
+                self.refresh_openhome(r);
+                out
+            }
+            Service::Volume => {
+                let r = inner.renderers.get_mut(key).ok_or(error::ACTION_FAILED)?;
+                let (out, effects) = r.oh.volume.invoke(invocation)?;
+                let spec = r.spec.clone();
+                let mut state = None;
+                for effect in effects {
+                    state = Some(match effect {
+                        rendering::Effect::SetVolume { thousandths } => {
+                            self.set_volume(&spec, thousandths)?
+                        }
+                        rendering::Effect::SetMute { mute } => self.set_mute(&spec, mute)?,
+                    });
+                }
+                // The same volume as RenderingControl's, through the same
+                // commands: the real value, clamp included, before the
+                // action answers, and both services event it.
+                if let Some(state) = state {
+                    self.sync(&mut inner, &state);
+                }
+                out
+            }
+            Service::Product => {
+                let r = inner.renderers.get_mut(key).ok_or(error::ACTION_FAILED)?;
+                let (out, effects) = r.oh.product.invoke(invocation)?;
+                let mut state = None;
+                for effect in effects {
+                    match effect {
+                        product::Effect::Select { index } => {
+                            state = self.select_source(r, index)?;
+                        }
+                        product::Effect::Standby { on } => {
+                            if on {
+                                // Standby stops what this renderer plays and
+                                // nothing else: chorus has no power state to
+                                // enter (the decision record says why the
+                                // flag exists at all).
+                                let effects = Self::halt(r);
+                                let _ = self.apply_effects(r, effects);
+                            }
+                            r.oh.product.set_standby(on);
+                        }
+                    }
+                }
+                match state {
+                    Some(state) => self.sync(&mut inner, &state),
+                    None => {
+                        if let Some(r) = inner.renderers.get_mut(key) {
+                            self.refresh_openhome(r);
+                        }
+                    }
+                }
+                out
+            }
+            Service::Info => {
+                let r = inner.renderers.get(key).ok_or(error::ACTION_FAILED)?;
+                return r.oh.info.invoke(invocation);
+            }
+            Service::Time => {
+                let r = inner.renderers.get_mut(key).ok_or(error::ACTION_FAILED)?;
+                self.read_position(r);
+                return r.oh.time.invoke(invocation);
             }
         };
         drop(inner);
         self.wake_events();
         Ok(done)
+    }
+
+    /// Make the Product source at `index` the current one. A line-in or a
+    /// TV input is selected with the room model's own `take`, so the
+    /// target's rooms play it (K78) and the state after is returned for the
+    /// caller to follow; the Playlist and UPnP AV are this renderer's decks,
+    /// and selecting one stops what the rooms played from elsewhere, as the
+    /// reference deactivates the source it leaves (ohPipeline
+    /// `OpenHome/Av/Product.cpp:429-462`). Nothing starts to play by being
+    /// selected. Leaves standby.
+    fn select_source(&self, r: &mut Renderer, index: usize) -> Result<Option<String>, UpnpError> {
+        let source =
+            r.oh.product
+                .sources()
+                .get(index)
+                .cloned()
+                .ok_or(error::OH_PRODUCT_SOURCE_NOT_FOUND)?;
+        r.oh.product.set_standby(false);
+        let target = r.spec.take.clone();
+        let take = |source: &str| {
+            self.apply_command(&format!(
+                r#"{{"v":2,"t":"take","target":"{}","source":"{}"}}"#,
+                target, source
+            ))
+        };
+        let state = match source.kind {
+            product::TYPE_PLAYLIST | product::TYPE_UPNP_AV => {
+                let elsewhere = Self::plays_elsewhere(r);
+                self.switch_deck(
+                    r,
+                    if source.kind == product::TYPE_PLAYLIST {
+                        Deck::Playlist
+                    } else {
+                        Deck::UpnpAv
+                    },
+                );
+                if elsewhere {
+                    Some(take("none")?)
+                } else {
+                    None
+                }
+            }
+            // Listed only while it plays: selecting it changes nothing.
+            product::TYPE_NET_AUX => None,
+            _ => {
+                let state = take(&format!("{LINE_IN_PREFIX}{}", source.system_name))?;
+                // The rooms left this renderer's player: its deck stops now,
+                // not when the manager next looks.
+                let effects = Self::halt(r);
+                let _ = self.apply_effects(r, effects);
+                Some(state)
+            }
+        };
+        (self.log)(&format!(
+            "upnp source selected target={} source=\"{}\" type={}",
+            r.spec.key, source.system_name, source.kind
+        ));
+        Ok(state)
+    }
+
+    /// Give Time the played position, while the driving deck plays.
+    fn read_position(&self, r: &mut Renderer) {
+        if Self::deck(r).state() == TransportState::Playing {
+            if let Some(handle) = self.handle_of(r) {
+                r.oh.time.position(handle.position_ms());
+            }
+        }
     }
 
     // ----- the players' reports -----
@@ -1081,7 +1759,37 @@ impl Renderers {
         }
         self.sessions.on_report(report);
         let epoch = report.epoch & 0xffff_ffff;
+        // What the player opened, for Info's details.
+        if let Event::Opened(info) | Event::Boundary(info) = &report.event {
+            r.oh.media = Some(info.clone());
+        }
+        match r.oh.deck {
+            Deck::UpnpAv => self.report_to_avtransport(r, epoch, &report.event),
+            Deck::Playlist => self.report_to_playlist(r, epoch, &report.event),
+        }
+        // Info and Time follow the player, whichever deck drives it.
         match &report.event {
+            Event::Opened(info) => {
+                if !r.oh.fresh && Self::deck(r).current().0 == info.uri {
+                    r.oh.info.details(details_of(info));
+                }
+                let duration = Self::deck(r).duration_ms();
+                r.oh.time.duration(duration);
+            }
+            Event::Started if r.oh.fresh => Self::track_started(r),
+            Event::Boundary(_) => Self::track_started(r),
+            Event::Title(title) => r.oh.info.metatext(title),
+            Event::Ended { .. } | Event::Failed { .. } => r.oh.time.stopped(),
+            _ => {}
+        }
+        self.refresh_openhome(r);
+        drop(inner);
+        self.wake_events();
+    }
+
+    /// One player report for a renderer whose AVTransport drives the player.
+    fn report_to_avtransport(&self, r: &mut Renderer, epoch: u64, event: &Event) {
+        match event {
             Event::Opened(info) => {
                 r.avt.media_opened(epoch, info.duration_ms, info.seekable);
             }
@@ -1142,8 +1850,54 @@ impl Renderers {
             }
             Event::Title(_) | Event::SeekDone { .. } => {}
         }
-        drop(inner);
-        self.wake_events();
+    }
+
+    /// One player report for a renderer whose Playlist drives the player.
+    /// The Playlist decides what follows by itself: at a boundary it hands
+    /// the player the track after the one that just became audible, with no
+    /// control point in the loop.
+    fn report_to_playlist(&self, r: &mut Renderer, epoch: u64, event: &Event) {
+        match event {
+            Event::Opened(info) => {
+                r.oh.playlist
+                    .media_opened(epoch, info.duration_ms, info.seekable);
+            }
+            Event::Started => {
+                r.oh.playlist.playing(epoch);
+            }
+            Event::Boundary(info) => {
+                let effects =
+                    r.oh.playlist
+                        .track_boundary(epoch, &info.uri, info.duration_ms, info.seekable);
+                let (uri, metadata) = r.oh.playlist.deck().current();
+                let (hints, _) = hints_of(uri, metadata);
+                self.sessions.set_metadata(&r.spec.key, hints);
+                let _ = self.apply_effects(r, effects);
+            }
+            Event::NextOpened(_) => {}
+            Event::NextFailed { reason } => {
+                (self.log)(&format!(
+                    "upnp playlist track failed target={} reason=\"{}\"",
+                    r.spec.key, reason
+                ));
+                r.oh.playlist.next_failed(epoch, reason);
+            }
+            Event::Ended { .. } => {
+                let effects = r.oh.playlist.ended(epoch);
+                let _ = self.apply_effects(r, effects);
+            }
+            Event::Failed { reason } => {
+                (self.log)(&format!(
+                    "upnp media failed target={} reason=\"{}\"",
+                    r.spec.key, reason
+                ));
+                r.oh.playlist.failed(epoch, reason);
+            }
+            Event::SeekRefused { .. } => {
+                r.oh.playlist.playing(epoch);
+            }
+            Event::Title(_) | Event::SeekDone { .. } => {}
+        }
     }
 
     /// What the manager does every turn: players whose group plays something
@@ -1165,10 +1919,10 @@ impl Renderers {
                 r.loaded = false;
                 r.queued.clear();
                 if !matches!(
-                    r.avt.state(),
+                    Self::deck(r).state(),
                     TransportState::Stopped | TransportState::NoMediaPresent
                 ) {
-                    let _ = r.avt.stop();
+                    let _ = Self::halt(r);
                     changed = true;
                     (self.log)(&format!(
                         "upnp renderer stopped target={} reason=\"its rooms play something else\"",
@@ -1178,7 +1932,7 @@ impl Renderers {
                 continue;
             }
             let idle = matches!(
-                r.avt.state(),
+                Self::deck(r).state(),
                 TransportState::Stopped | TransportState::NoMediaPresent
             ) && !self.sessions.in_session(&r.spec.key);
             if idle && now.saturating_sub(r.idle_since_ms) >= STOPPED_HOLD_MS {
@@ -1193,6 +1947,18 @@ impl Renderers {
 
     // ----- eventing -----
 
+    /// The evented variables of an OpenHome service with their values now.
+    fn evented(r: &Renderer, service: Service) -> Vec<Property> {
+        match service {
+            Service::Product => r.oh.product.evented(),
+            Service::Volume => r.oh.volume.evented(),
+            Service::Info => r.oh.info.evented(),
+            Service::Time => r.oh.time.evented(),
+            Service::Playlist => r.oh.playlist.evented(),
+            _ => Vec::new(),
+        }
+    }
+
     fn initial_body(r: &Renderer, service: Service) -> String {
         match service {
             Service::AvTransport => gena::propertyset(&[(
@@ -1205,6 +1971,14 @@ impl Renderers {
             )]),
             Service::ConnectionManager => {
                 let vars = connmgr::evented();
+                let pairs: Vec<(&str, &str)> = vars.iter().map(|(n, v)| (*n, v.as_str())).collect();
+                gena::propertyset(&pairs)
+            }
+            // OpenHome: every evented variable, one property each, no
+            // LastChange (ohNet `OpenHome/Net/Device/DviSubscription.cpp`
+            // lines 219-258, 393-407).
+            _ => {
+                let vars = Self::evented(r, service);
                 let pairs: Vec<(&str, &str)> = vars.iter().map(|(n, v)| (*n, v.as_str())).collect();
                 gena::propertyset(&pairs)
             }
@@ -1231,6 +2005,9 @@ impl Renderers {
         let Some(r) = inner.renderers.get_mut(key) else {
             return;
         };
+        if service == Service::Time {
+            self.read_position(r);
+        }
         let body = Arc::new(Self::initial_body(r, service));
         if let Some(notify) = r.subs[service_index(service)].initial(sid) {
             Self::push_job(
@@ -1295,6 +2072,51 @@ impl Renderers {
             // ConnectionManager's variables never change; its table still
             // expires.
             r.subs[service_index(Service::ConnectionManager)].expire(now);
+            if !self.settings.openhome {
+                continue;
+            }
+            // The OpenHome services: each variable that changed since the
+            // service last evented, in one message per service, to every
+            // subscriber that has had its initial event. Time's position is
+            // read only while somebody subscribes to Time: it changes once a
+            // second while playing, and that is the event's cadence.
+            if !r.subs[service_index(Service::Time)].is_empty() {
+                self.read_position(r);
+            }
+            for (i, service) in Service::OPENHOME.into_iter().enumerate() {
+                let current = Self::evented(r, service);
+                let moderated: &[&str] = if service == Service::Playlist {
+                    &["IdArray"]
+                } else {
+                    &[]
+                };
+                let changed = r.oh.trackers[i].poll(&current, now, moderated, ID_ARRAY_HOLD_MS);
+                if changed.is_empty() {
+                    r.subs[service_index(service)].expire(now);
+                    continue;
+                }
+                let notifies = r.subs[service_index(service)].event(now);
+                if notifies.is_empty() {
+                    continue;
+                }
+                let pairs: Vec<(&str, &str)> =
+                    changed.iter().map(|(n, v)| (*n, v.as_str())).collect();
+                let body = Arc::new(gena::propertyset(&pairs));
+                for notify in notifies {
+                    Self::push_job(
+                        &mut inner.queues,
+                        notify.sid,
+                        Job {
+                            seq: notify.seq,
+                            callbacks: notify.callbacks,
+                            body: Arc::clone(&body),
+                            udn: key.clone(),
+                            service,
+                        },
+                        now,
+                    );
+                }
+            }
         }
         let mut healthy = Vec::new();
         let mut suspects = Vec::new();
@@ -1326,7 +2148,8 @@ impl Renderers {
         let now = self.now_ms();
         let mut due: Option<u64> = None;
         for r in inner.renderers.values_mut() {
-            for at in [r.avt.events().due_ms(), r.rcs.events().due_ms()]
+            let held = r.oh.trackers.iter().filter_map(Tracker::due_ms).min();
+            for at in [r.avt.events().due_ms(), r.rcs.events().due_ms(), held]
                 .into_iter()
                 .flatten()
             {
@@ -1536,6 +2359,7 @@ impl Discovery<'_> {
             // UDA11 section 1.2.2: a device that answers unicast searches on
             // a port other than 1900 says which, in 49152 to 65535.
             search_port: (self.port != SSDP_PORT && self.port >= 49152).then_some(self.port),
+            openhome: self.shared.settings.openhome,
         })
     }
 
@@ -1865,12 +2689,15 @@ impl Renderers {
         };
         let result = soap::validate(service, &action)
             .and_then(|invocation| self.act(key, service, &invocation));
+        // A request that named a lower version of the service than the one
+        // announced is answered in the version it named.
+        let version = soap::requested_version(service, &action).unwrap_or(service.version());
         match result {
             Ok(out) => {
                 let mut reply = Reply::xml(
                     200,
                     "OK",
-                    soap::build_response(service, &action.action, &out),
+                    soap::build_response_at(service, version, &action.action, &out),
                 );
                 reply.headers.push(("EXT", String::new()));
                 reply
@@ -1993,6 +2820,14 @@ impl Renderers {
             // Unknown, or vanished: the device is not there.
             None => return not_found(),
         };
+        // The OpenHome services exist only when they are switched on.
+        if let Resource::Scpd(service) | Resource::Control(service) | Resource::Event(service) =
+            resource
+        {
+            if !Service::offered(self.settings.openhome).contains(&service) {
+                return not_found();
+            }
+        }
         let method = request.method.as_str();
         let wrong_method = |allow: &str| {
             let mut reply = Reply::empty(405, reason_of(405));
@@ -2101,7 +2936,8 @@ impl Upnp {
     /// identity the UDNs rest on. `sessions` is the server's one table of
     /// player sessions over its players (goal 17: an alarm's stored stream
     /// URL plays through the same one). `reports` is the players' one report
-    /// stream (`Players::take_reports`).
+    /// stream (`Players::take_reports`). `hooks` is what the renderers ask
+    /// of the rest of the server.
     pub fn new(
         sockets: Sockets,
         flags: &UpnpFlags,
@@ -2109,8 +2945,9 @@ impl Upnp {
         state: Arc<ControlState>,
         sessions: Arc<PlayerSessions>,
         reports: Receiver<PlayerReport>,
-        log: Box<dyn Fn(&str) + Send + Sync>,
+        hooks: Hooks,
     ) -> Upnp {
+        let Hooks { input_kind, log } = hooks;
         let players = Arc::clone(sessions.players());
         let mut subnets: Vec<Cidr> = flags
             .callback_subnets
@@ -2127,6 +2964,7 @@ impl Upnp {
                 http: sockets.http,
                 subnets,
                 server_id,
+                openhome: flags.openhome,
             },
             state,
             players,
@@ -2136,6 +2974,7 @@ impl Upnp {
             next_base: AtomicU64::new(1),
             server: server_token(),
             wake_events,
+            input_kind,
             log: Box::new(move |line: &str| session_log(line)),
         });
         Upnp {
@@ -2152,7 +2991,7 @@ impl Upnp {
         let s = &self.shared.settings;
         format!(
             "upnp renderers listening on={} workers={} ssdp_port={} ssdp_group={} \
-             callback_subnets={} loopback_callbacks={} identity={}",
+             callback_subnets={} loopback_callbacks={} identity={} openhome={}",
             s.http,
             self.workers,
             self.sockets.ssdp_port,
@@ -2171,7 +3010,8 @@ impl Upnp {
             } else {
                 "refused"
             },
-            s.server_id
+            s.server_id,
+            if s.openhome { "on" } else { "off" }
         )
     }
 
@@ -2423,6 +3263,147 @@ mod tests {
             ("Den + Kitchen", "live-1", 500)
         );
         assert_eq!(live.group.as_deref(), Some("live-1"));
+    }
+
+    #[test]
+    fn a_target_knows_its_limit_its_source_and_the_inputs_its_rooms_offer() {
+        let state = concat!(
+            r#"{"v":2,"t":"state","serial":9,"zones":["#,
+            r#"{"id":"kitchen","name":"Kitchen","group":"live-1","volume":0.400,"muted":false,"#,
+            r#""endpoints":["amp","sub"],"limit":0.800,"effective_limit":0.600},"#,
+            r#"{"id":"den","name":"Den","group":"live-1","volume":0.600,"muted":false,"#,
+            r#""endpoints":["hub"],"limit":1.000,"effective_limit":1.000},"#,
+            r#"{"id":"study","name":"study","group":"study","volume":1.000,"muted":false,"#,
+            r#""endpoints":[]}],"#,
+            r#""groups":[{"id":"live-1","kind":"live","zones":["kitchen","den"],"volume":0.500,"#,
+            r#""source":"line-in:hub/tv","audio":"127.0.0.1:4010","now_playing":{"title":"TV","#,
+            r#""artist":null,"album":null,"art_url":null,"duration_ms":null,"state":"playing","#,
+            r#""via":"streamer"}},"#,
+            r#"{"id":"study","kind":"room","zones":["study"],"volume":1.000,"source":"stream","#,
+            r#""audio":"127.0.0.1:4010"}],"saved_groups":[],"#,
+            r#""inputs":["amp/line-1",{"id":"hub/tv","name":"Television"},"other/line-9"]}"#
+        );
+        let (_, specs) = specs_of(state).unwrap();
+        let by = |key: &str| specs.iter().find(|s| s.key == key).unwrap();
+        // A room: its effective limit, its own endpoints' inputs, and what
+        // its group plays.
+        let kitchen = by("room:kitchen");
+        assert_eq!(kitchen.limit, 600);
+        assert_eq!(kitchen.inputs, [("amp/line-1".to_string(), None)]);
+        assert_eq!(kitchen.source, "line-in:hub/tv");
+        assert_eq!(
+            kitchen.playing.as_ref().and_then(|p| p.title.as_deref()),
+            Some("TV")
+        );
+        // A room with no limit in the state is not limited; an input of an
+        // endpoint in no room of the target is not the target's.
+        let study = by("room:study");
+        assert_eq!((study.limit, study.inputs.len()), (1000, 0));
+        assert_eq!((study.source.as_str(), &study.playing), ("stream", &None));
+        // A group: the average of its rooms' limits, the inputs of all its
+        // rooms, an input's label where the state gives one.
+        let live = by("live:den+kitchen");
+        assert_eq!(live.limit, 800);
+        assert_eq!(
+            live.inputs,
+            [
+                ("amp/line-1".to_string(), None),
+                ("hub/tv".to_string(), Some("Television".to_string()))
+            ]
+        );
+    }
+
+    #[test]
+    fn the_sources_are_the_playlist_upnp_av_the_inputs_by_kind_and_spotify_while_it_plays() {
+        use chorus_protocol::v2::SourceKind;
+        let spec = |source: &str, inputs: &[(&str, Option<&str>)]| Spec {
+            key: "room:kitchen".into(),
+            kind: Kind::Room,
+            name: "Kitchen".into(),
+            rooms: vec!["kitchen".into()],
+            take: "kitchen".into(),
+            group: None,
+            volume: 400,
+            mute: false,
+            limit: 1000,
+            source: source.into(),
+            playing: None,
+            inputs: inputs
+                .iter()
+                .map(|(id, label)| (id.to_string(), label.map(str::to_string)))
+                .collect(),
+        };
+        let kinds = |id: &str| match id {
+            "amp/line-1" => Some(SourceKind::LineIn),
+            "hub/optical" => Some(SourceKind::Optical),
+            "hub/arc" => Some(SourceKind::HdmiArc),
+            _ => None,
+        };
+        let listed = |spec: &Spec| -> Vec<(String, String, &'static str, bool)> {
+            sources_of(spec, &kinds)
+                .into_iter()
+                .map(|s| (s.system_name, s.name, s.kind, s.visible))
+                .collect()
+        };
+        let row = |system: &str, name: &str, kind: &'static str, visible: bool| {
+            (system.to_string(), name.to_string(), kind, visible)
+        };
+        let fixed = [
+            row("Playlist", "Playlist", "Playlist", true),
+            row("UpnpAv", "UPnP AV", "UpnpAv", false),
+        ];
+        assert_eq!(listed(&spec("stream", &[])), fixed);
+        let inputs = [
+            ("amp/line-1", None),
+            ("hub/optical", Some("Television")),
+            ("hub/arc", None),
+        ];
+        let mut expected = fixed.to_vec();
+        expected.extend([
+            row("amp/line-1", "line-1", "Analog", true),
+            row("hub/optical", "Television", "Digital", true),
+            row("hub/arc", "arc", "Hdmi", true),
+        ]);
+        assert_eq!(listed(&spec("stream", &inputs)), expected);
+        // A Spotify receiver playing in the target's group is one more
+        // source, a NetAux called Spotify, and only then. The spelling is
+        // goal 17's Soloist track's; nothing else here depends on it.
+        let mut with_spotify = expected.clone();
+        with_spotify.push(row("Spotify", "Spotify", "NetAux", true));
+        assert_eq!(listed(&spec("soloist:r0", &inputs)), with_spotify);
+        assert_eq!(listed(&spec("player:p0", &inputs)), expected);
+        // An input the target plays that another room's endpoint offers is
+        // listed too (kind unknown: analogue), and two inputs of one name
+        // are told apart by their endpoints.
+        let twins = [("amp/line-1", None), ("den-amp/line-1", None)];
+        let named: Vec<String> = sources_of(&spec("line-in:far/aux", &twins), &kinds)
+            .into_iter()
+            .skip(2)
+            .map(|s| format!("{}={}:{}", s.system_name, s.name, s.kind))
+            .collect();
+        assert_eq!(
+            named,
+            [
+                "amp/line-1=amp/line-1:Analog",
+                "den-amp/line-1=den-amp/line-1:Analog",
+                "far/aux=aux:Analog"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_now_playing_record_becomes_a_didl_item_for_info() {
+        let item = didl_of(&Playing {
+            title: Some("A & B".into()),
+            artist: Some("C".into()),
+            album: None,
+            art_url: None,
+            duration_ms: Some(1000),
+        });
+        let read = didl::parse(&item).expect("DIDL-Lite");
+        assert_eq!(read.title.as_deref(), Some("A & B"));
+        assert_eq!(read.artist.as_deref(), Some("C"));
+        assert_eq!(read.album, None);
     }
 
     #[test]

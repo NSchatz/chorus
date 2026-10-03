@@ -1,6 +1,7 @@
 //! Writes the generated documents among the UPnP golden vectors:
-//! `make upnp-vectors` (`fixtures/README.md`). The device description and
-//! the three service descriptions are long and are written from the tables
+//! `make upnp-vectors` (`fixtures/README.md`). The device descriptions (a
+//! room without and with the OpenHome services) and the eight service
+//! descriptions are long and are written from the tables
 //! in `chorus_upnp::description`, so they are regenerated here rather than
 //! typed; every other vector under `fixtures/upnp` was written by hand from
 //! the specifications and this program does not touch it.
@@ -21,13 +22,31 @@ fn main() {
         friendly_name: "Kitchen".to_string(),
         model_name: "chorus room".to_string(),
         model_number: "0.1.0".to_string(),
+        openhome: false,
     };
     let config_id = device_config_id(&info);
     let mut files = vec![(
         "description-room.xml".to_string(),
         device_description(&info, config_id),
     )];
-    for service in Service::ALL {
+    for service in Service::AV {
+        files.push((
+            format!("scpd-{}.xml", service.path()),
+            scpd(service, config_id),
+        ));
+    }
+    // The same room with the OpenHome services (goal 17): its description,
+    // and the five service descriptions under that device's CONFIGID.
+    let info = DeviceInfo {
+        openhome: true,
+        ..info
+    };
+    let config_id = device_config_id(&info);
+    files.push((
+        "description-room-openhome.xml".to_string(),
+        device_description(&info, config_id),
+    ));
+    for service in Service::OPENHOME {
         files.push((
             format!("scpd-{}.xml", service.path()),
             scpd(service, config_id),

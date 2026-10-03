@@ -320,6 +320,9 @@ group is a UPnP AV media renderer a control point can play to):
                                 program holds 1900 (docs/upnp.md says what is lost then)
   --upnp-ssdp-group <addr:port> where discovery notifications are sent. The standard is
                                 239.255.255.250:1900; anything else is for tests
+  --upnp-openhome <on|off>      (goal 17) also offer the OpenHome services Product, Volume,
+                                Info, Time and Playlist on every renderer, so a control point
+                                can hand over a queue and sleep (default on with --upnp)
 
 mqtt (goal 15; docs/mqtt.md; off unless --mqtt-broker is given; read-only: it publishes
 state and events, never subscribes, has no command topic and no Home Assistant discovery):
@@ -1426,9 +1429,21 @@ fn main() -> ExitCode {
                 Arc::clone(state),
                 Arc::clone(sessions),
                 reports,
-                {
-                    let status = status.clone();
-                    Box::new(move |line: &str| status.say(line))
+                chorus_server::upnp::Hooks {
+                    // (goal 17) What kind each offered input is, for the
+                    // OpenHome source list: the state names inputs, only the
+                    // line-ins know whether one is analogue, optical or HDMI.
+                    input_kind: {
+                        let line_ins = line_ins.clone();
+                        Box::new(move |input: &str| {
+                            let id = chorus_control::rooms::InputId::parse(input)?;
+                            line_ins.as_ref()?.kind_of(&id)
+                        })
+                    },
+                    log: {
+                        let status = status.clone();
+                        Box::new(move |line: &str| status.say(line))
+                    },
                 },
             );
             println!("chorus-server: {}", upnp.describe());

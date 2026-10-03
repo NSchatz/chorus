@@ -19,6 +19,7 @@ use chorus_upnp::description::{self, DeviceInfo};
 use chorus_upnp::didl;
 use chorus_upnp::gena::{self, CallbackRefusal, Cidr, Subscribe};
 use chorus_upnp::lastchange::{event_xml, AVT_NS, RCS_NS};
+use chorus_upnp::openhome::{self, info::Info, playlist, product, time::Time, volume::Volume};
 use chorus_upnp::rendering::RenderingControl;
 use chorus_upnp::soap::{self, SoapError};
 use chorus_upnp::ssdp::{self, Advert, SearchDrop};
@@ -117,12 +118,13 @@ fn kitchen() -> DeviceInfo {
         friendly_name: "Kitchen".into(),
         model_name: "chorus room".into(),
         model_number: "0.1.0".into(),
+        openhome: false,
     }
 }
 
 fn ssdp_messages(f: &mut Fixtures) {
     let p = f.fields("ssdp-advert.fields");
-    let advert = Advert {
+    let mut advert = Advert {
         udn: Uuid::parse(need(&p, "udn")).unwrap(),
         location: need(&p, "location").into(),
         server: need(&p, "server").into(),
@@ -130,6 +132,7 @@ fn ssdp_messages(f: &mut Fixtures) {
         boot_id: need(&p, "boot_id").parse().unwrap(),
         config_id: need(&p, "config_id").parse().unwrap(),
         search_port: Some(need(&p, "search_port").parse().unwrap()),
+        openhome: false,
     };
     assert_eq!(
         advert.udn,
@@ -142,6 +145,17 @@ fn ssdp_messages(f: &mut Fixtures) {
         ssdp::byebye_set(&advert).concat(),
         f.wire("ssdp-byebye.ssdp")
     );
+    // With the OpenHome services: eleven of each, the five behind the six.
+    advert.openhome = true;
+    let alive = ssdp::alive_set(&advert);
+    assert_eq!(alive.len(), 11);
+    assert_eq!(alive.concat(), f.wire("ssdp-alive-openhome.ssdp"));
+    assert_eq!(
+        ssdp::byebye_set(&advert).concat(),
+        f.wire("ssdp-byebye-openhome.ssdp")
+    );
+    assert!(alive.concat().starts_with(&f.wire("ssdp-alive.ssdp")));
+    advert.openhome = false;
     // What the device sends, a control point reads.
     for m in ssdp::alive_set(&advert) {
         let read = client::parse_ssdp(m.as_bytes()).unwrap();
@@ -155,6 +169,8 @@ fn ssdp_messages(f: &mut Fixtures) {
         let expect = f.fields(&format!("msearch-{name}.fields"));
         let datagram = f.wire(&format!("msearch-{name}.ssdp"));
         let multicast = need(&expect, "multicast") == "true";
+        // The device with the OpenHome services, for the cases that say so.
+        advert.openhome = get(&expect, "openhome") == Some("true");
         let parsed = ssdp::parse_search(datagram.as_bytes(), multicast);
         match need(&expect, "result") {
             "ok" => {
@@ -216,7 +232,7 @@ fn descriptions(f: &mut Fixtures) {
     assert_eq!(d.services.len(), 3);
     assert!(!text.to_ascii_lowercase().contains("dlna"));
 
-    for service in Service::ALL {
+    for service in Service::AV {
         let urls = d.service(service).unwrap();
         assert_eq!(urls.service_id, service.service_id());
         // Relative URLs under /upnp/<uuid>/, each routing to its resource.
@@ -326,7 +342,7 @@ fn descriptions(f: &mut Fixtures) {
 }
 
 fn service_of(fields: &Fields) -> Service {
-    Service::from_path(need(fields, "service")).expect("avt, rcs or cm")
+    Service::from_path(need(fields, "service")).expect("a service's path segment")
 }
 
 fn pair(text: &str) -> (&str, &str) {
@@ -427,7 +443,13 @@ fn soap_responses(f: &mut Fixtures) {
             Some(other) => panic!("{name}: unknown source {other}"),
         };
         let body = f.document(&format!("soap-response-{name}.xml"));
-        assert_eq!(soap::build_response(service, action, &out), body, "{name}");
+        // A response to a request that named a lower version of the service
+        // is written in that version.
+        let built = match get(&expect, "version") {
+            None => soap::build_response(service, action, &out),
+            Some(v) => soap::build_response_at(service, v.parse().unwrap(), action, &out),
+        };
+        assert_eq!(built, body, "{name}");
         // And a control point reads the same values back.
         let reply = client::parse_soap_reply(&body).unwrap();
         for (n, v) in &out {
@@ -447,6 +469,10 @@ fn soap_responses(f: &mut Fixtures) {
             chorus_upnp::error::RCS_INVALID_INSTANCE_ID,
             chorus_upnp::error::CM_INVALID_CONNECTION_REFERENCE,
             chorus_upnp::error::AVT_CONTENT_BUSY,
+            chorus_upnp::error::OH_PLAYLIST_ID_NOT_FOUND,
+            chorus_upnp::error::OH_PLAYLIST_INDEX_NOT_FOUND,
+            chorus_upnp::error::OH_PRODUCT_SOURCE_NOT_FOUND,
+            chorus_upnp::error::OH_VOLUME_INVALID,
         ];
         let error: UpnpError = *known
             .iter()
@@ -714,6 +740,216 @@ fn events(f: &mut Fixtures) {
     );
 }
 
+fn kitchen_with_openhome() -> DeviceInfo {
+    DeviceInfo {
+        openhome: true,
+        ..kitchen()
+    }
+}
+
+fn pairs(properties: &[openhome::Property]) -> Vec<(&str, &str)> {
+    properties.iter().map(|(n, v)| (*n, v.as_str())).collect()
+}
+
+/// The OpenHome vectors (goal 17): the description with the five services
+/// behind the three, the SCPDs, `SourceXml`, `IdArray`, `ReadList` and the
+/// plain property sets, each in the form of the reference implementation.
+fn openhome_services(f: &mut Fixtures) {
+    let info = kitchen_with_openhome();
+    let config_id = description::device_config_id(&info);
+    let text = f.document("description-room-openhome.xml");
+    assert_eq!(text, description::device_description(&info, config_id));
+    let d = client::parse_description(&text).unwrap();
+    assert_eq!(d.device_type, "urn:schemas-upnp-org:device:MediaRenderer:1");
+    assert_eq!(d.services.len(), 8);
+    for (urls, service) in d.services.iter().zip(Service::ALL) {
+        assert_eq!(urls.service_type, service.service_type());
+        assert_eq!(urls.service_id, service.service_id());
+    }
+    for service in Service::OPENHOME {
+        let urls = d.service(service).unwrap();
+        for url in [&urls.scpd_url, &urls.control_url, &urls.event_sub_url] {
+            assert!(description::route(url).is_some(), "{url}");
+        }
+        let name = format!("scpd-{}.xml", service.path());
+        let text = f.document(&name);
+        assert_eq!(text, description::scpd(service, config_id), "{name}");
+        let scpd = client::parse_scpd(&text).unwrap();
+        let table = description::table(service);
+        let actions: Vec<&str> = scpd.actions.iter().map(|a| a.name.as_str()).collect();
+        let expected: Vec<&str> = table.actions.iter().map(|a| a.name).collect();
+        assert_eq!(actions, expected, "{name}");
+        for action in &scpd.actions {
+            for arg in &action.arguments {
+                assert!(
+                    scpd.variable(&arg.related).is_some(),
+                    "{name}: {}",
+                    arg.name
+                );
+            }
+        }
+        // No LastChange: every evented variable is evented by itself.
+        assert!(scpd.variable("LastChange").is_none(), "{name}");
+        assert!(scpd.variables.iter().any(|v| v.send_events), "{name}");
+    }
+    let playlist_scpd = client::parse_scpd(&f.document("scpd-ohl.xml")).unwrap();
+    assert_eq!(
+        playlist_scpd.variable("IdArray").unwrap().data_type,
+        "bin.base64"
+    );
+    assert_eq!(
+        playlist_scpd
+            .variable("TransportState")
+            .unwrap()
+            .allowed_values,
+        ["Playing", "Paused", "Stopped", "Buffering"]
+    );
+    for absent in ["DeleteMultiple", "Move"] {
+        assert!(playlist_scpd.action(absent).is_none(), "{absent}");
+    }
+
+    // Product: the source list and the initial event.
+    let p = f.fields("openhome-product.fields");
+    let sources: Vec<product::Source> = list(&p, "source")
+        .into_iter()
+        .map(|line| {
+            let parts: Vec<&str> = line.split('|').collect();
+            let kind = [
+                product::TYPE_PLAYLIST,
+                product::TYPE_UPNP_AV,
+                product::TYPE_ANALOG,
+                product::TYPE_DIGITAL,
+                product::TYPE_HDMI,
+                product::TYPE_NET_AUX,
+            ]
+            .into_iter()
+            .find(|k| *k == parts[2])
+            .expect("a source type");
+            product::Source {
+                system_name: parts[0].to_string(),
+                name: parts[1].to_string(),
+                kind,
+                visible: parts[3] == "true",
+            }
+        })
+        .collect();
+    let mut prod = product::Product::new(need(&p, "room"), need(&p, "model"), sources);
+    prod.set_index(need(&p, "index").parse().unwrap());
+    let source_xml = f.document("openhome-sourcexml.xml");
+    assert_eq!(prod.source_xml(), source_xml);
+    assert_eq!(
+        gena::propertyset(&pairs(&prod.evented())),
+        f.document("notify-openhome-product-initial.xml")
+    );
+    // A control point reads the list back out of the event, unescaped once.
+    let read =
+        client::parse_propertyset(&f.document("notify-openhome-product-initial.xml")).unwrap();
+    assert_eq!(read.len(), 18);
+    assert!(read.contains(&("SourceXml".to_string(), source_xml)));
+
+    // IdArray: big-endian 32-bit ids, concatenated, base64.
+    for line in f.raw("openhome-idarray.cases").lines() {
+        if line.starts_with('#') {
+            continue;
+        }
+        let (ids, encoded) = line.split_once('|').expect("ids | base64");
+        let ids: Vec<u32> = ids
+            .split_ascii_whitespace()
+            .map(|i| i.parse().unwrap())
+            .collect();
+        assert_eq!(playlist::encode_ids(&ids), encoded.trim(), "{line}");
+        assert_eq!(playlist::decode_ids(encoded.trim()), Some(ids), "{line}");
+    }
+
+    // Playlist: the initial event of an empty list, three inserts, ReadList
+    // and the event the inserts make.
+    let call = |list: &mut playlist::Playlist, action: &str, inputs: &[&str]| {
+        list.invoke(
+            &soap::Invocation {
+                action: description::table(Service::Playlist)
+                    .action(action)
+                    .unwrap(),
+                inputs: inputs.iter().map(|s| s.to_string()).collect(),
+            },
+            1,
+        )
+        .unwrap()
+        .0
+    };
+    let mut list_ = playlist::Playlist::new();
+    let mut tracker = openhome::Tracker::new();
+    assert_eq!(
+        gena::propertyset(&pairs(&list_.evented())),
+        f.document("notify-openhome-playlist-initial.xml")
+    );
+    assert!(tracker
+        .poll(
+            &list_.evented(),
+            0,
+            &["IdArray"],
+            playlist::ID_ARRAY_HOLD_MS
+        )
+        .is_empty());
+    let script = f.fields("openhome-playlist.fields");
+    let mut after = "0".to_string();
+    let mut sent = Vec::new();
+    for (i, track) in list(&script, "track").into_iter().enumerate() {
+        let (uri, metadata) = track.split_once('|').expect("uri|metadata");
+        let out = call(&mut list_, "Insert", &[&after, uri, metadata]);
+        after = out[0].1.clone();
+        assert_eq!(after, (i + 1).to_string());
+        sent.extend(tracker.poll(
+            &list_.evented(),
+            10 * (i as u64 + 1),
+            &["IdArray"],
+            playlist::ID_ARRAY_HOLD_MS,
+        ));
+    }
+    // The id left at once; the array is held 300 ms from its first change.
+    assert_eq!(sent, [("Id", "1".to_string())]);
+    assert_eq!(tracker.due_ms(), Some(310));
+    sent.extend(tracker.poll(
+        &list_.evented(),
+        310,
+        &["IdArray"],
+        playlist::ID_ARRAY_HOLD_MS,
+    ));
+    assert_eq!(
+        gena::propertyset(&pairs(&sent)),
+        f.document("notify-openhome-playlist-inserted.xml")
+    );
+    let out = call(&mut list_, "ReadList", &[need(&script, "read_list")]);
+    assert_eq!(out[0].1, f.document("openhome-readlist.xml"));
+    let out = call(&mut list_, "IdArray", &[]);
+    let reply =
+        client::parse_soap_reply(&f.document("soap-response-openhome-idarray.xml")).unwrap();
+    assert_eq!(reply.value("Token"), Some(out[0].1.as_str()));
+    assert_eq!(reply.value("Array"), Some(out[1].1.as_str()));
+
+    // Volume, Info and Time: the initial events, and a change event that
+    // carries only what changed.
+    let mut volume = Volume::new(400, false, 600);
+    let mut tracker = openhome::Tracker::new();
+    assert_eq!(
+        gena::propertyset(&pairs(&volume.evented())),
+        f.document("notify-openhome-volume-initial.xml")
+    );
+    tracker.poll(&volume.evented(), 0, &[], 0);
+    volume.report(600, true, 600);
+    assert_eq!(
+        gena::propertyset(&pairs(&tracker.poll(&volume.evented(), 1, &[], 0))),
+        f.document("notify-openhome-volume-change.xml")
+    );
+    assert_eq!(
+        gena::propertyset(&pairs(&Info::new().evented())),
+        f.document("notify-openhome-info-initial.xml")
+    );
+    assert_eq!(
+        gena::propertyset(&pairs(&Time::new().evented())),
+        f.document("notify-openhome-time-initial.xml")
+    );
+}
+
 #[test]
 fn every_vector_holds_and_every_file_is_read() {
     let mut f = Fixtures::new();
@@ -724,6 +960,7 @@ fn every_vector_holds_and_every_file_is_read() {
     subscriptions(&mut f);
     metadata(&mut f);
     events(&mut f);
+    openhome_services(&mut f);
     let unread: Vec<String> = f
         .all()
         .into_iter()
@@ -748,7 +985,19 @@ fn the_generated_vectors_are_current() {
         f.raw("description-room.xml"),
         format!("{}\n", description::device_description(&info, config_id))
     );
-    for service in Service::ALL {
+    for service in Service::AV {
+        assert_eq!(
+            f.raw(&format!("scpd-{}.xml", service.path())),
+            format!("{}\n", description::scpd(service, config_id))
+        );
+    }
+    let info = kitchen_with_openhome();
+    let config_id = description::device_config_id(&info);
+    assert_eq!(
+        f.raw("description-room-openhome.xml"),
+        format!("{}\n", description::device_description(&info, config_id))
+    );
+    for service in Service::OPENHOME {
         assert_eq!(
             f.raw(&format!("scpd-{}.xml", service.path())),
             format!("{}\n", description::scpd(service, config_id))

@@ -24,6 +24,10 @@
 //! - [`rendering`]: RenderingControl: Master volume and mute.
 //! - [`connmgr`]: ConnectionManager: the Sink list.
 //! - [`time`]: `H:MM:SS` durations.
+//! - [`openhome`]: the OpenHome services Product:2, Volume:2, Info:1, Time:1
+//!   and Playlist:1 on the same device (goal 17, P6's Option B): their
+//!   tables, their state machines and the plain-variable event path.
+//! - [`base64`]: RFC 4648 base64, for the Playlist's `IdArray`.
 //! - [`client`]: what a control point needs (the server's scripted control
 //!   point test is written against it), tested by round trips against the
 //!   device side.
@@ -46,18 +50,24 @@
 //! - **CDS1**: ContentDirectory:1 Service Template 1.01 (DIDL-Lite).
 //! - **RFC9562**: Universally Unique IDentifiers.
 //!
-//! Nothing here was read from another implementation's source.
+//! Nothing of the UPnP AV half was read from another implementation's
+//! source. The OpenHome half has no specification but its reference
+//! implementation: [`openhome`] is written from the service XMLs and the
+//! provider sources of ohPipeline and ohNet (both MIT), cited there by path
+//! and commit.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 pub mod avtransport;
+pub mod base64;
 pub mod client;
 pub mod connmgr;
 pub mod description;
 pub mod didl;
 pub mod gena;
 pub mod lastchange;
+pub mod openhome;
 pub mod rendering;
 pub mod soap;
 pub mod ssdp;
@@ -68,9 +78,11 @@ pub mod xml;
 /// The device type every chorus renderer announces (MR1 section 2.1).
 pub const DEVICE_TYPE: &str = "urn:schemas-upnp-org:device:MediaRenderer:1";
 
-/// One of the three services of a MediaRenderer:1 device (MR1 section 2.2,
-/// table 1: RenderingControl and ConnectionManager are required, AVTransport
-/// is the one a renderer that pulls media over HTTP implements).
+/// One of the services of a chorus renderer: the three of a MediaRenderer:1
+/// device (MR1 section 2.2, table 1: RenderingControl and ConnectionManager
+/// are required, AVTransport is the one a renderer that pulls media over
+/// HTTP implements) and, when the OpenHome services are on, the five of
+/// [`openhome`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Service {
     /// AVTransport:1: what plays and the transport state.
@@ -79,34 +91,130 @@ pub enum Service {
     RenderingControl,
     /// ConnectionManager:1: which formats the renderer takes.
     ConnectionManager,
+    /// OpenHome Product:2: what the device is and its sources.
+    Product,
+    /// OpenHome Volume:2: volume, mute and the volume limit.
+    Volume,
+    /// OpenHome Info:1: what plays now.
+    Info,
+    /// OpenHome Time:1: where in the track.
+    Time,
+    /// OpenHome Playlist:1: the queue the device holds and walks itself.
+    Playlist,
 }
 
 impl Service {
-    /// The three services in the order the description and the discovery
-    /// messages list them.
-    pub const ALL: [Service; 3] = [
+    /// The three UPnP AV services in the order the description and the
+    /// discovery messages list them.
+    pub const AV: [Service; 3] = [
         Service::AvTransport,
         Service::RenderingControl,
         Service::ConnectionManager,
     ];
 
-    /// The service type URN (UDA11 section 2.3, `serviceType`).
+    /// The five OpenHome services, in the order they are listed after the
+    /// AV ones.
+    pub const OPENHOME: [Service; 5] = [
+        Service::Product,
+        Service::Volume,
+        Service::Info,
+        Service::Time,
+        Service::Playlist,
+    ];
+
+    /// Every service there is: [`Service::AV`], then [`Service::OPENHOME`].
+    pub const ALL: [Service; 8] = [
+        Service::AvTransport,
+        Service::RenderingControl,
+        Service::ConnectionManager,
+        Service::Product,
+        Service::Volume,
+        Service::Info,
+        Service::Time,
+        Service::Playlist,
+    ];
+
+    /// The services a device offers: the AV three, and the OpenHome five
+    /// behind them when `openhome` is on (the server's `--upnp-openhome`).
+    pub fn offered(openhome: bool) -> &'static [Service] {
+        if openhome {
+            &Service::ALL
+        } else {
+            &Service::AV
+        }
+    }
+
+    /// Where the service sits in [`Service::ALL`].
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    /// Whether this is one of the OpenHome services.
+    pub fn is_openhome(self) -> bool {
+        self.index() >= Service::AV.len()
+    }
+
+    /// The service type URN without its version: `urn:<domain>:service:<name>`
+    /// (UDA11 section 2.3; for OpenHome the domain `av.openhome.org` is
+    /// written `av-openhome-org`, ohNet `OpenHome/Net/Service.cpp:754-772`).
+    fn type_stem(self) -> &'static str {
+        match self {
+            Service::AvTransport => "urn:schemas-upnp-org:service:AVTransport",
+            Service::RenderingControl => "urn:schemas-upnp-org:service:RenderingControl",
+            Service::ConnectionManager => "urn:schemas-upnp-org:service:ConnectionManager",
+            Service::Product => "urn:av-openhome-org:service:Product",
+            Service::Volume => "urn:av-openhome-org:service:Volume",
+            Service::Info => "urn:av-openhome-org:service:Info",
+            Service::Time => "urn:av-openhome-org:service:Time",
+            Service::Playlist => "urn:av-openhome-org:service:Playlist",
+        }
+    }
+
+    /// The version of the service chorus announces. The AV services are
+    /// version 1; of OpenHome's, Product and Volume are version 2 and the
+    /// rest version 1 (`docs/upnp.md` says why).
+    pub fn version(self) -> u32 {
+        match self {
+            Service::Product | Service::Volume => 2,
+            _ => 1,
+        }
+    }
+
+    /// The service type URN announced (UDA11 section 2.3, `serviceType`).
     pub fn service_type(self) -> &'static str {
         match self {
             Service::AvTransport => "urn:schemas-upnp-org:service:AVTransport:1",
             Service::RenderingControl => "urn:schemas-upnp-org:service:RenderingControl:1",
             Service::ConnectionManager => "urn:schemas-upnp-org:service:ConnectionManager:1",
+            Service::Product => "urn:av-openhome-org:service:Product:2",
+            Service::Volume => "urn:av-openhome-org:service:Volume:2",
+            Service::Info => "urn:av-openhome-org:service:Info:1",
+            Service::Time => "urn:av-openhome-org:service:Time:1",
+            Service::Playlist => "urn:av-openhome-org:service:Playlist:1",
         }
+    }
+
+    /// The service type URN at `version`, for answering a request that named
+    /// a lower version than the one announced in that version.
+    pub fn service_type_at(self, version: u32) -> String {
+        format!("{}:{}", self.type_stem(), version)
     }
 
     /// The service id (MR1 section 4, the device description: the ids are
     /// `AVTransport`, `RenderingControl` and `ConnectionManager` "prefixed by
-    /// urn:upnp-org:serviceId:", which is `upnp-org`, not `schemas-upnp-org`).
+    /// urn:upnp-org:serviceId:", which is `upnp-org`, not `schemas-upnp-org`;
+    /// OpenHome's are `urn:av-openhome-org:serviceId:<Name>`, ohNet
+    /// `OpenHome/Net/Service.cpp:790-809`).
     pub fn service_id(self) -> &'static str {
         match self {
             Service::AvTransport => "urn:upnp-org:serviceId:AVTransport",
             Service::RenderingControl => "urn:upnp-org:serviceId:RenderingControl",
             Service::ConnectionManager => "urn:upnp-org:serviceId:ConnectionManager",
+            Service::Product => "urn:av-openhome-org:serviceId:Product",
+            Service::Volume => "urn:av-openhome-org:serviceId:Volume",
+            Service::Info => "urn:av-openhome-org:serviceId:Info",
+            Service::Time => "urn:av-openhome-org:serviceId:Time",
+            Service::Playlist => "urn:av-openhome-org:serviceId:Playlist",
         }
     }
 
@@ -116,6 +224,11 @@ impl Service {
             Service::AvTransport => "avt",
             Service::RenderingControl => "rcs",
             Service::ConnectionManager => "cm",
+            Service::Product => "ohp",
+            Service::Volume => "ohv",
+            Service::Info => "ohi",
+            Service::Time => "oht",
+            Service::Playlist => "ohl",
         }
     }
 
@@ -124,21 +237,48 @@ impl Service {
         Service::ALL.into_iter().find(|s| s.path() == segment)
     }
 
-    /// The service a service type URN names; only version 1 is offered, so a
-    /// URN of another version names nothing (UDA11 section 1.3.3).
+    /// The service a service type URN names exactly, at the version
+    /// announced (UDA11 section 1.3.3). [`Service::matching`] is the
+    /// version-tolerant form.
     pub fn from_type(urn: &str) -> Option<Service> {
         Service::ALL.into_iter().find(|s| s.service_type() == urn)
     }
 
+    /// The service a service type URN names and the version it asks for,
+    /// when chorus can serve that version: the same service at the announced
+    /// version or a lower one, down to 1. UDA11 section 2: a higher version
+    /// of a service is a superset of the lower ones, so a control point that
+    /// binds `Product:1` is served by `Product:2`; a search or an action
+    /// naming the lower version is answered in that version (UDA11 section
+    /// 1.3.3: "The response MUST specify the same version as was contained in
+    /// the search request"; ohNet answers the same way,
+    /// `OpenHome/Net/Device/Upnp/DviProtocolUpnp.cpp:685-702`). A higher
+    /// version than the announced one, version 0 and a number with a sign or
+    /// leading zeros name nothing.
+    pub fn matching(urn: &str) -> Option<(Service, u32)> {
+        let (stem, version) = urn.rsplit_once(':')?;
+        let service = Service::ALL.into_iter().find(|s| s.type_stem() == stem)?;
+        if version.is_empty()
+            || version.len() > 4
+            || version.starts_with('0')
+            || !version.bytes().all(|b| b.is_ascii_digit())
+        {
+            return None;
+        }
+        let version: u32 = version.parse().ok()?;
+        (version >= 1 && version <= service.version()).then_some((service, version))
+    }
+
     /// The namespace of the service's LastChange `Event` document (AVT1
     /// section 5, RCS1 section 5: the schemas' target namespaces).
-    /// ConnectionManager has no LastChange: its variables are evented
-    /// directly (CM1 section 2.3).
+    /// ConnectionManager and the OpenHome services have no LastChange: their
+    /// variables are evented directly (CM1 section 2.3; ohNet
+    /// `OpenHome/Net/Device/DviSubscription.cpp:393-407`).
     pub fn event_namespace(self) -> Option<&'static str> {
         match self {
             Service::AvTransport => Some("urn:schemas-upnp-org:metadata-1-0/AVT/"),
             Service::RenderingControl => Some("urn:schemas-upnp-org:metadata-1-0/RCS/"),
-            Service::ConnectionManager => None,
+            _ => None,
         }
     }
 }
@@ -244,6 +384,31 @@ pub mod error {
     /// CM1 section 2.4.5.4: "The connection reference argument does not refer
     /// to a valid connection established by this service."
     pub const CM_INVALID_CONNECTION_REFERENCE: UpnpError = e(706, "Invalid connection reference");
+
+    /// OpenHome Product: "Source not found", for an index or a name that is
+    /// not in the source list (ohPipeline `OpenHome/Av/ProviderProduct.cpp`
+    /// lines 238-296, `OpenHome/Av/Utils/FaultCode.cpp:21`, at `cccd06dd`).
+    pub const OH_PRODUCT_SOURCE_NOT_FOUND: UpnpError = e(801, "Source not found");
+    /// OpenHome Playlist: "Id not found" (ohPipeline
+    /// `OpenHome/Av/Playlist/ProviderPlaylist.cpp:23-26`).
+    pub const OH_PLAYLIST_ID_NOT_FOUND: UpnpError = e(800, "Id not found");
+    /// OpenHome Playlist: "Playlist full" (the same lines).
+    pub const OH_PLAYLIST_FULL: UpnpError = e(801, "Playlist full");
+    /// OpenHome Playlist: "Index not found" (`ProviderPlaylist.cpp:294-301`).
+    pub const OH_PLAYLIST_INDEX_NOT_FOUND: UpnpError = e(802, "Index not found");
+    /// OpenHome Playlist: "Seek failed" (`ProviderPlaylist.cpp:240-280`).
+    pub const OH_PLAYLIST_SEEK_FAILED: UpnpError = e(803, "Seek failed");
+    /// OpenHome Playlist: "Shuffle not currently possible"
+    /// (`ProviderPlaylist.cpp:218-229`).
+    pub const OH_PLAYLIST_SHUFFLE_NOT_POSSIBLE: UpnpError =
+        e(804, "Shuffle not currently possible");
+    /// OpenHome Volume: "Action not supported", for balance and fade, which
+    /// chorus has not (ohPipeline `OpenHome/Av/ProviderVolume.cpp:15-16`).
+    pub const OH_VOLUME_NOT_SUPPORTED: UpnpError = e(801, "Action not supported");
+    /// OpenHome Volume: "Volume invalid": above the scale, or above the
+    /// limit when the volume already is at the limit
+    /// (`ProviderVolume.cpp:18-19`, `VolumeManager.cpp:229-253`).
+    pub const OH_VOLUME_INVALID: UpnpError = e(811, "Volume invalid");
 
     /// Every AVTransport:1 error code with its name, for the tests that hold
     /// the table to the specification.
@@ -359,17 +524,63 @@ mod tests {
 
     #[test]
     fn the_services_are_found_by_type_and_by_path() {
-        for s in Service::ALL {
+        for (i, s) in Service::ALL.into_iter().enumerate() {
             assert_eq!(Service::from_type(s.service_type()), Some(s));
             assert_eq!(Service::from_path(s.path()), Some(s));
-            assert!(s.service_id().starts_with("urn:upnp-org:serviceId:"));
+            assert_eq!(s.index(), i);
+            assert_eq!(s.service_type_at(s.version()), s.service_type());
+            assert_eq!(Service::matching(s.service_type()), Some((s, s.version())));
+            assert_eq!(s.is_openhome(), i >= 3);
+            if s.is_openhome() {
+                assert!(s.service_id().starts_with("urn:av-openhome-org:serviceId:"));
+            } else {
+                assert!(s.service_id().starts_with("urn:upnp-org:serviceId:"));
+            }
         }
-        // Only version 1 exists here.
+        assert_eq!(Service::offered(false), Service::AV);
+        assert_eq!(Service::offered(true), Service::ALL);
+        assert_eq!(&Service::ALL[..3], Service::AV);
+        assert_eq!(&Service::ALL[3..], Service::OPENHOME);
+        // Only version 1 of the AV services exists here.
         assert_eq!(
             Service::from_type("urn:schemas-upnp-org:service:AVTransport:2"),
             None
         );
+        assert_eq!(
+            Service::matching("urn:schemas-upnp-org:service:AVTransport:2"),
+            None
+        );
         assert_eq!(Service::ConnectionManager.event_namespace(), None);
+        assert_eq!(Service::Playlist.event_namespace(), None);
+    }
+
+    #[test]
+    fn a_lower_version_of_a_service_is_served_and_a_higher_one_is_not() {
+        let p = "urn:av-openhome-org:service:Product";
+        assert_eq!(
+            Service::matching(&format!("{p}:1")),
+            Some((Service::Product, 1))
+        );
+        assert_eq!(
+            Service::matching(&format!("{p}:2")),
+            Some((Service::Product, 2))
+        );
+        for bad in [":3", ":0", ":", ":01", ":+1", ":x", "", ":99999"] {
+            assert_eq!(Service::matching(&format!("{p}{bad}")), None, "{bad}");
+        }
+        assert_eq!(
+            Service::matching("urn:av-openhome-org:service:Volume:1"),
+            Some((Service::Volume, 1))
+        );
+        assert_eq!(
+            Service::matching("urn:av-openhome-org:service:Playlist:2"),
+            None
+        );
+        assert_eq!(
+            Service::matching("urn:av-openhome-org:service:Radio:1"),
+            None
+        );
+        assert_eq!(Service::from_type(&format!("{p}:1")), None);
     }
 
     #[test]

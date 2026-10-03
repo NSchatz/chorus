@@ -1,0 +1,27 @@
+{
+  "type": "playback_state",
+  "status": "playing",
+  "item": {
+    "uri": "spotify:track:2JRo0gjbX4GrCqBYdRohoo",
+    "entity_type": "track",
+    "decorations": {
+      "identity": { "name": "My Song" },
+      "playback": { "duration_ms": 210000, "content_ratings": [] }
+    }
+  },
+  "context": {
+    "uri": "spotify:playlist:37i9dQZF1DXcBWIGoYBM5M",
+    "entity_type": "playlist",
+    "decorations": { "identity": { "name": "Today's Top Hits" } }
+  },
+  "position": { "position_ms": 45000, "timestamp_ms": 1747654321000, "speed": 1.0 },
+  "volume": 65,
+  "is_active": true,
+  "options": { "shuffle": false, "repeat": "off", "playback_speed": 1.0, "modes": {} },
+  "available_actions": {
+    "pause": {},
+    "seek": {},
+    "seek_forward": { "step_ms": 15000 },
+    "seek_backward": { "step_ms": 15000 }
+  }
+}
