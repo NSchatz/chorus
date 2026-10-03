@@ -88,7 +88,7 @@ links none of them. The image carries each package's Debian copyright file and a
 naming every package, its version and its Debian source package at the snapshot.debian.org
 timestamp the binary came from; the release attaches that notices file as
 `chorus-soloist-v<ver>-NOTICES.md`. The source packages themselves are not attached: Debian's
-snapshot archive is where they are. `docs/decisions/0000-the-chorus-soloist-image.md` says why
+snapshot archive is where they are. `docs/decisions/0131-the-chorus-soloist-image.md` says why
 that is the position and what the owner would add before publishing the image to others.
 
 ## Pushing the image to a registry (the owner's step)

@@ -9,7 +9,7 @@ tests run. The server side (the FIFO readers, the pool's manager, the `soloist:`
 `chorusctl soloist`) is a later change and has its own section in this page when it lands.
 
 Decision records: [0130](decisions/0130-the-soloist-receiver-supervisor.md) (the supervisor) and
-[0000](decisions/0000-the-chorus-soloist-image.md) (the `chorus-soloist` image, its listings check
+[0131](decisions/0131-the-chorus-soloist-image.md) (the `chorus-soloist` image, its listings check
 and the deploy files; "The image" and "Running the receivers" below).
 
 ## Words
@@ -115,7 +115,7 @@ What it does:
 
 It reaps its own children (PipeWire, WirePlumber, Soloist) and no others: as PID 1 of a
 container it does not adopt and reap processes those leave behind, so the receiver container
-runs it under an init (`init: true` in `deploy/soloist/compose.yaml`, ADR 0000: what Soloist
+runs it under an init (`init: true` in `deploy/soloist/compose.yaml`, ADR 0131: what Soloist
 forks is not documented). It handles SIGTERM and SIGINT itself either way.
 
 `chorus-soloistd --health-check --soloist-dir DIR` is the probe a container healthcheck runs. It
@@ -240,7 +240,7 @@ PipeWire, WirePlumber and Soloist):
 A session manager is needed: without one a client is never linked to the sink and the FIFO
 stays empty (goal 17's PipeWire probe; its report is the measurement track's).
 
-Since ADR 0000 the full gate runs this path on the image's own PipeWire (`make soloist-image`,
+Since ADR 0131 the full gate runs this path on the image's own PipeWire (`make soloist-image`,
 "The image" below). Before that, run here by hand on 2026-10-03: `chorus-soloistd --pipewire auto` at this change, with PipeWire 1.4.2 and WirePlumber 0.5.8
 from Debian 13's packages extracted rootless, and `pw-cat -p --target chorus-r0 --rate 44100
 --channels 2 --format f32 --raw -` playing a 3 s float32 ramp: the FIFO delivered 2048 zero
@@ -251,7 +251,7 @@ is not a timing measurement.
 ## The image
 
 `make soloist-image` (`tools/soloist-image.sh`) builds `target/image/chorus-soloist-oci.tar`, an
-OCI image layout of one receiver, with no container daemon (ADR 0000 says why this way):
+OCI image layout of one receiver, with no container daemon (ADR 0131 says why this way):
 
 | In the image | From |
 |---|---|

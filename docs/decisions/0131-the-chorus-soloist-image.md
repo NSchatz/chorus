@@ -1,4 +1,4 @@
-# 0000: the chorus-soloist image is built without a daemon from sha256-pinned Debian packages unpacked by dpkg-deb onto a digest-pinned trixie base, with a static chorus-soloistd, no Soloist file, a probe that connects to nothing, and a listings check that fails on any Soloist file in an image or a release
+# 0131: the chorus-soloist image is built without a daemon from sha256-pinned Debian packages unpacked by dpkg-deb onto a digest-pinned trixie base, with a static chorus-soloistd, no Soloist file, a probe that connects to nothing, and a listings check that fails on any Soloist file in an image or a release
 
 - Status: accepted (goal 17, 2026-10-03)
 - Decided by: the owner for what is built (P7 Option C: a pool of receiver containers, the

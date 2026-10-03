@@ -1,5 +1,5 @@
 # The Spotify Soloist receivers under Docker Compose: the reference form
-# (docs/soloist.md, "Running the receivers"; ADR "the chorus-soloist image").
+# (docs/soloist.md, "Running the receivers"; ADR 0131).
 # The homelab's stack is a copy in the homelab repo's own conventions, opened
 # there as a PR the owner merges and applies (K28). Nothing here deploys.
 #

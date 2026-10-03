@@ -72,7 +72,7 @@ Pushing the tarball to a registry is the owner's step, never the build's.
 `soloist/` is the second image and its reference deployment: one Spotify Soloist receiver
 per container (PipeWire, WirePlumber and `chorus-soloistd`), run as a pool of identical
 replicas beside chorus-server. `docs/soloist.md` ("The image" and "Running the receivers")
-is the page; `docs/decisions/0000-the-chorus-soloist-image.md` is the record. In short:
+is the page; `docs/decisions/0131-the-chorus-soloist-image.md` is the record. In short:
 
 - `make soloist-image` (`tools/soloist-image.sh`) builds
   `target/image/chorus-soloist-oci.tar` with no container daemon: the digest-pinned
