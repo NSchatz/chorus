@@ -160,6 +160,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "chorus-mqtt"
+version = "0.1.0"
+dependencies = [
+ "chorus-control",
+]
+
+[[package]]
 name = "chorus-opus-sys"
 version = "0.1.0"
 dependencies = [
