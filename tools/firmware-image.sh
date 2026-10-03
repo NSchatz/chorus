@@ -182,6 +182,11 @@ say "  jobs:       IDF_PY_BUILD_JOBS=${IDF_PY_BUILD_JOBS:-<unset: the ninja defa
     -D CHORUS_BOARD_PROFILE="$PROFILE" -D CHORUS_OTA_NEVER_CONFIRM="$NEVER_CONFIRM" \
     "${VERSION_ARGS[@]}" "${CCACHE_FLAG[@]}" build)
 
+# The profile this image was built with, where the flash tool and the staging
+# tool read it (<build>/board_profile.conf): the copy the component embedded,
+# not one an earlier configure step may have left there naming another.
+cp "$OUT_DIR/esp-idf/main/board_profile.conf" "$OUT_DIR/board_profile.conf"
+
 # Guardrail 2 over what was just built: the generated configuration and both
 # linked images, before anything is reported as an image.
 bash "$REPO_ROOT/tools/firmware-image-guard.sh" "$OUT_DIR"
