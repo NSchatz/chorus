@@ -509,6 +509,9 @@ static void test_buffer_rules(void)
                                       CHUNK_FRAMES) == CHORUS_PLAYOUT_REFUSED,
                  "a chunk at another rate is refused: one clock domain, no resampler");
     uint32_t more = chorus_playout_fill(&p, out, 100);
+    chorus_check(p.stats.underruns == 1,
+                 "that run of underrun silence is one underrun event (%u), however long",
+                 (unsigned)p.stats.underruns);
     chorus_check(more == 0 && p.stats.underrun_frames == 100 && out_left(out) == 0,
                  "an empty buffer after audio writes silence and counts an underrun of %" PRIu64
                  " frames",

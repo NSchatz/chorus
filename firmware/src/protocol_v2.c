@@ -593,6 +593,16 @@ static int decode_payload(uint8_t type, const uint8_t *payload, size_t len, chor
         t->rssi_dbm = (rssi > 127u) ? (int8_t)((int)rssi - 256) : (int8_t)rssi;
         t->temperature_centi_c =
             (temperature > 32767u) ? (int16_t)((int32_t)temperature - 65536) : (int16_t)temperature;
+        /* The heap block (goal 15) is there whole or not at all: a peer built
+         * before it sends 36 bytes and reads as unknown, and a tail shorter
+         * than the block is excess, ignored. */
+        t->heap_free_bytes = CHORUS_V2_TELEMETRY_HEAP_UNKNOWN;
+        t->heap_min_free_bytes = CHORUS_V2_TELEMETRY_HEAP_UNKNOWN;
+        if (r.len - r.at >= CHORUS_V2_TELEMETRY_HEAP_BLOCK_LEN &&
+            (read_u32(&r, "heap_free_bytes", &t->heap_free_bytes) != 0 ||
+             read_u32(&r, "heap_min_free_bytes", &t->heap_min_free_bytes) != 0)) {
+            return -1;
+        }
         return 0;
     }
     case CHORUS_V2_HANDSHAKE_INIT: {
@@ -1634,6 +1644,14 @@ static void write_payload(writer_t *w, const chorus_v2_message_t *m)
         put_u8(w, t->link);
         put_u8(w, (uint8_t)t->rssi_dbm);
         put_u16(w, (uint16_t)t->temperature_centi_c);
+        /* Trailing and optional (goal 15): written only when the endpoint
+         * knows one of the two, so a telemetry without heap keeps its 36
+         * bytes. */
+        if (t->heap_free_bytes != CHORUS_V2_TELEMETRY_HEAP_UNKNOWN ||
+            t->heap_min_free_bytes != CHORUS_V2_TELEMETRY_HEAP_UNKNOWN) {
+            put_u32(w, t->heap_free_bytes);
+            put_u32(w, t->heap_min_free_bytes);
+        }
         break;
     }
     case CHORUS_V2_HANDSHAKE_INIT:

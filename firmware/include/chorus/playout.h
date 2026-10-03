@@ -173,6 +173,10 @@ typedef struct {
     uint64_t muted_frames;
     uint32_t hard_resyncs;
     uint32_t fine_corrections;
+    /* Underruns as events (goal 15, what telemetry's `underruns` carries):
+     * each run of underrun silence counts once, however many frames it
+     * lasts; `underrun_frames` above is its length. */
+    uint32_t underruns;
     uint32_t queued_frames;
     double correction_ppm;
     int error_known;
@@ -264,6 +268,9 @@ typedef struct {
      * writes silence: audio played before the offset is known would be played
      * at an instant nobody chose. */
     int acquired;
+    /* Inside a run of underrun silence: the next audio frame written ends
+     * it, so one run is one `stats.underruns`. */
+    int underrunning;
 
     /* The GPIO marker's one slot, written by the writer task only while
      * marker_pending is 0 and read and cleared by the interrupt: the frame

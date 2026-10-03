@@ -1,0 +1,25 @@
+# Canonical input for the telemetry_heap golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly telemetry_heap.hex, and decoding telemetry_heap.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+#
+# A Wi-Fi speaker that reports its heap (goal 15): the optional heap block, two u32s after the
+# 36 bytes every telemetry carries. An endpoint that does not report heap sends no block (the
+# vector `telemetry`, unchanged), and a server built before the block ignores it as excess.
+
+message_type = telemetry
+taken_ns = 7000000000
+sync_error_ns = 84000
+buffer_fill_us = 212500
+underruns = 2
+resyncs = 1
+correction_ppb = 12750
+link = wireless
+rssi_dbm = -58
+temperature_centi_c = 4725
+heap_free_bytes = 187432
+heap_min_free_bytes = 141200

@@ -296,7 +296,16 @@ typedef struct {
     uint8_t link;
     int8_t rssi_dbm;
     int16_t temperature_centi_c;
+    /* The optional heap block (goal 15): free heap now and the least since
+     * boot, in bytes; CHORUS_V2_TELEMETRY_HEAP_UNKNOWN when not reported. The
+     * encoder writes the block only when one of the two is known, so a
+     * telemetry without heap keeps its 36 bytes. */
+    uint32_t heap_free_bytes;
+    uint32_t heap_min_free_bytes;
 } chorus_v2_telemetry_t;
+
+#define CHORUS_V2_TELEMETRY_HEAP_UNKNOWN UINT32_MAX
+#define CHORUS_V2_TELEMETRY_HEAP_BLOCK_LEN 8u
 
 /* The server offering a low-latency stream, or ending one (direction 0, and
  * then every field but stream_tag is zero). The key is as secret as the

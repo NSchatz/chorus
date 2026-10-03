@@ -210,6 +210,18 @@ pub fn v2_message_from_fields(f: &Fields) -> Message {
             link: named("link", Link::from_name(f.str("link"))),
             rssi_dbm: int(f, "rssi_dbm") as i8,
             temperature_centi_c: int(f, "temperature_centi_c") as i16,
+            // Optional (goal 15): a vector made before the heap block has
+            // neither, which is how "not reported" is written.
+            heap_free_bytes: if f.has("heap_free_bytes") {
+                f.u64("heap_free_bytes") as u32
+            } else {
+                TELEMETRY_HEAP_UNKNOWN
+            },
+            heap_min_free_bytes: if f.has("heap_min_free_bytes") {
+                f.u64("heap_min_free_bytes") as u32
+            } else {
+                TELEMETRY_HEAP_UNKNOWN
+            },
         }),
         Type::LowLatencyOffer => Message::LowLatencyOffer(LowLatencyOffer {
             direction: named(

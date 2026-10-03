@@ -29,6 +29,12 @@
 #   docs/decisions/0112-a-faster-gate-with-the-same-checks.md says why it).
 #   zig and cargo-zigbuild are the C compiler and linker of the Linux endpoint package's cross
 #   builds at a glibc floor (tools/endpoint-package.sh; the package's ADR says why them).
+#   prometheus 3.13.3 (for promtool) Apache-2.0 https://github.com/prometheus/prometheus/releases/tag/v3.13.3
+#     (read 2026-10-03; prometheus-3.13.3.linux-amd64.tar.gz sha256
+#     b349c732d8a853e657d0e7ae1bbad4d11b586615fb65fdc59d896b9f869c001e, the digest mise.lock carries)
+#   promtool lints a real scrape of chorus-server's /metrics (`make verify-metrics`,
+#   tools/verify-metrics.sh; docs/telemetry.md). It is not a gate step: where promtool is absent the
+#   target refuses by name (tools/unrun-checks-are-visibly-unrun.sh).
 # The GPL-3.0 tools run as unmodified binaries; their source is never read (brief section 0.9).
 
 [tools]
@@ -42,6 +48,7 @@
 "core:zig" = "0.16.0"
 "aqua:rust-cross/cargo-zigbuild" = "0.23.4"
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.146"
+"aqua:prometheus/prometheus" = "3.13.3"
 
 [settings]
 lockfile = true

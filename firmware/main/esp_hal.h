@@ -21,6 +21,7 @@
 #include "chorus/amp.h"
 #include "chorus/endpoint_config.h"
 #include "chorus/playout.h"
+#include "chorus/session.h"
 #include "chorus/wifi.h"
 
 /* Bring up the I2C bus, the amplifier's power-down line and the I2S channel
@@ -64,5 +65,20 @@ i2s_chan_handle_t chorus_esp_hal_i2s_tx(void);
  * somebody has an ESP32-S3 on a wireless link and the capture rig, and
  * docs/verification-record.md quotes that refusal. */
 void chorus_esp_hal_radio(chorus_radio_t *radio);
+
+/* The session's health seam on the board (goal 15, chorus/session.h
+ * `health`); `ctx` is the board's `chorus_transport_t`, by pointer.
+ *
+ * What it fills, and from where: `link` from the committed transport (wired,
+ * wireless; the emulator's link stays unknown, it is neither); `rssi_dbm`
+ * from esp_wifi_sta_get_rssi on a wireless board that is associated; the heap
+ * from heap_caps over the internal 8-bit heap, the figures the console's
+ * `resources` prints. The temperature stays UNKNOWN: no board profile has a
+ * temperature sensor, and the SoC's die sensor is not a board temperature
+ * (docs/telemetry.md names it as a follow-up).
+ *
+ * NOT HOST-GRADABLE and NOT CLAIMED, as the rest of this file: the values a
+ * real board reports are a bench item (docs/telemetry.md, "Bench"). */
+void chorus_esp_hal_health(void *ctx, chorus_session_health_t *health);
 
 #endif /* CHORUS_ESP_HAL_H */

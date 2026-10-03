@@ -108,6 +108,14 @@ pub const FIRMWARE_ACK_EVERY: u32 = 16;
 /// 32 (two acknowledgements' worth).
 pub const FIRMWARE_WINDOW_CHUNKS: u32 = 32;
 
+/// `telemetry`'s optional heap block (goal 15): the value of
+/// `heap_free_bytes` or `heap_min_free_bytes` when the endpoint does not
+/// report it. An encoder writes the block only when one of the two is known.
+pub const TELEMETRY_HEAP_UNKNOWN: u32 = u32::MAX;
+/// The heap block's length: two `u32`s after the 36 bytes every `telemetry`
+/// carries.
+pub const TELEMETRY_HEAP_BLOCK_LEN: usize = 8;
+
 /// The bits of `capabilities`' trailing `features` byte (goal 13). Unlike
 /// `sound`'s flags, a bit no version defines is accepted and kept: a feature
 /// is something an endpoint CAN do, and a server that does not know one simply

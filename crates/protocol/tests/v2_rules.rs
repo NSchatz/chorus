@@ -480,3 +480,48 @@ fn the_firmware_messages_are_held_to_their_rules_and_their_edges_are_accepted() 
         }
     }
 }
+
+/// Goal 15: `telemetry`'s heap block is optional and trailing. An endpoint
+/// that reports no heap sends the 36 bytes it always did, the block is there
+/// whole or not at all, and a tail shorter than the block is excess.
+#[test]
+fn telemetry_carries_heap_only_when_it_is_known_and_absent_reads_as_unknown() {
+    let base = Telemetry {
+        taken_ns: 1,
+        sync_error_ns: i64::MIN,
+        buffer_fill_us: 0,
+        underruns: 0,
+        resyncs: 0,
+        correction_ppb: 0,
+        link: Link::Unknown,
+        rssi_dbm: i8::MIN,
+        temperature_centi_c: i16::MIN,
+        heap_free_bytes: TELEMETRY_HEAP_UNKNOWN,
+        heap_min_free_bytes: TELEMETRY_HEAP_UNKNOWN,
+    };
+    let without = encode(&Message::Telemetry(base)).unwrap();
+    assert_eq!(without.len(), 3 + 36, "no heap known: the bytes of before");
+    let known = Telemetry {
+        heap_free_bytes: 187_432,
+        ..base
+    };
+    let with = encode(&Message::Telemetry(known)).unwrap();
+    assert_eq!(with.len(), without.len() + TELEMETRY_HEAP_BLOCK_LEN);
+    assert_eq!(&with[3..3 + 36], &without[3..]);
+    assert_eq!(
+        decode_frame(&with).outcome,
+        Outcome::Decoded(Message::Telemetry(known)),
+        "the figure that is not known stays unknown inside a block"
+    );
+    assert_eq!(
+        decode_frame(&without).outcome,
+        Outcome::Decoded(Message::Telemetry(base)),
+        "no block reads as unknown, never as zero"
+    );
+    // Four bytes are not a block: excess, ignored.
+    let mut partial = with[..with.len() - 4].to_vec();
+    partial[2] = 40;
+    let decoded = decode_frame(&partial);
+    assert_eq!(decoded.consumed, partial.len());
+    assert_eq!(decoded.outcome, Outcome::Decoded(Message::Telemetry(base)));
+}

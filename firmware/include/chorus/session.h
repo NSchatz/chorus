@@ -43,6 +43,27 @@
  * pins this endpoint's key to, so a real endpoint names its own. */
 #define CHORUS_SESSION_DEFAULT_ID "chorus-endpoint"
 
+/* What the endpoint reports about itself that the session cannot read from
+ * its own state (goal 15): how it reaches the network, the radio's signal,
+ * a temperature, and the heap. The session hands the `health` seam below a
+ * record in which EVERYTHING IS UNKNOWN, and the board fills only what it has
+ * a source for; what stays unknown is sent as unknown (docs/protocol.md,
+ * "Telemetry"), never as zero. */
+typedef struct {
+    /* 0 unknown, 1 wired, 2 wireless: the wire's `link`. */
+    uint8_t link;
+    /* INT8_MIN when unknown or wired. */
+    int8_t rssi_dbm;
+    /* Hundredths of a degree Celsius; INT16_MIN when unknown. */
+    int16_t temperature_centi_c;
+    /* Bytes; CHORUS_V2_TELEMETRY_HEAP_UNKNOWN when not reported. */
+    uint32_t heap_free_bytes;
+    uint32_t heap_min_free_bytes;
+} chorus_session_health_t;
+
+/* A health record in which nothing is known. */
+void chorus_session_health_unknown(chorus_session_health_t *health);
+
 typedef struct {
     char server[CHORUS_SESSION_ADDRESS_MAX];
     uint32_t first_backoff_ms;
@@ -131,6 +152,15 @@ typedef struct {
      * server's first record opens, and ends the run when the unit reboots.
      * NULL: no `ota` feature, and the three types are stepped over. */
     chorus_ota_t *ota;
+
+    /* The endpoint's health (goal 15), optional: asked once per `telemetry`
+     * (about once a second) on the session's own task, with a record in
+     * which everything is unknown, and it fills what the board knows
+     * (firmware/main/esp_hal.c on the board; the host programs fill it from
+     * their command line, as stated fakes). NULL reports all of it unknown
+     * and sends no heap block. It must not block. */
+    void (*health)(void *ctx, chorus_session_health_t *health);
+    void *health_ctx;
 } chorus_session_config_t;
 
 /* Why a run ended. Never "the server went away": that is not an end, it is a

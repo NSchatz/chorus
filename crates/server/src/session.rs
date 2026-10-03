@@ -785,6 +785,14 @@ pub fn route_controller(
     let takes_updates = greeting.features & chorus_protocol::v2::features::OTA != 0;
     reader.set_handler(Box::new(move |m| {
         count(&ctx, &m);
+        // (goal 15) The endpoint's report is kept as its latest, for
+        // `GET /metrics`. Kept beside the room model: no state is published.
+        if let Message::Telemetry(report) = &m {
+            if let Some(control) = ctx.control.as_ref() {
+                control.telemetry_reported(&endpoint, report);
+            }
+            return;
+        }
         // An endpoint's firmware state (goal 14): the acknowledgement that
         // moves its transfer on, and what the control plane shows of it.
         if let Message::FirmwareStatus(status) = &m {
