@@ -184,6 +184,171 @@ pub struct ServerConfig {
     /// default, creates neither. Needs `--slots` of at least 1, because a
     /// player is heard only as a stream slot's input.
     pub players: usize,
+    /// (goal 16) `--media-allow-loopback`: the players' fetch policy lets a
+    /// media URL name this machine's loopback. For tests and development
+    /// only (the scripted control point serves its media from loopback);
+    /// never in a deployment, where it would let a control point make the
+    /// server fetch from its own host. Needs `--players` of at least 1. The
+    /// server's own listeners stay refused either way.
+    pub media_allow_loopback: bool,
+    /// (goal 16) The UPnP AV media renderers' flags (`crate::upnp`,
+    /// `docs/upnp.md`). Off unless `--upnp` is given.
+    pub upnp: UpnpFlags,
+}
+
+/// (goal 16) What the `--upnp*` flags said. The renderers are off unless
+/// `on` is set, and every other flag here is refused without it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpnpFlags {
+    /// `--upnp`: every room, saved group and live group is a UPnP AV media
+    /// renderer. Off: no thread, no socket.
+    pub on: bool,
+    /// `--upnp-listen <addr:port>`: the one HTTP listener of every renderer
+    /// (descriptions, control, eventing).
+    pub listen: String,
+    /// `--upnp-workers <n>`: the HTTP worker threads.
+    pub workers: usize,
+    /// `--upnp-callback-subnet <cidr>` (repeatable): where event callbacks
+    /// may point. Empty: the subnets of this host's own interfaces, read at
+    /// start (`crate::upnp::on_link_subnets`).
+    pub callback_subnets: Vec<String>,
+    /// `--upnp-ssdp-port <port>`: the UDP port the discovery socket binds.
+    /// 1900 is the standard; anything else is for tests, or for a host whose
+    /// port 1900 another program holds (`docs/upnp.md`).
+    pub ssdp_port: u16,
+    /// `--upnp-ssdp-group <addr:port>`: where discovery notifications are
+    /// sent. `None` is the standard group, 239.255.255.250:1900; anything
+    /// else is for tests.
+    pub ssdp_group: Option<String>,
+    /// The first `--upnp-*` flag given other than `--upnp`, so a run that
+    /// set one and forgot `--upnp` is told which.
+    given: Option<String>,
+}
+
+impl Default for UpnpFlags {
+    fn default() -> Self {
+        UpnpFlags {
+            on: false,
+            listen: format!("0.0.0.0:{}", crate::upnp::DEFAULT_HTTP_PORT),
+            workers: crate::upnp::DEFAULT_WORKERS,
+            callback_subnets: Vec::new(),
+            ssdp_port: crate::upnp::SSDP_PORT,
+            ssdp_group: None,
+            given: None,
+        }
+    }
+}
+
+/// What `--upnp` needs of the rest of the configuration.
+struct UpnpNeeds {
+    control: bool,
+    slots: usize,
+    players: usize,
+    ephemeral_identity: bool,
+}
+
+impl UpnpFlags {
+    /// Whether these flags are renderers this server can run.
+    fn check(&self, needs: &UpnpNeeds) -> Result<(), ServerConfigError> {
+        let refused = |argument: &str, detail: String| {
+            Err(ServerConfigError::Upnp {
+                argument: argument.to_string(),
+                detail,
+            })
+        };
+        if !self.on {
+            return match &self.given {
+                Some(argument) => refused(
+                    argument,
+                    "it configures the UPnP AV media renderers, which are off without --upnp"
+                        .to_string(),
+                ),
+                None => Ok(()),
+            };
+        }
+        if !needs.control {
+            return refused(
+                "--upnp",
+                "a renderer stands for a room or a group of the control plane, and a server \
+                 with no --control-listen has none"
+                    .to_string(),
+            );
+        }
+        if needs.slots == 0 {
+            return refused(
+                "--upnp",
+                "what a renderer plays is heard through a stream slot: give --slots <S> of at \
+                 least 1"
+                    .to_string(),
+            );
+        }
+        if needs.players == 0 {
+            return refused(
+                "--upnp",
+                "a renderer plays through one of the server's network media players: give \
+                 --players <P> of at least 1"
+                    .to_string(),
+            );
+        }
+        if needs.ephemeral_identity {
+            return refused(
+                "--upnp",
+                "a renderer's identity (its UDN) is derived from this server's persisted key, \
+                 so that control points find the same devices after a restart; \
+                 --ephemeral-identity makes a new key every run: give --identity-dir <dir> (or \
+                 --state-file) instead"
+                    .to_string(),
+            );
+        }
+        match self.listen.parse::<std::net::SocketAddr>() {
+            Ok(address) if address.port() != 0 || address.ip().is_loopback() => {}
+            Ok(_) => {
+                return refused(
+                    "--upnp-listen",
+                    "port 0 is allowed on a loopback address only (tests): control points and \
+                     the host firewall need a port that stays the same"
+                        .to_string(),
+                )
+            }
+            Err(_) => {
+                return refused(
+                    "--upnp-listen",
+                    format!(
+                        "'{}' is not <address:port> with a literal address",
+                        self.listen
+                    ),
+                )
+            }
+        }
+        if self.workers == 0 || self.workers > crate::upnp::MAX_WORKERS {
+            return refused(
+                "--upnp-workers",
+                format!(
+                    "{} is not 1 to {}: each is a thread held for the life of the process",
+                    self.workers,
+                    crate::upnp::MAX_WORKERS
+                ),
+            );
+        }
+        for subnet in &self.callback_subnets {
+            if chorus_upnp::gena::Cidr::parse(subnet).is_none() {
+                return refused(
+                    "--upnp-callback-subnet",
+                    format!("'{}' is not <address>/<prefix length>", subnet),
+                );
+            }
+        }
+        if let Some(group) = &self.ssdp_group {
+            if !matches!(group.parse::<std::net::SocketAddr>(), Ok(a) if a.is_ipv4() && a.port() != 0)
+            {
+                return refused(
+                    "--upnp-ssdp-group",
+                    format!("'{}' is not <IPv4 address:port>", group),
+                );
+            }
+        }
+        Ok(())
+    }
 }
 
 /// (goal 16) Whether `--players <players>` is something a server with
@@ -372,6 +537,8 @@ impl Default for ServerConfig {
             udp_loss: None,
             mqtt: MqttFlags::default(),
             players: 0,
+            media_allow_loopback: false,
+            upnp: UpnpFlags::default(),
         }
     }
 }
@@ -468,6 +635,13 @@ pub enum ServerConfigError {
         /// Why.
         detail: String,
     },
+    /// (goal 16) An `--upnp*` flag the renderers cannot run with.
+    Upnp {
+        /// The argument as it was given.
+        argument: String,
+        /// Why.
+        detail: String,
+    },
     /// (goal 13) A low-latency flag the plan refuses: an `L_tv` out of range
     /// or below the floor, an FEC shape the offer cannot carry, a loss
     /// specification that is not `<ppm>,<seed>`.
@@ -485,6 +659,7 @@ impl fmt::Display for ServerConfigError {
             ServerConfigError::Format(e) => write!(f, "{}", e),
             ServerConfigError::LowLatency { argument, detail }
             | ServerConfigError::Players { argument, detail }
+            | ServerConfigError::Upnp { argument, detail }
             | ServerConfigError::Mqtt { argument, detail } => {
                 write!(f, "argument '{}' refused: {}", argument, detail)
             }
@@ -720,6 +895,34 @@ impl ServerConfig {
                 "--players" => {
                     config.players = usize::try_from(number(&arg, &value()?)?).unwrap_or(usize::MAX)
                 }
+                "--media-allow-loopback" => config.media_allow_loopback = true,
+                "--upnp" => config.upnp.on = true,
+                "--upnp-listen"
+                | "--upnp-workers"
+                | "--upnp-callback-subnet"
+                | "--upnp-ssdp-port"
+                | "--upnp-ssdp-group" => {
+                    let text = value()?;
+                    config.upnp.given.get_or_insert_with(|| arg.clone());
+                    match arg.as_str() {
+                        "--upnp-listen" => config.upnp.listen = text,
+                        "--upnp-workers" => {
+                            config.upnp.workers =
+                                usize::try_from(number(&arg, &text)?).unwrap_or(usize::MAX)
+                        }
+                        "--upnp-callback-subnet" => config.upnp.callback_subnets.push(text),
+                        "--upnp-ssdp-port" => {
+                            config.upnp.ssdp_port =
+                                u16::try_from(number(&arg, &text)?).map_err(|_| {
+                                    ServerConfigError::Upnp {
+                                        argument: arg.clone(),
+                                        detail: format!("{} is not a port, 0 to 65535", text),
+                                    }
+                                })?
+                        }
+                        _ => config.upnp.ssdp_group = Some(text),
+                    }
+                }
                 "--event-streams" => config.event_streams = number(&arg, &value()?)? as usize,
                 "--civil-time" => {
                     let text = value()?;
@@ -817,7 +1020,23 @@ impl ServerConfig {
             return Err(ServerConfigError::SlotsWithGroupAudio);
         }
         config.mqtt.check(config.control_listen.is_some())?;
+        // Before the players' own rule, so that a `--upnp` missing its slots
+        // is told so by its own name.
+        config.upnp.check(&UpnpNeeds {
+            control: config.control_listen.is_some(),
+            slots: config.slots,
+            players: config.players,
+            ephemeral_identity: config.ephemeral_identity,
+        })?;
         check_players(config.players, config.slots)?;
+        if config.media_allow_loopback && config.players == 0 {
+            return Err(ServerConfigError::Players {
+                argument: "--media-allow-loopback".to_string(),
+                detail: "it changes what the network media players may fetch, and this server \
+                         has none: give --players <P> of at least 1"
+                    .to_string(),
+            });
+        }
         if config.civil_time.is_some() && config.civil_time_from.is_some() {
             return Err(ServerConfigError::TwoCivilClocks);
         }
@@ -1186,6 +1405,143 @@ mod tests {
             "{:?}",
             err
         );
+    }
+
+    #[test]
+    fn the_upnp_renderers_are_off_by_default_and_refused_by_name_without_what_they_need() {
+        let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let refused = |list: &[&str]| match ServerConfig::from_args(args(list)).unwrap_err() {
+            ServerConfigError::Upnp { argument, detail } => (argument, detail),
+            other => panic!("{:?}: {:?}", list, other),
+        };
+        let default = ServerConfig::default();
+        assert!(!default.upnp.on, "off by default");
+        assert_eq!(default.upnp.listen, "0.0.0.0:4030");
+        assert_eq!(default.upnp.workers, 4);
+        assert_eq!(default.upnp.ssdp_port, 1900);
+        assert_eq!(default.upnp.ssdp_group, None);
+        assert!(default.upnp.callback_subnets.is_empty());
+        assert!(!default.media_allow_loopback);
+
+        // Every other flag of the family is refused without --upnp, by its
+        // own name.
+        for (flag, value) in [
+            ("--upnp-listen", "127.0.0.1:4030"),
+            ("--upnp-workers", "2"),
+            ("--upnp-callback-subnet", "192.0.2.0/24"),
+            ("--upnp-ssdp-port", "1900"),
+            ("--upnp-ssdp-group", "127.0.0.1:1900"),
+        ] {
+            let (argument, detail) = refused(&["--control-listen", "127.0.0.1:0", flag, value]);
+            assert_eq!(argument, flag);
+            assert!(detail.contains("--upnp"), "{detail}");
+        }
+
+        // What --upnp needs, each named in the refusal.
+        let base = [
+            "--control-listen",
+            "127.0.0.1:0",
+            "--slots",
+            "2",
+            "--players",
+            "1",
+            "--identity-dir",
+            "/var/lib/chorus",
+            "--upnp",
+        ];
+        let without = |drop: &str| -> Vec<&str> {
+            let at = base.iter().position(|a| *a == drop).unwrap();
+            let mut v = base.to_vec();
+            v.drain(at..at + 2);
+            v
+        };
+        for (dropped, named) in [
+            ("--control-listen", "--control-listen"),
+            ("--slots", "--slots"),
+            ("--players", "--players"),
+        ] {
+            // Without the control plane, --slots is refused first by its own
+            // rule; with it, --upnp names what is missing.
+            let list = without(dropped);
+            match ServerConfig::from_args(args(&list)) {
+                Err(ServerConfigError::Upnp { argument, detail }) => {
+                    assert_eq!(argument, "--upnp");
+                    assert!(detail.contains(named), "{dropped}: {detail}");
+                }
+                Err(other) => assert_eq!(dropped, "--control-listen", "{other:?}"),
+                Ok(_) => panic!("--upnp without {dropped} was accepted"),
+            }
+        }
+        let (argument, detail) = refused(&[
+            "--control-listen",
+            "127.0.0.1:0",
+            "--slots",
+            "2",
+            "--players",
+            "1",
+            "--ephemeral-identity",
+            "--upnp",
+        ]);
+        assert_eq!(argument, "--upnp");
+        assert!(detail.contains("--ephemeral-identity") && detail.contains("--identity-dir"));
+
+        // On, with its defaults and with every flag given.
+        fn joined<'a>(parts: &[&[&'a str]]) -> Vec<&'a str> {
+            parts.concat()
+        }
+        let on = |extra: &[&'static str]| joined(&[&base, extra]);
+        let c = ServerConfig::from_args(args(&on(&[]))).unwrap();
+        assert!(c.upnp.on);
+        assert_eq!(
+            (c.upnp.listen.as_str(), c.upnp.workers),
+            ("0.0.0.0:4030", 4)
+        );
+        let c = ServerConfig::from_args(args(&on(&[
+            "--upnp-listen",
+            "192.0.2.10:4031",
+            "--upnp-workers",
+            "8",
+            "--upnp-callback-subnet",
+            "192.0.2.0/24",
+            "--upnp-callback-subnet",
+            "198.51.100.0/24",
+            "--upnp-ssdp-port",
+            "49200",
+            "--upnp-ssdp-group",
+            "127.0.0.1:49300",
+            "--media-allow-loopback",
+        ])))
+        .unwrap();
+        assert_eq!(c.upnp.listen, "192.0.2.10:4031");
+        assert_eq!(c.upnp.workers, 8);
+        assert_eq!(c.upnp.callback_subnets, ["192.0.2.0/24", "198.51.100.0/24"]);
+        assert_eq!(c.upnp.ssdp_port, 49200);
+        assert_eq!(c.upnp.ssdp_group.as_deref(), Some("127.0.0.1:49300"));
+        assert!(c.media_allow_loopback);
+
+        // Values the renderers cannot run with, each by its flag's name.
+        for (flag, value) in [
+            ("--upnp-listen", "kitchen:4030"),
+            ("--upnp-listen", "192.0.2.10:0"),
+            ("--upnp-workers", "0"),
+            ("--upnp-workers", "17"),
+            ("--upnp-callback-subnet", "192.0.2.0/40"),
+            ("--upnp-callback-subnet", "the-lan"),
+            ("--upnp-ssdp-port", "70000"),
+            ("--upnp-ssdp-group", "239.255.255.250"),
+        ] {
+            assert_eq!(refused(&on(&[flag, value])).0, flag, "{value}");
+        }
+        // Port 0 is for a loopback listener (tests) only.
+        assert!(ServerConfig::from_args(args(&on(&["--upnp-listen", "127.0.0.1:0"]))).is_ok());
+
+        // --media-allow-loopback is about the players, and needs some.
+        match ServerConfig::from_args(args(&["--media-allow-loopback"])).unwrap_err() {
+            ServerConfigError::Players { argument, .. } => {
+                assert_eq!(argument, "--media-allow-loopback")
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]

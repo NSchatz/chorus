@@ -44,6 +44,11 @@ chorus-decode = { path = "../decode" }
 # player threads open the URLs they are given through it, under the fetch policy main.rs builds
 # (src/mediaplayer.rs). It brings rustls and ring into the server binary.
 chorus-fetch = { path = "../fetch" }
+# The UPnP AV media renderers' pure half (goal 16, docs/upnp.md, ADR 0121): discovery messages,
+# descriptions, SOAP, GENA, LastChange, DIDL-Lite and the AVTransport state machine. No socket,
+# no thread, no third-party dependency; src/upnp.rs is the sockets and the threads. The scripted
+# control point (tests/upnp_control_point.rs) is written with its `client` module.
+chorus-upnp = { path = "../upnp" }
 
 [dev-dependencies]
 # The end-to-end tests decode what the server put on a real socket with the

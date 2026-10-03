@@ -291,6 +291,50 @@ for name in aac-in-mp4 aac-adts; do
     echo "image test: --probe-media $file -> $(cat "$T/aac.err")"
 done
 
+# The UPnP AV media renderers in the image's own binary (goal 16, docs/upnp.md):
+# a second server with --upnp, everything on loopback (its discovery socket on
+# an ephemeral port and its notifications to a loopback port, so no multicast
+# and no port 1900), and the kitchen's device description read over HTTP.
+UPNP_DIR="$T/upnp"
+mkdir -p "$UPNP_DIR"
+read -r UPNP_AUDIO UPNP_NOTIFY < <(free_ports)
+"$BIN" --listen "127.0.0.1:$UPNP_AUDIO" --control-listen 127.0.0.1:0 \
+    --state-file "$UPNP_DIR/zones.state" --zone kitchen --source tone --serve-forever \
+    --slots 1 --players 1 --upnp --upnp-listen 127.0.0.1:0 --upnp-ssdp-port 0 \
+    --upnp-ssdp-group "127.0.0.1:$UPNP_NOTIFY" \
+    --allow-non-realtime --no-lock-memory > "$UPNP_DIR/server.log" 2>&1 &
+UPNP_PID=$!
+stop_servers() {
+    if [ -n "$PID" ]; then kill "$PID" 2>/dev/null || true; fi
+    if [ -n "$UPNP_PID" ]; then kill "$UPNP_PID" 2>/dev/null || true; fi
+}
+trap stop_servers EXIT
+UPNP_HTTP=""
+UPNP_UDN=""
+for _ in $(seq 1 100); do
+    UPNP_HTTP="$(sed -n 's/.*upnp renderers listening on=\([^ ]*\).*/\1/p' "$UPNP_DIR/server.log" | head -n 1)"
+    UPNP_UDN="$(sed -n 's/.*upnp renderer appeared target=room:kitchen udn=\([^ ]*\).*/\1/p' "$UPNP_DIR/server.log" | head -n 1)"
+    if [ -n "$UPNP_HTTP" ] && [ -n "$UPNP_UDN" ]; then
+        break
+    fi
+    kill -0 "$UPNP_PID" 2>/dev/null || break
+    sleep 0.1
+done
+if [ -z "$UPNP_HTTP" ] || [ -z "$UPNP_UDN" ]; then
+    echo "image test: FAIL: the server with --upnp did not announce a renderer for the kitchen"
+    cat "$UPNP_DIR/server.log"
+    exit 1
+fi
+DESC="$(curl -fsS "http://$UPNP_HTTP/upnp/$UPNP_UDN/desc.xml")"
+printf '%s' "$DESC" | grep -q 'urn:schemas-upnp-org:device:MediaRenderer:1' ||
+    { echo "image test: FAIL: the description is not a MediaRenderer:1: $DESC"; exit 1; }
+printf '%s' "$DESC" | grep -q "<UDN>uuid:$UPNP_UDN</UDN>" ||
+    { echo "image test: FAIL: the description does not carry the UDN $UPNP_UDN"; exit 1; }
+echo "image test: --upnp: GET http://$UPNP_HTTP/upnp/$UPNP_UDN/desc.xml -> MediaRenderer:1, $(printf '%s' "$DESC" | sed -n 's/.*<friendlyName>\(.*\)<\/friendlyName>.*/friendlyName \1/p')"
+kill "$UPNP_PID" 2>/dev/null || true
+wait "$UPNP_PID" 2>/dev/null || true
+UPNP_PID=""
+
 # The probe the owner runs in the deployed container: present, static, and it runs.
 PROBE="$T/bundle/rootfs/usr/local/bin/chorus-wakeup-probe"
 "$PROBE" --period-us 5000 --seconds 1 > "$T/probe.txt"

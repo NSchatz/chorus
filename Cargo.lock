@@ -234,6 +234,7 @@ dependencies = [
  "chorus-protocol",
  "chorus-schedule",
  "chorus-sync",
+ "chorus-upnp",
 ]
 
 [[package]]
