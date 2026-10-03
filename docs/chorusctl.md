@@ -105,7 +105,7 @@ flags:
   --timeout <seconds>   how long to wait for the server, 1 to 60; default 5
   --help                this text; after a noun, that noun's verbs (also -h, and 'help <noun>')
   --group <group>       volume get, set, step: act on a group instead of a room
-  --source <source>     groups take: stream, none, line-in:<endpoint>/<input> or chime:<name>
+  --source <source>     groups take: stream, none, line-in:<endpoint>/<input>, chime:<name> or player:<id>
   --none                endpoints room: take the speaker out of every room
   --all                 updates install: every present speaker of the image's board not running it
   --force               updates install: install even the version the speaker already runs
@@ -133,6 +133,11 @@ nothing reads `GET /api/state`. The wire word for a room is `zone`.
 | `rooms show <room>` | (reads) | that room's object from `zones` |
 | `rooms name <room> <name>` | `name` | the state message |
 
+`rooms list` has a last column, `PLAYING`, only when some room's group is playing one of the
+server's network media players and the server has said what (goal 16): the title and the artist
+where they are known, and `(paused)` or `(buffering)` when it is not playing. A house with no
+player prints the table without it.
+
 ### groups
 
 | Command | Sends | `--json` prints |
@@ -145,8 +150,8 @@ nothing reads `GET /api/state`. The wire word for a room is `zone`.
 | `groups take <target> [--source <source>]` | `take` | the state message |
 
 A target is a room, a saved group or a group that exists now. A source is `stream`, `none`,
-`line-in:<endpoint>/<input>` or `chime:<name>`; without `--source` the target keeps what its group
-played.
+`line-in:<endpoint>/<input>`, `chime:<name>` or (goal 16) `player:<id>`, one of the server's
+network media players (`--players`); without `--source` the target keeps what its group played.
 
 ### volume
 

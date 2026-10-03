@@ -317,7 +317,7 @@ fn build(
                         usage(
                             format!(
                                 "'{}' is not a source: it is stream, none, \
-                                 line-in:<endpoint>/<input> or chime:<name>",
+                                 line-in:<endpoint>/<input>, chime:<name> or player:<id>",
                                 text
                             ),
                             line.to_string(),

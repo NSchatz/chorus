@@ -139,7 +139,7 @@ pub const FLAGS: &[Flag] = &[
     Flag {
         name: "--source",
         value: Some("<source>"),
-        about: "groups take: stream, none, line-in:<endpoint>/<input> or chime:<name>",
+        about: "groups take: stream, none, line-in:<endpoint>/<input>, chime:<name> or player:<id>",
         global: false,
     },
     Flag {

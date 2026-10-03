@@ -27,7 +27,9 @@ catalog v2 `docs/decisions/0075-control-catalog-v2.md` (the version policy, grou
 volume's definition and its citation, take-the-room, the clamp rule, the bond
 layouts and the Wi-Fi refusal, state-file format 2), and for per-room sound
 `docs/decisions/0081-per-room-sound-in-the-catalog-and-on-the-wire.md`, and
-for the speakers `docs/decisions/0106-speakers-adopted-named-and-assigned-rooms.md`.
+for the speakers `docs/decisions/0106-speakers-adopted-named-and-assigned-rooms.md`,
+and for player sources and what is playing
+`docs/decisions/0119-player-sources-player-ports-and-now-playing.md`.
 
 ## The versions
 
@@ -138,9 +140,29 @@ client chose). A live group that `join` or `take` leaves with one room
 `group` and `ungroup` keep v1's behaviour exactly and dissolve nothing.
 
 Each formed group plays a **source** (v2): `stream` (the server's configured
-stream, the default), `none`, `chime:<name>` or `line-in:<endpoint>/<input>`.
-The spelling is the catalog's; which chimes exist and which inputs are offered
-is the server runtime's, and the state lists the offered ones as `inputs`.
+stream, the default), `none`, `chime:<name>`, `line-in:<endpoint>/<input>` or
+(goal 16) `player:<id>`, one of the server's network media players.
+The spelling is the catalog's; which chimes exist, which inputs are offered and
+which players the server runs is the server runtime's, and the state lists the
+offered inputs as `inputs`.
+
+**A player plays in at most one group** (goal 16). A `take` that names a player
+another formed group is playing is refused, field `source`, naming that group;
+so is one naming a player the server does not run (`there is no player 'p7' on
+this server; its players are p0, p1`: the players are `p0` to `p<N-1>` of
+`--players N`). A player follows its group as any source does when a live
+group forms or dissolves. The one place a source is otherwise copied, `take`
+pushing rooms out of the target's group, keeps the player with the target and
+leaves the rooms pushed out playing `none`; when that `take` gives the target
+another source, the player goes with the rooms pushed out instead.
+
+What a player is playing is the group's **now-playing record** (goal 16): its
+title, artist, album, artwork URL, duration and whether it is playing, paused
+or buffering, and what is driving the player (`via`). It is a fact about now:
+the server's runtime sets it, no command does, and it is never persisted. A
+group has one only while its source is a player source; it moves with the
+source when groups re-form and is gone the moment the group plays anything
+else or is no longer formed.
 
 A **speaker** (v2, goal 14) is an endpoint this server has adopted: the id
 its audio sessions authenticate as, pinned to its key on its first handshake
@@ -678,7 +700,9 @@ of each, `fixtures/control/v2/state-empty.json` the empty house):
 | field | notes |
 |---|---|
 | `zones[]` | v1's fields, then `transport` (`wired` or `wireless`, as declared), `limit`, `effective_limit`, `quiet` (`[{"days","start","end","limit","active"}]`), `bond` (`[{"endpoint","role"}]`, `[]` for none), `ramp` (a running ramp's target, or `null`), and (goal 12) `sound` (`{"bass","treble","loudness","night","speech"}`), `bass_management` (`{"crossover_hz","sub_level_db","sub_polarity","active"}`) and `room_eq` (`{"enabled","filters"}`) |
+| `zones[].source`, `zones[].now_playing` | (goal 16) **written only while the room's group has a now-playing record**, last in the room's object, in that order: the group's `source` (a `player:<id>`) and the record, below |
 | `groups[]` | every formed group, in the order its first room was configured: `id`, `kind`, `zones`, `volume` (the group volume), `source`, `audio` |
+| `groups[].now_playing` | (goal 16) **written only while the group has a now-playing record**, after `audio`: `title`, `artist`, `album`, `art_url` (each a string, or `null` where not known), `duration_ms` (a whole number, or `null` for a live stream or an unknown length), `state` (`playing`, `paused` or `buffering`), `via` (an identifier: `upnp` for a UPnP AV control point). Never persisted |
 | `saved_groups[]` | every saved definition, sorted by id, active or not: `id`, `name`, `zones`, `active` |
 | `endpoints[]` | every endpoint any room has or that has reported a link, sorted: `id`, `link` |
 | `alarms[]` | sorted by id: `alarm_set`'s fields from `alarm` on, then `ringing` |
@@ -694,7 +718,26 @@ of each, `fixtures/control/v2/state-empty.json` the empty house):
 and are absent, not empty, on a server that has adopted nothing, so
 `state-empty.json` and `state-rich.json` are the bytes they were;
 `fixtures/control/v2/state-speakers.json` pins both, and
-`fixtures/control/v2/state-firmware.json` the firmware members. A reader takes the
+`fixtures/control/v2/state-firmware.json` the firmware members. The same rule
+holds for what is playing (goal 16): a room and a group with no now-playing
+record carry neither `now_playing` nor, on the room, `source`, so every vector
+committed before it is the bytes it was, and
+`fixtures/control/v2/state-playing.json` pins a house where two groups have a
+record, one plays a player nothing was said about, and one plays the stream.
+
+**The now-playing record's bounds.** The server holds what it is told to
+these, and the state never carries more: a title, artist or album has every
+control character replaced by a space, is trimmed, is cut to 256 bytes of
+UTF-8 at a character boundary (ASSUMED bound), and is `null` when nothing is
+left; `art_url` is `null` unless it starts `http://` or `https://`, holds no
+space or control character and is at most 2048 bytes (a longer URL is dropped,
+never cut); `duration_ms` is `null` above 9007199254740991 (2^53 - 1, the
+largest whole number every JSON reader holds exactly, RFC 8259 section 6);
+`via` is an identifier. The record is on the room as well as on the group
+because a consumer of one room reads the room's object: the MQTT room topic
+is that object, byte for byte (`docs/mqtt.md`). A room's controllers are shown
+`paused` while its group's record says `paused`, and `playing` otherwise
+(`docs/protocol.md`, "0x33 controller state"). A reader takes the
 members it knows by name and ignores the rest (the page and the Linux client
 do); a later goal's per-speaker facts are appended to a speaker's object
 after `roles`.
@@ -848,6 +891,13 @@ by that session's own reader (the chunks). With `--mqtt-broker` (goal 15,
 the rest before the scheduling report: `6 + 2N + M + 1`. Without the flag it
 does not exist. Everything that touches the broker happens on it, so a broker
 that is down or silent holds no worker, no reader and not the conductor.
+With `--players P` (goal 16; it needs `--slots` of at least 1, and P is at
+most 16) there are P threads more, `player-0` to `player-<P-1>`, created with
+the rest before the scheduling report whether or not anything ever plays:
+`6 + 2N + M + 1 + P`, the one being the TV relay that `--slots` brings.
+Without the flag there is none. Each is the one writer of its player port; a
+stream starting, ending or changing makes no thread, because a thread made
+when a stream starts would be one the report never saw.
 
 This is a safety property and not a style. `std::thread::spawn` inherits the
 creating thread's scheduling policy, and `deploy/run-server.sh` runs the server
@@ -887,8 +937,9 @@ default) the server is the one-stream shape it always was.
 - **What a slot plays** follows its group's source: `stream` is the configured
   `--source` (read once per chunk however many slots play it); `chime:<name>`
   is that chime, rendered at start and repeated with a gap; `line-in:<endpoint>/
-  <input>` is that endpoint's input (below, "The schedule runtime"); `none` is
-  no slot at all. In this shape a source that ends (a file) is reopened, and no
+  <input>` is that endpoint's input (below, "The schedule runtime");
+  `player:p<i>` (goal 16) is that player's port (below, "Players in the
+  slots"); `none` is no slot at all. In this shape a source that ends (a file) is reopened, and no
   slot sends `stream_end`.
 - **The conductor** is the thread that carries every change to the sessions it
   concerns: which slot each plays and each session hears, `room_volume` to the
@@ -998,6 +1049,28 @@ endpoints add their own playout latency on top of every stamp, so a line-in
 is heard at L_local plus that until an endpoint mode for local line-ins
 exists (ADR 0079's follow-ups).
 
+**Players in the slots (goal 16).** `--players N` gives the server N network
+media players, `p0` to `p<N-1>`, each a **player port**
+(`crates/server/src/playerport.rs`): a ring holding one second (ASSUMED) of
+decoded audio at the server's own sample rate and channel count, allocated at
+start. A player's thread decodes, converts to that rate and those channels,
+and writes; nothing it writes is ever dropped (a full ring accepts what fits
+and the thread waits). At each tick the audio thread takes exactly one chunk
+from the port of every player some slot plays, in the order written, and
+plays silence for whatever the ring lacks: a port that is held (paused, or
+filling) or empty plays silence, and the last frames of the media go out
+padded with silence, not held back. The chunks go out on the slots' one grid
+like the configured stream's, so there is no latency plan and the group's
+tier latency applies as it does to `stream`. The port counts the frames
+written and the frames taken since the last flush, which is how the thread
+knows its position and the moment a second track, written straight after the
+first, starts to go out (gapless: the audio thread never sees a boundary). An
+alarm whose source is a `player:<id>` rings the `bell` chime (reason
+`player-source`): an alarm has no media to hand a player. A room that was
+playing a player when an alarm or an autoplay took it gets the player back
+when that ends, unless another group took the player meanwhile: then the room
+plays `none` (`schedule restore group=<id> source=none reason=player-busy`).
+
 **Test clocks.** `--civil-time <day>-<HH:MM>` holds the civil clock at that
 weekday and time (of the week of Monday 2024-01-01, in the zone loaded);
 `--civil-time-from <YYYY-MM-DDTHH:MM:SSZ>` runs it from that UTC instant; and
@@ -1047,10 +1120,11 @@ or checks a permission, and a version that adds one will be a new version.
 An endpoint's telemetry is not in the catalog and not in the state message: it
 is served on `GET /metrics` (`docs/telemetry.md`), so a report a second per
 speaker never becomes a state change. Also absent, and belonging to later
-phases: presets,
-and anything about what is playing rather than where. Catalog v2 names a
-group's source and the inputs offered; choosing what a stream URL or a service
-plays is not here.
+phases: presets. Catalog v2 names a group's source and the inputs offered, and
+(goal 16) the state says what a player source is playing; choosing what a
+player plays (a stream URL, a service) is not a control message: it is said to
+the player by what drives it (a UPnP AV control point, `docs/upnp.md` once the
+renderer lands).
 
 No firmware image travels over this channel (goal 14): a request is at most
 16 KiB and an image is megabytes. Images are staged as files in
@@ -1067,7 +1141,8 @@ endpoint's link; saved groups; alarms; autoplay rules (with, from format 4,
 speaker's `name`, `named` and `room`, in a `[speaker <id>]` section. It does
 not persist what is a fact about now: which endpoints are present, which quiet
 window is active, which alarm is ringing, a running ramp, what a group is
-playing, a sleep timer, which inputs are offered, or a speaker's presence,
+playing (its source and, goal 16, its now-playing record), a sleep timer,
+which inputs are offered, or a speaker's presence,
 software, roles, key fingerprint and refused key changes (the pins themselves
 are the server's `adopted-endpoints`, beside its key), or anything about
 firmware: the staged images (the directory is read again at start) and a

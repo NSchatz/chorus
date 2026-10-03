@@ -22,8 +22,9 @@
 //!    `RoomVolume` to every player of the room with its `ramp_ms`.
 //! 2. **Routing** (`--slots S`): what each stream slot plays
 //!    ([`SlotCommand`] to the audio thread, at its next chunk boundary: the
-//!    configured stream, a rendered chime, a line-in's port, silence, and a
-//!    line-in's latency target), and which slot each session hears
+//!    configured stream, a rendered chime, a line-in's port, a player's
+//!    port (goal 16), silence, and a line-in's latency target), and which
+//!    slot each session hears
 //!    (`Router::move_to`, between two ticks).
 //! 3. **`room_volume`** to every player session of a room whose gain or
 //!    effective limit changed (docs/decisions/0074-*), at once.
@@ -219,6 +220,8 @@ pub struct Conductor {
     /// play in (its log word), so a change is one line.
     tv_relay: Option<Arc<TvRelay>>,
     tv_modes: Vec<(chorus_control::rooms::InputId, String)>,
+    /// (goal 16) How many players this server runs (`--players`).
+    players: usize,
 }
 
 /// When an endpoint of a room on `transport` plays audio stamped `t` on the
@@ -254,7 +257,16 @@ impl Conductor {
             transports: ZoneTransports::default(),
             tv_relay: None,
             tv_modes: Vec::new(),
+            players: 0,
         }
+    }
+
+    /// (goal 16) This server runs `players` network media players
+    /// (`--players`, `crate::player`): a group whose source is `player:p<i>`
+    /// plays port `i`.
+    pub fn with_players(mut self, players: usize) -> Conductor {
+        self.players = players;
+        self
     }
 
     /// Play TV inputs in low-latency mode through `relay` where they can
@@ -635,6 +647,11 @@ impl Conductor {
                 .and_then(|s| s.line_ins.as_ref())
                 .and_then(|l| l.port_of(input))
                 .map_or(SlotInput::Silence, |p| SlotInput::LineIn(p as u8)),
+            // (goal 16) A player this server does not run plays silence
+            // here; a command naming one never gets this far (it is refused
+            // by name, `ControlState::apply`).
+            Source::Player(id) => crate::player::player_index(id, self.players)
+                .map_or(SlotInput::Silence, |p| SlotInput::Player(p as u8)),
         }
     }
 

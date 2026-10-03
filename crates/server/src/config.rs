@@ -179,6 +179,38 @@ pub struct ServerConfig {
     /// (goal 15) The MQTT publisher's flags (`crate::mqtt`, `docs/mqtt.md`).
     /// Off unless `--mqtt-broker` is given.
     pub mqtt: MqttFlags,
+    /// (goal 16) Network media players (`--players <N>`): N player ports and
+    /// N `player-<i>` threads, created at start (`crate::player`). `0`, the
+    /// default, creates neither. Needs `--slots` of at least 1, because a
+    /// player is heard only as a stream slot's input.
+    pub players: usize,
+}
+
+/// (goal 16) Whether `--players <players>` is something a server with
+/// `slots` stream slots can run.
+fn check_players(players: usize, slots: usize) -> Result<(), ServerConfigError> {
+    let refused = |detail: String| {
+        Err(ServerConfigError::Players {
+            argument: "--players".to_string(),
+            detail,
+        })
+    };
+    if players > crate::player::MAX_PLAYERS {
+        return refused(format!(
+            "{} players is past the ceiling of {}: each is a thread and a ring of audio held \
+             for the life of the process",
+            players,
+            crate::player::MAX_PLAYERS
+        ));
+    }
+    if players > 0 && slots == 0 {
+        return refused(
+            "a player is heard as a stream slot's input, and this server has none: give \
+             --slots <S> of at least 1 (which needs --control-listen)"
+                .to_string(),
+        );
+    }
+    Ok(())
 }
 
 /// (goal 15) What the `--mqtt-*` flags said. The publisher is off unless
@@ -339,6 +371,7 @@ impl Default for ServerConfig {
             fec_depth: chorus_protocol::v2::lowlat::DEFAULTS.fec_depth,
             udp_loss: None,
             mqtt: MqttFlags::default(),
+            players: 0,
         }
     }
 }
@@ -428,6 +461,13 @@ pub enum ServerConfigError {
         /// Why.
         detail: String,
     },
+    /// (goal 16) A `--players` the server cannot run.
+    Players {
+        /// The argument as it was given.
+        argument: String,
+        /// Why.
+        detail: String,
+    },
     /// (goal 13) A low-latency flag the plan refuses: an `L_tv` out of range
     /// or below the floor, an FEC shape the offer cannot carry, a loss
     /// specification that is not `<ppm>,<seed>`.
@@ -444,6 +484,7 @@ impl fmt::Display for ServerConfigError {
         match self {
             ServerConfigError::Format(e) => write!(f, "{}", e),
             ServerConfigError::LowLatency { argument, detail }
+            | ServerConfigError::Players { argument, detail }
             | ServerConfigError::Mqtt { argument, detail } => {
                 write!(f, "argument '{}' refused: {}", argument, detail)
             }
@@ -676,6 +717,9 @@ impl ServerConfig {
                         .push((group.to_string(), address.to_string()));
                 }
                 "--slots" => config.slots = number(&arg, &value()?)? as usize,
+                "--players" => {
+                    config.players = usize::try_from(number(&arg, &value()?)?).unwrap_or(usize::MAX)
+                }
                 "--event-streams" => config.event_streams = number(&arg, &value()?)? as usize,
                 "--civil-time" => {
                     let text = value()?;
@@ -773,6 +817,7 @@ impl ServerConfig {
             return Err(ServerConfigError::SlotsWithGroupAudio);
         }
         config.mqtt.check(config.control_listen.is_some())?;
+        check_players(config.players, config.slots)?;
         if config.civil_time.is_some() && config.civil_time_from.is_some() {
             return Err(ServerConfigError::TwoCivilClocks);
         }
@@ -1140,6 +1185,81 @@ mod tests {
             matches!(err, ServerConfigError::NotAZone { .. }),
             "{:?}",
             err
+        );
+    }
+
+    #[test]
+    fn players_are_off_by_default_bounded_and_need_a_stream_slot() {
+        let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let refused = |list: &[&str]| match ServerConfig::from_args(args(list)).unwrap_err() {
+            ServerConfigError::Players { argument, detail } => {
+                assert_eq!(argument, "--players");
+                detail
+            }
+            other => panic!("{:?}: {:?}", list, other),
+        };
+        assert_eq!(ServerConfig::default().players, 0, "off by default");
+        let on = ServerConfig::from_args(args(&[
+            "--control-listen",
+            "127.0.0.1:0",
+            "--slots",
+            "2",
+            "--players",
+            "3",
+        ]))
+        .unwrap();
+        assert_eq!(
+            (on.slots, on.players),
+            (2, 3),
+            "more players than slots is allowed"
+        );
+        // `--players 0` is the default said out loud, with or without slots.
+        assert_eq!(
+            ServerConfig::from_args(args(&["--players", "0"]))
+                .unwrap()
+                .players,
+            0
+        );
+        // Without a stream slot a player could never be heard: refused by
+        // name, in the one-stream shape with or without a control plane.
+        assert!(refused(&["--players", "1"]).contains("--slots"));
+        assert!(
+            refused(&["--control-listen", "127.0.0.1:0", "--players", "1"]).contains("--slots")
+        );
+        // The ceiling.
+        let most = crate::player::MAX_PLAYERS.to_string();
+        assert!(ServerConfig::from_args(args(&[
+            "--control-listen",
+            "127.0.0.1:0",
+            "--slots",
+            "1",
+            "--players",
+            &most,
+        ]))
+        .is_ok());
+        let detail = refused(&[
+            "--control-listen",
+            "127.0.0.1:0",
+            "--slots",
+            "1",
+            "--players",
+            "17",
+        ]);
+        assert!(detail.contains("17") && detail.contains("16"), "{}", detail);
+        assert_eq!(
+            ServerConfig::from_args(args(&["--players", "many"])).unwrap_err(),
+            ServerConfigError::NotANumber {
+                argument: "--players".to_string(),
+                value: "many".to_string()
+            }
+        );
+        let said = ServerConfig::from_args(args(&["--players", "1"]))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            said.starts_with("argument '--players' refused: "),
+            "{}",
+            said
         );
     }
 

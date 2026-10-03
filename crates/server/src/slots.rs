@@ -31,7 +31,11 @@
 //! chime rendered at start, repeated with a gap) and [`SlotInput::LineIn`]
 //! (an endpoint's line-in through its port, `crate::linein`, played through
 //! the latency-growth plan of ADR 0071 so its latency grows without a glitch
-//! when a room joins its group, K94).
+//! when a room joins its group, K94) and [`SlotInput::Player`] (goal 16: a
+//! network media player's decoded audio through its port,
+//! `crate::playerport`, one chunk a tick, silence for whatever it lacks).
+//! A player is not live, so it has no latency plan: its chunks go out on the
+//! grid as the configured stream's do, and the group's tier latency applies.
 //!
 //! A line-in's chunks carry the grid's sequence and timestamp like every
 //! other slot's: what its plan moves is which source frames a chunk carries,
@@ -76,6 +80,7 @@ use chorus_sync::latency_grow::{
 };
 
 use crate::linein::{decode_sample, encode_sample, Port};
+use crate::playerport::PlayerPort;
 use crate::router::Router;
 use crate::serve::{ServeError, ServeParams};
 use crate::source::PcmSource;
@@ -101,6 +106,10 @@ pub enum SlotInput {
     /// An endpoint's line-in, by the port its upstream goes into
     /// (`crate::linein`), played through the latency plan.
     LineIn(u8),
+    /// (goal 16) A network media player, by its port
+    /// ([`SlotMedia::players`], `crate::playerport`): one chunk of its
+    /// decoded audio a tick, silence for whatever it lacks.
+    Player(u8),
 }
 
 impl SlotInput {
@@ -111,6 +120,7 @@ impl SlotInput {
             SlotInput::Stream => "stream",
             SlotInput::Chime(_) => "chime",
             SlotInput::LineIn(_) => "line-in",
+            SlotInput::Player(_) => "player",
         }
     }
 }
@@ -171,6 +181,9 @@ pub struct SlotMedia {
     pub chimes: Vec<Arc<[u8]>>,
     /// The line-in ports (`crate::linein`).
     pub ports: Vec<Arc<Port>>,
+    /// (goal 16) The player ports (`crate::playerport`), `--players` of
+    /// them: player `p<i>` is `players[i]`.
+    pub players: Vec<Arc<PlayerPort>>,
 }
 
 /// What a slot's line-in is doing, on the audio thread. One per slot,
@@ -306,6 +319,12 @@ pub fn serve_slots(
         })
         .collect();
     let mut port_played = vec![false; ports];
+    // (goal 16) One chunk's buffer per player port, and whether the port was
+    // taken from this tick: a port is drained ONCE per tick however many
+    // slots name it, so its frames are never split between two slots.
+    let player_ports = media.players.len();
+    let mut player_pcm = vec![vec![0u8; bytes_per_chunk]; player_ports];
+    let mut player_played = vec![false; player_ports];
     let chunk_ns = params.chunk_us * 1_000;
     let interval_ns = params.emit_interval_ns();
     let origin_ns = timeline.now_ns();
@@ -394,6 +413,7 @@ pub fn serve_slots(
             // the chunk's own: a chime into its slot's buffer, a line-in once
             // per port however many slots play it.
             port_played.fill(false);
+            player_played.fill(false);
             for slot in 0..slots {
                 match inputs[slot] {
                     SlotInput::Chime(c) => match media.chimes.get(usize::from(c)) {
@@ -420,6 +440,15 @@ pub fn serve_slots(
                             }
                         }
                     }
+                    SlotInput::Player(p) => {
+                        let p = usize::from(p);
+                        if let Some(port) = media.players.get(p) {
+                            if !player_played[p] {
+                                port.play(frames, params.format.sample_format, &mut player_pcm[p]);
+                                player_played[p] = true;
+                            }
+                        }
+                    }
                     SlotInput::Silence | SlotInput::Stream => {}
                 }
             }
@@ -431,6 +460,11 @@ pub fn serve_slots(
                         if port_played.get(usize::from(*p)) == Some(&true) =>
                     {
                         cut(&port_pcm[usize::from(*p)])?
+                    }
+                    (SlotInput::Player(p), _)
+                        if player_played.get(usize::from(*p)) == Some(&true) =>
+                    {
+                        cut(&player_pcm[usize::from(*p)])?
                     }
                     _ => quiet.clone(),
                 };
@@ -452,6 +486,9 @@ pub fn serve_slots(
                 SlotInput::Chime(_) => &slot_pcm[slot],
                 SlotInput::LineIn(p) if port_played.get(usize::from(*p)) == Some(&true) => {
                     &port_pcm[usize::from(*p)]
+                }
+                SlotInput::Player(p) if player_played.get(usize::from(*p)) == Some(&true) => {
+                    &player_pcm[usize::from(*p)]
                 }
                 _ => &silence,
             };

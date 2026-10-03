@@ -98,6 +98,53 @@ fn the_rich_vector_gives_the_rooms_and_saved_groups_it_holds() {
     }
 }
 
+/// (goal 16) A room whose group plays a player and has a now-playing record
+/// carries `source` and `now_playing` in its payload, because the payload is
+/// the room's object; a room with no record has neither. Nothing in this
+/// crate changed for it.
+#[test]
+fn a_room_playing_a_player_carries_its_source_and_what_it_plays() {
+    let text = std::fs::read_to_string(fixtures().join("v2/state-playing.json")).unwrap();
+    let cut = retained_of(text.trim_end()).unwrap();
+    let room = |id: &str| &cut.rooms.iter().find(|(r, _)| r == id).unwrap().1;
+    let song = concat!(
+        r#""source":"player:p0","now_playing":{"title":"Morning Light","artist":"The Example Quartet","#,
+        r#""album":"First Takes","art_url":"http://192.0.2.10:8200/art/42.jpg","#,
+        r#""duration_ms":215000,"state":"playing","via":"upnp"}}"#
+    );
+    for id in ["living", "kitchen"] {
+        assert!(room(id).ends_with(song), "{}", room(id));
+    }
+    assert!(room("study").ends_with(concat!(
+        r#""source":"player:p1","now_playing":{"title":"Evening news","artist":null,"#,
+        r#""album":null,"art_url":null,"duration_ms":null,"state":"paused","via":"upnp"}}"#
+    )));
+    for id in ["bedroom", "hall"] {
+        assert!(!room(id).contains("now_playing"), "{}", room(id));
+        assert!(!room(id).contains(r#""source""#), "{}", room(id));
+        assert!(room(id).ends_with(r#""room_eq":{"enabled":true,"filters":[]}}"#));
+    }
+    // The saved group's payload is its definition, as before.
+    assert_eq!(
+        cut.groups,
+        [(
+            "downstairs".to_string(),
+            r#"{"id":"downstairs","name":"Downstairs","zones":["living","kitchen"],"active":true}"#
+                .to_string()
+        )]
+    );
+    // And docs/mqtt.md shows the study's payload as it is.
+    let doc = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/mqtt.md"),
+    )
+    .unwrap();
+    assert!(
+        doc.contains(&format!("```json\n{}\n```", room("study"))),
+        "docs/mqtt.md does not show {}",
+        room("study")
+    );
+}
+
 #[test]
 fn a_string_holding_brackets_quotes_and_commas_does_not_move_a_cut() {
     let state = concat!(

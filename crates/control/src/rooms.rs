@@ -413,11 +413,13 @@ impl QuietWindow {
 /// What a group is playing.
 ///
 /// The ids are the envelope's: `stream` is the server's configured stream,
-/// `none` is nothing, `chime:<name>` one of the generated chimes, and
-/// `line-in:<endpoint>/<input>` an endpoint's offered line-in. This crate
-/// validates the spelling; which chimes exist and which inputs are offered is
-/// the runtime's to know, so a well-spelled source naming one that does not
-/// exist is the runtime's refusal, not the catalog's.
+/// `none` is nothing, `chime:<name>` one of the generated chimes,
+/// `line-in:<endpoint>/<input>` an endpoint's offered line-in, and (goal 16)
+/// `player:<id>` one of the server's network media players. This crate
+/// validates the spelling; which chimes exist, which inputs are offered and
+/// which players the server runs is the runtime's to know, so a well-spelled
+/// source naming one that does not exist is the runtime's refusal, not the
+/// catalog's.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Source {
     /// The configured stream: what every group plays until told otherwise.
@@ -428,6 +430,12 @@ pub enum Source {
     Chime(String),
     /// An endpoint's line-in.
     LineIn(InputId),
+    /// (goal 16) One of the server's network media players, by its id (the
+    /// server's are `p0`, `p1`, ...). What the player plays is not the
+    /// catalog's: the runtime that drives it says so in the group's
+    /// [`NowPlaying`]. A player plays in at most one group at a time
+    /// (`crate::zones`).
+    Player(String),
 }
 
 impl Source {
@@ -438,6 +446,7 @@ impl Source {
             Source::None => "none".to_string(),
             Source::Chime(name) => format!("chime:{}", name),
             Source::LineIn(input) => format!("line-in:{}", input.literal()),
+            Source::Player(id) => format!("player:{}", id),
         }
     }
 
@@ -454,13 +463,131 @@ impl Source {
         if let Some(input) = text.strip_prefix("line-in:") {
             return InputId::parse(input).map(Source::LineIn);
         }
+        if let Some(id) = text.strip_prefix("player:") {
+            return is_identifier(id).then(|| Source::Player(id.to_string()));
+        }
         None
     }
 }
 
 /// What a refusal says a source is.
-pub const SOURCE_SPELLINGS: &str =
-    "'stream', 'none', 'chime:<name>' or 'line-in:<endpoint>/<input>', each name an identifier";
+pub const SOURCE_SPELLINGS: &str = "'stream', 'none', 'chime:<name>', \
+     'line-in:<endpoint>/<input>' or 'player:<id>', each name an identifier";
+
+/// Whether what a player source plays is playing, paused or still filling its
+/// buffer (goal 16).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayState {
+    /// Audio is going out.
+    Playing,
+    /// Held where it is; silence goes out.
+    Paused,
+    /// Waiting for enough of the media to play; silence goes out.
+    Buffering,
+}
+
+impl PlayState {
+    /// The catalog's word for it.
+    pub fn name(self) -> &'static str {
+        match self {
+            PlayState::Playing => "playing",
+            PlayState::Paused => "paused",
+            PlayState::Buffering => "buffering",
+        }
+    }
+
+    /// Read the catalog's word back.
+    pub fn parse(text: &str) -> Option<PlayState> {
+        match text {
+            "playing" => Some(PlayState::Playing),
+            "paused" => Some(PlayState::Paused),
+            "buffering" => Some(PlayState::Buffering),
+            _ => None,
+        }
+    }
+}
+
+/// Longest a now-playing title, artist or album may be, in bytes of UTF-8.
+/// A longer one is cut at the last character boundary at or below this.
+/// ASSUMED: 256 bytes shows any title a page or a remote has room for, and
+/// bounds what a media file's tags or a control point can put into every
+/// state message (three of these per playing group, once per member room).
+pub const MAX_NOW_PLAYING_TEXT: usize = 256;
+
+/// Longest a now-playing art URL may be, in bytes. A longer one is dropped,
+/// not cut: a cut URL names something else. ASSUMED: 2048, the length every
+/// common HTTP client and server accepts in a request line.
+pub const MAX_ART_URL_LEN: usize = 2048;
+
+/// Largest a now-playing duration may be, in ms: the largest whole number
+/// every JSON reader holds exactly (2^53 - 1, RFC 8259 section 6). A larger
+/// one is dropped (the duration is then unknown).
+pub const MAX_DURATION_MS: u64 = (1 << 53) - 1;
+
+/// What a group's player source is playing now (goal 16): a fact about now,
+/// set by the server's runtime (`crate::zones::Zones::set_now_playing`),
+/// never by a command and never persisted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NowPlaying {
+    /// The title, when known.
+    pub title: Option<String>,
+    /// The artist, when known.
+    pub artist: Option<String>,
+    /// The album, when known.
+    pub album: Option<String>,
+    /// Where the artwork is, when known: an `http` or `https` URL.
+    pub art_url: Option<String>,
+    /// How long the media is, ms, when known (a live stream has none).
+    pub duration_ms: Option<u64>,
+    /// Playing, paused or buffering.
+    pub state: PlayState,
+    /// What is driving the player, an identifier: `upnp` for a UPnP AV
+    /// control point (later goals add their own).
+    pub via: String,
+}
+
+impl NowPlaying {
+    /// The record held to its bounds, which is what the room model stores:
+    /// in a title, artist or album every control character becomes a space,
+    /// the ends are trimmed, the text is cut to [`MAX_NOW_PLAYING_TEXT`]
+    /// bytes at a character boundary, and an empty one is absent; an art URL
+    /// that is not `http://` or `https://`, holds a control character or a
+    /// space, or is longer than [`MAX_ART_URL_LEN`] is absent; a duration
+    /// above [`MAX_DURATION_MS`] is absent.
+    pub fn bounded(self) -> NowPlaying {
+        NowPlaying {
+            title: self.title.and_then(bounded_text),
+            artist: self.artist.and_then(bounded_text),
+            album: self.album.and_then(bounded_text),
+            art_url: self.art_url.filter(|u| {
+                (u.starts_with("http://") || u.starts_with("https://"))
+                    && u.len() <= MAX_ART_URL_LEN
+                    && !u.chars().any(|c| c.is_control() || c == ' ')
+            }),
+            duration_ms: self.duration_ms.filter(|d| *d <= MAX_DURATION_MS),
+            state: self.state,
+            via: self.via,
+        }
+    }
+}
+
+/// A displayed text held to [`MAX_NOW_PLAYING_TEXT`]; `None` when nothing is
+/// left of it.
+fn bounded_text(text: String) -> Option<String> {
+    let clean: String = text
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let mut clean = clean.trim();
+    if clean.len() > MAX_NOW_PLAYING_TEXT {
+        let mut end = MAX_NOW_PLAYING_TEXT;
+        while !clean.is_char_boundary(end) {
+            end -= 1;
+        }
+        clean = clean[..end].trim_end();
+    }
+    (!clean.is_empty()).then(|| clean.to_string())
+}
 
 /// One endpoint's input: `<endpoint>/<input>`, both identifiers.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -647,7 +774,13 @@ mod tests {
 
     #[test]
     fn a_source_has_one_spelling() {
-        for text in ["stream", "none", "chime:bell", "line-in:endpoint-a/line-1"] {
+        for text in [
+            "stream",
+            "none",
+            "chime:bell",
+            "line-in:endpoint-a/line-1",
+            "player:p0",
+        ] {
             assert_eq!(Source::parse(text).unwrap().literal(), text);
         }
         for text in [
@@ -656,9 +789,63 @@ mod tests {
             "chime:Bell",
             "line-in:a",
             "line-in:a/",
+            "player:",
+            "player:P0",
+            "player:p0/x",
             "x",
         ] {
             assert_eq!(Source::parse(text), None, "{}", text);
+        }
+    }
+
+    #[test]
+    fn a_now_playing_record_is_held_to_its_bounds() {
+        let long = "\u{e9}".repeat(200); // 400 bytes of two-byte characters
+        let record = NowPlaying {
+            title: Some(format!("  A\ttitle\n{}", long)),
+            artist: Some(" \r\n ".to_string()),
+            album: Some("Album".to_string()),
+            art_url: Some("javascript:alert(1)".to_string()),
+            duration_ms: Some(u64::MAX),
+            state: PlayState::Buffering,
+            via: "upnp".to_string(),
+        }
+        .bounded();
+        let title = record.title.unwrap();
+        assert!(title.starts_with("A title "), "{}", title);
+        assert!(title.len() <= MAX_NOW_PLAYING_TEXT, "{}", title.len());
+        assert!(title.ends_with('\u{e9}'), "cut on a character boundary");
+        assert_eq!(record.artist, None, "nothing left is nothing said");
+        assert_eq!(record.album.as_deref(), Some("Album"));
+        assert_eq!(record.art_url, None, "only http and https");
+        assert_eq!(record.duration_ms, None);
+        // An odd bound: a three-byte character straddling it is dropped whole.
+        let wide = "\u{20ac}".repeat(100); // 300 bytes
+        let cut = bounded_text(wide).unwrap();
+        assert_eq!(cut.len(), 255);
+        let url = format!("https://example.invalid/{}", "a".repeat(MAX_ART_URL_LEN));
+        let kept = NowPlaying {
+            title: None,
+            artist: None,
+            album: None,
+            art_url: Some("http://192.0.2.7:8200/art/1.jpg".to_string()),
+            duration_ms: Some(MAX_DURATION_MS),
+            state: PlayState::Playing,
+            via: "upnp".to_string(),
+        };
+        assert_eq!(kept.clone().bounded(), kept);
+        assert_eq!(
+            NowPlaying {
+                art_url: Some(url),
+                ..kept
+            }
+            .bounded()
+            .art_url,
+            None,
+            "a URL past the bound is dropped, never cut"
+        );
+        for state in [PlayState::Playing, PlayState::Paused, PlayState::Buffering] {
+            assert_eq!(PlayState::parse(state.name()), Some(state));
         }
     }
 

@@ -71,15 +71,21 @@
 //! - with `--mqtt-broker` (goal 15, and it needs the control plane), the
 //!   **mqtt-publisher** (`chorus_server::mqtt`), which connects to the
 //!   broker, publishes and reconnects, all on itself. Without the flag it
-//!   does not exist.
+//!   does not exist;
+//! - with `--players P` (goal 16, and it needs `--slots`), one **player**
+//!   thread per player, `player-0` to `player-<P-1>`
+//!   (`chorus_server::player`), each the one writer of its player port. They
+//!   exist from the start whether or not anything plays, because a thread
+//!   made when a stream starts would be a thread the report never saw.
+//!   Without the flag there is none.
 //!
 //! So the population is `3 + 2N` without the control plane and
 //! `6 + 2N + M` with it, plus one for the advertiser, one for the TV
-//! relay with `--slots` and one for the MQTT publisher with
-//! `--mqtt-broker`, and NOT ONE of those
+//! relay with `--slots`, one for the MQTT publisher with
+//! `--mqtt-broker` and P for `--players P`, and NOT ONE of those
 //! numbers is a function of how many endpoints or browsers are switched on,
-//! nor of `--slots`: every stream slot is cut by the one audio thread
-//! (`chorus_server::slots`).
+//! of how many streams are playing, nor of `--slots`: every stream slot is
+//! cut by the one audio thread (`chorus_server::slots`).
 //! `crates/server/tests/control_thread_population.rs` grades that against
 //! `/proc` while subscribers come and go.
 //!
@@ -119,6 +125,7 @@ use chorus_server::hostreport::{
     ContractRefused, RealTimeOutcome, SchedulingVerdict,
 };
 use chorus_server::linein::LineIns;
+use chorus_server::playerport::PlayerPort;
 use chorus_server::router::Router;
 use chorus_server::schedule_runtime::Runtime;
 use chorus_server::serve::{serve_stream, ServeError, ServeParams, ServeReport};
@@ -276,6 +283,9 @@ control plane:
                                 never the audio)
   --tz <path>                   the TZif file civil time is kept in (default: $TZ, then
                                 /etc/localtime, else UTC)
+  --players <n>                 network media players, 0-16 (default 0: none): n player
+                                threads and n player ports, made at start; a group plays one
+                                as the source player:p<i> (needs --slots of at least 1)
   --advertise --instance <label>  advertise by multicast DNS
 
 mqtt (goal 15; docs/mqtt.md; off unless --mqtt-broker is given; read-only: it publishes
@@ -767,12 +777,34 @@ fn main() -> ExitCode {
             media.ports = l.ports().to_vec();
             line_ins = Some(l);
         }
+        // (goal 16) The player ports, `--players` of them, each a ring at
+        // this server's format, allocated here before the audio thread
+        // exists. None without the flag, and then nothing below mentions
+        // them.
+        media.players = (0..config.players)
+            .map(|_| Arc::new(PlayerPort::for_format(&format)))
+            .collect();
         println!(
             "chorus-server: slot-media chimes={} rendered_bytes={} line_in_ports={}",
             media.chimes.len(),
             media.chimes.iter().map(|c| c.len()).sum::<usize>(),
             media.ports.len()
         );
+        if !media.players.is_empty() {
+            println!(
+                "chorus-server: players count={} ids={} ring_ms={} ring_frames={}",
+                media.players.len(),
+                chorus_server::player::player_list(media.players.len()),
+                chorus_server::playerport::PLAYER_RING_MS,
+                media.players[0].capacity()
+            );
+        }
+    }
+    // The audio thread takes the media; the player threads, created below
+    // with the rest, each take the producer's side of one port.
+    let player_ports = media.players.clone();
+    if let Some((_, state)) = &control {
+        state.set_players(player_ports.len());
     }
     let params = ServeParams {
         format,
@@ -1170,7 +1202,8 @@ fn main() -> ExitCode {
                 Arc::clone(&router),
                 (config.slots > 0).then(|| slot_commands.clone()),
             )
-            .with_transports(transports.clone());
+            .with_transports(transports.clone())
+            .with_players(player_ports.len());
             if let Some(relay) = &tv_relay {
                 conductor = conductor.with_tv_relay(Arc::clone(relay));
             }
@@ -1241,6 +1274,18 @@ fn main() -> ExitCode {
         });
     }
 
+    // (goal 16) The player threads: one ordinary thread per `--players`
+    // port, created here with the rest and counted below, whether or not
+    // anything ever plays. What each does is its driver's; this build's are
+    // idle (the renderer hands its own to the same call).
+    let player_threads = chorus_server::player::spawn(
+        &player_ports,
+        chorus_server::player::idle_drivers(player_ports.len()),
+        &keep,
+        &registry,
+        &ready,
+    );
+
     // The advertiser, which answers browses for as long as the run lasts.
     let mut advertiser_threads = 0usize;
     if let Some(advertiser) = advertiser.take() {
@@ -1264,8 +1309,13 @@ fn main() -> ExitCode {
     drop(ready);
 
     // The report is taken over the whole population or not at all.
-    let expected =
-        1 + client_threads + control_threads + advertiser_threads + relay_threads + mqtt_threads;
+    let expected = 1
+        + client_threads
+        + control_threads
+        + advertiser_threads
+        + relay_threads
+        + mqtt_threads
+        + player_threads;
     let mut up = 0usize;
     while came_up.recv().is_ok() {
         up += 1;

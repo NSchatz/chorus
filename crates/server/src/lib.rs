@@ -28,7 +28,10 @@
 //! on the civil and monotonic clocks, the only place this server reads the
 //! civil one; a slot can play a generated chime or an endpoint's line-in,
 //! which [`linein`] accepts from the endpoint's session and the slot plays
-//! through the latency-growth plan (`chorus_sync::latency_grow`).
+//! through the latency-growth plan (`chorus_sync::latency_grow`). With
+//! `--players N` (goal 16) a slot can also play one of N network media
+//! players: [`playerport`] is the ring a player's decoded audio crosses to
+//! the audio thread in, and [`player`] the fixed threads that fill them.
 //!
 //! **The control half** ([`control`]) is the second, separate catalog: zones
 //! with names, groups, volume and mute, changed by a versioned JSON message and
@@ -73,6 +76,8 @@ pub mod hostreport;
 pub mod linein;
 pub mod metrics;
 pub mod mqtt;
+pub mod player;
+pub mod playerport;
 pub mod probe_media;
 pub mod router;
 pub mod schedule_runtime;
