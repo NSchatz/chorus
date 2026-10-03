@@ -29,11 +29,12 @@
 //! Exit codes: 0 stopped by SIGTERM or SIGINT; 2 a usage error; 3 no
 //! receiver index is free (or the one named is held); 4 the receiver
 //! directory cannot be used (the lock file, the FIFO or the socket); 5
-//! PipeWire could not be started.
+//! PipeWire could not be started. `--health-check` ([`health`]) exits 0 or 1.
 
 #![warn(missing_docs)]
 
 pub mod args;
+pub mod health;
 pub mod log;
 pub mod pipewire;
 pub mod supervisor;
@@ -61,6 +62,22 @@ pub fn run(arguments: Vec<String>) -> i32 {
         Ok(args::Parsed::Version) => {
             println!("chorus-soloistd {}", env!("CARGO_PKG_VERSION"));
             return 0;
+        }
+        Ok(args::Parsed::HealthCheck(probe)) => {
+            return match health::check(
+                &probe.soloist_dir,
+                &probe.pipewire_runtime_dir,
+                probe.pipewire,
+            ) {
+                Ok(what) => {
+                    println!("chorus-soloistd: healthy: {what}");
+                    0
+                }
+                Err(why) => {
+                    eprintln!("chorus-soloistd: unhealthy: {why}");
+                    1
+                }
+            };
         }
         Err(why) => {
             eprintln!("chorus-soloistd: {why}\n\n{}", args::USAGE);
