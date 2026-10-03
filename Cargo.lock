@@ -227,6 +227,7 @@ dependencies = [
  "chorus-decode",
  "chorus-discovery",
  "chorus-dsp",
+ "chorus-fetch",
  "chorus-hostctl",
  "chorus-measure",
  "chorus-mqtt",

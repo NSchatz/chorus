@@ -14,7 +14,6 @@ pub mod playlist;
 
 use std::collections::VecDeque;
 use std::io::{self, Read};
-use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::error::FetchError;
@@ -224,9 +223,11 @@ impl HlsStream {
     fn reload(&mut self) -> Result<(), FetchError> {
         let wait = reload_wait(self.target, self.last_changed);
         let due = self.last_load + wait;
-        let now = Instant::now();
-        if due > now {
-            thread::sleep(due - now);
+        if !self.ctx.sleep_until(due) {
+            return Err(FetchError::Io(io::Error::new(
+                io::ErrorKind::TimedOut,
+                http::CANCELLED,
+            )));
         }
         let began = Instant::now();
         let (_, text) = load_playlist(&mut self.ctx, &self.playlist_url)?;

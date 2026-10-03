@@ -38,7 +38,7 @@ use std::io::{self, Read, SeekFrom};
 use std::time::Instant;
 
 pub use error::FetchError;
-pub use http::USER_AGENT;
+pub use http::{Cancel, CANCEL_SLICE, USER_AGENT};
 pub use icy::IcyInfo;
 pub use policy::Policy;
 pub use tls::{ca_bundle_path, DEFAULT_CA_BUNDLE};
@@ -107,8 +107,26 @@ struct Plain {
 /// as the stream of its segments, the first of which is fetched and judged
 /// before this returns.
 pub fn open(url: &str, policy: &Policy) -> Result<Stream, FetchError> {
+    open_with(url, policy, None)
+}
+
+/// [`open`], for a caller that may give the fetch up: `cancel` is asked at
+/// least every [`CANCEL_SLICE`] while the fetch waits on a connected socket
+/// (the response head, the TLS handshake, every later read of the stream,
+/// HLS segments and reloads included) and once it answers `true` the wait
+/// ends with an `io::Error` of kind `TimedOut`. The read timeout of the
+/// policy still bounds each wait as before.
+///
+/// What it does not interrupt: name resolution, and a TCP connect in
+/// progress, which `std::net` offers no way to leave early; a connect is
+/// bounded by the policy's `connect_timeout`.
+pub fn open_cancellable(url: &str, policy: &Policy, cancel: Cancel) -> Result<Stream, FetchError> {
+    open_with(url, policy, Some(cancel))
+}
+
+fn open_with(url: &str, policy: &Policy, cancel: Option<Cancel>) -> Result<Stream, FetchError> {
     let url = Url::parse(url)?;
-    let mut ctx = Ctx::new(policy);
+    let mut ctx = Ctx::new(policy, cancel);
     let began = Instant::now();
     let Response {
         url,

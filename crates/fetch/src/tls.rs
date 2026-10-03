@@ -11,7 +11,6 @@
 //! this crate reads it, and nothing on the audio path depends on it.
 
 use std::io;
-use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -20,6 +19,7 @@ use rustls::pki_types::{CertificateDer, ServerName};
 use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 
 use crate::error::FetchError;
+use crate::http::Sock;
 use crate::policy::Policy;
 use crate::url::Url;
 
@@ -73,8 +73,8 @@ pub(crate) fn client_config(policy: &Policy) -> Result<Arc<ClientConfig>, FetchE
 pub(crate) fn handshake(
     config: Arc<ClientConfig>,
     url: &Url,
-    sock: TcpStream,
-) -> Result<StreamOwned<ClientConnection, TcpStream>, FetchError> {
+    sock: Sock,
+) -> Result<StreamOwned<ClientConnection, Sock>, FetchError> {
     let host = &url.host;
     let name = ServerName::try_from(host.clone()).map_err(|_| {
         FetchError::Tls(format!(
@@ -103,6 +103,12 @@ fn handshake_error(host: &str, e: io::Error) -> FetchError {
         io::ErrorKind::UnexpectedEof => FetchError::Tls(format!(
             "{host}: the connection closed during the handshake"
         )),
+        io::ErrorKind::TimedOut
+            if e.get_ref()
+                .is_some_and(|m| m.to_string() == crate::http::CANCELLED) =>
+        {
+            FetchError::Io(e)
+        }
         io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => FetchError::Io(io::Error::new(
             io::ErrorKind::TimedOut,
             "the tls handshake did not finish within the read timeout",
