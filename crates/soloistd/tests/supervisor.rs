@@ -8,8 +8,9 @@
 //!
 //! Every wait is bounded: a message is awaited until a deadline
 //! ([`PATIENCE`], generous because the gate's hosts are shared) and the test
-//! fails at the deadline. The only fixed sleeps are the two that show
-//! something does NOT happen (no restart loop, no stall), 300 ms and 400 ms.
+//! fails at the deadline. The only fixed sleeps are the three that show
+//! something does NOT happen (no restart loop, twice, and no stall): 300 ms,
+//! 300 ms and 400 ms.
 
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
