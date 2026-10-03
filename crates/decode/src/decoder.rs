@@ -783,12 +783,12 @@ impl RawL16 {
 }
 
 /// ADTS framing (AAC as radio streams and `.aac` files carry it): a 12-bit
-/// sync word with the layer bits 00, where MPEG audio (MP3) never has 00
-/// (ISO/IEC 13818-7's ADTS header as summarised in the MultimediaWiki page
-/// "ADTS", <https://wiki.multimedia.cx/index.php/ADTS>, read 2026-10-03). Two
-/// headers one frame length apart are asked for when the bytes reach that far,
-/// so a stray 0xFFF in other data is not called AAC. An ID3v2 tag in front is
-/// stepped over.
+/// sync word with the layer bits 00, where MPEG audio (MP3) never has 00, and a
+/// 13-bit frame length (the ADTS header of ISO/IEC 13818-7, `ASSUMED` from
+/// memory, not re-read; the `aac-adts` fixture, written by ffmpeg, holds it).
+/// Two headers one frame length apart are asked for when the bytes reach that
+/// far, so a stray 0xFFF in other data is not called AAC. An ID3v2 tag in
+/// front is stepped over.
 fn is_adts(head: &[u8]) -> bool {
     let mut at = 0usize;
     if head.len() >= 10 && &head[..3] == b"ID3" {
