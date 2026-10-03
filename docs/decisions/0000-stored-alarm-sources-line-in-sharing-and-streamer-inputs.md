@@ -27,8 +27,9 @@ group (ADR 0066's follow-up) and "a certified streamer on a line-in as an input"
 Four things constrained the answers. Brief section 4.8: "No arbitrary URL fetch except the
 input paths the decisions name (UPnP renders, HA's media and TTS URLs from HA's own address,
 stored alarm stream URLs)". ADR 0076: the schedule runtime is pure (no clock, no socket, no
-thread) and everything it cannot do is an effect. The thread contract (ADR 0012, 0119): no
-thread is created after the scheduling report, none per stream. And every committed vector
+thread) and everything it cannot do is an effect. The thread contract (the header of
+`crates/server/src/main.rs`; ADR 0119): no thread is created after the scheduling report,
+none per stream. And every committed vector
 stays the bytes it was unless a decision here retires it.
 
 ## What was read
@@ -40,9 +41,12 @@ licensed hardware design, no Soloist file and no external web page was opened.
   (`/cache/tmp/chorus-g17/agent-rules.md`, `design.md` sections 0, 1, 2.5 and 3) and the
   coordinator's code survey (`research/survey.md` sections A, C, D, F, H, I).
 - The program: `.claude/goals/2026-09-chorus.md` section 4.8, section 21, the K80 and K94 rows.
-- Decisions: ADR 0066 (alternatives and follow-ups), 0071 (headings; the plan's own doc
-  comments in `crates/sync/src/latency_grow.rs`), 0076 (fire, fallback, end), 0079 (item 6),
-  0119, 0124 (the header and "why no command plays a URL"), 0020 (the busy-worker refusal).
+- Decisions, in part and said so: ADR 0066 (its alternatives and follow-ups), 0071 (its
+  headings and the paragraph on a target set while a transition runs; the plan's own doc
+  comments in `crates/sync/src/latency_grow.rs`), 0075 (headings), 0076 (fire, fallback,
+  end), 0079 (item 6), 0119 (headings and its lines about alarms and the restore), 0124 (its
+  header and context), 0020 (its lines on the busy-worker refusal). What these records say
+  beyond those parts is taken from the coordinator's survey, not from a reading of them.
 - Code: `crates/control/src/rooms.rs`, `catalog.rs`, `zones.rs`, `persist.rs`;
   `crates/control/tests/catalog_v2.rs`, `vectors/mod.rs`; `crates/server/src/schedule_runtime.rs`,
   `conductor.rs`, `playersessions.rs` (whole); `linein.rs`, `slots.rs`, `control.rs`,
@@ -63,7 +67,8 @@ licensed hardware design, no Soloist file and no external web page was opened.
 `https://` URL with a host, no control character, space, quote or backslash, at most 2048
 bytes: ASSUMED, the art URL's bound) or `spotify`
 (`spotify:<track|album|playlist|episode>:<id>`, the id 1 to 64 ASCII letters and digits:
-ASSUMED bound; P7 says ids are 22 base-62 characters). The shape is checked when it is stored;
+both the shape and the bound are the design envelope's and ASSUMED; no Spotify document was
+read for this record). The shape is checked when it is stored;
 the fetch policy is asked when it is played, because whether a name resolves to a refused
 address is a fact about that morning.
 
@@ -134,8 +139,8 @@ plays=chime:bell detail="<words>"`: `no-players`, `no-free-player`, `not-started
 ### 3. The Spotify alarm source: validated and stored here, played by the Soloist track
 
 A stored source of kind `spotify` rings the fallback chime with reason `soloist-off` unless
-`Runtime::set_soloist_alarms(true)` was called, which nothing calls yet: P7 ships it switched
-off. Switched on, the alarm fires exactly as for a URL and asks with `Effect::PlaySpotify`;
+`Runtime::set_soloist_alarms(true)` was called, which nothing calls yet: the design envelope
+(from P7) ships it switched off. Switched on, the alarm fires exactly as for a URL and asks with `Effect::PlaySpotify`;
 whoever carries it out answers with the same two entry points (the receiver's source for
 `started`; `soloist-unavailable`, `soloist-logged-out`, `soloist-expired` or
 `soloist-timeout` for `failed`). Today the conductor answers `soloist-unavailable` at once.
@@ -173,8 +178,8 @@ the listener cannot hear at the same time. If a house wants that, it is its own 
 ### 5. A TV input a second group plays leaves low-latency mode while it is shared
 
 In low-latency mode a TV input's hub sends datagrams to the relay INSTEAD of its upstream
-chunks (ADR 0094: "the hub switches its upstream to datagrams at its accept"), so there is
-nothing in the port for a second group to play. The choices were to refuse the second group,
+chunks (the header of `crates/server/src/tvrelay.rs`: "The hub switches its upstream to
+datagrams at its accept"), so there is nothing in the port for a second group to play. The choices were to refuse the second group,
 to keep the TV's room low-latency and leave the second group silent, or to put every group
 on the slot path. The third is the only one in which sharing works at all without a wire
 change, and it is what a group of two rooms already does (`reason=grouped`): the conductor
@@ -190,8 +195,9 @@ two encodes on the hub); a follow-up if a house wants TV sound elsewhere with li
 No. A start is refused in exactly one case today, a `stream_format` that is not the
 server's, and the endpoint is already told by the `source_control` stop that follows. A
 message carrying the reason would give the endpoint nothing it can act on: its format is
-what its hardware captures, it has no person to show a reason to (the status LED has no
-state for it, ADR 0063), and it does not retry with another format. The people who can act
+what its hardware captures, it has no person to show a reason to (ASSUMED: no endpoint
+state shows one today; the controls record was not read for this), and it does not retry
+with another format. The people who can act
 are the ones reading the server's log (`line-in refused input= reason=format-mismatch
 detail="offered ... this server streams ..."`), which has both formats. The place a refusal
 should become visible to a person is the state (the input listed as offered and refused),

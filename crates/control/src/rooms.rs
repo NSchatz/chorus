@@ -558,8 +558,8 @@ impl StoredSource {
     /// [`MAX_STORED_VALUE_LEN`] bytes. Whether the server may fetch it is the
     /// fetch policy's to say when it is played, not here. A `spotify` value
     /// is `spotify:<track|album|playlist|episode>:<id>`, the id 1 to 64
-    /// ASCII letters and digits (ASSUMED bound: Spotify's ids are 22 base-62
-    /// characters, P7).
+    /// ASCII letters and digits (ASSUMED: the shape is the goal-17 design
+    /// envelope's and the bound is this crate's; no Spotify document was read).
     pub fn value_problem(kind: StoredKind, value: &str) -> Option<String> {
         if value.len() > MAX_STORED_VALUE_LEN {
             return Some(format!(
