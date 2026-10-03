@@ -1,4 +1,4 @@
-# 0000: a Soloist receiver is supervised by chorus-soloistd over one directory of FIFOs and Unix sockets, with the protocol, the API model, RFC 6455 framing, the expiry arithmetic and the pool in one pure crate, three libc calls in one listed module, and a fake Soloist that no image can carry
+# 0130: a Soloist receiver is supervised by chorus-soloistd over one directory of FIFOs and Unix sockets, with the protocol, the API model, RFC 6455 framing, the expiry arithmetic and the pool in one pure crate, three libc calls in one listed module, and a fake Soloist that no image can carry
 
 - Status: accepted (goal 17, 2026-10-03)
 - Decided by: the owner for what is built (P7 Option C: Soloist receivers in containers of

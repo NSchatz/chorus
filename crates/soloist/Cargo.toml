@@ -9,7 +9,7 @@ license.workspace = true
 
 # One dependency, chorus's own: the hand-written JSON reader and writer of the
 # control catalog, so the server and the sidecar read one JSON dialect
-# (the decision record of goal 17's track S1 says why). SHA-1 and base64 for
+# (ADR 0130 says why). SHA-1 and base64 for
 # the WebSocket handshake are written here from their specifications.
 [dependencies]
 chorus-control = { path = "../control" }

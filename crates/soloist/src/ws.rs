@@ -24,7 +24,7 @@
 //! a reserved bit set fails the connection (section 5.2).
 //!
 //! SHA-1 and base64 are private to this module: the handshake is their only
-//! use here (the decision record of goal 17's track S1 says why they are not
+//! use here (ADR 0130, docs/decisions, says why they are not
 //! shared with `crates/upnp`).
 
 /// The GUID every server appends to the client's key (section 1.3).

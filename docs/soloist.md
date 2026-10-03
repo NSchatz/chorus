@@ -8,7 +8,7 @@ supervises it (proposal P7, Option C). This page is what goal 17's track S1 buil
 tests run. The server side (the FIFO readers, the pool's manager, the `soloist:` source,
 `chorusctl soloist`) is a later change and has its own section in this page when it lands.
 
-Decision record: [0000](decisions/0000-the-soloist-receiver-supervisor.md).
+Decision record: [0130](decisions/0130-the-soloist-receiver-supervisor.md).
 
 ## Words
 

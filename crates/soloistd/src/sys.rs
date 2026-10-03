@@ -11,7 +11,7 @@
 //! ("normal daemon shutdown ... removes `ws.addr` and `ws.port`"). Once one
 //! libc call is needed, the other two are the same size and remove a
 //! dependency on which programs the image carries
-//! (the decision record of goal 17's track S1).
+//! (docs/decisions/0130-the-soloist-receiver-supervisor.md).
 //!
 //! The declarations are libc's, as the POSIX.1-2017 pages give them
 //! (`mkfifo(3p)`, `kill(3p)`, `signal(3p)`); the constants are Linux's for

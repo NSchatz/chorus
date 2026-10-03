@@ -24,7 +24,7 @@ name = "chorus-fake-soloist"
 path = "examples/chorus-fake-soloist.rs"
 
 # std, threads and blocking I/O with timeouts: no async runtime, no external
-# crate (docs/decisions, goal 17 track S1).
+# crate (ADR 0130).
 [dependencies]
 chorus-soloist = { path = "../soloist" }
 chorus-control = { path = "../control" }
