@@ -47,8 +47,8 @@ fn c_endpoints() -> (PathBuf, PathBuf) {
     std::fs::create_dir_all(&build).expect("firmware/build can be made");
     let session = build.join("chorus-endpoint-session");
     let dsp_session = build.join("chorus-endpoint-dsp-session");
-    let lock = std::fs::File::create(build.join(".chorus-endpoint-session.lock"))
-        .expect("a lock file");
+    let lock =
+        std::fs::File::create(build.join(".chorus-endpoint-session.lock")).expect("a lock file");
     lock.lock().expect("the build lock");
     let made = Command::new("make")
         .current_dir(&root)
