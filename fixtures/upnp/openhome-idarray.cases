@@ -1,0 +1,7 @@
+# ids (decimal, space-separated) | IdArray
+ | 
+1 | AAAAAQ==
+1 2 3 | AAAAAQAAAAIAAAAD
+7 5 6 | AAAABwAAAAUAAAAG
+4294967295 | /////w==
+256 65536 16777216 | AAABAAABAAABAAAA

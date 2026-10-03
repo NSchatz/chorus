@@ -57,23 +57,30 @@ pub struct Advert {
     /// `SEARCHPORT.UPNP.ORG`, when unicast searches are answered on a port
     /// other than 1900 (UDA11 section 1.2.2: 49152 to 65535).
     pub search_port: Option<u16>,
+    /// Whether the device offers the OpenHome services too
+    /// ([`Service::offered`]).
+    pub openhome: bool,
 }
 
-/// The six notification types of a root device with no embedded device and
-/// three services (UDA11 section 1.2.2, tables 1-1 to 1-3: 3 + 2d + k
-/// messages), each with its USN. `NT` of the second row and the USN prefix
-/// "MUST match the value of the UDN element in the device description".
-pub fn targets(udn: &Uuid) -> [(String, String); 6] {
+/// The notification types of a root device with no embedded device and
+/// `k` services (UDA11 section 1.2.2, tables 1-1 to 1-3: 3 + 2d + k
+/// messages), each with its USN: six for the three AV services, eleven with
+/// the five OpenHome ones. `NT` of the second row and the USN prefix "MUST
+/// match the value of the UDN element in the device description".
+pub fn targets(udn: &Uuid, openhome: bool) -> Vec<(String, String)> {
     let uuid = format!("uuid:{udn}");
     let row = |nt: &str| (nt.to_string(), format!("{uuid}::{nt}"));
-    [
+    let mut rows = vec![
         row("upnp:rootdevice"),
         (uuid.clone(), uuid.clone()),
         row(DEVICE_TYPE),
-        row(Service::AvTransport.service_type()),
-        row(Service::RenderingControl.service_type()),
-        row(Service::ConnectionManager.service_type()),
-    ]
+    ];
+    rows.extend(
+        Service::offered(openhome)
+            .iter()
+            .map(|s| row(s.service_type())),
+    );
+    rows
 }
 
 fn boot_config(out: &mut String, advert: &Advert, search_port: bool) {
@@ -85,12 +92,12 @@ fn boot_config(out: &mut String, advert: &Advert, search_port: bool) {
     out.push_str("\r\n");
 }
 
-/// The `ssdp:alive` set: six datagrams, always sent whole (UDA11 section
+/// The `ssdp:alive` set: one datagram per row of [`targets`], always sent whole (UDA11 section
 /// 1.2.2: "refreshing or canceling individual messages is PROHIBITED"). The
 /// header set and order are the specification's template; there is no body
 /// and the blank line after the last header is part of the message.
 pub fn alive_set(advert: &Advert) -> Vec<String> {
-    targets(&advert.udn)
+    targets(&advert.udn, advert.openhome)
         .into_iter()
         .map(|(nt, usn)| {
             let mut m = String::from("NOTIFY * HTTP/1.1\r\n");
@@ -111,7 +118,7 @@ pub fn alive_set(advert: &Advert) -> Vec<String> {
 /// BOOTID the alive messages carried (UDA11 section 1.2.3; no LOCATION,
 /// CACHE-CONTROL or SERVER).
 pub fn byebye_set(advert: &Advert) -> Vec<String> {
-    targets(&advert.udn)
+    targets(&advert.udn, advert.openhome)
         .into_iter()
         .map(|(nt, usn)| {
             let mut m = String::from("NOTIFY * HTTP/1.1\r\n");
@@ -201,16 +208,31 @@ pub fn parse_search(datagram: &[u8], multicast: bool) -> Result<Search, SearchDr
     })
 }
 
-/// The rows of [`targets`] a search target matches (UDA11 section 1.3.3):
-/// all six for `ssdp:all`, one for `upnp:rootdevice`, for this device's
-/// `uuid:`, for the device type and for each service type. Only version 1
-/// of each type exists here, and "The response MUST specify the same version
-/// as was contained in the search request", so a search for another version
-/// matches nothing.
-pub fn matches(st: &str, udn: &Uuid) -> Vec<(String, String)> {
-    let all = targets(udn);
+/// The rows a search target matches (UDA11 section 1.3.3): every row of
+/// [`targets`] for `ssdp:all`, one for `upnp:rootdevice`, for this device's
+/// `uuid:`, for the device type and for each service type.
+///
+/// Versions: "The response MUST specify the same version as was contained in
+/// the search request", and a device that has version N of a service answers
+/// a search for a lower version of it, since N is a superset. The AV types
+/// exist in version 1 only, so only an exact match answers; Product and
+/// Volume are announced in version 2, and a search for
+/// `urn:av-openhome-org:service:Product:1` is answered with that very URN in
+/// `ST` and in the `USN` ([`Service::matching`]; ohNet does the same, ohN
+/// `OpenHome/Net/Device/Upnp/DviProtocolUpnp.cpp:685-702`). A search for a
+/// higher version than the one announced matches nothing.
+pub fn matches(st: &str, udn: &Uuid, openhome: bool) -> Vec<(String, String)> {
+    let all = targets(udn, openhome);
     if st == "ssdp:all" {
-        return all.to_vec();
+        return all;
+    }
+    if let Some((service, version)) = Service::matching(st) {
+        if !Service::offered(openhome).contains(&service) {
+            return Vec::new();
+        }
+        let nt = service.service_type_at(version);
+        let usn = format!("uuid:{udn}::{nt}");
+        return vec![(nt, usn)];
     }
     all.into_iter()
         .filter(|(nt, _)| {
@@ -230,7 +252,7 @@ pub fn matches(st: &str, udn: &Uuid) -> Vec<(String, String)> {
 /// `EXT:` is "REQUIRED for backwards compatibility with UPnP 1.0" and has no
 /// value.
 pub fn search_responses(search: &Search, advert: &Advert, date: Option<&str>) -> Vec<String> {
-    matches(&search.st, &advert.udn)
+    matches(&search.st, &advert.udn, advert.openhome)
         .into_iter()
         .map(|(st, usn)| {
             let mut m = String::from("HTTP/1.1 200 OK\r\n");
@@ -354,7 +376,8 @@ impl Announcer {
 
 /// A per-source limit on answered searches, so the renderer set cannot be
 /// used to amplify traffic at an address (one `ssdp:all` search draws six
-/// datagrams per renderer, 96 from a sixteen-room house, to whatever source
+/// datagrams per renderer, eleven with the OpenHome services: 96 to 176 from
+/// a sixteen-room house, to whatever source
 /// address the query claimed). UDA11 does not ask for this; it is chorus's
 /// own rule (the limits are chorus's choice). A search over the limit is
 /// dropped, which the specification's "silently discard" covers.
@@ -481,6 +504,7 @@ mod tests {
             boot_id: 1_790_934_000,
             config_id: 1234,
             search_port: None,
+            openhome: false,
         }
     }
 
@@ -494,7 +518,7 @@ mod tests {
     #[test]
     fn the_six_rows_are_the_specifications() {
         let u = "uuid:3b8fa6e6-bb30-5005-b768-3e87f0af9a9a";
-        let t = targets(&advert().udn);
+        let t = targets(&advert().udn, false);
         let nts: Vec<&str> = t.iter().map(|(nt, _)| nt.as_str()).collect();
         assert_eq!(
             nts,
@@ -545,6 +569,7 @@ mod tests {
         }
         let with_port = Advert {
             search_port: Some(49_201),
+            openhome: false,
             ..a
         };
         for m in alive_set(&with_port) {
@@ -552,6 +577,51 @@ mod tests {
         }
         for m in byebye_set(&with_port) {
             assert!(!m.contains("SEARCHPORT"));
+        }
+    }
+
+    #[test]
+    fn with_openhome_there_are_eleven_rows_and_a_lower_version_is_echoed() {
+        let a = Advert {
+            openhome: true,
+            ..advert()
+        };
+        assert_eq!(alive_set(&a).len(), 11);
+        assert_eq!(byebye_set(&a).len(), 11);
+        assert_eq!(&targets(&a.udn, true)[..6], &targets(&a.udn, false)[..]);
+        let answer = |st: &str| {
+            search_responses(
+                &Search {
+                    st: st.into(),
+                    window_ms: 1000,
+                },
+                &a,
+                None,
+            )
+        };
+        assert_eq!(answer("ssdp:all").len(), 11);
+        for s in Service::ALL {
+            assert_eq!(answer(s.service_type()).len(), 1, "{s:?}");
+        }
+        // Product is announced in version 2; a search for version 1 gets one
+        // answer that says version 1, in ST and in USN.
+        let v1 = "urn:av-openhome-org:service:Product:1";
+        let r = answer(v1);
+        assert_eq!(r.len(), 1);
+        let (_, h) = Headers::parse(&r[0]);
+        assert_eq!(h.get("ST"), Some(v1));
+        assert_eq!(h.get("USN"), Some(format!("uuid:{}::{v1}", a.udn).as_str()));
+        let (_, h2) = Headers::parse(&answer("urn:av-openhome-org:service:Product:2")[0]);
+        assert_eq!(h2.get("ST"), Some("urn:av-openhome-org:service:Product:2"));
+        // A higher version, and a service chorus leaves out, get nothing.
+        for none in [
+            "urn:av-openhome-org:service:Product:3",
+            "urn:av-openhome-org:service:Playlist:2",
+            "urn:av-openhome-org:service:Radio:1",
+            "urn:av-openhome-org:service:Transport:1",
+            "urn:av-openhome-org:device:Source:1",
+        ] {
+            assert!(answer(none).is_empty(), "{none}");
         }
     }
 
@@ -623,8 +693,12 @@ mod tests {
         assert_eq!(count("urn:schemas-upnp-org:device:MediaRenderer:1"), 1);
         assert_eq!(count("urn:schemas-upnp-org:device:MediaRenderer:2"), 0);
         assert_eq!(count("urn:schemas-upnp-org:device:MediaServer:1"), 0);
-        for s in Service::ALL {
+        for s in Service::AV {
             assert_eq!(count(s.service_type()), 1);
+        }
+        // The OpenHome services are not offered by this device.
+        for s in Service::OPENHOME {
+            assert_eq!(count(s.service_type()), 0);
         }
         assert_eq!(count("urn:schemas-upnp-org:service:AVTransport:2"), 0);
         assert_eq!(count(""), 0);

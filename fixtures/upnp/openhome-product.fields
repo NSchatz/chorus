@@ -1,0 +1,8 @@
+# A room with a turntable on a line-in and a TV on an optical input.
+room = Kitchen
+model = chorus room
+source.0 = Playlist|Playlist|Playlist|true
+source.1 = UpnpAv|UPnP AV|UpnpAv|false
+source.2 = amp/line-1|Turntable & <more>|Analog|true
+source.3 = amp/tv|tv|Digital|true
+index = 2

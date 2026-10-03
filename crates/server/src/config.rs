@@ -220,6 +220,10 @@ pub struct UpnpFlags {
     /// sent. `None` is the standard group, 239.255.255.250:1900; anything
     /// else is for tests.
     pub ssdp_group: Option<String>,
+    /// `--upnp-openhome <on|off>` (goal 17): whether every renderer also
+    /// offers the OpenHome services Product, Volume, Info, Time and Playlist
+    /// on the same device (`docs/upnp.md`). On when `--upnp` is given.
+    pub openhome: bool,
     /// The first `--upnp-*` flag given other than `--upnp`, so a run that
     /// set one and forgot `--upnp` is told which.
     given: Option<String>,
@@ -234,6 +238,7 @@ impl Default for UpnpFlags {
             callback_subnets: Vec::new(),
             ssdp_port: crate::upnp::SSDP_PORT,
             ssdp_group: None,
+            openhome: true,
             given: None,
         }
     }
@@ -901,7 +906,8 @@ impl ServerConfig {
                 | "--upnp-workers"
                 | "--upnp-callback-subnet"
                 | "--upnp-ssdp-port"
-                | "--upnp-ssdp-group" => {
+                | "--upnp-ssdp-group"
+                | "--upnp-openhome" => {
                     let text = value()?;
                     config.upnp.given.get_or_insert_with(|| arg.clone());
                     match arg.as_str() {
@@ -911,6 +917,18 @@ impl ServerConfig {
                                 usize::try_from(number(&arg, &text)?).unwrap_or(usize::MAX)
                         }
                         "--upnp-callback-subnet" => config.upnp.callback_subnets.push(text),
+                        "--upnp-openhome" => {
+                            config.upnp.openhome = match text.as_str() {
+                                "on" => true,
+                                "off" => false,
+                                _ => {
+                                    return Err(ServerConfigError::Upnp {
+                                        argument: arg.clone(),
+                                        detail: format!("'{}' is not on or off", text),
+                                    })
+                                }
+                            }
+                        }
                         "--upnp-ssdp-port" => {
                             config.upnp.ssdp_port =
                                 u16::try_from(number(&arg, &text)?).map_err(|_| {
@@ -1421,6 +1439,10 @@ mod tests {
         assert_eq!(default.upnp.ssdp_port, 1900);
         assert_eq!(default.upnp.ssdp_group, None);
         assert!(default.upnp.callback_subnets.is_empty());
+        assert!(
+            default.upnp.openhome,
+            "the OpenHome services come with --upnp"
+        );
         assert!(!default.media_allow_loopback);
 
         // Every other flag of the family is refused without --upnp, by its
@@ -1431,6 +1453,7 @@ mod tests {
             ("--upnp-callback-subnet", "192.0.2.0/24"),
             ("--upnp-ssdp-port", "1900"),
             ("--upnp-ssdp-group", "127.0.0.1:1900"),
+            ("--upnp-openhome", "off"),
         ] {
             let (argument, detail) = refused(&["--control-listen", "127.0.0.1:0", flag, value]);
             assert_eq!(argument, flag);

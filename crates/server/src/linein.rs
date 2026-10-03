@@ -320,6 +320,16 @@ impl LineIns {
             .map(|i| (i.session, i.kind))
     }
 
+    /// (goal 17) What kind an offered input is; `None` when it is not
+    /// offered. Read by the UPnP renderers for the OpenHome source list.
+    pub fn kind_of(&self, input: &InputId) -> Option<SourceKind> {
+        lock(&self.inner)
+            .inputs
+            .iter()
+            .find(|i| i.id == *input)
+            .map(|i| i.kind)
+    }
+
     /// Everything that happened since the last call, in order.
     pub fn take_events(&self) -> Vec<InputEvent> {
         std::mem::take(&mut lock(&self.inner).events)

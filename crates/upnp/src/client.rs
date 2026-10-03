@@ -605,13 +605,14 @@ mod tests {
             boot_id: 17,
             config_id: 99,
             search_port: Some(49_201),
+            openhome: false,
         };
         for (i, m) in ssdp::alive_set(&advert).iter().enumerate() {
             let p = parse_ssdp(m.as_bytes()).unwrap();
             assert_eq!(p.kind, SsdpKind::Alive);
             assert_eq!(p.udn(), Some(advert.udn));
-            assert_eq!(p.target, ssdp::targets(&advert.udn)[i].0);
-            assert_eq!(p.usn, ssdp::targets(&advert.udn)[i].1);
+            assert_eq!(p.target, ssdp::targets(&advert.udn, false)[i].0);
+            assert_eq!(p.usn, ssdp::targets(&advert.udn, false)[i].1);
             assert_eq!(p.location.as_deref(), Some(advert.location.as_str()));
             assert_eq!(p.max_age_s, Some(1800));
             assert_eq!(
@@ -847,6 +848,7 @@ mod tests {
             friendly_name: "Tom & Jerry".into(),
             model_name: "chorus room".into(),
             model_number: "0.1.0".into(),
+            openhome: false,
         };
         let d = parse_description(&device_description(&info, 4242)).unwrap();
         assert_eq!(d.config_id, Some(4242));
@@ -857,7 +859,7 @@ mod tests {
         assert_eq!(d.manufacturer, "chorus");
         assert_eq!(d.udn, "uuid:3b8fa6e6-bb30-5005-b768-3e87f0af9a9a");
         assert_eq!(d.services.len(), 3);
-        for service in Service::ALL {
+        for service in Service::AV {
             let urls = d.service(service).unwrap();
             assert_eq!(urls.service_id, service.service_id());
             for url in [&urls.scpd_url, &urls.control_url, &urls.event_sub_url] {
