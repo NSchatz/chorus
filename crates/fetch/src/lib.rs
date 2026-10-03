@@ -9,8 +9,7 @@
 //!   checked on the resolved address before every connect, redirects and HLS
 //!   segments included ([`policy`]);
 //! - speaks HTTP/1.1 by hand over `std::net`, with TLS from rustls for https
-//!   ([`http`](mod@crate::http) is private; its rules are in the decision
-//!   record);
+//!   (the client is private; its rules are in the decision record);
 //! - takes ICY metadata back out of a radio stream and keeps the latest
 //!   title ([`icy`]);
 //! - plays an HLS playlist of packed MP3 segments as one stream and refuses
@@ -18,8 +17,8 @@
 //!
 //! Nothing here decodes audio, starts a thread or reads a settable clock:
 //! every timeout and the HLS reload schedule run on `std::time::Instant`.
-//! (TLS certificate validity is checked by rustls against the system time;
-//! see [`tls`](mod@crate::tls).)
+//! (TLS certificate validity is checked by rustls against the system time,
+//! which no code here reads.)
 //!
 //! The decision record is `docs/decisions/0120-the-media-fetcher.md`; the
 //! owner's page is `docs/streams.md`.

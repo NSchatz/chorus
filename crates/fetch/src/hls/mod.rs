@@ -1,4 +1,4 @@
-//! HLS (RFC 8216, https://www.rfc-editor.org/rfc/rfc8216, read 2026-10-03) in
+//! HLS (RFC 8216, <https://www.rfc-editor.org/rfc/rfc8216>, read 2026-10-03) in
 //! its smallest correct scope: a media playlist of packed-audio MP3 segments
 //! (section 3.4), read as one continuous MPEG audio stream.
 //!
@@ -82,7 +82,7 @@ pub fn classify_segment(start: &[u8]) -> SegmentKind {
 
 /// The whole length of the ID3v2 tag that `start` begins with, header
 /// included, or `None` when it does not begin with one. The ID3v2 header
-/// (https://id3.org/id3v2.4.0-structure section 3.1, read 2026-10-03):
+/// (<https://id3.org/id3v2.4.0-structure> section 3.1, read 2026-10-03):
 /// `"ID3"`, two version bytes, one flags byte, and the size of what follows
 /// the header as four bytes of seven bits each ("zz is less than $80"); flag
 /// bit 4 says a ten-byte footer follows the tag, which the size leaves out.
@@ -258,7 +258,9 @@ impl HlsStream {
         self.last_changed = changed;
         if changed {
             self.changed_at = began;
-        } else if began.duration_since(self.changed_at) > self.target * STALL_TARGET_DURATIONS {
+        } else if began.duration_since(self.changed_at)
+            > reload_wait(self.target, true) * STALL_TARGET_DURATIONS
+        {
             return Err(FetchError::Io(io::Error::new(
                 io::ErrorKind::TimedOut,
                 format!(

@@ -98,6 +98,10 @@ answer is what is checked.
 | `response headers larger than <n> bytes` | the header bound | P6 ("bounded size") |
 
 An IPv4-mapped IPv6 address (`::ffff:a.b.c.d`) is judged as the IPv4 address it reaches.
+Not judged, and said so: IPv6 forms that reach an IPv4 address only through a translator on
+the network (NAT64's `64:ff9b::/96`, 6to4, Teredo). Whether such an address lands on a
+loopback or link-local service is the translator's doing, on the translator's host, not this
+machine's.
 Private ranges (RFC 1918, IPv6 unique local) are allowed on purpose: control points serve
 media from the household's own network, which is the feature. The class of attack the rules
 answer is server-side request forgery: a renderer on the LAN made to read the host's
@@ -276,6 +280,17 @@ stream is endless and the reader's pace bounds what is held.
   (`crates/fetch/tests/common/pki.rs`): no key in the repository, no new crate (ring is a
   direct dev-dependency at the version rustls already locks).
 - **Enumerating interfaces** for "the server's own addresses": section 2.
+
+## Open points
+
+- A live HLS reader that is held up for longer than the playlist's window (a long pause with
+  the player's buffer full) resumes with segment URLs the server may have removed; the next
+  fetch is then `http status 404` and the stream ends. Skipping to the live window instead
+  is a small change if playback shows it matters.
+- The first request always says `Icy-MetaData: 1`; range re-requests and HLS playlist and
+  segment requests do not, because an interleaved block inside a range or a segment would be
+  noise nothing strips.
+- The resolver has no timeout (section 6).
 
 ## Consequences
 

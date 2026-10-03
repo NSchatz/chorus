@@ -1,4 +1,4 @@
-//! HLS playlists (RFC 8216, https://www.rfc-editor.org/rfc/rfc8216, read
+//! HLS playlists (RFC 8216, <https://www.rfc-editor.org/rfc/rfc8216>, read
 //! 2026-10-03): the parser, the choice of a variant, and where a live
 //! playlist is entered. Pure: text in, a value or a named error out.
 //!
@@ -349,7 +349,7 @@ enum CodecKind {
 
 /// `mp4a.40.34` is MPEG-4 audio object type 34, "MPEG-1/2 Layer 3", and is
 /// what Apple's authoring guidance writes for MP3
-/// (https://developer.apple.com/documentation/http-live-streaming/hls-authoring-specification-for-apple-devices-appendixes,
+/// (<https://developer.apple.com/documentation/http-live-streaming/hls-authoring-specification-for-apple-devices-appendixes>,
 /// read 2026-10-03). ASSUMED from the MP4 registration authority's object
 /// type table, not re-read: `mp4a.69` (MPEG-2 audio part 3) and `mp4a.6B`
 /// (MPEG-1 audio part 3) also name MP3. Every other `mp4a.40.x` is an AAC

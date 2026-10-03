@@ -3,7 +3,7 @@
 //! back out so the decoder sees audio only.
 //!
 //! There is no standard. Worked from the write-up at
-//! https://cast.readme.io/docs/icy (read 2026-10-03): the response header
+//! <https://cast.readme.io/docs/icy> (read 2026-10-03): the response header
 //! `icy-metaint: N` gives the number of audio bytes between metadata blocks,
 //! and `icy-name`, `icy-genre`, `icy-br` describe the station.
 //!

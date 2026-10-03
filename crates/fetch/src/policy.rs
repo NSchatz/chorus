@@ -88,7 +88,7 @@ pub fn canonical(ip: IpAddr) -> IpAddr {
 /// | `the server's own port` | an own address at a denied port | brief 4.8, P6 |
 ///
 /// An IPv4-mapped IPv6 address is judged as the IPv4 address it reaches.
-/// (RFC section numbers read 2026-10-03 at https://www.rfc-editor.org/rfc/.)
+/// (RFC section numbers read 2026-10-03 at <https://www.rfc-editor.org/rfc/>.)
 pub fn check_address(
     addr: SocketAddr,
     policy: &Policy,

@@ -3,7 +3,7 @@
 //! field here, and everything it refuses to carry (userinfo, other schemes) is
 //! an error by name.
 //!
-//! Syntax follows RFC 3986 (https://www.rfc-editor.org/rfc/rfc3986, sections 3
+//! Syntax follows RFC 3986 (<https://www.rfc-editor.org/rfc/rfc3986>, sections 3
 //! and 5.2, read 2026-10-03) for the subset used: `scheme "://" host [":" port]
 //! path ["?" query]`. A fragment is never sent to a server (RFC 3986 section
 //! 3.5), so it is dropped. Relative references are resolved as section 5.2.2

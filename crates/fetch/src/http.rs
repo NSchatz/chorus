@@ -2,11 +2,11 @@
 //! body. Hand-written over `std::net`, as the rest of chorus's HTTP is.
 //!
 //! One request per connection (`Connection: close`). The message syntax is RFC
-//! 9112 (https://www.rfc-editor.org/rfc/rfc9112, read 2026-10-03): the status
+//! 9112 (<https://www.rfc-editor.org/rfc/rfc9112>, read 2026-10-03): the status
 //! line (section 4), header fields (section 5), and the three ways a body ends
 //! (section 6.3): a chunked transfer coding (section 7.1), a `Content-Length`,
 //! or the close of the connection. Redirects and `Range` are RFC 9110
-//! (https://www.rfc-editor.org/rfc/rfc9110, sections 15.4 and 14, read
+//! (<https://www.rfc-editor.org/rfc/rfc9110>, sections 15.4 and 14, read
 //! 2026-10-03). The one thing outside those: a SHOUTcast server's `ICY 200 OK`
 //! status line, accepted as an HTTP/1.0 answer.
 //!

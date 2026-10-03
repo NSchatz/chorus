@@ -4,7 +4,7 @@
 //! The provider is handed to the configuration explicitly; nothing here reads
 //! or installs a process-wide default. Certificate and host name verification
 //! are rustls's own and there is no way to turn them off. (API as documented
-//! at https://docs.rs/rustls/0.23.45/rustls/, read 2026-10-03.)
+//! at <https://docs.rs/rustls/0.23.45/rustls/>, read 2026-10-03.)
 //!
 //! Certificate validity is the one place a fetch depends on the wall clock:
 //! rustls compares the certificate's dates with the system time. No code in
@@ -26,7 +26,7 @@ use crate::url::Url;
 /// Where the roots are read from when neither the policy nor `SSL_CERT_FILE`
 /// names a bundle: the path Debian's ca-certificates package writes, which the
 /// release image's distroless base ships
-/// (https://github.com/GoogleContainerTools/distroless/blob/main/base/README.md,
+/// (<https://github.com/GoogleContainerTools/distroless/blob/main/base/README.md>,
 /// read 2026-10-03).
 pub const DEFAULT_CA_BUNDLE: &str = "/etc/ssl/certs/ca-certificates.crt";
 
