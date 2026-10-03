@@ -1,0 +1,22 @@
+format	run	cpu_s	wall_s	audio_s	pct_of_one_core	maxrss_kb	loadavg	line
+wav48	0	0.151	0.152	130.00	0.1164	23272	48.66	chorus-server: probe-media: codec=pcm rate=48000 channels=2 bits=16 frames=6240000 title=- artist=- album=- pcm_f32_fnv1a64=c1fa5e6164d69f20
+wav48	1	0.135	0.135	130.00	0.1035	23272	48.66	chorus-server: probe-media: codec=pcm rate=48000 channels=2 bits=16 frames=6240000 title=- artist=- album=- pcm_f32_fnv1a64=c1fa5e6164d69f20
+wav48	2	0.115	0.116	130.00	0.0887	23272	48.66	chorus-server: probe-media: codec=pcm rate=48000 channels=2 bits=16 frames=6240000 title=- artist=- album=- pcm_f32_fnv1a64=c1fa5e6164d69f20
+wav	0	0.126	0.127	130.00	0.0973	23272	48.66	chorus-server: probe-media: codec=pcm rate=44100 channels=2 bits=16 frames=5733000 title=- artist=- album=- pcm_f32_fnv1a64=58be2c315d027473
+wav	1	0.107	0.108	130.00	0.0827	23272	48.66	chorus-server: probe-media: codec=pcm rate=44100 channels=2 bits=16 frames=5733000 title=- artist=- album=- pcm_f32_fnv1a64=58be2c315d027473
+wav	2	0.107	0.107	130.00	0.0822	23272	48.66	chorus-server: probe-media: codec=pcm rate=44100 channels=2 bits=16 frames=5733000 title=- artist=- album=- pcm_f32_fnv1a64=58be2c315d027473
+flac	0	0.214	0.214	130.00	0.1643	23272	48.66	chorus-server: probe-media: codec=flac rate=44100 channels=2 bits=16 frames=5733000 title=- artist=- album=- pcm_f32_fnv1a64=58be2c315d027473
+flac	1	0.305	0.307	130.00	0.2345	23272	48.66	chorus-server: probe-media: codec=flac rate=44100 channels=2 bits=16 frames=5733000 title=- artist=- album=- pcm_f32_fnv1a64=58be2c315d027473
+flac	2	0.283	0.283	130.00	0.2176	23272	48.66	chorus-server: probe-media: codec=flac rate=44100 channels=2 bits=16 frames=5733000 title=- artist=- album=- pcm_f32_fnv1a64=58be2c315d027473
+mp3	0	0.377	0.377	130.00	0.2900	23272	48.66	chorus-server: probe-media: codec=mp3 rate=44100 channels=2 bits=- frames=5733000 title=- artist=- album=- pcm_f32_fnv1a64=901df18c8d3b23b6
+mp3	1	0.369	0.370	130.00	0.2841	23272	48.66	chorus-server: probe-media: codec=mp3 rate=44100 channels=2 bits=- frames=5733000 title=- artist=- album=- pcm_f32_fnv1a64=901df18c8d3b23b6
+mp3	2	0.392	0.392	130.00	0.3013	23272	47.01	chorus-server: probe-media: codec=mp3 rate=44100 channels=2 bits=- frames=5733000 title=- artist=- album=- pcm_f32_fnv1a64=901df18c8d3b23b6
+vorbis	0	0.288	0.288	130.00	0.2216	23272	47.01	chorus-server: probe-media: codec=vorbis rate=44100 channels=2 bits=- frames=5733000 title=- artist=- album=- pcm_f32_fnv1a64=74d7fb04aad1314a
+vorbis	1	0.392	0.393	130.00	0.3015	23272	47.01	chorus-server: probe-media: codec=vorbis rate=44100 channels=2 bits=- frames=5733000 title=- artist=- album=- pcm_f32_fnv1a64=74d7fb04aad1314a
+vorbis	2	0.461	0.461	130.00	0.3543	23272	47.01	chorus-server: probe-media: codec=vorbis rate=44100 channels=2 bits=- frames=5733000 title=- artist=- album=- pcm_f32_fnv1a64=74d7fb04aad1314a
+opus	0	0.799	0.801	130.00	0.6145	23272	47.01	chorus-server: probe-media: codec=opus rate=48000 channels=2 bits=- frames=6240000 title=- artist=- album=- pcm_f32_fnv1a64=3ef7127a1a68c7b9
+opus	1	0.806	0.810	130.00	0.6197	23272	47.01	chorus-server: probe-media: codec=opus rate=48000 channels=2 bits=- frames=6240000 title=- artist=- album=- pcm_f32_fnv1a64=3ef7127a1a68c7b9
+opus	2	0.779	0.781	130.00	0.5995	23272	47.01	chorus-server: probe-media: codec=opus rate=48000 channels=2 bits=- frames=6240000 title=- artist=- album=- pcm_f32_fnv1a64=3ef7127a1a68c7b9
+alac	0	0.680	0.681	130.00	0.5235	23272	47.01	chorus-server: probe-media: codec=alac rate=44100 channels=2 bits=16 frames=5733000 title=- artist=- album=- pcm_f32_fnv1a64=58be2c315d027473
+alac	1	0.898	0.898	130.00	0.6906	23272	46.37	chorus-server: probe-media: codec=alac rate=44100 channels=2 bits=16 frames=5733000 title=- artist=- album=- pcm_f32_fnv1a64=58be2c315d027473
+alac	2	0.779	0.780	130.00	0.5995	23272	46.37	chorus-server: probe-media: codec=alac rate=44100 channels=2 bits=16 frames=5733000 title=- artist=- album=- pcm_f32_fnv1a64=58be2c315d027473
