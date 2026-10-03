@@ -832,6 +832,50 @@ What changes: goal 14's OTA, explicit-install and adoption lines gain their hard
 a named fault to fix; the ASSUMED 8 MB layout, the 60 s trial, the chunk window and the board's
 internal RAM for the session stack are confirmed or replaced.
 
+### S11. Telemetry from real speakers: one scrape, wired and Wi-Fi (goal 15; after S10, and S9 for the Wi-Fi half)
+
+Needs: the wired board of S10 (adopted, playing), for the Wi-Fi half the board of S9 on the
+compact Wi-Fi profile, both flashed (the guarded tool, as in S10) with a build from a commit that
+has the exporter's firmware half (ADR 0115), and the chorus server of S10 on the audio network.
+`curl` on the bench machine. No bought part.
+
+This is goal 15's hardware step. The server's exporter (`GET /metrics` on the control port,
+`docs/telemetry.md`) is graded in the gate against a host endpoint that reports stated fake
+values for link, RSSI, heap and temperature (`metrics_scrape`); what the board's own binding
+reads (`firmware/main/esp_hal.c`) has compiled in every image and never run on silicon. The
+alert rules proposed to the homelab carry floors and windows marked ASSUMED until this session.
+
+```
+curl -s http://<server>:<control port>/metrics | grep '^chorus_' > scrape.txt
+chorusctl --server <server>:<control port> endpoints list
+```
+
+**S11.1 The wired speaker.** While it plays, scrape. Expected for its `speaker` label:
+`chorus_speaker_connected` 1, `chorus_speaker_link_info{...,link="wired"}` 1, a sync error, a
+buffer fill, a rate correction, `resyncs_total` and `underruns_total`, `heap_free_bytes` and
+`heap_min_free_bytes`, `chorus_speaker_firmware_info` with the flashed version, and no
+`chorus_speaker_rssi_dbm` and no `chorus_speaker_temperature_celsius` line (no board profile has
+a temperature source; a line there is a fault to report).
+
+**S11.2 The Wi-Fi speaker.** Scrape with the speaker near the access point, then carried two
+rooms away, a minute apart. Expected: `link="wifi"`, and `chorus_speaker_rssi_dbm` lower (more
+negative) in the second scrape.
+
+**S11.3 The heap floor.** Leave the wired speaker playing for an hour, then scrape. Note
+`chorus_speaker_heap_min_free_bytes`: it is the floor the homelab's heap alert should sit under.
+
+**S11.4 A speaker that goes away.** Pull the wired speaker's power, wait a minute, scrape.
+Expected for its label: exactly `chorus_speaker_connected` 0, `chorus_speaker_info` and
+`chorus_speaker_firmware_info`; every other series of it gone.
+
+Paste into the Needs item: the `chorus_speaker_` lines of each scrape (the `speaker` label is the
+random `chorus-<12 hex>` id, not a hardware address; delete any LAN address, K27) and
+`chorusctl endpoints list`'s output from S11.1.
+
+What changes: `docs/telemetry.md`'s table of what the firmware fills is confirmed or corrected;
+the ASSUMED heap floor and Wi-Fi level of the homelab's `chorus` alert rules get measured
+replacements; a report under `docs/measurements/` (Source: hardware) records the four scrapes.
+
 ## 4. Order and what each session unblocks
 
 S0 first; S1 needs one Pi; S2 needs both and the interface; S3 needs S2's rig trusted; S4 after
@@ -842,7 +886,8 @@ one Pi as the hub (S0) and a receiver HAT (T1 or T2); S8.5 and S8.7 also need S1
 follows S5 on a board whose amplifier bring-up reaches Play, flashed with the compact Wi-Fi
 profile; it needs a phone and the house's 2.4 GHz network and no chorus server, and it unblocks
 WIFI-7's characterization run (section 6). S10 follows S5 (and S7.1, so the board is known to
-play) on the wired profile with a chorus server on the audio network. None
+play) on the wired profile with a chorus server on the audio network. S11 follows S10 on the
+same board and server (its Wi-Fi half follows S9). None
 of these blocks a chorus
 goal (K7): each goal that can use a result re-checks for its pull request.
 
@@ -851,7 +896,7 @@ goal (K7): each goal that can use a result re-checks for its pull request.
 Each evidence run (S1-S4, S6, S7.3, S7.4) commits its report on `bench/<date>-<topic>` and opens a pull request
 from endpoint A (`docs/bench.md`); the owner does nothing else. If the report or pull-request half
 fails after a measurement, nothing is lost: fix the cause and run the same script with
-`--report-from <run directory>` (printed at the start) from the same commit. S0, S5, S9 and S10 are
+`--report-from <run directory>` (printed at the start) from the same commit. S0, S5, S9, S10 and S11 are
 answered in their Needs items; S9's answer is console lines only, chosen so that no network name,
 passphrase or address is pasted.
 

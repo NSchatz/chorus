@@ -169,4 +169,5 @@ RSSI that moves the right way when the speaker is carried away from the
 access point; that `heap_min_free_bytes` stays above a floor through an hour
 of playback (the floor the alert rule then uses, replacing an ASSUMED one);
 and that pulling a speaker's power leaves exactly `connected` 0, `info` and
-`firmware_info` of it in the next scrape. Flashing is the owner's action.
+`firmware_info` of it in the next scrape. Flashing is the owner's action. The session is S11 in
+`docs/bench-packet.md`.
