@@ -2153,8 +2153,13 @@ fn a_live_group_keeps_its_identity_when_the_same_rooms_re_form() {
     let seen = home.notes.len();
     home.server
         .applied(r#"{"v":1,"t":"name","zone":"kitchen","name":"Galley"}"#);
+    // `Home::devices` pairs a search answer with a description fetched after
+    // it, so a rename landing between the two shows the new name beside the
+    // old CONFIGID and BOOTID: wait for a search answer made after the rename.
     let renamed = wait("the renamed room", || {
-        home.devices().into_iter().find(|d| d.name == "Galley")
+        home.devices()
+            .into_iter()
+            .find(|d| d.name == "Galley" && d.config_id != kitchen.config_id)
     });
     assert_eq!(renamed.udn, kitchen.udn, "a rename keeps the UDN");
     assert_ne!(renamed.config_id, kitchen.config_id, "a new CONFIGID");
