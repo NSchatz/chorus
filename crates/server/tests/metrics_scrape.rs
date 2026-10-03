@@ -305,6 +305,11 @@ fn the_exporter_serves_every_listed_metric_in_a_test_scrape() {
         "--- GET /metrics (the line-A scrape) ---\n{}--- end ---",
         text
     );
+    // `make verify-metrics` (tools/verify-metrics.sh) asks for the scrape as
+    // a file, to hand it to promtool.
+    if let Some(path) = std::env::var_os("CHORUS_METRICS_SCRAPE_OUT") {
+        std::fs::write(&path, &text).expect("the scrape can be written where it was asked for");
+    }
     let s = samples(&text);
 
     // The server's own two series.

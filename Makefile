@@ -145,6 +145,14 @@ verify-mdns: tools-executable
 verify-endpoint-mdns: tools-executable
 	bash tools/endpoint-mdns-live-run.sh
 
+# Goal 15, line A's lint: a real scrape of chorus-server's /metrics (taken by
+# the line-A test, crates/server/tests/metrics_scrape.rs) is clean under
+# `promtool check metrics`. promtool is pinned in mise.toml; where it is absent
+# or another version the target refuses by name, never passes. Not in the gate:
+# the gate holds the format in the server's own tests.
+verify-metrics: tools-executable
+	bash tools/verify-metrics.sh
+
 # The other half of AC-2's fallback sentence: "connects to the configured static
 # address AND PLAYS". Needs a playback device that opens and no multicast at
 # all; the browse returning nothing is the antecedent, and a browse that cannot
@@ -348,6 +356,6 @@ verify-null-device: tools-executable
 	firmware-wireless gate gate-fast measure-fixture-reports measure-fixtures one  \
 	ota-qemu probe qemu-boot qemu-env sim-house sync-vectors ten-minute-run ten-minute-run-null test tools-executable verify verify-alsa-null verify-control  \
 	verify-control-determinism verify-device verify-discovery-fallback  \
-	verify-endpoint-mdns verify-endpoint-rig verify-host verify-mdns verify-measure-device  \
+	verify-endpoint-mdns verify-endpoint-rig verify-host verify-mdns verify-measure-device verify-metrics  \
 	verify-house-soak verify-null-device verify-restart-storm verify-soak verify-sync-hour  \
 	verify-wireless 

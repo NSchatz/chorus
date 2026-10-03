@@ -96,6 +96,30 @@ checksum = "sha256:39785160b3c2f6ed9a765049cf4fa79f3b39aa02eb7598a5a0e2a1a0b9ffb
 url = "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.146/cargo-nextest-0.9.146-universal-apple-darwin.tar.gz"
 url_api = "https://api.github.com/repos/nextest-rs/nextest/releases/assets/579630774"
 
+[[tools."aqua:prometheus/prometheus"]]
+version = "3.13.3"
+backend = "aqua:prometheus/prometheus"
+
+[tools."aqua:prometheus/prometheus"."platforms.linux-arm64"]
+checksum = "sha256:aa9be9c36608e7ab7cc089726195d0e4fa74f87b330538df9d30d3da1f2b0e18"
+url = "https://github.com/prometheus/prometheus/releases/download/v3.13.3/prometheus-3.13.3.linux-arm64.tar.gz"
+url_api = "https://api.github.com/repos/prometheus/prometheus/releases/assets/548741589"
+
+[tools."aqua:prometheus/prometheus"."platforms.linux-x64"]
+checksum = "sha256:b349c732d8a853e657d0e7ae1bbad4d11b586615fb65fdc59d896b9f869c001e"
+url = "https://github.com/prometheus/prometheus/releases/download/v3.13.3/prometheus-3.13.3.linux-amd64.tar.gz"
+url_api = "https://api.github.com/repos/prometheus/prometheus/releases/assets/548741513"
+
+[tools."aqua:prometheus/prometheus"."platforms.macos-arm64"]
+checksum = "sha256:5d58c2597557184700b37a8000cd6b402f7c1b555a4439dc3cdfe42e31916720"
+url = "https://github.com/prometheus/prometheus/releases/download/v3.13.3/prometheus-3.13.3.darwin-arm64.tar.gz"
+url_api = "https://api.github.com/repos/prometheus/prometheus/releases/assets/548740840"
+
+[tools."aqua:prometheus/prometheus"."platforms.macos-x64"]
+checksum = "sha256:171d890dbb83ba5d4758a1e8f117e8803cd70f86af798ff881d94df5603cb505"
+url = "https://github.com/prometheus/prometheus/releases/download/v3.13.3/prometheus-3.13.3.darwin-amd64.tar.gz"
+url_api = "https://api.github.com/repos/prometheus/prometheus/releases/assets/548740792"
+
 [[tools."aqua:rhysd/actionlint"]]
 version = "1.7.12"
 backend = "aqua:rhysd/actionlint"

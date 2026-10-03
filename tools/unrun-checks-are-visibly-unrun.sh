@@ -261,6 +261,13 @@ expect_missing_prerequisite "ota-qemu-run.sh" \
     bash "$REPO_ROOT/tools/ota-qemu-run.sh"
 rm -rf "$NO_QEMU"
 
+# No promtool (goal 15). Genuinely absent: CHORUS_PROMTOOL names a file that
+# does not exist, which is what a machine that never ran `mise install` looks
+# like to it. The lint refuses before it runs the test that takes the scrape.
+expect_missing_prerequisite "verify-metrics.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_PROMTOOL="$REPO_ROOT/target/chorus-no-such-promtool" \
+    bash "$REPO_ROOT/tools/verify-metrics.sh"
+
 # --- and the list above is the whole list ------------------------------------
 #
 # An entry point is environment-dependent exactly when it calls one of lib.sh's

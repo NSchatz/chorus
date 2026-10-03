@@ -608,3 +608,35 @@ kill_quietly() {
         wait "$pid" 2>/dev/null || true
     fi
 }
+
+# promtool, at the version mise.toml pins (the Prometheus release it ships in),
+# for `make verify-metrics`. Looked for in CHORUS_PROMTOOL, then on PATH, then
+# among mise's installed tools. Sets PROMTOOL. A promtool of another version is
+# not the pinned linter, so it is refused as absent rather than run.
+require_promtool() {
+    local criterion="$1"
+    local wanted
+    wanted="$(sed -n 's/^"aqua:prometheus\/prometheus" = "\([0-9.]*\)"$/\1/p' \
+        "$REPO_ROOT/mise.toml")"
+    local how="run 'mise install' in the repository (mise.toml pins Prometheus $wanted, whose release carries promtool), or point CHORUS_PROMTOOL at a promtool $wanted"
+    PROMTOOL="${CHORUS_PROMTOOL:-}"
+    if [ -z "$PROMTOOL" ]; then
+        PROMTOOL="$(command -v promtool 2>/dev/null || true)"
+    fi
+    if [ -z "$PROMTOOL" ] && command -v mise >/dev/null 2>&1; then
+        PROMTOOL="$(cd "$REPO_ROOT" && mise which promtool 2>/dev/null || true)"
+    fi
+    if [ -z "$PROMTOOL" ] || [ ! -x "$PROMTOOL" ]; then
+        missing_prerequisite "$criterion" \
+            "promtool $wanted; none was found (${PROMTOOL:-not on PATH, not installed by mise})" \
+            "$how"
+    fi
+    local have
+    have="$("$PROMTOOL" --version 2>&1 | sed -n 's/^promtool, version \([0-9.]*\).*/\1/p' | head -n 1)"
+    if [ "$have" != "$wanted" ]; then
+        missing_prerequisite "$criterion" \
+            "promtool $wanted; $PROMTOOL is version ${have:-unknown}" \
+            "$how"
+    fi
+    export PROMTOOL
+}
