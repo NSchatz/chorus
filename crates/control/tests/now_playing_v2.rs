@@ -52,9 +52,9 @@ fn take(zones: &mut Zones, target: &str, source: &str) {
 
 fn song(state: PlayState) -> NowPlaying {
     NowPlaying {
-        title: Some("So What".to_string()),
-        artist: Some("Miles Davis".to_string()),
-        album: Some("Kind of Blue".to_string()),
+        title: Some("Morning Light".to_string()),
+        artist: Some("The Example Quartet".to_string()),
+        album: Some("First Takes".to_string()),
         art_url: Some("http://192.0.2.10:8200/art/42.jpg".to_string()),
         duration_ms: Some(215_000),
         state,
@@ -62,7 +62,7 @@ fn song(state: PlayState) -> NowPlaying {
     }
 }
 
-const SONG: &str = r#"{"title":"So What","artist":"Miles Davis","album":"Kind of Blue","art_url":"http://192.0.2.10:8200/art/42.jpg","duration_ms":215000,"state":"playing","via":"upnp"}"#;
+const SONG: &str = r#"{"title":"Morning Light","artist":"The Example Quartet","album":"First Takes","art_url":"http://192.0.2.10:8200/art/42.jpg","duration_ms":215000,"state":"playing","via":"upnp"}"#;
 
 fn state(zones: &Zones) -> Value {
     json::parse(&zones.encode_state()).unwrap()
@@ -442,7 +442,7 @@ fn nothing_about_what_plays_is_persisted() {
         .unwrap();
     let text = render(&zones);
     assert!(
-        !text.contains("So What") && !text.contains("player:"),
+        !text.contains("Morning Light") && !text.contains("player:"),
         "{}",
         text
     );

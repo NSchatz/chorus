@@ -66,8 +66,8 @@ fn rooms_list_says_what_each_room_is_playing_when_some_room_does() {
         printed("v2/state-playing", &["rooms", "list"]),
         "\
 ROOM     NAME     GROUP       VOLUME  MUTED  LIMIT  PRESENT  PLAYING
-living   living   downstairs  1.000   no     1.000  0/0      So What - Miles Davis
-kitchen  kitchen  downstairs  1.000   no     1.000  0/0      So What - Miles Davis
+living   living   downstairs  1.000   no     1.000  0/0      Morning Light - The Example Quartet
+kitchen  kitchen  downstairs  1.000   no     1.000  0/0      Morning Light - The Example Quartet
 study    study    study       1.000   no     1.000  0/0      Evening news (paused)
 bedroom  bedroom  bedroom     1.000   no     1.000  0/0      -
 hall     hall     hall        1.000   no     1.000  0/0      -
@@ -85,7 +85,7 @@ hall     hall     hall        1.000   no     1.000  0/0      -
     );
     // A room's JSON is still the server's own bytes, what plays included.
     let one = cut_out_of("v2/state-playing", &["rooms", "show", "living"]);
-    assert!(one.contains(r#""source":"player:p0","now_playing":{"title":"So What","#));
+    assert!(one.contains(r#""source":"player:p0","now_playing":{"title":"Morning Light","#));
     let groups = printed("v2/state-playing", &["groups", "list"]);
     assert!(groups.contains("player:p2"), "{}", groups);
 }

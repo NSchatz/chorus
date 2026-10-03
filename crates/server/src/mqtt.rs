@@ -706,8 +706,8 @@ mod tests {
             .set_now_playing(
                 "kitchen",
                 Some(NowPlaying {
-                    title: Some("So What".to_string()),
-                    artist: Some("Miles Davis".to_string()),
+                    title: Some("Morning Light".to_string()),
+                    artist: Some("The Example Quartet".to_string()),
                     album: None,
                     art_url: None,
                     duration_ms: Some(215_000),
@@ -719,8 +719,8 @@ mod tests {
         let playing = wanted_of(&topics, &zones.encode_state()).unwrap();
         assert!(
             playing[&kitchen].ends_with(concat!(
-                r#","source":"player:p0","now_playing":{"title":"So What","#,
-                r#""artist":"Miles Davis","album":null,"art_url":null,"#,
+                r#","source":"player:p0","now_playing":{"title":"Morning Light","#,
+                r#""artist":"The Example Quartet","album":null,"art_url":null,"#,
                 r#""duration_ms":215000,"state":"playing","via":"upnp"}}"#
             )),
             "{}",

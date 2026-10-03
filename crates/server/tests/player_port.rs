@@ -529,8 +529,8 @@ fn what_is_playing_reaches_the_state_and_a_paused_room_shows_paused() {
     let house = house("kitchen-panel");
     let subscriber = house.state.fanout().subscribe();
     let song = |state| NowPlaying {
-        title: Some("So What".to_string()),
-        artist: Some("Miles Davis".to_string()),
+        title: Some("Morning Light".to_string()),
+        artist: Some("The Example Quartet".to_string()),
         album: None,
         art_url: None,
         duration_ms: Some(215_000),
@@ -566,7 +566,7 @@ fn what_is_playing_reaches_the_state_and_a_paused_room_shows_paused() {
     );
     let told = subscriber.try_recv().expect("every subscriber is told");
     assert!(
-        told.contains(r#""source":"player:p0","now_playing":{"title":"So What","artist":"Miles Davis","album":null,"art_url":null,"duration_ms":215000,"state":"playing","via":"upnp"}"#),
+        told.contains(r#""source":"player:p0","now_playing":{"title":"Morning Light","artist":"The Example Quartet","album":null,"art_url":null,"duration_ms":215000,"state":"playing","via":"upnp"}"#),
         "{}",
         told
     );

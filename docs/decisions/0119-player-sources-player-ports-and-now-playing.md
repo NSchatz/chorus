@@ -77,7 +77,9 @@ nothing here was written from another project.
    copied, so there it stays with the target and the rooms pushed out play `none`; when the same
    `take` gives the target another source, the player and its record go with the rooms pushed
    out. Keeping it with the target is the choice that leaves a renderer bound to that group
-   driving what it was driving.
+   driving what it was driving. The schedule runtime's restore after an alarm or an autoplay is
+   the one caller for which the refusal is not the end: a room whose player another group took
+   meanwhile is given `none` (logged `reason=player-busy`), not left on the alarm's chime.
 
 4. **Now-playing is a record per group, set by the runtime, never persisted.**
    `NowPlaying { title, artist, album, art_url: Option<String>, duration_ms: Option<u64>,
@@ -221,7 +223,7 @@ port's own unmeasured reasoning; ADR 0077's follow-up (measure the tick at S = 3
 - The renderer (goal 16, track R): drivers that fetch, decode and write; `set_now_playing` from
   DIDL-Lite, tags or ICY; what a renderer does when its group's source is taken away (an alarm,
   another `take`): it learns it from `ControlState::player_group`.
-- An alarm that restores a room afterwards restores its source through `set_group_source`; a
-  player source comes back with no record until its driver says one again.
+- An alarm that restores a room's player source restores no record: the record was cleared when
+  the chime took the group, and comes back when the player's driver says it again.
 - `docs/protocol.md` does not yet say when `controller_state` says paused; the rule is in
   `docs/control-plane.md`.

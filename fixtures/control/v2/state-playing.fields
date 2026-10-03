@@ -23,5 +23,5 @@ command.0 = {"v":2,"t":"group_save","group":"downstairs","name":"Downstairs","zo
 command.1 = {"v":2,"t":"take","target":"downstairs","source":"player:p0"}
 command.2 = {"v":2,"t":"take","target":"study","source":"player:p1"}
 command.3 = {"v":2,"t":"take","target":"bedroom","source":"player:p2"}
-now_playing.0 = downstairs | playing | upnp | 215000 | So What | Miles Davis | Kind of Blue | http://192.0.2.10:8200/art/42.jpg
+now_playing.0 = downstairs | playing | upnp | 215000 | Morning Light | The Example Quartet | First Takes | http://192.0.2.10:8200/art/42.jpg
 now_playing.1 = study | paused | upnp | | Evening news | | |

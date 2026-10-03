@@ -1066,7 +1066,10 @@ written and the frames taken since the last flush, which is how the thread
 knows its position and the moment a second track, written straight after the
 first, starts to go out (gapless: the audio thread never sees a boundary). An
 alarm whose source is a `player:<id>` rings the `bell` chime (reason
-`player-source`): an alarm has no media to hand a player.
+`player-source`): an alarm has no media to hand a player. A room that was
+playing a player when an alarm or an autoplay took it gets the player back
+when that ends, unless another group took the player meanwhile: then the room
+plays `none` (`schedule restore group=<id> source=none reason=player-busy`).
 
 **Test clocks.** `--civil-time <day>-<HH:MM>` holds the civil clock at that
 weekday and time (of the week of Monday 2024-01-01, in the zone loaded);

@@ -108,8 +108,8 @@ fn a_room_playing_a_player_carries_its_source_and_what_it_plays() {
     let cut = retained_of(text.trim_end()).unwrap();
     let room = |id: &str| &cut.rooms.iter().find(|(r, _)| r == id).unwrap().1;
     let song = concat!(
-        r#""source":"player:p0","now_playing":{"title":"So What","artist":"Miles Davis","#,
-        r#""album":"Kind of Blue","art_url":"http://192.0.2.10:8200/art/42.jpg","#,
+        r#""source":"player:p0","now_playing":{"title":"Morning Light","artist":"The Example Quartet","#,
+        r#""album":"First Takes","art_url":"http://192.0.2.10:8200/art/42.jpg","#,
         r#""duration_ms":215000,"state":"playing","via":"upnp"}}"#
     );
     for id in ["living", "kitchen"] {

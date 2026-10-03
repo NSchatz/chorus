@@ -810,8 +810,20 @@ impl Runtime {
                 continue;
             };
             let all_ours = members(&group, zones).iter().all(|m| restored.contains(&m));
-            if all_ours && zones.source(&group) != snap.source {
-                let _ = zones.set_group_source(&group, snap.source.clone());
+            if all_ours
+                && zones.source(&group) != snap.source
+                && zones.set_group_source(&group, snap.source.clone()).is_err()
+            {
+                // (goal 16) The one source that can be refused here: a
+                // player another group took while this one was away. The
+                // group is not left playing what the runtime gave it (an
+                // alarm's chime would ring on): it plays nothing.
+                let _ = zones.set_group_source(&group, Source::None);
+                self.log(format!(
+                    "schedule restore group={} source=none reason=player-busy wanted={}",
+                    group,
+                    snap.source.literal()
+                ));
             }
         }
         self.persist = true;
