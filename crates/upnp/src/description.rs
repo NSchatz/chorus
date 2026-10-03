@@ -17,6 +17,7 @@
 //! interface the server has. There is no `URLBase` ("UPnP 1.1 devices MUST
 //! NOT include URLBase").
 
+use crate::openhome::tables;
 use crate::ssdp;
 use crate::uuid::Uuid;
 use crate::xml::escape_text;
@@ -484,12 +485,18 @@ pub const CONNECTION_MANAGER: ServiceTable = ServiceTable {
     ],
 };
 
-/// The table of a service.
+/// The table of a service. The OpenHome services' tables are in
+/// [`crate::openhome::tables`].
 pub fn table(service: Service) -> &'static ServiceTable {
     match service {
         Service::AvTransport => &AVTRANSPORT,
         Service::RenderingControl => &RENDERING_CONTROL,
         Service::ConnectionManager => &CONNECTION_MANAGER,
+        Service::Product => &tables::PRODUCT,
+        Service::Volume => &tables::VOLUME,
+        Service::Info => &tables::INFO,
+        Service::Time => &tables::TIME,
+        Service::Playlist => &tables::PLAYLIST,
     }
 }
 
@@ -576,6 +583,11 @@ pub struct DeviceInfo {
     pub model_name: String,
     /// `modelNumber`: the chorus version.
     pub model_number: String,
+    /// Whether the device also offers the OpenHome services
+    /// ([`Service::OPENHOME`]), listed after the three AV ones on the same
+    /// `MediaRenderer:1` device (the single-device layout, `docs/upnp.md`).
+    /// This is the one switch of the layout.
+    pub openhome: bool,
 }
 
 /// What a path under `/upnp/` names.
@@ -646,7 +658,8 @@ pub fn route(path: &str) -> Option<(Uuid, Resource)> {
 
 /// The device description (UDA11 section 2.3), element order as the
 /// specification's template: `specVersion` 1.1, the MediaRenderer:1 device
-/// type, the names, the UDN, and the three services with relative URLs. The
+/// type, the names, the UDN, and the services ([`Service::offered`]) with
+/// relative URLs. The
 /// manufacturer is "chorus" and the model description says what the device
 /// is: a UPnP AV media renderer. No icon, no presentation page, no URLBase.
 pub fn device_description(info: &DeviceInfo, config_id: u32) -> String {
@@ -675,7 +688,7 @@ pub fn device_description(info: &DeviceInfo, config_id: u32) -> String {
     ));
     x.push_str(&format!("    <UDN>uuid:{}</UDN>\n", info.udn));
     x.push_str("    <serviceList>\n");
-    for service in Service::ALL {
+    for &service in Service::offered(info.openhome) {
         x.push_str("      <service>\n");
         x.push_str(&format!(
             "        <serviceType>{}</serviceType>\n",
@@ -706,14 +719,14 @@ pub fn device_description(info: &DeviceInfo, config_id: u32) -> String {
 }
 
 /// The CONFIGID of a device: [`ssdp::config_id`] over the device description
-/// and the three SCPDs, each written with `configId="0"` (the number cannot
+/// and the SCPDs of the services it offers, each written with `configId="0"` (the number cannot
 /// be part of what it is the hash of). UDA11 section 1.2.2: the
 /// configuration is "the DDD of the root device ... and the SCPDs of all the
 /// contained services". The same device gets the same number after a
 /// restart; a rename changes it.
 pub fn device_config_id(info: &DeviceInfo) -> u32 {
     let mut all = device_description(info, 0);
-    for service in Service::ALL {
+    for &service in Service::offered(info.openhome) {
         all.push_str(&scpd(service, 0));
     }
     ssdp::config_id(all.as_bytes())
@@ -722,6 +735,7 @@ pub fn device_config_id(info: &DeviceInfo) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client;
     use std::collections::BTreeSet;
 
     fn info() -> DeviceInfo {
@@ -730,6 +744,7 @@ mod tests {
             friendly_name: "Kitchen".into(),
             model_name: "chorus room".into(),
             model_number: "0.1.0".into(),
+            openhome: false,
         }
     }
 
@@ -792,7 +807,7 @@ mod tests {
 
     #[test]
     fn the_tables_are_self_consistent() {
-        for service in Service::ALL {
+        for service in Service::AV {
             let t = table(service);
             assert_eq!(t.service, service);
             assert!(!t.variables.is_empty(), "UDA11 2.5: one or more variables");
@@ -893,6 +908,56 @@ mod tests {
         ];
         let at: Vec<usize> = order.iter().map(|e| d.find(e).unwrap()).collect();
         assert!(at.windows(2).all(|w| w[0] < w[1]));
+    }
+
+    #[test]
+    fn the_openhome_switch_adds_five_services_behind_the_three() {
+        let av = client::parse_description(&device_description(&info(), 1)).unwrap();
+        assert_eq!(av.services.len(), 3);
+        let mut with = info();
+        with.openhome = true;
+        let text = device_description(&with, 1);
+        let d = client::parse_description(&text).unwrap();
+        let types: Vec<&str> = d.services.iter().map(|s| s.service_type.as_str()).collect();
+        assert_eq!(
+            types,
+            [
+                "urn:schemas-upnp-org:service:AVTransport:1",
+                "urn:schemas-upnp-org:service:RenderingControl:1",
+                "urn:schemas-upnp-org:service:ConnectionManager:1",
+                "urn:av-openhome-org:service:Product:2",
+                "urn:av-openhome-org:service:Volume:2",
+                "urn:av-openhome-org:service:Info:1",
+                "urn:av-openhome-org:service:Time:1",
+                "urn:av-openhome-org:service:Playlist:1",
+            ]
+        );
+        // The device is the same MediaRenderer:1 (the single-device layout).
+        assert_eq!(d.device_type, DEVICE_TYPE);
+        assert!(text.contains("<serviceId>urn:av-openhome-org:serviceId:Product</serviceId>"));
+        assert!(text.contains(&format!(
+            "<SCPDURL>/upnp/{}/ohl/scpd.xml</SCPDURL>",
+            with.udn
+        )));
+        // The switch changes the configuration, so the CONFIGID too.
+        assert_ne!(device_config_id(&info()), device_config_id(&with));
+        // Every SCPD parses and says what its table says.
+        for service in Service::OPENHOME {
+            let scpd = client::parse_scpd(&scpd(service, 5)).unwrap();
+            let t = table(service);
+            assert_eq!(scpd.actions.len(), t.actions.len());
+            assert_eq!(scpd.variables.len(), t.variables.len());
+            for (read, var) in scpd.variables.iter().zip(t.variables) {
+                assert_eq!(
+                    (
+                        read.name.as_str(),
+                        read.data_type.as_str(),
+                        read.send_events
+                    ),
+                    (var.name, var.data_type, var.evented)
+                );
+            }
+        }
     }
 
     #[test]

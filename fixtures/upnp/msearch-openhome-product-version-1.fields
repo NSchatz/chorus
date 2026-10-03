@@ -1,0 +1,6 @@
+multicast = true
+openhome = true
+result = ok
+st = urn:av-openhome-org:service:Product:1
+window_ms = 1000
+responses = 1

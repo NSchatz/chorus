@@ -1,0 +1,7 @@
+soapaction = "urn:av-openhome-org:service:Product:2#SetVolume"
+service = ohp
+parse = ok
+service_type = urn:av-openhome-org:service:Product:2
+action = SetVolume
+arg.0 = Value=10
+validate = 401

@@ -1,0 +1,4 @@
+service = ohl
+action = IdArray
+out.0 = Token=3
+out.1 = Array=AAAAAQAAAAIAAAAD
