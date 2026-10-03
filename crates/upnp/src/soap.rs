@@ -148,8 +148,13 @@ impl Invocation {
 ///   the action in the service description MUST be" sent): 402 Invalid Args;
 /// - elements that are not arguments of the action are ignored, and so is
 ///   the order.
+///
+/// The service type may name a lower version of the service than the one
+/// announced ([`Service::matching`]): a control point bound to `Product:1`
+/// is served by `Product:2`. [`requested_version`] gives the version to
+/// answer in.
 pub fn validate(service: Service, request: &ActionRequest) -> Result<Invocation, UpnpError> {
-    if request.service_type != service.service_type() {
+    if requested_version(service, request).is_none() {
         return Err(error::INVALID_ACTION);
     }
     let action = table(service)
@@ -163,6 +168,15 @@ pub fn validate(service: Service, request: &ActionRequest) -> Result<Invocation,
     Ok(Invocation { action, inputs })
 }
 
+/// The version of `service` a request names, when it names this service at
+/// a version chorus serves: the announced one or a lower one.
+pub fn requested_version(service: Service, request: &ActionRequest) -> Option<u32> {
+    match Service::matching(&request.service_type) {
+        Some((named, version)) if named == service => Some(version),
+        _ => None,
+    }
+}
+
 fn envelope(body: &str) -> String {
     format!(
         "<?xml version=\"1.0\"?>\n<s:Envelope xmlns:s=\"{ENVELOPE_NS}\" s:encodingStyle=\"{ENCODING_NS}\"><s:Body>{body}</s:Body></s:Envelope>"
@@ -174,9 +188,22 @@ fn envelope(body: &str) -> String {
 /// out arguments in the order given, each value escaped once. An action
 /// with no out arguments gets the empty element.
 pub fn build_response(service: Service, action: &str, out: &[(&str, String)]) -> String {
+    build_response_at(service, service.version(), action, out)
+}
+
+/// [`build_response`] in the namespace of `version` of the service: a
+/// request that named a lower version than the announced one is answered in
+/// the version it named (the response element is "in the service type's
+/// namespace", and the control point's service type is the one it sent).
+pub fn build_response_at(
+    service: Service,
+    version: u32,
+    action: &str,
+    out: &[(&str, String)],
+) -> String {
     let mut inner = format!(
         "<u:{action}Response xmlns:u=\"{}\">",
-        service.service_type()
+        service.service_type_at(version)
     );
     for (name, value) in out {
         inner.push_str(&format!("<{name}>{}</{name}>", escape_text(value)));

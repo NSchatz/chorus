@@ -8,6 +8,8 @@
 
 #![allow(dead_code)]
 
+pub mod line_in;
+
 use std::io::Read;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicU64, Ordering};

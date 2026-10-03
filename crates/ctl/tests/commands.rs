@@ -107,6 +107,31 @@ fn cases() -> Vec<Case> {
         ),
         case("v2/firmware_cancel", "updates", "cancel", &["speaker"]),
         case("v2/firmware_rescan", "updates", "rescan", &[]),
+        case(
+            "v2/source_store",
+            "sources",
+            "store",
+            &["id", "kind", "name", "value"],
+        ),
+        case(
+            "v2/source_store-spotify",
+            "sources",
+            "store",
+            &["id", "kind", "name", "value"],
+        ),
+        case("v2/source_forget", "sources", "forget", &["id"]),
+        case(
+            "v2/input_label",
+            "inputs",
+            "label",
+            &["input", "role", "name"],
+        ),
+        case("v2/input_label-clear", "inputs", "unlabel", &["input"]),
+        case("v2/soloist_restart", "soloist", "restart", &[]),
+        case("v2/playback", "soloist", "pause", &["target"]),
+        case("v2/playback-resume", "soloist", "resume", &["target"]),
+        case("v2/playback-next", "soloist", "next", &["target"]),
+        case("v2/playback-previous", "soloist", "previous", &["target"]),
     ];
     // `inputs select <input> <target>` is `take` with a line-in source: the
     // input is the vector's source without its `line-in:` prefix.
@@ -199,10 +224,13 @@ fn a_read_verb_gets_the_state_and_sends_no_command() {
         vec!["groups", "list"],
         vec!["volume", "get", "kitchen"],
         vec!["inputs", "list"],
+        vec!["inputs", "labels"],
+        vec!["sources", "list"],
         vec!["endpoints", "list"],
         vec!["endpoints", "show", "endpoint-a"],
         vec!["updates", "list"],
         vec!["updates", "status"],
+        vec!["soloist", "status"],
     ] {
         let fake = Fake::answering(&[("200 OK", &state)]);
         let outcome = ctl(&fake.address, &args);

@@ -3,12 +3,13 @@
 Spotify Soloist is Spotify's own Spotify Connect receiver program for Linux, proprietary, with a
 90-day build lifetime and a per-developer API key. chorus never downloads, ships, links or runs
 it in its own builds and tests: the owner installs the binary and the key on the host, and chorus
-supervises it (proposal P7, Option C). This page is what goal 17's track S1 built: the supervisor
-`chorus-soloistd`, the pure library `chorus-soloist` both sides share, and the fake Soloist the
-tests run. The server side (the FIFO readers, the pool's manager, the `soloist:` source,
-`chorusctl soloist`) is a later change and has its own section in this page when it lands.
+supervises it (proposal P7, Option C). This page is both halves: the supervisor
+`chorus-soloistd`, the pure library `chorus-soloist` both sides share and the fake Soloist the
+tests run; and, from "The server side" on, what `chorus-server` does with the receivers: the
+flags, the `soloist:` source, take the room, volume, the alarm source and the expiry warning.
 
-Decision records: [0130](decisions/0130-the-soloist-receiver-supervisor.md) (the supervisor) and
+Decision records: [0130](decisions/0130-the-soloist-receiver-supervisor.md) (the supervisor),
+[0132](decisions/0132-the-soloist-receivers-in-the-server.md) (the server side) and
 [0131](decisions/0131-the-chorus-soloist-image.md) (the `chorus-soloist` image, its listings check
 and the deploy files; "The image" and "Running the receivers" below).
 
@@ -374,6 +375,180 @@ control socket: `login`, `logout`, `play <uri>`, `pause`, `resume`, `volume <n>`
 about 1 s in all on the development host when run alone (they run in parallel; the three
 fixed waits are 300 ms, 300 ms and 400 ms, every other wait ends when the awaited message arrives).
 
+## The server side
+
+```
+chorus-server ... --control-listen ADDR --slots S --soloist-dir DIR --soloist-receivers N
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--soloist-receivers N` | 0 | how many receivers, `r0` to `r<N-1>`, at most 32 (`ASSUMED`: twice P7's default pool of 16; proposal P11 measures what a host carries). 0, or the flag absent: no Soloist code runs and no thread of it exists |
+| `--soloist-dir DIR` | required with N above 0 | the receiver directory, the same one the receiver containers are given |
+| `--soloist-grace SECONDS` | 60 (`ASSUMED`, P7) | how long a dissolved, idle live group keeps its receiver |
+| `--soloist-volume chorus\|receiver` | `chorus` | which gain stage a Spotify volume drives; "Volume" below |
+| `--soloist-alarms` | off | let an alarm play a stored Spotify URI; "The alarm source" below |
+
+The receivers need the control plane and at least one stream slot. A receiver directory the
+server cannot list at start is exit code 11, before any thread exists. A receiver whose
+container has not started is not an error: its FIFO and socket are looked for again every
+250 ms for as long as the server runs. The other flags are refused when `--soloist-receivers` is
+absent and are inert beside an explicit `--soloist-receivers 0`, so a deployment switches the
+receivers off by changing one number.
+
+### Threads
+
+`N + 1`, made at start and never after, registered by role like every thread of the server
+(`docs/control-plane.md`, "The thread population"): `soloist-reader-<i>` per receiver and one
+`soloist-manager`. They exist whether or not any receiver container is running.
+
+### The reader and the port
+
+`soloist-reader-<i>` (`crates/server/src/soloistreader.rs`) is the one reader of `r<i>.pcm`. It
+opens it the way the FIFO source opens a pipe (read-write and non-blocking: no writer is not a
+hang, a writer that closes is not an end) and reads it always, played or not, so the pipe never
+fills. It converts the FIFO's float32 44.1 kHz stereo to the server's channel count with the
+media player's remix and to the server's rate with its resampler (`chorus_decode`), and writes
+the receiver's port (`crates/server/src/soloistport.rs`), a ring the audio thread takes one
+chunk from each tick without waiting.
+
+The port's rules, and where each number comes from:
+
+- **While no group plays the receiver, what is read is discarded** (and counted). Selecting and
+  deselecting both empty the ring, so a group that takes a receiver hears only what arrived
+  after it did.
+- **A full ring drops and counts**: the line-in port's rule. It holds one second (`ASSUMED`, the
+  size of the other ports).
+- **A fill target of 120 ms.** The port plays nothing until it holds 120 ms, and fills to it
+  again after it ran dry. This is chorus's choice from goal 17's PipeWire probe (PipeWire 1.4.2
+  and WirePlumber 0.5.8 on the development host, 2026-10-03; `Source: host`, its report is the
+  goal's measurement track's): the sink writes the FIFO one whole quantum at a time, at most
+  2048 frames (46.4 ms), and on that host, loaded and without real-time scheduling, the largest
+  gap between two writes was 98 ms. 120 ms is that gap plus one default 20 ms chunk. It is the
+  "extra pipe buffer" P7 expected chorus to absorb; it delays what a room hears and is not a
+  sync error, because every room of the group plays the same chunk at the same instant.
+- **Running dry is silence, on time, and counted**: the missing part of a chunk is padded, and a
+  dry spell shorter than 500 ms (`ASSUMED`) is an underrun. A longer one is the music having
+  stopped (an idle sink writes nothing at all), and the next stream starts on an empty ring.
+- The probe also saw whole quanta lost on the loaded host. Nothing can put those back; the
+  frames either side are played in order, and the gap is an underrun in the counters.
+
+The counters are in `GET /metrics` (`docs/telemetry.md`).
+
+**Not built: rate matching.** The receiver's audio is clocked by the receiver container's
+PipeWire graph, which is driven by a timer on the host's clock (the probe measured 44100.07
+frames a second, 2 parts in a million fast), and chorus's timeline is the same host's monotonic
+clock, so the two do not drift apart as a DAC and a server would. What difference there is ends
+as a dropped write or an underrun after hours, both counted. If the owner's build shows more,
+the fix is the line-in's (a rate-matched resampler), not a larger ring.
+
+### The source and take the room (K78)
+
+A group that plays receiver `i` has the source `soloist:r<i>` (`docs/control-plane.md`). No
+command names it: the manager is the only thing that gives a group that source, and a client's
+`take` naming one is refused by name.
+
+`soloist-manager` (`crates/server/src/soloist.rs`) connects to every `r<i>.sock`, runs the pool
+(`chorus_soloist::pool`) over the targets of the control state, and sends each supervisor the
+`assign` or `release` it has not been sent. Then:
+
+- **A target's device plays** (its receiver reports `playing`) **and the target's group does
+  not play it**: first every OTHER receiver that a room of the target is hearing is sent `pause`
+  then `deactivate`, then the target's rooms are made one group playing the receiver, with the
+  catalog's own `take`. So playing on a saved group's device moves the member rooms into the
+  group, and a member room's own device, if it was playing, is paused and deactivated before
+  the take; and playing on a room's own device while the room is in a group takes the room out
+  of the group. Two Spotify sources are never mixed in a room: the displaced receiver is told
+  first, and the room's slot changes input at a chunk boundary, from one receiver's port to the
+  other's (proposal P7, the Developer Policy's overlap clause).
+- This rule is read literally in both directions, as the goal's design states it: when a room's
+  own device takes the room out of a group, the group's device is one "a room of the target is
+  hearing", so it is paused too, and the rooms left in the group go quiet until somebody plays
+  on the group's device again. (If the same account moved its playback from the group's device
+  to the room's, Spotify itself stops the group's device; chorus doing so as well changes
+  nothing. With two accounts it is a choice, recorded in the decision record as one to revisit
+  on the owner's build.)
+- **A group stops playing a receiver, whoever made it** (it took another source, an alarm rang,
+  a UPnP cast took the room, the group dissolved): the receiver is sent `pause`, and
+  `deactivate` if it was the active device, so the Spotify app shows the truth and nothing
+  plays unheard.
+- After the manager's own `pause` a receiver that still says `playing` is left alone for 3 s
+  (`ASSUMED`), so a report already on its way does not take the room back.
+
+What is playing goes into the group's now-playing record: the item's name, its creators joined
+by `, `, its parent's name as the album, its `large` cover (else the first), its duration, and
+`playing` or `paused`, with `via` `spotify`. `position.timestamp_ms` is never read.
+
+`chorusctl soloist pause|resume|next|previous <room or group>` (the catalog's `playback`) are
+forwarded to the receiver the group plays as `pause`, `play`, `skip_next` and `skip_prev`.
+
+### Volume (K77, K81), and why there are two mappings
+
+Which gain stage Soloist's volume drives is not documented (`--initial-volume`: "If omitted,
+Spotify Soloist uses the audio system's current/default volume", the command-line reference,
+read 2026-10-03), and only the owner's build can show whether the audio in the FIFO has already
+been scaled by it. P7 therefore asked for both mappings behind one switch:
+
+- **`--soloist-volume chorus`** (the default) takes the audio to arrive untouched (Soloist is
+  started with `--initial-volume 100`). A volume the Spotify app sets becomes the target's
+  volume in chorus, through the catalog's own `volume` and `group_volume`, so every room's
+  limit clamps it; and the target's volume, whoever changed it, is sent to the receiver with
+  `set_volume`, so the app's slider shows what the rooms are at (and jumps back to the limit
+  when a person pushed it past).
+- **`--soloist-volume receiver`** takes Soloist's volume to act on its audio: it is the group
+  gain, chorus leaves its own volumes alone (they are per-room trims on top), and chorus only
+  clamps: a Spotify volume above the target's limit is set back to the limit.
+
+The echo guard is one rule in both: a `volume_changed` equal to what the manager last sent is
+its own echo and is not applied. If the default is wrong for the owner's build (the audio is
+scaled by Soloist AND by chorus), music is quieter than the slider says and never louder: the
+limits hold under either mapping.
+
+### The alarm source, and why it ships off
+
+`docs/inputs.md`, "The Spotify playlist source", has the behaviour and the fallback reasons.
+The switch is off by default because of the Developer Policy's alarm clause (proposal P7,
+"Alarms": the API allows the play, and the clause is the owner's to read in their own
+dashboard before turning it on).
+
+### Announcements pause, they do not duck (a rule for goal 20)
+
+When the announcement path arrives (goal 20, K71), a room playing a `soloist:` source is
+PAUSED through the API for the announcement and resumed after it, never ducked, and a switch
+to or from a `soloist:` source cuts and never crossfades (the same overlap clause). Nothing of
+it is built here; `Source::is_soloist` (`chorus_control::rooms`) is the query that path uses.
+
+### When the build expires
+
+Soloist builds expire 90 days after their build date. The server shows it four ways, from 14
+days before:
+
+- the state's `soloist` member: `warning` (`Soloist build expires in N days`, then `Soloist
+  build expired`) and `build.expires_in_days` (`docs/control-plane.md`);
+- the control page's warning line (`docs/control-page.md`);
+- `chorus_soloist_build_expires_seconds` and `chorus_soloist_build_expired` in `GET /metrics`;
+- a log line when the warning first holds and once a day after: `chorus-server: soloist
+  warning: Soloist build expires in N days`.
+
+`chorusctl soloist status` prints the warning, the build and every receiver. Updating is the
+owner's action: replace the Soloist binary in the directory the receiver containers mount, then
+`chorusctl soloist restart`, which has every supervisor read the binary again, clear `expired`
+and start again.
+
+### Tests
+
+`crates/server/tests/soloist_receivers.rs` runs the real `chorus-server`, one real supervisor
+per receiver (`--pipewire none`) and the fake Soloist under each, with the test as the Spotify
+app. Both programs are examples of `crates/server` (`server-test-soloistd`,
+`server-test-fake-soloist`), so nothing that builds an image or a release builds them. Its
+servers run at 44.1 kHz, so the fake's signal is compared bit for bit; the 48 kHz path is the
+same reader with the resampler in it, held to the resampler's own output by the reader's unit
+tests. Sixteen tests, about 23 s when the binary runs alone on the development host (they run
+in parallel; the four that wait out a real bound are the alarm timeout's 10 s, the 3.5 s that
+shows a paused receiver is not played again, and two alarms' 12 s of modelled lead time).
+`crates/server/tests/control_thread_population.rs` holds the thread counts with no receiver
+container running.
+
 ## What is assumed, pending the owner's build
 
 Soloist's documentation does not state these; each is a named assumption here and an
@@ -391,6 +566,11 @@ owner-build question. Where the code depends on one, it fails safe.
 | the cache size, 256 MB | P7's `ASSUMED` | a flag |
 | what Soloist needs from its host beyond PipeWire (shared libraries, CA certificates) | that a glibc program built for Linux runs on Debian 13 with the image's packages (a LEAD: issue 1's reporter ran it in a Debian trixie container) | Soloist does not start: `failed`, with its own message in the log; the missing package is a line in `deploy/soloist/debian-packages.pins` |
 | which processes Soloist starts | not relied on: the receiver container runs an init | none |
+| which gain stage Soloist's volume drives | the audio arrives unscaled (`--soloist-volume chorus`) | music is quieter than the slider says; `--soloist-volume receiver` is the other mapping |
+| whether `play` on a device that is already playing sends `playback_changed` | not relied on: after `play` is accepted the manager asks for the state | none |
+| whether a paused Soloist answers `pause` with an event | not relied on: the settle time is a bound, not a wait | a `playing` report is ignored for at most 3 s |
+| Soloist's cadence into PipeWire | one quantum of at most 2048 frames at a time, as `pw-cat` did in the probe | more underruns in the counters; the fill target is one constant |
+| whether two devices of one account can play at once | not relied on: a displaced device is paused by chorus either way | none |
 
 ## Sources
 

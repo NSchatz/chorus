@@ -85,6 +85,18 @@
 //! format 5. What is a fact about now stays out, as ever: whether a speaker's
 //! session is up, its software, its roles, its key's fingerprint (the pin
 //! file is the server's, `adopted-endpoints`), and the key changes refused.
+//!
+//! # Format 6 (goal 17: stored sources and input labels)
+//!
+//! Format 6 adds two section kinds: `[stored-source <id>]` with three fields,
+//! each required: `kind` (`url` or `spotify`), `value` (held to the rule the
+//! catalog holds a `source_store` to) and `name`; and
+//! `[input-label <endpoint>/<input>]` with two, each required: `name` and
+//! `role` (`line-in` or `streamer`). An alarm whose source is `stored:<id>`
+//! names a stored source of this file. A format 1 to 5 file loads unchanged
+//! with neither; the next write is format 6. What a stored source's player
+//! is playing, and whether a labelled input is offered, are facts about now
+//! and stay out.
 
 use std::fmt;
 use std::io::{self, Write};
@@ -92,8 +104,9 @@ use std::path::{Path, PathBuf};
 
 use crate::catalog::{is_display_name, is_identifier, Command, Volume};
 use crate::rooms::{
-    validate_layout, Alarm, Autoplay, BondMember, ClockTime, Days, InputId, Link, QuietWindow,
-    Role, SavedGroup, Source, MAX_DURATION_MIN, MAX_QUIET_WINDOWS, MAX_RAMP_S,
+    validate_layout, Alarm, Autoplay, BondMember, ClockTime, Days, InputId, InputLabel, InputRole,
+    Link, QuietWindow, Role, SavedGroup, Source, StoredKind, StoredSource, MAX_DURATION_MIN,
+    MAX_QUIET_WINDOWS, MAX_RAMP_S,
 };
 use crate::sound::{
     EqFilter, FixedPoint, Polarity, CROSSOVER_HZ, ROOM_EQ_MAX_FILTERS, SUB_LEVEL_CDB, TONE_DB,
@@ -103,10 +116,10 @@ use crate::theater::{TvUpmix, AV_TRIM_MS};
 use crate::zones::{Zone, Zones};
 
 /// The version of this file format, which is what every write produces.
-pub const STATE_FORMAT: u32 = 5;
+pub const STATE_FORMAT: u32 = 6;
 
 /// Every format this build reads.
-pub const READ_FORMATS: &[u32] = &[1, 2, 3, 4, 5];
+pub const READ_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6];
 
 /// Why persisted state could not be read.
 #[derive(Debug)]
@@ -225,7 +238,8 @@ pub fn render(zones: &Zones) -> String {
     out.push_str("# and a room's limit, quiet hours and bonded set (docs/control-plane.md);\n");
     out.push_str("# format 3 a room's sound, bass management and correction EQ; format 4\n");
     out.push_str("# a room's TV upmix and A/V trim and an autoplay rule's TV behaviour;\n");
-    out.push_str("# format 5 the adopted speakers ([speaker]: name, named, room).\n");
+    out.push_str("# format 5 the adopted speakers ([speaker]: name, named, room);\n");
+    out.push_str("# format 6 stored sources ([stored-source]) and input labels ([input-label]).\n");
     out.push('\n');
     out.push_str(&format!("format = {}\n", STATE_FORMAT));
     out.push_str(&format!("serial = {}\n", zones.serial()));
@@ -319,6 +333,19 @@ pub fn render(zones: &Zones) -> String {
         ));
         out.push_str(&format!("low_latency = {}\n", u8::from(rule.low_latency)));
     }
+    for stored in zones.stored_sources() {
+        out.push('\n');
+        out.push_str(&format!("[stored-source {}]\n", escape(&stored.id)));
+        out.push_str(&format!("kind = {}\n", stored.kind.name()));
+        out.push_str(&format!("value = {}\n", escape(&stored.value)));
+        out.push_str(&format!("name = {}\n", escape(&stored.name)));
+    }
+    for label in zones.input_labels() {
+        out.push('\n');
+        out.push_str(&format!("[input-label {}]\n", label.input.literal()));
+        out.push_str(&format!("name = {}\n", escape(&label.name)));
+        out.push_str(&format!("role = {}\n", label.role.name()));
+    }
     for speaker in zones.speakers().all() {
         out.push('\n');
         out.push_str(&format!("[speaker {}]\n", escape(&speaker.id)));
@@ -382,6 +409,14 @@ fn kinds_of(format: u32) -> &'static [&'static str] {
     match format {
         1 => &["zone"],
         2..=4 => &["zone", "endpoint", "saved-group", "alarm", "autoplay"],
+        5 => &[
+            "zone",
+            "endpoint",
+            "saved-group",
+            "alarm",
+            "autoplay",
+            "speaker",
+        ],
         _ => &[
             "zone",
             "endpoint",
@@ -389,6 +424,8 @@ fn kinds_of(format: u32) -> &'static [&'static str] {
             "alarm",
             "autoplay",
             "speaker",
+            "stored-source",
+            "input-label",
         ],
     }
 }
@@ -398,6 +435,7 @@ fn added_in(kind: &str) -> u32 {
     match kind {
         "zone" => 1,
         "speaker" => 5,
+        "stored-source" | "input-label" => 6,
         _ => 2,
     }
 }
@@ -452,7 +490,7 @@ pub fn load(text: &str, default_audio: &str) -> Result<Zones, StateError> {
             // and a named refusal on one somebody hand-edited wrongly.
             let id =
                 unescape(id.trim()).map_err(|detail| StateError::Malformed { line, detail })?;
-            let valid = if kind == "autoplay" {
+            let valid = if kind == "autoplay" || kind == "input-label" {
                 InputId::parse(&id).is_some()
             } else {
                 is_identifier(&id)
@@ -598,6 +636,40 @@ pub fn load(text: &str, default_audio: &str) -> Result<Zones, StateError> {
     let target_exists = |zones: &Zones, target: &str| {
         zones.zone(target).is_some() || zones.saved_groups().iter().any(|g| g.id == target)
     };
+    // (format 6) Stored sources before the alarms that name them.
+    for section in sections.iter().filter(|s| s.kind == "stored-source") {
+        let word = section.get("kind")?;
+        let kind = StoredKind::parse(&word)
+            .ok_or_else(|| section.fail(format!("'{}' is not a kind of stored source", word)))?;
+        let value = section.get("value")?;
+        if let Some(problem) = StoredSource::value_problem(kind, &value) {
+            return Err(section.fail(problem));
+        }
+        let name = section.get("name")?;
+        if !is_display_name(&name) {
+            return Err(section.fail(format!("'{}' is not a name", name)));
+        }
+        zones.restore_stored_source(StoredSource {
+            id: section.id.clone(),
+            kind,
+            value,
+            name,
+        });
+    }
+    for section in sections.iter().filter(|s| s.kind == "input-label") {
+        let name = section.get("name")?;
+        if !is_display_name(&name) {
+            return Err(section.fail(format!("'{}' is not a name", name)));
+        }
+        let word = section.get("role")?;
+        let role = InputRole::parse(&word)
+            .ok_or_else(|| section.fail(format!("'{}' is not an input's role", word)))?;
+        zones.restore_input_label(InputLabel {
+            input: InputId::parse(&section.id).expect("checked at the header"),
+            name,
+            role,
+        });
+    }
     for section in sections.iter().filter(|s| s.kind == "alarm") {
         let target = section.get("target")?;
         if !target_exists(&zones, &target) {
@@ -617,8 +689,16 @@ pub fn load(text: &str, default_audio: &str) -> Result<Zones, StateError> {
                 .ok_or_else(|| section.fail(format!("'{}' is not HH:MM", time)))?,
             days: Days::from_names(days.split(',').map(str::trim).filter(|d| !d.is_empty()))
                 .map_err(|e| section.fail(e))?,
-            source: Source::parse(&source)
-                .ok_or_else(|| section.fail(format!("'{}' is not a source", source)))?,
+            source: match Source::parse(&source) {
+                Some(Source::Stored(id)) if zones.stored_source(&id).is_none() => {
+                    return Err(section.fail(format!(
+                        "plays 'stored:{}', which is not a stored source in this file",
+                        id
+                    )))
+                }
+                Some(source) => source,
+                None => return Err(section.fail(format!("'{}' is not a source", source))),
+            },
             volume: Volume::parse(&volume)
                 .ok_or_else(|| section.fail(format!("'{}' is not a volume", volume)))?,
             ramp_s: section.number("ramp_s", MAX_RAMP_S)?,
@@ -1017,9 +1097,9 @@ mod tests {
 
     #[test]
     fn a_state_file_this_build_does_not_understand_is_refused_rather_than_guessed() {
-        // Format 5 is this build's own since goal 14; the next one is not.
-        let err = load("format = 6\nserial = 1\n", "x").unwrap_err();
-        assert!(err.to_string().contains("declares format 6"), "{}", err);
+        // Format 6 is this build's own since goal 17; the next one is not.
+        let err = load("format = 7\nserial = 1\n", "x").unwrap_err();
+        assert!(err.to_string().contains("declares format 7"), "{}", err);
         let err = load("serial = 1\n", "x").unwrap_err();
         assert!(err.to_string().contains("no format version"), "{}", err);
     }

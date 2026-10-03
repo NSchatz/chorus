@@ -83,12 +83,12 @@ impl PcmSource for FileSource {
     target_os = "linux",
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
-const O_NONBLOCK: Option<i32> = Some(0o4000);
+pub(crate) const O_NONBLOCK: Option<i32> = Some(0o4000);
 #[cfg(not(all(
     target_os = "linux",
     any(target_arch = "x86_64", target_arch = "aarch64")
 )))]
-const O_NONBLOCK: Option<i32> = None;
+pub(crate) const O_NONBLOCK: Option<i32> = None;
 
 /// How often an empty pipe is looked at again while a chunk is being waited
 /// for. A millisecond is a twentieth of the default chunk.

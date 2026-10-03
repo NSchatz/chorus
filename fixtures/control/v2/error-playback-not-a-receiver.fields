@@ -1,0 +1,17 @@
+# Canonical input for the catalog v2 error-playback-not-a-receiver vector.
+#
+# `input` is refused, by the decoder or by the room state the lines below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-playback-not-a-receiver.json. Nothing of it is applied.
+#
+# (goal 17) A playback command for a room whose group plays the stream: the server runs a receiver (`soloist.N = <id> | <state> | <target> | <name>`), and the room does not play it.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+zones = kitchen
+soloist.0 = r0 | running | room:kitchen | kitchen
+input = {"v":2,"t":"playback","target":"kitchen","action":"pause"}
+field = target
+ends_the_session = 0

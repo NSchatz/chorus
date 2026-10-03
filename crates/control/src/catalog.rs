@@ -41,9 +41,10 @@ use std::fmt;
 
 use crate::json::{self, Value};
 use crate::rooms::{
-    validate_layout, Alarm, Autoplay, BondMember, ClockTime, Days, InputId, Link, QuietWindow,
-    Role, Source, MAX_DEFINITIONS, MAX_DURATION_MIN, MAX_QUIET_WINDOWS, MAX_RAMP_S, MAX_SLEEP_MIN,
-    SOURCE_SPELLINGS,
+    validate_layout, Alarm, Autoplay, BondMember, ClockTime, Days, InputId, InputLabel, InputRole,
+    Link, PlaybackAction, QuietWindow, Role, SoloistState, Source, StoredKind, StoredSource,
+    ALARM_SOURCE_SPELLINGS, MAX_DEFINITIONS, MAX_DURATION_MIN, MAX_QUIET_WINDOWS, MAX_RAMP_S,
+    MAX_SLEEP_MIN, SOURCE_SPELLINGS,
 };
 use crate::sound::{
     EqFilter, FixedPoint, Polarity, CROSSOVER_HZ, ROOM_EQ_MAX_FILTERS, SUB_LEVEL_CDB, TONE_DB,
@@ -395,6 +396,30 @@ pub enum Command {
     },
     /// (v2, goal 14) Read the firmware directory again and grade every image.
     FirmwareRescan,
+    /// (v2, goal 17) Store, or replace, a named source an alarm can play
+    /// (`stored:<id>`): a stream URL or a Spotify URI.
+    SourceStore(StoredSource),
+    /// (v2, goal 17) Forget a stored source. Refused while an alarm plays it.
+    SourceForget {
+        /// The stored source.
+        id: String,
+    },
+    /// (v2, goal 17) Label an input: its name and what it is wired to. An
+    /// empty name with the role `line-in` removes the label.
+    InputLabel(InputLabel),
+    /// (v2, goal 17) Tell every Soloist receiver's supervisor to read its
+    /// binary again and start again: what the owner runs after replacing an
+    /// expired build.
+    SoloistRestart,
+    /// (v2, goal 17) Pause, resume or skip what the Spotify receiver of a
+    /// target's group is playing. Refused for a group that plays anything
+    /// else.
+    Playback {
+        /// A room, a saved group or a formed group.
+        target: String,
+        /// What to do.
+        action: PlaybackAction,
+    },
 }
 
 impl Command {
@@ -434,6 +459,11 @@ impl Command {
             Command::FirmwareInstall { .. } => "firmware_install",
             Command::FirmwareCancel { .. } => "firmware_cancel",
             Command::FirmwareRescan => "firmware_rescan",
+            Command::SourceStore(_) => "source_store",
+            Command::SourceForget { .. } => "source_forget",
+            Command::InputLabel(_) => "input_label",
+            Command::SoloistRestart => "soloist_restart",
+            Command::Playback { .. } => "playback",
         }
     }
 
@@ -665,6 +695,23 @@ impl Command {
             }
             Command::FirmwareCancel { speaker } => text("speaker", speaker),
             Command::FirmwareRescan => {}
+            Command::SourceStore(stored) => {
+                text("id", &stored.id);
+                text("kind", stored.kind.name());
+                text("value", &stored.value);
+                text("name", &stored.name);
+            }
+            Command::SourceForget { id } => text("id", id),
+            Command::InputLabel(label) => {
+                text("input", &label.input.literal());
+                text("name", &label.name);
+                text("role", label.role.name());
+            }
+            Command::SoloistRestart => {}
+            Command::Playback { target, action } => {
+                text("target", target);
+                text("action", action.name());
+            }
         }
         Value::Obj(m)
     }
@@ -729,6 +776,63 @@ pub fn alarm_value(a: &Alarm) -> Value {
         ),
         ("enabled".to_string(), Value::Bool(a.enabled)),
     ])
+}
+
+/// A stored source's fields, in the declared order, as the state message
+/// carries them: `id`, `kind`, `value`, `name`.
+pub fn stored_source_value(s: &StoredSource) -> Value {
+    Value::Obj(vec![
+        ("id".to_string(), Value::text(&s.id)),
+        ("kind".to_string(), Value::text(s.kind.name())),
+        ("value".to_string(), Value::text(&s.value)),
+        ("name".to_string(), Value::text(&s.name)),
+    ])
+}
+
+/// An input label's fields, in the declared order, as the state message
+/// carries them: `input`, `name`, `role`.
+pub fn input_label_value(l: &InputLabel) -> Value {
+    Value::Obj(vec![
+        ("input".to_string(), Value::text(&l.input.literal())),
+        ("name".to_string(), Value::text(&l.name)),
+        ("role".to_string(), Value::text(l.role.name())),
+    ])
+}
+
+/// The state's `soloist` member (goal 17), in the declared order: the
+/// receivers always, the build once a supervisor reported one, the warning
+/// and the exhausted targets only when there is something to say.
+pub fn soloist_value(s: &SoloistState) -> Value {
+    let mut m = vec![(
+        "receivers".to_string(),
+        Value::Arr(
+            s.receivers
+                .iter()
+                .map(|r| {
+                    Value::Obj(vec![
+                        ("id".to_string(), Value::text(&r.id)),
+                        ("state".to_string(), Value::text(&r.state)),
+                        ("target".to_string(), Value::text(&r.target)),
+                        ("name".to_string(), Value::text(&r.name)),
+                    ])
+                })
+                .collect(),
+        ),
+    )];
+    if let Some(build) = &s.build {
+        let mut b = vec![("version".to_string(), Value::text(&build.version))];
+        if let Some(days) = build.expires_in_days {
+            b.push(("expires_in_days".to_string(), Value::int(days)));
+        }
+        m.push(("build".to_string(), Value::Obj(b)));
+    }
+    if let Some(warning) = &s.warning {
+        m.push(("warning".to_string(), Value::text(warning)));
+    }
+    if !s.exhausted.is_empty() {
+        m.push(("exhausted".to_string(), texts(&s.exhausted)));
+    }
+    Value::Obj(m)
 }
 
 /// A value in hundredths of a dB, as the catalog writes it: two places.
@@ -1151,6 +1255,19 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
                 None => None,
                 Some(_) => Some(source_field(value, "source").map_err(at)?),
             };
+            if let Some(Source::Stored(stored)) = &source {
+                // (goal 17) A stored source is an alarm's: brief section 4.8
+                // names "stored alarm stream URLs" as the input path, and no
+                // command plays a URL in a room (ADR 0124).
+                return Err(at(Refusal::rejected(
+                    "source",
+                    format!(
+                        "'stored:{}' is a stored source, which only an alarm plays (alarm_set \
+                         with this source); a take cannot name one",
+                        stored
+                    ),
+                )));
+            }
             Command::Take { target, source }
         }
         "group_volume" => {
@@ -1211,7 +1328,7 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
                 target: id("target")?,
                 time: clock_field(value, "time").map_err(at)?,
                 days: days_field(value, "days").map_err(at)?,
-                source: source_field(value, "source").map_err(at)?,
+                source: alarm_source_field(value, "source").map_err(at)?,
                 volume: volume_field(value, "volume").map_err(at)?,
                 ramp_s: whole(value, "ramp_s", 0, i64::from(MAX_RAMP_S)).map_err(at)? as u32,
                 duration_min: whole(value, "duration_min", 0, i64::from(MAX_DURATION_MIN))
@@ -1407,6 +1524,110 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
         "firmware_rescan" => {
             fields(&["v", "t"], &[])?;
             Command::FirmwareRescan
+        }
+        "soloist_restart" => {
+            fields(&["v", "t"], &[])?;
+            Command::SoloistRestart
+        }
+        "playback" => {
+            fields(&["v", "t", "target", "action"], &[])?;
+            let target = id("target")?;
+            let word = value.get("action").and_then(Value::as_str).unwrap_or("");
+            let action = PlaybackAction::parse(word).ok_or_else(|| {
+                at(Refusal::rejected(
+                    "action",
+                    format!(
+                        "'{}' is not a playback action: the catalog declares 'pause', 'resume', \
+                         'next' and 'previous'",
+                        word.escape_debug()
+                    ),
+                ))
+            })?;
+            Command::Playback { target, action }
+        }
+        "source_store" => {
+            fields(&["v", "t", "id", "kind", "value", "name"], &[])?;
+            let id = id("id")?;
+            let word = value.get("kind").and_then(Value::as_str).unwrap_or("");
+            let kind = StoredKind::parse(word).ok_or_else(|| {
+                at(Refusal::rejected(
+                    "kind",
+                    format!(
+                        "'{}' is not a kind of stored source: the catalog declares 'url' and \
+                         'spotify'",
+                        word
+                    ),
+                ))
+            })?;
+            let stored = match value.get("value").and_then(Value::as_str) {
+                Some(text) => text.to_string(),
+                None => {
+                    return Err(at(Refusal::rejected(
+                        "value",
+                        "the field 'value' is not a string".to_string(),
+                    )))
+                }
+            };
+            if let Some(problem) = StoredSource::value_problem(kind, &stored) {
+                return Err(at(Refusal::rejected("value", problem)));
+            }
+            Command::SourceStore(StoredSource {
+                id,
+                kind,
+                value: stored,
+                name: display_name(value, "name").map_err(at)?,
+            })
+        }
+        "source_forget" => {
+            fields(&["v", "t", "id"], &[])?;
+            Command::SourceForget { id: id("id")? }
+        }
+        "input_label" => {
+            fields(&["v", "t", "input", "name", "role"], &[])?;
+            let input = match value.get("input").and_then(Value::as_str) {
+                Some(text) => InputId::parse(text).ok_or_else(|| {
+                    at(Refusal::rejected(
+                        "input",
+                        format!(
+                            "'{}' is not an input: the catalog declares '<endpoint>/<input>', \
+                             both identifiers",
+                            text
+                        ),
+                    ))
+                })?,
+                None => {
+                    return Err(at(Refusal::rejected(
+                        "input",
+                        "the field 'input' is not a string".to_string(),
+                    )))
+                }
+            };
+            let word = value.get("role").and_then(Value::as_str).unwrap_or("");
+            let role = InputRole::parse(word).ok_or_else(|| {
+                at(Refusal::rejected(
+                    "role",
+                    format!(
+                        "'{}' is not an input's role: the catalog declares 'line-in' and \
+                         'streamer'",
+                        word
+                    ),
+                ))
+            })?;
+            // An empty name with the role 'line-in' removes the label; any
+            // other name is a display name.
+            let name = match value.get("name").and_then(Value::as_str) {
+                Some("") if role == InputRole::LineIn => String::new(),
+                Some("") => {
+                    return Err(at(Refusal::rejected(
+                        "name",
+                        "a streamer has a name; an empty name goes with the role 'line-in' \
+                         only, and removes the label"
+                            .to_string(),
+                    )))
+                }
+                _ => display_name(value, "name").map_err(at)?,
+            };
+            Command::InputLabel(InputLabel { input, name, role })
         }
         "bass_management" => {
             fields(
@@ -1692,15 +1913,53 @@ fn days_field(value: &Value, field: &str) -> Result<Days, Refusal> {
 
 fn source_field(value: &Value, field: &str) -> Result<Source, Refusal> {
     let text = value.get(field).and_then(Value::as_str).unwrap_or("");
-    Source::parse(text).ok_or_else(|| {
-        Refusal::rejected(
+    not_a_receiver(
+        field,
+        Source::parse(text).ok_or_else(|| {
+            Refusal::rejected(
+                field,
+                format!(
+                    "'{}' is not a source: the catalog declares {}",
+                    text, SOURCE_SPELLINGS
+                ),
+            )
+        })?,
+    )
+}
+
+/// (goal 17) An alarm's source: a group's sources and `stored:<id>`.
+fn alarm_source_field(value: &Value, field: &str) -> Result<Source, Refusal> {
+    let text = value.get(field).and_then(Value::as_str).unwrap_or("");
+    not_a_receiver(
+        field,
+        Source::parse(text).ok_or_else(|| {
+            Refusal::rejected(
+                field,
+                format!(
+                    "'{}' is not a source: the catalog declares {}",
+                    text, ALARM_SOURCE_SPELLINGS
+                ),
+            )
+        })?,
+    )
+}
+
+/// (goal 17) No command names a Soloist receiver as a source: a receiver's
+/// audio follows the Spotify app, and the server's receiver manager is the
+/// only one that gives a group that source (design: take the room, K78).
+fn not_a_receiver(field: &str, source: Source) -> Result<Source, Refusal> {
+    match source {
+        Source::Soloist(id) => Err(Refusal::rejected(
             field,
             format!(
-                "'{}' is not a source: the catalog declares {}",
-                text, SOURCE_SPELLINGS
+                "'soloist:{}' is a Spotify receiver, which plays where the Spotify app plays \
+                 it: choose the room or group as the device in the Spotify app; a command \
+                 cannot name one",
+                id
             ),
-        )
-    })
+        )),
+        other => Ok(other),
+    }
 }
 
 fn identifier_list(value: &Value, field: &str) -> Result<Vec<String>, Refusal> {

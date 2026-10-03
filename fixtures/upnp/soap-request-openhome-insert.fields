@@ -1,0 +1,9 @@
+soapaction = "urn:av-openhome-org:service:Playlist:1#Insert"
+service = ohl
+parse = ok
+service_type = urn:av-openhome-org:service:Playlist:1
+action = Insert
+arg.0 = AfterId=0
+arg.1 = Uri=http://192.0.2.9/a.flac?x=1&y=2
+arg.2 = Metadata=<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/"><item id="1"><dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">A &amp; B</dc:title></item></DIDL-Lite>
+validate = ok
