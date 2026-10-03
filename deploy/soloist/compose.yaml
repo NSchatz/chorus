@@ -1,0 +1,141 @@
+# The Spotify Soloist receivers under Docker Compose: the reference form
+# (docs/soloist.md, "Running the receivers"; ADR "the chorus-soloist image").
+# The homelab's stack is a copy in the homelab repo's own conventions, opened
+# there as a PR the owner merges and applies (K28). Nothing here deploys.
+#
+# One service, CHORUS_SOLOIST_RECEIVERS identical containers. Each holds
+# PipeWire, WirePlumber, chorus-soloistd and, mounted from the host, the
+# owner's Soloist binary: the image carries NO Spotify software. A container
+# claims the lowest free receiver index in the shared receiver directory, so
+# the replicas need no names of their own (and may have none: container_name
+# cannot be combined with replicas).
+#
+# Before the first start, the owner (docs/soloist.md has each step):
+#   1. creates the macvlan network on the LAN interface, with a range of
+#      addresses reserved for the receivers, and names it below. It is
+#      external: its interface, subnet and range stay out of this file.
+#   2. creates the four host directories with owner 65532 (the user of both
+#      chorus images), places the Soloist binary as soloist/bin/soloist and
+#      the API key as soloist/secrets/api_key (mode 0400, owner 65532).
+#   3. sets CHORUS_SOLOIST_IMAGE to the image by digest: the manifest digest
+#      `make soloist-image` prints, which is the digest a registry serves
+#      once the owner has pushed the release's tarball (docs/release.md).
+#
+#   CHORUS_SOLOIST_IMAGE=<registry>/chorus-soloist@sha256:<digest> \
+#     docker compose -f deploy/soloist/compose.yaml up -d
+
+---
+name: chorus-soloist
+
+services:
+  chorus-soloist:
+    image: ${CHORUS_SOLOIST_IMAGE:-chorus-soloist:dev}
+    restart: unless-stopped
+    # The pool (P7 Option C): one receiver per container, each with its own
+    # network namespace and LAN address, because Soloist's own mDNS
+    # responder needs UDP 5353 to itself (P7: a LEAD from Soloist issue 1).
+    # The same number goes to --receivers below and to chorus-server's
+    # --soloist-receivers.
+    deploy:
+      replicas: ${CHORUS_SOLOIST_RECEIVERS:-4}
+    networks:
+      - receivers
+    # An init as PID 1: chorus-soloistd reaps PipeWire, WirePlumber and
+    # Soloist, its own children, and nothing else; whatever Soloist leaves
+    # behind is reaped by the init, which also passes SIGTERM on.
+    init: true
+    command:
+      - --soloist-dir
+      - /run/chorus/soloist
+      - --receivers
+      - "${CHORUS_SOLOIST_RECEIVERS:-4}"
+      - --api-key-file
+      - /run/secrets/soloist_api_key
+      - --state-dir
+      - /var/lib/chorus-soloist
+      - --cache-dir
+      - /var/cache/chorus-soloist
+    volumes:
+      # The receiver directory, shared with chorus-server and with nothing
+      # else: r<i>.lock, r<i>.pcm (the audio) and r<i>.sock (control).
+      - type: bind
+        source: ${CHORUS_SOLOIST_HOST_DIR:-/srv/chorus/soloist}/receivers
+        target: /run/chorus/soloist
+        bind:
+          create_host_path: false
+      # The owner's Soloist binary, replaced every 90 days. Read-only.
+      - type: bind
+        source: ${CHORUS_SOLOIST_HOST_DIR:-/srv/chorus/soloist}/bin
+        target: /opt/soloist
+        read_only: true
+        bind:
+          create_host_path: false
+      # The owner's API key. Read-only; never in the image or this file.
+      - type: bind
+        source: ${CHORUS_SOLOIST_HOST_DIR:-/srv/chorus/soloist}/secrets/api_key
+        target: /run/secrets/soloist_api_key
+        read_only: true
+        bind:
+          create_host_path: false
+      # Soloist's data directories, one per target: the Spotify Connect
+      # identity and session of each room and group. Worth backing up.
+      - type: bind
+        source: ${CHORUS_SOLOIST_HOST_DIR:-/srv/chorus/soloist}/state
+        target: /var/lib/chorus-soloist
+        bind:
+          create_host_path: false
+      # Soloist's cache, one directory per target, up to --cache-size each
+      # (256 MB, ASSUMED, P7). It is a path of its own so it can sit
+      # outside whatever the host backs up.
+      - type: bind
+        source: ${CHORUS_SOLOIST_CACHE_DIR:-/var/cache/chorus-soloist}
+        target: /var/cache/chorus-soloist
+        bind:
+          create_host_path: false
+    # The root file system is read-only. PipeWire's socket and the
+    # configuration chorus-soloistd writes live in a tmpfs that the
+    # container's user owns (the supervisor makes it mode 0700).
+    read_only: true
+    tmpfs:
+      - /run/chorus-soloist:uid=65532,gid=65532,mode=0700,size=1m
+      - /tmp:size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Per receiver. P7's limits, ASSUMED until the owner's build is
+    # measured: Soloist's own cost is unknown here (no binary, no key).
+    # The PipeWire half is measured (goal 17's probe, PipeWire 1.4.2 and
+    # WirePlumber 0.5.8, one client playing): about 19 MB RSS, about 0.25 %
+    # of one core, and 6 threads. chorus-soloistd's and Soloist's own
+    # threads count against pids_limit too.
+    mem_limit: 192m
+    cpus: 0.25
+    pids_limit: 64
+    # The image's own probe: this container's supervisor holds its receiver
+    # (its lock is held, its socket and FIFO exist, PipeWire's socket
+    # exists). It connects to nothing: a connection to the receiver's
+    # socket would replace chorus-server's.
+    healthcheck:
+      test:
+        - CMD
+        - /usr/local/bin/chorus-soloistd
+        - --health-check
+        - --soloist-dir
+        - /run/chorus/soloist
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  # A macvlan network on the LAN, made by the owner once (docs/soloist.md).
+  # Named here, defined nowhere in this repository.
+  receivers:
+    external: true
+    name: ${CHORUS_SOLOIST_NETWORK:-chorus-soloist-lan}

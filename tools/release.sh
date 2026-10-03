@@ -5,6 +5,12 @@
 #   chorus-server-v<ver>-x86_64-unknown-linux-musl   the static server binary
 #   chorus-server-v<ver>-oci.tar                     the OCI image as a tarball (tools/image.sh,
 #                                                    tested there: unpacked, --help, GET /api/state)
+#   chorus-soloist-v<ver>-oci.tar                    the Soloist receiver image as an OCI tarball
+#                                                    (tools/soloist-image.sh, tested there); it
+#                                                    holds PipeWire, WirePlumber and chorus-soloistd
+#                                                    and NO Soloist file (docs/soloist.md)
+#   chorus-soloist-v<ver>-NOTICES.md                 that image's third-party notices: every Debian
+#                                                    package in it and where its source is
 #   chorus-endpoint-esp32s3-v<ver>.bin               the endpoint application image
 #   chorus-endpoint-esp32s3-v<ver>.tar.gz            bootloader, partition table, application
 #                                                    and flasher_args.json (offsets and flags)
@@ -20,6 +26,10 @@
 # visible step (docs/release.md), flashing is the owner's at the bench, and pushing
 # the image to a registry is the owner's Needs step.
 #
+# `tools/release.sh --list` prints the artifact names of the workspace's version and builds
+# nothing (`make soloist-lists` reads it); a release's directory is held to the same list
+# before the digests are written, so the two cannot drift apart.
+#
 # Refuses by name when: the version does not match Cargo.toml's workspace version,
 # the tree is dirty, HEAD is not on origin/main, or ESP-IDF is not the pinned one
 # (tools/firmware-image.sh's own refusal).
@@ -27,6 +37,38 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
+
+TARGET=x86_64-unknown-linux-musl
+
+# The MPL-2.0 crates of the shipped binaries (step 5), as "name version" lines.
+mpl_crates() {
+    cargo tree --locked -e normal -p chorus-client-linux -p chorus-hostprobe -p chorus-server \
+        --prefix none --format '{p}|{l}' --target x86_64-unknown-linux-gnu |
+        awk -F'|' '$2 ~ /MPL-2.0/ {split($1, a, " "); print a[1] " " substr(a[2], 2)}' | LC_ALL=C sort -u
+}
+
+# Every file a release of version $1 holds, one name a line.
+artifact_names() {
+    local ver="$1" name cver
+    echo "chorus-server-v$ver-$TARGET"
+    echo "chorus-server-v$ver-oci.tar"
+    echo "chorus-soloist-v$ver-oci.tar"
+    echo "chorus-soloist-v$ver-NOTICES.md"
+    echo "chorus-endpoint-esp32s3-v$ver.bin"
+    echo "chorus-endpoint-esp32s3-v$ver.tar.gz"
+    echo "chorus-endpoint_${ver}_arm64.deb"
+    echo "chorus-endpoint_${ver}_amd64.deb"
+    while read -r name cver; do
+        [ -n "$name" ] && echo "$name-$cver.crate"
+    done < <(mpl_crates)
+    echo "SHA256SUMS"
+    echo "NOTES.md"
+}
+
+if [ "${1:-}" = --list ]; then
+    artifact_names "$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+    exit 0
+fi
 
 VER="${1:-${VERSION:-}}"
 [ -n "$VER" ] || { echo "release: REFUSED: no version (make release VERSION=x.y.z)"; exit 2; }
@@ -41,7 +83,6 @@ OUT="$ROOT/dist/v$VER"
 rm -rf "$OUT"
 mkdir -p "$OUT"
 SHA="$(git rev-parse HEAD)"
-TARGET=x86_64-unknown-linux-musl
 echo "release: v$VER from $SHA into $OUT"
 
 # 1. The server binary (static musl, the same build the image carries: the C in it,
@@ -61,6 +102,16 @@ install -m 0755 "$TD/$TARGET/release/chorus-server" "$OUT/chorus-server-v$VER-$T
 CHORUS_IMAGE_OUT="$OUT/chorus-server-v$VER-oci.tar" bash tools/image.sh
 MANIFEST_DIGEST="$(tar -xOf "$OUT/chorus-server-v$VER-oci.tar" index.json |
     python3 -c 'import json,sys; m=json.load(sys.stdin)["manifests"]; assert len(m)==1; print(m[0]["digest"])')"
+
+# 2b. The Soloist receiver image, built and tested by tools/soloist-image.sh, and its notices
+# (the file the image carries at /usr/share/doc/chorus/THIRD-PARTY-NOTICES.md). No Soloist
+# file is in it: the binary is the owner's, mounted at run time (docs/soloist.md).
+CHORUS_SOLOIST_IMAGE_OUT="$OUT/chorus-soloist-v$VER-oci.tar" bash tools/soloist-image.sh
+install -m 0644 "$TD/image/soloist-work/stage-chorus/usr/share/doc/chorus/THIRD-PARTY-NOTICES.md" \
+    "$OUT/chorus-soloist-v$VER-NOTICES.md"
+SOLOIST_DIGEST="$(tar -xOf "$OUT/chorus-soloist-v$VER-oci.tar" index.json |
+    python3 -c 'import json,sys; m=json.load(sys.stdin)["manifests"]; assert len(m)==1; print(m[0]["digest"])')"
+SOLOIST_PACKAGES="$(command grep -c -v -E '^(#|[[:space:]]*$)' deploy/soloist/debian-packages.pins)"
 
 # 3. The endpoint firmware image (ESP-IDF at the pinned version; guard-checked).
 if [ -z "${IDF_PATH:-}" ]; then
@@ -83,9 +134,7 @@ CHORUS_PACKAGE_OUT="$OUT" bash tools/endpoint-package.sh arm64 amd64
 # Symphonia FLAC crates (ADR 0044) and chorus-server, since goal 16, those and the Symphonia
 # crates of its other decoders (ADR 0122). cargo tree finds them all. Each .crate is the crates.io download, taken from the
 # local registry cache or fetched, and must match the checksum Cargo.lock pins.
-MPL_CRATES="$(cargo tree --locked -e normal -p chorus-client-linux -p chorus-hostprobe -p chorus-server \
-    --prefix none --format '{p}|{l}' --target x86_64-unknown-linux-gnu |
-    awk -F'|' '$2 ~ /MPL-2.0/ {split($1, a, " "); print a[1] " " substr(a[2], 2)}' | LC_ALL=C sort -u)"
+MPL_CRATES="$(mpl_crates)"
 MPL_NOTES=""
 while read -r name ver; do
     [ -n "$name" ] || continue
@@ -108,7 +157,13 @@ while read -r name ver; do
 done <<< "$MPL_CRATES"
 [ -n "$MPL_NOTES" ] || { echo "release: REFUSED: no MPL-2.0 crate found, but chorus-client and chorus-server link Symphonia (ADR 0044, ADR 0122)"; exit 2; }
 
-# 6. Digests and notes.
+# 6. Digests and notes. First: the directory holds exactly the names `--list` prints (less
+# the two files written below), so the list `make soloist-lists` checks is this release's.
+if ! diff <(artifact_names "$VER" | command grep -v -x -e SHA256SUMS -e NOTES.md | LC_ALL=C sort) \
+    <(cd "$OUT" && command ls | LC_ALL=C sort); then
+    echo "release: REFUSED: $OUT does not hold exactly the artifacts tools/release.sh --list names (above: < listed, > built)"
+    exit 2
+fi
 (cd "$OUT" && sha256sum chorus-* ./*.crate | sed 's| \./| |' > SHA256SUMS)
 EXTERNAL="$(command grep -c '^source = ' Cargo.lock || true)"
 cat > "$OUT/NOTES.md" <<EOF
@@ -124,6 +179,14 @@ Artifacts:
   \`gcr.io/distroless/static-debian12:nonroot\`, digest-pinned in tools/image.sh). Manifest
   digest \`$MANIFEST_DIGEST\`. It is in no registry; pushing it is the owner's step
   (docs/release.md).
+- \`chorus-soloist-v$VER-oci.tar\`: one Spotify Soloist receiver as an OCI image layout
+  tarball: PipeWire, WirePlumber and \`chorus-soloistd\` on \`debian:trixie-slim\`
+  (digest-pinned in tools/soloist-image.sh), with $SOLOIST_PACKAGES Debian packages pinned by
+  sha256 in deploy/soloist/debian-packages.pins. Manifest digest \`$SOLOIST_DIGEST\`. It holds
+  no Spotify software: Soloist is proprietary, and whoever runs the image mounts their own
+  binary and API key (docs/soloist.md). It is in no registry.
+- \`chorus-soloist-v$VER-NOTICES.md\`: that image's notices: every Debian package in it, its
+  version, and the Debian source package that is its source, at snapshot.debian.org.
 - \`chorus-endpoint-esp32s3-v$VER.bin\` and \`.tar.gz\`: the ESP32-S3 endpoint image built
   with ESP-IDF $IDF_VER, with the bootloader, partition table and flasher_args.json. The
   firmware safety scans (no eFuse writes, Secure Boot, Flash Encryption or anti-rollback)
@@ -162,3 +225,4 @@ EOF
 echo "release: artifacts in $OUT"
 ls -l "$OUT"
 echo "release: OCI manifest digest $MANIFEST_DIGEST"
+echo "release: chorus-soloist OCI manifest digest $SOLOIST_DIGEST"

@@ -1,6 +1,6 @@
 # The Debian packages the chorus-soloist image carries (tools/soloist-image.sh stages exactly
 # these, each verified against its sha256; tools/conventions/check-pins.sh holds this file's
-# shape; docs/decisions/0000-the-chorus-soloist-image.md says why this method).
+# shape; the decision record "the chorus-soloist image" in docs/decisions says why this method).
 #
 # What it is: the Depends closure (no Recommends) of pipewire, pipewire-bin and wireplumber
 # over the package set of the base image debian:trixie-20260918-slim, resolved on 2026-10-03

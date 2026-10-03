@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # `make soloist-image`: the chorus-soloist OCI image (one Spotify Soloist receiver:
 # PipeWire, WirePlumber and chorus-soloistd), built with no container daemon, and
-# its test. docs/decisions/0000-the-chorus-soloist-image.md says why this method.
+# its test. The decision record "the chorus-soloist image" (docs/decisions) says why this method.
 #
 # What goes in, on the digest-pinned debian:trixie-slim base:
 #   1. the Debian packages of deploy/soloist/debian-packages.pins, each fetched

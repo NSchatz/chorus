@@ -19,11 +19,14 @@ Everything else in the image is Debian 13 (trixie):
   generated file is `/etc/ld.so.cache`, the loader's index of the libraries, which Debian's
   own `ldconfig` wrote.
 
-The licences those copyright files state include the MIT (Expat) licence (PipeWire, apart
-from the parts Debian marks LGPL-2.1-or-later, and WirePlumber), the GNU LGPL 2.1 or later
-(GLib, libpulse, libsndfile, ALSA's library and others), the GNU GPL with the GCC Runtime
-Library Exception (the GCC runtime libraries) and BSD-style licences. The copyright file of
-each package is the authority, not this summary.
+The licences those copyright files state include the MIT (Expat) licence (WirePlumber, and
+PipeWire apart from the parts Debian marks otherwise), the GNU LGPL 2.1 or later (GLib,
+libpulse, libsndfile, ALSA's library and others), the GNU GPL (FFTW: version 2 or later;
+GNU Readline: version 3 or later; libffado: versions 2 and 3; the GCC runtime libraries:
+version 3 or later with the GCC Runtime Library Exception) and BSD-style licences. The texts
+of the GNU licences are in `/usr/share/common-licenses/`. The copyright file of each package
+is the authority, not this summary. These packages are separate works beside
+`chorus-soloistd`, which is not based on any of them and links none of them.
 
 ## Source
 

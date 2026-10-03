@@ -50,6 +50,7 @@ How the rules work:
 | 21 | Commits | `tools/conventions/check-commits.sh` |
 | 22 | Every rule has a check | `tools/conventions/check-conventions.sh` |
 | 23 | Datasheet-cited amplifier map | `tools/conventions/check-amp-map.sh`; gate step `firmware-check` (`test_amp` drives the datasheet-modelled part with the committed map) |
+| 24 | No Soloist file is shipped | gate step `soloist-lists`: `make soloist-lists` (`tools/soloist-lists.py`, after gate steps `image` and `soloist-image` built what it lists) |
 
 The rest of this file is each rule in full, in table order.
 
@@ -230,11 +231,15 @@ exists (brief section 0.9):
 | ESP-IDF components | `firmware/main/idf_component.yml` (`==x.y.z`) | `firmware/dependencies.lock` component hashes |
 | Crates | `Cargo.lock`, `--locked` | the lockfile checksums |
 | The emulator (goal 14) | `tools/qemu/pins.conf` (the QEMU release, micromamba), `tools/qemu/libs.explicit.txt` (its conda-forge libraries, each an exact build) | the release archive's, the program's and micromamba's sha256; a sha256 per library package |
+| The `chorus-soloist` image (goal 17) | `tools/soloist-image.sh` (the Debian base: a dated tag and its digest), `deploy/soloist/debian-packages.pins` (every Debian package: exact version, the snapshot.debian.org timestamp it is fetched at) | the base image digest; a sha256 and a size per package file |
 
 `check-pins.sh` checks the table: exact versions, the digests, the three Rust toolchain names
 agreeing, the ESP-IDF tag and commit, each ESP-IDF component's exact version with its hash in
-the lock, and the emulator's record and library list (`tools/qemu-env.sh` installs exactly those and
-verifies an install against them). **Review-only (no check):** a pinned version is never
+the lock, the emulator's record and library list (`tools/qemu-env.sh` installs exactly those and
+verifies an install against them), and the `chorus-soloist` image's base and package list
+(`tools/soloist-image.sh` fetches exactly those and verifies each file, cached or fetched, against
+its sha256). The image tools themselves, crane and umoci, are pinned where they are run
+(`mise exec <tool>@<version>` in `tools/image.sh` and `tools/soloist-image.sh`). **Review-only (no check):** a pinned version is never
 upgraded silently (an upgrade is its own commit saying why, and a toolchain upgrade, Rust or
 ESP-IDF, goes through a proposal, K51), and every version, number or licence a pin rests on cites
 its URL and the date read.
@@ -358,3 +363,19 @@ loudspeaker rather than failing a test. `check-amp-map.sh` grades the file and f
 on three scratch maps (an `unknown` key, an uncited key and an out-of-range page must each fail).
 The reading behind the values is `docs/research/tas5825m-register-map.md`; a new amplifier part
 brings its own datasheet revision and this rule's citation form with it.
+
+## 24. No Soloist file is shipped
+
+Spotify Soloist is proprietary, with a per-developer key and a 90-day build lifetime: chorus
+never ships it, in an image, a release or the repository, and never ships the fake Soloist its
+tests run either (`docs/soloist.md`; P7). `make soloist-lists` prints what chorus does ship: the
+files it adds to the `chorus-server` image, the `chorus-soloist` image (what chorus adds, and the
+Debian packages), the release's artifact names and the tracked files that name soloist. It fails,
+naming the path, when a path in an image or a release names soloist and is not one of chorus's
+own (`chorus-soloistd`, the mount points, the `chorus-soloist` image tarball and its notices),
+when `/opt/soloist` in the image is anything but an empty directory, when the fake is found by
+name or by content, when a file chorus adds to an image is executable and is not, byte for byte,
+a `[[bin]]` of this workspace, or when a tracked file naming soloist is a binary, an archive or
+of no known kind. It proves itself first on scratch trees with each fault planted. It builds
+nothing: it reads what the gate steps `image` and `soloist-image` left, and refuses by name
+without them.

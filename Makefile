@@ -31,6 +31,23 @@ tier-full: gate
 image: tools-executable
 	bash tools/image.sh
 
+# The chorus-soloist OCI image (one Spotify Soloist receiver: PipeWire, WirePlumber and
+# chorus-soloistd on a digest-pinned Debian base, the packages pinned by sha256 in
+# deploy/soloist/debian-packages.pins), built with no container daemon, and its test: unpacked,
+# the image's own PipeWire supervised and played through (tools/soloist-image.sh). It holds no
+# Soloist file. Needs no network once its cache (/cache/chorus-soloist-image) is warm.
+soloist-image: tools-executable
+	bash tools/soloist-image.sh
+
+# What chorus ships, listed, and held to "no Soloist file and no fake Soloist in an image or a
+# release" (docs/conventions.md rule 24). Reads the trees `make image` and `make soloist-image`
+# left; builds nothing and refuses by name without them. LISTS_ARGS=--full prints every Debian
+# package with its sha256.
+soloist-lists: tools-executable
+	python3 tools/soloist-lists.py $(LISTS_ARGS)
+
+.PHONY: soloist-image soloist-lists
+
 # Regenerate fixtures/decode (goal 16): one short file per settled input format with what a
 # reference decoder made of it. Never run by the gate. REFDEC is a conda-forge prefix holding
 # the pinned reference programs (ffmpeg, lame, mpg123, flac, opusdec, sndfile-convert);

@@ -34,6 +34,15 @@ services:
     cpus: 1.0
     volumes:
       - chorus-state:/var/lib/chorus
+      # Spotify Soloist receivers (docs/soloist.md): the receiver directory
+      # shared with deploy/soloist/compose.yaml, the same host directory
+      # there and here, owned by 65532 (the user of both images). Uncomment
+      # with the two flags at the end of the command.
+      # - type: bind
+      #   source: ${CHORUS_SOLOIST_HOST_DIR:-/srv/chorus/soloist}/receivers
+      #   target: /run/chorus/soloist
+      #   bind:
+      #     create_host_path: false
     # No capability is added: a priority up to RLIMIT_RTPRIO and a lock up to
     # RLIMIT_MEMLOCK need neither CAP_SYS_NICE nor CAP_IPC_LOCK (sched(7),
     # mlock(2)), which is why the ulimits above are the whole grant.
@@ -74,6 +83,15 @@ services:
       - --memlock-wanted-bytes
       - "67108864"
       - --serve-forever
+      # Spotify Soloist receivers: the server's side of the receiver
+      # directory. These two flags arrive with goal 17's server track (the
+      # change that adds the `soloist:` source); a server built before it
+      # refuses them as unknown arguments. The number is the receivers'
+      # CHORUS_SOLOIST_RECEIVERS.
+      # - --soloist-dir
+      # - /run/chorus/soloist
+      # - --soloist-receivers
+      # - "4"
 
 volumes:
   chorus-state:
