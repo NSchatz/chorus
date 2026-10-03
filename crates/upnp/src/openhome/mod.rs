@@ -10,7 +10,8 @@
 //! - **ohN**: `github.com/openhome/ohNet` at
 //!   `b16816876a88e5f1783225114470025458eb1b61`
 //!
-//! (read 2026-10-03; `docs/decisions/` lists what was read). No code was
+//! (read 2026-10-03; `docs/decisions/0128-openhome-services.md` lists what
+//! was read). No code was
 //! copied: the tables are transcribed data and the state machines are
 //! chorus's own.
 //!

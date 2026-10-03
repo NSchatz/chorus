@@ -17,7 +17,8 @@
 //!
 //! With `--upnp-openhome on`, the default, each of those devices also offers
 //! OpenHome's Product:2, Volume:2, Info:1, Time:1 and Playlist:1
-//! (`chorus_upnp::openhome`; `docs/upnp.md`, "OpenHome"). A renderer then has
+//! (`chorus_upnp::openhome`; `docs/upnp.md`, "OpenHome";
+//! `docs/decisions/0128-openhome-services.md`). A renderer then has
 //! two **decks**, of which one at a time drives its player: AVTransport's
 //! (the Product source `UpnpAv`) and the Playlist's. An AVTransport
 //! `SetAVTransportURI` or `Play` takes the player for the first, a Playlist

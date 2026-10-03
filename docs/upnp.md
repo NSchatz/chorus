@@ -17,7 +17,7 @@ The record of why it is built this way is
 
 Since goal 17 every renderer also offers the **OpenHome** services, so a
 control point can hand over a whole queue and go to sleep: see "OpenHome"
-below (`docs/decisions/0000-openhome-services.md`).
+below (`docs/decisions/0128-openhome-services.md`).
 
 ## What appears on the network
 

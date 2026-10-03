@@ -530,7 +530,7 @@ fields. A `.fields` file is `key = value` lines (`#` starts a comment) as elsewh
   DLNA fields in `protocolInfo` and vendor namespaces, one hostile with a DOCTYPE and nested
   entities, and garbage.
 
-The OpenHome vectors (goal 17, the decision record of the OpenHome services): `openhome-*` and
+The OpenHome vectors (goal 17, ADR 0128): `openhome-*` and
 every file with `openhome` in its name. They were typed by a script independent of the crate
 from the reference forms (ohPipeline's `SourceXml`, `TrackList` and `IdArray`, ohNet's property
 sets and SOAP shapes, both MIT, at the commits `docs/upnp.md` names), except the generated

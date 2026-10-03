@@ -1,4 +1,4 @@
-# 0000: every UPnP renderer also offers OpenHome Product:2, Volume:2, Info:1, Time:1 and Playlist:1 on the same device, behind one switch; the Playlist is held by chorus and drives the player through a private AVTransport deck, so a queue plays through gapless with no control point connected
+# 0128: every UPnP renderer also offers OpenHome Product:2, Volume:2, Info:1, Time:1 and Playlist:1 on the same device, behind one switch; the Playlist is held by chorus and drives the player through a private AVTransport deck, so a queue plays through gapless with no control point connected
 
 - Status: accepted (goal 17, 2026-10-03)
 - Decided by: the goal (program section 21; P6 Option B, approved) inside the coordinator's
