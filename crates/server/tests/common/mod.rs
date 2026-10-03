@@ -157,6 +157,26 @@ impl RunningServer {
         server
     }
 
+    /// The server's process id, for a test that reads `/proc` about it.
+    pub fn pid(&self) -> u32 {
+        self.child.id()
+    }
+
+    /// Wait for the server to exit by itself, and give back whether it
+    /// exited with success; `None` if it has not within `limit`.
+    pub fn exited(&mut self, limit: Duration) -> Option<bool> {
+        let deadline = Instant::now() + limit;
+        loop {
+            if let Ok(Some(status)) = self.child.try_wait() {
+                return Some(status.success());
+            }
+            if Instant::now() >= deadline {
+                return None;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
     /// Wait for a line containing `what`, and give it back.
     pub fn wait_for(&mut self, what: &str) -> String {
         if let Some(line) = self.seen.iter().find(|l| l.contains(what)) {

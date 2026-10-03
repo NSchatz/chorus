@@ -726,7 +726,9 @@ fn answer_past_the_ceiling(address: &str) -> String {
 /// The population with the control plane on: 1 supervisor + 1 audio + 1
 /// acceptor + 2 per client slot + 1 control acceptor + 1 per control worker +
 /// the event writer + the conductor. Not a function of `--slots`, nor of how
-/// many endpoints or subscribers there are.
+/// many endpoints or subscribers there are. The TV relay (with `--slots`) and
+/// the MQTT publisher (with `--mqtt-broker`) are one more each, added where a
+/// test turns them on.
 fn population(max_clients: usize, workers: usize) -> usize {
     1 + 1 + 1 + 2 * max_clients + 1 + workers + 1 + 1
 }
@@ -910,6 +912,69 @@ fn the_population_does_not_depend_on_the_number_of_stream_slots() {
     println!(
         "population with --slots 1 and --slots 8: {} threads each (6 + 2N + M + 1, N={}, M=2)",
         counts[0], MAX_CLIENTS
+    );
+}
+
+/// (goal 15) The MQTT publisher is one more declared, ordinary thread with
+/// `--mqtt-broker`, and does not exist without it: `6 + 2N + M + 1` against
+/// `6 + 2N + M`. The broker here is a loopback listener that never accepts
+/// and never answers, which is the hardest case for the rule: the publisher
+/// is stuck waiting on it, and that must cost no thread and nothing else.
+#[test]
+fn the_mqtt_publisher_is_one_declared_thread_with_its_flag_and_none_without() {
+    let stalled_broker = std::net::TcpListener::bind(EPHEMERAL).expect("a loopback port");
+    let broker = stalled_broker.local_addr().unwrap().to_string();
+    let shape = |mqtt: bool| {
+        let mut extra = vec![
+            "--max-clients".to_string(),
+            MAX_CLIENTS.to_string(),
+            "--control-workers".to_string(),
+            "2".to_string(),
+            "--zone".to_string(),
+            "kitchen".to_string(),
+        ];
+        if mqtt {
+            extra.extend(["--mqtt-broker".to_string(), broker.clone()]);
+        }
+        let (server, pid, _rest, startup) = start(&extra);
+        let rows = reported(&startup);
+        assert_roles(&rows, 2, &startup);
+        let threads = kernel_threads(pid);
+        let declared: BTreeSet<u32> = rows.iter().map(|r| r.tid).collect();
+        assert_eq!(declared, threads, "mqtt={}: {:?}", mqtt, rows);
+        let publishers = rows.iter().filter(|r| r.role == "mqtt-publisher").count();
+        assert_eq!(publishers, usize::from(mqtt), "mqtt={}: {:?}", mqtt, rows);
+        assert_eq!(
+            threads.len(),
+            population(MAX_CLIENTS, 2) + usize::from(mqtt),
+            "mqtt={} runs {} threads: {:?}",
+            mqtt,
+            threads.len(),
+            rows
+        );
+        // A command, a session and a broker that is not answering: the
+        // population again.
+        let plane = Plane::new(control_address(&startup), 2, None, "kitchen");
+        let response = plane.command(&volume_body("kitchen", "0.500"));
+        assert!(response.contains("200 OK"), "{}", response);
+        let mut client = common::v2_client(audio_address(&startup).as_str(), READ_TIMEOUT);
+        let mut scratch = vec![0u8; 65_536];
+        assert!(client.reader.read(&mut scratch).expect("audio comes down") > 0);
+        thread::sleep(SETTLE);
+        assert_eq!(
+            kernel_threads(pid),
+            threads,
+            "mqtt={}: a command, a session or the broker made a thread",
+            mqtt
+        );
+        drop(server);
+        threads.len()
+    };
+    let (off, on) = (shape(false), shape(true));
+    assert_eq!(on, off + 1);
+    println!(
+        "population without --mqtt-broker: {} threads (6 + 2N + M, N={}, M=2); with it: {}",
+        off, MAX_CLIENTS, on
     );
 }
 
