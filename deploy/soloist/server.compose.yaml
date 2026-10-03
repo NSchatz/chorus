@@ -1,0 +1,51 @@
+# chorus-server's half of the Spotify Soloist receivers: an override of
+# deploy/compose.yaml, used only by a host that runs the receivers of
+# deploy/soloist/compose.yaml (docs/soloist.md, "Running the receivers").
+# Without this file the server runs no Soloist code and has no such thread.
+#
+#   CHORUS_IMAGE=<ref> docker compose -f deploy/compose.yaml \
+#     -f deploy/soloist/server.compose.yaml up -d
+#
+# It adds the receiver directory (the same host directory the receivers
+# mount, owned by 65532, the user of both images) and replaces the command:
+# Compose replaces a command whole, so this is deploy/compose.yaml's command
+# with --slots and the two Soloist flags added. `make image` holds the two
+# commands to each other and starts the image's server with these flags.
+
+---
+services:
+  chorus-server:
+    volumes:
+      - type: bind
+        source: ${CHORUS_SOLOIST_HOST_DIR:-/srv/chorus/soloist}/receivers
+        target: /run/chorus/soloist
+        bind:
+          create_host_path: false
+    command:
+      - --listen
+      - 0.0.0.0:4010
+      - --control-listen
+      - 0.0.0.0:4020
+      - --state-file
+      - /var/lib/chorus/zones.state
+      - --source
+      - tone
+      - --rt-priority
+      - "20"
+      - --rttime-us
+      - "200000"
+      - --memlock-wanted-bytes
+      - "67108864"
+      # The receivers play into groups, and every group's stream is a stream
+      # slot: as many as groups may play at once (at most 32).
+      - --slots
+      - "${CHORUS_SLOTS:-4}"
+      # The receivers: the directory above, and as many as the receivers'
+      # CHORUS_SOLOIST_RECEIVERS (0 switches them off again). The other
+      # flags keep their defaults: --soloist-grace 60, --soloist-volume
+      # chorus, and no --soloist-alarms (docs/soloist.md, "The server side").
+      - --soloist-dir
+      - /run/chorus/soloist
+      - --soloist-receivers
+      - "${CHORUS_SOLOIST_RECEIVERS:-4}"
+      - --serve-forever

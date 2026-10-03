@@ -322,9 +322,11 @@ macvlan network, the healthcheck as Docker runs it); anything about timing (conv
 
 `deploy/soloist/compose.yaml` is the reference: one service, `deploy.replicas` identical
 containers on an external macvlan network (each receiver needs UDP 5353 of its own network
-namespace, P7), every container claiming the lowest free receiver index. `deploy/compose.yaml`
-carries chorus-server's half (the same receiver directory, and `--soloist-dir` and
-`--soloist-receivers`, which arrive with the server-side change) as commented lines. Nothing in
+namespace, P7), every container claiming the lowest free receiver index. chorus-server's
+half is the override `deploy/soloist/server.compose.yaml`, added to `deploy/compose.yaml` only on
+a host that runs the receivers: the same receiver directory mounted, and `--slots`,
+`--soloist-dir` and `--soloist-receivers` on the command ("The server side" below; the other
+flags keep their defaults). Nothing in
 this repository deploys anything; the homelab's stack is a PR in the homelab repository.
 
 The owner's steps, on the host that runs both:
@@ -343,10 +345,10 @@ The owner's steps, on the host that runs both:
    owner 65532. It is read at each start of Soloist and never logged.
 5. **Start** the receivers with the image pinned by digest (`CHORUS_SOLOIST_IMAGE`: the
    manifest digest `make soloist-image` prints, which the release notes repeat), and
-   chorus-server with the receiver directory mounted and its two flags.
+   chorus-server with the override (`docker compose -f deploy/compose.yaml -f
+   deploy/soloist/server.compose.yaml up -d`), with the same `CHORUS_SOLOIST_RECEIVERS`.
 6. **Every 90 days at the latest, replace the binary**: put the new build at `bin/soloist`,
-   then `chorusctl soloist restart` (it arrives with the server-side change; restarting the
-   receiver containers does the same). From 14 days before expiry the supervisor logs
+   then `chorusctl soloist restart` (restarting the receiver containers does the same). From 14 days before expiry the supervisor logs
    `warning: Soloist build expires in N days`; an expired build exits with code 10 and the
    receiver stays `expired` until the restart.
 

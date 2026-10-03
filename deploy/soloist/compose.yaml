@@ -35,7 +35,8 @@ services:
     # network namespace and LAN address, because Soloist's own mDNS
     # responder needs UDP 5353 to itself (P7: a LEAD from Soloist issue 1).
     # The same number goes to --receivers below and to chorus-server's
-    # --soloist-receivers.
+    # --soloist-receivers (deploy/soloist/server.compose.yaml reads the
+    # same variable).
     deploy:
       replicas: ${CHORUS_SOLOIST_RECEIVERS:-4}
     networks:

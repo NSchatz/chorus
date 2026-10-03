@@ -8,7 +8,7 @@
   chorus's own choice and is said to be
 - Implemented in: `tools/soloist-image.sh`, `tools/soloist-image-test.py`,
   `deploy/soloist/debian-packages.pins`, `deploy/soloist/THIRD-PARTY-NOTICES.md`,
-  `deploy/soloist/compose.yaml`, `tools/soloist-lists.py`, `tools/release.sh`, `tools/gate.sh`,
+  `deploy/soloist/compose.yaml`, `deploy/soloist/server.compose.yaml`, `tools/soloist-lists.py`, `tools/release.sh`, `tools/gate.sh`,
   `tools/conventions/check-pins.sh`, `crates/soloistd/src/health.rs`; described in
   `docs/soloist.md` ("The image", "Running the receivers"), `docs/release.md`,
   `docs/conventions.md` (rule 14's table, rule 24)
@@ -245,6 +245,9 @@ macvlan, Docker's healthcheck), timing, or arm64.
 - The source-package question of decision 9 is the owner's before anything is published.
 - Whether Soloist finds what it needs in this image (shared libraries, CA certificates) is
   not documented and not testable here; a missing library is a line in the pin list.
-- The server-side flags named in `deploy/compose.yaml` (`--soloist-dir`,
-  `--soloist-receivers`) and `chorusctl soloist restart` arrive with the server track; the
-  lines are comments until then.
+- The server's half is an override file, `deploy/soloist/server.compose.yaml`, not lines in
+  `deploy/compose.yaml`: the receivers need `--slots` as well as `--soloist-dir` and
+  `--soloist-receivers` (ADR 0132), Compose replaces a command whole, and a bind mount of a
+  directory that does not exist would stop a server that wants no receivers. So the override
+  restates the command, and `make image` fails if it is anything but `deploy/compose.yaml`'s
+  command plus those three flags, and starts the image's server with them.

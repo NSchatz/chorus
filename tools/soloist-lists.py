@@ -17,6 +17,9 @@ and FAILS, naming the path, when
   2. the fake Soloist is in an image or a release: by name (`fake-soloist`,
      `soloist-fake`, `soloist_fake`) or by content (a file carrying the fake's
      `FAKE_SOLOIST_` settings);
+     the test-only examples that run the fake and the supervisor
+     (`chorus-fake-soloist`, `server-test-fake-soloist`, `server-test-soloistd`)
+     are refused by the same rules and by rule 3, since an example is no `[[bin]]`;
   3. a regular file chorus adds to an image is executable (a mode bit or an ELF
      header) and is not, byte for byte, a `[[bin]]` of this workspace as built
      for the image;
@@ -57,10 +60,10 @@ ALLOWED_IMAGE = {
 ALLOWED_RELEASE = re.compile(r"^chorus-soloist-v[0-9]+\.[0-9]+\.[0-9]+(-oci\.tar|-NOTICES\.md)$")
 # The kinds of tracked file that may name soloist, first match wins.
 TRACKED = [
-    ("source", re.compile(r"^crates/soloist(d|-fake)?/.*\.(rs|toml)$")),
-    ("fixtures", re.compile(r"^fixtures/soloist/[a-z0-9-]+\.(json|line|txt)$")),
+    ("source", re.compile(r"^crates/(soloist(d|-fake)?/.*|server/(src|tests|examples)/[a-z0-9_-]+)\.(rs|toml)$")),
+    ("fixtures", re.compile(r"^fixtures/(soloist/[a-z0-9-]+\.(json|line|txt)|control/v2/[a-z0-9_-]+\.(json|fields))$")),
     ("docs", re.compile(r"^docs/(soloist\.md|decisions/[0-9]{4}-[a-z0-9-]+\.md|proposals/P7-spotify-soloist\.md)$")),
-    ("config", re.compile(r"^deploy/soloist/(compose\.yaml|debian-packages\.pins|THIRD-PARTY-NOTICES\.md)$")),
+    ("config", re.compile(r"^deploy/soloist/(compose\.yaml|server\.compose\.yaml|debian-packages\.pins|THIRD-PARTY-NOTICES\.md)$")),
     ("tools", re.compile(r"^tools/soloist-(image\.sh|image-test\.py|lists\.py)$")),
 ]
 BINARY_SUFFIX = re.compile(r"\.(tar|tgz|gz|xz|zst|zip|deb|rpm|bin|so|AppImage)$", re.I)
@@ -184,6 +187,12 @@ def self_test():
              "/usr/lib/libchorus_soloist_fake.rlib is the fake Soloist"),
             ("the fake under another name", dict(clean, **{"usr/local/bin/chorus-server": (b"\x7fELF FAKE_SOLOIST_CONTROL", 0o755)}),
              "/usr/local/bin/chorus-server carries the fake Soloist's settings"),
+            ("the server tests' fake", dict(clean, **{"usr/local/bin/server-test-fake-soloist": (b"\x7fELF", 0o755)}),
+             "/usr/local/bin/server-test-fake-soloist is the fake Soloist"),
+            ("the server tests' supervisor example", dict(clean, **{"usr/local/bin/server-test-soloistd": (b"\x7fELF", 0o755)}),
+             "/usr/local/bin/server-test-soloistd names soloist and is not one of chorus's own paths"),
+            ("an example under a plain name", dict(clean, **{"usr/local/bin/chorus-helper": (b"\x7fELF", 0o755)}),
+             "/usr/local/bin/chorus-helper is executable and is not a [[bin]]"),
             ("a foreign executable", dict(clean, **{"usr/local/bin/helper": (b"#!/bin/sh\n", 0o755)}),
              "/usr/local/bin/helper is executable and is not a [[bin]]"),
             ("a foreign ELF without the mode bit", dict(clean, **{"usr/share/blob": (b"\x7fELF x", 0o644)}),
@@ -245,7 +254,7 @@ def main():
     if why:
         print("soloist-lists: FAIL: the check does not prove itself: " + why)
         return 1
-    print("soloist-lists: self-test: 8 planted trees, 3 release names and 2 tracked files each refused by name")
+    print("soloist-lists: self-test: 11 planted trees, 3 release names and 2 tracked files each refused by name")
 
     td = os.environ.get("CARGO_TARGET_DIR", os.path.join(ROOT, "target"))
     built = os.path.join(td, TARGET, "release")
@@ -307,7 +316,8 @@ def main():
     counts = classify(tracked, lambda p: head(os.path.join(ROOT, p)) if os.path.isfile(os.path.join(ROOT, p)) else b"", problems)
     print("(d) tracked files naming soloist: %d, all chorus's own: %s"
           % (len(tracked), ", ".join("%d %s" % (counts[k], k) for k, _ in TRACKED if k in counts)))
-    print("    no binary and no archive among them; the fake Soloist is source only (crates/soloist-fake, an example of crates/soloistd)")
+    print("    no binary and no archive among them; the fake Soloist and the test supervisor are source only:")
+    print("    crates/soloist-fake and examples of crates/soloistd and crates/server, which no --bins build makes")
 
     if problems:
         for line in problems:

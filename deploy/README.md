@@ -86,8 +86,12 @@ is the page; `docs/decisions/0131-the-chorus-soloist-image.md` is the record. In
 - `soloist/compose.yaml` is the reference form: `deploy.replicas`, an external macvlan
   network (named, not defined here), the receiver directory shared with chorus-server,
   `read_only`, `cap_drop: [ALL]`, `no-new-privileges`, limits per receiver, and the
-  image's own `--health-check`. `compose.yaml` here carries the server's half as
-  commented lines until the server's flags land.
+  image's own `--health-check`.
+- `soloist/server.compose.yaml` is the server's half, an override of `compose.yaml` that a
+  host running the receivers adds (`-f compose.yaml -f soloist/server.compose.yaml`): the
+  receiver directory mounted, and `--slots`, `--soloist-dir` and `--soloist-receivers` on the
+  command. Without it the server runs no Soloist code. `make image` holds the override's
+  command to `compose.yaml`'s and starts the image's server with those flags.
 - `soloist/THIRD-PARTY-NOTICES.md` is the head of the notices the image carries; the build
   appends the package table.
 

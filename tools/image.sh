@@ -304,9 +304,11 @@ read -r UPNP_AUDIO UPNP_NOTIFY < <(free_ports)
     --upnp-ssdp-group "127.0.0.1:$UPNP_NOTIFY" \
     --allow-non-realtime --no-lock-memory > "$UPNP_DIR/server.log" 2>&1 &
 UPNP_PID=$!
+SOL_PID=""
 stop_servers() {
     if [ -n "$PID" ]; then kill "$PID" 2>/dev/null || true; fi
     if [ -n "$UPNP_PID" ]; then kill "$UPNP_PID" 2>/dev/null || true; fi
+    if [ -n "$SOL_PID" ]; then kill "$SOL_PID" 2>/dev/null || true; fi
 }
 trap stop_servers EXIT
 UPNP_HTTP=""
@@ -334,6 +336,78 @@ echo "image test: --upnp: GET http://$UPNP_HTTP/upnp/$UPNP_UDN/desc.xml -> Media
 kill "$UPNP_PID" 2>/dev/null || true
 wait "$UPNP_PID" 2>/dev/null || true
 UPNP_PID=""
+
+# The Soloist receivers' flags (goal 17, docs/soloist.md): the override a host
+# with receivers adds, deploy/soloist/server.compose.yaml, restates the command
+# of deploy/compose.yaml (Compose replaces a command whole), so the two are held
+# to each other here: the override is the base's command plus --slots,
+# --soloist-dir and --soloist-receivers, and nothing else. Then the image's own
+# server is started with exactly those added flags (the directory a scratch one,
+# with no receiver container: a receiver that has not started is not an error),
+# and refuses by exit code 11 a receiver directory that is not there.
+SOLOIST_FLAGS="$(python3 - deploy/compose.yaml deploy/soloist/server.compose.yaml <<'EOF'
+import re, sys
+
+def command(path):
+    items, on = [], False
+    for line in open(path):
+        if re.match(r"^    command:\s*$", line):
+            on = True
+        elif on and re.match(r"^      - ", line):
+            value = line[8:].strip().strip('"')
+            items.append(re.sub(r"^\$\{[A-Z_]+:-(.*)\}$", r"\1", value))
+        elif on and not re.match(r"^\s*(#.*)?$", line):
+            on = False
+    return items
+
+base, over = command(sys.argv[1]), command(sys.argv[2])
+added = [(i, over[i + 1]) for i, flag in enumerate(over) if flag in ("--slots", "--soloist-dir", "--soloist-receivers")]
+rest = [x for i, x in enumerate(over) if not any(i in (at, at + 1) for at, _ in added)]
+if not base or rest != base or len(added) != 3:
+    sys.exit("image test: FAIL: deploy/soloist/server.compose.yaml's command is not deploy/compose.yaml's plus --slots, --soloist-dir and --soloist-receivers:\n  base     %s\n  override %s" % (base, over))
+print(" ".join("%s %s" % (over[at], value) for at, value in added))
+EOF
+)"
+SOL_DIR="$T/soloist"
+mkdir -p "$SOL_DIR/receivers"
+# shellcheck disable=SC2086 # the flags are words: --slots 4 --soloist-dir <dir> --soloist-receivers 4
+set -- ${SOLOIST_FLAGS/\/run\/chorus\/soloist/$SOL_DIR/receivers}
+SOL_STATE=""
+for attempt in 1 2 3; do
+    read -r SOL_AUDIO SOL_CONTROL < <(free_ports)
+    "$BIN" --listen "127.0.0.1:$SOL_AUDIO" --control-listen "127.0.0.1:$SOL_CONTROL" \
+        --state-file "$SOL_DIR/zones.state" --zone kitchen --source tone --serve-forever \
+        "$@" --allow-non-realtime --no-lock-memory > "$SOL_DIR/server.log" 2>&1 &
+    SOL_PID=$!
+    for _ in $(seq 1 50); do
+        if SOL_STATE="$(curl -fsS "http://127.0.0.1:$SOL_CONTROL/api/state" 2>/dev/null)"; then
+            break
+        fi
+        kill -0 "$SOL_PID" 2>/dev/null || break
+        sleep 0.1
+    done
+    if printf '%s' "$SOL_STATE" | grep -q kitchen || ! grep -q 'Address in use' "$SOL_DIR/server.log"; then
+        break
+    fi
+    kill "$SOL_PID" 2>/dev/null || true
+    wait "$SOL_PID" 2>/dev/null || true
+    echo "image test: attempt $attempt lost a port race, retrying on new ports"
+done
+if ! printf '%s' "$SOL_STATE" | grep -q kitchen || ! kill -0 "$SOL_PID" 2>/dev/null; then
+    echo "image test: FAIL: the server did not serve with the override's flags: $*"
+    cat "$SOL_DIR/server.log"
+    exit 1
+fi
+kill "$SOL_PID" 2>/dev/null || true
+wait "$SOL_PID" 2>/dev/null || true
+SOL_PID=""
+SOL_RC=0
+timeout 30 "$BIN" --listen 127.0.0.1:0 --control-listen 127.0.0.1:0 --state-file "$SOL_DIR/none.state" \
+    --zone kitchen --source tone --serve-forever --slots 1 --soloist-dir "$SOL_DIR/absent" \
+    --soloist-receivers 1 --allow-non-realtime --no-lock-memory > "$SOL_DIR/absent.log" 2>&1 || SOL_RC=$?
+[ "$SOL_RC" -eq 11 ] ||
+    { echo "image test: FAIL: a receiver directory that is not there gave exit $SOL_RC, not 11"; cat "$SOL_DIR/absent.log"; exit 1; }
+echo "image test: the override's command is the base's plus: $SOLOIST_FLAGS; the image's server serves with them (GET /api/state), and exits 11 without the receiver directory"
 
 # The probe the owner runs in the deployed container: present, static, and it runs.
 PROBE="$T/bundle/rootfs/usr/local/bin/chorus-wakeup-probe"
