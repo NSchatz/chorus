@@ -14,11 +14,36 @@
 # link is `emulated`, and refuses by name in an image built without it.
 CONFIG_ETH_USE_OPENETH=y
 
-# The octal PSRAM stays as sdkconfig.defaults has it: the emulator emulates an
-# octal part (tools/qemu/lib.sh starts it with one), and the endpoint needs it.
-# Built without PSRAM, the image stopped at its first step in the emulator,
-# "no memory to read firmware/config/endpoint.conf and the embedded board
-# profile": the configuration reader takes one 128 KiB block for its two
-# tables, the internal heap's largest free block was 90 KiB, and on a speaker
-# malloc() places a block that large in PSRAM (the generated sdkconfig has
-# CONFIG_SPIRAM_USE_MALLOC=y; docs/decisions/0109-*).
+# PSRAM, in quad mode where a speaker's is octal. The endpoint needs PSRAM: the
+# configuration reader takes one 128 KiB block for its two tables, the
+# internal heap's largest free block is 90 KiB, and on a speaker malloc()
+# places a block that large in PSRAM (the generated sdkconfig has
+# CONFIG_SPIRAM_USE_MALLOC=y). Built without PSRAM, the image stopped at its
+# first step in the emulator: "no memory to read firmware/config/endpoint.conf
+# and the embedded board profile". With the octal part emulated (the machine
+# option ESP-IDF's launcher uses for it), the pinned emulator itself crashed
+# with a segmentation fault as the application started, at 8 and at 32 MB;
+# with the octal image on the emulator's default part, the image reported
+# "PSRAM chip is not connected, or wrong PSRAM line mode" and restarted. The
+# emulator's default part is quad, so this board's PSRAM is quad
+# (docs/decisions/0109-*).
+CONFIG_SPIRAM_MODE_QUAD=y
+
+# malloc() of any size tries PSRAM first on this board (the default puts a
+# block of 16 KiB or less in internal RAM first; components/esp_psram/
+# Kconfig.spiram.common:97-100). With the default the board's internal RAM was
+# gone by the time app_main made the session task, whose 32 KiB stack
+# FreeRTOS takes from internal RAM, and the image said "the session task could
+# not be started" (docs/decisions/0109-*). Nothing on this board needs
+# internal RAM for speed: it plays nothing. Whether a SPEAKER's internal RAM
+# holds that stack beside its sound chain and playout path is a question for
+# the bench (app_main's refusal now says how much was free).
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0
+
+# That alone did not do it: with every malloc() in PSRAM the board still had
+# 86715 bytes of internal RAM free when app_main made the session task, but in
+# pieces, the largest 31744 bytes, and the task's stack is one 32768-byte block.
+# ESP-IDF keeps a pool of internal RAM for exactly such requests ("the stack
+# for new tasks", components/esp_psram/Kconfig.spiram.common:117-131), 32 KiB
+# by default; on this board it is 64 KiB, taken in one piece at start-up.
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536

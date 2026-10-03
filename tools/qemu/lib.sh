@@ -185,8 +185,13 @@ PY
 #   - the flash and the eFuse file as drives; the eFuse file is opened read and
 #     write because the machine requires a writable drive, and the caller proves
 #     afterwards that nothing was written;
-#   - octal PSRAM, as a speaker's board carries (sdkconfig.defaults requires
-#     it at boot); `-m 32M` is the size ESP-IDF's launcher gives the machine;
+#   - the machine's default PSRAM part, which is quad (the emulated board's
+#     image is built for quad: firmware/sdkconfig.qemu-s3-openeth says why);
+#     `-m 8M`, the part the reference board carries (ASSUMED, as the board
+#     is). Not ESP-IDF's launcher's 32M: with 32 MB of PSRAM mapped the
+#     application had no virtual address range left to map a partition
+#     (`esp_mmu_map_virt(522): no such vaddr range`, then NVS refused), tried
+#     2026-10-03 (docs/decisions/0109-*);
 #   - the timer group's watchdog off, as ESP-IDF's launcher sets it: the
 #     emulator's sense of time under a loaded host is not the chip's;
 #   - a user network with the OpenCores controller: the guest gets an address by
@@ -196,12 +201,11 @@ PY
 qemu_boot() {
     local flash="$1" efuses="$2" serial="$3" seconds="$4"
     : > "$serial"
-    LD_LIBRARY_PATH="$(qemu_libs)/lib" timeout "$seconds" "$(qemu_program)" -M esp32s3 -m 32M \
+    LD_LIBRARY_PATH="$(qemu_libs)/lib" timeout "$seconds" "$(qemu_program)" -M esp32s3 -m 8M \
         -drive "file=$flash,if=mtd,format=raw" \
         -drive "file=$efuses,if=none,format=raw,id=efuse" \
         -global driver=nvram.esp32s3.efuse,property=drive,value=efuse \
         -global driver=timer.esp32s3.timg,property=wdt_disable,value=true \
-        -global driver=ssi_psram,property=is_octal,value=true \
         -nic user,model=open_eth \
         -nographic -monitor none -serial "file:$serial" > "$serial.emulator" 2>&1 &
     QEMU_PID=$!

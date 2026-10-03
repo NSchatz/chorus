@@ -400,6 +400,9 @@ void app_main(void)
                      session->server);
         }
         session->event_log_path = "/dev/console";
+        ESP_LOGI(TAG, "emulated board: internal RAM free %u bytes, largest block %u",
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     }
     session->first_backoff_ms = config.reconnect_first_backoff_ms;
     session->max_backoff_ms = config.reconnect_max_backoff_ms;
@@ -461,8 +464,12 @@ void app_main(void)
 
     if (xTaskCreate(session_task, "chorus-session", SESSION_STACK_BYTES, &task, SESSION_PRIORITY,
                     NULL) != pdPASS) {
-        ESP_LOGE(TAG, "the session task could not be started; the output stage goes back to "
-                      "high impedance");
+        ESP_LOGE(TAG,
+                 "the session task could not be started (a %u-byte stack; internal RAM free %u "
+                 "bytes, largest block %u); the output stage goes back to high impedance",
+                 (unsigned)SESSION_STACK_BYTES,
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
         output_stage_off(plays, &config.amp, &bus, &stage, &controller);
     }
     /* app_main returns and its task is deleted (CONFIG_ESP_MAIN_TASK_STACK_SIZE
