@@ -266,6 +266,83 @@ libopus's opus_compare passes the decode against the official one; the decode mu
 exactly libopus 1.6.1's as chorus builds it (`decode_fnv1a64`), which holds the endpoint and the
 Linux client, the same code, to one output.
 
+## `decode/`
+
+One short file per input format the server decodes (goal 16; `docs/decoders.md`, ADR 0122), each
+with what a reference decoder made of it, and two AAC files to refuse. Rust-only by declaration
+(`docs/conventions.md` section 9): read by `crates/decode/tests/reference_decodes.rs`, which
+fails on a file no test reads, by `crates/server/src/probe_media.rs`'s tests, and by
+`tools/image.sh` (which stages some beside the image test, never in the image). 50 files,
+895,476 bytes.
+
+Signals (synthesised by the generator, deterministic): `tone44`, 0.3 s at 44.1 kHz, four tones
+per channel; `sweep48`, 0.3 s at 48 kHz, a logarithmic sweep 20 Hz to 20 kHz with the right
+channel inverted at 0.7, at 16 and at 24 bits; `gap44` / `gap48`, 1.0 s of three tones per
+channel at non-integer frequencies cut in two at the middle frame and encoded as two separate
+tracks (`-a`, `-b`): the gapless pairs.
+
+Per fixture `NAME`:
+
+- `NAME.<ext>`: the encoded file (`wav`, `flac`, `m4a`, `mp3`, `ogg`, `opus`, `aac`).
+- `NAME.fields`: `key = value`. `file` and `file_sha256`; `codec`, `container`,
+  `sample_rate_hz`, `channels`, `bits` (lossless only), `frames` (what the reference decoder
+  gave, after gapless trimming); `match`, the criterion the test applies (`bit-exact`,
+  `iso-11172-4-full-accuracy`, `opus`, `frames-and-join`, `refused`); `reference_sha256`, the
+  sha256 of the reference decode as interleaved little-endian samples (2 bytes each at 16 bits,
+  3 at 24; MP3 and Vorbis references are rounded to 24 bits); for Opus also `exact_sha256` (the
+  decode of libopus 1.6.1 as chorus builds it, made by `tools/decode-fixtures/opus_pkt.c` over
+  packets the generator's own Ogg reader took out of the file, after pre-skip and end trim, as
+  24-bit samples), `pre_skip`, `input_sample_rate_hz` and `output_gain_q8`;
+  `decode_f32_fnv1a64` for the exact formats (the FNV-1a 64 of the decode as little-endian
+  `f32`, which `chorus-server --probe-media` prints); `title`, `artist`, `album` (the tags the
+  file carries; the title names the fixture); `moov` (`first` or `last`) for MP4; the
+  `gap_*` keys of a lossless gapless pair; `refusal` for the AAC files. Provenance in comments.
+- `NAME.ref`, where a test needs the reference samples and not only their hash: for MP3 and
+  Vorbis `tone44` and `sweep48` the reference decode as 24-bit little-endian (3 bytes a
+  sample); for Opus `tone44` and `sweep48` opusdec's decode as 16-bit little-endian, which
+  libopus's opus_compare judges against. The lossy gapless halves have no `.ref` (size): they
+  are held by frame count and by the join against the original signal, which the test
+  regenerates from its formula.
+
+The reference programs are conda-forge packages (channel `conda-forge`, `linux-64`), installed
+rootless on 2026-10-03 and used as programs only; none of their source was opened. The
+generator refuses a prefix whose `conda-meta` does not hold exactly these:
+
+| Package | Version | Build | Licence | Package sha256 | Used for |
+|---|---|---|---|---|---|
+| `ffmpeg` | 9.0.2 | `lgpl_hdc5ac13_803` | LGPL-2.1-or-later | `cec32eda8d1b08499d999fb7de006b03f29b3e4227ecba8bf32ea085399286f2` | encodes ALAC, Vorbis (libvorbis), Opus (libopus), AAC; decodes ALAC |
+| `lame` | 4.0 | `h770b6ad_1` | LGPL-2.0-only | `560a8561c5cc1f3c05b1e91d93436eb14fe55beb29c27e02623b42960d64d91f` | encodes MP3, with the Xing/LAME header |
+| `mpg123` | 1.33.7 | `h877a99e_1` | LGPL-2.1-only | `5afc3265622de6663f4179bc9023e1c1cac06b9c8620a0bf54aa0a0c232cf15a` | the MP3 reference decoder |
+| `libflac` | 1.5.0 | `he200343_1` | BSD-3-Clause | `e755e234236bdda3d265ae82e5b0581d259a9279e3e5b31d745dc43251ad64fb` | `flac`: the FLAC encoder and reference decoder |
+| `libvorbis` | 1.3.7 | `h54a6638_2` | BSD-3-Clause | `ca494c99c7e5ecc1b4cd2f72b5584cef3d4ce631d23511184411abcbb90a21a5` | the Vorbis encoder and reference decoder |
+| `libsndfile` | 1.2.2 | `hbc6d301_3` | LGPL-2.1-or-later | `3503121a77d76e33f668916b69d4b20cb6a21f62aa4351d1506271ae9d184c61` | `sndfile-convert`: runs libvorbis's decode |
+| `libogg` | 1.3.5 | `hd0c01bc_1` | BSD-3-Clause | `ffb066ddf2e76953f92e06677021c73c85536098f1c21fcd15360dbc859e22e4` | under libvorbis and opus-tools |
+| `libopus` | 1.6.1 | `hebe6cf0_1` | BSD-3-Clause | `82873b6c8478e19ab7aef0828ad3619b6633ad185a90a52f39dcb2c30c0c075e` | the Opus encoder, and opusdec's decoder |
+| `opus-tools` | 0.2 | `h916dfff_0` | BSD-2-Clause | `63a8f9a187e4af87776096ac892aac82ed0c7778f700a0f9d2363f1896bd5dce` | `opusdec`: the Opus reference decode |
+
+(Versions, builds, licences and hashes as micromamba recorded them in the prefix's
+`conda-meta/*.json`, read 2026-10-03.) The install that made the prefix, with the micromamba
+pin `tools/lib.sh` uses:
+
+```
+MAMBA_ROOT_PREFIX=/cache/opt/micromamba mise exec github:mamba-org/micromamba-releases@2.9.0-0 -- \
+  micromamba create -y -p /cache/opt/chorus-refdec -c conda-forge \
+  'ffmpeg=9.0.2=lgpl*' opus-tools=0.2 mpg123=1.33.7 lame libflac=1.5.0 libvorbis=1.3.7
+```
+
+Three traps the generator steps around: `opusenc` of opus-tools 0.2 does not start in that
+prefix (it wants an older libFLAC), so ffmpeg's libopus encodes; ffmpeg's libvorbis decode
+returned short lengths for some files in the goal's research, so `sndfile-convert` is the Vorbis
+reference decoder; and ffmpeg resamples a 44.1 kHz source to 48 kHz before libopus, so
+`opus-tone44` is an Opus file made from the 44.1 kHz tone whose header says 48000.
+
+Binary on purpose. Regenerated only by `make decode-fixtures`
+(`tools/decode-fixtures/generate.py`), never by a test or the gate; two runs give the same
+bytes (checked 2026-10-03 by hashing the directory after each). The generator refuses to write
+a lossless fixture whose reference decode is not the input, an MP3 or Vorbis fixture whose
+reference decode does not have the input's frame count, and an Opus fixture whose opusdec
+length is not the granule position less the pre-skip.
+
 ## `bench/`
 
 What the device-class bench scripts read, for `tools/bench/e2e-test.sh`: the

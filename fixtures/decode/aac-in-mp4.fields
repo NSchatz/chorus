@@ -1,0 +1,9 @@
+# aac-in-mp4: AAC-LC in MP4, ffmpeg 9.0.2's own AAC encoder. chorus never compiles
+# an AAC decoder (docs/proposals/P9-decoders.md); the file exists to be refused by name.
+# Written by tools/decode-fixtures/generate.py (`make decode-fixtures`); do not edit by hand.
+file = aac-in-mp4.m4a
+file_sha256 = 27522ba70d69067732e945e7ce1cad78b1be41974baac4a8d6a5844e1872e0c7
+codec = aac
+container = mp4
+match = refused
+refusal = unsupported: aac

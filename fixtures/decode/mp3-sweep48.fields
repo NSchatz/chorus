@@ -1,0 +1,17 @@
+# mp3-sweep48: MPEG-1 Layer III, 128 kbit/s stereo at 48000 Hz, `lame -b 128 --noreplaygain` (LAME 4.0),
+# with LAME's Xing/LAME header (encoder delay and padding) and an ID3v2 tag.
+# Reference: `mpg123 -e f32 -w` (mpg123 1.33.7, gapless on), rounded to 24 bits;
+# reference_sha256 is its sha256 as interleaved little-endian 24-bit samples (3 bytes each), and NAME.ref is those bytes.
+# Written by tools/decode-fixtures/generate.py (`make decode-fixtures`); do not edit by hand.
+file = mp3-sweep48.mp3
+file_sha256 = dcff317cab3807063c3277204398aa28b70e2c23f184884db85782d061378e7c
+codec = mp3
+container = mp3
+sample_rate_hz = 48000
+channels = 2
+frames = 14400
+match = iso-11172-4-full-accuracy
+reference_sha256 = 3f4645f3b8661eada28578e20fb6b554197f67b2f383810be6ac47da8b0d0f25
+title = chorus fixture mp3-sweep48
+artist = the generator
+album = fixtures/decode

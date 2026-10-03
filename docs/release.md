@@ -9,12 +9,12 @@ program: that is the owner's step (below).
 
 | Artifact | What it is | Built by |
 |---|---|---|
-| `chorus-server-v<ver>-x86_64-unknown-linux-musl` | the static server binary | `cargo build --release --locked --target x86_64-unknown-linux-musl` |
+| `chorus-server-v<ver>-x86_64-unknown-linux-musl` | the static server binary (C, for libopus, compiled by the pinned zig through `tools/zig-musl-cc.sh`) | `cargo build --release --locked --target x86_64-unknown-linux-musl`, as `tools/image.sh` runs it |
 | `chorus-server-v<ver>-oci.tar` | the server as an OCI image layout tarball on a digest-pinned distroless base, tested unpacked (`--help`, `GET /api/state`) | `tools/image.sh` |
 | `chorus-endpoint-esp32s3-v<ver>.bin` | the ESP32-S3 endpoint application image | `tools/firmware-image.sh` (ESP-IDF at the pin in `firmware/config/endpoint.conf`, then the eFuse and image guard) |
 | `chorus-endpoint-esp32s3-v<ver>.tar.gz` | the bootloader, partition table, application and `flasher_args.json` (offsets and flash flags) | the same build |
 | `chorus-endpoint_<ver>_arm64.deb`, `chorus-endpoint_<ver>_amd64.deb` | the Linux endpoint package: `chorus-client`, its systemd unit, `/etc/chorus/client.conf`, real-time limits and `chorus-verify-host`, for glibc 2.36 and later (goal 10; `docs/linux-endpoint.md`) | `tools/endpoint-package.sh` (cross-built rootless with zig and cargo-zigbuild; readelf, dpkg-deb and `systemd-analyze verify` checks) |
-| `<crate>-<ver>.crate` | the source of each MPL-2.0 crate a shipped binary links (the four Symphonia crates in `chorus-client`), checked against `Cargo.lock`'s checksum | `tools/release.sh` (below) |
+| `<crate>-<ver>.crate` | the source of each MPL-2.0 crate a shipped binary links (the twelve Symphonia crates in `chorus-server`, four of them also in `chorus-client`), checked against `Cargo.lock`'s checksum | `tools/release.sh` (below) |
 | `SHA256SUMS` | sha256 of every artifact | `tools/release.sh` |
 
 Later releases add more firmware targets as the program builds them.
@@ -61,6 +61,13 @@ with the Linux endpoint packages (goal 10), `chorus-client` links Symphonia's FL
 `cargo tree`, copies each `.crate` from the local registry cache (or fetches it from
 `https://static.crates.io/crates/<name>/<name>-<ver>.crate`), refuses unless its sha256 is
 the checksum `Cargo.lock` pins, and lists each in the notes.
+
+Since goal 16 the server links Symphonia too (MP3, FLAC, Vorbis, ALAC and WAV decoding;
+`docs/decoders.md`, ADR 0122): twelve MPL-2.0 crates in all, which the same `cargo tree` query
+finds, so the release attaches twelve `.crate` files. The image says where that source is
+itself: `/usr/share/doc/chorus/THIRD-PARTY-NOTICES.md` names each crate and version with its
+crates.io location, and `/usr/share/doc/chorus/libopus-COPYING` reproduces libopus's
+BSD-3-Clause licence, which a binary distribution must carry; `make image` checks both.
 
 The endpoint packages also say it on the device: `/usr/share/doc/chorus-endpoint/copyright`
 lists every crate linked into the packaged binaries with its licence and reproduces the

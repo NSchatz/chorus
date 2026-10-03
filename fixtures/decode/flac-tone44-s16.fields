@@ -1,0 +1,20 @@
+# flac-tone44-s16: 16-bit stereo at 44100 Hz, `flac -8 --no-padding` (libFLAC 1.5.0).
+# Reference: `flac -d` of the same build, equal to the input signal; reference_sha256 is the
+# sha256 of that decode as interleaved little-endian 16-bit samples (2 bytes each).
+# decode_f32_fnv1a64 is the FNV-1a 64 of the same samples as f32 (sample / 2^(bits-1)),
+# little-endian: what chorus-server --probe-media prints for an exact decode.
+# Written by tools/decode-fixtures/generate.py (`make decode-fixtures`); do not edit by hand.
+file = flac-tone44-s16.flac
+file_sha256 = 490ad929bfb25c1d89ef19aa28e327b706b4f3a1970005e1a24d8238e11ec01d
+codec = flac
+container = flac
+sample_rate_hz = 44100
+channels = 2
+bits = 16
+frames = 13230
+match = bit-exact
+reference_sha256 = 4672360407b9641a22de280b36fa3b5a9a35df97f758a506ea83344a19c8f94d
+decode_f32_fnv1a64 = da9dc4ae6edcf30e
+title = chorus fixture flac-tone44-s16
+artist = the generator
+album = fixtures/decode

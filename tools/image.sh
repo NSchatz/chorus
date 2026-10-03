@@ -12,7 +12,14 @@
 #
 # Tools (rootless, pinned): crane 0.22.1 (aqua:google/go-containerregistry) and
 # umoci 0.6.0 (aqua:opencontainers/umoci), run through mise; the Rust toolchain
-# and its musl target from rust-toolchain.toml.
+# and its musl target from rust-toolchain.toml; and zig (the `core:zig` pin of
+# mise.toml) as the C compiler for that target.
+#
+# The server links C since goal 16: libopus, for Ogg Opus (crates/decode,
+# crates/opus-sys). zig compiles those units against musl's headers through
+# tools/zig-musl-cc.sh; the link is still rustc's own over its self-contained
+# musl, so the binary stays what it was, a static position-independent
+# executable, which the test below holds (docs/decisions/0122-the-server-decoders.md).
 #
 # Output: CHORUS_IMAGE_OUT (default target/image/chorus-server-oci.tar).
 
@@ -27,6 +34,9 @@ BASE_DIGEST="sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57
 CRANE=(mise exec aqua:google/go-containerregistry@0.22.1 -- crane)
 UMOCI=(mise exec aqua:opencontainers/umoci@0.6.0 -- umoci)
 TARGET=x86_64-unknown-linux-musl
+pin() { sed -n "s|^\"$1\" = \"\(.*\)\"$|\1|p" mise.toml; }
+ZIG_VERSION="$(pin core:zig)"
+[ -n "$ZIG_VERSION" ] || { echo "image: mise.toml pins no core:zig"; exit 2; }
 
 TD="${CARGO_TARGET_DIR:-$ROOT/target}"
 OUT="${CHORUS_IMAGE_OUT:-$TD/image/chorus-server-oci.tar}"
@@ -40,7 +50,14 @@ CREATED="$(date -u -d "@$EPOCH" +%Y-%m-%dT%H:%M:%SZ)"
 REVISION="$(git rev-parse HEAD)"
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
 
-echo "image: building chorus-server for $TARGET"
+# The C compiler of the musl target (the `cc` crate reads this variable), and
+# what makes its output the same from one build to the next.
+export CHORUS_ZIG_VERSION="$ZIG_VERSION"
+export CC_x86_64_unknown_linux_musl="$ROOT/tools/zig-musl-cc.sh"
+export SOURCE_DATE_EPOCH="$EPOCH"
+export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$TD/zig-cache}"
+
+echo "image: building chorus-server for $TARGET (C by zig $ZIG_VERSION)"
 cargo build --release --locked --target "$TARGET" -p chorus-server --bins
 # The wakeup-jitter probe rides along for the owner's production run inside the
 # deployed container (docs/measurements/host-wakeup-jitter.md, "Next"); it never
@@ -73,6 +90,21 @@ install -m 0755 "$TD/$TARGET/release/chorus-server" "$STAGE/usr/local/bin/chorus
 install -m 0755 "$TD/$TARGET/release/chorus-rt-spin" "$STAGE/usr/local/bin/chorus-rt-spin"
 install -m 0755 "$TD/$TARGET/release/chorus-wakeup-probe" "$STAGE/usr/local/bin/chorus-wakeup-probe"
 install -m 0644 config/verification.conf "$STAGE/etc/chorus/verification.conf"
+# The notices the binary's third-party code asks for (libopus: BSD-3-Clause,
+# reproduced; Symphonia: MPL-2.0, where its source is), with the exact crates
+# and versions this build links.
+MPL_CRATES="$(cargo tree --locked -e normal -p chorus-server --prefix none --format '{p}|{l}' --target "$TARGET" |
+    awk -F'|' '$2 ~ /MPL-2.0/ {split($1, a, " "); print a[1] " " substr(a[2], 2)}' | LC_ALL=C sort -u)"
+[ -n "$MPL_CRATES" ] || { echo "image: no MPL-2.0 crate found, but chorus-server links Symphonia"; exit 2; }
+mkdir -p "$STAGE/usr/share/doc/chorus"
+install -m 0644 third_party/opus/COPYING "$STAGE/usr/share/doc/chorus/libopus-COPYING"
+{
+    cat deploy/THIRD-PARTY-NOTICES.md
+    while read -r name ver; do
+        echo "- \`$name\` $ver: https://crates.io/crates/$name/$ver"
+    done <<< "$MPL_CRATES"
+} > "$STAGE/usr/share/doc/chorus/THIRD-PARTY-NOTICES.md"
+chmod 0644 "$STAGE/usr/share/doc/chorus/THIRD-PARTY-NOTICES.md"
 # The zone state directory. A rootless insert records every file as root's, and
 # the image runs as 65532, so the directory is world-writable with the sticky
 # bit (as /tmp is) rather than owned; a mounted volume takes its place in a run.
@@ -139,6 +171,33 @@ assert "--control-listen" in args, args
 print("image test: entrypoint and command:", " ".join(args))
 EOF
 
+# The binary is what it was before it linked C: static, position-independent,
+# asking the system for no loader and no library.
+ELF_TYPE="$(readelf -h "$BIN" | sed -n 's/^ *Type: *//p')"
+case "$ELF_TYPE" in
+    DYN*) ;;
+    *) echo "image test: FAIL: chorus-server is '$ELF_TYPE', not a position-independent executable"; exit 1 ;;
+esac
+if readelf -d "$BIN" | grep -q NEEDED; then
+    echo "image test: FAIL: chorus-server needs a shared library"; exit 1
+fi
+if readelf -lW "$BIN" | grep -q INTERP; then
+    echo "image test: FAIL: chorus-server asks for a program interpreter"; exit 1
+fi
+STRIPPED="$T/chorus-server.stripped"
+strip -o "$STRIPPED" "$BIN"
+echo "image test: chorus-server is a static PIE (no NEEDED, no INTERP): $(stat -c %s "$BIN") bytes, $(stat -c %s "$STRIPPED") stripped"
+
+# The notices are in the image, and name every MPL-2.0 crate the binary links.
+DOC="$T/bundle/rootfs/usr/share/doc/chorus"
+cmp -s third_party/opus/COPYING "$DOC/libopus-COPYING" ||
+    { echo "image test: FAIL: the image does not carry libopus's COPYING"; exit 1; }
+while read -r name ver; do
+    grep -qF "https://crates.io/crates/$name/$ver" "$DOC/THIRD-PARTY-NOTICES.md" ||
+        { echo "image test: FAIL: the notices do not say where $name $ver's source is"; exit 1; }
+done <<< "$MPL_CRATES"
+echo "image test: notices: libopus-COPYING and THIRD-PARTY-NOTICES.md ($(printf '%s\n' "$MPL_CRATES" | wc -l) MPL-2.0 crates named)"
+
 echo "image test: $ (unpacked rootfs)/usr/local/bin/chorus-server --help"
 "$BIN" --help | tee "$T/help.txt" | head -n 5
 grep -q '^usage: chorus-server' "$T/help.txt"
@@ -194,6 +253,44 @@ if "$BIN" --health-check "127.0.0.1:$DEAD"; then
     echo "image test: FAIL: --health-check reported a dead port healthy"
     exit 1
 fi
+# The decoders in the image's own binary run (goal 16): one fixture of every
+# settled format, staged beside the test and not in the image, decoded by the
+# unpacked server. libopus here is the zig-compiled build, not the host build
+# the crate's own tests run. Lossless formats and Opus (integer arithmetic)
+# must give the fixture's hash; MP3 and Vorbis (floating point) its frame count.
+M="$T/media"
+mkdir -p "$M"
+field() { sed -n "s/^$2 = //p" "fixtures/decode/$1.fields"; }
+for name in wav-tone44-s16 flac-sweep48-s24 alac-tone44-s16-moov-first alac-sweep48-s24-moov-last \
+    mp3-tone44 vorbis-tone44 opus-tone44 opus-sweep48; do
+    file="$(field "$name" file)"
+    cp "fixtures/decode/$file" "$M/$file"
+    line="$("$BIN" --probe-media "$M/$file")"
+    want="codec=$(field "$name" codec) rate=$(field "$name" sample_rate_hz) channels=$(field "$name" channels)"
+    hash="$(field "$name" decode_f32_fnv1a64)"
+    case "$line" in
+        *"probe-media: $want bits="*" frames=$(field "$name" frames) "*) ;;
+        *) echo "image test: FAIL: --probe-media $file: $line (wanted $want, $(field "$name" frames) frames)"; exit 1 ;;
+    esac
+    if [ -n "$hash" ]; then
+        case "$line" in
+            *" pcm_f32_fnv1a64=$hash") ;;
+            *) echo "image test: FAIL: --probe-media $file: $line (wanted the exact decode $hash)"; exit 1 ;;
+        esac
+    fi
+    echo "image test: --probe-media $file -> ${line#chorus-server: probe-media: }"
+done
+for name in aac-in-mp4 aac-adts; do
+    file="$(field "$name" file)"
+    cp "fixtures/decode/$file" "$M/$file"
+    if "$BIN" --probe-media "$M/$file" > "$T/aac.out" 2> "$T/aac.err"; then
+        echo "image test: FAIL: --probe-media decoded $file, which is AAC"; exit 1
+    fi
+    grep -qx "chorus-server: probe-media refused: $(field "$name" refusal)" "$T/aac.err" ||
+        { echo "image test: FAIL: $file was refused, but not by name: $(cat "$T/aac.err")"; exit 1; }
+    echo "image test: --probe-media $file -> $(cat "$T/aac.err")"
+done
+
 # The probe the owner runs in the deployed container: present, static, and it runs.
 PROBE="$T/bundle/rootfs/usr/local/bin/chorus-wakeup-probe"
 "$PROBE" --period-us 5000 --seconds 1 > "$T/probe.txt"
