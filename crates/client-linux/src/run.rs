@@ -508,6 +508,10 @@ fn play<S: PcmSink>(
     // timeline, carried for the moments the queue is momentarily empty.
     let mut next_write_ts_ns = 0u64;
     let mut was_stale = false;
+    // The endpoint's report to the server (goal 15): the last playout error
+    // the loop formed, and when the next `telemetry` is due.
+    let mut last_error_ns: Option<f64> = None;
+    let mut next_report_us = 0u64;
     let mut was_muted = false;
     let mut was_undelayed = false;
     // What the zone last commanded, so a change is one log line and not one per
@@ -813,6 +817,7 @@ fn play<S: PcmSink>(
                     error_ns,
                     server_now_ns,
                 }) => {
+                    last_error_ns = Some(error_ns);
                     if let Some(series) = offsets.as_mut() {
                         series.observe(server_now_ns, error_ns)?;
                     }
@@ -822,6 +827,7 @@ fn play<S: PcmSink>(
                     clamped,
                     error_ns,
                 }) => {
+                    last_error_ns = Some(error_ns);
                     if let (Some(series), Some(offset_ns)) =
                         (offsets.as_mut(), sync.telemetry(now_ns).offset_ns)
                     {
@@ -844,6 +850,7 @@ fn play<S: PcmSink>(
                     )?;
                 }
                 Ok(Correction::HardResync { step_ns, error_ns }) => {
+                    last_error_ns = Some(error_ns);
                     corrector.advance(now_ns.saturating_sub(last_advance_ns));
                     last_advance_ns = now_ns;
                     corrector.hard_resync(step_ns, config.sync.mute_ns);
@@ -863,6 +870,27 @@ fn play<S: PcmSink>(
                 }
             }
             let telemetry = sync.telemetry(now_ns);
+            // The report to the server (goal 15, docs/telemetry.md), about
+            // once a second, up the connection the time sync travels on. A
+            // server that has gone away is not this loop's error.
+            if now_us >= next_report_us {
+                next_report_us = now_us + REPORT_INTERVAL_US;
+                if let Some(out) = sync_out.as_mut() {
+                    let report = wire_report(
+                        now_ns,
+                        last_error_ns,
+                        frames_to_us(buffer.queued_frames(), rate_hz),
+                        Counters::get(&counters.underruns),
+                        &telemetry,
+                        config.transport,
+                    );
+                    if let Ok(frame) = chorus_protocol::v2::encode(
+                        &chorus_protocol::v2::Message::Telemetry(report),
+                    ) {
+                        let _ = out.write_all(&frame).and_then(|()| out.flush());
+                    }
+                }
+            }
             // The offset in use, for the source role's upstream timestamps
             // (`crate::source`): one clock mapping per endpoint, not two.
             counters.offset.publish(telemetry.offset_ns);
@@ -1203,6 +1231,53 @@ pub fn header_for(config: &ClientConfig, device: &str, shape: &StreamShape) -> L
     }
 }
 
+/// How often the playout loop sends the server a `telemetry` (goal 15): the
+/// protocol's "about once a second".
+const REPORT_INTERVAL_US: u64 = 1_000_000;
+
+/// This endpoint's `telemetry` (protocol v2, 0x15), from what the playout
+/// loop itself knows. `docs/telemetry.md` is the reference.
+///
+/// What a Linux endpoint knows: its playout error (the last one the loop
+/// formed against the device's reported delay; unknown until it has formed
+/// one), the audio queued in its buffer, the underruns and hard resyncs of
+/// this session, the rate correction in force, and the link it was TOLD it is
+/// on (`--transport`, a declaration and not a probe). What it does not know
+/// and says so: a signal strength, a temperature and a heap figure. None of
+/// those has a source here, and none is invented.
+pub fn wire_report(
+    now_ns: u64,
+    last_error_ns: Option<f64>,
+    buffer_fill_us: u64,
+    underruns: u64,
+    sync: &crate::sync::Telemetry,
+    transport: chorus_control::transport::Transport,
+) -> chorus_protocol::v2::Telemetry {
+    use chorus_control::transport::Transport;
+    use chorus_protocol::v2::{Link, TELEMETRY_HEAP_UNKNOWN};
+    chorus_protocol::v2::Telemetry {
+        taken_ns: now_ns,
+        // `as` saturates a float at the integer's ends and maps NaN to 0;
+        // the minimum is the wire's "unknown", so a real error never uses it.
+        sync_error_ns: match last_error_ns {
+            Some(e) if e.is_finite() => (e.round() as i64).max(i64::MIN + 1),
+            _ => i64::MIN,
+        },
+        buffer_fill_us: u32::try_from(buffer_fill_us).unwrap_or(u32::MAX),
+        underruns: u32::try_from(underruns).unwrap_or(u32::MAX),
+        resyncs: sync.hard_resyncs,
+        correction_ppb: (sync.correction_ppm * 1000.0).round() as i32,
+        link: match transport {
+            Transport::Wired => Link::Wired,
+            Transport::Wireless => Link::Wireless,
+        },
+        rssi_dbm: i8::MIN,
+        temperature_centi_c: i16::MIN,
+        heap_free_bytes: TELEMETRY_HEAP_UNKNOWN,
+        heap_min_free_bytes: TELEMETRY_HEAP_UNKNOWN,
+    }
+}
+
 /// A counter snapshot, for the final report.
 pub fn counter_lines(counters: &Counters) -> Vec<String> {
     vec![
@@ -1234,4 +1309,72 @@ pub fn counter_lines(counters: &Counters) -> Vec<String> {
 /// A receiver with no bytes yet, for callers that build a handshake by hand.
 pub fn fresh_receiver() -> Receiver {
     Receiver::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chorus_control::transport::Transport;
+    use chorus_protocol::v2::{Link, TELEMETRY_HEAP_UNKNOWN};
+
+    fn sync(correction_ppm: f64, hard_resyncs: u32) -> Telemetry {
+        Telemetry {
+            offset_ns: Some(10),
+            round_trip_ns: Some(400_000),
+            bound_ns: Some(200_000),
+            stale: false,
+            age_ns: Some(1),
+            correction_ppm,
+            clamped: false,
+            hard_resyncs,
+            accepted: 3,
+            discarded: 0,
+        }
+    }
+
+    #[test]
+    fn the_report_carries_what_the_loop_knows_and_says_unknown_for_the_rest() {
+        let report = wire_report(
+            7_000_000_000,
+            Some(-1250.4),
+            180_000,
+            2,
+            &sync(-3.5, 1),
+            Transport::Wireless,
+        );
+        assert_eq!(report.taken_ns, 7_000_000_000);
+        assert_eq!(report.sync_error_ns, -1250);
+        assert_eq!(report.buffer_fill_us, 180_000);
+        assert_eq!(report.underruns, 2);
+        assert_eq!(report.resyncs, 1);
+        assert_eq!(report.correction_ppb, -3500);
+        assert_eq!(report.link, Link::Wireless);
+        // No source on a Linux endpoint: unknown, never a number.
+        assert_eq!(report.rssi_dbm, i8::MIN);
+        assert_eq!(report.temperature_centi_c, i16::MIN);
+        assert_eq!(report.heap_free_bytes, TELEMETRY_HEAP_UNKNOWN);
+        assert_eq!(report.heap_min_free_bytes, TELEMETRY_HEAP_UNKNOWN);
+        assert_eq!(
+            chorus_protocol::v2::encode(&chorus_protocol::v2::Message::Telemetry(report))
+                .unwrap()
+                .len(),
+            3 + 36,
+            "no heap known: no heap block"
+        );
+    }
+
+    #[test]
+    fn an_error_the_loop_has_not_formed_is_unknown_and_never_zero() {
+        let none = wire_report(1, None, 0, 0, &sync(0.0, 0), Transport::Wired);
+        assert_eq!(none.sync_error_ns, i64::MIN);
+        assert_eq!(none.link, Link::Wired);
+        let nan = wire_report(1, Some(f64::NAN), 0, 0, &sync(0.0, 0), Transport::Wired);
+        assert_eq!(nan.sync_error_ns, i64::MIN);
+        // A real error, however large, never collides with "unknown".
+        let huge = wire_report(1, Some(-1e30), 0, 0, &sync(0.0, 0), Transport::Wired);
+        assert_eq!(huge.sync_error_ns, i64::MIN + 1);
+        // Counters that outgrow the wire saturate; they do not wrap.
+        let many = wire_report(1, None, u64::MAX, u64::MAX, &sync(0.0, 0), Transport::Wired);
+        assert_eq!((many.buffer_fill_us, many.underruns), (u32::MAX, u32::MAX));
+    }
 }
