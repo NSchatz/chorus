@@ -159,6 +159,19 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE CHORUS_TARGET_ESP32S3=1)
 if(chorus_wireless_profile)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE CHORUS_PROVISIONING=1)
 endif()
+# The emulator run's bad image (goal 14, docs/decisions/0111-*): the update
+# unit built never to confirm its trial (firmware/main/esp_ota.c), so the
+# bootloader's rollback is exercised. tools/firmware-image.sh passes
+# CHORUS_OTA_NEVER_CONFIRM=0 or 1; only the emulator's profile may be 1.
+if(CHORUS_OTA_NEVER_CONFIRM)
+    file(STRINGS "${chorus_board_file}" chorus_emulated_profile REGEX "^link_transport *= *emulated")
+    if(NOT chorus_emulated_profile)
+        message(FATAL_ERROR "chorus: CHORUS_OTA_NEVER_CONFIRM is for the emulator's board only, "
+            "and ${CHORUS_BOARD_PROFILE} is not it")
+    endif()
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE CHORUS_OTA_NEVER_CONFIRM=1)
+    message(STATUS "chorus: this image never confirms its trial (the emulator run's bad image)")
+endif()
 
 # The vendored units are upstream's code, byte for byte: their own definitions,
 # the floating-point flags every C unit here gets, and no warnings (they are

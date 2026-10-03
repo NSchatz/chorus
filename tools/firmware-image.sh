@@ -124,6 +124,49 @@ if [ "$(cat "$OUT_DIR/sdkconfig.generated-from" 2> /dev/null)" != "$DEFAULTS_SUM
     printf '%s\n' "$DEFAULTS_SUM" > "$OUT_DIR/sdkconfig.generated-from"
 fi
 
+# THE EMULATOR RUN'S IMAGES (goal 14, docs/decisions/0111-*). The firmware
+# update run needs images of one profile that differ in version, and one that
+# never confirms its trial:
+#   CHORUS_IMAGE_VERSION      the version the image carries in its application
+#                             description (ESP-IDF's PROJECT_VER; default: what
+#                             ESP-IDF derives, the checkout's git description)
+#   CHORUS_OTA_NEVER_CONFIRM  1 builds the update unit's never_confirm in
+#                             (chorus/ota.h): an image that rolls itself back.
+#                             Refused for every profile but the emulator's; a
+#                             speaker is never built to fail its trial.
+IMAGE_VERSION="${CHORUS_IMAGE_VERSION:-}"
+NEVER_CONFIRM="${CHORUS_OTA_NEVER_CONFIRM:-0}"
+if [ -n "$IMAGE_VERSION" ] && ! [[ "$IMAGE_VERSION" =~ ^[A-Za-z0-9._-]{1,31}$ ]]; then
+    say "chorus: REFUSED: CHORUS_IMAGE_VERSION '$IMAGE_VERSION' is not 1 to 31 of [A-Za-z0-9._-]"
+    exit 2
+fi
+case "$NEVER_CONFIRM" in
+    0) ;;
+    1)
+        if [ "$(endpoint_conf link_transport)" != emulated ]; then
+            say "chorus: REFUSED: CHORUS_OTA_NEVER_CONFIRM=1 builds an image that rolls itself back; only the emulator's board (link_transport = emulated) is built that way, and $PROFILE is not it"
+            exit 2
+        fi
+        say "  update:     NEVER CONFIRMS its trial (CHORUS_OTA_NEVER_CONFIRM=1): the emulator run's bad image"
+        ;;
+    *)
+        say "chorus: REFUSED: CHORUS_OTA_NEVER_CONFIRM is '$NEVER_CONFIRM', not 0 or 1"
+        exit 2
+        ;;
+esac
+VERSION_ARGS=()
+[ -n "$IMAGE_VERSION" ] && VERSION_ARGS=(-D PROJECT_VER="$IMAGE_VERSION")
+say "  version:    ${IMAGE_VERSION:-ESP-IDF default, the git description}"
+# CMake keeps a -D value in its cache, so a directory that once carried a
+# version or the never-confirm build would carry it into a later build that
+# asked for neither. The directory remembers what it was configured with and
+# is configured afresh (ccache keeps that cheap) when that changes.
+VARIANT="version=${IMAGE_VERSION} never_confirm=${NEVER_CONFIRM}"
+if [ "$(cat "$OUT_DIR/image-variant" 2> /dev/null)" != "$VARIANT" ]; then
+    rm -f "$OUT_DIR/CMakeCache.txt"
+    printf '%s\n' "$VARIANT" > "$OUT_DIR/image-variant"
+fi
+
 say "chorus: building"
 # The generated sdkconfig lives in the build directory, not in firmware/, so two
 # build directories never share one and the image guard reads the configuration
@@ -136,7 +179,8 @@ fi
 say "  jobs:       IDF_PY_BUILD_JOBS=${IDF_PY_BUILD_JOBS:-<unset: the ninja default>}"
 (cd "$REPO_ROOT/firmware" && idf.py -B "$OUT_DIR" -D SDKCONFIG="$OUT_DIR/sdkconfig" \
     -D SDKCONFIG_DEFAULTS="$DEFAULTS_LIST" \
-    -D CHORUS_BOARD_PROFILE="$PROFILE" "${CCACHE_FLAG[@]}" build)
+    -D CHORUS_BOARD_PROFILE="$PROFILE" -D CHORUS_OTA_NEVER_CONFIRM="$NEVER_CONFIRM" \
+    "${VERSION_ARGS[@]}" "${CCACHE_FLAG[@]}" build)
 
 # Guardrail 2 over what was just built: the generated configuration and both
 # linked images, before anything is reported as an image.

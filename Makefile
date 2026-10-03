@@ -258,6 +258,13 @@ qemu-env: tools-executable
 qemu-boot: tools-executable
 	bash tools/qemu-boot-run.sh
 
+# A firmware update under the emulator (goal 14, line B, docs/decisions/0111-*):
+# the server's explicit install of a good image (confirmed) and of a bad one
+# (rolled back by the bootloader). Source: simulation. Same prerequisites and
+# lock as qemu-boot.
+ota-qemu: tools-executable
+	bash tools/ota-qemu-run.sh
+
 # Flash the built image: the owner's act at the bench. tools/firmware-flash.sh
 # refuses unless the owner set the owner-at-bench variable on their own command
 # line (docs/bench-packet.md); this target never sets it. PORT names the board.
@@ -333,7 +340,7 @@ verify-null-device: tools-executable
 	.PHONY: release image endpoint-packages build check discovery-vectors firmware-check firmware-golden-vectors  \
 	firmware-flash firmware-image firmware-image-guard firmware-safety-scans firmware-sync-scenarios  \
 	firmware-wireless gate gate-fast measure-fixture-reports measure-fixtures one  \
-	probe qemu-boot qemu-env sim-house sync-vectors ten-minute-run ten-minute-run-null test tools-executable verify verify-alsa-null verify-control  \
+	ota-qemu probe qemu-boot qemu-env sim-house sync-vectors ten-minute-run ten-minute-run-null test tools-executable verify verify-alsa-null verify-control  \
 	verify-control-determinism verify-device verify-discovery-fallback  \
 	verify-endpoint-mdns verify-endpoint-rig verify-host verify-mdns verify-measure-device  \
 	verify-house-soak verify-null-device verify-restart-storm verify-soak verify-sync-hour  \
