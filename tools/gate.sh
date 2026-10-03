@@ -1,11 +1,21 @@
 #!/usr/bin/env bash
 # `make gate`: the one check a change has to pass before it merges.
 #
-# Every step runs, in order, even after one fails, so a red run lists every
-# broken step and not only the first. Each step prints its exit code and its
+# The cheap steps (the conventions checks, fmt and clippy) all run, in order, even
+# after one fails, so a red run lists every broken one. If any of them failed the
+# gate stops there, names them, and lists the steps it did not run: a change that
+# fails a lint is red whatever its tests say, and the tests and builds after it
+# are most of the gate's time. Once the cheap steps pass, every later step runs,
+# in order, even after one fails. Each step prints its exit code and its
 # wall-clock; the run ends with the total and PASS or FAIL. A step's full output
 # goes to its own log under CHORUS_GATE_LOG (default target/gate/), and the last
 # lines of a failing step are printed beside it.
+#
+# The workspace tests run under cargo-nextest (pinned in mise.toml, configured in
+# .config/nextest.toml): every test in its own process, several at once, the
+# wall-clock-sensitive ones one at a time, no retries. The documentation tests,
+# which nextest does not run, run after them with `cargo test --doc`.
+# docs/decisions/0112-a-faster-gate-with-the-same-checks.md says why.
 #
 # The gate never takes chorus-heavy.lock itself; callers do (the merge rule in
 # .claude/goals/2026-09-chorus.md, section 0.3).
@@ -28,6 +38,8 @@
 #   CHORUS_ALSA_PREFIX        a rootless alsa-lib for the alsa-null step when the
 #                             system has no libasound.so.2 (default /cache/opt/chorus-alsa;
 #                             SKIPPED under CI when neither exists)
+#   NEXTEST_TEST_THREADS      how many tests run at once (default: .config/nextest.toml)
+#   CHORUS_FIRMWARE_JOBS      make's job count for the firmware host build (default 8)
 
 # Every step function is invoked by name through step(), which shellcheck
 # cannot see.
@@ -38,6 +50,18 @@ cd "$(dirname "$0")/.." || exit 2
 ROOT="$(pwd)"
 
 MODE="${1:-full}"
+
+# Every cargo build in the gate, and every one its steps and tests start, is a
+# one-shot build: incremental compilation would write gigabytes of small cache
+# files (2.7 GB in 23,730 files in one goal worktree, measured 2026-10-03) for a
+# rebuild that never comes. Exported so the nested builds agree with the gate's
+# and reuse its artifacts. The code built is the same either way.
+export CARGO_INCREMENTAL=0
+
+# The pinned test runner (mise.toml), run through mise as tools/endpoint-package.sh
+# runs its pinned tools.
+NEXTEST_VERSION="$(sed -n 's|^"aqua:nextest-rs/nextest/cargo-nextest" = "\(.*\)"$|\1|p' mise.toml)"
+
 LOG="${CHORUS_GATE_LOG:-${CARGO_TARGET_DIR:-$ROOT/target}/gate}"
 mkdir -p "$LOG"
 : > "$LOG/summary.txt"
@@ -59,6 +83,34 @@ step() {
         FAILED+=("$name")
         tail -n 15 "$LOG/$name.log" | sed "s/^/  $name| /"
     fi
+}
+
+# The workspace tests: every test under nextest, then the documentation tests,
+# which nextest does not run. Both run even when the first fails, so a red run
+# names every failing test.
+workspace_tests() {
+    local rc=0
+    if [ -z "$NEXTEST_VERSION" ]; then
+        echo "mise.toml pins no aqua:nextest-rs/nextest/cargo-nextest; the gate runs the workspace tests with it"
+        return 2
+    fi
+    MISE_TRUSTED_CONFIG_PATHS="$ROOT" \
+        mise exec "aqua:nextest-rs/nextest/cargo-nextest@$NEXTEST_VERSION" -- \
+        cargo nextest run --workspace --locked || rc=1
+    cargo test --doc --workspace --locked || rc=1
+    return "$rc"
+}
+
+# After the cheap steps: stop here when any of them failed, naming them and the
+# steps that will not run.
+stop_if_cheap_steps_failed() {
+    [ "${#FAILED[@]}" -eq 0 ] && return 0
+    local T1
+    T1=$(date +%s.%N)
+    printf 'gate: STOPPED after the cheap steps: %s failed; not run: %s\n' "${FAILED[*]}" "$*" |
+        tee -a "$LOG/summary.txt"
+    printf 'gate: FAIL (%s), wall-clock %ss\n' "${FAILED[*]}" "$(elapsed "$T0" "$T1")" | tee -a "$LOG/summary.txt"
+    exit 1
 }
 
 # --- the conventions checks (also the whole of gate-fast) -----------------------
@@ -190,14 +242,18 @@ if [ "$MODE" = tier-fast ]; then
     # separate build step is left to the full tier.
     step fmt              cargo fmt --all --check
     step clippy           cargo clippy --workspace --all-targets --locked -- -D warnings
-    step test             cargo test --workspace --locked
+    stop_if_cheap_steps_failed test
+    step test             workspace_tests
 fi
 
 if [ "$MODE" = full ]; then
     step fmt              cargo fmt --all --check
     step clippy           cargo clippy --workspace --all-targets --locked -- -D warnings
+    stop_if_cheap_steps_failed build test determinism firmware-check verify alsa-null \
+        firmware-esp32s3-wired firmware-esp32s3-wifi firmware-esp32s3-qemu firmware-profiles \
+        qemu-boot ota-qemu image endpoint-packages
     step build            cargo build --workspace --all-targets --locked
-    step test             cargo test --workspace --locked
+    step test             workspace_tests
     step determinism      make --no-print-directory verify-control-determinism
     step firmware-check   env CHORUS_OUTAGE_SECONDS="${CHORUS_GATE_OUTAGE_SECONDS:-30}" \
                               make --no-print-directory firmware-check

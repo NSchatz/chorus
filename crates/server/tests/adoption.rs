@@ -36,12 +36,20 @@ fn repository_root() -> PathBuf {
 }
 
 /// Build the two host programs of the C endpoint with the firmware's own
-/// Makefile (a no-op when they are current) and say where they are.
+/// Makefile (a no-op when they are current) and say where they are. The make
+/// runs under the same file lock `firmware_install.rs` and
+/// `crates/protocol/tests/firmware_session.rs` take, so two test processes
+/// never run make into `firmware/build` at once (the gate's test runner runs
+/// each test in its own process, several at a time).
 fn c_endpoints() -> (PathBuf, PathBuf) {
     let root = repository_root();
     let build = root.join("firmware").join("build");
+    std::fs::create_dir_all(&build).expect("firmware/build can be made");
     let session = build.join("chorus-endpoint-session");
     let dsp_session = build.join("chorus-endpoint-dsp-session");
+    let lock =
+        std::fs::File::create(build.join(".chorus-endpoint-session.lock")).expect("a lock file");
+    lock.lock().expect("the build lock");
     let made = Command::new("make")
         .current_dir(&root)
         .arg("--no-print-directory")

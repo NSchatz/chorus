@@ -151,6 +151,33 @@ VENDOR_OBJ := $(BUILD)/vendor/dr_flac.o \
 LIB_SRC += $(CODEC_SRC)
 CFLAGS += $(DRFLAC_DEFS) $(CODEC_INC)
 
+# --- objects and header dependencies -------------------------------------------
+#
+# Every chorus unit compiles once, to its own object under $(OBJ), and every
+# binary links the objects of the sources it names, in the same order. gcc
+# compiled each source of a one-command build as its own translation unit anyway
+# (no -flto, no -fwhole-program), so the code linked is the code it was; what
+# changes is that a unit twenty binaries share compiles once, and that each
+# object records every header it read (-MD -MP, the vendored headers seen
+# through -isystem included), so a changed header rebuilds exactly the objects
+# that include it. Before, the binaries named only their .c files, and a change
+# to a header alone left every binary built from it stale.
+#
+# The include paths per directory are the ones each unit was compiled with: a
+# firmware/src unit includes nothing from firmware/tests or firmware/check, so the
+# -I$(FW)/tests the test binaries added changed nothing in it (its preprocessed
+# text is the same with and without, checked 2026-10-03 for every unit), and
+# test_scan.c's -I$(FW)/check is the only one a test unit needs.
+OBJ := $(BUILD)/obj
+DEPFLAGS := -MD -MP
+fwobj = $(patsubst $(FW)/%.c,$(OBJ)/%.o,$(1))
+LIB_OBJ := $(call fwobj,$(LIB_SRC))
+GATE_OBJ := $(call fwobj,$(GATE_SRC) $(FW)/check/main_config_check.c)
+SCAN_OBJ := $(call fwobj,$(SCAN_SRC))
+CODEC_OBJ := $(call fwobj,$(CODEC_SRC))
+TEST_SUPPORT_OBJ := $(call fwobj,$(TEST_SUPPORT))
+SESSION_SUPPORT_OBJ := $(call fwobj,$(SESSION_SUPPORT))
+
 .PHONY: all check config-check golden-vectors sync-scenarios safety-scans amplifier clocking \
         telemetry wireless link console provisioning session-outage noise-vectors psa-tree codec codec-fixtures playout volume controls dsp lowlat \
         identity discovery ota clean
@@ -190,7 +217,7 @@ psa-tree:
 
 $(PSA_BUILD)/%.o: $(PSA_DIR)/%.c $(FW)/crypto/chorus_psa_config.h | psa-tree
 	@mkdir -p $(dir $@)
-	$(CC) $(PSA_CFLAGS) $(PSA_CONFIG) $(PSA_INCLUDES) $(PSA_PRIVATE_INCLUDES) -c $< -o $@
+	$(CC) $(PSA_CFLAGS) $(DEPFLAGS) $(PSA_CONFIG) $(PSA_INCLUDES) $(PSA_PRIVATE_INCLUDES) -c $< -o $@
 
 $(PSA_LIB): $(PSA_OBJ) $(FW)/crypto/chorus_psa_config.h | psa-tree
 	rm -f $@
@@ -204,7 +231,7 @@ $(PSA_LIB): $(PSA_OBJ) $(FW)/crypto/chorus_psa_config.h | psa-tree
 # is true: nothing below compiles until the checker has passed over
 # firmware/config/endpoint.conf, and the checker names the offending value and
 # the rule it broke.
-$(BUILD)/chorus-endpoint-config-check: $(GATE_SRC) $(FW)/check/main_config_check.c | $(BUILD)
+$(BUILD)/chorus-endpoint-config-check: $(GATE_OBJ) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
 
 $(STAMP): $(BUILD)/chorus-endpoint-config-check $(FW)/config/endpoint.conf $(BOARDS)
@@ -218,55 +245,76 @@ $(STAMP): $(BUILD)/chorus-endpoint-config-check $(FW)/config/endpoint.conf $(BOA
 
 config-check: $(STAMP)
 
+# --- objects ------------------------------------------------------------------
+
+$(OBJ)/src/%.o: $(FW)/src/%.c | $(BUILD)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
+
+$(OBJ)/tests/%.o: $(FW)/tests/%.c | $(BUILD)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(DEPFLAGS) -I$(FW)/check -I$(FW)/tests -c -o $@ $<
+
+$(OBJ)/check/%.o: $(FW)/check/%.c | $(BUILD)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(DEPFLAGS) -I$(FW)/check -c -o $@ $<
+
+# Nothing of the endpoint compiles until the configuration gate has passed, as
+# before: every object but the checker's own and the scanner's (host tooling,
+# outside the tree it scans) waits for the stamp. Order-only, so a renewed stamp
+# relinks the binaries (they name it) without recompiling every unit.
+$(filter-out $(GATE_OBJ) $(OBJ)/tests/test_scan.o,$(LIB_OBJ) \
+	$(patsubst $(FW)/tests/%.c,$(OBJ)/tests/%.o,$(wildcard $(FW)/tests/*.c))): | $(STAMP)
+
 # --- binaries ----------------------------------------------------------------
 
-$(BUILD)/chorus-endpoint-scan: $(SCAN_SRC) $(FW)/check/main_endpoint_scan.c | $(BUILD)
-	$(CC) $(CFLAGS) -I$(FW)/check -o $@ $^ $(LDLIBS)
+$(BUILD)/chorus-endpoint-scan: $(SCAN_OBJ) $(OBJ)/check/main_endpoint_scan.o | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
 
 # fake_flash.c is linked for --ota-flash: the host session's two-slot flash in
 # a file, so a test can "reboot" the endpoint by starting the binary again.
-$(BUILD)/chorus-endpoint-session: $(LIB_SRC) $(SESSION_SUPPORT) $(FW)/tests/main_session.c \
-                                  $(FW)/tests/fake_flash.c $(STAMP) $(PSA_LIB) $(VENDOR_OBJ) | $(BUILD)
-	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(SESSION_SUPPORT) $(FW)/tests/main_session.c \
-		$(FW)/tests/fake_flash.c $(PSA_LIB) $(VENDOR_OBJ) $(LDLIBS)
+$(BUILD)/chorus-endpoint-session: $(LIB_OBJ) $(SESSION_SUPPORT_OBJ) $(OBJ)/tests/main_session.o \
+                                  $(OBJ)/tests/fake_flash.o $(STAMP) $(PSA_LIB) $(VENDOR_OBJ) | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $(LIB_OBJ) $(SESSION_SUPPORT_OBJ) $(OBJ)/tests/main_session.o \
+		$(OBJ)/tests/fake_flash.o $(PSA_LIB) $(VENDOR_OBJ) $(LDLIBS)
 
 # Goal 12's end to end on fakes (firmware/tests/dsp-session.sh): the real
 # session, the real playout path and its sound chain, and a fake I2S DMA that
 # keeps every frame written. Links pthreads for the writer thread.
-$(BUILD)/chorus-endpoint-dsp-session: $(LIB_SRC) $(FW)/tests/main_dsp_session.c $(STAMP) \
+$(BUILD)/chorus-endpoint-dsp-session: $(LIB_OBJ) $(OBJ)/tests/main_dsp_session.o $(STAMP) \
                                       $(PSA_LIB) $(VENDOR_OBJ) | $(BUILD)
-	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(FW)/tests/main_dsp_session.c $(PSA_LIB) \
+	$(CC) $(CFLAGS) -o $@ $(LIB_OBJ) $(OBJ)/tests/main_dsp_session.o $(PSA_LIB) \
 		$(VENDOR_OBJ) $(LDLIBS) -lpthread
 
 # The scan's own tests link the scanner and not the endpoint library: the
 # scanner is host tooling and deliberately outside the tree it scans.
-$(BUILD)/test_scan: $(SCAN_SRC) $(FW)/tests/test_scan.c | $(BUILD)
-	$(CC) $(CFLAGS) -I$(FW)/check -I$(FW)/tests -o $@ $(SCAN_SRC) $(FW)/tests/test_scan.c $(LDLIBS)
+$(BUILD)/test_scan: $(SCAN_OBJ) $(OBJ)/tests/test_scan.o | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
 
 $(BUILD)/test_protocol $(BUILD)/test_protocol_v2 $(BUILD)/test_noise $(BUILD)/test_lowlat \
 $(BUILD)/test_sync $(BUILD)/test_amp $(BUILD)/test_i2s $(BUILD)/test_telemetry \
 $(BUILD)/test_wifi $(BUILD)/test_link $(BUILD)/test_console $(BUILD)/test_playout \
 $(BUILD)/test_volume $(BUILD)/test_controls $(BUILD)/test_dsp \
 $(BUILD)/test_endpoint_dsp $(BUILD)/test_identity $(BUILD)/test_provision $(BUILD)/test_ota \
-$(BUILD)/test_discovery: $(BUILD)/test_%: $(LIB_SRC) $(TEST_SUPPORT) \
-                         $(FW)/tests/test_%.c $(STAMP) $(PSA_LIB) $(VENDOR_OBJ) | $(BUILD)
-	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(LIB_SRC) $(TEST_SUPPORT) $(FW)/tests/test_$*.c \
+$(BUILD)/test_discovery: $(BUILD)/test_%: $(LIB_OBJ) $(TEST_SUPPORT_OBJ) \
+                         $(OBJ)/tests/test_%.o $(STAMP) $(PSA_LIB) $(VENDOR_OBJ) | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $(LIB_OBJ) $(TEST_SUPPORT_OBJ) $(OBJ)/tests/test_$*.o \
 		$(PSA_LIB) $(VENDOR_OBJ) $(LDLIBS)
 
 # The decoders' test links the codec units and the vendored objects and nothing
 # else of the endpoint: the seam has no dependency on the session.
 $(BUILD)/vendor/dr_flac.o: $(THIRD_PARTY)/dr_flac/dr_flac.c $(THIRD_PARTY)/dr_flac/dr_flac.h | $(BUILD)
 	mkdir -p $(dir $@)
-	$(CC) $(VENDOR_CFLAGS) $(DRFLAC_DEFS) -c -o $@ $<
+	$(CC) $(VENDOR_CFLAGS) $(DEPFLAGS) $(DRFLAC_DEFS) -c -o $@ $<
 
 $(BUILD)/vendor/opus/%.o: $(OPUS_DIR)/%.c $(OPUS_LIST) | $(BUILD)
 	mkdir -p $(dir $@)
-	$(CC) $(VENDOR_CFLAGS) $(OPUS_DEFS) -I$(OPUS_DIR)/include -I$(OPUS_DIR)/celt \
+	$(CC) $(VENDOR_CFLAGS) $(DEPFLAGS) $(OPUS_DEFS) -I$(OPUS_DIR)/include -I$(OPUS_DIR)/celt \
 		-I$(OPUS_DIR)/silk -I$(OPUS_DIR)/src -c -o $@ $<
 
-$(BUILD)/test_codec: $(CODEC_SRC) $(VENDOR_OBJ) $(FW)/tests/test_codec.c $(STAMP) | $(BUILD)
-	$(CC) $(CFLAGS) -I$(FW)/tests -o $@ $(CODEC_SRC) \
-		$(FW)/tests/test_codec.c $(VENDOR_OBJ) $(LDLIBS)
+$(BUILD)/test_codec: $(CODEC_OBJ) $(VENDOR_OBJ) $(OBJ)/tests/test_codec.o $(STAMP) | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $(CODEC_OBJ) \
+		$(OBJ)/tests/test_codec.o $(VENDOR_OBJ) $(LDLIBS)
 
 # libopus's conformance tool (RFC 6716 section 6, RFC 8251), vendored unchanged:
 # it judges a decode against the official reference decode.
@@ -436,3 +484,8 @@ check: config-check golden-vectors lowlat sync-scenarios safety-scans clocking a
 
 clean:
 	rm -rf $(BUILD)
+
+# The headers each object read, recorded by its last compile (-MD -MP above).
+TEST_MAIN_OBJ := $(patsubst $(FW)/tests/%.c,$(OBJ)/tests/%.o,$(wildcard $(FW)/tests/*.c))
+-include $(patsubst %.o,%.d,$(sort $(LIB_OBJ) $(GATE_OBJ) $(SCAN_OBJ) $(OBJ)/check/main_endpoint_scan.o \
+	$(TEST_MAIN_OBJ) $(PSA_OBJ) $(VENDOR_OBJ)))

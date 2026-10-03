@@ -551,10 +551,10 @@ static int the_committed_vectors_round_trip(void)
         vector_t *v = &vectors[i];
         char path[512];
         char relative[256];
-        snprintf(relative, sizeof(relative), "fixtures/protocol/v2/%s.hex", v->stem);
+        snprintf(relative, sizeof(relative), "fixtures/protocol/v2/%.127s.hex", v->stem);
         chorus_repo_path(path, sizeof(path), relative);
         long hex_ok = fixture_read(path, hex_text, sizeof(hex_text));
-        snprintf(relative, sizeof(relative), "fixtures/protocol/v2/%s.fields", v->stem);
+        snprintf(relative, sizeof(relative), "fixtures/protocol/v2/%.127s.fields", v->stem);
         chorus_repo_path(path, sizeof(path), relative);
         long fields_ok = fixture_read(path, fields_text, sizeof(fields_text));
         long len = (hex_ok < 0) ? -1 : fixture_parse_hex(hex_text, v->frame, sizeof(v->frame));
