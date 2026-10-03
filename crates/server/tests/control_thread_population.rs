@@ -727,8 +727,9 @@ fn answer_past_the_ceiling(address: &str) -> String {
 /// acceptor + 2 per client slot + 1 control acceptor + 1 per control worker +
 /// the event writer + the conductor. Not a function of `--slots`, nor of how
 /// many endpoints or subscribers there are. The TV relay (with `--slots`) and
-/// the MQTT publisher (with `--mqtt-broker`) are one more each, added where a
-/// test turns them on.
+/// the MQTT publisher (with `--mqtt-broker`) are one more each, and the
+/// players (`--players P`, goal 16) are P more, added where a test turns them
+/// on.
 fn population(max_clients: usize, workers: usize) -> usize {
     1 + 1 + 1 + 2 * max_clients + 1 + workers + 1 + 1
 }
@@ -974,6 +975,105 @@ fn the_mqtt_publisher_is_one_declared_thread_with_its_flag_and_none_without() {
     assert_eq!(on, off + 1);
     println!(
         "population without --mqtt-broker: {} threads (6 + 2N + M, N={}, M=2); with it: {}",
+        off, MAX_CLIENTS, on
+    );
+}
+
+/// (goal 16) `--players P` is P more declared, ordinary threads, `player-0`
+/// to `player-<P-1>`, created with the rest whether or not anything plays,
+/// and none without the flag: `6 + 2N + M + 1 + P` against `6 + 2N + M + 1`
+/// (the one is the TV relay, which `--slots` brings and `--players` needs).
+/// A group taking a player, and a session hearing it, make no thread: a
+/// thread per stream is what the contract forbids.
+#[test]
+fn the_players_are_declared_threads_with_their_flag_and_none_without() {
+    let shape = |players: usize| {
+        let mut extra = vec![
+            "--max-clients".to_string(),
+            MAX_CLIENTS.to_string(),
+            "--control-workers".to_string(),
+            "2".to_string(),
+            "--slots".to_string(),
+            "2".to_string(),
+            "--zone".to_string(),
+            "kitchen".to_string(),
+            "--zone".to_string(),
+            "study".to_string(),
+        ];
+        if players > 0 {
+            extra.extend(["--players".to_string(), players.to_string()]);
+        }
+        let (server, pid, _rest, startup) = start(&extra);
+        let rows = reported(&startup);
+        assert_roles(&rows, 2, &startup);
+        let threads = kernel_threads(pid);
+        let declared: BTreeSet<u32> = rows.iter().map(|r| r.tid).collect();
+        assert_eq!(declared, threads, "players={}: {:?}", players, rows);
+        let named: BTreeSet<String> = rows
+            .iter()
+            .filter(|r| r.role.starts_with("player"))
+            .map(|r| r.role.clone())
+            .collect();
+        let wanted: BTreeSet<String> = (0..players).map(|i| format!("player-{}", i)).collect();
+        assert_eq!(named, wanted, "players={}: {:?}", players, rows);
+        assert_eq!(
+            threads.len(),
+            population(MAX_CLIENTS, 2) + 1 + players,
+            "players={} runs {} threads: {:?}",
+            players,
+            threads.len(),
+            rows
+        );
+        assert_eq!(
+            startup
+                .iter()
+                .any(|l| l.contains("chorus-server: players ")),
+            players > 0,
+            "the players line is said only with the flag: {:?}",
+            startup
+        );
+        // Each room takes a player (refused by name where there is none), a
+        // session hears one, and the population again.
+        let plane = Plane::new(control_address(&startup), 2, None, "kitchen");
+        for (room, player) in [("kitchen", "p0"), ("study", "p1")] {
+            let response = plane.command(&format!(
+                r#"{{"v":2,"t":"take","target":"{}","source":"player:{}"}}"#,
+                room, player
+            ));
+            if players > 0 {
+                assert!(response.contains("200 OK"), "{}", response);
+                assert!(
+                    response.contains(&format!(r#""source":"player:{}""#, player)),
+                    "{}",
+                    response
+                );
+            } else {
+                assert!(response.contains("400 Bad Request"), "{}", response);
+                assert!(
+                    response.contains(&format!("there is no player '{}' on this server", player)),
+                    "{}",
+                    response
+                );
+            }
+        }
+        let mut client = common::v2_client(audio_address(&startup).as_str(), READ_TIMEOUT);
+        let mut scratch = vec![0u8; 65_536];
+        assert!(client.reader.read(&mut scratch).expect("audio comes down") > 0);
+        thread::sleep(SETTLE);
+        assert_eq!(
+            kernel_threads(pid),
+            threads,
+            "players={}: a take or a session made a thread",
+            players
+        );
+        drop(server);
+        threads.len()
+    };
+    let (off, on) = (shape(0), shape(3));
+    assert_eq!(on, off + 3);
+    println!(
+        "population without --players: {} threads (6 + 2N + M + 1, N={}, M=2); with --players \
+         3: {}",
         off, MAX_CLIENTS, on
     );
 }

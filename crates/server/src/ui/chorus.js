@@ -157,8 +157,27 @@
       muted: typeof raw.muted === "boolean" ? raw.muted : null,
       present: readList(raw.present),
       endpoints: readList(raw.endpoints),
-      audio: readText(raw.audio)
+      audio: readText(raw.audio),
+      playing: readPlaying(raw.now_playing)
     };
+  }
+
+  /// What the room's group is playing (goal 16), as words for the meta line,
+  /// or null when the state says nothing: the state it is in, then the title
+  /// and the artist where they are known.
+  function readPlaying(raw) {
+    if (!raw || typeof raw !== "object") {
+      return null;
+    }
+    var state = readText(raw.state);
+    var title = readText(raw.title);
+    var artist = readText(raw.artist);
+    var what = [title, artist]
+      .filter(function (part) {
+        return part !== null;
+      })
+      .join(" - ");
+    return (state === null ? "playing" : state) + (what === "" ? "" : " " + what);
   }
 
   function percentText(thousandths) {
@@ -526,6 +545,10 @@
     }
     meta += " · group " + (zone.group === null ? "unavailable" : zone.group);
     meta += " · stream " + (zone.audio === null ? "unavailable" : zone.audio);
+    // What the room is playing, said only when the state says it.
+    if (zone.playing !== null) {
+      meta += " · " + zone.playing;
+    }
     parts.meta.textContent = meta;
 
     parts.endpoints.textContent = endpointFigure(zone);

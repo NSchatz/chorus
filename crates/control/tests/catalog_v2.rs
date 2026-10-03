@@ -19,8 +19,8 @@ use chorus_control::catalog::{decode_command, decode_message, Command, Refusal, 
 use chorus_control::firmware::{Image, Report, SpeakerFirmware};
 use chorus_control::json;
 use chorus_control::rooms::{
-    Alarm, Autoplay, BondMember, CivilTime, ClockTime, Days, InputId, Link, QuietWindow, Role,
-    Source,
+    Alarm, Autoplay, BondMember, CivilTime, ClockTime, Days, InputId, Link, NowPlaying, PlayState,
+    QuietWindow, Role, Source,
 };
 use chorus_control::sound::{EqFilter, FixedPoint, Polarity};
 use chorus_control::speakers::KeyChange;
@@ -300,6 +300,31 @@ fn encode_from(fields: &Fields) -> String {
                 zones
                     .set_alarm_ringing(&fields.get("ringing"), true)
                     .unwrap();
+            }
+            // (goal 16) What the runtime said each group's player source is
+            // playing: `now_playing.N = <group> | <state> | <via> |
+            // <duration_ms> | <title> | <artist> | <album> | <art_url>`, an
+            // empty part where the fact is not known.
+            let mut n = 0;
+            while fields.has(&format!("now_playing.{}", n)) {
+                let line = fields.get(&format!("now_playing.{}", n));
+                let p: Vec<&str> = line.split('|').map(str::trim).collect();
+                let text = |t: &str| (!t.is_empty()).then(|| t.to_string());
+                zones
+                    .set_now_playing(
+                        p[0],
+                        Some(NowPlaying {
+                            title: text(p[4]),
+                            artist: text(p[5]),
+                            album: text(p[6]),
+                            art_url: text(p[7]),
+                            duration_ms: text(p[3]).map(|d| d.parse().unwrap()),
+                            state: PlayState::parse(p[1]).unwrap(),
+                            via: p[2].to_string(),
+                        }),
+                    )
+                    .unwrap_or_else(|e| panic!("{}: {}", line, e));
+                n += 1;
             }
             zones.encode_state()
         }

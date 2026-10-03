@@ -300,6 +300,52 @@ fn alarm_with_a_chime_ramps_from_silence_to_its_volume_in_steps_and_ends_restore
     assert_eq!(h.logged("alarm=wake ended restored=kitchen"), 1);
 }
 
+/// (goal 16) A player plays in one group. A room that was playing one when
+/// its alarm rang gets it back when the alarm ends, unless another group
+/// took the player meanwhile: then the room plays nothing, and is not left
+/// ringing.
+#[test]
+fn alarm_ending_gives_a_room_its_player_back_unless_another_group_took_it() {
+    let p0 = || Source::Player("p0".to_string());
+    for taken_meanwhile in [false, true] {
+        let mut h = House::new(
+            Zone::utc(),
+            thursday(6, 59, 0),
+            &[("kitchen", 500), ("study", 500)],
+        );
+        h.zones.set_group_source("kitchen", p0()).unwrap();
+        h.command(Command::AlarmSet(alarm(
+            "wake",
+            "kitchen",
+            "07:00",
+            "chime:bell",
+            600,
+            10,
+        )));
+        h.run(60_000, 100);
+        assert_eq!(h.source_of("kitchen"), Source::Chime("bell".to_string()));
+        assert_eq!(h.zones.player_group("p0"), None, "the alarm freed it");
+        if taken_meanwhile {
+            h.zones.set_group_source("study", p0()).unwrap();
+        }
+        // duration_min 1: it ends at 07:01, fades, and the room is put back.
+        h.run(70_000, 100);
+        assert!(!h.zones.is_ringing("wake") && h.rt.ringing().is_empty());
+        if taken_meanwhile {
+            assert_eq!(h.source_of("study"), p0());
+            assert_eq!(
+                h.source_of("kitchen"),
+                Source::None,
+                "not given a player another group has, and not left ringing"
+            );
+            assert_eq!(h.logged("reason=player-busy wanted=player:p0"), 1);
+        } else {
+            assert_eq!(h.source_of("kitchen"), p0());
+            assert_eq!(h.logged("reason=player-busy"), 0);
+        }
+    }
+}
+
 #[test]
 fn alarm_with_a_line_in_source_starts_the_input_and_ramps() {
     let mut h = House::new(

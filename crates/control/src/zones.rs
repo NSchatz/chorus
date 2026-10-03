@@ -51,12 +51,34 @@
 //! - [`Zones::set_civil_time`] (or [`Zones::set_active_quiet`]) says which
 //!   quiet-hours windows are active, and clamps;
 //! - [`Zones::set_group_source`] says what a group plays;
+//! - [`Zones::set_now_playing`] says what a group's player source is playing
+//!   (goal 16: title, artist, album, artwork, duration, state);
 //! - [`Zones::start_ramp`], [`Zones::runtime_volume`] and [`Zones::stop_ramp`]
 //!   move a room's volume over time, every step clamped;
 //! - [`Zones::set_alarm_ringing`] records an alarm as ringing or not;
 //! - [`Zones::sleep_expired`] removes a sleep timer that ran out;
 //! - [`Zones::offer_input`] and [`Zones::withdraw_input`] say which line-ins
 //!   are offered.
+//!
+//! # Player sources and what is playing (goal 16)
+//!
+//! `player:<id>` is one of the server's network media players. **A player
+//! plays in at most one group**: a `take` or a runtime hook that would give a
+//! second formed group the same player is refused by name (field `source`).
+//! When groups re-form, the player follows its group as every source does (a
+//! live group forming, a group dissolving into its last room); the one case
+//! where a source is otherwise COPIED, `take` pushing rooms out of the
+//! target's group, keeps the player with the target and leaves the rooms
+//! pushed out playing `none` (or, when the same `take` gives the target
+//! another source, the player goes with the rooms pushed out).
+//!
+//! What the player is playing is the group's [`NowPlaying`] record: a fact
+//! about now, never persisted, set only by the runtime, held to its bounds,
+//! moved with the group's source, dropped when the group is no longer formed
+//! and cleared the moment the group's source stops being a player source.
+//! The state message carries it only where there is one (`now_playing` on the
+//! `groups[]` entry, `source` and `now_playing` on each member room), so a
+//! server with no player says the bytes it said before goal 16.
 //!
 //! # Speakers (goal 14)
 //!
@@ -86,8 +108,8 @@ use crate::catalog::{
 use crate::firmware::{self, image_value, Image};
 use crate::json::{self, Value};
 use crate::rooms::{
-    Alarm, Autoplay, BondMember, CivilTime, InputId, Link, QuietWindow, Role, SavedGroup,
-    SleepTimer, Source, MAX_DEFINITIONS,
+    Alarm, Autoplay, BondMember, CivilTime, InputId, Link, NowPlaying, QuietWindow, Role,
+    SavedGroup, SleepTimer, Source, MAX_DEFINITIONS,
 };
 use crate::sound::{BassManagement, RoomEq, SoundSettings};
 use crate::speakers::{key_change_value, speaker_value, KeyChange, NotListed, Speaker, Speakers};
@@ -258,6 +280,10 @@ pub struct Zones {
     saved: Vec<SavedGroup>,
     /// (v2) What each formed group plays, where it is not [`Source::Stream`].
     sources: Vec<(String, Source)>,
+    /// (v2, goal 16) What each formed group's player source is playing now,
+    /// sorted by group. Only a group whose source is a player source has one.
+    /// Never persisted.
+    now_playing: Vec<(String, NowPlaying)>,
     /// (v2) Alarms, sorted by id.
     alarms: Vec<Alarm>,
     /// (v2) Alarms ringing now. Never persisted.
@@ -1280,8 +1306,21 @@ impl Zones {
             } else {
                 self.fresh_live_id()
             };
-            if let Some(s) = self.source_of(&group) {
-                self.set_source(&home, s);
+            match self.source_of(&group) {
+                // (goal 16) A player plays in one group, so it cannot be
+                // copied as any other source is. It stays with the target,
+                // and the rooms pushed out play nothing; unless this take
+                // gives the target something else to play, when the player
+                // (and what it is playing) goes with the rooms pushed out.
+                Some(s @ Source::Player(_)) => {
+                    if source.is_none_or(|new| *new == s) {
+                        self.set_source(&home, Source::None);
+                    } else {
+                        self.move_source(&group, &home);
+                    }
+                }
+                Some(s) => self.set_source(&home, s),
+                None => {}
             }
             for i in &strangers {
                 self.zones[*i].group = home.clone();
@@ -1299,9 +1338,48 @@ impl Zones {
             self.dissolve_if_alone(&from);
         }
         if let Some(source) = source {
+            self.player_is_free(&group, source)?;
             self.set_source(&group, source.clone());
         }
         Ok(())
+    }
+
+    /// (goal 16) Refuse to give `group` a player source another formed group
+    /// is playing: a player is one stream of decoded audio, and two groups
+    /// playing it would be two listeners of one position nobody chose.
+    fn player_is_free(&self, group: &str, source: &Source) -> Result<(), Refusal> {
+        let Source::Player(id) = source else {
+            return Ok(());
+        };
+        match self.player_group(id) {
+            Some(other) if other != group => Err(Refusal::rejected(
+                "source",
+                format!(
+                    "player '{}' is playing in group '{}', and a player plays in one group at \
+                     a time; take '{}' instead, or stop it there first (take '{}' with source \
+                     'none')",
+                    id, other, other, other
+                ),
+            )),
+            _ => Ok(()),
+        }
+    }
+
+    /// (goal 16) The formed group playing `player:<id>`, if one is.
+    pub fn player_group(&self, id: &str) -> Option<String> {
+        self.sources
+            .iter()
+            .find(|(g, s)| matches!(s, Source::Player(p) if p == id) && !self.members(g).is_empty())
+            .map(|(g, _)| g.clone())
+    }
+
+    /// (goal 16) What a formed group's player source is playing now, when the
+    /// runtime has said.
+    pub fn now_playing(&self, group: &str) -> Option<&NowPlaying> {
+        self.now_playing
+            .iter()
+            .find(|(g, _)| g == group)
+            .map(|(_, n)| n)
     }
 
     /// A group that is not saved and holds one room, not its own, becomes that
@@ -1344,7 +1422,12 @@ impl Zones {
         self.source_of(group).unwrap_or(Source::Stream)
     }
 
+    /// Every change of what a group plays goes through here, which is what
+    /// keeps a now-playing record only where a player source is.
     fn set_source(&mut self, group: &str, source: Source) {
+        if !matches!(source, Source::Player(_)) {
+            self.now_playing.retain(|(g, _)| g != group);
+        }
         self.sources.retain(|(g, _)| g != group);
         if source != Source::Stream {
             self.sources.push((group.to_string(), source));
@@ -1352,18 +1435,28 @@ impl Zones {
         }
     }
 
+    /// Group `to` plays what `from` played, and `from` no longer does; what
+    /// it was playing (goal 16) goes with it.
     fn move_source(&mut self, from: &str, to: &str) {
         if let Some(source) = self.source_of(from) {
+            let playing = self.now_playing(from).cloned();
             self.sources.retain(|(g, _)| g != from);
+            self.now_playing.retain(|(g, _)| g != from);
             self.set_source(to, source);
+            if let Some(playing) = playing {
+                self.now_playing.retain(|(g, _)| g != to);
+                self.now_playing.push((to.to_string(), playing));
+                self.now_playing.sort_by(|a, b| a.0.cmp(&b.0));
+            }
         }
     }
 
-    /// Drop what names a group that is no longer formed: its source and its
-    /// sleep timer. Runs after every change.
+    /// Drop what names a group that is no longer formed: its source, what it
+    /// was playing and its sleep timer. Runs after every change.
     fn prune(&mut self) {
         let formed: Vec<String> = self.zones.iter().map(|z| z.group.clone()).collect();
         self.sources.retain(|(g, _)| formed.contains(g));
+        self.now_playing.retain(|(g, _)| formed.contains(g));
         let zones: Vec<String> = self.zones.iter().map(|z| z.id.clone()).collect();
         self.sleep
             .retain(|s| zones.contains(&s.target) || formed.contains(&s.target));
@@ -1448,12 +1541,69 @@ impl Zones {
         Ok(changed)
     }
 
-    /// Say what a formed group plays.
+    /// Say what a formed group plays. A player source another formed group is
+    /// playing is refused by name (goal 16); a source that is not a player
+    /// source clears the group's now-playing record.
     pub fn set_group_source(&mut self, group: &str, source: Source) -> Result<(), Refusal> {
         self.formed_members(group)?;
+        self.player_is_free(group, &source)?;
         self.set_source(group, source);
         self.serial += 1;
         Ok(())
+    }
+
+    /// (goal 16) Say what a formed group's player source is playing now, or
+    /// (`None`) that nothing is known. The record is held to its bounds
+    /// ([`NowPlaying::bounded`]). Refused by name, with nothing changed, for a
+    /// group that is not formed, a group whose source is not a player source
+    /// (a record describes what a player plays), and a `via` that is not an
+    /// identifier. Returns whether anything changed; the serial moves only
+    /// when it did, so a runtime that says the same thing again fans nothing
+    /// out.
+    pub fn set_now_playing(
+        &mut self,
+        group: &str,
+        playing: Option<NowPlaying>,
+    ) -> Result<bool, Refusal> {
+        self.formed_members(group)?;
+        let playing = match playing {
+            None => None,
+            Some(record) => {
+                let source = self.source(group);
+                if !matches!(source, Source::Player(_)) {
+                    return Err(Refusal::rejected(
+                        "group",
+                        format!(
+                            "group '{}' plays '{}', which is not a player source; a now-playing \
+                             record says what a player source ('player:<id>') is playing",
+                            group,
+                            source.literal()
+                        ),
+                    ));
+                }
+                if !is_identifier(&record.via) {
+                    return Err(Refusal::rejected(
+                        "via",
+                        format!(
+                            "'{}' is not an identifier; 'via' names what drives the player \
+                             (for example 'upnp')",
+                            record.via.escape_debug()
+                        ),
+                    ));
+                }
+                Some(record.bounded())
+            }
+        };
+        if self.now_playing(group) == playing.as_ref() {
+            return Ok(false);
+        }
+        self.now_playing.retain(|(g, _)| g != group);
+        if let Some(record) = playing {
+            self.now_playing.push((group.to_string(), record));
+            self.now_playing.sort_by(|a, b| a.0.cmp(&b.0));
+        }
+        self.serial += 1;
+        Ok(true)
     }
 
     /// Start a ramp in a room towards `target`, clamped to its effective limit
@@ -1687,7 +1837,7 @@ impl Zones {
             .formed_groups()
             .into_iter()
             .map(|g| {
-                Value::Obj(vec![
+                let mut group = vec![
                     ("id".to_string(), Value::text(&g.id)),
                     ("kind".to_string(), Value::text(g.kind.name())),
                     ("zones".to_string(), texts(&g.zones)),
@@ -1700,7 +1850,14 @@ impl Zones {
                         Value::text(&self.source(&g.id).literal()),
                     ),
                     ("audio".to_string(), Value::text(self.audio_for(&g.id))),
-                ])
+                ];
+                // (goal 16) Written only when there is something to say, so
+                // a group with no player source says the bytes it said before
+                // and the committed state vectors did not move.
+                if let Some(playing) = self.now_playing(&g.id) {
+                    group.push(("now_playing".to_string(), now_playing_value(playing)));
+                }
+                Value::Obj(group)
             })
             .collect();
         let saved = self
@@ -1902,6 +2059,18 @@ impl Zones {
                 ]),
             ),
         ]);
+        // (goal 16) What the room's group is playing, on the room itself and
+        // only when there is a record: the room object is what a consumer of
+        // one room reads (the MQTT room topic is this object, byte for byte),
+        // and it carries the group's `source` with it so that consumer need
+        // not read `groups[]` to know which player it is.
+        if let Some(playing) = self.now_playing(&z.group) {
+            fields.push((
+                "source".to_string(),
+                Value::text(&self.source(&z.group).literal()),
+            ));
+            fields.push(("now_playing".to_string(), now_playing_value(playing)));
+        }
         Value::Obj(fields)
     }
 
@@ -1945,6 +2114,30 @@ impl Zones {
     pub fn encode_state_at(&self, version: i64) -> String {
         json::write(&self.state_value_at(version))
     }
+}
+
+/// A now-playing record as the state message carries it: every member always,
+/// `null` where a fact is not known, in this order.
+fn now_playing_value(playing: &NowPlaying) -> Value {
+    let text = |t: &Option<String>| match t {
+        Some(t) => Value::text(t),
+        None => Value::Null,
+    };
+    Value::Obj(vec![
+        ("title".to_string(), text(&playing.title)),
+        ("artist".to_string(), text(&playing.artist)),
+        ("album".to_string(), text(&playing.album)),
+        ("art_url".to_string(), text(&playing.art_url)),
+        (
+            "duration_ms".to_string(),
+            match playing.duration_ms {
+                Some(ms) => Value::int(ms as i64),
+                None => Value::Null,
+            },
+        ),
+        ("state".to_string(), Value::text(playing.state.name())),
+        ("via".to_string(), Value::text(&playing.via)),
+    ])
 }
 
 /// Replace the flags of a room's windows and clamp; whether anything moved.

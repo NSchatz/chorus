@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"source","detail":"player 'p0' is playing in group 'kitchen', and a player plays in one group at a time; take 'kitchen' instead, or stop it there first (take 'kitchen' with source 'none')"}

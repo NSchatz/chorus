@@ -1,0 +1,27 @@
+# Canonical input for the catalog v2 state-playing vector.
+#
+# Applying the commands below, in order, to a server configured with these
+# zones, then the runtime hooks below, must produce exactly state-playing.json.
+#
+# Goal 16: three groups play a player source (`player:<id>`), and the runtime
+# said what two of them are playing (`now_playing.N = <group> | <state> | <via>
+# | <duration_ms> | <title> | <artist> | <album> | <art_url>`, an empty part
+# where the fact is not known). A group with a record carries `now_playing`
+# after `audio`, and each of its rooms carries `source` and `now_playing` after
+# `room_eq`; the bedroom plays a player nothing was said about, and the hall
+# plays the stream, so neither they nor their groups carry either member.
+# That "only where there is a record" rule is why state-empty.json and
+# state-rich.json did not move.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = state
+default_audio = 127.0.0.1:4010
+zones = living,kitchen,study,bedroom,hall
+command.0 = {"v":2,"t":"group_save","group":"downstairs","name":"Downstairs","zones":["living","kitchen"]}
+command.1 = {"v":2,"t":"take","target":"downstairs","source":"player:p0"}
+command.2 = {"v":2,"t":"take","target":"study","source":"player:p1"}
+command.3 = {"v":2,"t":"take","target":"bedroom","source":"player:p2"}
+now_playing.0 = downstairs | playing | upnp | 215000 | Morning Light | The Example Quartet | First Takes | http://192.0.2.10:8200/art/42.jpg
+now_playing.1 = study | paused | upnp | | Evening news | | |

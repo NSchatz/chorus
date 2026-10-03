@@ -52,7 +52,7 @@
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
@@ -61,7 +61,7 @@ use std::time::{Duration, Instant};
 use chorus_control::catalog::{decode_message, Refusal};
 use chorus_control::fanout::ControlFanout;
 use chorus_control::persist;
-use chorus_control::rooms::{CivilTime, Role, Source};
+use chorus_control::rooms::{CivilTime, NowPlaying, PlayState, Role, Source};
 use chorus_control::sound::Polarity;
 use chorus_control::speakers::{KeyChange, NotListed, SpeakerNow};
 use chorus_control::zones::{Zone, Zones};
@@ -252,6 +252,10 @@ pub struct ControlState {
     /// ([`ControlState::publish_events_through`]); empty with the publisher
     /// off, and then nothing is left anywhere.
     mqtt_events: OnceLock<crate::mqtt::EventTap>,
+    /// (goal 16) How many network media players this server runs
+    /// (`--players`; [`ControlState::set_players`]): a `take` whose source
+    /// names a player it does not run is refused by name.
+    players: AtomicUsize,
 }
 
 /// The files the browser is served: the page, what it loads, and the document
@@ -312,7 +316,81 @@ impl ControlState {
             firmware: OnceLock::new(),
             telemetry: crate::metrics::TelemetryStore::new(),
             mqtt_events: OnceLock::new(),
+            players: AtomicUsize::new(0),
         }
+    }
+
+    /// (goal 16) Say how many network media players this server runs
+    /// (`--players`): `p0` to `p<players-1>`. Called once, before any
+    /// command is served.
+    pub fn set_players(&self, players: usize) {
+        self.players.store(players, Ordering::SeqCst);
+    }
+
+    /// (goal 16) How many players this server runs.
+    pub fn players(&self) -> usize {
+        self.players.load(Ordering::SeqCst)
+    }
+
+    /// (goal 16) The formed group playing `player:<id>` now, if one is: where
+    /// the player's driver puts what it is playing, and how it learns that
+    /// nobody plays it any more.
+    pub fn player_group(&self, id: &str) -> Option<String> {
+        self.locked().zones.player_group(id)
+    }
+
+    /// (goal 16) What `group`'s player source is playing now, as the room
+    /// model holds it.
+    pub fn now_playing(&self, group: &str) -> Option<NowPlaying> {
+        self.locked().zones.now_playing(group).cloned()
+    }
+
+    /// (goal 16) Say what `group`'s player source is playing now, or (`None`)
+    /// that nothing is known: the runtime hook a player's driver calls
+    /// (`Zones::set_now_playing`). The state is fanned out, and the conductor
+    /// woken (a controller is shown whether its room is paused), only when
+    /// something changed; nothing is persisted, because nothing persisted
+    /// moved. Refused by name for a group that is not formed or does not play
+    /// a player source.
+    pub fn set_now_playing(
+        &self,
+        group: &str,
+        playing: Option<NowPlaying>,
+    ) -> Result<bool, Refusal> {
+        let state = {
+            let mut held = self.locked();
+            if !held.zones.set_now_playing(group, playing)? {
+                return Ok(false);
+            }
+            held.zones.encode_state()
+        };
+        self.publish(state);
+        Ok(true)
+    }
+
+    /// (goal 16) A `take` that names a player this server does not run is
+    /// refused by name; which players exist is the runtime's to know, as the
+    /// catalog says.
+    fn player_exists(&self, command: &Command) -> Result<(), Refusal> {
+        let Command::Take {
+            source: Some(Source::Player(id)),
+            ..
+        } = command
+        else {
+            return Ok(());
+        };
+        let players = self.players();
+        if crate::player::player_index(id, players).is_some() {
+            return Ok(());
+        }
+        Err(Refusal::rejected(
+            "source",
+            format!(
+                "there is no player '{}' on this server; its players are {}",
+                id,
+                crate::player::player_list(players)
+            ),
+        ))
     }
 
     /// (goal 15) Leave every accepted controller command at `tap` for the
@@ -490,7 +568,7 @@ impl ControlState {
                     .iter()
                     .map(|e| (e.clone(), sound_of(z, e)))
                     .collect(),
-                controller_state: controller_state_of(z),
+                controller_state: controller_state_of(z, zones.now_playing(&z.group)),
                 route: match &held.slots {
                     None => Some(0),
                     Some(table) => table.slot_of(&z.group),
@@ -602,6 +680,7 @@ impl ControlState {
         let state = {
             let mut held = self.locked();
             Self::commit(&mut held, |zones| {
+                self.player_exists(&command)?;
                 zones.apply(&command)?;
                 // (goal 14) Forgetting a speaker forgets its pin too, after
                 // the room model has agreed and before anything is installed:
@@ -678,7 +757,7 @@ impl ControlState {
                     changed = Some(held.zones.encode_state());
                 }
                 let z = held.zones.zone(&zone).expect("translate found the zone");
-                let state = controller_state_of(z);
+                let state = controller_state_of(z, held.zones.now_playing(&z.group));
                 Ok((
                     ControllerApplied {
                         zone,
@@ -1154,15 +1233,22 @@ pub fn fold_of(roles: &[Role]) -> u8 {
 
 /// What a room's controllers are shown (docs/protocol.md, "0x33 controller
 /// state"): its volume in points, its mute and its group.
-pub fn controller_state_of(zone: &Zone) -> ControllerState {
+///
+/// `playing` is what the room's group's player source is playing, when the
+/// runtime has said (goal 16): a room whose group is paused shows paused.
+/// Every other room is playing, because the server streams to every attached
+/// endpoint; a player that is buffering is shown as playing, the wire having
+/// no third word (`docs/protocol.md`).
+pub fn controller_state_of(zone: &Zone, playing: Option<&NowPlaying>) -> ControllerState {
     let points =
         (i64::from(zone.volume.thousandths()) + THOUSANDTHS_PER_POINT / 2) / THOUSANDTHS_PER_POINT;
     ControllerState {
         volume: points.clamp(0, 100) as u8,
         muted: zone.muted,
-        // The server streams to every attached endpoint; whether an input is
-        // paused arrives with the inputs (goals 16, 17).
-        playback: Playback::Playing,
+        playback: match playing.map(|p| p.state) {
+            Some(PlayState::Paused) => Playback::Paused,
+            _ => Playback::Playing,
+        },
         group: zone.group.clone(),
     }
 }

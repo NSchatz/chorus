@@ -1,0 +1,19 @@
+# Canonical input for the catalog v2 error-take-player-busy vector.
+#
+# `input` is refused, by the decoder or by the room state the commands below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-take-player-busy.json. Nothing of it is applied.
+#
+# Goal 16: a player plays in at most one group. The kitchen is playing
+# `player:p0`, so the study taking the same player is refused naming the group
+# that has it.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+zones = kitchen,study
+command.0 = {"v":2,"t":"take","target":"kitchen","source":"player:p0"}
+input = {"v":2,"t":"take","target":"study","source":"player:p0"}
+field = source
+ends_the_session = 0
