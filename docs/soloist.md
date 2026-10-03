@@ -9,7 +9,9 @@ tests run; and, from "The server side" on, what `chorus-server` does with the re
 flags, the `soloist:` source, take the room, volume, the alarm source and the expiry warning.
 
 Decision records: [0130](decisions/0130-the-soloist-receiver-supervisor.md) (the supervisor),
-[0132](decisions/0132-the-soloist-receivers-in-the-server.md) (the server side).
+[0132](decisions/0132-the-soloist-receivers-in-the-server.md) (the server side) and
+[0131](decisions/0131-the-chorus-soloist-image.md) (the `chorus-soloist` image, its listings check
+and the deploy files; "The image" and "Running the receivers" below).
 
 ## Words
 
@@ -67,6 +69,7 @@ chorus-soloistd --soloist-dir DIR --api-key-file FILE --state-dir DIR --cache-di
 | `--stop-timeout-ms` | 5000 | SIGTERM to SIGKILL |
 | `--backoff-min-ms`, `--backoff-max-ms` | 1000, 60000 | the retry delay after a failure: doubled each time, capped |
 | `--expiry-check-secs` | 86400 | how often the build's expiry is looked at |
+| `--health-check` | | with `--soloist-dir` (and `--pipewire`, `--pipewire-runtime-dir` when not the defaults): the container's probe, below |
 
 The defaults in the last four rows are chorus's own choices, not measured values.
 
@@ -113,8 +116,19 @@ What it does:
 
 It reaps its own children (PipeWire, WirePlumber, Soloist) and no others: as PID 1 of a
 container it does not adopt and reap processes those leave behind, so the receiver container
-runs it under an init (compose `init: true`) or as PID 1 knowing that; the image track decides
-which. It handles SIGTERM and SIGINT itself either way.
+runs it under an init (`init: true` in `deploy/soloist/compose.yaml`, ADR 0131: what Soloist
+forks is not documented). It handles SIGTERM and SIGINT itself either way.
+
+`chorus-soloistd --health-check --soloist-dir DIR` is the probe a container healthcheck runs. It
+starts nothing and **connects to nothing**: the receiver's socket takes one connection and a new
+one replaces the old, so a probe that connected would drop chorus-server each time it ran.
+After claiming its receiver the supervisor writes the index to the file `receiver` in its
+runtime directory (private to the container); the probe reads it and exits 0 when `r<i>.lock`
+is held by someone (an exclusive lock taken from the probe would block), `r<i>.sock` is a
+socket, `r<i>.pcm` is a FIFO and, with `--pipewire auto`, PipeWire's socket exists; otherwise 1
+with the reason on one line. It says the supervisor is alive and holds its receiver. It does
+not say Soloist is logged in or playing: that is the `status` and the events chorus-server
+gets.
 
 The API key: Soloist accepts it only as a command-line argument (`-k, --api-key KEY`: "Treat
 this value as a secret"; the reference lists no key file and no environment variable, and says
@@ -227,13 +241,123 @@ PipeWire, WirePlumber and Soloist):
 A session manager is needed: without one a client is never linked to the sink and the FIFO
 stays empty (goal 17's PipeWire probe; its report is the measurement track's).
 
-Run here by hand on 2026-10-03 (not part of the gate, which runs no PipeWire: conventions rule
-10): `chorus-soloistd --pipewire auto` at this change, with PipeWire 1.4.2 and WirePlumber 0.5.8
+Since ADR 0131 the full gate runs this path on the image's own PipeWire (`make soloist-image`,
+"The image" below). Before that, run here by hand on 2026-10-03: `chorus-soloistd --pipewire auto` at this change, with PipeWire 1.4.2 and WirePlumber 0.5.8
 from Debian 13's packages extracted rootless, and `pw-cat -p --target chorus-r0 --rate 44100
 --channels 2 --format f32 --raw -` playing a 3 s float32 ramp: the FIFO delivered 2048 zero
 frames, then all 132300 frames bit for bit, then 820 zero frames; SIGTERM ended the supervisor
 with exit code 0 and no process left. This shows the configuration and the supervision work; it
 is not a timing measurement.
+
+## The image
+
+`make soloist-image` (`tools/soloist-image.sh`) builds `target/image/chorus-soloist-oci.tar`, an
+OCI image layout of one receiver, with no container daemon (ADR 0131 says why this way):
+
+| In the image | From |
+|---|---|
+| Debian 13 (trixie), `docker.io/library/debian:trixie-20260918-slim` pinned by digest | the registry, once, then the cache |
+| 60 Debian packages: PipeWire 1.4.2, WirePlumber 0.5.8 and what they depend on, unpacked with `dpkg-deb -x` | snapshot.debian.org at `20260918T000000Z`, each file held to the sha256 in `deploy/soloist/debian-packages.pins` |
+| `/usr/local/bin/chorus-soloistd`, a static binary (the entrypoint) | this workspace |
+| `/etc/passwd` and `/etc/group` with the user `chorus`, uid and gid 65532 (chorus-server's, so both can use the receiver directory) | the base's files plus one line each |
+| `/etc/ld.so.cache` | the image's own `ldconfig`, run by the build |
+| `/usr/share/doc/chorus/THIRD-PARTY-NOTICES.md`, `/usr/share/doc/<package>/copyright`, `/var/lib/dpkg/status.d/<package>` | `deploy/soloist/THIRD-PARTY-NOTICES.md` plus the package table; the packages themselves; each package's control file |
+
+**No Soloist file is in the image**, and none is in the repository or a release: `make
+soloist-lists` prints what chorus ships and fails on any such file (conventions rule 24).
+PipeWire's and WirePlumber's configuration is not in the image either: `chorus-soloistd` writes
+it at start ("PipeWire" above).
+
+Mount points and what the run provides (`deploy/soloist/compose.yaml`):
+
+| Path | What | In the reference compose file |
+|---|---|---|
+| `/run/chorus/soloist` | the receiver directory, shared with chorus-server | a host directory owned by 65532, bound into both |
+| `/opt/soloist` | the owner's Soloist: the executable `/opt/soloist/soloist` | a host directory, read-only |
+| `/run/secrets/soloist_api_key` | the owner's API key | a host file, read-only, readable by 65532 |
+| `/var/lib/chorus-soloist` | state: Soloist's data directory per target (the Connect identity and session) | a host directory; worth backing up |
+| `/var/cache/chorus-soloist` | Soloist's cache per target | a host directory outside any backed-up path |
+| `/run/chorus-soloist` | the supervisor's runtime directory: the written configuration, PipeWire's socket, the `receiver` index file | a tmpfs owned by 65532 |
+
+The image's command is `--soloist-dir /run/chorus/soloist --api-key-file
+/run/secrets/soloist_api_key --state-dir /var/lib/chorus-soloist --cache-dir
+/var/cache/chorus-soloist`; the compose file repeats it and adds `--receivers`. The root file
+system can be read-only. The image is amd64 only, as the server image is.
+
+What the image test proves, and what it does not. `make soloist-image` unpacks the tarball
+(umoci, rootless) and, with no container (the gate has no user namespace and no chroot), runs
+the unpacked files by path: the image's programs are started through the image's own loader
+over the image's own libraries, and PipeWire's module directories are named by environment
+variables where a container would use the compiled-in paths. It shows:
+
+- the entrypoint, the command and the user of the image's configuration; `chorus-soloistd` is a
+  static position-independent executable and runs; `/opt/soloist` is an empty directory;
+- every pinned package's copyright file and control record is present and the notices name each
+  package and its source;
+- every `NEEDED` library of every program and library the packages brought is in the image's
+  loader cache or the file's own `RUNPATH` (253 files): the loader finds them with no maintainer
+  script having run, and nothing needs a file of an excluded package;
+- the image's `pipewire` and `wireplumber` are the pinned versions and run;
+- **the real PCM path**: the image's `chorus-soloistd --pipewire auto` writes the configuration,
+  starts and supervises the image's PipeWire and WirePlumber; the image's own `pw-cat` plays a
+  2 s float32 signal into the sink `chorus-r0`; the FIFO `r0.pcm` must deliver frames of that
+  signal only, bit for bit and in order (a quantum lost to a busy host is counted and reported,
+  and less than half arriving fails);
+- **the supervisor's half**, on the same running supervisor: `--health-check` healthy; a
+  connection to `r0.sock` as chorus-server makes it gets `hello`, `build` and `status idle`;
+  `assign` starts the fake Soloist (built outside the image, given by `--soloist-bin`, standing
+  in for the owner's binary) and gives `status running`; the fake's login and play come back as
+  relayed events; `release` gives `idle`; SIGTERM ends the supervisor with exit code 0 and no
+  child left; `--health-check` then says unhealthy; the API key is in no log line.
+
+It does not show: Soloist itself (never downloaded or run here), so not that Soloist finds the
+libraries it needs in this image, nor that Soloist's PipeWire client links to the sink the way
+`pw-cat --target` does (the fake Soloist has no PipeWire client: it writes a FIFO itself, which
+is off in this test, so the audio in the FIFO is `pw-cat`'s, never the fake's); the image inside
+a container runtime (the read-only root, the tmpfs, the dropped capabilities, the limits, the
+macvlan network, the healthcheck as Docker runs it); anything about timing (conventions rule
+11); arm64.
+
+## Running the receivers
+
+`deploy/soloist/compose.yaml` is the reference: one service, `deploy.replicas` identical
+containers on an external macvlan network (each receiver needs UDP 5353 of its own network
+namespace, P7), every container claiming the lowest free receiver index. chorus-server's
+half is the override `deploy/soloist/server.compose.yaml`, added to `deploy/compose.yaml` only on
+a host that runs the receivers: the same receiver directory mounted, and `--slots`,
+`--soloist-dir` and `--soloist-receivers` on the command ("The server side" below; the other
+flags keep their defaults). Nothing in
+this repository deploys anything; the homelab's stack is a PR in the homelab repository.
+
+The owner's steps, on the host that runs both:
+
+1. **The network.** Create a macvlan network on the LAN interface with a range of addresses
+   reserved for the receivers, named `chorus-soloist-lan` (or set `CHORUS_SOLOIST_NETWORK`).
+   The interface, subnet and range are the host's and stay out of this repository.
+2. **The directories**, all owned by uid and gid 65532: under `/srv/chorus/soloist` (or
+   `CHORUS_SOLOIST_HOST_DIR`) `receivers` (mode 0770), `bin`, `secrets` (mode 0700) and
+   `state`; and the cache, `/var/cache/chorus-soloist` (or `CHORUS_SOLOIST_CACHE_DIR`), outside
+   whatever the host backs up (up to 256 MB per target, `ASSUMED`, P7). `state` holds each
+   target's Spotify Connect identity and session and is worth backing up.
+3. **Place the binary**: Spotify's Soloist build for the host's architecture as
+   `bin/soloist`, executable. chorus never downloads it.
+4. **Place the key**: the Soloist API key as the single line of `secrets/api_key`, mode 0400,
+   owner 65532. It is read at each start of Soloist and never logged.
+5. **Start** the receivers with the image pinned by digest (`CHORUS_SOLOIST_IMAGE`: the
+   manifest digest `make soloist-image` prints, which the release notes repeat), and
+   chorus-server with the override (`docker compose -f deploy/compose.yaml -f
+   deploy/soloist/server.compose.yaml up -d`), with the same `CHORUS_SOLOIST_RECEIVERS`.
+6. **Every 90 days at the latest, replace the binary**: put the new build at `bin/soloist`,
+   then `chorusctl soloist restart` (restarting the receiver containers does the same). From 14 days before expiry the supervisor logs
+   `warning: Soloist build expires in N days`; an expired build exits with code 10 and the
+   receiver stays `expired` until the restart.
+
+The limits per receiver in the compose file (`mem_limit: 192m`, `cpus: 0.25`,
+`pids_limit: 64`) are P7's and `ASSUMED`: Soloist's own cost cannot be measured without the
+owner's build. The PipeWire half is measured: about 19 MB RSS, about 0.25 % of one core and 6
+threads for PipeWire and WirePlumber with one client playing (goal 17's PipeWire probe,
+PipeWire 1.4.2 and WirePlumber 0.5.8, 2026-10-03, `Source: host`; the measurement track's
+report carries it).
 
 ## The fake Soloist
 
@@ -442,6 +566,8 @@ owner-build question. Where the code depends on one, it fails safe.
 | whether a running Soloist exits at the moment of expiry | not relied on | either way exit code 10 is `expired` |
 | Soloist's PipeWire node properties | not relied on: routing is by `--pipewire-device` | none |
 | the cache size, 256 MB | P7's `ASSUMED` | a flag |
+| what Soloist needs from its host beyond PipeWire (shared libraries, CA certificates) | that a glibc program built for Linux runs on Debian 13 with the image's packages (a LEAD: issue 1's reporter ran it in a Debian trixie container) | Soloist does not start: `failed`, with its own message in the log; the missing package is a line in `deploy/soloist/debian-packages.pins` |
+| which processes Soloist starts | not relied on: the receiver container runs an init | none |
 | which gain stage Soloist's volume drives | the audio arrives unscaled (`--soloist-volume chorus`) | music is quieter than the slider says; `--soloist-volume receiver` is the other mapping |
 | whether `play` on a device that is already playing sends `playback_changed` | not relied on: after `play` is accepted the manager asks for the state | none |
 | whether a paused Soloist answers `pause` with an event | not relied on: the settle time is a bound, not a wait | a `playing` report is ignored for at most 3 s |

@@ -1,0 +1,8 @@
+format	file	bytes	kbit_per_s	sha256	what
+wav48	wav48.wav	24960044	1536	11ab6013c9d5336986e198933f2f79a95898216439c16749a29a062ede5c843d	WAV, 16-bit stereo 48 kHz (the server's own rate: no decoder work, no resampling)
+wav	wav.wav	22932044	1411	cb8d6cecad6e286d81c9c869cb68f9c0bc234a10686c014aa33f4a6f79aff028	WAV, 16-bit stereo 44.1 kHz
+flac	flac.flac	17663781	1087	f362b991f7610a7aa35ab2c3044a6038cca10d7bce794e3c6db137a26c0ddd3c	FLAC level 5, 16-bit stereo 44.1 kHz
+mp3	mp3.mp3	5202546	320	14f6d7faf1a6c8382db10e04b07424e6a5df2ffc9cd9edd5b94d6b5fe7abd0b0	MP3 320 kbit/s CBR, stereo 44.1 kHz
+vorbis	vorbis.ogg	3272597	201	8d20560143b5fc7eca8067291911463966a06e2c22caf5edce0f42b262a7919d	Ogg Vorbis quality 6, stereo 44.1 kHz
+opus	opus.opus	2014848	124	a67723324e2e5d1a656640d46c21a4cf722b7ef37ac8be12db974cbe0adb9277	Ogg Opus 128 kbit/s, stereo 48 kHz
+alac	alac.m4a	17845857	1098	98d905cff5d19ee21aab4e103de1fdec4121af42067bde2e647075076bbb4aaf	ALAC in MP4 (moov first), 16-bit stereo 44.1 kHz

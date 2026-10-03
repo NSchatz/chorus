@@ -214,6 +214,15 @@ expect_missing_prerequisite "house-soak-run.sh" \
     CHORUS_HOUSE_SOAK_SECONDS=60 CHORUS_HOUSE_SOAK_REPORT= \
     bash "$REPO_ROOT/tools/house-soak-run.sh"
 
+# The same for the concurrent-streams measurement (goal 17, P11): it needs the
+# release build of the server and the client and a playback device that opens.
+# It is a measurement, not a check, and it still refuses by name before it
+# starts a process: the device (or, on a tree with no release build, the build)
+# is the prerequisite made absent.
+expect_missing_prerequisite "concurrent-streams-run.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_CLIENT_DEVICE=chorus-no-such-device \
+    bash "$REPO_ROOT/tools/concurrent-streams-run.sh"
+
 # The same, for AC-2's fallback half run all the way to playing. It needs a
 # device that opens and no multicast at all, so the device is the prerequisite
 # that is made absent here.

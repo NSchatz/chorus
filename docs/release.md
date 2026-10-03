@@ -11,6 +11,8 @@ program: that is the owner's step (below).
 |---|---|---|
 | `chorus-server-v<ver>-x86_64-unknown-linux-musl` | the static server binary (C, for libopus, compiled by the pinned zig through `tools/zig-musl-cc.sh`) | `cargo build --release --locked --target x86_64-unknown-linux-musl`, as `tools/image.sh` runs it |
 | `chorus-server-v<ver>-oci.tar` | the server as an OCI image layout tarball on a digest-pinned distroless base, tested unpacked (`--help`, `GET /api/state`) | `tools/image.sh` |
+| `chorus-soloist-v<ver>-oci.tar` | one Spotify Soloist receiver as an OCI image layout tarball: PipeWire, WirePlumber and `chorus-soloistd` on a digest-pinned `debian:trixie-slim`, the Debian packages pinned by sha256; tested unpacked. **It holds no Soloist file** (`docs/soloist.md`) | `tools/soloist-image.sh` |
+| `chorus-soloist-v<ver>-NOTICES.md` | that image's third-party notices: each Debian package, its version, and the Debian source package that is its source (the file the image carries at `/usr/share/doc/chorus/THIRD-PARTY-NOTICES.md`) | `tools/soloist-image.sh` |
 | `chorus-endpoint-esp32s3-v<ver>.bin` | the ESP32-S3 endpoint application image | `tools/firmware-image.sh` (ESP-IDF at the pin in `firmware/config/endpoint.conf`, then the eFuse and image guard) |
 | `chorus-endpoint-esp32s3-v<ver>.tar.gz` | the bootloader, partition table, application and `flasher_args.json` (offsets and flash flags) | the same build |
 | `chorus-endpoint_<ver>_arm64.deb`, `chorus-endpoint_<ver>_amd64.deb` | the Linux endpoint package: `chorus-client`, its systemd unit, `/etc/chorus/client.conf`, real-time limits and `chorus-verify-host`, for glibc 2.36 and later (goal 10; `docs/linux-endpoint.md`) | `tools/endpoint-package.sh` (cross-built rootless with zig and cargo-zigbuild; readelf, dpkg-deb and `systemd-analyze verify` checks) |
@@ -18,6 +20,11 @@ program: that is the owner's step (below).
 | `SHA256SUMS` | sha256 of every artifact | `tools/release.sh` |
 
 Later releases add more firmware targets as the program builds them.
+
+`bash tools/release.sh --list` prints exactly these names for the workspace's version and
+builds nothing; a release refuses to finish unless its directory holds exactly that list, and
+`make soloist-lists` (a gate step) reads it and fails if any name is a Soloist file or the fake
+Soloist (conventions rule 24).
 
 ## Cutting one
 
@@ -73,6 +80,17 @@ The endpoint packages also say it on the device: `/usr/share/doc/chorus-endpoint
 lists every crate linked into the packaged binaries with its licence and reproduces the
 libopus, MIT and Apache-2.0 texts.
 
+## The Debian packages in the Soloist receiver image
+
+The `chorus-soloist` image is chorus's own static `chorus-soloistd` beside unmodified Debian
+binary packages (PipeWire, WirePlumber and what they depend on), some under the LGPL. chorus
+links none of them. The image carries each package's Debian copyright file and a notices file
+naming every package, its version and its Debian source package at the snapshot.debian.org
+timestamp the binary came from; the release attaches that notices file as
+`chorus-soloist-v<ver>-NOTICES.md`. The source packages themselves are not attached: Debian's
+snapshot archive is where they are. `docs/decisions/0131-the-chorus-soloist-image.md` says why
+that is the position and what the owner would add before publishing the image to others.
+
 ## Pushing the image to a registry (the owner's step)
 
 The program never pushes (no registry credential exists here and none is created, K4,
@@ -92,3 +110,7 @@ mise exec aqua:google/go-containerregistry@0.22.1 -- crane digest ghcr.io/nschat
 
 The last line must print the manifest digest from the release notes; the homelab stack
 pins `image:` to that digest.
+
+The receiver image is pushed the same way from `chorus-soloist-v<ver>-oci.tar` (to a
+`chorus-soloist` repository), and the receivers' stack pins `image:` to the digest the
+release notes give for it, which is the digest `make soloist-image` prints.

@@ -32,6 +32,9 @@
 #                             the rootless install this repository is built with)
 #   CHORUS_CCACHE_DIR         where ccache keeps its cache (default /cache/ccache/chorus)
 #   (the image step pulls its digest-pinned base once, then reads it from a cache)
+#   CHORUS_SOLOIST_IMAGE_CACHE  where the soloist-image step keeps its base and the pinned
+#                             Debian packages (default /cache/chorus-soloist-image); warm, the
+#                             step needs no network
 #   CHORUS_GATE_OUTAGE_SECONDS  the outage-of-minutes run's length in the gate
 #                             (default 30; `make firmware-check` runs the committed 130)
 #   IDF_PY_BUILD_JOBS         idf.py's ninja job count; passed through explicitly
@@ -251,7 +254,7 @@ if [ "$MODE" = full ]; then
     step clippy           cargo clippy --workspace --all-targets --locked -- -D warnings
     stop_if_cheap_steps_failed build test determinism firmware-check verify alsa-null \
         firmware-esp32s3-wired firmware-esp32s3-wifi firmware-esp32s3-qemu firmware-profiles \
-        qemu-boot ota-qemu image endpoint-packages
+        qemu-boot ota-qemu image soloist-image soloist-lists endpoint-packages
     step build            cargo build --workspace --all-targets --locked
     step test             workspace_tests
     step determinism      make --no-print-directory verify-control-determinism
@@ -284,6 +287,12 @@ if [ "$MODE" = full ]; then
     step ota-qemu         firmware_ota_qemu
     sed -n -e 's/^ota-qemu: \(.*\)/gate: ota-qemu \1/p' "$LOG/ota-qemu.log" | tee -a "$LOG/summary.txt"
     step image            make --no-print-directory image
+    # The Soloist receiver image (goal 17), built from pinned packages and tested
+    # unpacked; then the listings of both images and the release, held to "no
+    # Soloist file" (conventions rule 24). The image prints its own wall-clock.
+    step soloist-image    make --no-print-directory soloist-image
+    sed -n -e 's/^soloist-image: \(manifest digest .*\|wall-clock .*\)/gate: soloist-image \1/p' "$LOG/soloist-image.log" | tee -a "$LOG/summary.txt"
+    step soloist-lists    make --no-print-directory soloist-lists
     # Both architectures: the two cross builds and their checks take about 45 s
     # cold and 9 s warm here (measured 2026-09-30), inside the gate's budget.
     step endpoint-packages make --no-print-directory endpoint-packages

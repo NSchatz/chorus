@@ -472,6 +472,18 @@ pub fn run(config: Config) -> i32 {
             return EXIT_PIPEWIRE;
         }
     }
+    // For `--health-check`: which receiver this container's supervisor holds.
+    // Without PipeWire the runtime directory may not be this run's to write
+    // (tests), and nothing probes it.
+    if let Err(e) =
+        crate::health::write_index(&supervisor.config.pipewire_runtime_dir, supervisor.index)
+    {
+        if supervisor.layout.is_some() {
+            supervisor
+                .log
+                .line(&format!("the index file for --health-check: {e}"));
+        }
+    }
     supervisor.refresh_build();
 
     let acceptor = tx.clone();

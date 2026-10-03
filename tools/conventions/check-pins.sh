@@ -10,6 +10,9 @@
 #   the emulator (goal 14): tools/qemu/pins.conf names an exact release, its archive's URL and
 #   sha256, the program's sha256 and micromamba's version, URL and sha256; every package of
 #   tools/qemu/libs.explicit.txt is a conda-forge linux-64 build held to its sha256
+#   the chorus-soloist image (goal 17): tools/soloist-image.sh names its Debian base by dated tag
+#   and digest; every package of deploy/soloist/debian-packages.pins is an exact version with
+#   its sha256 and size at one snapshot.debian.org timestamp
 #   the gate builds and tests with --locked (cargo build, test, clippy and nextest run); any
 #   package.json pins exact versions beside a lockfile
 . "$(dirname "$0")/lib.sh"
@@ -103,6 +106,27 @@ while IFS= read -r l; do
 done < <(command grep -v -E '^(#|@EXPLICIT$|[[:space:]]*$)' tools/qemu/libs.explicit.txt)
 [ "$libs" -gt 0 ] || bad "tools/qemu/libs.explicit.txt lists no package"
 echo "emulator: QEMU $qver, micromamba $mver, $libs library packages, each with a sha256"
+
+# The chorus-soloist image (goal 17): its base by digest in tools/soloist-image.sh, and every
+# Debian package in deploy/soloist/debian-packages.pins an exact version with its sha256 and
+# size, fetched from snapshot.debian.org at the one timestamp the file names.
+spins=deploy/soloist/debian-packages.pins
+snap="$(sed -n 's/^# snapshot = //p' "$spins")"
+[[ "$snap" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || bad "$spins names no snapshot timestamp (# snapshot = yyyymmddThhmmssZ)"
+[ "$(sed -n 's/^# archive = //p' "$spins")" = "https://snapshot.debian.org/archive/" ] || bad "$spins does not fetch from https://snapshot.debian.org/archive/"
+command grep -E -q '^BASE_DIGEST="sha256:[0-9a-f]{64}"$' tools/soloist-image.sh || bad "tools/soloist-image.sh pins no base digest (BASE_DIGEST=\"sha256:...\")"
+command grep -E -q '^BASE_TAG="trixie-[0-9]{8}-slim"$' tools/soloist-image.sh || bad "tools/soloist-image.sh names no dated base tag (BASE_TAG=\"trixie-yyyymmdd-slim\")"
+debs=0
+while read -r pkg ver arch sha size src srcver path rest; do
+    debs=$((debs + 1))
+    [[ "$pkg" =~ ^[a-z0-9][a-z0-9+.-]+$ && "$ver" =~ ^[0-9][A-Za-z0-9.+~:-]*$ && "$arch" =~ ^(amd64|all)$ &&
+        "$sha" =~ ^[0-9a-f]{64}$ && "$size" =~ ^[0-9]+$ && "$src" =~ ^[a-z0-9][a-z0-9+.-]+$ && -n "$srcver" && -z "$rest" &&
+        "$path" == debian*/"$snap"/pool/*_"$arch".deb ]] ||
+        bad "a package of the chorus-soloist image not pinned to a version, a sha256 and the snapshot $snap: $pkg $ver"
+done < <(command grep -v -E '^(#|[[:space:]]*$)' "$spins")
+[ "$debs" -gt 0 ] || bad "$spins lists no package"
+[ "$(command grep -v -E '^(#|[[:space:]]*$)' "$spins" | cut -d' ' -f1 | sort | uniq -d | wc -l)" -eq 0 ] || bad "$spins lists a package twice"
+echo "soloist image: base $(sed -n 's/^BASE_TAG="\(.*\)"$/\1/p' tools/soloist-image.sh) by digest, $debs Debian packages at snapshot $snap, each with a sha256"
 
 for s in build test clippy 'nextest run'; do
     command grep -E "cargo $s .*--locked" tools/gate.sh > /dev/null || bad "the gate's cargo $s does not pass --locked"

@@ -58,6 +58,9 @@ services:
     # holds UDP 5353, the server refuses by name (exit 9) rather than run
     # unadvertised (audit L-3), and endpoints use their static fallback address.
     # On a host with no other responder, add --advertise to the command.
+    # Spotify Soloist receivers are opt-in: deploy/soloist/server.compose.yaml
+    # is the override that mounts the receiver directory and adds --slots,
+    # --soloist-dir and --soloist-receivers to this command.
     command:
       - --listen
       - 0.0.0.0:4010

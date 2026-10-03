@@ -67,6 +67,34 @@ runs `chorus-server --help`, starts the unpacked server and reads
 `GET /api/state` back, and checks that this Dockerfile's build context compiles.
 Pushing the tarball to a registry is the owner's step, never the build's.
 
+## The Soloist receiver image (`make soloist-image`) and its compose file
+
+`soloist/` is the second image and its reference deployment: one Spotify Soloist receiver
+per container (PipeWire, WirePlumber and `chorus-soloistd`), run as a pool of identical
+replicas beside chorus-server. `docs/soloist.md` ("The image" and "Running the receivers")
+is the page; `docs/decisions/0131-the-chorus-soloist-image.md` is the record. In short:
+
+- `make soloist-image` (`tools/soloist-image.sh`) builds
+  `target/image/chorus-soloist-oci.tar` with no container daemon: the digest-pinned
+  `debian:trixie-20260918-slim`, the 60 Debian packages of `soloist/debian-packages.pins`
+  fetched from snapshot.debian.org and held to their sha256, and a static `chorus-soloistd`.
+  Its test unpacks the tarball and runs the image's own PipeWire and WirePlumber under the
+  image's supervisor. Warm, it needs no network.
+- **The image holds no Spotify software.** Soloist is proprietary: the owner places the
+  binary and the API key on the host, and `soloist/compose.yaml` mounts both read-only.
+  `make soloist-lists` holds both images and the release to that (conventions rule 24).
+- `soloist/compose.yaml` is the reference form: `deploy.replicas`, an external macvlan
+  network (named, not defined here), the receiver directory shared with chorus-server,
+  `read_only`, `cap_drop: [ALL]`, `no-new-privileges`, limits per receiver, and the
+  image's own `--health-check`.
+- `soloist/server.compose.yaml` is the server's half, an override of `compose.yaml` that a
+  host running the receivers adds (`-f compose.yaml -f soloist/server.compose.yaml`): the
+  receiver directory mounted, and `--slots`, `--soloist-dir` and `--soloist-receivers` on the
+  command. Without it the server runs no Soloist code. `make image` holds the override's
+  command to `compose.yaml`'s and starts the image's server with those flags.
+- `soloist/THIRD-PARTY-NOTICES.md` is the head of the notices the image carries; the build
+  appends the package table.
+
 ## What the server does with what it is granted
 
 - Reads `RLIMIT_RTPRIO` and asks for a priority no greater than it. Never more.

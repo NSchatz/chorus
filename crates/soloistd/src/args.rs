@@ -33,6 +33,10 @@ usage: chorus-soloistd --soloist-dir DIR --api-key-file FILE --state-dir DIR --c
   --backoff-min-ms MS      the first retry delay after a failure (default 1000)
   --backoff-max-ms MS      the longest retry delay (default 60000)
   --expiry-check-secs S    how often the build's expiry is looked at (default 86400)
+  --health-check           with --soloist-dir (and --pipewire, --pipewire-runtime-dir
+                           when they are not the defaults): start nothing, say
+                           whether this container's supervisor holds its receiver;
+                           exit 0 healthy, 1 unhealthy
   --help, --version";
 
 /// Whether PipeWire is run.
@@ -94,6 +98,57 @@ pub enum Parsed {
     Help,
     /// Print the version.
     Version,
+    /// Probe the supervisor of this container (`--health-check`).
+    HealthCheck(Health),
+}
+
+/// What `--health-check` looks at.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Health {
+    /// The receiver directory.
+    pub soloist_dir: PathBuf,
+    /// The supervisor's runtime directory, where it wrote its index.
+    pub pipewire_runtime_dir: PathBuf,
+    /// Whether the supervisor runs PipeWire.
+    pub pipewire: PipewireMode,
+}
+
+/// The default of `--pipewire-runtime-dir`.
+const RUNTIME_DIR: &str = "/run/chorus-soloist";
+
+fn pipewire_mode(value: &str) -> Result<PipewireMode, String> {
+    match value {
+        "auto" => Ok(PipewireMode::Auto),
+        "none" => Ok(PipewireMode::None),
+        other => Err(format!("--pipewire is auto or none, not {other:?}")),
+    }
+}
+
+/// Read the arguments of a `--health-check` (that flag left out).
+fn parse_health(arguments: &[&String]) -> Result<Parsed, String> {
+    let mut soloist_dir = None;
+    let mut health = Health {
+        soloist_dir: PathBuf::new(),
+        pipewire_runtime_dir: PathBuf::from(RUNTIME_DIR),
+        pipewire: PipewireMode::Auto,
+    };
+    let mut pairs = arguments.chunks(2);
+    for pair in &mut pairs {
+        let flag = pair[0].as_str();
+        let value = pair
+            .get(1)
+            .ok_or_else(|| format!("{flag} needs a value"))?
+            .as_str();
+        match flag {
+            "--soloist-dir" => soloist_dir = Some(PathBuf::from(value)),
+            "--pipewire-runtime-dir" => health.pipewire_runtime_dir = PathBuf::from(value),
+            "--pipewire" => health.pipewire = pipewire_mode(value)?,
+            other => return Err(format!("--health-check does not take {other:?}")),
+        }
+    }
+    health.soloist_dir =
+        soloist_dir.ok_or_else(|| "--health-check needs --soloist-dir".to_string())?;
+    Ok(Parsed::HealthCheck(health))
 }
 
 fn number(flag: &str, value: &str) -> Result<u64, String> {
@@ -104,6 +159,13 @@ fn number(flag: &str, value: &str) -> Result<u64, String> {
 
 /// Read the arguments (the program name left out).
 pub fn parse(arguments: &[String]) -> Result<Parsed, String> {
+    if arguments.iter().any(|a| a == "--health-check") {
+        let rest: Vec<&String> = arguments
+            .iter()
+            .filter(|a| *a != "--health-check")
+            .collect();
+        return parse_health(&rest);
+    }
     let mut soloist_dir = None;
     let mut api_key_file = None;
     let mut state_dir = None;
@@ -120,7 +182,7 @@ pub fn parse(arguments: &[String]) -> Result<Parsed, String> {
         pipewire: PipewireMode::Auto,
         pipewire_bin: PathBuf::from("pipewire"),
         wireplumber_bin: PathBuf::from("wireplumber"),
-        pipewire_runtime_dir: PathBuf::from("/run/chorus-soloist"),
+        pipewire_runtime_dir: PathBuf::from(RUNTIME_DIR),
         wireplumber_config_dir: PathBuf::from("/usr/share/wireplumber"),
         ws_timeout: Duration::from_millis(20_000),
         stop_timeout: Duration::from_millis(5_000),
@@ -150,13 +212,7 @@ pub fn parse(arguments: &[String]) -> Result<Parsed, String> {
             "--state-dir" => state_dir = Some(PathBuf::from(value)),
             "--cache-dir" => cache_dir = Some(PathBuf::from(value)),
             "--cache-size" => config.cache_size = number(flag, value)?,
-            "--pipewire" => {
-                config.pipewire = match value {
-                    "auto" => PipewireMode::Auto,
-                    "none" => PipewireMode::None,
-                    other => return Err(format!("--pipewire is auto or none, not {other:?}")),
-                }
-            }
+            "--pipewire" => config.pipewire = pipewire_mode(value)?,
             "--pipewire-bin" => config.pipewire_bin = PathBuf::from(value),
             "--wireplumber-bin" => config.wireplumber_bin = PathBuf::from(value),
             "--pipewire-runtime-dir" => config.pipewire_runtime_dir = PathBuf::from(value),
@@ -259,6 +315,39 @@ mod tests {
             let error = parse(&args(line)).unwrap_err();
             assert!(error.contains(why), "{line}: {error}");
         }
+        for (line, why) in [
+            ("--health-check", "needs --soloist-dir"),
+            ("--health-check --soloist-dir", "needs a value"),
+            (
+                "--health-check --soloist-dir /s --receivers 2",
+                "does not take",
+            ),
+            (
+                "--health-check --soloist-dir /s --pipewire maybe",
+                "auto or none",
+            ),
+        ] {
+            let error = parse(&args(line)).unwrap_err();
+            assert!(error.contains(why), "{line}: {error}");
+        }
+        assert_eq!(
+            parse(&args("--soloist-dir /s --health-check")),
+            Ok(Parsed::HealthCheck(Health {
+                soloist_dir: PathBuf::from("/s"),
+                pipewire_runtime_dir: PathBuf::from("/run/chorus-soloist"),
+                pipewire: PipewireMode::Auto,
+            }))
+        );
+        assert_eq!(
+            parse(&args(
+                "--health-check --pipewire none --pipewire-runtime-dir /r --soloist-dir /s"
+            )),
+            Ok(Parsed::HealthCheck(Health {
+                soloist_dir: PathBuf::from("/s"),
+                pipewire_runtime_dir: PathBuf::from("/r"),
+                pipewire: PipewireMode::None,
+            }))
+        );
         assert_eq!(parse(&args("--help")), Ok(Parsed::Help));
         assert_eq!(parse(&args("--version")), Ok(Parsed::Version));
     }
