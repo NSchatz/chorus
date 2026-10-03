@@ -1,0 +1,17 @@
+[package]
+name = "chorus-mqtt"
+description = "the pure half of chorus's MQTT 3.1.1 publisher: the packets a publish-only client sends and reads, the topic rules, and the payloads cut out of the control state message"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+# The payloads are pieces of the control catalog's state message, and the
+# event payload is written with the catalog's own JSON writer, so there is one
+# schema and one escaping rule. chorus-control has no dependency of its own.
+chorus-control = { path = "../control" }
+
+[lints]
+workspace = true

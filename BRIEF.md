@@ -359,7 +359,7 @@ Log each of these in docs/decisions/ when made, with a sentence of reasoning. Ro
 3. Wire protocol framing, field layout, ports, connection model.
 4. Chunk size and default buffer target (starting points: 20 ms / 500 ms).
 5. Sync filter parameters and servo gains (start from the reference constants in 5.3, tune with the rig).
-6. Hand-write vs vendor: JSON handling, mDNS, WebSocket, MQTT (case-by-case per 3.2).
+6. Hand-write vs vendor: JSON handling, mDNS, WebSocket, MQTT (case-by-case per 3.2). MQTT: hand-written, a publish-only MQTT 3.1.1 client (decided 2026-10-03 in goal 15, K46, P10; `docs/decisions/0116-an-opt-in-read-only-mqtt-publisher.md`).
 7. Dev bench hardware: exact ESP32-S3 board, TAS5825M module, wired interface (W5500 vs RMII; decided by P1: W5500, R8), measurement interface.
 8. Pin map for the bench build (respect the pitfalls list in Section 6).
 9. Zone/group/config data model and file format.
@@ -368,7 +368,7 @@ Log each of these in docs/decisions/ when made, with a sentence of reasoning. Ro
 12. Wi-Fi tier policy: which zones, what buffer, what targets.
 13. TV path capture hardware and phase timing.
 14. OTA distribution details and (much later, production only) signing.
-15. HA/MQTT entity model.
+15. HA/MQTT entity model. The MQTT half is decided (P10, approved by the owner at Checkpoint K; K46, K61): MQTT carries no entities and no Home Assistant discovery, only opt-in, read-only state and event topics (`docs/mqtt.md`); Home Assistant's entities come from chorus's own integration.
 16. Whether any of the recommendations above deserve overturning as evidence arrives.
 
 ---

@@ -12,7 +12,10 @@ are `docs/conventions.md`, "Clean-room provenance".
 Snapcast and snapcast-rs, the ESP32 snapclient, shairport-sync, squeezelite, go-librespot,
 ESPHome's C++ runtime, gmrender-resurrect, upmpdcli, MPD, libcec, and any other GPL or LGPL
 project. The GPL tools chorus runs as unmodified binaries (shellcheck, yamllint, cppcheck,
-ccache) are used, never read.
+ccache) are used, never read. Mosquitto (EPL-2.0 / EDL-1.0, the homelab's MQTT broker) is held
+to the same rule by goal 15's envelope: its man pages, documentation and issue reports were read
+for `docs/mqtt.md`, its source was not, and chorus's MQTT codec was written from the OASIS
+standard (ADR 0116 lists what was read).
 
 ## What is recorded, and from when
 

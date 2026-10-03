@@ -72,6 +72,7 @@ pub mod health;
 pub mod hostreport;
 pub mod linein;
 pub mod metrics;
+pub mod mqtt;
 pub mod router;
 pub mod schedule_runtime;
 pub mod serve;
