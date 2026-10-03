@@ -21,6 +21,7 @@ members = [
     "crates/ctl",
     "crates/mqtt",
     "crates/decode",
+    "crates/fetch",
 ]
 
 [workspace.package]
