@@ -1,4 +1,4 @@
-# 0000: chorus-server reads each Soloist receiver's FIFO on a fixed thread into a port with a fill target, one manager thread runs the pool and takes the room, a receiver is a source no command can name, and the Spotify alarm source ships switched off
+# 0132: chorus-server reads each Soloist receiver's FIFO on a fixed thread into a port with a fill target, one manager thread runs the pool and takes the room, a receiver is a source no command can name, and the Spotify alarm source ships switched off
 
 - Status: accepted (goal 17, 2026-10-03)
 - Decided by: the owner for what is built (P7 Option C; K59, K65, K66, K77, K78, K80, K81);

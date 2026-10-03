@@ -9,7 +9,7 @@ tests run; and, from "The server side" on, what `chorus-server` does with the re
 flags, the `soloist:` source, take the room, volume, the alarm source and the expiry warning.
 
 Decision records: [0130](decisions/0130-the-soloist-receiver-supervisor.md) (the supervisor),
-[0000](decisions/0000-the-soloist-receivers-in-the-server.md) (the server side).
+[0132](decisions/0132-the-soloist-receivers-in-the-server.md) (the server side).
 
 ## Words
 
