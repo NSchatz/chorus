@@ -431,8 +431,14 @@ def subscribe_all(devices):
 
 
 def command(control, body):
-    status, _, text = http_once(control, "POST", "/api/command",
-                                {"Host": "chorus", "Content-Type": "application/json"}, body.encode())
+    # Sixteen endpoints attaching at once can hold every control worker for a moment; the
+    # server says so with 503 ("try again"), and a control point does.
+    for _ in range(50):
+        status, _, text = http_once(control, "POST", "/api/command",
+                                    {"Host": "chorus", "Content-Type": "application/json"}, body.encode())
+        if status != 503:
+            break
+        time.sleep(0.2)
     if status != 200:
         die(f"the control plane answered {status} to {body}: {text[:300]}")
 
