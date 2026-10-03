@@ -1,0 +1,43 @@
+# chorus golden vector: telemetry with the heap block, protocol v2 message type 0x15.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# produce these exact bytes from the canonical input in telemetry_heap.fields, and recover
+# exactly those fields from them (docs/protocol.md, "Telemetry").
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x15, payload length 44 (0x002C), big-endian
+15 00 2C
+
+# taken_ns = 7000000000, endpoint clock
+00 00 00 01 A1 3B 86 00
+
+# sync_error_ns = 84000
+00 00 00 00 00 01 48 20
+
+# buffer_fill_us = 212500
+00 03 3E 14
+
+# underruns = 2
+00 00 00 02
+
+# resyncs = 1
+00 00 00 01
+
+# correction_ppb = 12750
+00 00 31 CE
+
+# link = 2 (wireless)
+02
+
+# rssi_dbm = -58
+C6
+
+# temperature_centi_c = 4725 (47.25 C)
+12 75
+
+# the heap block (optional, goal 15): heap_free_bytes = 187432
+00 02 DC 28
+
+# heap_min_free_bytes = 141200
+00 02 27 90

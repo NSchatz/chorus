@@ -28,6 +28,7 @@ use crate::v2::catalog::{
     SOUND_EQ_Q_MILLI, SOUND_SUB_LEVEL_CDB, SOUND_TONE_DB,
 };
 use crate::v2::catalog::{signal_reason, sound_flags, sound_fold, SOUND_TV_UPMIX_MAX};
+use crate::v2::catalog::{TELEMETRY_HEAP_BLOCK_LEN, TELEMETRY_HEAP_UNKNOWN};
 use crate::v2::messages::*;
 
 /// What is wrong with a field.
@@ -342,6 +343,15 @@ pub fn encode_payload(message: &Message) -> Result<Vec<u8>, EncodeError> {
             w.u8(m.link.to_wire());
             w.u8(m.rssi_dbm as u8);
             w.u16(m.temperature_centi_c as u16);
+            // Trailing and optional (goal 15): written only when the
+            // endpoint knows one of the two, so a telemetry without heap
+            // keeps its 36 bytes.
+            if m.heap_free_bytes != TELEMETRY_HEAP_UNKNOWN
+                || m.heap_min_free_bytes != TELEMETRY_HEAP_UNKNOWN
+            {
+                w.u32(m.heap_free_bytes);
+                w.u32(m.heap_min_free_bytes);
+            }
         }
         Message::HandshakeInit(m) => {
             w.bytes(&MAGIC);
@@ -651,23 +661,43 @@ fn decode_payload(message_type: Type, payload: &[u8]) -> Result<Message, FieldEr
         Type::OutputDelay => Message::OutputDelay(OutputDelay {
             delay_ns: r.u64("delay_ns")?,
         }),
-        Type::Telemetry => Message::Telemetry(Telemetry {
-            taken_ns: r.u64("taken_ns")?,
-            sync_error_ns: r.u64("sync_error_ns")? as i64,
-            buffer_fill_us: r.u32("buffer_fill_us")?,
-            underruns: r.u32("underruns")?,
-            resyncs: r.u32("resyncs")?,
-            correction_ppb: r.u32("correction_ppb")? as i32,
-            link: {
-                let b = r.u8("link")?;
-                Link::from_wire(b).ok_or(FieldError {
-                    field: "link",
-                    problem: Problem::Undefined(b as u64),
-                })?
-            },
-            rssi_dbm: r.u8("rssi_dbm")? as i8,
-            temperature_centi_c: r.u16("temperature_centi_c")? as i16,
-        }),
+        Type::Telemetry => {
+            let taken_ns = r.u64("taken_ns")?;
+            let sync_error_ns = r.u64("sync_error_ns")? as i64;
+            let buffer_fill_us = r.u32("buffer_fill_us")?;
+            let underruns = r.u32("underruns")?;
+            let resyncs = r.u32("resyncs")?;
+            let correction_ppb = r.u32("correction_ppb")? as i32;
+            let link_byte = r.u8("link")?;
+            let link = Link::from_wire(link_byte).ok_or(FieldError {
+                field: "link",
+                problem: Problem::Undefined(link_byte as u64),
+            })?;
+            let rssi_dbm = r.u8("rssi_dbm")? as i8;
+            let temperature_centi_c = r.u16("temperature_centi_c")? as i16;
+            // The heap block (goal 15) is there whole or not at all: an
+            // endpoint built before it sends 36 bytes and reads as unknown,
+            // and a tail shorter than the block is excess, ignored.
+            let (heap_free_bytes, heap_min_free_bytes) =
+                if r.remaining() >= TELEMETRY_HEAP_BLOCK_LEN {
+                    (r.u32("heap_free_bytes")?, r.u32("heap_min_free_bytes")?)
+                } else {
+                    (TELEMETRY_HEAP_UNKNOWN, TELEMETRY_HEAP_UNKNOWN)
+                };
+            Message::Telemetry(Telemetry {
+                taken_ns,
+                sync_error_ns,
+                buffer_fill_us,
+                underruns,
+                resyncs,
+                correction_ppb,
+                link,
+                rssi_dbm,
+                temperature_centi_c,
+                heap_free_bytes,
+                heap_min_free_bytes,
+            })
+        }
         Type::LowLatencyOffer => {
             let b = r.u8("direction")?;
             let direction = LowLatencyDirection::from_wire(b).ok_or(FieldError {

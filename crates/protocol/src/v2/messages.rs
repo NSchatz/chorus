@@ -110,6 +110,15 @@ pub struct Telemetry {
     pub rssi_dbm: i8,
     /// Board temperature in hundredths of a degree Celsius; `i16::MIN` when unknown.
     pub temperature_centi_c: i16,
+    /// Free heap in bytes right now (goal 15, the optional heap block);
+    /// [`crate::v2::TELEMETRY_HEAP_UNKNOWN`] when the endpoint does not
+    /// report it. An encoder writes the block only when one of the two
+    /// figures is known, so a telemetry without heap is byte for byte what it
+    /// was before the block existed.
+    pub heap_free_bytes: u32,
+    /// The least free heap since boot, in bytes;
+    /// [`crate::v2::TELEMETRY_HEAP_UNKNOWN`] when not reported.
+    pub heap_min_free_bytes: u32,
 }
 
 /// The server offering a low-latency stream to an endpoint, or ending one
