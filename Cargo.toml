@@ -23,6 +23,9 @@ members = [
     "crates/decode",
     "crates/fetch",
     "crates/upnp",
+    "crates/soloist",
+    "crates/soloistd",
+    "crates/soloist-fake",
 ]
 
 [workspace.package]
