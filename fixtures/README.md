@@ -529,3 +529,18 @@ fields. A `.fields` file is `key = value` lines (`#` starts a comment) as elsewh
   `album`, `album_art_uri`, `class` and each `res.<n>.*`, or `none`): a plain track, one with
   DLNA fields in `protocolInfo` and vendor namespaces, one hostile with a DOCTYPE and nested
   entities, and garbage.
+
+The OpenHome vectors (goal 17, the decision record of the OpenHome services): `openhome-*` and
+every file with `openhome` in its name. They were typed by a script independent of the crate
+from the reference forms (ohPipeline's `SourceXml`, `TrackList` and `IdArray`, ohNet's property
+sets and SOAP shapes, both MIT, at the commits `docs/upnp.md` names), except the generated
+`description-room-openhome.xml` and `scpd-oh{p,v,i,t,l}.xml`, which `make upnp-vectors` writes
+with the others. `ssdp-alive-openhome.ssdp` and `ssdp-byebye-openhome.ssdp` are the eleven
+datagrams of a device with the services; `msearch-openhome-*` the searches by version (a lower
+version is answered in that version, a higher one not at all; `openhome = true` in the fields
+says the device offers the services); `soap-request-openhome-*`, `soap-response-openhome-*`
+(with `version` when the answer is in a lower version's namespace) and `soap-fault-openhome-*`
+as their AV siblings; `openhome-product.fields` with `openhome-sourcexml.xml` the source list;
+`openhome-idarray.cases` ids and their base64; `openhome-playlist.fields` with
+`openhome-readlist.xml` three inserts and a `ReadList`; and `notify-openhome-*` the plain
+property sets: each service's initial event and two change events.
