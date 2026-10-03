@@ -1,0 +1,22 @@
+[package]
+name = "chorus-ctl"
+description = "chorusctl: a command-line client of the chorus control API (rooms, groups, volume, inputs, endpoints, updates)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+# The catalog itself: chorusctl builds a typed `Command` and sends
+# `Command::encode()`, so the bytes it sends are the catalog's by construction,
+# and it reads the state with the catalog's own JSON reader. The one
+# dependency; chorus-control has none of its own.
+chorus-control = { path = "../control" }
+
+[[bin]]
+name = "chorusctl"
+path = "src/main.rs"
+
+[lints]
+workspace = true
