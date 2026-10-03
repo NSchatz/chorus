@@ -40,7 +40,16 @@ ZIG_VERSION="$(pin core:zig)"
 
 TD="${CARGO_TARGET_DIR:-$ROOT/target}"
 OUT="${CHORUS_IMAGE_OUT:-$TD/image/chorus-server-oci.tar}"
-WORK="$TD/image/work"
+# What the build itself writes (the musl target directory, zig's cache, the staged tree, the
+# Dockerfile's build context and its check) is read by nothing afterwards: it goes where
+# tools/build-dir.sh says (the tmpfs when it fits, else the lane's shared directory), never
+# into a directory of this worktree's own. The tarball and the pulled base stay under $TD.
+# shellcheck source=tools/build-dir.sh
+. "$ROOT/tools/build-dir.sh"
+BD="$(throwaway_build_dir image)"
+mkdir -p "$BD"
+echo "image: build directory $BD"
+WORK="$BD/image/work"
 BASE_CACHE="${CHORUS_IMAGE_BASE_CACHE:-$TD/image/base-${BASE_DIGEST#sha256:}}"
 
 # Every timestamp in the image is the commit's, so two builds of one commit
@@ -55,14 +64,14 @@ VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
 export CHORUS_ZIG_VERSION="$ZIG_VERSION"
 export CC_x86_64_unknown_linux_musl="$ROOT/tools/zig-musl-cc.sh"
 export SOURCE_DATE_EPOCH="$EPOCH"
-export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$TD/zig-cache}"
+export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$BD/zig-cache}"
 
 echo "image: building chorus-server for $TARGET (C by zig $ZIG_VERSION)"
-cargo build --release --locked --target "$TARGET" -p chorus-server --bins
+CARGO_TARGET_DIR="$BD" cargo build --release --locked --target "$TARGET" -p chorus-server --bins
 # The wakeup-jitter probe rides along for the owner's production run inside the
 # deployed container (docs/measurements/host-wakeup-jitter.md, "Next"); it never
 # runs unless invoked.
-cargo build --release --locked --target "$TARGET" -p chorus-hostprobe --bin chorus-wakeup-probe
+CARGO_TARGET_DIR="$BD" cargo build --release --locked --target "$TARGET" -p chorus-hostprobe --bin chorus-wakeup-probe
 
 if [ ! -f "$BASE_CACHE/index.json" ]; then
     echo "image: pulling $BASE_REF@$BASE_DIGEST"
@@ -86,9 +95,9 @@ EOF
 
 STAGE="$WORK/stage"
 mkdir -p "$STAGE/usr/local/bin" "$STAGE/etc/chorus"
-install -m 0755 "$TD/$TARGET/release/chorus-server" "$STAGE/usr/local/bin/chorus-server"
-install -m 0755 "$TD/$TARGET/release/chorus-rt-spin" "$STAGE/usr/local/bin/chorus-rt-spin"
-install -m 0755 "$TD/$TARGET/release/chorus-wakeup-probe" "$STAGE/usr/local/bin/chorus-wakeup-probe"
+install -m 0755 "$BD/$TARGET/release/chorus-server" "$STAGE/usr/local/bin/chorus-server"
+install -m 0755 "$BD/$TARGET/release/chorus-rt-spin" "$STAGE/usr/local/bin/chorus-rt-spin"
+install -m 0755 "$BD/$TARGET/release/chorus-wakeup-probe" "$STAGE/usr/local/bin/chorus-wakeup-probe"
 install -m 0644 config/verification.conf "$STAGE/etc/chorus/verification.conf"
 # The notices the binary's third-party code asks for (libopus: BSD-3-Clause,
 # reproduced; Symphonia: MPL-2.0, where its source is), with the exact crates
@@ -154,7 +163,7 @@ sed -n 's/^COPY \([^-][^ ]*\) \(.*\)$/\1 \2/p' deploy/Dockerfile | while read -r
 done
 cp rust-toolchain.toml "$CTX/"   # the Dockerfile's base is the same pinned release
 echo "image test: the Dockerfile's build context: $(cd "$CTX" && find . -maxdepth 1 -mindepth 1 | sort | tr '\n' ' ')"
-(cd "$CTX" && CARGO_TARGET_DIR="$TD/image/docker-context-target" cargo check --locked --workspace --bins --quiet)
+(cd "$CTX" && CARGO_TARGET_DIR="$BD/docker-context-target" cargo check --locked --workspace --bins --quiet)
 echo "image test: the Dockerfile's build context compiles"
 
 T="$WORK/test"
