@@ -1,4 +1,4 @@
-# 0000: MQTT is an opt-in, read-only, publish-only MQTT 3.1.1 client written here, on one declared thread, carrying exactly what P10 settled and no Home Assistant discovery
+# 0116: MQTT is an opt-in, read-only, publish-only MQTT 3.1.1 client written here, on one declared thread, carrying exactly what P10 settled and no Home Assistant discovery
 
 - Status: accepted (goal 15, 2026-10-03)
 - Decided by: the owner for what MQTT carries (P10, Option M2, approved at Checkpoint K:

@@ -3,7 +3,7 @@
 chorus-server can publish what it already knows to an MQTT broker (goal 15). It is **off by
 default**, **read-only** and **publish-only**: it tells a broker the state of each room and saved
 group and each button press it accepted, and it is told nothing back. The decision record is
-`docs/decisions/0000-an-opt-in-read-only-mqtt-publisher.md`; what was settled is proposal P10
+`docs/decisions/0116-an-opt-in-read-only-mqtt-publisher.md`; what was settled is proposal P10
 (`docs/proposals/P10-ha-dashboard-mqtt.md`, Option M2, approved at Checkpoint K): "MQTT off by
 default with an opt-in read-only publisher and no HA discovery".
 
@@ -167,7 +167,7 @@ on.
 
 ## Mosquitto ACL notes for the owner
 
-These are notes for the broker's side, which is the owner's (`docs/decisions/0000-...`,
+These are notes for the broker's side, which is the owner's (`docs/decisions/0116-...`,
 "Follow-ups"). Nothing in this repository touches a broker, and every name below is a
 placeholder. Sources, each read 2026-10-03 by the goal's research: mosquitto.conf(5),
 <https://mosquitto.org/man/mosquitto-conf-5.html>; mosquitto_passwd(1),

@@ -49,7 +49,8 @@
 //! the last was acknowledged, which is also how a dead link is noticed (an
 //! acknowledgement that does not come within the response timeout ends the
 //! connection). The session is clean, so nothing is ever sent twice
-//! (`docs/decisions/` records the choice).
+//! (`docs/decisions/0116-an-opt-in-read-only-mqtt-publisher.md` records the
+//! choice).
 //!
 //! Control code: it touches no PCM and is never called from the audio
 //! thread. Its only clock is the monotonic one.
