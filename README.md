@@ -7,7 +7,7 @@ The target is sub-millisecond inter-device error on wired endpoints, measured ra
 - `BRIEF.md` - the guiding document: requirements, measured targets, hard guardrails, design areas with recommendations, the phased roadmap (section 8), and the decisions still open.
 - `CLAUDE.md` - the working agreement and the plan of record (the /goal program in `.claude/goals/`).
 - `docs/decisions/` - one file per significant decision. `docs/measurements/` - harness reports; a timing claim without one is not evidence.
-- `docs/protocol.md` - the audio wire format, which is what a second implementation is held to. `docs/control-plane.md` - the control catalog, which is a separate contract on a separate connection and held the same way.
+- `docs/protocol.md` - the audio wire format, which is what a second implementation is held to. `docs/control-plane.md` - the control catalog, which is a separate contract on a separate connection and held the same way. `docs/mqtt.md` - the opt-in, read-only MQTT publisher (off by default): its topics, what it does not publish, and the broker notes for the owner.
 
 ## Where each phase stands
 

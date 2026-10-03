@@ -842,7 +842,11 @@ process is `6 + 2N + M` threads, plus one for `--advertise`, and it does not
 depend on `--slots`: every stream slot is cut by the one audio thread. Nor
 on `--firmware-dir` (goal 14): an image travels in the speaker's own session,
 queued by the control worker that applies `firmware_install` (the offer) and
-by that session's own reader (the chunks).
+by that session's own reader (the chunks). With `--mqtt-broker` (goal 15,
+`docs/mqtt.md`) there is one thread more, the `mqtt-publisher`, created with
+the rest before the scheduling report: `6 + 2N + M + 1`. Without the flag it
+does not exist. Everything that touches the broker happens on it, so a broker
+that is down or silent holds no worker, no reader and not the conductor.
 
 This is a safety property and not a style. `std::thread::spawn` inherits the
 creating thread's scheduling policy, and `deploy/run-server.sh` runs the server

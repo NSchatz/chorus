@@ -154,3 +154,33 @@ fn a_controller_event_is_one_canonical_object() {
     );
     assert!(!odd.contains('\n'));
 }
+
+#[test]
+fn the_examples_in_docs_mqtt_md_are_the_fixtures_bytes() {
+    let doc = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/mqtt.md"),
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(fixtures().join("v2/state-rich.json")).unwrap();
+    let cut = retained_of(text.trim_end()).unwrap();
+    let kitchen = &cut.rooms.iter().find(|(id, _)| id == "kitchen").unwrap().1;
+    let downstairs = &cut
+        .groups
+        .iter()
+        .find(|(id, _)| id == "downstairs")
+        .unwrap()
+        .1;
+    for example in [kitchen, downstairs] {
+        assert!(
+            doc.contains(&format!("```json\n{}\n```", example)),
+            "docs/mqtt.md does not show {}",
+            example
+        );
+    }
+    let event = controller_event("endpoint-a", "kitchen", "volume_step", -5, "", "applied");
+    assert!(
+        doc.contains(&format!("```json\n{}\n```", event)),
+        "{}",
+        event
+    );
+}
