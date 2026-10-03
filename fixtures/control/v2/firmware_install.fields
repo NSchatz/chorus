@@ -1,0 +1,14 @@
+# Canonical input for the catalog v2 firmware_install vector.
+#
+# Encoding these field values must produce exactly firmware_install.json, and decoding
+# firmware_install.json must recover exactly these field values.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# Goal 14: install a staged, verified image on one speaker. The only command that
+# starts a transfer (K93, I13).
+
+message_type = firmware_install
+speaker = chorus-0123456789ab
+image = brick-2-0-0

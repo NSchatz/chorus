@@ -1,0 +1,30 @@
+# Canonical input for the catalog v2 state-firmware vector.
+#
+# A server with a firmware directory (`image.N`), two adopted speakers that
+# said what they run (`report.N`), and one `firmware_install` applied, must
+# produce exactly state-firmware.json.
+#
+# Goal 14: the top-level `firmware` member (the staged images, each with its
+# verdict, and a refused one's reason) is written only by a server with a
+# firmware directory, after every member the state had before. A speaker's
+# `firmware` object is written only once it has reported, appended after
+# `roles`; `update_available` is derived from the images, never stored. One
+# speaker was just asked to install (`requested`); the other came back from a
+# rollback (`rolled_back`, naming the version that was tried).
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = state
+zones = living,kitchen
+adopted.0 = chorus-0123456789ab 1f0e:2d3c:4b5a:6978
+adopted.1 = chorus-ba9876543210 8796:a5b4:c3d2:e1f0
+image.0 = brick-2-0-0 | 2.0.0 | brick-s3-wired | 1536000 | 0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0 | verified
+image.1 = brick-tampered | 2.0.0 | brick-s3-wired | 1536000 | 00000000000000000000000000000000000000000000000000000000000000aa | digest-mismatch
+image.2 = compact-2-0-0 | 2.0.0 | compact-s3-wifi | 1536000 | 0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0 | verified
+image.3 = brick-1-0-0 | 1.0.0 | brick-s3-wired | 1536000 | 0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0 | verified
+up.0 = chorus-0123456789ab | chorus-endpoint 0.1.0 | player
+report.0 = chorus-0123456789ab | idle | none | 0 | 0 | 1.0.0 | brick-s3-wired | 0 |  | 0
+up.1 = chorus-ba9876543210 | chorus-endpoint 0.1.0 | player
+report.1 = chorus-ba9876543210 | rolled_back | not_confirmed | 9 | 0 | 1.0.0 | brick-s3-wired | 1 | 3.0.0 | 0
+command.0 = {"v":2,"t":"firmware_install","speaker":"chorus-0123456789ab","image":"brick-2-0-0"}

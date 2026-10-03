@@ -44,6 +44,7 @@ use chorus_protocol::v2::{
 
 use crate::control::ControlState;
 use crate::controller::ControllerAction;
+use crate::firmware::Firmware;
 use crate::linein::LineIns;
 use crate::router::{Router, SessionStart};
 use crate::stream::Fanout;
@@ -449,6 +450,11 @@ pub struct SessionContext {
     /// (`crate::tvrelay`), or `None` when this server relays no TV (no
     /// line-ins): an accept is then ignored.
     pub tv_relay: Option<Arc<TvRelay>>,
+    /// (goal 14) The firmware images and the installs in progress
+    /// (`crate::firmware`), or `None` when this server runs no control plane
+    /// (no command could start an install): an endpoint's `firmware_status`
+    /// is then not read.
+    pub firmware: Option<Arc<Firmware>>,
 }
 
 impl fmt::Debug for SessionContext {
@@ -475,6 +481,7 @@ impl SessionContext {
             router: Arc::new(Router::single(Arc::new(Fanout::new()))),
             line_ins: None,
             tv_relay: None,
+            firmware: None,
         }
     }
 
@@ -513,10 +520,25 @@ impl SessionContext {
         }
     }
 
-    /// (goal 14) Tell the control plane a session has ended.
-    pub fn session_down(&self, endpoint_id: &str) {
+    /// (goal 14) Tell the control plane a session has ended. `session` is
+    /// the router's id for it: an install travelling in it ends with it and
+    /// is shown `interrupted` (`crate::firmware`: never resumed).
+    pub fn session_down(&self, endpoint_id: &str, session: u64) {
         if let Some(control) = &self.control {
+            if let Some(speaker) = self.firmware.as_ref().and_then(|f| f.session_down(session)) {
+                control.firmware_interrupted(&speaker);
+            }
             control.speaker_session_down(endpoint_id);
+        }
+    }
+
+    /// (goal 14) What the session's reader does every time it looks up from
+    /// its socket: top up the transfer travelling in this session, if any
+    /// (`crate::firmware::Firmware::pump`; never blocks, takes no lock when
+    /// there is none).
+    pub fn pump_firmware(&self, session: u64) {
+        if let Some(firmware) = &self.firmware {
+            firmware.pump(session);
         }
     }
 
@@ -758,8 +780,22 @@ pub fn route_controller(
     let endpoint = greeting.endpoint_id.clone();
     let is_controller = greeting.roles & roles::CONTROLLER != 0;
     let is_source = greeting.roles & roles::SOURCE != 0;
+    // (goal 14) Only an endpoint that declared the `ota` feature is read
+    // for its firmware, and only such a one is ever offered an image.
+    let takes_updates = greeting.features & chorus_protocol::v2::features::OTA != 0;
     reader.set_handler(Box::new(move |m| {
         count(&ctx, &m);
+        // An endpoint's firmware state (goal 14): the acknowledgement that
+        // moves its transfer on, and what the control plane shows of it.
+        if let Message::FirmwareStatus(status) = &m {
+            if let (true, Some(firmware), Some(control)) =
+                (takes_updates, ctx.firmware.as_ref(), ctx.control.as_ref())
+            {
+                let report = firmware.status(session, &endpoint, status);
+                control.firmware_reported(&endpoint, &report);
+            }
+            return;
+        }
         // A source's offer and its started input's format (ADR 0066) go to
         // the line-ins (`crate::linein`); its chunks arrive on the v1 path,
         // through `read_requests_and_upstream`.

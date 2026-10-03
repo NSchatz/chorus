@@ -1,0 +1,17 @@
+# Canonical input for the catalog v2 error-firmware-rescan-no-dir vector.
+#
+# `input` is refused, by the decoder or by the room state the lines below
+# built (the speakers adopted and up, the images staged and what each speaker
+# reported, then the commands), and encoding the refusal must produce exactly
+# error-firmware-rescan-no-dir.json. Nothing of it is applied.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+#
+# Goal 14: A rescan on a server started without --firmware-dir.
+
+message_type = error
+zones = living,kitchen
+input = {"v":2,"t":"firmware_rescan"}
+field = t
+ends_the_session = 0

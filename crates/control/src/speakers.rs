@@ -37,6 +37,7 @@
 //! the server restarts.
 
 use crate::catalog::{is_display_name, is_identifier};
+use crate::firmware::{speaker_firmware_value, Image, SpeakerFirmware};
 use crate::json::Value;
 use crate::rooms::Link;
 
@@ -64,6 +65,10 @@ pub struct SpeakerNow {
     /// The fingerprint of the key it is pinned to; empty where the server
     /// has not said (a record loaded from a state file whose pin is gone).
     pub key: String,
+    /// (goal 14, explicit installs) What it runs and what it is doing about
+    /// an update, from its own `firmware_status`; `None` until it has sent
+    /// one (a speaker that never does takes no updates).
+    pub firmware: Option<SpeakerFirmware>,
 }
 
 impl SpeakerNow {
@@ -256,9 +261,12 @@ pub fn is_speaker_name(name: &str) -> bool {
 /// (the `endpoints` array's fact), `unknown` where it never has.
 ///
 /// A per-speaker fact added later is appended here, after `roles`, so the
-/// members before it keep their order.
-pub fn speaker_value(speaker: &Speaker, link: Link) -> Value {
-    Value::Obj(vec![
+/// members before it keep their order. The first is `firmware` (goal 14),
+/// written only once the speaker has said what it runs, so a speaker that
+/// takes no updates keeps the bytes it had; `update_available` in it is
+/// derived here from the staged `images`, never stored.
+pub fn speaker_value(speaker: &Speaker, link: Link, images: &[Image]) -> Value {
+    let mut fields = vec![
         ("id".to_string(), Value::text(&speaker.id)),
         ("name".to_string(), Value::text(&speaker.name)),
         ("named".to_string(), Value::Bool(speaker.named)),
@@ -277,7 +285,14 @@ pub fn speaker_value(speaker: &Speaker, link: Link) -> Value {
             "roles".to_string(),
             Value::Arr(speaker.now.roles.iter().map(|r| Value::text(r)).collect()),
         ),
-    ])
+    ];
+    if let Some(firmware) = &speaker.now.firmware {
+        fields.push((
+            "firmware".to_string(),
+            speaker_firmware_value(firmware, images),
+        ));
+    }
+    Value::Obj(fields)
 }
 
 /// One key change as the state message's `key_changes` array holds it.

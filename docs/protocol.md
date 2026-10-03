@@ -1213,6 +1213,42 @@ restarted) cancels it before offering anew.
 messages and the real C endpoint binary on loopback, and is the reference
 for a sender.
 
+### What the chorus server does (goal 14, explicit installs)
+
+`crates/server/src/firmware.rs` is the server's sender, and
+`docs/control-plane.md` ("Firmware: staged images and explicit installs")
+says what the owner sees and sends. On the wire:
+
+- **Offered only on `firmware_install`.** The control plane applying that
+  command is the one path that queues a `firmware_offer`; staging an image, a
+  session coming up, a reconnect and a server restart send none. Only a
+  session whose `capabilities.features` has `ota` is read for its
+  `firmware_status` or offered anything.
+- **From the session's own threads.** The offer and every chunk go on the
+  session's own outbound queue, the one its audio is on, and are sealed by its
+  own writer: the control worker queues the offer, and the session's reader
+  queues the chunks, each time it reads a `firmware_status` and each time it
+  looks up from its socket (at least every 200 ms). No thread is added.
+- **A smaller window than the wire allows.** `chunk_bytes` is 1024 (ASSUMED)
+  and at most 16 chunks (ASSUMED: one acknowledgement's worth, half the
+  wire's 32) are queued beyond the last `received`; a full queue is not
+  waited on, the chunk goes on the next look.
+- **A transfer lives as long as its session.** When the session it travels
+  in ends before `verified`, the server drops it; when the speaker comes back
+  still `receiving` a transfer the server is not carrying (that session ended,
+  or the server restarted: nothing about an install is persisted), the server
+  sends the cancel and offers nothing. The speaker abandons it and answers
+  `idle`; a new `firmware_install` starts again from byte 0 with a new
+  transfer id. Transfer ids start from a random value in each server process,
+  so a new process never names an old process's transfer.
+- **Never to a real address without the owner.** A transfer to a peer that is
+  not loopback is refused (`owner-not-at-bench`) unless the owner's bench
+  variable reads `1` (program section 0.7, `docs/firmware-updates.md`).
+
+`crates/server/tests/firmware_install.rs` runs the real server against the
+real C endpoint binary; its first test,
+`nothing_installs_until_the_explicit_install_action`, is goal 14's line C.
+
 ## The session, in order
 
 1. The endpoint connects and sends `handshake_init`.

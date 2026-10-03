@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"t","detail":"no-firmware-dir: this server was started without --firmware-dir, so there is no directory to read"}
