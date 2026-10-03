@@ -233,3 +233,10 @@ both are the owner's confirmations in `docs/mqtt.md`.
 - A retained topic of a room or saved group removed while the server was not running is not
   cleared (a publisher that never subscribes cannot learn what the broker holds).
 - MQTT over TLS, if it is ever wanted, reopens decision 4.
+- P10's option text also lists "playing, input ... now-playing title and artist" in a room's
+  retained state. The room object published (the control state's own, one schema) carries
+  volume, mute, limit and group membership only: the source lives on the live group
+  (`groups[].source`), which is not published, and no title or artist exists before goals 16 and
+  17. The goals that add inputs and now-playing put them in the control state's room object, or
+  publish the live group, and the room topic then carries them (found by goal 15's adversarial
+  check, 2026-10-03).

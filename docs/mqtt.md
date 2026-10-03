@@ -127,6 +127,14 @@ packet it was sent.
 - **No artwork, no audio, no telemetry.** Per-speaker telemetry is goal 15's Prometheus
   endpoint on the control listener, not MQTT.
 - **No TLS.** The connection is plain TCP (see the notes below).
+- **Not yet: what a room is playing.** P10's option text lists a room's state as "playing,
+  input, volume, group membership, now-playing title and artist". A room's topic carries the
+  control state's room object, which today holds volume, mute, limit and group membership and
+  nothing about the source. What a live group plays is in the control state's `groups[].source`,
+  and live groups are not published; a title and an artist exist nowhere in chorus before the
+  inputs of goals 16 and 17. When the control state's room object gains them, the room topic
+  carries them with no change here (one schema); until then a consumer that needs the source
+  reads `GET /api/state`.
 
 ## When the broker is away
 
