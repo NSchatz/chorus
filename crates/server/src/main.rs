@@ -81,7 +81,10 @@
 //!   (`chorus_server::player`), each the one writer of its player port. They
 //!   exist from the start whether or not anything plays, because a thread
 //!   made when a stream starts would be a thread the report never saw.
-//!   Without the flag there is none;
+//!   Without the flag there is none. (goal 17) An alarm whose source is a
+//!   stored stream URL plays through one of them and adds no thread: the
+//!   players' reports are taken by the conductor, on the thread it already
+//!   is, when there is no `--upnp`, and by `upnp-manager` when there is;
 //! - with `--upnp` (goal 16, and it needs the control plane, `--slots` and
 //!   `--players`), the UPnP AV media renderers' `4 + W` threads
 //!   (`chorus_server::upnp`): `upnp-ssdp`, `upnp-acceptor`, `upnp-events`,
