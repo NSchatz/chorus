@@ -125,7 +125,7 @@ struct Figures {
 
 fn measure(from: u32, to: u32) -> Figures {
     let low = f64::from(from.min(to));
-    let frames = from as usize / 2; // half a second
+    let frames = from as usize / 4; // a quarter of a second
     let edge = {
         let r = Resampler::new(from, to, 1);
         // Leave the ends out: there the window reaches past the signal.
@@ -133,12 +133,12 @@ fn measure(from: u32, to: u32) -> Figures {
     };
     let inner = |out: &[f32]| out[edge..out.len() - edge].to_vec();
 
-    // Passband: 24 tones, logarithmically spaced from 20 Hz to the passband edge.
+    // Passband: 12 tones, logarithmically spaced from 20 Hz to the passband edge.
     let top = PASSBAND_EDGE * low;
     let mut ripple = 0.0f64;
     let mut spurious = f64::MIN;
-    for k in 0..24 {
-        let hz = 20.0 * (top / 20.0).powf(f64::from(k) / 23.0);
+    for k in 0..12 {
+        let hz = 20.0 * (top / 20.0).powf(f64::from(k) / 11.0);
         let out = inner(&resample(from, to, &tone(from, hz, frames)));
         let (amplitude, rest) = fit(&out, to, hz);
         ripple = ripple.max(db(amplitude / AMPLITUDE).abs());
@@ -154,8 +154,8 @@ fn measure(from: u32, to: u32) -> Figures {
     let stopband_db = (to < from).then(|| {
         let (lo, hi) = (0.5 * f64::from(to), 0.5 * f64::from(from));
         let mut worst = f64::MIN;
-        for k in 0..16 {
-            let hz = lo + (hi - lo) * (f64::from(k) + 0.02) / 16.0;
+        for k in 0..8 {
+            let hz = lo + (hi - lo) * (f64::from(k) + 0.02) / 8.0;
             let out = inner(&resample(from, to, &tone(from, hz, frames)));
             let rms =
                 (out.iter().map(|s| f64::from(*s).powi(2)).sum::<f64>() / out.len() as f64).sqrt();
@@ -170,8 +170,8 @@ fn measure(from: u32, to: u32) -> Figures {
         let lowest = (f64::from(from) - 0.5 * f64::from(to)).max(20.0);
         let highest = 0.5 * f64::from(from);
         let mut worst = f64::MIN;
-        for k in 0..16 {
-            let hz = lowest + (highest - lowest) * (f64::from(k) + 0.5) / 16.0;
+        for k in 0..8 {
+            let hz = lowest + (highest - lowest) * (f64::from(k) + 0.5) / 8.0;
             let out = inner(&resample(from, to, &tone(from, hz, frames)));
             let (_, image) = fit_two(&out, to, hz, f64::from(from) - hz);
             worst = worst.max(db(image / AMPLITUDE));

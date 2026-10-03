@@ -4,7 +4,7 @@
 //! `fixtures/decode` holds one short file per format with what a reference
 //! decoder made of it (`fixtures/README.md` says which program, version and
 //! package hash). What "match" means, per format
-//! (docs/decisions/0000-the-server-decoders.md):
+//! (docs/decisions/0122-the-server-decoders.md):
 //!
 //! - WAV, FLAC, ALAC: bit-exact. The integers recovered from the `f32` output
 //!   hash to the reference decode's sha256, and the frame count is exact.

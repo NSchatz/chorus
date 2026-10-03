@@ -12,7 +12,7 @@ license.workspace = true
 # https://crates.io/api/v1/crates/symphonia/0.6.1): the demuxers and decoders of proposal P9,
 # Option A. `default-features = false` keeps AAC, MKV, ADPCM and CAF out of the build: AAC is
 # never compiled (P9, K79). MPL-2.0 is admitted for these crates by
-# docs/decisions/0000-the-server-decoders.md.
+# docs/decisions/0122-the-server-decoders.md.
 symphonia = { version = "=0.6.1", default-features = false, features = ["mp3", "flac", "vorbis", "alac", "pcm", "wav", "ogg", "isomp4", "id3v1", "id3v2"] }
 # Ogg Opus: Symphonia's Ogg demuxer hands the packets to the vendored libopus 1.6.1, the same
 # code the endpoints run (ADR 0044).

@@ -19,7 +19,7 @@
 # crates/opus-sys). zig compiles those units against musl's headers through
 # tools/zig-musl-cc.sh; the link is still rustc's own over its self-contained
 # musl, so the binary stays what it was, a static position-independent
-# executable, which the test below holds (docs/decisions/0000-the-server-decoders.md).
+# executable, which the test below holds (docs/decisions/0122-the-server-decoders.md).
 #
 # Output: CHORUS_IMAGE_OUT (default target/image/chorus-server-oci.tar).
 

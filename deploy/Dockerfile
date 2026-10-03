@@ -29,7 +29,7 @@ COPY fixtures ./fixtures
 COPY audio-path.conf ./
 # The server's and the Linux client's Opus decoders compile the vendored libopus
 # (crates/opus-sys; docs/decisions/0044-the-vendored-decoders.md and
-# 0000-the-server-decoders.md). This is a glibc build: the base image's own C
+# 0122-the-server-decoders.md). This is a glibc build: the base image's own C
 # compiler builds it, and nothing here targets musl.
 COPY third_party/opus ./third_party/opus
 # The server compiles the control page's documentation into itself

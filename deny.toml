@@ -41,7 +41,7 @@ exceptions = [
     # and MP4, and the `symphonia` crate that ties them to one probe. Each is MPL-2.0, 0.6.1,
     # unmodified from crates.io (https://crates.io/api/v1/crates/symphonia/0.6.1, read
     # 2026-10-03). Allowed for these eight crates only by
-    # docs/decisions/0000-the-server-decoders.md (proposal P9, Option A; K26, K95).
+    # docs/decisions/0122-the-server-decoders.md (proposal P9, Option A; K26, K95).
     { crate = "symphonia", allow = ["MPL-2.0"] },
     { crate = "symphonia-bundle-mp3", allow = ["MPL-2.0"] },
     { crate = "symphonia-codec-alac", allow = ["MPL-2.0"] },

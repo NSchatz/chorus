@@ -7,7 +7,7 @@
 //! and starts no thread; where the bytes come from (a file, an HTTP body) is
 //! the caller's.
 //!
-//! Formats (docs/decoders.md, docs/decisions/0000-the-server-decoders.md): MP3, FLAC,
+//! Formats (docs/decoders.md, docs/decisions/0122-the-server-decoders.md): MP3, FLAC,
 //! Ogg Vorbis, ALAC in MP4 and WAV/LPCM through Symphonia 0.6.1; Ogg Opus
 //! through Symphonia's Ogg demuxer and the vendored libopus 1.6.1
 //! (`chorus-opus-sys`, the code the endpoints run); raw big-endian L16 by

@@ -3,7 +3,7 @@
 # CC_x86_64_unknown_linux_musl to this file, which is how the `cc` crate finds a
 # compiler for that target). It compiles C only: the link stays rustc's own, over
 # its self-contained musl, so the server remains a static PIE
-# (docs/decisions/0000-the-server-decoders.md).
+# (docs/decisions/0122-the-server-decoders.md).
 #
 # The `cc` crate passes rustc's triple as --target=x86_64-unknown-linux-musl, a
 # spelling zig does not take; it is dropped, and zig's own goes in its place.

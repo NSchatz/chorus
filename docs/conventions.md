@@ -199,7 +199,7 @@ root, and `license.workspace = true` in every crate, which the workspace sets to
   CC0-1.0 (brief section 4.7). Anything else needs an ADR naming the crate, then an exception in
   `deny.toml` citing it (K95). The exceptions so far: Unicode-3.0 for `unicode-ident` (ADR
   0039), MPL-2.0 for the four Symphonia crates FLAC decoding uses (ADR 0044, P9), and MPL-2.0
-  for the eight further Symphonia crates of the server's decoders (ADR 0000, P9).
+  for the eight further Symphonia crates of the server's decoders (ADR 0122, P9).
 - Crates come from crates.io only, one version of each (`cargo deny check sources bans`).
 - **Review-only (no check):** a new external crate comes with an ADR answering BRIEF §3.2's
   question (why not build it); cargo-deny checks its licence and source, not the ADR.

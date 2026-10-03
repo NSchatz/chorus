@@ -2,7 +2,7 @@
 
 chorus itself is MIT OR Apache-2.0. The `chorus-server` binary in this image also contains
 the code below, statically linked. `docs/decoders.md` and
-`docs/decisions/0000-the-server-decoders.md` in the chorus repository say why each is there.
+`docs/decisions/0122-the-server-decoders.md` in the chorus repository say why each is there.
 
 ## libopus 1.6.1 (BSD-3-Clause)
 

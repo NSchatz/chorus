@@ -44,7 +44,15 @@ SHA="$(git rev-parse HEAD)"
 TARGET=x86_64-unknown-linux-musl
 echo "release: v$VER from $SHA into $OUT"
 
-# 1. The server binary (static musl, the same build the image carries).
+# 1. The server binary (static musl, the same build the image carries: the C in it,
+# libopus, is compiled by the pinned zig exactly as tools/image.sh sets it up).
+ZIG_VERSION="$(sed -n 's|^"core:zig" = "\(.*\)"$|\1|p' mise.toml)"
+[ -n "$ZIG_VERSION" ] || { echo "release: REFUSED: mise.toml pins no core:zig"; exit 2; }
+export CHORUS_ZIG_VERSION="$ZIG_VERSION"
+export CC_x86_64_unknown_linux_musl="$ROOT/tools/zig-musl-cc.sh"
+SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+export SOURCE_DATE_EPOCH
+export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$TD/zig-cache}"
 cargo build --release --locked --target "$TARGET" -p chorus-server --bins
 install -m 0755 "$TD/$TARGET/release/chorus-server" "$OUT/chorus-server-v$VER-$TARGET"
 "$OUT/chorus-server-v$VER-$TARGET" --help | head -n 1
@@ -72,7 +80,8 @@ IDF_VER="$(sed -n 's/^espidf_version *= *//p' firmware/config/endpoint.conf | he
 CHORUS_PACKAGE_OUT="$OUT" bash tools/endpoint-package.sh arm64 amd64
 
 # 5. The source of every MPL-2.0 crate in a shipped binary (P9): chorus-client links the
-# Symphonia FLAC crates (ADR 0044). Each .crate is the crates.io download, taken from the
+# Symphonia FLAC crates (ADR 0044) and chorus-server, since goal 16, those and the Symphonia
+# crates of its other decoders (ADR 0122). cargo tree finds them all. Each .crate is the crates.io download, taken from the
 # local registry cache or fetched, and must match the checksum Cargo.lock pins.
 MPL_CRATES="$(cargo tree --locked -e normal -p chorus-client-linux -p chorus-hostprobe -p chorus-server \
     --prefix none --format '{p}|{l}' --target x86_64-unknown-linux-gnu |
@@ -97,7 +106,7 @@ while read -r name ver; do
 - \`$name\` $ver: https://crates.io/crates/$name/$ver, attached as \`$name-$ver.crate\`
   (sha256 \`$want\`, the checksum Cargo.lock pins)."
 done <<< "$MPL_CRATES"
-[ -n "$MPL_NOTES" ] || { echo "release: REFUSED: no MPL-2.0 crate found, but chorus-client links Symphonia (ADR 0044)"; exit 2; }
+[ -n "$MPL_NOTES" ] || { echo "release: REFUSED: no MPL-2.0 crate found, but chorus-client and chorus-server link Symphonia (ADR 0044, ADR 0122)"; exit 2; }
 
 # 6. Digests and notes.
 (cd "$OUT" && sha256sum chorus-* ./*.crate | sed 's| \./| |' > SHA256SUMS)
@@ -130,13 +139,17 @@ Artifacts:
 Licences: chorus is MIT OR Apache-2.0 (LICENSE-MIT, LICENSE-APACHE). Dependencies: the
 Rust workspace has $EXTERNAL external crates (Cargo.lock \`source =\` lines), each under a
 licence on the allowlist in \`deny.toml\` (checked by cargo-deny in \`make gate\`), or an
-exception its ADR names. The server links no MPL-2.0 crate; chorus-client, in the Linux
-endpoint packages, links these MPL-2.0 crates unmodified (ADR 0044), whose source is:
+exception its ADR names. chorus-server (the binary and the image) links the Symphonia
+crates below, MPL-2.0, unmodified (ADR 0122); chorus-client, in the Linux endpoint
+packages, links the FLAC ones among them (ADR 0044). Their source is:
 $MPL_NOTES
 
-The endpoint packages also carry libopus 1.6.1 (BSD-3-Clause) inside chorus-client; each
-package's /usr/share/doc/chorus-endpoint/copyright lists every crate and reproduces the
-licences. The firmware links ESP-IDF components (ESP-IDF is Apache-2.0; its bundled
+chorus-server and chorus-client also carry libopus 1.6.1 (BSD-3-Clause). The image
+reproduces its licence in /usr/share/doc/chorus/libopus-COPYING and names the Symphonia
+crates and where their source is in /usr/share/doc/chorus/THIRD-PARTY-NOTICES.md; each
+endpoint package's /usr/share/doc/chorus-endpoint/copyright lists every crate and
+reproduces the licences. Whoever passes the bare server binary on passes those two files
+on with it. The firmware links ESP-IDF components (ESP-IDF is Apache-2.0; its bundled
 third-party components carry their own licences, listed in ESP-IDF's
 \`docs/en/COPYRIGHT.rst\`), whose source is ESP-IDF $IDF_VER at the commit pinned in
 \`firmware/config/endpoint.conf\`.

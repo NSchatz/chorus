@@ -30,7 +30,7 @@
 #   zig and cargo-zigbuild are the C compiler and linker of the Linux endpoint package's cross
 #   builds at a glibc floor (tools/endpoint-package.sh; the package's ADR says why them).
 #   zig alone is also the C compiler of the server image's musl build (tools/image.sh through
-#   tools/zig-musl-cc.sh, goal 16; docs/decisions/0000-the-server-decoders.md).
+#   tools/zig-musl-cc.sh, goal 16; docs/decisions/0122-the-server-decoders.md).
 #   prometheus 3.13.3 (for promtool) Apache-2.0 https://github.com/prometheus/prometheus/releases/tag/v3.13.3
 #     (read 2026-10-03; prometheus-3.13.3.linux-amd64.tar.gz sha256
 #     b349c732d8a853e657d0e7ae1bbad4d11b586615fb65fdc59d896b9f869c001e, the digest mise.lock carries)
