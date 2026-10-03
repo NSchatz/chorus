@@ -9,7 +9,7 @@
   `soloistreader.rs` (the readers), `targets.rs` (the targets of a state, moved out of
   `upnp.rs`), and the wiring in `config.rs`, `main.rs`, `conductor.rs`, `control.rs`,
   `slots.rs`; `crates/control` (`Source::Soloist`, the commands `soloist_restart` and
-  `playback`, the state's `soloist` member, eleven vectors under `fixtures/control/v2`);
+  `playback`, the state's `soloist` member, ten vectors under `fixtures/control/v2`);
   `crates/ctl` (the noun `soloist`); `crates/soloist-fake` (item metadata, a command log, a
   stall control); `crates/server/tests/soloist_receivers.rs`; `docs/soloist.md`
 

@@ -1242,8 +1242,11 @@ fn an_alarm_whose_receiver_never_reports_playing_rings_the_chime_after_the_bound
     let line = rings_the_chime(&mut server, "soloist-timeout");
     assert!(line.contains("no 'playing' within 10 s"), "{line}");
     let waited = asked.elapsed();
+    // After the bound, not at once. The clock here started when this test
+    // SAW the play in the server's log, which on a busy host is some time
+    // after the manager's own 10 s began, so the lower edge is loose.
     assert!(
-        waited >= Duration::from_secs(8) && waited < Duration::from_secs(25),
+        waited >= Duration::from_secs(5) && waited < Duration::from_secs(25),
         "the fallback came after {waited:?}"
     );
     assert!(bench.commands(0).contains(&format!("play {PLAYLIST}")));
