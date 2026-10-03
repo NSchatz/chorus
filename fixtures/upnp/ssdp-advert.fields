@@ -1,0 +1,9 @@
+# The root device every ssdp-*.ssdp vector is about (UDA 1.1 section 1.2.2).
+udn = 3b8fa6e6-bb30-5005-b768-3e87f0af9a9a
+location = http://192.0.2.10:49200/upnp/3b8fa6e6-bb30-5005-b768-3e87f0af9a9a/desc.xml
+server = Linux/6.12 UPnP/1.1 chorus/0.1.0
+max_age_s = 1800
+boot_id = 1790934000
+config_id = 1234567
+search_port = 49201
+date = Fri, 02 Oct 2026 09:40:00 GMT

@@ -1,0 +1,3 @@
+method = UNSUBSCRIBE
+result = ok
+sid = uuid:abababab-abab-4bab-abab-abababababab

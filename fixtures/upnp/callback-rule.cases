@@ -1,0 +1,20 @@
+# The delivery URL rule (UDA 2.0 section 4.1 with P6's subnet list and the requester rule).
+# url | requester | subnets (comma-separated) | allow loopback | result
+http://192.0.2.50:49152/cb | 192.0.2.50 | 192.0.2.0/24 | false | ok
+http://192.0.2.50/cb | 192.0.2.50 | 198.51.100.0/24,192.0.2.0/24 | false | ok
+http://203.0.113.9/cb | 203.0.113.9 | 192.0.2.0/24 | false | OutsideSubnets
+http://203.0.113.9/cb | 192.0.2.50 | 192.0.2.0/24 | false | OutsideSubnets
+http://192.0.2.51/cb | 192.0.2.50 | 192.0.2.0/24 | false | NotTheRequester
+http://127.0.0.1:8000/cb | 127.0.0.1 | 192.0.2.0/24 | false | Loopback
+http://127.0.0.1:8000/cb | 127.0.0.1 | 192.0.2.0/24 | true | ok
+http://127.0.0.1:8000/cb | 192.0.2.50 | 192.0.2.0/24 | true | NotTheRequester
+http://169.254.7.7/cb | 169.254.7.7 | 0.0.0.0/0 | false | NotUnicast
+http://239.255.255.250:1900/cb | 192.0.2.50 | 0.0.0.0/0 | false | NotUnicast
+http://0.0.0.0/cb | 192.0.2.50 | 0.0.0.0/0 | false | NotUnicast
+https://192.0.2.50/cb | 192.0.2.50 | 192.0.2.0/24 | false | NotHttp
+ftp://192.0.2.50/cb | 192.0.2.50 | 192.0.2.0/24 | false | NotHttp
+http://user@192.0.2.50/cb | 192.0.2.50 | 192.0.2.0/24 | false | NotHttp
+http://phone.example:49152/cb | 192.0.2.50 | 192.0.2.0/24 | false | NotAnAddress
+http://[2001:db8::50]:49152/cb | 2001:db8::50 | 2001:db8::/64 | false | ok
+http://[2001:db8::50]:49152/cb | 2001:db8::50 | 192.0.2.0/24 | false | OutsideSubnets
+http://[fe80::1]/cb | fe80::1 | ::/0 | false | NotUnicast

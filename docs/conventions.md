@@ -152,6 +152,9 @@ format (`crates/decode`), and its fixtures (one short file per settled format wi
 decoder's output, and two AAC files to refuse) are read by
 `crates/decode/tests/reference_decodes.rs`, which fails on a fixture no test reads; they are
 regenerated only by `make decode-fixtures`.
+`fixtures/upnp` (goal 16) is Rust-only by declaration too: the UPnP AV media renderer runs in
+chorus-server alone, and `crates/upnp/tests/fixtures.rs` reads every vector and fails on a file
+it does not read.
 `fixtures/protocol/v2` (protocol v2, goal 5) and `fixtures/protocol/v2/noise` are shared like the
 rest: since the endpoint moved to v2 (goal 6) the check holds them to their Rust readers and to
 `firmware/tests/test_protocol_v2.c` and `firmware/tests/test_noise.c`.

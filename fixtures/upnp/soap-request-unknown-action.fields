@@ -1,0 +1,8 @@
+# Record is optional and chorus does not offer it: 401 Invalid Action.
+soapaction = "urn:schemas-upnp-org:service:AVTransport:1#Record"
+service = avt
+parse = ok
+service_type = urn:schemas-upnp-org:service:AVTransport:1
+action = Record
+arg.0 = InstanceID=0
+validate = 401

@@ -477,3 +477,55 @@ opcode, the operands), `<name>.fields` its canonical input (`initiator`, `destin
 validity of every vector, and drives the Audio System role to produce each vector the hub sends.
 The vectors were written from the message tables in goal 13's research (`cec.md`) by a script
 independent of the Rust codec, not by a test run.
+
+## `upnp/`
+
+UPnP AV golden vectors (goal 16, ADR 0121), Rust-only by declaration
+(`check-shared-fixtures.sh`: the media renderer runs in chorus-server alone, there is no C
+implementation). `crates/upnp/tests/fixtures.rs` walks every kind below and then fails if any
+file in the directory was read by none of it. All addresses are RFC 5737's.
+
+Apart from the four generated documents, every vector was typed from the specifications'
+templates (UDA 1.1, AVTransport:1, RenderingControl:1, ConnectionManager:1) as literal strings,
+not produced by the crate: the builders must write those bytes and the parsers must read those
+fields. A `.fields` file is `key = value` lines (`#` starts a comment) as elsewhere here.
+
+- `ssdp-advert.fields` is the root device the discovery vectors are about; `ssdp-alive.ssdp`
+  and `ssdp-byebye.ssdp` are its six `ssdp:alive` and six `ssdp:byebye` datagrams, one after
+  another. A `.ssdp` or `.headers` file holds header-only messages **written with LF; on the
+  wire every line ends in CRLF**, and the test converts before comparing byte for byte.
+- `msearch-<case>.ssdp` is an M-SEARCH datagram, `msearch-<case>.fields` whether it arrived by
+  multicast and what the reader must make of it (`result` `ok` with `st`, `window_ms` and the
+  number of `responses`, or the drop: `NoMx`, `WrongMan`), and
+  `msearch-<case>.responses.ssdp` the responses byte for byte when there are any.
+- `description-room.xml`, `scpd-avt.xml`, `scpd-rcs.xml`, `scpd-cm.xml`: the device description
+  of a room and the three service descriptions. **Generated**, by `make upnp-vectors` from the
+  tables in `crates/upnp/src/description.rs`; a test asserts the committed files are what that
+  target writes now, and another reads them back with the control point's parser and holds them
+  to UDA 1.1's rules. An `.xml` file is a document followed by one line feed that is not part
+  of it.
+- `soap-request-<case>.xml` is a control request's body and `soap-request-<case>.fields` the
+  `soapaction` header's value as sent, the service it was posted to, and what must be read:
+  `parse` (`ok` or `doctype`), the `service_type`, the `action`, each argument in the order
+  sent as `arg.<n> = <name>=<value>` (the value unescaped once), and `validate` (`ok`, `401`,
+  `402`). The dialects: the specification's template, other prefixes, default namespaces, an
+  unquoted SOAPACTION, escaped and CDATA-wrapped DIDL-Lite metadata whose title is
+  `A & B <"x"> é`, an unknown action, a missing argument, a DOCTYPE.
+- `soap-response-<case>.xml` with its `.fields` (the service, the action, and the out arguments
+  as `out.<n>`, or `from`, naming the state they are taken from) and `soap-fault-<case>.xml`
+  with its `.fields` (`code`, `description`): response and UPnPError bodies byte for byte.
+- `subscribe-<case>.headers` is a SUBSCRIBE or UNSUBSCRIBE request head and
+  `subscribe-<case>.fields` its `method` and `result`: `new` (with `callback.<n>` and
+  `timeout_s`), `renew` or `ok` (with `sid`), or the HTTP status that refuses it (`400`, `412`).
+- `callback-rule.cases` is the delivery URL rule as a table: `url | requester | subnets |
+  allow loopback | result`.
+- `lastchange-<service>-<case>.xml` are LastChange `Event` documents and `notify-<case>.xml`
+  event bodies (the property set, the `Event` document escaped once inside it), produced by
+  walking one sequence: idle, SetAVTransportURI, Play, SetNextAVTransportURI, the gapless
+  boundary, the end. `notify-request.http` is a whole NOTIFY request: its head written with LF
+  like a `.headers` file, a blank line, then the body as it is.
+- `didl-<case>.xml` are DIDL-Lite documents as control points send them and
+  `didl-<case>.fields` what is read from each (`result` `metadata` with `title`, `artist`,
+  `album`, `album_art_uri`, `class` and each `res.<n>.*`, or `none`): a plain track, one with
+  DLNA fields in `protocolInfo` and vendor namespaces, one hostile with a DOCTYPE and nested
+  entities, and garbage.

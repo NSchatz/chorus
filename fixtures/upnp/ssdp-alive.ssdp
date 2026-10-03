@@ -1,0 +1,72 @@
+NOTIFY * HTTP/1.1
+HOST: 239.255.255.250:1900
+CACHE-CONTROL: max-age=1800
+LOCATION: http://192.0.2.10:49200/upnp/3b8fa6e6-bb30-5005-b768-3e87f0af9a9a/desc.xml
+NT: upnp:rootdevice
+NTS: ssdp:alive
+SERVER: Linux/6.12 UPnP/1.1 chorus/0.1.0
+USN: uuid:3b8fa6e6-bb30-5005-b768-3e87f0af9a9a::upnp:rootdevice
+BOOTID.UPNP.ORG: 1790934000
+CONFIGID.UPNP.ORG: 1234567
+SEARCHPORT.UPNP.ORG: 49201
+
+NOTIFY * HTTP/1.1
+HOST: 239.255.255.250:1900
+CACHE-CONTROL: max-age=1800
+LOCATION: http://192.0.2.10:49200/upnp/3b8fa6e6-bb30-5005-b768-3e87f0af9a9a/desc.xml
+NT: uuid:3b8fa6e6-bb30-5005-b768-3e87f0af9a9a
+NTS: ssdp:alive
+SERVER: Linux/6.12 UPnP/1.1 chorus/0.1.0
+USN: uuid:3b8fa6e6-bb30-5005-b768-3e87f0af9a9a
+BOOTID.UPNP.ORG: 1790934000
+CONFIGID.UPNP.ORG: 1234567
+SEARCHPORT.UPNP.ORG: 49201
+
+NOTIFY * HTTP/1.1
+HOST: 239.255.255.250:1900
+CACHE-CONTROL: max-age=1800
+LOCATION: http://192.0.2.10:49200/upnp/3b8fa6e6-bb30-5005-b768-3e87f0af9a9a/desc.xml
+NT: urn:schemas-upnp-org:device:MediaRenderer:1
+NTS: ssdp:alive
+SERVER: Linux/6.12 UPnP/1.1 chorus/0.1.0
+USN: uuid:3b8fa6e6-bb30-5005-b768-3e87f0af9a9a::urn:schemas-upnp-org:device:MediaRenderer:1
+BOOTID.UPNP.ORG: 1790934000
+CONFIGID.UPNP.ORG: 1234567
+SEARCHPORT.UPNP.ORG: 49201
+
+NOTIFY * HTTP/1.1
+HOST: 239.255.255.250:1900
+CACHE-CONTROL: max-age=1800
+LOCATION: http://192.0.2.10:49200/upnp/3b8fa6e6-bb30-5005-b768-3e87f0af9a9a/desc.xml
+NT: urn:schemas-upnp-org:service:AVTransport:1
+NTS: ssdp:alive
+SERVER: Linux/6.12 UPnP/1.1 chorus/0.1.0
+USN: uuid:3b8fa6e6-bb30-5005-b768-3e87f0af9a9a::urn:schemas-upnp-org:service:AVTransport:1
+BOOTID.UPNP.ORG: 1790934000
+CONFIGID.UPNP.ORG: 1234567
+SEARCHPORT.UPNP.ORG: 49201
+
+NOTIFY * HTTP/1.1
+HOST: 239.255.255.250:1900
+CACHE-CONTROL: max-age=1800
+LOCATION: http://192.0.2.10:49200/upnp/3b8fa6e6-bb30-5005-b768-3e87f0af9a9a/desc.xml
+NT: urn:schemas-upnp-org:service:RenderingControl:1
+NTS: ssdp:alive
+SERVER: Linux/6.12 UPnP/1.1 chorus/0.1.0
+USN: uuid:3b8fa6e6-bb30-5005-b768-3e87f0af9a9a::urn:schemas-upnp-org:service:RenderingControl:1
+BOOTID.UPNP.ORG: 1790934000
+CONFIGID.UPNP.ORG: 1234567
+SEARCHPORT.UPNP.ORG: 49201
+
+NOTIFY * HTTP/1.1
+HOST: 239.255.255.250:1900
+CACHE-CONTROL: max-age=1800
+LOCATION: http://192.0.2.10:49200/upnp/3b8fa6e6-bb30-5005-b768-3e87f0af9a9a/desc.xml
+NT: urn:schemas-upnp-org:service:ConnectionManager:1
+NTS: ssdp:alive
+SERVER: Linux/6.12 UPnP/1.1 chorus/0.1.0
+USN: uuid:3b8fa6e6-bb30-5005-b768-3e87f0af9a9a::urn:schemas-upnp-org:service:ConnectionManager:1
+BOOTID.UPNP.ORG: 1790934000
+CONFIGID.UPNP.ORG: 1234567
+SEARCHPORT.UPNP.ORG: 49201
+

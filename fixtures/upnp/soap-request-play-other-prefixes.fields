@@ -1,0 +1,9 @@
+# Other legal prefixes (UDA 1.1 section 3.2.1: a device MUST accept them).
+soapaction = "urn:schemas-upnp-org:service:AVTransport:1#Play"
+service = avt
+parse = ok
+service_type = urn:schemas-upnp-org:service:AVTransport:1
+action = Play
+arg.0 = InstanceID=0
+arg.1 = Speed=1
+validate = ok

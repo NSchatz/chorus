@@ -1,0 +1,5 @@
+M-SEARCH * HTTP/1.1
+HOST: 192.0.2.10:1900
+MAN: "ssdp:discover"
+ST: upnp:rootdevice
+

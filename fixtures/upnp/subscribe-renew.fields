@@ -1,0 +1,4 @@
+method = SUBSCRIBE
+result = renew
+sid = uuid:abababab-abab-4bab-abab-abababababab
+timeout_s = 300

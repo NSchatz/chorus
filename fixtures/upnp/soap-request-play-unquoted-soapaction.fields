@@ -1,0 +1,9 @@
+# SOAPACTION without its double quotes, and the arguments in the other order.
+soapaction = urn:schemas-upnp-org:service:AVTransport:1#Play
+service = avt
+parse = ok
+service_type = urn:schemas-upnp-org:service:AVTransport:1
+action = Play
+arg.0 = Speed=1
+arg.1 = InstanceID=0
+validate = ok

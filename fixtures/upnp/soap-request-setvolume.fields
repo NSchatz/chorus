@@ -1,0 +1,9 @@
+soapaction = "urn:schemas-upnp-org:service:RenderingControl:1#SetVolume"
+service = rcs
+parse = ok
+service_type = urn:schemas-upnp-org:service:RenderingControl:1
+action = SetVolume
+arg.0 = InstanceID=0
+arg.1 = Channel=Master
+arg.2 = DesiredVolume=20
+validate = ok

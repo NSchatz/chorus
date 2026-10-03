@@ -1,0 +1,5 @@
+multicast = true
+result = ok
+st = uuid:3b8fa6e6-bb30-5005-b768-3e87f0af9a9a
+window_ms = 5000
+responses = 1

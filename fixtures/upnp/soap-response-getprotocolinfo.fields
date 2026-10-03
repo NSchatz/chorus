@@ -1,0 +1,4 @@
+# The Sink list: no AAC type under any name and no DLNA.ORG_PN.
+service = cm
+action = GetProtocolInfo
+from = connmgr
