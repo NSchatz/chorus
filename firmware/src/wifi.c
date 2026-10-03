@@ -10,6 +10,8 @@ const char *chorus_transport_name(chorus_transport_t transport)
         return "wired";
     case CHORUS_TRANSPORT_WIRELESS:
         return "wireless";
+    case CHORUS_TRANSPORT_EMULATED:
+        return "emulated";
     }
     return "unknown";
 }
@@ -22,6 +24,9 @@ chorus_transport_t chorus_transport_from_name(const char *name, int *ok)
     }
     if (strcmp(name, "wireless") == 0) {
         return CHORUS_TRANSPORT_WIRELESS;
+    }
+    if (strcmp(name, "emulated") == 0) {
+        return CHORUS_TRANSPORT_EMULATED;
     }
     *ok = 0;
     return CHORUS_TRANSPORT_WIRED;

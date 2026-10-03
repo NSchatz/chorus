@@ -7,6 +7,13 @@
  * link; the compact speakers may instead run the native Wi-Fi tier (K91). The
  * ESP32-S3 has no Ethernet MAC of its own, so SPI is the only wired path.
  *
+ * A third link exists for one board that is not a speaker (goal 14): the
+ * emulator's. QEMU's esp32s3 machine has no SPI peripheral and no radio, and
+ * offers the OpenCores Ethernet controller instead, so the emulated board's
+ * profile declares `link_transport = emulated` and the same three calls
+ * (init, start, wait for an address) run on that controller. Nothing about a
+ * wired or a wireless endpoint changes.
+ *
  * Everything here is a DECISION and is graded on a host by
  * firmware/tests/test_link.c against a fake Ethernet controller and the fake
  * radio: a wired endpoint never brings the radio up, a wireless one never
@@ -73,7 +80,8 @@ typedef struct {
  * routed, the INT line is routed, no pin is shared with another W5500 signal
  * or with the audio pins, the SPI host is named, and the clock is inside the
  * W5500's limit and the GPIO matrix's. A wireless link carries no Ethernet
- * rule: its W5500 pins are never driven. */
+ * rule: its W5500 pins are never driven. An emulated link carries one, the
+ * address timeout: its controller has no pins. */
 size_t chorus_link_validate(const chorus_wifi_config_t *link, const chorus_eth_config_t *eth,
                             const chorus_pin_map_t *audio, chorus_finding_t *findings,
                             size_t capacity, size_t *count);
@@ -133,11 +141,36 @@ typedef struct {
  * radio is never touched: no init, no mode, no join.
  *
  * Wireless: chorus_wifi_bring_up, unchanged (the Wi-Fi tier, K91). The
- * Ethernet controller is never touched. */
+ * Ethernet controller is never touched.
+ *
+ * Emulated: init, start and the wait for an address on the controller the
+ * caller bound (the emulator's), each refused by the same names. The radio is
+ * never touched and no W5500 pin rule applies. */
 chorus_bring_up_status_t chorus_link_bring_up(const chorus_wifi_config_t *link,
                                               const chorus_eth_config_t *eth,
                                               const chorus_pin_map_t *audio,
                                               chorus_ethernet_t *ethernet, chorus_radio_t *radio,
                                               chorus_link_report_t *report);
+
+/* Where an emulated board's server is.
+ *
+ * The emulator's user network carries no multicast, so the DNS-SD browse
+ * (chorus/discovery.h) finds nothing there, and the committed server_address is
+ * loopback, which is the guest itself. What that network does give is a
+ * gateway that IS the host: QEMU's documentation of user networking draws the
+ * guest behind a "Firewall/DHCP server" at the address the lease names as the
+ * router (https://www.qemu.org/docs/master/system/devices/net.html, read
+ * 2026-10-02), and a TCP connection to that address reaches a listener on the
+ * host's loopback (tried in the pinned emulator, docs/decisions/0109-*).
+ * So the emulated board's server is the gateway its address lease named, at
+ * the port the committed server_address names, and no address is written in
+ * any file.
+ *
+ * Writes `<gateway>:<port of configured>` into `out` and returns 0. Returns -1,
+ * with `out` empty, when `gateway` is not a dotted IPv4 address or is the
+ * unset address, when `configured` has no numeric port, or when the result
+ * does not fit. */
+int chorus_link_emulated_server(const char *gateway, const char *configured, char *out,
+                                size_t out_len);
 
 #endif /* CHORUS_LINK_H */

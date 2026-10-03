@@ -76,11 +76,8 @@ conventions() {
 
 # --- the firmware image ------------------------------------------------------
 
-# One image per link profile of the one P1 target (esp32s3): the wired
-# classes' W5500 default and the compact speakers' Wi-Fi tier. $1 is the board
-# profile (firmware/boards/), each built in its own persistent directory.
-firmware_idf() {
-    local profile="$1"
+# ESP-IDF and ccache, for every step that builds an image.
+firmware_env() {
     if [ -z "${IDF_PATH:-}" ] && [ -n "${CHORUS_IDF_ENV:-}" ] && [ -f "$CHORUS_IDF_ENV" ]; then
         # shellcheck disable=SC1090
         . "$CHORUS_IDF_ENV" > "$LOG/idf-env.log" 2>&1
@@ -104,6 +101,15 @@ firmware_idf() {
     export CCACHE_NOHASHDIR=true
     mkdir -p "$CCACHE_DIR"
     echo "ccache: $(ccache --version | head -n 1), CCACHE_DIR=$CCACHE_DIR"
+}
+
+# One image per board profile of the one P1 target (esp32s3): the wired
+# classes' W5500 default, the compact speakers' Wi-Fi tier, and the emulator's
+# board (goal 14). $1 is the board profile (firmware/boards/), each built in
+# its own persistent directory and each held to the same safety scans.
+firmware_idf() {
+    local profile="$1"
+    firmware_env || return 1
     ccache --zero-stats > /dev/null
     CHORUS_IDF_CCACHE=1 \
         CHORUS_BOARD_PROFILE="$profile" \
@@ -114,6 +120,19 @@ firmware_idf() {
     # The last lines of the step's log: what was built, for which board, on
     # which link.
     echo "firmware image: target esp32s3, board profile $profile"
+}
+
+# The emulator's image, booted (goal 14): tools/qemu-boot-run.sh on the
+# directory the firmware-esp32s3-qemu step just built, so the image is not
+# built twice. It refuses by name when the pinned emulator is absent
+# (bash tools/qemu-env.sh install); it is never skipped. Source: simulation.
+firmware_qemu_boot() {
+    firmware_env || return 1
+    CHORUS_IDF_CCACHE=1 \
+        CHORUS_IMAGE_OUT="$ROOT/firmware/build/gate-esp32s3-qemu-s3-openeth" \
+        CHORUS_QEMU_OUT="$LOG/qemu-boot" \
+        IDF_PY_BUILD_JOBS="${IDF_PY_BUILD_JOBS:-2}" \
+        bash tools/qemu-boot-run.sh
 }
 
 # The profiles the image steps built and scanned in THIS run (each step's log
@@ -174,6 +193,7 @@ if [ "$MODE" = full ]; then
     step alsa-null        make --no-print-directory verify-alsa-null
     step firmware-esp32s3-wired firmware_idf brick-s3-wired
     step firmware-esp32s3-wifi  firmware_idf compact-s3-wifi
+    step firmware-esp32s3-qemu  firmware_idf qemu-s3-openeth
     # Every board profile is built and scanned (goal 14): a profile added to
     # firmware/boards without an image step here would ship unbuilt and
     # unguarded, so the two sets are held to each other.
@@ -181,12 +201,16 @@ if [ "$MODE" = full ]; then
     # What each image is, from its own build log, into the summary: the
     # target, the board and its ASSUMED status with the Needs item, the link,
     # and the safety scan's verdict for that target.
-    for p in wired wifi; do
+    for p in wired wifi qemu; do
         sed -n -e 's/^  board: *\(.*\)/  board \1/p' -e 's/^  needs item: *\(.*\)/  needs item \1/p' \
             -e 's/^chorus: image built: \(.*\)/  built: \1/p' \
             -e 's/^\(safety scan: .*\)/  \1/p' "$LOG/firmware-esp32s3-$p.log" |
             sed "s/^/gate: firmware-esp32s3-$p /" | tee -a "$LOG/summary.txt"
     done
+    # The emulator's image, booted against a real server: adopted, and the same
+    # speaker after a reboot. The run prints its own wall-clock.
+    step qemu-boot        firmware_qemu_boot
+    sed -n -e 's/^qemu-boot: \(.*\)/gate: qemu-boot \1/p' "$LOG/qemu-boot.log" | tee -a "$LOG/summary.txt"
     step image            make --no-print-directory image
     # Both architectures: the two cross builds and their checks take about 45 s
     # cold and 9 s warm here (measured 2026-09-30), inside the gate's budget.

@@ -82,6 +82,16 @@ size_t chorus_link_validate(const chorus_wifi_config_t *link, const chorus_eth_c
                             size_t capacity, size_t *count)
 {
     size_t before = *count;
+    if (link->transport == CHORUS_TRANSPORT_EMULATED) {
+        /* The emulator's controller has no pins and no SPI; the one rule it
+         * shares with the W5500 is that the network is given time to answer. */
+        if (eth->address_timeout_ms == 0) {
+            add_finding(findings, capacity, count, "link-address-timeout-is-zero",
+                        "link_address_timeout_ms = 0 gives the network no time to hand out an "
+                        "address");
+        }
+        return *count - before;
+    }
     if (link->transport != CHORUS_TRANSPORT_WIRED) {
         return 0;
     }
@@ -191,10 +201,13 @@ chorus_bring_up_status_t chorus_link_bring_up(const chorus_wifi_config_t *link,
         return report->status;
     }
 
-    /* Wired. The wireless bring-up is asked too, because it is what says, for
-     * the telemetry line, that a wired endpoint publishes no wireless claim;
-     * it returns before touching the radio for any transport but wireless. */
+    /* Wired, or the emulator's controller. The wireless bring-up is asked too,
+     * because it is what says, for the telemetry line, that such an endpoint
+     * publishes no wireless claim; it returns before touching the radio for
+     * any transport but wireless. */
     (void)chorus_wifi_bring_up(link, radio, &report->wifi);
+    const int emulated = link->transport == CHORUS_TRANSPORT_EMULATED;
+    const char *name = chorus_transport_name(link->transport);
 
     chorus_finding_t findings[16];
     size_t count = 0;
@@ -202,7 +215,7 @@ chorus_bring_up_status_t chorus_link_bring_up(const chorus_wifi_config_t *link,
     if (count > 0) {
         report->status = CHORUS_BRING_UP_CONFIG_REFUSED;
         snprintf(report->detail, sizeof(report->detail),
-                 "link=wired status=%s rule=%s :: %s (%zu finding%s; nothing was touched)",
+                 "link=%s status=%s rule=%s :: %s (%zu finding%s; nothing was touched)", name,
                  chorus_bring_up_status_name(report->status), findings[0].rule, findings[0].detail,
                  count, count == 1 ? "" : "s");
         return report->status;
@@ -220,6 +233,14 @@ chorus_bring_up_status_t chorus_link_bring_up(const chorus_wifi_config_t *link,
         report->status = CHORUS_BRING_UP_OK;
         report->link_up = 1;
     }
+    if (emulated) {
+        /* The same three calls in the same order, on the controller app_main
+         * bound for this transport (esp_link.h); it has no wiring to report. */
+        snprintf(report->detail, sizeof(report->detail),
+                 "link=emulated phy=openeth status=%s address_timeout_ms=%u",
+                 chorus_bring_up_status_name(report->status), (unsigned)eth->address_timeout_ms);
+        return report->status;
+    }
     snprintf(report->detail, sizeof(report->detail),
              "link=wired phy=w5500 status=%s spi=%s clock_mhz=%u sclk=%u mosi=%u miso=%u cs=%u "
              "int=%u address_timeout_ms=%u",
@@ -228,4 +249,30 @@ chorus_bring_up_status_t chorus_link_bring_up(const chorus_wifi_config_t *link,
              (unsigned)eth->miso, (unsigned)eth->cs, (unsigned)eth->int_pin,
              (unsigned)eth->address_timeout_ms);
     return report->status;
+}
+
+int chorus_link_emulated_server(const char *gateway, const char *configured, char *out,
+                                size_t out_len)
+{
+    if (gateway == NULL || configured == NULL || out == NULL || out_len == 0) {
+        return -1;
+    }
+    out[0] = '\0';
+    /* A dotted IPv4 address and nothing else: the user network hands out no
+     * other kind, and a text with a colon in it would read as a second port. */
+    size_t gateway_len = strlen(gateway);
+    if (gateway_len == 0 || strspn(gateway, "0123456789.") != gateway_len ||
+        strcmp(gateway, "0.0.0.0") == 0) {
+        return -1;
+    }
+    const char *colon = strrchr(configured, ':');
+    if (colon == NULL || colon[1] == '\0' || strspn(colon + 1, "0123456789") != strlen(colon + 1)) {
+        return -1;
+    }
+    int written = snprintf(out, out_len, "%s:%s", gateway, colon + 1);
+    if (written < 0 || (size_t)written >= out_len) {
+        out[0] = '\0';
+        return -1;
+    }
+    return 0;
 }

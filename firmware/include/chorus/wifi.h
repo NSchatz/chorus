@@ -79,11 +79,15 @@
  * and has no wireless claim made about it. */
 typedef enum {
     CHORUS_TRANSPORT_WIRED = 0,
-    CHORUS_TRANSPORT_WIRELESS
+    CHORUS_TRANSPORT_WIRELESS,
+    /* The emulator's Ethernet controller (goal 14, chorus/link.h): a link no
+     * speaker has. Like a wired one it brings no radio up and has no wireless
+     * claim made about it. */
+    CHORUS_TRANSPORT_EMULATED
 } chorus_transport_t;
 
 const char *chorus_transport_name(chorus_transport_t transport);
-/* Parse `wired` or `wireless`. `*ok` is 0 for anything else. */
+/* Parse `wired`, `wireless` or `emulated`. `*ok` is 0 for anything else. */
 chorus_transport_t chorus_transport_from_name(const char *name, int *ok);
 
 /* A Wi-Fi power save mode, in the platform's own terms.

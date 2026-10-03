@@ -7,6 +7,9 @@
 #   mise.toml: exact x.y.z versions only, and mise.lock holds a sha256 for every binary tool
 #   ESP-IDF: firmware/config/endpoint.conf names an exact tag and its 40-hex commit, and CI
 #   clones that tag
+#   the emulator (goal 14): tools/qemu/pins.conf names an exact release, its archive's URL and
+#   sha256, the program's sha256 and micromamba's version, URL and sha256; every package of
+#   tools/qemu/libs.explicit.txt is a conda-forge linux-64 build held to its sha256
 #   the gate builds with --locked; any package.json pins exact versions beside a lockfile
 . "$(dirname "$0")/lib.sh"
 rc=0
@@ -76,6 +79,29 @@ while IFS= read -r l; do
         bad "firmware/dependencies.lock has no component_hash for $name at $v"
 done < <(git ls-files 'firmware/*idf_component.yml' | xargs -r sed -n '/^dependencies:/,/^[^ ]/p' | command grep -E '^[[:space:]]+[a-z0-9_./-]+:[[:space:]]*"')
 echo "esp-idf components: $comps"
+
+# The emulator and its library environment (goal 14): the record the install and
+# the runs read (tools/qemu/lib.sh), held to exact versions and sha256 digests.
+qpin() { sed -n "s/^$1 = //p" tools/qemu/pins.conf | head -n 1; }
+qver="$(qpin qemu_version)"
+qurl="$(qpin qemu_asset_url)"
+[[ "$qver" =~ ^esp_develop_[0-9]+\.[0-9]+\.[0-9]+_[0-9]{8}$ ]] || bad "tools/qemu/pins.conf qemu_version '$qver' is not an exact release (esp_develop_x.y.z_yyyymmdd)"
+[[ "$qurl" == https://github.com/espressif/qemu/releases/download/*"$qver"* ]] || bad "tools/qemu/pins.conf qemu_asset_url does not name the release $qver"
+for k in qemu_asset_sha256 qemu_binary_sha256 micromamba_sha256; do
+    [[ "$(qpin "$k")" =~ ^[0-9a-f]{64}$ ]] || bad "tools/qemu/pins.conf $k is not a sha256"
+done
+mver="$(qpin micromamba_version)"
+[[ "$mver" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$ ]] || bad "tools/qemu/pins.conf micromamba_version '$mver' is not an exact release"
+[[ "$(qpin micromamba_url)" == https://github.com/mamba-org/micromamba-releases/releases/download/"$mver"/* ]] || bad "tools/qemu/pins.conf micromamba_url does not name the release $mver"
+libs=0
+command grep -q -x '@EXPLICIT' tools/qemu/libs.explicit.txt || bad "tools/qemu/libs.explicit.txt is not an explicit list (no @EXPLICIT line)"
+while IFS= read -r l; do
+    libs=$((libs + 1))
+    [[ "$l" =~ ^https://conda\.anaconda\.org/conda-forge/(linux-64|noarch)/[A-Za-z0-9._+-]+-[^-]+-[^-]+\.(conda|tar\.bz2)#sha256:[0-9a-f]{64}$ ]] ||
+        bad "a library of the emulator not pinned to a conda-forge build and its sha256: $l"
+done < <(command grep -v -E '^(#|@EXPLICIT$|[[:space:]]*$)' tools/qemu/libs.explicit.txt)
+[ "$libs" -gt 0 ] || bad "tools/qemu/libs.explicit.txt lists no package"
+echo "emulator: QEMU $qver, micromamba $mver, $libs library packages, each with a sha256"
 
 for s in build test clippy; do
     command grep -E "cargo $s .*--locked" tools/gate.sh > /dev/null || bad "the gate's cargo $s does not pass --locked"

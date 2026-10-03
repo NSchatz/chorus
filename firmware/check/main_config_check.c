@@ -105,11 +105,18 @@ int main(int argc, char **argv)
            config.board.model_status == CHORUS_BOARD_ASSUMED ? config.board.needs_item : "",
            config.board.model_status == CHORUS_BOARD_ASSUMED ? "\"" : "",
            config.board.flash_size_mb);
+    if (config.board.audio_output == CHORUS_AUDIO_OUTPUT_NONE) {
+        printf("  audio output   none: no amplifier, no I2S and no I2C are brought up (the "
+               "emulated board)\n");
+    }
     if (config.link.transport == CHORUS_TRANSPORT_WIRED) {
         printf("  link           transport=wired phy=w5500 spi=%s clock=%u MHz sclk=%u mosi=%u "
                "miso=%u cs=%u int=%u\n",
                chorus_spi_host_name(config.eth.spi_host), config.eth.spi_clock_mhz, config.eth.sclk,
                config.eth.mosi, config.eth.miso, config.eth.cs, config.eth.int_pin);
+    } else if (config.link.transport == CHORUS_TRANSPORT_EMULATED) {
+        printf("  link           transport=emulated phy=openeth (the emulator's Ethernet; the "
+               "W5500 pins and the radio are not driven)\n");
     } else {
         printf("  link           transport=wireless power_save=%s (the W5500 pins are not "
                "driven)\n",

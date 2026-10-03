@@ -215,10 +215,12 @@ exists (brief section 0.9):
 | ESP-IDF | `firmware/config/endpoint.conf` | the tag's commit |
 | ESP-IDF components | `firmware/main/idf_component.yml` (`==x.y.z`) | `firmware/dependencies.lock` component hashes |
 | Crates | `Cargo.lock`, `--locked` | the lockfile checksums |
+| The emulator (goal 14) | `tools/qemu/pins.conf` (the QEMU release, micromamba), `tools/qemu/libs.explicit.txt` (its conda-forge libraries, each an exact build) | the release archive's, the program's and micromamba's sha256; a sha256 per library package |
 
 `check-pins.sh` checks the table: exact versions, the digests, the three Rust toolchain names
-agreeing, the ESP-IDF tag and commit, and each ESP-IDF component's exact version with its hash in
-the lock. **Review-only (no check):** a pinned version is never
+agreeing, the ESP-IDF tag and commit, each ESP-IDF component's exact version with its hash in
+the lock, and the emulator's record and library list (`tools/qemu-env.sh` installs exactly those and
+verifies an install against them). **Review-only (no check):** a pinned version is never
 upgraded silently (an upgrade is its own commit saying why, and a toolchain upgrade, Rust or
 ESP-IDF, goes through a proposal, K51), and every version, number or licence a pin rests on cites
 its URL and the date read.

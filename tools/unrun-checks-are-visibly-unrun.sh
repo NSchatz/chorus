@@ -248,6 +248,16 @@ expect_missing_prerequisite "endpoint-mdns-live-run.sh" \
     bash "$REPO_ROOT/tools/with-mdns-port-taken.sh" \
     bash "$REPO_ROOT/tools/endpoint-mdns-live-run.sh"
 
+# No emulator (goal 14). Genuinely absent: CHORUS_QEMU_HOME and
+# CHORUS_QEMU_LIBS name an empty directory, which is what a machine that never
+# ran tools/qemu-env.sh install looks like. The run refuses before it builds
+# an image or starts a server.
+NO_QEMU="$(mktemp -d "${TMPDIR:-/tmp}/chorus-no-qemu.XXXXXX")"
+expect_missing_prerequisite "qemu-boot-run.sh" \
+    env CHORUS_SKIP_BUILD=1 CHORUS_QEMU_HOME="$NO_QEMU" CHORUS_QEMU_LIBS="$NO_QEMU/libs" \
+    bash "$REPO_ROOT/tools/qemu-boot-run.sh"
+rm -rf "$NO_QEMU"
+
 # --- and the list above is the whole list ------------------------------------
 #
 # An entry point is environment-dependent exactly when it calls one of lib.sh's
