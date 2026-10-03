@@ -1,4 +1,4 @@
-# 0000: chorusctl is a std-only noun/verb client of the control API that sends the catalog's own bytes, prints the server's own JSON, and maps what came back to five exit codes
+# 0114: chorusctl is a std-only noun/verb client of the control API that sends the catalog's own bytes, prints the server's own JSON, and maps what came back to five exit codes
 
 - Status: accepted (goal 15, 2026-10-03)
 - Decided by: the goal (program section 19 item 3, done-when line D; K46) inside the

@@ -7,7 +7,7 @@ message of the control catalog, byte for byte the vector under `fixtures/control
 arguments (`crates/ctl/tests/commands.rs` holds it to that).
 
 It is the crate `crates/ctl` (package `chorus-ctl`, binary `chorusctl`); the decision record is
-`docs/decisions/0000-chorusctl.md`.
+`docs/decisions/0114-chorusctl.md`.
 
 ```sh
 cargo build --release -p chorus-ctl        # target/release/chorusctl
