@@ -42,8 +42,16 @@
 //! 7. Play: `pause_seek_stop_and_the_end_of_media`.
 //! 8. Metadata: `metadata_is_kept_verbatim_and_tolerated_when_broken`, and the
 //!    gapless test (the room's state shows title, artist, album).
-//! 9. Gapless: `a_control_point_plays_two_tracks_gapless_with_metadata`;
-//!    replace, clear, a next URI that is not found and Next are in
+//! 9. Gapless: `a_control_point_plays_two_tracks_gapless_with_metadata` (a
+//!    room's renderer), and the same script with the same assertions on a
+//!    saved group's renderer and on a live group's renderer, with a client
+//!    session capturing in each of the group's two rooms
+//!    (`a_saved_group_renderer_plays_two_tracks_gapless_with_metadata_in_every_room`,
+//!    `a_live_group_renderer_plays_two_tracks_gapless_with_metadata_in_every_room`):
+//!    each room's PCM is compared sample for sample, each room's control
+//!    state shows both tracks' metadata, and the two rooms' captures must sit
+//!    at the same places on the chunk grid (sequence, timestamp, index in the
+//!    chunk). Replace, clear, a next URI that is not found and Next are in
 //!    `pause_seek_stop_and_the_end_of_media`. NOT covered: a
 //!    SetNextAVTransportURI that arrives after the join was written and
 //!    before it is audible (the window is at most the player's ring, and the
@@ -57,7 +65,9 @@
 //!     endless or oversized response (the fetcher's own tests).
 //! 12. Volume: `volume_is_clamped_by_the_room_limit_and_the_real_value_is_evented`.
 //! 13. Moderation: in the eventing test.
-//! 14. Groups appear and vanish: `casting_to_a_group_takes_its_rooms`,
+//! 14. Groups appear and vanish: `casting_to_a_group_takes_its_rooms` (K78,
+//!     the players' pool; what a group's rooms receive is in step 9's two
+//!     group tests, not here),
 //!     `a_vanished_group_says_byebye_and_its_description_is_gone`,
 //!     `a_live_group_keeps_its_identity_when_the_same_rooms_re_form` (and the
 //!     rename).
@@ -372,8 +382,13 @@ fn didl(title: &str, artist: &str, album: &str, url: &str, mime: &str, duration:
 
 // ----- what a room plays, captured -----------------------------------------------
 
-/// One chunk as received: its sequence and its PCM.
-type Chunk = (u32, Vec<u8>);
+/// One chunk as received: its sequence, its timestamp on the server's
+/// timeline and its PCM.
+type Chunk = (u32, u64, Vec<u8>);
+
+/// One frame as received: its chunk's sequence and timestamp, its index in
+/// the chunk, and the frame.
+type Placed = (u32, u64, usize, Frame);
 
 /// Everything a listener received, chunk by chunk.
 #[derive(Clone, Default)]
@@ -386,10 +401,11 @@ impl Heard {
         thread::spawn(move || {
             while keep.load(Ordering::SeqCst) {
                 if let Some(chunk) = listener.next_chunk(Duration::from_millis(100)) {
-                    into.0
-                        .lock()
-                        .unwrap()
-                        .push((chunk.sequence, chunk.audio_data));
+                    into.0.lock().unwrap().push((
+                        chunk.sequence,
+                        chunk.timestamp_ns,
+                        chunk.audio_data,
+                    ));
                 }
             }
         });
@@ -403,12 +419,24 @@ impl Heard {
     /// Every frame received from chunk `from` on, with the sequence of the
     /// chunk it came in.
     fn frames_since(&self, from: usize) -> Vec<(u32, Frame)> {
+        self.placed_since(from)
+            .into_iter()
+            .map(|(sequence, _, _, frame)| (sequence, frame))
+            .collect()
+    }
+
+    /// Every frame received from chunk `from` on, with where the server put
+    /// it: the sequence and the timestamp of its chunk, and its index inside
+    /// that chunk.
+    fn placed_since(&self, from: usize) -> Vec<Placed> {
         let chunks = self.0.lock().unwrap();
         let mut out = Vec::new();
-        for (sequence, data) in chunks.iter().skip(from) {
-            for f in data.as_chunks::<4>().0 {
+        for (sequence, timestamp_ns, data) in chunks.iter().skip(from) {
+            for (index, f) in data.as_chunks::<4>().0.iter().enumerate() {
                 out.push((
                     *sequence,
+                    *timestamp_ns,
+                    index,
                     [
                         i16::from_le_bytes([f[0], f[1]]),
                         i16::from_le_bytes([f[2], f[3]]),
@@ -1743,11 +1771,42 @@ fn eventing_follows_gena_and_refuses_callbacks_off_the_subnets() {
     );
 }
 
-#[test]
-fn a_control_point_plays_two_tracks_gapless_with_metadata() {
-    let home = Home::start(&["kitchen"]);
-    let kitchen = wait("the kitchen", || home.devices().into_iter().next());
-    let heard = home.listen_in("kitchen");
+/// What `plays_a_gapless_pair` measured.
+struct Gapless {
+    /// STOPPED or TRANSITIONING events between the two tracks.
+    breaks: usize,
+    /// Frames of the whole signal, and the frame the two files join at.
+    total: usize,
+    cut: usize,
+    /// Per room: its id, the frames it received that are not silence, and the
+    /// largest difference from the expected signal.
+    rooms: Vec<(String, usize, i32)>,
+}
+
+impl Gapless {
+    /// `kitchen frames expected N received N max diff 0; den ...`.
+    fn per_room(&self) -> String {
+        self.rooms
+            .iter()
+            .map(|(room, received, worst)| {
+                format!(
+                    "{room} frames expected {} received {received} max diff {worst}",
+                    self.total
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("; ")
+    }
+}
+
+/// The scripted control point plays two tracks to `renderer` with
+/// SetNextAVTransportURI, and everything acceptance line C says about that
+/// is asserted: the events at the boundary, the metadata in the control
+/// state of every room in `rooms`, and the PCM every one of those rooms
+/// received (each `Heard` is a real client session attached to its room),
+/// sample for sample. With more than one room, the rooms must also have
+/// received the same frames at the same places on the server's chunk grid.
+fn plays_a_gapless_pair(home: &Home, renderer: &Device, rooms: &[(&str, &Heard)]) -> Gapless {
     let events = Events::start();
     let media = MediaServer::start();
 
@@ -1773,61 +1832,72 @@ fn a_control_point_plays_two_tracks_gapless_with_metadata() {
         "0:00:02",
     );
 
-    let sid = home.subscribe(&kitchen, AVT, &events.callback("avt"));
+    let sid = home.subscribe(renderer, AVT, &events.callback("avt"));
     assert!(matches!(
-        home.set_uri(&kitchen, &first, &first_didl),
+        home.set_uri(renderer, &first, &first_didl),
         SoapReply::Response { .. }
     ));
-    assert_eq!(home.transport(&kitchen).0, "STOPPED");
+    assert_eq!(home.transport(renderer).0, "STOPPED");
     assert!(home
-        .avt(&kitchen, "GetCurrentTransportActions")
+        .avt(renderer, "GetCurrentTransportActions")
         .value("Actions")
         .unwrap()
         .contains("Play"));
-    home.play(&kitchen);
+    home.play(renderer);
     assert!(matches!(
-        home.set_next(&kitchen, &second, &second_didl),
+        home.set_next(renderer, &second, &second_didl),
         SoapReply::Response { .. }
     ));
-    let info = home.avt(&kitchen, "GetMediaInfo");
+    let info = home.avt(renderer, "GetMediaInfo");
     assert_eq!(info.value("NextURI"), Some(second.as_str()));
     assert_eq!(info.value("NextURIMetaData"), Some(second_didl.as_str()));
 
     let playing = events.until(&sid, 0, "TransportState", "PLAYING");
-    // Track 1 in the room's control state: what the app, chorusctl and MQTT
-    // show.
-    let room = wait("track 1 in the room's state", || {
-        let room = home.room("kitchen");
-        room.contains(r#""state":"playing""#).then_some(room)
-    });
-    for wanted in [
-        r#""source":"player:p0""#,
-        r#""title":"Low Tide""#,
-        r#""artist":"The Harbour Lights""#,
-        r#""album":"Salt""#,
-        r#""art_url":"http://192.0.2.10:8200/art/cover.jpg""#,
-        r#""via":"upnp""#,
-    ] {
-        assert!(room.contains(wanted), "{wanted} in {room}");
+    // Track 1 in every room's control state: what the app, chorusctl and
+    // MQTT show.
+    for (id, _) in rooms {
+        let room = wait("track 1 in the room's state", || {
+            let room = home.room(id);
+            (room.contains(r#""state":"playing""#) && room.contains(r#""title":"Low Tide""#))
+                .then_some(room)
+        });
+        for wanted in [
+            r#""source":"player:p0""#,
+            r#""title":"Low Tide""#,
+            r#""artist":"The Harbour Lights""#,
+            r#""album":"Salt""#,
+            r#""art_url":"http://192.0.2.10:8200/art/cover.jpg""#,
+            r#""via":"upnp""#,
+        ] {
+            assert!(room.contains(wanted), "{wanted} in {room}");
+        }
     }
     assert_eq!(
-        home.avt(&kitchen, "GetPositionInfo").value("TrackDuration"),
+        home.avt(renderer, "GetPositionInfo").value("TrackDuration"),
         Some("0:00:03"),
         "the decoder's duration, 144007 frames"
     );
 
     // The boundary, as the control point's NOTIFY listener saw it.
     let swapped = events.until(&sid, playing, "AVTransportURI", &second);
-    let room = wait("track 2 in the room's state", || {
-        let room = home.room("kitchen");
-        room.contains(r#""title":"Slack Water""#).then_some(room)
-    });
-    assert!(room.contains(r#""via":"upnp""#) && room.contains(r#""album":"Salt""#));
-    let position = home.avt(&kitchen, "GetPositionInfo");
+    for (id, _) in rooms {
+        let room = wait("track 2 in the room's state", || {
+            let room = home.room(id);
+            room.contains(r#""title":"Slack Water""#).then_some(room)
+        });
+        for wanted in [
+            r#""artist":"The Harbour Lights""#,
+            r#""album":"Salt""#,
+            r#""via":"upnp""#,
+        ] {
+            assert!(room.contains(wanted), "{wanted} in {room}");
+        }
+    }
+    let position = home.avt(renderer, "GetPositionInfo");
     assert_eq!(position.value("TrackURI"), Some(second.as_str()));
     assert_eq!(position.value("TrackMetaData"), Some(second_didl.as_str()));
     assert_eq!(position.value("TrackDuration"), Some("0:00:02"));
-    assert_eq!(home.transport(&kitchen).0, "PLAYING");
+    assert_eq!(home.transport(renderer).0, "PLAYING");
 
     // The end of track 2: STOPPED, evented.
     let stopped = events.until(&sid, swapped, "TransportState", "STOPPED");
@@ -1865,49 +1935,151 @@ fn a_control_point_plays_two_tracks_gapless_with_metadata() {
         assert_eq!(pair[1].seq, pair[0].seq + 1);
     }
 
-    // What the room played: the uncut signal, once, sample for sample.
-    let (frames, at) = wait("the whole signal in the room", || {
-        let frames = heard.frames_since(0);
-        let start = frames.iter().position(|(_, f)| *f == signal[0])?;
-        (frames.len() >= start + total + 4_800).then_some((frames, start))
-    });
-    let mut worst = 0i32;
-    for (n, want) in signal.iter().enumerate() {
-        let got = frames[at + n].1;
-        for c in 0..2 {
-            worst = worst.max((i32::from(got[c]) - i32::from(want[c])).abs());
+    // What every room played: the uncut signal, once, sample for sample.
+    let mut measured = Vec::new();
+    let mut placements: Vec<Vec<Placed>> = Vec::new();
+    for (id, heard) in rooms {
+        let (frames, at) = wait("the whole signal in the room", || {
+            let frames = heard.placed_since(0);
+            let start = frames.iter().position(|p| p.3 == signal[0])?;
+            (frames.len() >= start + total + 4_800).then_some((frames, start))
+        });
+        let mut worst = 0i32;
+        for (n, want) in signal.iter().enumerate() {
+            let got = frames[at + n].3;
+            for c in 0..2 {
+                worst = worst.max((i32::from(got[c]) - i32::from(want[c])).abs());
+            }
         }
+        let received = frames.iter().filter(|p| p.3 != SILENCE).count();
+        let sequences: Vec<u32> = frames[at..at + total].iter().map(|p| p.0).collect();
+        assert!(
+            sequences
+                .windows(2)
+                .all(|w| w[1] == w[0] || w[1] == w[0].wrapping_add(1)),
+            "{id}: no chunk is missing inside the two tracks"
+        );
+        assert_eq!(worst, 0, "{id}: the two files join sample for sample");
+        assert_eq!(
+            received, total,
+            "{id}: nothing else was heard, and no frame is silence"
+        );
+        assert!(
+            frames[at + total..].iter().all(|p| p.3 == SILENCE),
+            "{id}: silence after the end"
+        );
+        // The join is inside a chunk, not at the edge of one: the frame
+        // before it and the frame after it came in the same chunk.
+        assert_eq!(
+            frames[at + cut - 1].0,
+            frames[at + cut].0,
+            "{id}: the join is not at a chunk boundary"
+        );
+        assert_ne!(frames[at + cut].2, 0, "{id}: the join is inside a chunk");
+        measured.push((id.to_string(), received, worst));
+        placements.push(frames[at..at + total].to_vec());
     }
-    let received = frames.iter().filter(|(_, f)| *f != SILENCE).count();
-    let sequences: Vec<u32> = frames[at..at + total].iter().map(|(s, _)| *s).collect();
-    assert!(
-        sequences
-            .windows(2)
-            .all(|w| w[1] == w[0] || w[1] == w[0].wrapping_add(1)),
-        "no chunk is missing inside the two tracks"
-    );
-    assert_eq!(worst, 0, "the two files join sample for sample");
-    assert_eq!(
-        received, total,
-        "nothing else was heard, and no frame is silence"
-    );
-    assert!(frames[at + total..].iter().all(|(_, f)| *f == SILENCE));
-    // After the end the room plays nothing and shows nothing.
-    let room = wait("the room is released", || {
-        let room = home.room("kitchen");
-        (!room.contains("now_playing")).then_some(room)
-    });
-    assert!(!room.contains(r#""source":"player"#), "{room}");
+    // One stream for the whole group: every room received each frame in the
+    // chunk of the same sequence, with the same timestamp, at the same index.
+    for (n, other) in placements.iter().enumerate().skip(1) {
+        let differs = placements[0].iter().zip(other).position(|(a, b)| a != b);
+        assert_eq!(
+            differs,
+            None,
+            "{} and {} received the signal at different places on the chunk grid: {:?} and {:?}",
+            rooms[0].0,
+            rooms[n].0,
+            differs.map(|d| placements[0][d]),
+            differs.map(|d| other[d])
+        );
+    }
+    // After the end the rooms play nothing and show nothing.
+    for (id, _) in rooms {
+        let room = wait("the room is released", || {
+            let room = home.room(id);
+            (!room.contains("now_playing")).then_some(room)
+        });
+        assert!(!room.contains(r#""source":"player"#), "{room}");
+    }
+    Gapless {
+        breaks,
+        total,
+        cut,
+        rooms: measured,
+    }
+}
+
+#[test]
+fn a_control_point_plays_two_tracks_gapless_with_metadata() {
+    let home = Home::start(&["kitchen"]);
+    let kitchen = wait("the kitchen", || home.devices().into_iter().next());
+    let heard = home.listen_in("kitchen");
+    let g = plays_a_gapless_pair(&home, &kitchen, &[("kitchen", &heard)]);
+    let (_, received, worst) = &g.rooms[0];
     println!(
-        "control-point: gapless join: {breaks} STOPPED/TRANSITIONING events between tracks; 1 \
+        "control-point: gapless join: {} STOPPED/TRANSITIONING events between tracks; 1 \
          LastChange swapped AVTransportURI, metadata and duration and cleared \
-         NextAVTransportURI; frames expected {total} received {received}; max diff {worst}; \
-         join at frame {cut} (not a chunk boundary)"
+         NextAVTransportURI; frames expected {} received {received}; max diff {worst}; \
+         join at frame {} (not a chunk boundary)",
+        g.breaks, g.total, g.cut
     );
     println!(
         "control-point: metadata: room state showed title, artist, album, art and via=upnp for \
          track 1 (Low Tide) and then track 2 (Slack Water)"
     );
+}
+
+/// The line a group's gapless test prints.
+fn group_line(kind: &str, name: &str, g: &Gapless) -> String {
+    format!(
+        "control-point: gapless join on the {kind} group {name}: {} STOPPED/TRANSITIONING events \
+         between tracks; 1 LastChange swapped AVTransportURI, metadata and duration and cleared \
+         NextAVTransportURI; {}; join at frame {} (not a chunk boundary); the rooms received the \
+         same frames in chunks of the same sequence and timestamp; metadata (title, artist, \
+         album, art, via=upnp) in both rooms for both tracks",
+        g.breaks,
+        g.per_room(),
+        g.cut
+    )
+}
+
+#[test]
+fn a_saved_group_renderer_plays_two_tracks_gapless_with_metadata_in_every_room() {
+    let home = Home::start(&["kitchen", "den"]);
+    home.server.applied(
+        r#"{"v":2,"t":"group_save","group":"downstairs","name":"Downstairs","zones":["kitchen","den"]}"#,
+    );
+    // A client session in each room, before the group forms: the cast takes
+    // the rooms into the group (K78) with their sessions attached.
+    let (kitchen, den) = (home.listen_in("kitchen"), home.listen_in("den"));
+    let downstairs = wait("the saved group's renderer", || {
+        home.devices()
+            .into_iter()
+            .find(|d| d.model == "chorus saved group" && d.name == "Downstairs")
+    });
+    let g = plays_a_gapless_pair(&home, &downstairs, &[("kitchen", &kitchen), ("den", &den)]);
+    println!("{}", group_line("saved", "Downstairs", &g));
+}
+
+#[test]
+fn a_live_group_renderer_plays_two_tracks_gapless_with_metadata_in_every_room() {
+    let home = Home::start(&["kitchen", "den"]);
+    // A client session in each room, then the app joins the den to the
+    // kitchen: a live group, and its renderer appears.
+    let (kitchen, den) = (home.listen_in("kitchen"), home.listen_in("den"));
+    home.server
+        .applied(r#"{"v":2,"t":"join","zone":"den","target":"kitchen"}"#);
+    let live = wait("the live group's renderer", || {
+        home.devices()
+            .into_iter()
+            .find(|d| d.model == "chorus live group")
+    });
+    for room in ["kitchen", "den"] {
+        let state = home.room(room);
+        assert!(state.contains(r#""group":"live-"#), "{state}");
+    }
+    let g = plays_a_gapless_pair(&home, &live, &[("kitchen", &kitchen), ("den", &den)]);
+    println!("{}", group_line("live", &live.name, &g));
 }
 
 #[test]

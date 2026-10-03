@@ -207,8 +207,13 @@ repeat it.
 
 Tested (`crates/server/tests/upnp_control_point.rs`, against the real server
 binary over real sockets on loopback): discovery, descriptions, every action,
-eventing, gapless playing with the PCM a room received compared sample for
-sample, metadata into the control state, K78, volume clamping, every format,
+eventing, gapless playing on each of the three kinds of renderer (a room's, a
+saved group's and a live group's: the same two tracks, the same assertions on
+the events at the boundary, and a client session capturing in every room, one
+for the room and one in each of the two rooms of each group, with the PCM
+each room received compared sample for sample and, in a group, the two rooms'
+captures required to sit in chunks of the same sequence and timestamp),
+metadata into the control state of every such room, K78, volume clamping, every format,
 the refusals above, identities across a restart, byebye, and sixteen
 renderers at once.
 
