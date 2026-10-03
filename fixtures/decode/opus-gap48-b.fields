@@ -1,0 +1,27 @@
+# opus-gap48-b: Opus in Ogg (RFC 7845), 96 kbit/s stereo from a 48000 Hz source, libopus 1.6.1 through
+# `ffmpeg -c:a libopus`; mapping family 0. Decoded at 48 kHz, as Opus always is here.
+# Reference (reference_sha256): `opusdec --rate 48000 --no-dither` (opus-tools 0.2 over
+# libopus 1.6.1, a float build), 16-bit little-endian: what opus_compare judges against.
+# exact_sha256: the decode of libopus 1.6.1 as chorus builds it (fixed point,
+# third_party/opus/chorus-build.txt) by tools/decode-fixtures/opus_pkt.c over the packets this
+# script read out of the Ogg pages, after the pre-skip and the end trim of RFC 7845 section 4,
+# as interleaved little-endian 24-bit samples (3 bytes each). decode_f32_fnv1a64 is the
+# FNV-1a 64 of the same samples as little-endian f32 (sample / 2^23).
+# Written by tools/decode-fixtures/generate.py (`make decode-fixtures`); do not edit by hand.
+file = opus-gap48-b.opus
+file_sha256 = d389a46622f2a7ba8f36a77ba01924426ae6692fb53c1949c6539151ce96a236
+codec = opus
+container = ogg
+sample_rate_hz = 48000
+channels = 2
+frames = 24000
+pre_skip = 312
+input_sample_rate_hz = 48000
+output_gain_q8 = 0
+match = opus
+reference_sha256 = cb24d67ecec3ff539f45a472b81f036913504e6b4e556b8182d8e729b8605851
+exact_sha256 = 10c19ab5ca32f802f3e86d76d9f3ef8bb8dd646264c47b47ba54cfdfac3b1bc6
+decode_f32_fnv1a64 = 4fab78af1e1892ce
+title = chorus fixture opus-gap48-b
+artist = the generator
+album = fixtures/decode

@@ -78,6 +78,7 @@ pub mod metrics;
 pub mod mqtt;
 pub mod player;
 pub mod playerport;
+pub mod probe_media;
 pub mod router;
 pub mod schedule_runtime;
 pub mod serve;

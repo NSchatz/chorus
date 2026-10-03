@@ -35,6 +35,11 @@ chorus-measure = { path = "../measure" }
 # topics and the payloads cut out of the control state message. No third-party
 # dependency.
 chorus-mqtt = { path = "../mqtt" }
+# The decoders (goal 16, docs/decoders.md, docs/decisions/0122-the-server-decoders.md): MP3, FLAC,
+# Vorbis, ALAC and WAV through Symphonia 0.6.1 (MPL-2.0 by that record), Ogg Opus through the
+# vendored libopus (crates/opus-sys). Linked here first for `--probe-media` (src/probe_media.rs);
+# the players that feed a stream from them come with the renderer.
+chorus-decode = { path = "../decode" }
 
 [dev-dependencies]
 # The end-to-end tests decode what the server put on a real socket with the

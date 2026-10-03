@@ -147,6 +147,11 @@ implementations read: `fixtures/protocol`, `fixtures/sync`, `fixtures/sync/cross
 one language only. `check-shared-fixtures.sh` holds each directory to a Rust reader and a C
 reader and fails on a file of a kind neither reads. `fixtures/control`,
 `fixtures/measure`, `fixtures/schedule`, `fixtures/roomfit` and `fixtures/cec` are Rust-only by declaration (the endpoint does not speak them yet; room-correction fitting runs on the server; CEC runs on the Linux hub alone).
+`fixtures/decode` (goal 16) is Rust-only by declaration too: the server decodes every input
+format (`crates/decode`), and its fixtures (one short file per settled format with a reference
+decoder's output, and two AAC files to refuse) are read by
+`crates/decode/tests/reference_decodes.rs`, which fails on a fixture no test reads; they are
+regenerated only by `make decode-fixtures`.
 `fixtures/protocol/v2` (protocol v2, goal 5) and `fixtures/protocol/v2/noise` are shared like the
 rest: since the endpoint moved to v2 (goal 6) the check holds them to their Rust readers and to
 `firmware/tests/test_protocol_v2.c` and `firmware/tests/test_noise.c`.
@@ -193,7 +198,8 @@ root, and `license.workspace = true` in every crate, which the workspace sets to
   `deny.toml`: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, 0BSD, ISC, Zlib, Unlicense and
   CC0-1.0 (brief section 4.7). Anything else needs an ADR naming the crate, then an exception in
   `deny.toml` citing it (K95). The exceptions so far: Unicode-3.0 for `unicode-ident` (ADR
-  0039) and MPL-2.0 for the four Symphonia crates FLAC decoding uses (ADR 0044, P9).
+  0039), MPL-2.0 for the four Symphonia crates FLAC decoding uses (ADR 0044, P9), and MPL-2.0
+  for the eight further Symphonia crates of the server's decoders (ADR 0122, P9).
 - Crates come from crates.io only, one version of each (`cargo deny check sources bans`).
 - **Review-only (no check):** a new external crate comes with an ADR answering BRIEF §3.2's
   question (why not build it); cargo-deny checks its licence and source, not the ADR.

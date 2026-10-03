@@ -1,0 +1,20 @@
+# flac-sweep48-s24: 24-bit stereo at 48000 Hz, `flac -8 --no-padding` (libFLAC 1.5.0).
+# Reference: `flac -d` of the same build, equal to the input signal; reference_sha256 is the
+# sha256 of that decode as interleaved little-endian 24-bit samples (3 bytes each).
+# decode_f32_fnv1a64 is the FNV-1a 64 of the same samples as f32 (sample / 2^(bits-1)),
+# little-endian: what chorus-server --probe-media prints for an exact decode.
+# Written by tools/decode-fixtures/generate.py (`make decode-fixtures`); do not edit by hand.
+file = flac-sweep48-s24.flac
+file_sha256 = 0b514c9eaea0ee0fd29bc1043b1cd4b30316003bbcc7a0b38e80cf67781fce20
+codec = flac
+container = flac
+sample_rate_hz = 48000
+channels = 2
+bits = 24
+frames = 14400
+match = bit-exact
+reference_sha256 = 84700b17a5e85221eb2dfc3b1c0a5c6e5b660e4914f11dc60d1f46ba698dea59
+decode_f32_fnv1a64 = 3ab389d54a952505
+title = chorus fixture flac-sweep48-s24
+artist = the generator
+album = fixtures/decode

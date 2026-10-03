@@ -1,0 +1,23 @@
+# flac-gap44-a: 16-bit stereo at 44100 Hz, `flac -8 --no-padding` (libFLAC 1.5.0).
+# Reference: `flac -d` of the same build, equal to the input signal; reference_sha256 is the
+# sha256 of that decode as interleaved little-endian 16-bit samples (2 bytes each).
+# decode_f32_fnv1a64 is the FNV-1a 64 of the same samples as f32 (sample / 2^(bits-1)),
+# little-endian: what chorus-server --probe-media prints for an exact decode.
+# Written by tools/decode-fixtures/generate.py (`make decode-fixtures`); do not edit by hand.
+file = flac-gap44-a.flac
+file_sha256 = 4fd026e4d8df24eb4f31fdfb77dbd5475feb16619f25089cb884b4b92192cf07
+codec = flac
+container = flac
+sample_rate_hz = 44100
+channels = 2
+bits = 16
+frames = 22050
+match = bit-exact
+reference_sha256 = 1d337d1cdd34207fc141e33a4b271f2274ace365fe0d25ae4ea4d52294709170
+decode_f32_fnv1a64 = ef1586dfa4a78dfa
+title = chorus fixture flac-gap44-a
+artist = the generator
+album = fixtures/decode
+gap_total_frames = 44100
+gap_cut_frame = 22050
+gap_original_sha256 = bb744f61a51375278f762f11c5d233d8d1a765e329f754900f66ed3b6f54b051
