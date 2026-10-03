@@ -149,8 +149,8 @@ chorusctl inputs label kitchen-amp/line-1 streamer "Kitchen streamer"
   detection, ADR 0066) it plays into the room its endpoint is in, with no autoplay rule to
   write: goal 11's autoplay with the room as its target, the 30 s hold after the signal goes,
   and the restore of what the room played. An `autoplay` rule for the input, enabled or
-  disabled, is the person's word and wins (another target, or never). The label takes effect
-  at the input's next signal.
+  disabled, is the person's word and wins (another target, or never). Labelling an input
+  that has signal now plays it at once.
 - **The room shows it.** Every group playing the input carries a now-playing record with the
   label as its title and `via` `streamer`. What the streamer itself is playing is not known to
   chorus: it arrives as audio.

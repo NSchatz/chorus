@@ -1559,6 +1559,10 @@ fn a_streamer_input_autoplays_into_its_endpoints_room() {
     h.signal("amp/line1", true);
     assert!(!h.rt.is_autoplaying(&input("amp/line1")));
     assert_eq!(h.source_of("lounge"), Source::Stream);
+    // Labelled a streamer while its signal is present: it plays now.
+    h.command(label(InputRole::Streamer));
+    assert!(h.rt.is_autoplaying(&input("amp/line1")));
+    assert_eq!(h.source_of("lounge"), line_in);
 
     let mut h = house();
     h.command(label(InputRole::Streamer));

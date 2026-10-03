@@ -1,4 +1,4 @@
-# 0129: a stored source is an alarm's only, played by a held player session the conductor starts and answers for; a line-in plays in any number of groups on one port with one latency, the largest any listener needs; a shared TV input leaves low-latency mode; a refused line-in start gets no wire message; and a streamer is a labelled line-in that plays into its room
+# 0129: a stored source is an alarm's only, played by a held player session the conductor starts and answers for; a line-in plays in any number of groups on one port with one latency, the largest any listener needs; a shared TV input leaves low-latency mode; an endpoint that refuses a start sends no wire message; and a streamer is a labelled line-in that plays into its room
 
 - Status: accepted (goal 17, 2026-10-03)
 - Decided by: the goal (program section 21, item 3; K80, K94, K60) inside the coordinator's
@@ -41,9 +41,7 @@ licensed hardware design, no Soloist file and no external web page was opened.
   (`/cache/tmp/chorus-g17/agent-rules.md`, `design.md` sections 0, 1, 2.5 and 3) and the
   coordinator's code survey (`research/survey.md` sections A, C, D, F, H, I).
 - The program: `.claude/goals/2026-09-chorus.md` section 4.8, section 21, the K80 and K94 rows.
-- Decisions, in part and said so: ADR 0066 (its alternatives and follow-ups), 0071 (its
-  headings and the paragraph on a target set while a transition runs; the plan's own doc
-  comments in `crates/sync/src/latency_grow.rs`), 0075 (headings), 0076 (fire, fallback,
+- Decisions: ADR 0066 and ADR 0071, whole; in part and said so: 0075 (headings), 0076 (fire, fallback,
   end), 0079 (item 6), 0119 (headings and its lines about alarms and the restore), 0124 (its
   header and context), 0020 (its lines on the busy-worker refusal). What these records say
   beyond those parts is taken from the coordinator's survey, not from a reading of them.
@@ -190,21 +188,40 @@ group is left the TV's room returns to low-latency mode by itself. `docs/inputs.
 price in a person's words. Not chosen: a hub that sends both (a wire and firmware change, and
 two encodes on the hub); a follow-up if a house wants TV sound elsewhere with lip sync kept.
 
-### 6. A refused line-in start gets no wire message (ADR 0066's follow-up)
+### 6. An endpoint that refuses a start sends no wire message (ADR 0066's follow-up)
 
-No. A start is refused in exactly one case today, a `stream_format` that is not the
-server's, and the endpoint is already told by the `source_control` stop that follows. A
-message carrying the reason would give the endpoint nothing it can act on: its format is
-what its hardware captures, it has no person to show a reason to (ASSUMED: no endpoint
-state shows one today; the controls record was not read for this), and it does not retry
-with another format. The people who can act
-are the ones reading the server's log (`line-in refused input= reason=format-mismatch
-detail="offered ... this server streams ..."`), which has both formats. The place a refusal
-should become visible to a person is the state (the input listed as offered and refused),
-and that is a follow-up, below. Adding a v2 wire message, its fixtures for two
-implementations and a firmware handler to say what a stop already says is not worth its
-weight. Revisit when a format conversion exists (the refusal then becomes rare) or when an
-endpoint can do something about it.
+ADR 0066 item 6: an endpoint checks a `start` by name before it sends anything
+(`unknown-source`, `codec-not-listed`, `codec-not-sent`), logs `source-start-refused` with the
+reason and a counter, and sends no `stream_format`: "There is no wire message for a refusal;
+the server sees no `stream_format` (goal 17 may want one, below)". Decided: it does not get
+one.
+
+- This server's starts cannot produce any of the three. It starts an input only by the
+  `source_id` of that session's own latest offer (`LineIns::start`), and only in PCM
+  (`Conductor::source_control`), which is the codec the source role sends (ADR 0066 item 6:
+  "it sends PCM only"). ASSUMED: every endpoint that declares the source role lists PCM in
+  its capabilities; `docs/protocol.md` was not re-read for this. So a refusal is a defect in
+  one of the two programs, and a defect is found where it already is written down: the
+  endpoint's log line and counter.
+- A refusal message would speak only for an endpoint well enough to send it. What the
+  server actually has to notice is a start that gets no `stream_format` for ANY reason (a
+  refusal, a stalled endpoint, a session that died and is not yet known to have), and that
+  needs no new message: it is a start not answered within a bound, seen from the server.
+  That bound is not built here and is the first follow-up below. Until it is, an unanswered
+  start leaves its groups silent and the server says nothing, which for an alarm is the
+  wrong outcome (an alarm must still wake); with it, the input is treated as gone for
+  whatever plays it and an alarm falls back with a reason, as `input-gone` does today.
+- The cost of a message is a v2 message id, vectors under `fixtures/protocol/v2` for both
+  readers (conventions rule 9), a firmware handler and a server handler, to carry what a
+  timeout tells the server better.
+- The other direction already has its wire form. When the SERVER refuses an input (its
+  `stream_format` is not the server's own), the endpoint is sent the `source_control` stop,
+  and the reason with both formats is in the server's log (`line-in refused input=
+  reason=format-mismatch detail="offered ... this server streams ..."`), which is where the
+  person who can act on it reads.
+
+Revisit when the server starts inputs in a codec other than PCM (a refusal then becomes a
+thing a correct pair of programs can produce) or when a format conversion exists.
 
 ### 7. A streamer is a labelled line-in
 
@@ -217,7 +234,8 @@ A `streamer` input:
 - autoplays into its endpoint's own room when its signal appears, with no rule: the runtime
   uses goal 11's autoplay with that room as the target (the same hold, the same restore). An
   `autoplay` rule for the input, enabled or disabled, is the person's word and wins. An
-  endpoint in no room is logged and not played. The label takes effect at the next signal.
+  endpoint in no room is logged and not played. Labelling an input that has signal now plays
+  it at once, as its signal appearing would.
 - shows its label: the room model writes a now-playing record itself (title the label's
   name, `state` `playing`, `via` `streamer`) on every group playing the input, and removes
   it with the source. `Zones::set_now_playing` still accepts a record only for a player
@@ -266,12 +284,13 @@ worker). Nothing here is timing evidence.
 
 - The Soloist server track: fill `Effect::PlaySpotify`'s arm, call `set_soloist_alarms`,
   widen `Source::takes_now_playing`.
-- A refused input shown in the state (decision 6), and a line-in format conversion.
+- A bound on an unanswered start (decision 6): a start with no `stream_format` within a few
+  seconds is logged, stopped and treated as the input gone for whatever plays it, so an
+  alarm falls back to the chime. Until then such an alarm is silent.
+- A refused input shown in the state, and a line-in format conversion.
 - A retry for `no-free-player` when the busy player is one the alarm itself displaced
   (`docs/inputs.md`, "Known limit").
 - Snooze as a control command: the schedule library has the arithmetic, the catalog has no
   command, so "snooze behaves as for the other sources" is true only vacuously today.
-- A streamer label applied to an input that already has signal takes effect at the next
-  signal; applying it at once is a small follow-up if the owner wants it.
 - Hardware: nothing here was heard. The latency a shared input plays at on real endpoints is
   the stamp offset plus the endpoints' own playout latency (ADR 0079's follow-up).

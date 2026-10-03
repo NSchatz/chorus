@@ -598,6 +598,19 @@ impl Runtime {
             Command::AlarmDelete { alarm } => {
                 self.end_alarm(alarm, &[], now_mono_ns, "deleted", zones)
             }
+            // (goal 17) An input labelled a streamer while its signal is
+            // present plays now, as its signal appearing would: the label is
+            // the rule.
+            Command::InputLabel(label)
+                if label.role == InputRole::Streamer
+                    && zones.inputs().contains(&label.input)
+                    && !self.playing.iter().any(|p| p.input == label.input) =>
+            {
+                let input = label.input.clone();
+                if let Some(target) = self.autoplay_target(&input, zones) {
+                    self.start_autoplay(&input, &target, zones);
+                }
+            }
             Command::Sleep { target, minutes } => {
                 let reason = if *minutes == 0 { "sleep-0" } else { "replaced" };
                 self.cancel_sleep(target, &[], reason, zones);

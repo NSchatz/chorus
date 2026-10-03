@@ -17,9 +17,10 @@
 //! 3. The endpoint answers with `stream_format`. It must be this server's own
 //!    format (rate, channels, sample format, PCM) or the start is refused:
 //!    the conductor sends `stop` and logs `line-in refused
-//!    reason=format-mismatch` (a conversion is a follow-up). The `stop` IS
-//!    the refusal on the wire: there is no message of its own for it (the
-//!    ADR 0129 says why not).
+//!    reason=format-mismatch` (a conversion is a follow-up). An endpoint
+//!    that refuses the start itself sends nothing (ADR 0066), and nothing
+//!    is added for it: ADR 0129 says why, and names the bound on an
+//!    unanswered start as the follow-up.
 //! 4. Every upstream `audio_chunk` after that is written into the port's
 //!    ring ([`Port::write_pcm`]), on the session's reader thread, as samples
 //!    at full scale 1.0. A full ring drops the chunk and counts it.

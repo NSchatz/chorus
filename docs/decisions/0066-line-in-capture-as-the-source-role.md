@@ -151,7 +151,7 @@ libasound the step refuses by name (and prints SKIPPED under CI), as it already 
   without a glitch, K94) and the source-only endpoint (no playback stream, hence no offset until
   the server sends one) gets a time-sync exchange of its own before its first start.
 - Goal 17: line-in sharing to any group; whether a refused start needs a wire message.
-  (Done in ADR 0129, 2026-10-03: a line-in plays in any number of groups, and a refused start
-  gets no wire message, with the reasons.)
+  (Done in ADR 0129, 2026-10-03: a line-in plays in any number of groups, and an endpoint
+  that refuses a start sends no wire message, with the reasons and the follow-up it names.)
 - Measurement on hardware: the signal thresholds, the chunk and the capture ring on a real
   line-in, and the capture delay's accuracy on the rack amp's codec, when the board exists.
