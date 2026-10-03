@@ -269,17 +269,19 @@ fn serve_media(
             let mut n = 0usize;
             // As fast as the peer takes it: the player reads at the pace it
             // plays, so the socket's own back-pressure paces this.
-            while ok {
-                let block: Vec<u8> = (n..n + 4_800)
-                    .flat_map(|i| {
-                        let f = ramp_frame(i);
-                        [f[0].to_be_bytes(), f[1].to_be_bytes()].concat()
-                    })
-                    .collect();
-                if stream.write_all(&block).is_err() {
-                    break;
+            if ok {
+                loop {
+                    let block: Vec<u8> = (n..n + 4_800)
+                        .flat_map(|i| {
+                            let f = ramp_frame(i);
+                            [f[0].to_be_bytes(), f[1].to_be_bytes()].concat()
+                        })
+                        .collect();
+                    if stream.write_all(&block).is_err() {
+                        break;
+                    }
+                    n += 4_800;
                 }
-                n += 4_800;
             }
             closed.fetch_add(1, Ordering::SeqCst);
         }

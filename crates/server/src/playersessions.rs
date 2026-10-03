@@ -131,6 +131,10 @@ impl std::fmt::Display for PlayRefused {
     }
 }
 
+/// How a held session's caller makes its group play the player: it is handed
+/// the player's source (`player:p<i>`) and says why not, if not.
+pub type TakeBy<'a> = &'a mut dyn FnMut(&str) -> Result<(), String>;
+
 /// A held session that ended by itself (goal 17).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ended {
@@ -220,11 +224,7 @@ impl PlayerSessions {
     /// `request.target`'s group play it, or says why not; and when the track
     /// ends or fails the session leaves the group alone, gives the player
     /// back and reports the end through [`PlayerSessions::take_ended`].
-    pub fn play_held(
-        &self,
-        request: &PlayRequest,
-        take: &mut dyn FnMut(&str) -> Result<(), String>,
-    ) -> Result<usize, PlayRefused> {
+    pub fn play_held(&self, request: &PlayRequest, take: TakeBy<'_>) -> Result<usize, PlayRefused> {
         self.begin(request, true, Some(take))
     }
 
@@ -241,7 +241,7 @@ impl PlayerSessions {
         &self,
         request: &PlayRequest,
         load: bool,
-        held: Option<&mut dyn FnMut(&str) -> Result<(), String>>,
+        held: Option<TakeBy<'_>>,
     ) -> Result<usize, PlayRefused> {
         if self.players.is_empty() {
             return Err(PlayRefused::NoPlayers);

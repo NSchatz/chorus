@@ -2099,19 +2099,19 @@ impl Upnp {
     /// `subnets` is what `--upnp-callback-subnet` gave, already parsed; empty
     /// takes the host's own ([`on_link_subnets`]). `server_id` is the stable
     /// identity the UDNs rest on. `sessions` is the server's one table of
-    /// player sessions (goal 17: an alarm's stored stream URL plays through
-    /// the same one). `reports` is the players' one report stream
-    /// (`Players::take_reports`).
+    /// player sessions over its players (goal 17: an alarm's stored stream
+    /// URL plays through the same one). `reports` is the players' one report
+    /// stream (`Players::take_reports`).
     pub fn new(
         sockets: Sockets,
         flags: &UpnpFlags,
         server_id: String,
         state: Arc<ControlState>,
-        players: Arc<Players>,
         sessions: Arc<PlayerSessions>,
         reports: Receiver<PlayerReport>,
         log: Box<dyn Fn(&str) + Send + Sync>,
     ) -> Upnp {
+        let players = Arc::clone(sessions.players());
         let mut subnets: Vec<Cidr> = flags
             .callback_subnets
             .iter()

@@ -1424,7 +1424,6 @@ fn main() -> ExitCode {
                 &config.upnp,
                 upnp_identity,
                 Arc::clone(state),
-                Arc::clone(&players),
                 Arc::clone(sessions),
                 reports,
                 {
