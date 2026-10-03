@@ -756,6 +756,7 @@ The catalog above is the contract. The transport is HTTP on the address
 | `GET /api/state` | the state message, once (v2; `?v=1` for the v1 shape) |
 | `GET /api/events` | a `text/event-stream`, one `data: <state message>` per change, starting with the state as it stands (v2; `?v=1` for the v1 shape, rendered from the state as it stands when each change reaches the stream) |
 | `GET /api/report` | one line of plain text: commands applied, commands refused, connections and streams turned away, and the fanout's ceiling and drops |
+| `GET /metrics` | the Prometheus exporter (goal 15): per-speaker telemetry in text exposition format 0.0.4. Read-only, served by a control worker like any other request; `docs/telemetry.md` lists every series |
 | `POST /api/command` | the body is one control message, sent as `Content-Type: application/json`. `200` with the resulting state (v2, the bytes every subscriber is sent), `400` with an `error` (at the message's version), or `426` with a `refused`; `415` or `403` under the rules below |
 | `POST /api/leaving` | the body is an endpoint identifier, which stops being `present`. The same two rules as a command |
 
@@ -1039,7 +1040,10 @@ reachable from outside a local network. The channel binds a configured address
 and nothing in this phase changes that. The catalog has no message that grants
 or checks a permission, and a version that adds one will be a new version.
 
-Also absent, and belonging to later phases: telemetry from an endpoint, presets,
+An endpoint's telemetry is not in the catalog and not in the state message: it
+is served on `GET /metrics` (`docs/telemetry.md`), so a report a second per
+speaker never becomes a state change. Also absent, and belonging to later
+phases: presets,
 and anything about what is playing rather than where. Catalog v2 names a
 group's source and the inputs offered; choosing what a stream URL or a service
 plays is not here.

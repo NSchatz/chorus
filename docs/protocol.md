@@ -68,7 +68,7 @@ What a decoder does when it cannot accept a frame:
 | 0x12 | `stream_format` | v2 | in a record | codec, format, rate, channel map, chunk length, codec setup |
 | 0x13 | `coded_chunk` | v2 | in a record | one FLAC frame or Opus packet on the server timeline |
 | 0x14 | `output_delay` | v2 | in a record | 8 bytes, fixed |
-| 0x15 | `telemetry` | v2 | in a record | 36 bytes, fixed |
+| 0x15 | `telemetry` | v2 | in a record | 36 bytes, then an optional 8-byte heap block (goal 15) |
 | 0x16 | `low_latency_offer` | v2 (goal 13) | in a record | 53 bytes, fixed: direction, stream tag, key, UDP port, chunk, FEC, lead |
 | 0x17 | `low_latency_accept` | v2 (goal 13) | in a record | 7 bytes, fixed: stream tag, status, UDP port |
 | 0x18 | `firmware_offer` | v2 (goal 14) | in a record | transfer, size, SHA-256, chunk size, version, board; or the cancel |
@@ -576,8 +576,31 @@ second is the intent). It carries the diagnostics decision K83 surfaces.
 | 32 | 1 | `link` | 0 unknown, 1 wired, 2 wireless |
 | 33 | 1 | `rssi_dbm` | signed; `i8` minimum (-128) when unknown or wired |
 | 34 | 2 | `temperature_centi_c` | signed, hundredths of a degree Celsius; `i16` minimum when unknown |
+| 36 | 4 | `heap_free_bytes` | optional, goal 15 (the heap block): free heap now, in bytes; `u32` maximum when unknown |
+| 40 | 4 | `heap_min_free_bytes` | optional, goal 15 (the heap block): the least free heap since boot, in bytes; `u32` maximum when unknown |
 
-The firmware version is in the endpoint's `hello`.
+The firmware version is in the endpoint's `hello` (and, for an endpoint with
+an update unit, in its `firmware_status`).
+
+**The heap block** is the last two fields together, 8 bytes, under the rule
+that a payload longer than the fields a decoder knows is accepted ("Decoder
+behaviour"), exactly as `capabilities`' `features` byte is. An encoder writes
+it only when the endpoint knows at least one of the two figures, so a
+`telemetry` from an endpoint that reports no heap is byte for byte what it was
+before the block existed (`v2/telemetry.hex` is unchanged, 36 bytes), and a
+server built before goal 15 ignores the block as excess. A decoder reads the
+block whole or not at all: fewer than 8 bytes after `temperature_centi_c` are
+excess, and both figures then read as unknown, never as zero. Inside a block,
+a figure the endpoint does not know is the `u32` maximum
+(`v2/telemetry_heap.hex`). No feature bit announces it: a feature is something
+the server may then SEND an endpoint, and this is only something an endpoint
+says.
+
+`underruns` counts events (one per run of underrun silence), and `resyncs`
+counts hard resynchronisations; both restart at 0 with each session. The four
+playout figures (`buffer_fill_us`, `underruns`, `resyncs`, `correction_ppb`)
+have no "unknown" on the wire. What each endpoint fills, and what the server
+does with a report, is `docs/telemetry.md`.
 
 ## Room volume
 
