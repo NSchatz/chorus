@@ -50,7 +50,9 @@
 //! 5. **The heard latency** of every visualizer session (goal 12): the
 //!    playout latency of its room's tier ([`heard_latency_ns`]), which the
 //!    audio thread adds to a visualizer frame's stamp for that session
-//!    (`crate::router`, `docs/visualizer.md`).
+//!    (`crate::router`, `docs/visualizer.md`). And, for every room an HTTP
+//!    subscriber watches the visualizer of (`crate::lights`), the slot the
+//!    room is on and the same latency.
 //! 6. **The TV path** (goal 13, `crate::tvrelay`): which TV inputs play in
 //!    low-latency mode, handed to the relay as a list of [`TvPlay`]s; every
 //!    other TV input stays on its slot (ADR 0079), and so does one that more
@@ -455,6 +457,20 @@ impl Conductor {
                 }
             }
         }
+        // The rooms an HTTP subscriber watches the visualizer of
+        // (`crate::lights`): the slot each is on, and when it hears it. A
+        // room whose group has no slot, and every room in the one-stream
+        // shape, is on none and is sent nothing.
+        let slots = self.router.slots();
+        self.router.lights().place(|zone| {
+            let route = snapshot
+                .rooms
+                .iter()
+                .find(|r| r.id == zone)
+                .and_then(|r| r.route)
+                .filter(|route| *route < slots);
+            (route, heard_latency_ns(self.transports.of(zone)))
+        });
         self.route_inputs(&snapshot, &mut report, false);
         self.tv_path(&snapshot);
         report

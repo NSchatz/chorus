@@ -928,6 +928,12 @@ fn main() -> ExitCode {
         Router::single(Arc::new(chorus_server::stream::Fanout::new()))
     });
     let fanout = Arc::clone(&router.fanouts()[0]);
+    // The visualizer stream's tap for HTTP subscribers (`GET /api/visualizer`,
+    // chorus_server::lights): the router owns it, the control plane hands a
+    // subscriber to it, and its frames are stamped on this timeline.
+    if let Some((_, state)) = &control {
+        state.set_lights(Arc::clone(router.lights()), timeline);
+    }
     let keep = Arc::new(AtomicBool::new(true));
     // What the slots' own inputs are made of, before the audio thread
     // exists: every chime rendered at this server's format, and one line-in

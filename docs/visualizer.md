@@ -6,11 +6,15 @@ endpoint of the playing room or group that declared the `visualizer` role, stamp
 timeline at the moment that endpoint's room HEARS the audio they describe. The wire messages are
 `docs/protocol.md` "Visualizer and colour" (0x34 `visualizer_frame`, 0x35 `color`); the decision
 record is `docs/decisions/0084-the-visualizer-stream.md`; the research is
-`docs/research/research-dsp-phase-b.md` section 2 (read 2026-10-01).
+`docs/research/research-dsp-phase-b.md` section 2 (read 2026-10-01). A subscriber of the HTTP
+control plane that holds no audio-wire session (Home Assistant) reads a room's stream at a
+bounded rate from `GET /api/visualizer?zone=<room>` ("The HTTP stream" below,
+`docs/decisions/0153-the-visualizer-stream-over-http.md`).
 
-Every value below names its source or says ASSUMED. Nothing here is a timing claim: the
-end-to-end test compares stamps with stamps on one machine, and no report in
-`docs/measurements/` measures a light against a sound yet.
+Every value below names its source or says ASSUMED. Nothing here is a timing claim about a
+light: the end-to-end tests compare stamps with stamps, and an HTTP frame's `lead_ms` with
+arrival times, on one machine over loopback, and no report in `docs/measurements/` measures a
+light against a sound yet.
 
 ## Where it is computed
 
@@ -19,8 +23,9 @@ I/O, no allocation after `Analyzer::new`, the same frames for the same samples h
 split. The server runs one analyser per stream slot on the audio thread
 (`crates/server/src/slots.rs`), after each tick's broadcast and outside the grid guard, over the
 chunk that slot just played (the configured stream, a chime, a line-in, or silence). A slot no
-visualizer session is on is not analysed (`Router::watched`, an atomic per fanout); a slot that
-gains one is analysed from scratch from that tick. The one-stream shape (`--slots 0`) sends no
+visualizer session is on, and no room an HTTP subscriber watches, is not analysed
+(`Router::watched`, an atomic per fanout and one per slot in `crates/server/src/lights.rs`); a
+slot that gains one is analysed from scratch from that tick. The one-stream shape (`--slots 0`) sends no
 visualizer stream (a follow-up).
 
 ## What a frame carries
@@ -92,6 +97,79 @@ of silent frames sends its first and then nothing until there is something to sh
 full session queue refuses is dropped and counted (`VisualizerCounts`), never retried: the next
 frame supersedes it.
 
+And every subscriber of `GET /api/visualizer?zone=<room>` on the HTTP control plane, for the
+room it names: no session, no role, no endpoint identity. It is sent the same analysis under
+the rules of the next section.
+
+## The HTTP stream
+
+`GET /api/visualizer?zone=<room id>` on the control listener is a server-sent event stream
+(`docs/control-plane.md`, "How the messages travel"): the response headers, one comment line
+(`: visualizer`), then one `data:` line per frame, each one catalog version 2 message in the
+canonical encoding (`fixtures/visualizer/http-frame.json`; `http-frame.sse` is the event's
+bytes on the stream):
+
+```json
+{"v":2,"t":"visualizer","zone":"den","timestamp_ns":12345678901,"lead_ms":85,"peak":201,"beat":255,"red":255,"green":96,"blue":0,"brightness":180,"transition_ms":500}
+```
+
+| Field | Value |
+|---|---|
+| `zone` | the room the stream was opened for |
+| `timestamp_ns` | when that room hears the audio the frame describes, ns on the server timeline: the wire's stamp for an endpoint of that room (the frame's first hop, or the onset hop when it carries a beat, plus the room's heard latency, "When a frame is heard"). An integer; past 2^53 ns (104 days of server uptime) a reader that keeps JSON numbers as doubles loses its last digits, and `lead_ms` is what such a reader uses |
+| `lead_ms` | `timestamp_ns` less the server timeline's now at the moment the server rendered the frame for writing, whole ms rounded down: how long after the frame was written the room hears it. A subscriber has no clock on the server timeline, so this is the field it acts on: show the frame `lead_ms` after it arrives, less its own delay to the lamp. Zero or negative when the room has heard it already |
+| `peak` | the wire's `peak`: the level byte of the held sample peak, 0 to 255 |
+| `beat` | the wire's `beat`: 0, or the strength of the last onset this subscriber has not been sent yet (128 and up is two deviations) |
+| `red`, `green`, `blue`, `brightness`, `transition_ms` | the colour in force: the last `color` the analysis made for that slot ("The colour"), carried by every frame; all 0 until the first |
+
+There are no bands: a lamp has one colour and one level. An endpoint that wants a spectrum
+declares the `visualizer` role on the audio wire.
+
+**The room.** `zone` names a room; a room this server does not have is answered `404`, a
+request with no `zone` `400`, and neither holds anything. A group's stream is read through any
+of its rooms: every room of a group is on the group's slot, so the frames are the same and
+only the stamp is the room's own tier's. The subscription follows the room: when the room
+joins or leaves a group the conductor's next pass moves it to that group's slot. A room whose
+group plays nothing (source `none`: no slot) is sent nothing, and so is every room of a server
+in the one-stream shape (`--slots 0`), which computes no visualizer stream: the stream opens,
+is kept alive and stays empty.
+
+**The rate cap.** A subscriber is sent at most one frame every 100 ms, so at most 10 a second
+(`MIN_FRAME_INTERVAL`, `crates/server/src/lights.rs`). Cited, not measured: the smart lights'
+command rates the research found are Nanoleaf's "no faster than 10Hz" and Hue's effect rate
+under 12.5 Hz (`docs/research/research-dsp-phase-b.md` section 2, both LEADs), and 10 a second
+is inside both. The interval is taken on the event writer's monotonic clock between the
+moments it renders two frames for that subscriber; the writer wakes itself when a held-back
+subscriber's interval runs out, so a frame waits for the cap and not for the next frame.
+
+**The drop rule: superseded, never queued.** The server keeps ONE frame per subscribed room,
+the latest; the audio thread overwrites it 25 times a second and a subscriber is sent
+whichever is there when it may next be sent one. So a subscriber that is slow, or held by the
+cap, gets the latest frame and never a backlog, and it is never dropped for being slow (there
+is no queue to fill; only the event writer's 5 s stall bound ends its stream). Two things are
+carried past the frame that made them, because a lamp needs them and no later frame repeats
+them: the colour in force, and the last beat, which rides in the next frame the subscriber is
+sent, with `timestamp_ns` the beat's own (its onset's), unless a later beat replaced it first.
+Frames a subscriber was not sent are counted (`light_superseded` in `GET /api/report`, beside
+`light_subscribers` and `light_frames`). As on the wire, a run of silent frames sends its
+first and then nothing until there is something to show, and a stream sends only frames made
+after it was opened.
+
+**What `lead_ms` is worth.** The analysis leaves a frame about 91 ms after its audio was cut
+("The beat") and the cap can hold it up to 60 ms more (a frame every 40 ms against an
+interval of 100 ms), so in a wired room (heard 180 ms after the cut) a beat reaches the
+subscriber a few tens of ms before it is heard, and in a wireless room (500 ms) about 320 ms
+more. Measured by `crates/server/tests/visualizer_stream.rs` on 2026-10-04, on one machine
+over loopback with an unoptimised build: the four kicks' beat frames carried `lead_ms` 34 to
+35 in the wired room and 350 to 351 in the wireless one, every frame's between 34 and 95
+(wired) and 350 and 411 (wireless), and the time from a frame's arrival to its room hearing
+it, on the test's own clock, was 2.1 to 3.1 ms more than its `lead_ms` said (53 frames a
+room; the difference is the audio chunks' own delay to the test, which is how the test finds
+the server's clock). That is the server's arithmetic checked against a clock, on loopback; it
+is not a measurement of a network, of Home Assistant or of a lamp, each of which takes its
+own share of the lead, and a wired room's 35 ms may not cover them. A light that must land
+on the beat in a wired room needs the report the last follow-up below asks for.
+
 ## The endpoints
 
 - **The Linux client.** `--visualizer-bands <n>` (1 to 64) declares the role, asks for `n` bands
@@ -117,11 +195,22 @@ fixture's tolerance plus one hop (30 ms) of the kick on the server timeline as t
 wireless room playing the same stream on the other slot; and nothing at all for a player without
 the role or an endpoint in no room.
 
+The same file's second test reads the HTTP stream with no visualizer session at all: three
+raw-socket subscribers of `GET /api/visualizer`, for the den, the wireless study and an attic
+whose group has no slot. The den and the study each receive one beat per kick, stamped within
+the same tolerance of when that room hears the kick, each beat frame with a colour; the attic
+receives nothing; no two frames were written closer than the cap (by `timestamp_ns` less
+`lead_ms`) and no more arrive than the cap allows; and `lead_ms` agrees with the time to
+hearing measured on the test's own clock (the offset between the two clocks is the least
+arrival-less-stamp over the den's audio chunks, which the server never sends before their
+stamp). `fixtures/visualizer/http-frame.{fields,json,sse}` pin one frame's bytes
+(`crates/server/src/lights.rs`, `the_committed_frame_is_these_bytes`).
+
 ## Follow-ups
 
 - The one-stream shape (`--slots 0`) sends no visualizer stream.
 - Brightness is unweighted; K-weighting through `crates/dsp`'s biquads (BS.1770) when wanted.
-- Home Assistant lights (the integration's goal) take the `color` stream; the rate here is
-  already inside the smart lights' limits.
+- The Home Assistant integration's lights reading `GET /api/visualizer` ("The HTTP stream";
+  the server's half is done, the integration's entity is its own task).
 - No measurement of a light against a sound: a bench report would say how far an LED's flash is
   from the kick a microphone hears.

@@ -482,6 +482,12 @@ reproduces every WAV byte for byte (`CHORUS_WRITE_FIXTURES=1` rewrites them, for
 recipe and never for making a red assertion green) and that the analysis meets each
 expectation; `crates/server/tests/visualizer_stream.rs` plays 01 through the real server.
 
+`http-frame.{fields,json,sse}` are not analysis inputs: they pin the bytes of one frame as an
+HTTP subscriber of `GET /api/visualizer` is sent it (`docs/visualizer.md`, "The HTTP stream").
+`.fields` is the canonical input, `.json` the catalog version 2 `visualizer` message it
+encodes to, `.sse` that message as the event stream carries it (one `data:` line and a blank
+line). `crates/server/src/lights.rs` (`the_committed_frame_is_these_bytes`) holds all three.
+
 ## `cec/`
 
 HDMI-CEC golden vectors (goal 13, `docs/cec.md`), Rust-only by declaration

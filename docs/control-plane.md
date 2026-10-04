@@ -1033,7 +1033,8 @@ The catalog above is the contract. The transport is HTTP on the address
 | `GET /api/server` | (goal 18) who this server is, once: the `server` message below. Not a state: nothing changes it while the server runs and no state message carries it |
 | `GET /api/events` | a `text/event-stream`, one `data: <state message>` per change, starting with the state as it stands (v2; `?v=1` for the v1 shape, rendered from the state as it stands when each change reaches the stream) |
 | `GET /api/controller-events` | a `text/event-stream`, one `data: <controller_event message>` per controller command the server accepts (a button press on a speaker), from the moment the stream is opened. It starts with no message: a press is not a state, and one made before the stream was opened is never sent to it. Catalog version 2's message alone; `?v=1` changes nothing |
-| `GET /api/report` | one line of plain text: commands applied, commands refused, connections and streams turned away, the fanout's ceiling and drops, the event writer's streams, and the controller-event subscribers and their drops |
+| `GET /api/visualizer?zone=<room>` | a `text/event-stream`, one `data: <visualizer message>` per visualizer frame of that room (colour, level, beat), at most one every 100 ms, each the room's latest, from the moment the stream is opened. It starts with no message. Catalog version 2's message alone |
+| `GET /api/report` | one line of plain text: commands applied, commands refused, connections and streams turned away, the fanout's ceiling and drops, the event writer's streams, the controller-event subscribers and their drops, and the visualizer subscribers, the frames they were sent and the frames superseded |
 | `GET /metrics` | the Prometheus exporter (goal 15): per-speaker telemetry in text exposition format 0.0.4. Read-only, served by a control worker like any other request; `docs/telemetry.md` lists every series |
 | `POST /api/command` | the body is one control message, sent as `Content-Type: application/json`. `200` with the resulting state (v2, the bytes every subscriber is sent), `400` with an `error` (at the message's version), or `426` with a `refused`; `415` or `403` under the rules below |
 | `POST /api/leaving` | the body is an endpoint identifier, which stops being `present`. The same two rules as a command |
@@ -1091,6 +1092,34 @@ whose target is not a group name) is no event. Nothing is kept: a press
 accepted while nobody is subscribed is sent to nobody, and a stream opened
 afterwards starts empty. It is a message the server sends and never one it
 accepts: `POST /api/command` refuses it as an unknown message type.
+
+`GET /api/visualizer?zone=<room id>` is the same subscriber protocol a third time: a room's
+visualizer stream for a subscriber that holds no audio-wire session, which is how a light
+follows the music through Home Assistant
+(`docs/decisions/0153-the-visualizer-stream-over-http.md`; `docs/visualizer.md`, "The HTTP
+stream", is the reference for the message and its timing). The response is `200`,
+`text/event-stream`, then one comment line (`: visualizer`) and nothing else until the room
+plays something. Each frame is then one `data:` line holding one message in the canonical
+encoding (`fixtures/visualizer/http-frame.json`):
+
+```json
+{"v":2,"t":"visualizer","zone":"den","timestamp_ns":12345678901,"lead_ms":85,"peak":201,"beat":255,"red":255,"green":96,"blue":0,"brightness":180,"transition_ms":500}
+```
+
+| field | notes |
+|---|---|
+| `zone` | the room the stream was opened for. A group's stream is read through any of its rooms |
+| `timestamp_ns` | when that room hears the audio the frame describes, ns on the server timeline |
+| `lead_ms` | `timestamp_ns` less the server timeline's now when the server rendered the frame, whole ms: how long after it was written the room hears it. May be zero or negative |
+| `peak` | the level, 0 to 255 |
+| `beat` | 0, or the strength of the last beat this subscriber has not been sent; then `timestamp_ns` is the beat's |
+| `red`, `green`, `blue`, `brightness`, `transition_ms` | the colour in force, as the audio wire's `color`; all 0 before the first |
+
+A request with no `zone` is answered `400` and one naming a room this server does not have
+`404`. A room whose group plays nothing is sent nothing, and so is every room of a server
+without `--slots`, which computes no visualizer stream: the stream opens and stays empty.
+Like `controller_event`, it is a message the server sends and never one it accepts, it rides
+in no state message, and nothing is kept for a stream opened later.
 
 Every request is answered with `Connection: close`. A connection arriving when
 every worker is busy is answered `503` naming the ceiling and closed, rather
@@ -1156,6 +1185,14 @@ and counted in the same `stalled_dropped`. It differs in what it is fed, a
 second fanout that carries `controller_event` messages, and in its opening:
 nothing (`crates/server/tests/controller_events.rs`).
 
+A `GET /api/visualizer` stream is held by the same writer too, under the same ceiling,
+keepalive and 5 s stall bound, and it is the one kind fed by no fanout and no queue: when the
+writer has written a subscriber's last frame and 100 ms have passed since it rendered that
+one, it takes the room's latest frame (`crates/server/src/lights.rs`). The audio thread wakes
+the writer when a room has a new frame, with one non-blocking `try_send`; the writer wakes
+itself when a held-back subscriber's 100 ms run out
+(`crates/server/tests/visualizer_stream.rs`).
+
 ## The bound on a subscriber
 
 There is no back pressure: one subscriber that has stopped reading must not
@@ -1184,12 +1221,27 @@ the ones in between are gone. A press is never delayed or refused because a
 subscriber is slow: the fanout is one non-blocking `try_send` per subscriber,
 on the session's reader thread, before the endpoint is answered.
 
+A subscriber of `GET /api/visualizer` is bounded the other way, the audio fanout's way: the
+ITEM is dropped and the subscriber kept. Nothing waits for it but one frame per room, the
+latest, which the next frame overwrites, so a stalled subscriber costs one socket and at most
+one message of buffer in the event writer, and there is no ceiling to reach. It is sent at
+most one frame every 100 ms (at most 10 a second; cited from the smart lights' command rates,
+`docs/visualizer.md`, "The HTTP stream"), each the latest when its turn comes; the frames in
+between are superseded and counted as `light_superseded` in `GET /api/report`, beside
+`light_subscribers` (attached now) and `light_frames` (sent). That is right for this payload
+and wrong for the other two: a state stream or a press stream that skipped a message would be
+silently wrong, a light that skipped a frame shows the next one. The beat and the colour, the
+two things a skipped frame could lose, are carried into the next frame sent. The audio thread
+never waits on a subscriber: it overwrites the frame under a short lock and allocates
+nothing.
+
 ## The thread population
 
 With `--control-listen`, the server runs one control acceptor, one worker per
 `--control-workers` slot, the event writer (above) and the **conductor**
 (below), all created before the scheduling report is taken and none created
-afterwards however many subscribers, sessions or groups come and go. The whole
+afterwards however many subscribers (of states, of controller events or of a room's
+visualizer stream), sessions or groups come and go. The whole
 process is `6 + 2N + M` threads, plus one for `--advertise`, and it does not
 depend on `--slots`: every stream slot is cut by the one audio thread. Nor
 on `--firmware-dir` (goal 14): an image travels in the speaker's own session,

@@ -47,6 +47,12 @@
 //! asks [`Router::watched`] without taking a lock and analyses only the slots
 //! someone is watching.
 //!
+//! A subscriber of the HTTP control plane's visualizer stream is not a
+//! session and is not carried here; the router only owns the tap those
+//! subscribers read ([`Router::lights`], `crate::lights`), so that
+//! [`Router::watched`] is one question for the audio thread whichever kind is
+//! watching.
+//!
 //! This module reads no clock and stamps nothing. It is on the audio path
 //! because every chunk a session receives is decided by it.
 
@@ -59,6 +65,7 @@ use chorus_protocol::v2::{
     encode, roles, Color, ControllerState, Message, RoomVolume, Sound, VisualizerFrame,
 };
 
+use crate::lights::LightTap;
 use crate::stream::{Fanout, Outbound};
 
 /// One session the router is carrying.
@@ -150,6 +157,8 @@ pub struct Router {
     sessions: Mutex<Vec<Entry>>,
     /// Visualizer sessions on each fanout.
     watchers: Vec<AtomicUsize>,
+    /// The latest frame of each room an HTTP subscriber watches.
+    lights: Arc<LightTap>,
     grid: Mutex<()>,
     next: AtomicU64,
     moves: AtomicU64,
@@ -177,6 +186,9 @@ impl Router {
     fn with(fanouts: Vec<Arc<Fanout>>, slots: usize) -> Router {
         Router {
             watchers: fanouts.iter().map(|_| AtomicUsize::new(0)).collect(),
+            // Over the stream slots alone: the silent fanout and the
+            // one-stream shape's only fanout are never analysed.
+            lights: Arc::new(LightTap::new(slots)),
             fanouts,
             slots,
             sessions: Mutex::new(Vec::new()),
@@ -395,12 +407,19 @@ impl Router {
 }
 
 impl Router {
-    /// Whether any visualizer session is on fanout `route`, without a lock:
-    /// the audio thread analyses only the slots someone watches.
+    /// Whether any visualizer session is on fanout `route`, or any room an
+    /// HTTP subscriber watches is on that slot, without a lock: the audio
+    /// thread analyses only the slots someone watches.
     pub fn watched(&self, route: usize) -> bool {
         self.watchers
             .get(route)
             .is_some_and(|w| w.load(Ordering::Relaxed) > 0)
+            || self.lights.watching(route)
+    }
+
+    /// The visualizer stream's tap for HTTP subscribers (`crate::lights`).
+    pub fn lights(&self) -> &Arc<LightTap> {
+        &self.lights
     }
 
     /// The latency after which session `id` plays what it is sent, ns: its

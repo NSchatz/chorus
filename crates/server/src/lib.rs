@@ -76,6 +76,7 @@ pub mod events;
 pub mod firmware;
 pub mod health;
 pub mod hostreport;
+pub mod lights;
 pub mod linein;
 pub mod mediaplayer;
 pub mod metrics;

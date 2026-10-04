@@ -352,3 +352,444 @@ fn beats_from_fixture_audio_reach_a_visualizer_endpoint_on_the_server_timeline()
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// --- the HTTP stream (`GET /api/visualizer?zone=<room>`) ----------------------
+//
+// The same fixture through the same server, read by subscribers of the HTTP
+// control plane that hold no audio-wire session: `docs/visualizer.md`, "The
+// HTTP stream". Nothing above this line was changed for it.
+
+use std::net::TcpStream;
+use std::time::Instant;
+
+use chorus_control::json::{self, Value};
+use chorus_server::lights::MIN_FRAME_INTERVAL;
+
+/// One frame an HTTP subscriber received, and when its bytes were read, ns
+/// on the test's own monotonic clock.
+#[derive(Debug, Clone)]
+struct Lit {
+    arrived_ns: i128,
+    zone: String,
+    timestamp_ns: u64,
+    lead_ms: i64,
+    peak: u8,
+    beat: u8,
+    rgb: (u8, u8, u8),
+    brightness: u8,
+}
+
+/// A `GET /api/visualizer?zone=<room>` subscriber on a raw socket (what a
+/// script or a Home Assistant client is), read on a thread of its own.
+struct LightStream {
+    frames: Arc<Mutex<Vec<Lit>>>,
+    stop: Arc<AtomicBool>,
+    join: Option<JoinHandle<()>>,
+}
+
+fn light_request(control: &str, target: &str) -> (TcpStream, String) {
+    let mut socket = TcpStream::connect(control).expect("the control plane listens");
+    write!(
+        socket,
+        "GET {} HTTP/1.1\r\nHost: chorus\r\nConnection: close\r\n\r\n",
+        target
+    )
+    .unwrap();
+    socket
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    let mut head = String::new();
+    let mut byte = [0u8; 1];
+    // Byte by byte as far as the opening comment line or the end of a
+    // refusal, so nothing of the stream itself is read here.
+    while !head.ends_with("\r\n\r\n: visualizer\n\n") {
+        match socket.read(&mut byte) {
+            Ok(1) => head.push(byte[0] as char),
+            _ => break,
+        }
+    }
+    (socket, head)
+}
+
+impl LightStream {
+    fn open(control: &str, zone: &str, epoch: Instant) -> LightStream {
+        let (mut socket, head) = light_request(control, &format!("/api/visualizer?zone={}", zone));
+        assert!(
+            head.starts_with("HTTP/1.1 200 OK") && head.contains("text/event-stream"),
+            "{zone}: {head}"
+        );
+        socket
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .unwrap();
+        let frames = Arc::new(Mutex::new(Vec::new()));
+        let stop = Arc::new(AtomicBool::new(false));
+        let join = {
+            let frames = Arc::clone(&frames);
+            let stop = Arc::clone(&stop);
+            thread::spawn(move || {
+                let mut buffered = String::new();
+                let mut scratch = [0u8; 4_096];
+                while !stop.load(Ordering::SeqCst) {
+                    let n = match socket.read(&mut scratch) {
+                        Ok(0) => return,
+                        Ok(n) => n,
+                        Err(_) => continue,
+                    };
+                    let arrived_ns = epoch.elapsed().as_nanos() as i128;
+                    buffered.push_str(&String::from_utf8_lossy(&scratch[..n]));
+                    while let Some((block, rest)) = buffered.split_once("\n\n") {
+                        let block = block.to_string();
+                        buffered = rest.to_string();
+                        let Some(data) = block.strip_prefix("data: ") else {
+                            assert!(block.starts_with(':'), "not a comment: {block:?}");
+                            continue;
+                        };
+                        let message = json::parse(data).expect("a JSON message");
+                        let int = |key: &str| -> i128 {
+                            message
+                                .get(key)
+                                .and_then(Value::as_num)
+                                .unwrap_or_else(|| panic!("{data} has no {key}"))
+                                .parse()
+                                .unwrap()
+                        };
+                        assert_eq!(
+                            (int("v"), message.get("t").and_then(Value::as_str)),
+                            (2, Some("visualizer"))
+                        );
+                        assert_eq!(int("transition_ms") % 500, 0, "{data}");
+                        frames.lock().unwrap().push(Lit {
+                            arrived_ns,
+                            zone: message
+                                .get("zone")
+                                .and_then(Value::as_str)
+                                .unwrap()
+                                .to_string(),
+                            timestamp_ns: int("timestamp_ns") as u64,
+                            lead_ms: int("lead_ms") as i64,
+                            peak: int("peak") as u8,
+                            beat: int("beat") as u8,
+                            rgb: (int("red") as u8, int("green") as u8, int("blue") as u8),
+                            brightness: int("brightness") as u8,
+                        });
+                    }
+                }
+            })
+        };
+        LightStream {
+            frames,
+            stop,
+            join: Some(join),
+        }
+    }
+
+    fn finish(mut self) -> Vec<Lit> {
+        self.stop.store(true, Ordering::SeqCst);
+        if let Some(j) = self.join.take() {
+            j.join().expect("the subscriber read what it was sent");
+        }
+        let frames = self.frames.lock().unwrap().clone();
+        frames
+    }
+}
+
+/// A plain player's chunks with the instant each was read, ns on the test's
+/// clock: where the fixture is on the server timeline, and how the server
+/// timeline sits against the test's clock.
+fn timed_chunks(
+    player: Player,
+    epoch: Instant,
+    stop: Arc<AtomicBool>,
+) -> JoinHandle<Vec<(i128, AudioChunk)>> {
+    let (session, _messages) = player.split();
+    let mut reader = session.reader;
+    thread::spawn(move || {
+        let _writer = session.writer;
+        let mut chunks = Vec::new();
+        let mut pending: Vec<u8> = Vec::new();
+        let mut scratch = vec![0u8; 65_536];
+        while !stop.load(Ordering::SeqCst) {
+            match reader.read(&mut scratch) {
+                Ok(0) => break,
+                Ok(n) => pending.extend_from_slice(&scratch[..n]),
+                Err(_) => continue,
+            }
+            let arrived_ns = epoch.elapsed().as_nanos() as i128;
+            let mut at = 0usize;
+            while at < pending.len() {
+                let d = decode_frame(&pending[at..]);
+                if d.consumed == 0 {
+                    break;
+                }
+                at += d.consumed;
+                if let FrameOutcome::Decoded(Message::AudioChunk(c)) = d.outcome {
+                    chunks.push((arrived_ns, c));
+                }
+            }
+            pending.drain(..at);
+        }
+        chunks
+    })
+}
+
+#[test]
+fn an_http_subscriber_reads_a_rooms_beats_and_colour_under_the_rate_cap() {
+    let dir = std::env::temp_dir().join(format!("chorus-visualizer-http-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let fifo = dir.join("pcm.fifo");
+    assert!(Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .expect("mkfifo runs")
+        .success());
+    // Two slots and three rooms: the den (wired) and the study (wireless)
+    // play the stream, and the attic, the room past the last slot, plays
+    // nothing (its group starts with source `none`).
+    let mut server = RunningServer::start(&[
+        "--source",
+        &format!("fifo:{}", fifo.display()),
+        "--slots",
+        "2",
+        "--max-clients",
+        "2",
+        "--zone",
+        "den",
+        "--zone",
+        "study=wireless",
+        "--zone",
+        "attic",
+    ]);
+    let idle = server.wait_for("source=none reason=every-slot-in-use");
+    assert!(
+        idle.contains("group=attic"),
+        "the attic plays nothing: {idle}"
+    );
+
+    // A request that names no room, or one this server does not have, is
+    // refused and holds nothing.
+    let (_, unnamed) = light_request(&server.control, "/api/visualizer");
+    assert!(unnamed.starts_with("HTTP/1.1 400"), "{unnamed}");
+    let (_, unknown) = light_request(&server.control, "/api/visualizer?zone=cellar");
+    assert!(unknown.starts_with("HTTP/1.1 404"), "{unknown}");
+
+    // The only audio-wire session is a plain player in the den, which
+    // declares no visualizer role: it is how this test knows where the
+    // fixture is on the server timeline. The subscribers are HTTP alone.
+    let plain = fresh_id("visualizer-http-plain");
+    server.applied(&format!(
+        r#"{{"v":1,"t":"attach","zone":"den","endpoint":"{}"}}"#,
+        plain
+    ));
+    let epoch = Instant::now();
+    let stop = Arc::new(AtomicBool::new(false));
+    let playing = Player::connect(&server.audio, &plain, 0);
+    server.wait_for_all(&["client session", &format!("id={} ", plain)]);
+    let hearing = timed_chunks(playing, epoch, Arc::clone(&stop));
+    let den = LightStream::open(&server.control, "den", epoch);
+    let study = LightStream::open(&server.control, "study", epoch);
+    let attic = LightStream::open(&server.control, "attic", epoch);
+    let report = common::http(
+        &server.control,
+        "GET /api/report HTTP/1.1\r\nHost: chorus\r\nConnection: close\r\n\r\n",
+    )
+    .1;
+    assert!(report.contains("light_subscribers=3"), "{report}");
+    // Let the conductor place the rooms and the slots play silence a while.
+    thread::sleep(Duration::from_millis(600));
+
+    let samples = kick();
+    let stereo: Vec<u8> = samples
+        .iter()
+        .flat_map(|s| {
+            let b = s.to_le_bytes();
+            [b[0], b[1], b[0], b[1]]
+        })
+        .collect();
+    {
+        let mut pipe = OpenOptions::new().write(true).open(&fifo).unwrap();
+        pipe.write_all(&stereo).unwrap();
+    }
+    let duration_ms = samples.len() as u64 * 1_000 / RATE_HZ;
+    thread::sleep(Duration::from_millis(duration_ms + 1_500));
+    let report = common::http(
+        &server.control,
+        "GET /api/report HTTP/1.1\r\nHost: chorus\r\nConnection: close\r\n\r\n",
+    )
+    .1;
+    let den = den.finish();
+    let study = study.finish();
+    let attic = attic.finish();
+    stop.store(true, Ordering::SeqCst);
+    let chunks = hearing.join().unwrap();
+
+    // Where the fixture is on the server timeline, as the test above finds
+    // it: the first non-zero sample the den's player was sent.
+    let anchor_ns = chunks
+        .iter()
+        .find_map(|(_, c)| {
+            c.audio_data
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .position(|f| i16::from_le_bytes([f[0], f[1]]) != 0)
+                .map(|i| c.timestamp_ns + i as u64 * 1_000_000_000 / RATE_HZ)
+        })
+        .expect("the fixture reached the den");
+
+    let tolerance_ms: f64 = param("beat_tolerance_ms").parse::<f64>().unwrap() + f64::from(HOP_MS);
+    let kicks: Vec<f64> = param("expect_beats_ms")
+        .split_whitespace()
+        .map(|v| v.parse().unwrap())
+        .collect();
+    let wired = WIRED_GROUP_LATENCY_NS as u64;
+    let wireless = heard_latency_ns(Transport::Wireless);
+    let cap_ms = MIN_FRAME_INTERVAL.as_millis() as i128;
+    assert_eq!(
+        cap_ms, 100,
+        "the documented cap: at most 10 frames a second"
+    );
+
+    for (room, frames, latency) in [("den", &den, wired), ("study", &study, wireless)] {
+        assert!(frames.iter().all(|f| f.zone == room), "{room}: {frames:?}");
+        // A beat for each kick, stamped when this room hears the kick, and a
+        // colour on every frame that carries one.
+        let beats: Vec<&Lit> = frames.iter().filter(|f| f.beat > 0).collect();
+        assert_eq!(
+            beats.len(),
+            kicks.len(),
+            "{room}: one beat per kick: {beats:?}"
+        );
+        for (beat, kick) in beats.iter().zip(&kicks) {
+            let at = (beat.timestamp_ns as i64 - (anchor_ns + latency) as i64) as f64 / 1e6;
+            println!(
+                "visualizer http: {room} beat {} at {at:+.1} ms from the fixture's start, as \
+                 heard; lead {} ms; peak {}; colour {:?} at brightness {}",
+                beat.beat, beat.lead_ms, beat.peak, beat.rgb, beat.brightness
+            );
+            assert!(
+                (at - kick).abs() <= tolerance_ms,
+                "{room}: the beat at {at:.1} ms is not within {tolerance_ms} ms of the kick at \
+                 {kick} ms"
+            );
+            assert!(
+                beat.beat >= 128,
+                "{room}: the beat at {at:.1} ms is only {}",
+                beat.beat
+            );
+            assert!(
+                beat.brightness > 0 && beat.rgb != (0, 0, 0),
+                "{room}: the beat at {at:.1} ms carries no colour: {beat:?}"
+            );
+        }
+        // Silence sends its first frame and then nothing: the frames stop
+        // within a second of the fixture's end, and this stream was read
+        // for 1.5 s after it.
+        // Silence sends its first frame and then nothing. The stream was
+        // opened onto a slot playing silence at least 600 ms before the
+        // fixture, six frames' worth under the cap: one frame came of it,
+        // the first, and it shows nothing.
+        let before: Vec<&Lit> = frames
+            .iter()
+            .filter(|f| (f.timestamp_ns as i64) < (anchor_ns + latency) as i64 - 100_000_000)
+            .collect();
+        assert_eq!(before.len(), 1, "{room}: frames of the silence: {before:?}");
+        assert_eq!(
+            (before[0].peak, before[0].beat),
+            (0, 0),
+            "{room}: {before:?}"
+        );
+        let last = frames.last().unwrap();
+
+        // The rate. By the server's own account, the moment it wrote a
+        // frame is the frame's stamp less its lead (whole ms, rounded down),
+        // and two of those are never closer than the cap.
+        let wrote: Vec<i128> = frames
+            .iter()
+            .map(|f| i128::from(f.timestamp_ns) / 1_000_000 - i128::from(f.lead_ms))
+            .collect();
+        let closest = wrote.windows(2).map(|w| w[1] - w[0]).min().unwrap();
+        assert!(
+            closest >= cap_ms - 1,
+            "{room}: two frames written {closest} ms apart, under the {cap_ms} ms cap"
+        );
+        // And as observed here: over the whole stream, the frames that
+        // arrived are no more than the cap allows in the time they took to
+        // arrive (one frame's interval of slack for when this thread read).
+        let span_ms = (last.arrived_ns - frames[0].arrived_ns) / 1_000_000;
+        let most = (span_ms + cap_ms) / cap_ms + 1;
+        assert!(
+            frames.len() as i128 <= most,
+            "{room}: {} frames arrived in {span_ms} ms, more than {cap_ms} ms apart allows",
+            frames.len()
+        );
+        // The busiest second observed, for the record.
+        let busiest = frames
+            .iter()
+            .map(|f| {
+                frames
+                    .iter()
+                    .filter(|g| {
+                        g.arrived_ns >= f.arrived_ns && g.arrived_ns < f.arrived_ns + 1_000_000_000
+                    })
+                    .count()
+            })
+            .max()
+            .unwrap();
+        assert!(
+            busiest <= 11,
+            "{room}: {busiest} frames arrived within one second"
+        );
+
+        // The lead, measured: the server never sends a chunk before the
+        // instant it is stamped with, so the least (arrival - stamp) over
+        // the den's chunks is the test clock's offset from the server
+        // timeline, to within loopback's delay. With it, when the room
+        // hears a frame on the test's clock, less when the frame arrived,
+        // is what `lead_ms` said, to within that delay and a millisecond.
+        let offset_ns = chunks
+            .iter()
+            .map(|(arrived, c)| arrived - i128::from(c.timestamp_ns))
+            .min()
+            .unwrap();
+        let mut errors_ms: Vec<f64> = frames
+            .iter()
+            .map(|f| {
+                let left_ns = i128::from(f.timestamp_ns) + offset_ns - f.arrived_ns;
+                left_ns as f64 / 1e6 - f.lead_ms as f64
+            })
+            .collect();
+        errors_ms.sort_by(|a, b| a.total_cmp(b));
+        let median = errors_ms[errors_ms.len() / 2];
+        let leads: Vec<i64> = frames.iter().map(|f| f.lead_ms).collect();
+        println!(
+            "visualizer http: {room}: {} frames over {span_ms} ms, closest written {closest} ms \
+             apart, at most {busiest} in one second; lead_ms {} to {} (beats: {:?}); measured \
+             time to hearing less lead_ms: {:.1} / {:.1} / {:.1} ms (least / median / most)",
+            frames.len(),
+            leads.iter().min().unwrap(),
+            leads.iter().max().unwrap(),
+            beats.iter().map(|b| b.lead_ms).collect::<Vec<_>>(),
+            errors_ms[0],
+            median,
+            errors_ms[errors_ms.len() - 1]
+        );
+        assert!(
+            median.abs() <= 20.0,
+            "{room}: lead_ms is {median:.1} ms (median) from the time to hearing measured here"
+        );
+    }
+    // The same kicks, 320 ms later for the wireless room: its stamps are
+    // its own tier's.
+    let first = |frames: &[Lit]| frames.iter().find(|f| f.beat > 0).unwrap().timestamp_ns;
+    assert_eq!(first(&study) - first(&den), wireless - wired);
+
+    assert!(
+        attic.is_empty(),
+        "the room playing nothing was sent {} frames: {attic:?}",
+        attic.len()
+    );
+    assert!(report.contains("light_subscribers=3"), "{report}");
+    println!("visualizer http: {}", report.trim());
+    let _ = std::fs::remove_dir_all(&dir);
+}
