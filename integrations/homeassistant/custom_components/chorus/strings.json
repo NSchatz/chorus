@@ -164,6 +164,26 @@
       },
       "sync_error": {
         "name": "Sync error"
+      },
+      "visualizer": {
+        "name": "Visualizer",
+        "state_attributes": {
+          "beat": {
+            "name": "Beat"
+          },
+          "brightness": {
+            "name": "Brightness"
+          },
+          "lead_ms": {
+            "name": "Lead"
+          },
+          "rgb_color": {
+            "name": "Color"
+          },
+          "transition": {
+            "name": "Transition"
+          }
+        }
       }
     },
     "switch": {

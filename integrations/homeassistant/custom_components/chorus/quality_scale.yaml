@@ -18,7 +18,9 @@ rules:
     comment: >-
       The state is pushed (one server-sent event stream) and is never
       polled; a stream silent for 45 s is probed once for liveness. Button
-      presses are pushed too, on a second stream held the same way. The
+      presses are pushed too, on a second stream held the same way, and so
+      are a room's visualizer frames, on a stream held only while that
+      room's visualizer sensor is enabled. The
       speakers' diagnostic sensors are the one thing polled: one GET
       /metrics every 60 s for the whole server, only while at least one
       diagnostic sensor is enabled, and never two less than 55 s apart.

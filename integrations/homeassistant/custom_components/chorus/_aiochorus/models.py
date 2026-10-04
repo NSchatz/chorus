@@ -636,3 +636,73 @@ class ControllerEvent:
         if self.command == "previous":
             return BUTTON_PREVIOUS, PRESS
         return None
+
+
+def _byte(obj: dict[str, Any], key: str, what: str) -> int:
+    value = obj.get(key)
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 255:
+        raise ChorusProtocolError(f"{what} has no '{key}' from 0 to 255")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class VisualizerFrame:
+    """One frame of a room's visualizer stream, as a lamp needs it.
+
+    ``docs/visualizer.md``, "The HTTP stream": the level, the beat and the
+    colour in force. There are no bands. ``timestamp_ns`` is not kept: a
+    subscriber has no clock on the server's timeline, and ``lead_ms`` is the
+    field it acts on.
+    """
+
+    zone: str
+    # How long after the server wrote the frame the room hears it; zero or
+    # negative when the room has heard it already.
+    lead_ms: int
+    peak: int
+    beat: int
+    red: int
+    green: int
+    blue: int
+    brightness: int
+    transition_ms: int
+
+    @classmethod
+    def parse(cls, text: str | bytes) -> VisualizerFrame:
+        """Read a ``visualizer`` message."""
+        what = "the visualizer frame"
+        obj = loads(text, what)
+        if obj.get("t") != "visualizer":
+            raise ChorusProtocolError("the message is not a visualizer frame")
+        if obj.get("v") != 2:
+            raise ChorusProtocolError(f"{what} is not catalog version 2")
+        lead_ms = obj.get("lead_ms")
+        if isinstance(lead_ms, bool) or not isinstance(lead_ms, int):
+            raise ChorusProtocolError(f"{what} has no whole 'lead_ms'")
+        transition_ms = obj.get("transition_ms")
+        if (
+            isinstance(transition_ms, bool)
+            or not isinstance(transition_ms, int)
+            or transition_ms < 0
+        ):
+            raise ChorusProtocolError(f"{what} has no whole 'transition_ms'")
+        return cls(
+            zone=_str(obj, "zone", what),
+            lead_ms=lead_ms,
+            peak=_byte(obj, "peak", what),
+            beat=_byte(obj, "beat", what),
+            red=_byte(obj, "red", what),
+            green=_byte(obj, "green", what),
+            blue=_byte(obj, "blue", what),
+            brightness=_byte(obj, "brightness", what),
+            transition_ms=transition_ms,
+        )
+
+    @property
+    def silent(self) -> bool:
+        """Whether the frame shows nothing: no level and no beat.
+
+        The server sends the first frame of a run of silence and then nothing
+        until there is something to show.
+        """
+        return self.peak == 0 and self.beat == 0

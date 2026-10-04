@@ -230,10 +230,12 @@ async def test_sensor_registry_every_one_diagnostic_and_most_disabled_by_default
         "sync_error",
         "temperature",
     ]
+    # The speakers' sensors: a room's visualizer is a sensor too, and is not
+    # a diagnostic (tests/test_visualizer.py).
     ours = [
         e
         for e in er.async_entries_for_config_entry(registry, entry.entry_id)
-        if e.domain == "sensor"
+        if e.domain == "sensor" and ":speaker:" in e.unique_id
     ]
     assert {e.unique_id for e in ours} == {
         unique_id(speaker, key) for speaker in SPEAKERS for key in KEYS
@@ -430,7 +432,7 @@ async def test_sensor_speakers_adopted_and_forgotten(
         return {
             e.unique_id
             for e in er.async_entries_for_config_entry(registry, entry.entry_id)
-            if e.domain == "sensor"
+            if e.domain == "sensor" and ":speaker:" in e.unique_id
         }
 
     await start(hass, entry, server, one)

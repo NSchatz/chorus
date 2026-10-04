@@ -3,8 +3,9 @@
 It serves the repository's `fixtures/control/v2/` bytes (the state vectors and
 the server's identity, read from the repository and never copied), records
 every command it is sent byte for byte (with its headers), sends a button press
-to the subscribers of `GET /api/controller-events` when a test makes one, and
-applies the
+to the subscribers of `GET /api/controller-events` when a test makes one, sends
+a visualizer frame to the subscribers of a room's `GET /api/visualizer` when a
+test makes one, and applies the
 commands the integration sends to an in-memory model of the house so a test
 can see Home Assistant's entities follow. The model is a test double written
 from `docs/control-plane.md`, not the server: what the real server does is
@@ -99,6 +100,7 @@ class FakeChorusServer:
     state_status: int = 200
     events_status: int = 200
     controller_events_status: int = 200
+    visualizer_status: int = 200
     # `GET /metrics`: these bytes when set, else the three series the real
     # exporter has for a speaker that sent no telemetry (docs/telemetry.md).
     metrics_bytes: bytes | None = None
@@ -106,6 +108,10 @@ class FakeChorusServer:
     port: int = 0
     _streams: list[asyncio.Queue[bytes | None]] = field(default_factory=list)
     _press_streams: list[asyncio.Queue[bytes | None]] = field(default_factory=list)
+    # One (room, queue) per open `GET /api/visualizer?zone=<room>`.
+    _light_streams: list[tuple[str, asyncio.Queue[bytes | None]]] = field(
+        default_factory=list
+    )
     _runner: web.AppRunner | None = None
     _model: dict[str, Any] | None = None
 
@@ -117,6 +123,7 @@ class FakeChorusServer:
         app.router.add_get("/api/state", self._state)
         app.router.add_get("/api/events", self._events)
         app.router.add_get("/api/controller-events", self._controller_events)
+        app.router.add_get("/api/visualizer", self._visualizer)
         app.router.add_post("/api/command", self._command)
         app.router.add_get("/metrics", self._metrics)
         # No access log: nobody reads it, and it cannot format a frozen clock.
@@ -156,6 +163,7 @@ class FakeChorusServer:
         for queue in self._streams:
             queue.put_nowait(None)
         self.drop_press_streams()
+        self.drop_visualizer_streams()
 
     @property
     def press_subscribers(self) -> int:
@@ -174,6 +182,29 @@ class FakeChorusServer:
     def drop_press_streams(self) -> None:
         """Close every stream of button presses and leave the state's alone."""
         for queue in self._press_streams:
+            queue.put_nowait(None)
+
+    @property
+    def visualizer_subscribers(self) -> list[str]:
+        """The room of every visualizer stream open right now."""
+        return sorted(zone for zone, _ in self._light_streams)
+
+    def frame(self, frame: bytes) -> None:
+        """Send one `visualizer` frame to the subscribers of the room it names.
+
+        As the server does (docs/visualizer.md, "The HTTP stream"), nothing is
+        kept for a stream opened later. Unlike the server this fake holds no
+        rate cap and supersedes nothing: it sends every frame a test makes,
+        however fast, which is what the entity's own cap is tested against.
+        """
+        zone = json.loads(frame)["zone"]
+        for subscribed, queue in self._light_streams:
+            if subscribed == zone:
+                queue.put_nowait(frame)
+
+    def drop_visualizer_streams(self) -> None:
+        """Close every visualizer stream and leave the others alone."""
+        for _, queue in self._light_streams:
             queue.put_nowait(None)
 
     def script(self, status: int, body: bytes) -> None:
@@ -303,6 +334,40 @@ class FakeChorusServer:
                 await response.write(b"data: " + item + b"\n\n")
         finally:
             self._press_streams.remove(queue)
+        return response
+
+    async def _visualizer(self, request: web.Request) -> web.StreamResponse:
+        self.requests.append("GET /api/visualizer")
+        self._gone()
+        if self.visualizer_status != 200:
+            return web.Response(status=self.visualizer_status, text="no")
+        zone = request.query.get("zone")
+        if zone is None:
+            return web.Response(status=400, text="no zone")
+        if zone not in {z["id"] for z in json.loads(self.state_bytes)["zones"]}:
+            return web.Response(status=404, text="no such room")
+        response = web.StreamResponse(
+            headers={"Content-Type": "text/event-stream", "Connection": "close"}
+        )
+        await response.prepare(request)
+        queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+        stream = (zone, queue)
+        self._light_streams.append(stream)
+        try:
+            # One comment line and no frame until the room plays something.
+            await response.write(b": visualizer\n\n")
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), 0.02)
+                except TimeoutError:
+                    if request.transport is None or request.transport.is_closing():
+                        break
+                    continue
+                if item is None:
+                    break
+                await response.write(b"data: " + item + b"\n\n")
+        finally:
+            self._light_streams.remove(stream)
         return response
 
     async def _command(self, request: web.Request) -> web.Response:
