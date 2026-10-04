@@ -132,6 +132,40 @@ class NowPlaying:
         )
 
 
+def _whole(obj: dict[str, Any], key: str, default: int) -> int:
+    value = obj.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return default
+    return value
+
+
+def _flag(obj: dict[str, Any], key: str, default: bool) -> bool:
+    value = obj.get(key)
+    return value if isinstance(value, bool) else default
+
+
+@dataclass(frozen=True, slots=True)
+class Sound:
+    """A room's sound: tone in whole dB, loudness, night mode, speech enhancement."""
+
+    bass: int
+    treble: int
+    loudness: bool
+    night: bool
+    speech: bool
+
+    @classmethod
+    def from_obj(cls, obj: dict[str, Any]) -> Sound:
+        """Read a room's ``sound`` object; an absent member is its default."""
+        return cls(
+            bass=_whole(obj, "bass", 0),
+            treble=_whole(obj, "treble", 0),
+            loudness=_flag(obj, "loudness", True),
+            night=_flag(obj, "night", False),
+            speech=_flag(obj, "speech", False),
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class Zone:
     """A room."""
@@ -146,12 +180,17 @@ class Zone:
     limit: float
     effective_limit: float
     transport: str | None
+    # None when the server said nothing of the room's sound.
+    sound: Sound | None = None
+    # Whether an active quiet-hours window caps the room; on unless switched off.
+    quiet_enabled: bool = True
 
     @classmethod
     def from_obj(cls, obj: dict[str, Any]) -> Zone:
         """Read one element of ``zones``."""
         what = "a zone"
         volume = _number(obj, "volume", what)
+        sound = obj.get("sound")
         return cls(
             id=_str(obj, "id", what),
             name=_str(obj, "name", what),
@@ -167,6 +206,8 @@ class Zone:
                 else 1.0
             ),
             transport=_opt_str(obj, "transport"),
+            sound=Sound.from_obj(sound) if isinstance(sound, dict) else None,
+            quiet_enabled=_flag(obj, "quiet_enabled", True),
         )
 
 
@@ -220,6 +261,30 @@ class SavedGroup:
 
 
 @dataclass(frozen=True, slots=True)
+class AutoplayRule:
+    """An autoplay rule: an input that starts playing in a room or a saved group."""
+
+    input: str
+    target: str
+    enabled: bool
+    # Both are written only when false (docs/control-plane.md, "The TV path").
+    stop_on_standby: bool = True
+    low_latency: bool = True
+
+    @classmethod
+    def from_obj(cls, obj: dict[str, Any]) -> AutoplayRule:
+        """Read one element of ``autoplay``."""
+        what = "an autoplay rule"
+        return cls(
+            input=_str(obj, "input", what),
+            target=_str(obj, "target", what),
+            enabled=obj.get("enabled") is True,
+            stop_on_standby=_flag(obj, "stop_on_standby", True),
+            low_latency=_flag(obj, "low_latency", True),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class InputLabel:
     """A person's name for an input and what is wired to it."""
 
@@ -249,6 +314,7 @@ class State:
     inputs: tuple[str, ...]
     input_labels: tuple[InputLabel, ...]
     counts: tuple[tuple[str, int], ...] = field(default=())
+    autoplay: tuple[AutoplayRule, ...] = field(default=())
 
     @classmethod
     def parse(cls, text: str | bytes) -> State:
@@ -277,6 +343,9 @@ class State:
                 for key, value in sorted(obj.items())
                 if isinstance(value, list)
             ),
+            autoplay=tuple(
+                AutoplayRule.from_obj(rule) for rule in _objects(obj, "autoplay")
+            ),
         )
 
     def zone(self, zone_id: str) -> Zone | None:
@@ -295,6 +364,17 @@ class State:
     def saved_group(self, group_id: str) -> SavedGroup | None:
         """Return the saved definition with this id."""
         return next((g for g in self.saved_groups if g.id == group_id), None)
+
+    def autoplay_rule(self, input_id: str, target: str) -> AutoplayRule | None:
+        """Return the autoplay rule of an input, while it has this target."""
+        return next(
+            (
+                rule
+                for rule in self.autoplay
+                if rule.input == input_id and rule.target == target
+            ),
+            None,
+        )
 
     def input_name(self, input_id: str) -> str | None:
         """Return the label a person gave an input, if any."""

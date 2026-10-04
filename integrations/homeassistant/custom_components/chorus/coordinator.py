@@ -33,6 +33,13 @@ _FIELD_KEYS = {
     "group": "refused_group",
     "zone": "refused_zone",
     "volume": "refused_volume",
+    "input": "refused_input",
+    # The members of a room's sound (`sound`).
+    "bass": "refused_sound",
+    "treble": "refused_sound",
+    "loudness": "refused_sound",
+    "night": "refused_sound",
+    "speech": "refused_sound",
     # The command itself cannot be served now (no player, or none free).
     "t": "refused_unavailable",
 }

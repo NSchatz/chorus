@@ -11,7 +11,7 @@ rules:
     status: exempt
     comment: >-
       The integration registers no action of its own; it implements the
-      media_player and number platforms' entity actions.
+      media_player, number, select and switch platforms' entity actions.
   appropriate-polling:
     status: exempt
     comment: >-
@@ -81,17 +81,14 @@ rules:
   docs-troubleshooting: done
   docs-use-cases: done
   dynamic-devices: done
-  entity-category:
-    status: exempt
-    comment: >-
-      Every entity is a primary control (a media player or a group
-      volume); none is a configuration or diagnostic entity.
+  entity-category: done
   entity-device-class: done
   entity-disabled-by-default:
     status: exempt
     comment: >-
-      The integration has no noisy or rarely used entity; every entity
-      is a primary control.
+      The integration has no noisy or diagnostic entity. A room's sound
+      settings are few, change only when someone sets them, and are what
+      the owner asked to have in Home Assistant, so none starts disabled.
   entity-translations: done
   exception-translations: done
   icon-translations: done

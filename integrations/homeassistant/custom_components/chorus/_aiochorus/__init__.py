@@ -8,12 +8,15 @@ location. It imports nothing from Home Assistant and takes an injected
 from .client import ChorusClient, EventStream
 from .commands import (
     announce,
+    autoplay,
     encode_volume,
     group_volume,
     group_volume_step,
     join,
     mute,
     playback,
+    quiet_hours_enabled,
+    sound,
     take,
     volume,
     volume_from_level,
@@ -28,17 +31,20 @@ from .errors import (
     ChorusUnsupportedError,
 )
 from .models import (
+    AutoplayRule,
     Group,
     InputLabel,
     NowPlaying,
     SavedGroup,
     ServerInfo,
+    Sound,
     State,
     Zone,
 )
 from .sse import SSEParser
 
 __all__ = [
+    "AutoplayRule",
     "ChorusClient",
     "ChorusCommandError",
     "ChorusConnectionError",
@@ -53,15 +59,19 @@ __all__ = [
     "SSEParser",
     "SavedGroup",
     "ServerInfo",
+    "Sound",
     "State",
     "Zone",
     "announce",
+    "autoplay",
     "encode_volume",
     "group_volume",
     "group_volume_step",
     "join",
     "mute",
     "playback",
+    "quiet_hours_enabled",
+    "sound",
     "take",
     "volume",
     "volume_from_level",

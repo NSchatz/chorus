@@ -406,6 +406,43 @@ class FakeChorusServer:
             allowed = json.loads(self.server_bytes)["announce_origins"]
             if not any(command["url"].startswith(origin + "/") for origin in allowed):
                 raise Refusal("url", "the origin is not one of the announce origins")
+        elif kind == "sound":
+            sound = self._zone(command["zone"])["sound"]
+            for key in ("bass", "treble"):
+                if key in command and not -10 <= command[key] <= 10:
+                    raise Refusal(
+                        key,
+                        f"the field '{key}' is {command[key]} and the catalog "
+                        "declares a whole number from -10 to 10",
+                    )
+            for key in ("bass", "treble", "loudness", "night", "speech"):
+                if key in command:
+                    sound[key] = command[key]
+        elif kind == "quiet_hours_enabled":
+            zone = self._zone(command["zone"])
+            zone["quiet_enabled"] = command["enabled"]
+            # Off: no window caps the room. On inside a window: the cap applies
+            # at once and the volume is pulled down to it.
+            caps = [
+                window["limit"]
+                for window in zone["quiet"]
+                if window["active"] and command["enabled"]
+            ]
+            zone["effective_limit"] = min([zone["limit"], *caps])
+            zone["volume"] = min(zone["volume"], zone["effective_limit"])
+        elif kind == "autoplay":
+            endpoint, _, name = command["input"].partition("/")
+            if not endpoint or not name:
+                raise Refusal(
+                    "input",
+                    f"'{command['input']}' is not an input: '<endpoint>/<input>'",
+                )
+            target = command["target"]
+            if self._saved(target) is None:
+                self._zone(target, "target")
+            rule = {k: v for k, v in command.items() if k not in ("v", "t")}
+            rules = [r for r in self.model["autoplay"] if r["input"] != rule["input"]]
+            self.model["autoplay"] = sorted([*rules, rule], key=lambda r: r["input"])
         else:
             raise Refusal("t", f"'{kind}' is not a command of this fake")
         self._regroup(sources)

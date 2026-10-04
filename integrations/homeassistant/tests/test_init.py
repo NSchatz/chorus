@@ -46,7 +46,11 @@ async def test_setup_and_unload(
     assert server.subscribers == 1
     assert server.requests[:2] == ["GET /api/server", "GET /api/state"]
     assert len(hass.states.async_entity_ids("media_player")) == 5
-    assert len(hass.states.async_entity_ids("number")) == 4
+    # Per room: the group volume, bass and treble; an input select; loudness,
+    # night mode, speech enhancement and quiet hours. And two autoplay rules.
+    assert len(hass.states.async_entity_ids("number")) == 12
+    assert len(hass.states.async_entity_ids("select")) == 4
+    assert len(hass.states.async_entity_ids("switch")) == 18
 
     assert await hass.config_entries.async_unload(setup.entry_id)
     await hass.async_block_till_done()
