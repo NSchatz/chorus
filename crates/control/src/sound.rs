@@ -58,7 +58,8 @@ pub const TONE_DB: (i8, i8) = (-10, 10);
 pub const CROSSOVER_HZ: (u16, u16) = (40, 200);
 
 /// The crossover a room starts with: 80 Hz, the THX/SMPTE crossover
-/// (`.claude/goals/2026-09-chorus-research/research-theater.md` section 5.2
+/// (<https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus-research/research-theater.md>
+/// section 5.2
 /// and its source [B1]).
 pub const DEFAULT_CROSSOVER_HZ: u16 = 80;
 

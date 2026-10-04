@@ -268,7 +268,7 @@ mixer, mute handling, the fake-pipeline tests) is common to both options.
 
 ## What was read
 
-chorus: `/workspace/.claude/goals/2026-09-chorus.md` (§0.1, §0.3, §0.7, §0.13, §1 with K and I rows,
+chorus: [`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md) (§0.1, §0.3, §0.7, §0.13, §1 with K and I rows,
 §2, §3.3, §3.4, §4.8, §5, §13, §22-§24, §28-§31), the research files `research-ha-integration.md`,
 `research-ha-ma-sources.md` (§3 voice, §4 MQTT, §5 security, §7 sources and K33 log only),
 `/cache/tmp/chorus-g1/agent-rules.md`, `/cache/tmp/chorus-g1/proposal-format.md`. Web and APIs: the

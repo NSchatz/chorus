@@ -47,12 +47,12 @@ else
     echo "read forms: FAILED the scan, expected a pass"
     rc=1
 fi
-# The files the scan skips: docs/, the plan, these fixtures and exactly two scripts that build
+# The files the scan skips: docs/, these fixtures and exactly two scripts that build
 # the name from pieces to do their job. Anything added to that list fails here.
-want='^(docs/|\.claude/goals/|tools/conventions/fixtures/flash-guard/|tools/conventions/check-flash-guard\.sh$|tools/conventions/check-flash-tools-refuse\.sh$)'
+want='^(docs/|tools/conventions/fixtures/flash-guard/|tools/conventions/check-flash-guard\.sh$|tools/conventions/check-flash-tools-refuse\.sh$)'
 got="$(sed -n "s/^excluded='\(.*\)'$/\1/p" "$here/check-flash-guard.sh")"
 if [ "$got" = "$want" ]; then
-    echo "exclusions: docs/, .claude/goals/, the fixtures, check-flash-guard.sh, check-flash-tools-refuse.sh"
+    echo "exclusions: docs/, the fixtures, check-flash-guard.sh, check-flash-tools-refuse.sh"
 else
     echo "exclusions: check-flash-guard.sh skips '$got', expected exactly '$want'"
     rc=1

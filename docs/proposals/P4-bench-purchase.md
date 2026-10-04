@@ -209,7 +209,7 @@ register bring-up (goal 9's packet) waits for it either way.
 ## What was read
 
 Local: `/cache/tmp/chorus-g1/agent-rules.md`, `/cache/tmp/chorus-g1/proposal-format.md`;
-`/workspace/.claude/goals/2026-09-chorus.md` (header, §0.6-§0.13, §1, §2, §5, §10-§14, §28-§30);
+[`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md) (header, §0.6-§0.13, §1, §2, §5, §10-§14, §28-§30);
 `research-endpoint-hardware.md`, `research-platform-network.md`, `verify-theater-platform.md`
 (whole); baseline `BRIEF.md` §2.2, §5.3-§5.5, §6, §8, §10.
 

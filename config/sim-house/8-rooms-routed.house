@@ -30,8 +30,9 @@ wander_ppm_per_sqrt_s = 0.05
 
 # link.<name> = <wired|wireless> <base_us> <asymmetry_us> <model> <scale_us> [burst: <enter> <exit> <burst_scale_us> <shape>]
 # The router hop: +40 us each way (the planning research's "ASSUMED tens of
-# microseconds idle", .claude/goals/2026-09-chorus-research/
-# research-platform-network.md section 4.2), queuing on the trunk shared with
+# microseconds idle",
+# https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus-research/research-platform-network.md
+# section 4.2), queuing on the trunk shared with
 # house traffic raised to a 250 us exponential mean, and 60 us more delay on
 # the server-to-speaker direction (downloads share it) than the other.
 # Every number ASSUMED; the hop is unmeasured.

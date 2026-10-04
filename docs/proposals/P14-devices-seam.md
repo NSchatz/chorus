@@ -268,9 +268,9 @@ program and drafts that must be re-gated against a devices `main` that keeps mov
 
 ## What was read
 
-Local files only; no web page was needed for this proposal. chorus: `/workspace/.claude/goals/2026-09-chorus.md`
+Local files only; no web page was needed for this proposal. chorus: [`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md)
 (§0.1, §0.3, §0.7, §0.13, §1, §2, §3.4, §4.8, §5, §11, §24, §28-§31),
-`/workspace/.claude/goals/2026-09-chorus-research/review-cross-program-v1.md`,
+[`.claude/goals/2026-09-chorus-research/review-cross-program-v1.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus-research/review-cross-program-v1.md),
 `/cache/tmp/chorus-g1/agent-rules.md`, `/cache/tmp/chorus-g1/proposal-format.md`,
 `/cache/tmp/chorus-g1/verify/verify-3.md` (P14 section). devices
 (`/cache/wt/chorus/sib/devices`, read-only): the files listed under Sources, plus `git log`,
