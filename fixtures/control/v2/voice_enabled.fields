@@ -1,0 +1,15 @@
+# Canonical input for the catalog v2 voice_enabled vector.
+#
+# Encoding these field values must produce exactly voice_enabled.json,
+# and decoding voice_enabled.json must recover exactly these field values.
+#
+# Switches a room's voice path off (0) or on (1). Off by default. While off,
+# the server asks no microphone of the room for audio and drops any it is
+# sent; switching it on never opens a microphone's own gate.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = voice_enabled
+zone = kitchen
+enabled = 1

@@ -148,6 +148,10 @@ pub struct Zone {
     /// off the windows stay stored and keep their `quiet_active` flags (the
     /// clock is still inside them or not), and none of them caps the room.
     pub quiet_enabled: bool,
+    /// (v2) Whether the room's voice path is switched on (K73's software
+    /// gate, `voice_enabled`). Off by default: no microphone of the room is
+    /// asked for audio until a person switches it on.
+    pub voice_enabled: bool,
     /// (v2) The bonded set, or empty where the room has none and plays the
     /// stream's channels as v1 did.
     pub bond: Vec<BondMember>,
@@ -182,6 +186,7 @@ impl Zone {
             quiet: Vec::new(),
             quiet_active: Vec::new(),
             quiet_enabled: true,
+            voice_enabled: false,
             bond: Vec::new(),
             ramp: None,
             sound: SoundSettings::default(),
@@ -781,6 +786,9 @@ impl Zones {
                 let zone = &mut self.zones[room()];
                 zone.quiet_enabled = *enabled;
                 zone.clamp();
+            }
+            Command::VoiceEnabled { enabled, .. } => {
+                self.zones[room()].voice_enabled = *enabled;
             }
             Command::AlarmSet(alarm) => {
                 self.persistent_target(&alarm.target)?;
@@ -2002,9 +2010,14 @@ impl Zones {
     /// one, a speaker with an assigned room is marked absent from it (an
     /// unassigned one's presence is its control client's, as before goal 14).
     pub fn speaker_session_down(&mut self, id: &str) -> bool {
-        let mut changed = self
-            .speakers
-            .set_now(id, |now| now.sessions = now.sessions.saturating_sub(1));
+        let mut changed = self.speakers.set_now(id, |now| {
+            now.sessions = now.sessions.saturating_sub(1);
+            // A gate is a session's word: with no session there is none, and
+            // no word reads as muted.
+            if now.sessions == 0 {
+                now.mic_live = false;
+            }
+        });
         let gone = self
             .speakers
             .get(id)
@@ -2020,6 +2033,30 @@ impl Zones {
             self.serial += 1;
         }
         changed
+    }
+
+    /// Say what the mic gate of speaker `id` is, from its own `mic_state`
+    /// (the hardware switch, 0063; the protocol has no message that opens
+    /// it): `live` or muted. Never persisted, and back to muted when the
+    /// speaker's last session ends. Whether anything changed; nothing does
+    /// for an id with no record.
+    pub fn speaker_mic_gate(&mut self, id: &str, live: bool) -> bool {
+        let changed = self.speakers.set_now(id, |now| now.mic_live = live);
+        if changed {
+            self.serial += 1;
+        }
+        changed
+    }
+
+    /// Whether room `zone` hears nothing: `true` unless a speaker present in
+    /// it has reported its mic gate live. A room with no microphone, and one
+    /// whose microphones have said nothing yet, is muted.
+    pub fn mic_muted(&self, zone: &Zone) -> bool {
+        !zone.present.iter().any(|e| {
+            self.speakers
+                .get(e)
+                .is_some_and(|s| s.now.present() && s.now.mic_live)
+        })
     }
 
     /// The staged firmware images as the server graded them, or `None` when
@@ -2565,6 +2602,8 @@ impl Zones {
                     ("filters".to_string(), filters_value(&z.room_eq.filters)),
                 ]),
             ),
+            ("voice_enabled".to_string(), Value::Bool(z.voice_enabled)),
+            ("mic_muted".to_string(), Value::Bool(self.mic_muted(z))),
         ]);
         // (goal 16) What the room's group is playing, on the room itself and
         // only when there is a record: the room object is what a consumer of

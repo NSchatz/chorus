@@ -38,8 +38,8 @@ use chorus_protocol::v2::session::{
     accept, Identity, RecordSealer, SecureReader, SessionError, MAX_RECORD_PLAINTEXT,
 };
 use chorus_protocol::v2::{
-    roles, Capabilities, ChannelPosition, Codec, Hello, Link, Message, OutputDelay, StreamFormat,
-    PROTOCOL_VERSION,
+    roles, Capabilities, ChannelPosition, Codec, Hello, Link, Message, MicGate, OutputDelay,
+    StreamFormat, PROTOCOL_VERSION,
 };
 
 use crate::control::ControlState;
@@ -49,6 +49,7 @@ use crate::linein::LineIns;
 use crate::router::{Router, SessionStart};
 use crate::stream::Fanout;
 use crate::tvrelay::TvRelay;
+use crate::voice::{RoomVoice, Voice};
 use chorus_protocol::{CHUNK_HEADER_LEN, HEADER_LEN};
 
 /// The file holding the server's long-term secret key.
@@ -455,6 +456,11 @@ pub struct SessionContext {
     /// (no command could start an install): an endpoint's `firmware_status`
     /// is then not read.
     pub firmware: Option<Arc<Firmware>>,
+    /// What becomes of a voice endpoint's microphone audio (`crate::voice`):
+    /// kept in memory only while its room has voice switched on and its gate
+    /// is live, dropped and counted otherwise. Shared with the conductor,
+    /// which sends `voice_control`.
+    pub voice: Arc<Voice>,
 }
 
 impl fmt::Debug for SessionContext {
@@ -482,6 +488,7 @@ impl SessionContext {
             line_ins: None,
             tv_relay: None,
             firmware: None,
+            voice: Arc::new(Voice::new()),
         }
     }
 
@@ -524,7 +531,14 @@ impl SessionContext {
     /// the router's id for it: an install travelling in it ends with it and
     /// is shown `interrupted` (`crate::firmware`: never resumed).
     pub fn session_down(&self, endpoint_id: &str, session: u64) {
+        // Its microphone buffer is wiped with it, and its gate is no longer
+        // the room's word unless another session of the endpoint is live.
+        let (still_live, line) = self.voice.session_down(session);
+        if let Some(line) = line {
+            self.say(&line);
+        }
         if let Some(control) = &self.control {
+            control.speaker_mic_gate(endpoint_id, still_live);
             if let Some(speaker) = self.firmware.as_ref().and_then(|f| f.session_down(session)) {
                 control.firmware_interrupted(&speaker);
             }
@@ -780,6 +794,10 @@ pub fn route_controller(
     let endpoint = greeting.endpoint_id.clone();
     let is_controller = greeting.roles & roles::CONTROLLER != 0;
     let is_source = greeting.roles & roles::SOURCE != 0;
+    // (voice, P8) Known to the intake from here on, with or without the
+    // voice role: one that did not declare it is refused by name, once.
+    ctx.voice
+        .session_up(session, &endpoint, greeting.roles & roles::VOICE != 0);
     // (goal 14) Only an endpoint that declared the `ota` feature is read
     // for its firmware, and only such a one is ever offered an image.
     let takes_updates = greeting.features & chorus_protocol::v2::features::OTA != 0;
@@ -819,6 +837,45 @@ pub fn route_controller(
                 }
                 _ => {}
             }
+        }
+        // A voice endpoint's gate and its microphone audio (P8, ADR 0166).
+        // The audio goes to `crate::voice` and nowhere else: it is never an
+        // `audio_chunk`, so nothing that plays a source can be handed it
+        // (I4), and what is said of it is a count.
+        match &m {
+            Message::MicState(state) => {
+                let live = state.gate == MicGate::Live;
+                match ctx.voice.gate(session, live) {
+                    Some((changed, line)) => {
+                        if let Some(line) = line {
+                            ctx.say(&line);
+                        }
+                        if let (true, Some(control)) = (changed, ctx.control.as_ref()) {
+                            control.speaker_mic_gate(&endpoint, live);
+                        }
+                    }
+                    None => ctx.say(&format!(
+                        "voice mic id={} mic_state refused reason=no-voice-role",
+                        endpoint
+                    )),
+                }
+                return;
+            }
+            Message::MicAudio(frame) => {
+                let room = ctx
+                    .control
+                    .as_ref()
+                    .and_then(|control| control.voice_room(&endpoint));
+                let room = room.as_ref().map(|(room, enabled)| RoomVoice {
+                    room,
+                    enabled: *enabled,
+                });
+                if let (_, Some(line)) = ctx.voice.audio(session, room, frame) {
+                    ctx.say(&line);
+                }
+                return;
+            }
+            _ => {}
         }
         // A player's or a hub's answer to a low-latency offer (goal 13).
         if let Message::LowLatencyAccept(accept) = &m {

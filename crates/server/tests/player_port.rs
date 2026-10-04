@@ -149,6 +149,7 @@ fn house(endpoint: &str) -> House {
         line_ins: None,
         tv_relay: None,
         firmware: None,
+        voice: Arc::new(chorus_server::voice::Voice::new()),
     });
     let pool = ClientPool::spawn(
         2,

@@ -774,6 +774,7 @@ impl ControlState {
                     Some(table) => table.slot_of(&z.group),
                 },
                 av_trim_ms: z.av_trim_ms,
+                voice_enabled: z.voice_enabled,
             })
             .collect();
         let slots = match &held.slots {
@@ -1221,6 +1222,38 @@ impl ControlState {
         self.publish(state);
     }
 
+    /// (voice, P8) Speaker `id` said what its mic gate is (`mic_state`): the
+    /// room's `mic_muted` follows, and the state is fanned out when it
+    /// changed. Never persisted; no command reaches this.
+    pub fn speaker_mic_gate(&self, id: &str, live: bool) {
+        let state = {
+            let mut held = self.locked();
+            if !held.zones.speaker_mic_gate(id, live) {
+                return;
+            }
+            held.zones.encode_state()
+        };
+        self.publish(state);
+    }
+
+    /// (voice, P8) The room `endpoint` is in right now (the rule
+    /// [`Snapshot::room_of`] uses) and whether that room has voice switched
+    /// on; `None` for an endpoint in no room. Read for every `mic_audio`
+    /// frame, so a room switched off drops its very next frame.
+    pub fn voice_room(&self, endpoint: &str) -> Option<(String, bool)> {
+        let held = self.locked();
+        let zones = held.zones.zones();
+        zones
+            .iter()
+            .find(|z| z.present.iter().any(|e| e == endpoint))
+            .or_else(|| {
+                zones
+                    .iter()
+                    .find(|z| z.endpoints.iter().any(|e| e == endpoint))
+            })
+            .map(|z| (z.id.clone(), z.voice_enabled))
+    }
+
     /// Change what is known about speaker `id` right now (a per-speaker
     /// runtime fact, [`SpeakerNow`]) and fan the state out when it changed.
     /// Never persisted. Returns whether anything changed.
@@ -1562,6 +1595,9 @@ pub struct RoomView {
     /// (goal 13) Its A/V trim, ms: positive delays the audio; the TV relay
     /// moves its stamps by it (`crate::tvrelay`).
     pub av_trim_ms: i16,
+    /// (voice, P8) Whether the room has voice switched on: what its voice
+    /// endpoints are told as `voice_control.uplink`.
+    pub voice_enabled: bool,
 }
 
 /// The room model, read once, as the conductor plans over it.

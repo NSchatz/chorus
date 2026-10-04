@@ -52,6 +52,7 @@ const EVERY_V2_MESSAGE_TYPE: &[&str] = &[
     "limit",
     "quiet_hours",
     "quiet_hours_enabled",
+    "voice_enabled",
     "alarm_set",
     "alarm_delete",
     "alarm_stop",
@@ -524,6 +525,10 @@ fn command_from(fields: &Fields) -> Command {
             }
         }
         "quiet_hours_enabled" => Command::QuietHoursEnabled {
+            zone: get("zone"),
+            enabled: get("enabled") == "1",
+        },
+        "voice_enabled" => Command::VoiceEnabled {
             zone: get("zone"),
             enabled: get("enabled") == "1",
         },

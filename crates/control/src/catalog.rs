@@ -290,6 +290,15 @@ pub enum Command {
         /// Whether the room's windows cap it when they are active.
         enabled: bool,
     },
+    /// (v2) Switch a room's voice path on or off (K73's software gate).
+    /// Off by default. While off, the server asks no microphone of the room
+    /// for audio and drops any it is sent.
+    VoiceEnabled {
+        /// The room.
+        zone: String,
+        /// Whether the room's microphones may send audio to the voice path.
+        enabled: bool,
+    },
     /// (v2) Create or replace an alarm.
     AlarmSet(Alarm),
     /// (v2) Forget an alarm.
@@ -466,6 +475,7 @@ impl Command {
             Command::Limit { .. } => "limit",
             Command::QuietHours { .. } => "quiet_hours",
             Command::QuietHoursEnabled { .. } => "quiet_hours_enabled",
+            Command::VoiceEnabled { .. } => "voice_enabled",
             Command::AlarmSet(_) => "alarm_set",
             Command::AlarmDelete { .. } => "alarm_delete",
             Command::AlarmStop { .. } => "alarm_stop",
@@ -525,6 +535,7 @@ impl Command {
             | Command::Limit { zone, .. }
             | Command::QuietHours { zone, .. }
             | Command::QuietHoursEnabled { zone, .. }
+            | Command::VoiceEnabled { zone, .. }
             | Command::Sound { zone, .. }
             | Command::BassManagement { zone, .. }
             | Command::RoomEq { zone, .. }
@@ -614,7 +625,8 @@ impl Command {
                     Value::Arr(windows.iter().map(window_value).collect()),
                 ));
             }
-            Command::QuietHoursEnabled { zone, enabled } => {
+            Command::QuietHoursEnabled { zone, enabled }
+            | Command::VoiceEnabled { zone, enabled } => {
                 text("zone", zone);
                 m.push(("enabled".to_string(), Value::Bool(*enabled)));
             }
@@ -1447,6 +1459,13 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
         "quiet_hours_enabled" => {
             fields(&["v", "t", "zone", "enabled"], &[])?;
             Command::QuietHoursEnabled {
+                zone: id("zone")?,
+                enabled: boolean(value, "enabled").map_err(at)?,
+            }
+        }
+        "voice_enabled" => {
+            fields(&["v", "t", "zone", "enabled"], &[])?;
+            Command::VoiceEnabled {
                 zone: id("zone")?,
                 enabled: boolean(value, "enabled").map_err(at)?,
             }

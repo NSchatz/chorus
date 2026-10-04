@@ -1287,6 +1287,9 @@ fn main() -> ExitCode {
         }
         None => None,
     };
+    // (voice, P8) The microphone intake: shared by every session's reader
+    // and the conductor, and by nothing that plays, writes or serves audio.
+    let voice = Arc::new(chorus_server::voice::Voice::new());
     let session = Arc::new(SessionContext {
         identity,
         adoptions,
@@ -1310,6 +1313,7 @@ fn main() -> ExitCode {
         line_ins: line_ins.clone(),
         tv_relay: tv_relay.clone(),
         firmware,
+        voice: Arc::clone(&voice),
     });
     drop(arrived);
 
@@ -1457,7 +1461,8 @@ fn main() -> ExitCode {
                 (config.slots > 0).then(|| slot_commands.clone()),
             )
             .with_transports(transports.clone())
-            .with_players(player_ports.len());
+            .with_players(player_ports.len())
+            .with_voice(Arc::clone(&voice));
             if let Some(sessions) = &player_sessions {
                 // The reports are this thread's only when no renderer will
                 // take them.

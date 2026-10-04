@@ -84,9 +84,10 @@ fn the_rich_vector_gives_the_rooms_and_saved_groups_it_holds() {
     assert!(cut.rooms[0].1.starts_with(
         r#"{"id":"living","name":"Living Room","group":"downstairs","volume":0.857,"#
     ));
-    assert!(cut.rooms[0].1.ends_with(
-        r#""room_eq":{"enabled":true,"filters":[{"freq_hz":42,"gain_db":-6.00,"q":4.500}]}}"#
-    ));
+    assert!(cut.rooms[0].1.ends_with(concat!(
+        r#""room_eq":{"enabled":true,"filters":[{"freq_hz":42,"gain_db":-6.00,"q":4.500}]},"#,
+        r#""voice_enabled":false,"mic_muted":true}"#
+    )));
     assert!(!cut.groups.is_empty());
     for (id, object) in &cut.groups {
         assert!(
@@ -122,7 +123,9 @@ fn a_room_playing_a_player_carries_its_source_and_what_it_plays() {
     for id in ["bedroom", "hall"] {
         assert!(!room(id).contains("now_playing"), "{}", room(id));
         assert!(!room(id).contains(r#""source""#), "{}", room(id));
-        assert!(room(id).ends_with(r#""room_eq":{"enabled":true,"filters":[]}}"#));
+        assert!(room(id).ends_with(
+            r#""room_eq":{"enabled":true,"filters":[]},"voice_enabled":false,"mic_muted":true}"#
+        ));
     }
     // The saved group's payload is its definition, as before.
     assert_eq!(
