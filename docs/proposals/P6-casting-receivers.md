@@ -189,13 +189,13 @@ U1 is proposed (as planned). Two security rules come with it:
   `https`, no redirects to loopback, link-local or the server's own services, bounded size and
   time.
 
-## Network consequences (homelab facts, `NSchatz/homelab` at `d82e2ae`)
+## Network consequences (homelab facts, the owner's homelab repo at `d82e2ae`)
 
 - chorus-server runs on the host network (K34), so SSDP multicast works. The host firewall
   (`ansible/roles/firewall`) accepts UDP 1900 and 5353 from the LAN (`firewall_lan_udp`), but a
   host-network service's TCP port must be listed: `firewall_lan_tcp: [1180, 32469]` today holds
   only Plex's. The renderer's HTTP port (description, SOAP, GENA) needs adding there, an owner
-  step through the homelab PR and `host-apply`.
+  step through the PR to the owner's homelab repo and `host-apply`.
 - After the cutover, `docs/network.md`'s policy allows Trusted to reach the server only on listed
   ports (Plex's DLNA server has its own row, "32469, plus relayed SSDP") and lists no Servers to
   Trusted rule. A renderer needs Trusted to the server on its HTTP port, and the server to Trusted
@@ -242,7 +242,7 @@ can. Adding OpenHome later is additive on the same devices.
 - **Whether PC or phone audio to a room is wanted** (Option C) and **whether the owner adopts
   Roon** (Option D): owner inputs at Checkpoint K.
 - **Household subnets for GENA callbacks** after the cutover: from the homelab network design;
-  the goal-17 homelab PR names them without addresses in chorus's files.
+  the goal-17 PR to the owner's homelab repo names them without addresses in chorus's files.
 - **Renderer HTTP port:** a chorus choice made in goal 16; the homelab firewall rule follows it.
 - **Size of U1** (2k to 4k lines) and **Option B's effort**: `ASSUMED`.
 - **TIDAL Connect's partner terms:** unverifiable (every TIDAL page tried returned 403; only a
@@ -277,7 +277,7 @@ can. Adding OpenHome later is additive on the same devices.
 - Snapcast binary protocol (doc only), https://raw.githubusercontent.com/badaix/snapcast/develop/doc/binary_protocol.md, read 2026-09-30
 - Lyrion, SlimProto protocol (doc), https://lyrion.org/reference/slimproto-protocol/, read 2026-09-30
 - MPRIS D-Bus Interface Specification v2.2, https://specifications.freedesktop.org/mpris-spec/latest/, read 2026-09-30
-- `NSchatz/homelab` at `d82e2ae`: `ansible/roles/firewall/templates/host.nft.j2`, `ansible/roles/firewall/defaults/main.yml`, `docs/network.md`, `docs/security.md`, read 2026-09-30
+- The owner's homelab repo at `d82e2ae`: `ansible/roles/firewall/templates/host.nft.j2`, `ansible/roles/firewall/defaults/main.yml`, `docs/network.md`, `docs/security.md`, read 2026-09-30
 
 ## What was read
 
@@ -288,7 +288,7 @@ can. Adding OpenHome later is additive on the same devices.
   §34, §35.
 - Planning research: `research-casting-decoders.md`, `verify-ha-casting.md`, `review-homelab.md`.
 - `BRIEF.md` §2, §3 and §5.8 (baseline worktree).
-- `NSchatz/homelab` (read-only clone): the files listed in Sources, plus `CLAUDE.md`,
+- The owner's homelab repo (read-only clone): the files listed in Sources, plus `CLAUDE.md`,
   `.github/workflows/ci.yml` and `home-automation/mdns-reflector/docker-compose.yml`.
 - Every URL in Sources; five web searches (Roon Ready, Roon Bridge, Qobuz Connect, TIDAL Connect,
   OpenHome services).

@@ -346,10 +346,10 @@ since goal 3 began (the older history keeps its subjects); identity terms are
 `check-identity.sh`'s.
 
 **Review-only (no check):** the area names what changed (a crate, `firmware`, `tools`, `docs`,
-`deploy`, `ci`, or `goals` for ledger commits); branches are `chorus-g<n>/<topic>`; changes merge
-as squashed pull requests once an independent reviewer passes them, without waiting for CI, which
-runs `make gate` on every pull request, on main and nightly; a red main gets a fix-forward task
-(decision 0140); history is never rewritten.
+`deploy` or `ci`); work arrives as tasks from the owner's agent harness, each on a branch
+`task/<n>`; changes merge as squashed pull requests once an independent reviewer passes them,
+without waiting for CI, which runs `make gate` on every pull request, on main and nightly; a red
+main gets a fix-forward task (decision 0140); history is never rewritten.
 
 ## 22. Every rule has a check
 

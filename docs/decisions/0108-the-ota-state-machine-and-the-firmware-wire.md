@@ -3,7 +3,7 @@
 - Status: accepted (goal 14, 2026-10-02)
 - Decided by: the goal-14 design envelope, section 2 (OTA on the endpoint) and "The wire", track
   `chorus-g14/ota-core` (PR #108; first opened as #107, whose branch carried a commit subject one character over the limit); the program's research
-  `.claude/goals/2026-09-chorus-research/research-platform-network.md` section 3 (OTA testability
+  [`.claude/goals/2026-09-chorus-research/research-platform-network.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus-research/research-platform-network.md) section 3 (OTA testability
   without hardware: "the A/B decision logic must be chorus's own pure C"); BRIEF.md 5.9 and
   section 3.1 rule 2 (no eFuse burns on dev hardware); the owner's decisions K91, K92, K93 and I13
   (rollback, explicit installs); the placements below where the envelope left them open

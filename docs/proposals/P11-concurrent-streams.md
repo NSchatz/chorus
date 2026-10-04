@@ -35,7 +35,7 @@ playing one album is one stream.
 - **What happens at the limit today.** With every player in use a renderer answers
   `SetAVTransportURI` and `Play` with UPnP error 501 and the log says `no free player`
   (`docs/upnp.md`). Nothing is degraded for the streams already playing.
-- **The homelab's limits.** The chorus-server service of homelab PR #237 (open, head
+- **The homelab's limits.** The chorus-server service of PR #237 of the owner's homelab repo (open, head
   `46a8214`, read 2026-10-03) runs with `cpus: 1.0`, `mem_limit: 256m`, `pids_limit: 128`, a
   real-time priority ceiling of 20 and 64 MiB of lockable memory, sized for a server with no
   players and no renderers ("the audio path is a handful of threads"). Every service there
@@ -88,7 +88,7 @@ Three things the numbers say that the planning figures did not:
 3. **Memory is not the constraint unlocked, and may be the constraint locked.** The server's
    resident set never passed 58 MB. But a deployment locks its memory, which makes every
    mapping resident, and the 71-thread server maps 211 MB with access (mostly thread stacks; 151 MB even with neither players nor renderers),
-   against 64 MiB of lockable memory and `mem_limit: 256m` in homelab PR #237. That is read
+   against 64 MiB of lockable memory and `mem_limit: 256m` in PR #237 of the owner's homelab repo. That is read
    from `/proc/<pid>/maps`, not measured under a lock (Open inputs).
 
 ## What a house costs
@@ -231,8 +231,8 @@ below the code's ceilings and nothing is promised about them.
   Soloist and none of its cost is reported here.
 - **The server under locked memory.** A deployment locks its memory (`mlockall`); this
   container cannot (8 MiB granted). The report gives the size of what would be locked as read
-  from the mappings, not a measured locked resident set. The homelab PR's 64 MiB of lockable
-  memory must be checked against it on a host that grants the limit: an owner step, or a
+  from the mappings, not a measured locked resident set. The 64 MiB of lockable memory in the PR to the owner's homelab repo
+  must be checked against it on a host that grants the limit: an owner step, or a
   chorus measurement in a container started with the `ulimits` the compose file gives. Until
   then a server started as PR #237 starts it, with more threads than v0.1.0's, is expected
   to refuse the contract (exit 3, "locking memory was denied") or to need
@@ -265,12 +265,12 @@ below the code's ceilings and nothing is promised about them.
 - The PipeWire probe of goal 17 (2026-10-03): `/cache/tmp/chorus-g17/pw-probe/`, index
   `SHA256SUMS` (sha256 `4b517e0c89657288aaafce72af1bc8b578e4e922b05832a1ce46054e880285ac`);
   its per-receiver table is copied into the report above.
-- `.claude/goals/2026-09-chorus-research/research-casting-decoders.md` section 5 (2026-09-29):
+- [`.claude/goals/2026-09-chorus-research/research-casting-decoders.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus-research/research-casting-decoders.md) section 5 (2026-09-29):
   the planning-time ffmpeg proxy figures and proposed limits this replaces.
 - `docs/proposals/P7-spotify-soloist.md` (the pool, the `ASSUMED` per-receiver cost and limits).
-- `NSchatz/homelab` PR #237 at head `46a8214` (`gh pr diff 237 -R NSchatz/homelab`, read
+- PR #237 of the owner's homelab repo at head `46a8214` (`gh pr diff 237` there, read
   2026-10-03): the chorus-server service's `cpus`, `mem_limit`, `pids_limit` and `ulimits`.
-- `.claude/goals/2026-09-chorus.md`: K59, K66, K75, K76, I11, §5's table, §21.
+- [`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md): K59, K66, K75, K76, I11, §5's table, §21.
 - `docs/upnp.md`, `docs/decoders.md`, `docs/decisions/0124-the-media-player-engine.md`,
   `crates/server/src/main.rs` (the thread population), `crates/server/src/player.rs`
   (`MAX_PLAYERS`), `crates/server/src/config.rs` (`MAX_SLOTS`), `crates/hostctl` (`lock_memory`).
@@ -288,7 +288,7 @@ below the code's ceilings and nothing is promised about them.
 - For the receivers: `docs/soloist.md`, `crates/server/tests/soloist_receivers.rs`, the two
   examples of `crates/server`, the header of `crates/soloist-fake/src/lib.rs`,
   `docs/telemetry.md` (the receivers' counters), 2026-10-03.
-- `NSchatz/homelab` PR #237's diff (read-only), 2026-10-03.
+- The diff of PR #237 of the owner's homelab repo (read-only), 2026-10-03.
 - The reference programs (ffmpeg, LAME, FLAC) were run as programs to make the test signals;
   none of their source was opened. No GPL or LGPL source file was opened. No web page was
   read. No Soloist binary was downloaded or run.

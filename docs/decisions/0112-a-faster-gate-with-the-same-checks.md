@@ -15,7 +15,7 @@
 
 ## Context
 
-`make gate` grew from 439 s to 1,171 s (NSchatz/goals ADR 0003, from this program's ledgers) and measured 1,311 to 1,706 s on
+`make gate` grew from 439 s to 1,171 s (the owner's agent-harness repository, its ADR 0003, from this program's ledgers) and measured 1,311 to 1,706 s on
 2026-10-02 and 03 (the nightly, `/cache/goals/maker/nightly/chorus-2026-10-02T08:34:49Z.log`:
 1,483 s; goal 14's twelve gates, 1,130 to 1,706 s). `make tier-fast` measured 520 s, 408 s of it
 the test step. Every one of those minutes is spent under the host-wide heavy locks, and on
@@ -52,7 +52,7 @@ All read 2026-10-03: the repository's `Makefile`, `tools/gate.sh`, `tools/lib.sh
 `firmware/tests/session-outage.sh`, `Cargo.toml`, every crate's `Cargo.toml`, `rust-toolchain.toml`,
 `mise.toml`, `.github/workflows/ci.yml`, ADRs 0002 and 0020, and the integration tests
 named below; the nightly and goal gate logs named above; `gh run list` and the jobs and logs of
-runs 36846006728 and 34797144550; NSchatz/goals ADRs 0003 (speed) and 0018 (gate tiers) and its spec
+runs 36846006728 and 34797144550; the owner's agent-harness repository's ADRs 0003 (speed) and 0018 (gate tiers) and its spec
 `gates.md`.
 cargo-nextest's documentation at https://nexte.st (test groups, overrides, priorities, `retries`,
 `fail-fast`, JUnit output) and its release page

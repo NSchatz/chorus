@@ -5,7 +5,7 @@ Owner: the owner (identity scrub, decided 2026-09-29 by the owner, K27)
 Date: 2026-08-21
 Status: Guiding document, not a rigid specification. It defines goals, requirements, constraints, and reference knowledge, and it makes recommendations with rationale. Implementation decisions are made during the project, in collaboration with the owner, and recorded as they happen.
 Codename: "chorus" (placeholder, rename freely).
-Amended: 2026-09-30 (chorus goal 4) with the owner's decisions of 2026-09-29 (K-numbers in `.claude/goals/2026-09-chorus.md` §1); each changed passage carries its reversal number R<n>, the words "decided 2026-09-29 by the owner" and its decision IDs. The log is at the end of this document ("Amendments").
+Amended: 2026-09-30 (chorus goal 4) with the owner's decisions of 2026-09-29 (K-numbers in [`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md) §1); each changed passage carries its reversal number R<n>, the words "decided 2026-09-29 by the owner" and its decision IDs. The log is at the end of this document ("Amendments").
 
 ---
 
@@ -35,7 +35,7 @@ The point is not just the product. It is owning the whole stack: the sync algori
 Environment facts to assume:
 
 - Gigabit Cat6 to most rooms through conduit; TP-Link Omada PoE+ switch; UniFi Wi-Fi; VLANs.
-- A bare-metal Debian 13 host running Docker Compose stacks (no Proxmox), deployed through PRs in the homelab repo that the owner merges and applies; Home Assistant and an MQTT broker already running (R5, decided 2026-09-29 by the owner, K24, K28, K34).
+- A bare-metal Debian 13 host running Docker Compose stacks (no Proxmox), deployed through PRs in the owner's homelab repo that the owner merges and applies; Home Assistant and an MQTT broker already running (R5, decided 2026-09-29 by the owner, K24, K28, K34).
 - Endpoints will be mostly wired Ethernet or PoE. Wi-Fi endpoints are acceptable for casual music zones only.
 - Owner's background: strong Node.js/Python/AWS/Terraform/Docker/CI-CD, ESP32/ESPHome experience, comfortable learning C and Rust, DIY speaker building and woodworking capability.
 
@@ -284,7 +284,7 @@ Ordered to retire risk, with "success looks like" instead of rigid gates. Reorde
 
 ### 8.1 The program's phases (added 2026-09-30, chorus goal 4; K12, K13, K32, K47, decided 2026-09-29 by the owner)
 
-The /goal program in `.claude/goals/2026-09-chorus.md` is the plan of record. Its phases run the ten above in order and then the Sonos-parity work, foundations first (K32); one deliberate reorder puts rooms and groups (phase 11 below) before Fleet, because DSP and the TV path need them (I19). Each phase's acceptance is the "success looks like" line above (phases 1-10) or the line below, refined by that goal's done-when lines; real-hardware steps end as ready-to-run packets for the owner, never as success criteria (K7, K50).
+The /goal program in [`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md) was the plan of record until 2026-10-04; its remaining goals are now tasks from the owner's agent harness. Its phases run the ten above in order and then the Sonos-parity work, foundations first (K32); one deliberate reorder puts rooms and groups (phase 11 below) before Fleet, because DSP and the TV path need them (I19). Each phase's acceptance is the "success looks like" line above (phases 1-10) or the line below, refined by that goal's done-when lines; real-hardware steps end as ready-to-run packets for the owner, never as success criteria (K7, K50).
 
 | Program phase | Goals | Serves | Success looks like |
 |---|---|---|---|
@@ -304,7 +304,7 @@ The /goal program in `.claude/goals/2026-09-chorus.md` is the plan of record. It
 | The Home Assistant integration | 18, 19 | parity | a core-quality integration: media players per room and saved group, sound controls, diagnostics, events, update entities |
 | Voice and announcements | 20 | parity | rooms as Assist satellites, the wake word on the server, announcements with ducking |
 | The app | 21, 22 | parity | the installable PWA (Lit 3 and esbuild): rooms, groups, inputs, sound, setup and kiosk mode |
-| Acoustic design tools | 23 | hardware | `shopkit-acoustics` (box, port, baffle step, crossover), checked against published worked examples |
+| Acoustic design tools | 23 | hardware | an acoustics package in the owner's shared Python library (box, port, baffle step, crossover), checked against published worked examples |
 | The speaker designs | 24, 25, 26 | hardware | design packages for the compact speaker, the two-way, the subwoofer, the rack amp and the theater front |
 | Finale | 27 | all | a tagged release with every chosen parity feature built and tested on fakes and the simulator, the docs, the program report |
 

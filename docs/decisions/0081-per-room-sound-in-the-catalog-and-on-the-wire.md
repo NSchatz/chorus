@@ -40,7 +40,7 @@ envelope; ADRs 0074 and 0075 (the precedents this follows); `docs/control-plane.
 its tests; `firmware/src/protocol_v2.c`, `firmware/src/session.c`,
 `firmware/tests/test_protocol_v2.c`; `crates/server/src/{control,router,conductor,clients}.rs`
 and `crates/server/tests/limits_hold_for_every_volume_path.rs`;
-`.claude/goals/2026-09-chorus-research/research-theater.md` section 5.2;
+[`.claude/goals/2026-09-chorus-research/research-theater.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus-research/research-theater.md) section 5.2;
 `crates/client-linux/src/{zone,control,session,run,main}.rs`. External, for the defaults:
 Sonos's support article "Adjust the bass, treble, balance, and loudness"
 (<https://support.sonos.com/en-us/article/adjust-the-bass-treble-balance-and-loudness>), Sonos's
@@ -66,7 +66,7 @@ all read 2026-10-01. No GPL source.
    | `bass`, `treble` | whole dB, -10 to 10 | 0 | ASSUMED, 1 dB a step. Sonos's apps show -10 to +10, but neither its support article nor its developer documentation prints the range |
    | `loudness` | bool | true | ASSUMED as Sonos's default: Sonos's own documentation does not state it; a community answer (above) says current players default to on |
    | `night`, `speech` | bool | false | ASSUMED (the envelope) |
-   | `crossover_hz` | 40 to 200 | 80 | 80 Hz is the THX/SMPTE crossover (`.claude/goals/2026-09-chorus-research/research-theater.md` section 5.2 and its source [B1]); the range is ASSUMED |
+   | `crossover_hz` | 40 to 200 | 80 | 80 Hz is the THX/SMPTE crossover ([`.claude/goals/2026-09-chorus-research/research-theater.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus-research/research-theater.md) section 5.2 and its source [B1]); the range is ASSUMED |
    | `sub_level_db` | -12.00 to 6.00, 0.01 | 0.00 | ASSUMED |
    | `sub_polarity` | normal, inverted | normal | |
    | `room_eq.filters` | at most 8; 20 to 1000 Hz, -12.00 to +3.00 dB (0.01), Q 0.500 to 10.000 (0.001) | none | ASSUMED (the envelope): cut-heavy, below 1 kHz |

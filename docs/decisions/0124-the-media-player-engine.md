@@ -32,7 +32,7 @@ created per stream. Line C of the goal: a gapless handover a listener cannot hea
 - `crates/decode/src/{lib,decoder,media,resample,remix}.rs`, `crates/fetch/src/{lib,http,tls,
   policy,error}.rs`, `crates/fetch/src/hls/mod.rs`, `crates/upnp/src/avtransport.rs` (this
   repository, 2026-10-03); ADRs 0119, 0120, 0121, 0122; `docs/decoders.md`, `docs/streams.md`.
-- The program brief `.claude/goals/2026-09-chorus.md` section 4.8 and section 20.
+- The program brief [`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md) section 4.8 and section 20.
 - `std::net::TcpStream::connect_timeout` and `set_read_timeout`
   (<https://doc.rust-lang.org/std/net/struct.TcpStream.html>, read 2026-10-03): a connect in
   progress cannot be left early; a read timeout surfaces as `WouldBlock` or `TimedOut`.

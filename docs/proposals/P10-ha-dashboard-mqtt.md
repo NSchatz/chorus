@@ -31,9 +31,9 @@ The decisions that bound them, quoted:
 
 - §4.8: "The HA integration adds no unauthenticated endpoint to HA (a homelab rule; HA is public):
   every HTTP view it registers has `requires_auth=True` and every webhook is `local_only`, with a
-  test that says so; homelab PR bodies state it."
+  test that says so; [the owner's homelab repo's] PR bodies state it."
 - K40's noted consequence: anyone logged into HA can operate every enabled chorus entity. A
-  dashboard card is browser code running with that user's HA session (the homelab's own words,
+  dashboard card is browser code running with that user's HA session (the owner's homelab repo's own words,
   below).
 - K28: homelab changes are PRs chorus opens and never merges. The homelab rule for cards: "Native
   Sections, tile, heading and graph cards come first; a custom card is added only where native falls
@@ -111,14 +111,14 @@ default, never beside the integration". Re-checked 2026-09-30 against primary so
      vendored under `www/cards/chorus/` with a `cards.lock` line and served by HA's existing
      `/local`, so the integration registers no HTTP route at all. This needs goal 19 item 2's wording
      amended (the owner's call at Checkpoint K; P10 does not edit the brief).
-   - The homelab's `scripts/ha-cards-update.sh` downloads assets with an anonymous
+   - The owner's homelab repo's `scripts/ha-cards-update.sh` downloads assets with an anonymous
      `curl https://github.com/$repo/releases/download/...` (line 35). A private repo's release asset
      is not downloadable anonymously (**ASSUMED**, GitHub's usual behaviour for private repos), so
-     for chorus the homelab PR would carry the vendored file itself plus the lock line whose sha256
+     for chorus the PR to the owner's homelab repo would carry the vendored file itself plus the lock line whose sha256
      matches the release asset.
    - `frontend.add_extra_js_url` still exists (core 2026.9.3 `frontend/__init__.py` line 417, "This
      function allows custom integrations to register extra js or module url to load"). It loads the
-     module on every page for every user without a line in the homelab repo; the research's "do not
+     module on every page for every user without a line in the owner's homelab repo; the research's "do not
      use it" stands.
 7. **HA's own headers.** `http/headers.py` at 2026.9.3 adds `Referrer-Policy: no-referrer`,
    `X-Content-Type-Options: nosniff`, and `X-Frame-Options: SAMEORIGIN` when `use_x_frame_options`
@@ -163,13 +163,13 @@ Adversarially verified 2026-09-30 (goal-1 verifier 3): 12 claims confirmed, 0 re
   planning research's entity model, `research-ha-integration.md` §2; goal 18 item 2 names group
   volume but not this entity, so goal 18 must build it as a chorus-specific entity under K61) with
   `numeric-input`, carrying a positive visibility condition so it shows only while the room is
-  grouped (the homelab's own rule for conditional cards); per saved group ("Downstairs", "Whole
+  grouped (the owner's homelab repo's own rule for conditional cards); per saved group ("Downstairs", "Whole
   house"), a tile for its media player, whose volume is the K77 group volume; a media control card
   for now playing with artwork (K65). Grouping through the stock join dialog (rooms only, as found
   above). The 2026.9 Inline feature fix lets a compact room tile carry volume inline and playback
   below.
 - Costs: money none. Effort: part of goal 19; a dashboard YAML of a few hundred lines (**ASSUMED**
-  size) in the homelab PR, a copy under `integrations/homeassistant/` as the documented example, and
+  size) in the PR to the owner's homelab repo, a copy under `integrations/homeassistant/` as the documented example, and
   a pytest that every entity the YAML references exists in the integration's fixture entity set (no
   browser). Maintenance: YAML only; changes only when the entity model changes. Gate time:
   seconds.
@@ -190,8 +190,8 @@ Adversarially verified 2026-09-30 (goal-1 verifier 3): 12 claims confirmed, 0 re
 - Costs: effort about one third of a goal (**ASSUMED**) inside goal 19: a small module built with the
   P5 stack, vitest plus happy-dom unit tests (no second browser test, §4.2), a release asset, a
   homelab `cards.lock` line and vendored file per release, and the YAML resource with `?v=`.
-  Maintenance: re-test on every HA frontend release the homelab adopts. Delivery must be the
-  homelab's `www/cards` path (see re-verification item 6), which needs goal 19 item 2 amended.
+  Maintenance: re-test on every HA frontend release the homelab adopts. Delivery must be
+  the owner's homelab repo's `www/cards` path (see re-verification item 6), which needs goal 19 item 2 amended.
 - Risks: informal frontend APIs change (item 8); a card runs with the user's full HA session and no
   CSP (item 7), so a supply-chain slip in its build reaches every HA user; it duplicates what Option A
   already shows as a separate tile.
@@ -256,7 +256,7 @@ bypass HA's login onto an unauthenticated control API (K40). Any chorus card tal
   `fixtures/control` so there is one schema. **No `homeassistant/...` discovery topics and no command
   topics**: MQTT adds no second control path and no entity in HA.
 - Costs: goal 15 builds a small MQTT 3.1.1 publisher (hand-written or a permissive crate, a per-item
-  call BRIEF §5.8 already allows), tested against a fake broker; a homelab PR adds a Mosquitto user
+  call BRIEF §5.8 already allows), tested against a fake broker; a PR to the owner's homelab repo adds a Mosquitto user
   and a publish-only ACL on the prefix, and the password is an owner step (Needs item) kept outside
   git. Maintenance small.
 - Risks: a publisher with no known consumer in the house today (item 9: the homelab documents only
@@ -315,7 +315,7 @@ Stock HA 2026.9 already covers every K84 item except drag-to-group, and the re-c
 off-LAN users reach through the VPN (K82). A costs no browser code, keeps §4.8 true without any
 exception, and follows the homelab's card rule. The owner gives up a single room tile that also
 carries the live group's volume and member chips (Option B) and a Sonos-like card inside HA
-(Option C). If the owner later wants B, it ships through the homelab's `www/cards` path rather than an
+(Option C). If the owner later wants B, it ships through the owner's homelab repo's `www/cards` path rather than an
 integration static path, and goal 19 item 2's "served by the integration" is amended then. For MQTT,
 M2 keeps K46's outside-HA interface at small cost with no duplicate entities and no second control
 path; the owner gives up HA discovery for installs without the integration (M3), which no one in the
@@ -341,8 +341,8 @@ beyond the recommendation's own.
   as Mosquitto clients, and its MQTT plan ("Find the LAN clients") has not yet enumerated LAN
   clients. M2 is opt-in, so the answer does not change the recommendation.
 - If Option B or C is chosen: an amendment to goal 19 item 2 ("any browser code is served by the
-  integration") to "vendored in the homelab's `www/cards` with a lock line", so §4.8 stays literal.
-- If M2: a Mosquitto user and publish-only ACL for chorus (a homelab PR in goal 15) and its password
+  integration") to "vendored in the owner's homelab repo's `www/cards` with a lock line", so §4.8 stays literal.
+- If M2: a Mosquitto user and publish-only ACL for chorus (a PR to the owner's homelab repo in goal 15) and its password
   (an owner step, a Needs item filed by goal 15).
 - ASSUMED values: the dashboard YAML size; the effort fractions for B and C; that the resource
   loader never produces signed URLs; that private release assets cannot be fetched anonymously; that
@@ -365,7 +365,7 @@ beyond the recommendation's own.
 - HA core 2026.9.3 `http/server.py`, `http/static.py`, `http/auth.py`, `http/headers.py`, `http/__init__.py`, `http/config.py`, `http/const.py`, and `helpers/http.py`, https://raw.githubusercontent.com/home-assistant/core/2026.9.3/homeassistant/components/http/ and https://raw.githubusercontent.com/home-assistant/core/2026.9.3/homeassistant/helpers/http.py, read 2026-09-30
 - HA core 2026.9.3 `mqtt/const.py`, https://raw.githubusercontent.com/home-assistant/core/2026.9.3/homeassistant/components/mqtt/const.py, read 2026-09-30
 - HA core 2026.9.4 `frontend/manifest.json` (pins `home-assistant-frontend==20260826.7`), https://raw.githubusercontent.com/home-assistant/core/2026.9.4/homeassistant/components/frontend/manifest.json, and the latest core release (2026.9.4, published 2026-09-27), https://api.github.com/repos/home-assistant/core/releases/latest, read 2026-09-30
-- NSchatz/homelab `docs/network.md` ("MQTT plan") and `docs/home-automation.md` (Mosquitto users), `origin/main` `d82e2ae`, read 2026-09-30
+- The owner's homelab repo's `docs/network.md` ("MQTT plan") and `docs/home-automation.md` (Mosquitto users), `origin/main` `d82e2ae`, read 2026-09-30
 - HA frontend 20260826.7 (Apache-2.0, `LICENSE.md` checked): `src/components/media-player/dialog-join-media-players.ts`, `src/dialogs/more-info/controls/more-info-media_player.ts`, `src/common/dom/load_resource.ts`, `src/panels/lovelace/common/load-resources.ts`, https://raw.githubusercontent.com/home-assistant/frontend/20260826.7/, read 2026-09-30
 - Registering resources (dev docs, raw), https://raw.githubusercontent.com/home-assistant/developers.home-assistant/master/docs/frontend/custom-ui/registering-resources.md, read 2026-09-30
 - Custom card feature (dev docs, raw), https://raw.githubusercontent.com/home-assistant/developers.home-assistant/master/docs/frontend/custom-ui/custom-card-feature.md, read 2026-09-30

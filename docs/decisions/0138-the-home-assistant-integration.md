@@ -80,7 +80,7 @@ the domain in `.strict-typing`, no `brand/`), then the same copy with one rule r
 must fail, then the unpatched tree as a custom integration.
 
 **The pin.** `pytest-homeassistant-custom-component==0.13.366` (requires
-`homeassistant==2026.9.3`, the homelab's pinned version at homelab commit f0284f2), Python
+`homeassistant==2026.9.3`, the pinned version in the owner's homelab repo at commit f0284f2), Python
 3.14.8, recorded once in `integrations/homeassistant/harness.pin`. It moves when the homelab's
 Home Assistant pin moves. mypy and ruff are the versions core 2026.9.3 itself pins, so
 `mypy --strict` here and core's strict typing mean the same thing. Python 3.14.8 is this

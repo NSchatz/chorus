@@ -27,7 +27,7 @@ hand-written over `std::net`. Since goal 14 the catalog can start a firmware tra
 ## What was read
 
 All read 2026-10-03: the program's section 19 and K46, K93, I13;
-`.claude/goals/2026-09-chorus-research/research-pwa-conventions.md` section 5; the goal-15
+[`.claude/goals/2026-09-chorus-research/research-pwa-conventions.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus-research/research-pwa-conventions.md) section 5; the goal-15
 design envelope (section 3 and "Rules every track follows") and code survey (sections A, D, E,
 F); `CLAUDE.md`; `docs/conventions.md` (rules 2, 9, 12, 13, 15, 16, 18, 19, 20, 21);
 `docs/control-plane.md` (the routes, the refusals, "Firmware: staged images and explicit

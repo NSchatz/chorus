@@ -35,10 +35,10 @@ recommendations, and open decisions. It recommends; it does not dictate.
 (R1, decided 2026-09-29 by the owner, K1, K4, K11, K12, K28, K93: the retired
 umbrella's section, its specs, stages and pointers, is removed.)
 
-- The plan of record is the /goal program in `.claude/goals/2026-09-chorus.md`
-  (the contract is NSchatz/goals spec v1.1, the `/goals:spec` skill; the brief's §0 holds this
-  program's parameters and §4 its engineering rules; each goal's ledger is
-  `.claude/goals/2026-09-chorus-g<n>.status.md`). A phase's acceptance comes from
+- Work arrives as tasks from the owner's agent harness, each with a finish line written as
+  runnable checks; the /goal program's remaining goals are such tasks now. Its brief (§0 the
+  parameters, §4 the engineering rules), goal files and ledgers are pinned at
+  https://github.com/NSchatz/chorus/tree/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals. A phase's acceptance comes from
   BRIEF.md section 8's "success looks like" and the program's done-when lines.
 - Conventions and the rule-to-check table: `docs/conventions.md`. CI is the gate
   (`docs/decisions/0140-ci-is-the-gate.md`, decided by the owner 2026-10-04):
@@ -52,10 +52,10 @@ umbrella's section, its specs, stages and pointers, is removed.)
   run, a soak) holds `goals lock goals-heavy -- goals lock chorus-heavy -- ...`, subagents'
   included; a throwaway build keeps its cargo target directory where `tools/build-dir.sh`
   says (`/scratch` when it fits, else `/cache/wt/chorus/target/shared`).
-- Flashing, eFuses, deploys to the homelab and OTA installs on installed speakers are the owner's actions (K4, K28, K93); nothing in this repo sets `CHORUS_OWNER_AT_BENCH`. Each one is an issue in the owner's queue (NSchatz/goals: `goals needs add`, `/goals:needs`), and a request to another program is a `from:chorus` issue (`goals request add`).
-- BRIEF.md is kept current by the program: verified corrections and the owner's
+- Flashing, eFuses, deploys to the homelab and OTA installs on installed speakers are the owner's actions (K4, K28, K93); nothing in this repo sets `CHORUS_OWNER_AT_BENCH`. Each one is an issue in the owner's queue in the owner's agent harness (`goals needs add`, `/goals:needs`), and a request to another repository is a `from:chorus` issue (`goals request add`).
+- BRIEF.md is kept current by the work: verified corrections and the owner's
   decisions are written into it, each dated with its decision IDs. Its section
-  3.1 guardrails are never relaxed or removed by the program; they may only be
+  3.1 guardrails are never relaxed or removed by any task; they may only be
   tightened. When measurement contradicts BRIEF.md, say so in `docs/decisions/`
   and correct the brief in the same change. (R2, decided 2026-09-29 by the owner,
   K47; limit I2.)

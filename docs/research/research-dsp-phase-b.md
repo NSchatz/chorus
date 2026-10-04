@@ -620,7 +620,7 @@ only a search-engine or fetch summary was seen; "LEAD" items are not citations.
 40. Craciun, Uhle, Backstrom, EUSIPCO 2015: https://www.eurasip.org/Proceedings/Eusipco/Eusipco2015/papers/1570095143.pdf (read, context)
 41. Yoho et al. 2018, JASA: https://u.osu.edu/splab/files/2019/08/Speech-material-and-talker-effects-in-speech-band-importance.pdf (read, introduction only)
 42. Mandarin SII importance abstract: https://www.sciencedirect.com/science/article/abs/pii/S0167639316301935 (summary; LEAD)
-43. Existing repo research: `.claude/goals/2026-09-chorus-research/research-theater.md` section 5.2-5.3 (read; its bass management sources were Wikipedia and snippets, superseded here by A/52 and Dolby)
+43. Existing repo research: [`.claude/goals/2026-09-chorus-research/research-theater.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus-research/research-theater.md) section 5.2-5.3 (read; its bass management sources were Wikipedia and snippets, superseded here by A/52 and Dolby)
 
 Not opened (clean-room, K33): no GPL or other reciprocal-licence source file was opened. WLED
 (EUPL) and its MoonModules fork were consulted through their documentation pages only; a GitHub

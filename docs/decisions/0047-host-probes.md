@@ -28,7 +28,7 @@ taken from its documentation and man pages only, and from what the probes observ
   `src/unix/linux_like/mod.rs`, `src/unix/linux_like/linux/mod.rs`,
   `src/unix/linux_like/linux/arch/generic/mod.rs`, `src/unix/linux_like/linux/gnu/mod.rs`,
   `src/unix/linux_like/linux_l4re_shared.rs` (constant values and struct layouts).
-- chorus: `.claude/goals/2026-09-chorus-research/research-platform-network.md` section 5,
+- chorus: [`.claude/goals/2026-09-chorus-research/research-platform-network.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus-research/research-platform-network.md) section 5,
   `crates/hostctl/src/lib.rs`, `crates/server/src/stream.rs`, `crates/server/src/bin/chorus-rt-spin.rs`,
   `crates/audio-path/src/realtime.rs`, ADR 0020, ADR 0022, `tools/image.sh`, `deploy/`.
 
