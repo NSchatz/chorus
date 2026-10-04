@@ -60,7 +60,10 @@
 //! slot nobody watches costs nothing; a slot watched again after a gap is
 //! analysed from scratch (the analyser is reset at the new position). A run
 //! of silent frames sends its first and then nothing until there is
-//! something to show (`docs/visualizer.md`).
+//! something to show (`docs/visualizer.md`). The same frames, under the same
+//! silence rule, become the latest frame of every room on the slot that a
+//! subscriber of the HTTP control plane watches (`crate::lights`), and such
+//! a room makes its slot a watched one.
 //!
 //! No clock but the monotonic timeline is read here, and nothing here waits
 //! on anything but the pace of the grid.
@@ -553,6 +556,9 @@ pub fn serve_slots(
                     (u128::from(f.at_sample) * 1_000_000_000 / u128::from(rate)) as u64,
                 );
                 let pushed = router.push_visualizer(slot, at_ns, f, &mut v.bands);
+                // And to the rooms an HTTP subscriber watches: the latest
+                // frame of each, superseding the one before (`crate::lights`).
+                router.lights().push(slot, at_ns, f);
                 report.visualizer.frames += pushed.frames;
                 report.visualizer.colours += pushed.colours;
                 report.visualizer.dropped += pushed.dropped;

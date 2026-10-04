@@ -20,6 +20,19 @@
 //! fed by a second fanout (`ControlState`'s `presses`) and its messages are
 //! written as they are; nothing else about it is different to this module.
 //!
+//! # A third kind, which has no queue
+//!
+//! A `GET /api/visualizer?zone=<room>` stream (`crate::lights`,
+//! `docs/visualizer.md`) is one more peer under the same ceiling, keepalive
+//! and stall bound, and no thread either. It is not fed by a fanout: when it
+//! has written its last frame and the rate cap allows another, the writer
+//! takes the room's LATEST frame, whatever was made in between. So there is
+//! no queue to reach a ceiling and such a subscriber is never dropped for
+//! being slow, only for making no write progress at all; what it missed was
+//! superseded. The audio thread wakes the writer when a room has a new
+//! frame, and the writer wakes itself when a held-back subscriber's cap runs
+//! out.
+//!
 //! # A ceiling, and a stalled peer
 //!
 //! The writer holds at most `--event-streams` streams (default
@@ -46,6 +59,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::control::{ControlState, KEEPALIVE, WRITE_TIMEOUT};
+use crate::lights::LightSubscription;
 
 /// Event streams one server holds at once when `--event-streams` is not
 /// given. ASSUMED: a house of a few dozen endpoints and pages, with room to
@@ -60,11 +74,22 @@ const IDLE_WAKE: Duration = Duration::from_millis(200);
 /// How soon the writer tries again while a peer has bytes it could not take.
 const RETRY: Duration = Duration::from_millis(20);
 
+/// What a stream is fed by.
+enum Feed {
+    /// A fanout's bounded queue (states, or controller events), written at
+    /// catalog version `version`.
+    Messages {
+        inbox: Receiver<Arc<String>>,
+        version: i64,
+    },
+    /// A room's latest visualizer frame, under the rate cap.
+    Light(LightSubscription),
+}
+
 /// One stream the writer holds.
 struct Peer {
     socket: TcpStream,
-    inbox: Receiver<Arc<String>>,
-    version: i64,
+    feed: Feed,
     pending: Vec<u8>,
     written: usize,
     progress: Instant,
@@ -74,8 +99,7 @@ struct Peer {
 /// What a worker hands the writer.
 pub struct HandOver {
     socket: TcpStream,
-    inbox: Receiver<Arc<String>>,
-    version: i64,
+    feed: Feed,
 }
 
 /// The event streams the writer holds, and the way a stream reaches it.
@@ -127,6 +151,12 @@ impl EventStreams {
         let _ = self.wake.try_send(());
     }
 
+    /// The wake, for a thread that holds no `ControlState` (the audio
+    /// thread, through `crate::lights`): a `try_send` on it never blocks.
+    pub fn waker(&self) -> SyncSender<()> {
+        self.wake.clone()
+    }
+
     /// Claim one of the ceiling's streams, or `None` when every one is held.
     pub fn claim(&self) -> Option<Claim<'_>> {
         self.held
@@ -162,15 +192,21 @@ impl Claim<'_> {
     /// catalog version it is written at. A stream whose messages are not
     /// states (`GET /api/controller-events`) is handed over at the build's
     /// own version, at which a message is written as it is.
-    pub fn hand_over(mut self, socket: TcpStream, inbox: Receiver<Arc<String>>, version: i64) {
+    pub fn hand_over(self, socket: TcpStream, inbox: Receiver<Arc<String>>, version: i64) {
+        self.hand(socket, Feed::Messages { inbox, version });
+    }
+
+    /// Give the writer an opened visualizer stream (`GET /api/visualizer`):
+    /// its socket and its subscription to one room's latest frame.
+    pub fn hand_over_light(self, socket: TcpStream, subscription: LightSubscription) {
+        self.hand(socket, Feed::Light(subscription));
+    }
+
+    fn hand(mut self, socket: TcpStream, feed: Feed) {
         let sent = self
             .streams
             .handoff
-            .try_send(HandOver {
-                socket,
-                inbox,
-                version,
-            })
+            .try_send(HandOver { socket, feed })
             .is_ok();
         if sent {
             self.handed = true;
@@ -199,7 +235,18 @@ pub fn run_writer(state: Arc<ControlState>, keep: Arc<AtomicBool>) {
     let mut peers: Vec<Peer> = Vec::new();
     while keep.load(Ordering::SeqCst) {
         let waiting = peers.iter().any(|p| p.written < p.pending.len());
-        match woken.recv_timeout(if waiting { RETRY } else { IDLE_WAKE }) {
+        // A visualizer subscriber the rate cap is holding back is looked at
+        // again the moment its cap runs out, not at the next wake.
+        let now = Instant::now();
+        let capped = peers
+            .iter()
+            .filter_map(|p| match &p.feed {
+                Feed::Light(subscription) => subscription.wait(now),
+                Feed::Messages { .. } => None,
+            })
+            .min();
+        let rest = if waiting { RETRY } else { IDLE_WAKE };
+        match woken.recv_timeout(capped.map_or(rest, |c| c.min(rest))) {
             Ok(()) | Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
         }
@@ -211,8 +258,7 @@ pub fn run_writer(state: Arc<ControlState>, keep: Arc<AtomicBool>) {
             }
             peers.push(Peer {
                 socket: handed.socket,
-                inbox: handed.inbox,
-                version: handed.version,
+                feed: handed.feed,
                 pending: Vec::new(),
                 written: 0,
                 progress: now,
@@ -252,29 +298,40 @@ fn serve(peer: &mut Peer, state: &ControlState, now: Instant) -> Served {
     if peer.written == peer.pending.len() {
         peer.pending.clear();
         peer.written = 0;
-        match peer.inbox.try_recv() {
-            Ok(message) => {
+        // The next message, if there is one to write now.
+        let next = match &mut peer.feed {
+            Feed::Messages { inbox, version } => match inbox.try_recv() {
                 // The fanout carries the build's own (v2) state. A v1
                 // subscriber is written the v1 rendering of the state as it
                 // stands when the change reaches it: still one complete
                 // snapshot per change, never an older one.
-                let text = if peer.version == chorus_control::CATALOG_VERSION {
-                    message.to_string()
-                } else {
-                    state.encoded_state_at(peer.version)
-                };
-                peer.pending
-                    .extend_from_slice(format!("data: {}\n\n", text).as_bytes());
+                Ok(message) => Some(format!(
+                    "data: {}\n\n",
+                    if *version == chorus_control::CATALOG_VERSION {
+                        message.to_string()
+                    } else {
+                        state.encoded_state_at(*version)
+                    }
+                )),
+                Err(TryRecvError::Empty) => None,
+                // The fanout dropped this subscriber at its queue's ceiling.
+                Err(TryRecvError::Disconnected) => return Served::Gone,
+            },
+            // The room's latest frame, when the cap allows one and there is
+            // one newer than the last this subscriber was sent.
+            Feed::Light(subscription) => subscription.next(now),
+        };
+        match next {
+            Some(text) => {
+                peer.pending.extend_from_slice(text.as_bytes());
                 peer.progress = now;
             }
-            Err(TryRecvError::Empty) => {
+            None => {
                 if now.duration_since(peer.last_write) >= KEEPALIVE {
                     peer.pending.extend_from_slice(b": keepalive\n\n");
                     peer.progress = now;
                 }
             }
-            // The fanout dropped this subscriber at its queue's ceiling.
-            Err(TryRecvError::Disconnected) => return Served::Gone,
         }
     }
     while peer.written < peer.pending.len() {

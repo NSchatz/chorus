@@ -1,0 +1,25 @@
+# Canonical input for the visualizer stream's HTTP frame.
+#
+# Encoding these field values must produce exactly http-frame.json: the catalog version 2
+# `visualizer` message a server sends a `GET /api/visualizer?zone=den` subscriber for one
+# frame (docs/visualizer.md, "The HTTP stream"). http-frame.sse is that message as the bytes
+# on the event stream: one `data:` line and the blank line that ends the event. The server
+# sends it and nothing decodes it.
+#
+# A kick heard in the den: a beat at full strength, the peak the frame holds, the colour in
+# force, and the room hears it 85 ms after the server wrote the frame.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = visualizer
+zone = den
+timestamp_ns = 12345678901
+lead_ms = 85
+peak = 201
+beat = 255
+red = 255
+green = 96
+blue = 0
+brightness = 180
+transition_ms = 500

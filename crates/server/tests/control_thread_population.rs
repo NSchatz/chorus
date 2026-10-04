@@ -1516,9 +1516,14 @@ fn controller_event_subscribers_are_the_event_writers_and_create_no_thread() {
          scheduling report never saw"
     );
 
-    // The ceiling is one ceiling: a fourth stream, of either kind, is refused
-    // by name.
-    for path in ["/api/controller-events", "/api/events"] {
+    // The ceiling is one ceiling: a fourth stream, of any kind (a room's
+    // visualizer stream is the third, docs/visualizer.md), is refused by
+    // name.
+    for path in [
+        "/api/controller-events",
+        "/api/events",
+        "/api/visualizer?zone=kitchen",
+    ] {
         let body = plane.serve("the event writer's answer past its ceiling", |_| {
             let (status, body) = common::http(plane.address.as_str(), &get_request(path));
             if body.contains(BUSY_REASON) {

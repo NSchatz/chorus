@@ -222,6 +222,9 @@ pub struct ControlState {
     /// state's, and nothing kept: a broadcast with nobody attached is gone,
     /// so a stream opened afterwards is never sent a past press.
     presses: Arc<ControlFanout>,
+    /// The visualizer stream's tap (`crate::lights`), which the router owns:
+    /// what a `GET /api/visualizer` stream subscribes to. Set once, at start.
+    lights: OnceLock<Arc<crate::lights::LightTap>>,
     state_file: Option<PathBuf>,
     /// Commands applied since the process started.
     applied: AtomicU64,
@@ -321,6 +324,7 @@ impl ControlState {
             held: Mutex::new(Held { zones, slots: None }),
             fanout: Arc::new(ControlFanout::new()),
             presses: Arc::new(ControlFanout::new()),
+            lights: OnceLock::new(),
             state_file,
             applied: AtomicU64::new(0),
             refused: AtomicU64::new(0),
@@ -604,6 +608,19 @@ impl ControlState {
         self.events = EventStreams::new(ceiling);
     }
 
+    /// The visualizer stream's tap, stamped on `timeline`: from now on a
+    /// `GET /api/visualizer` stream subscribes to it, and a new frame wakes
+    /// the event writer. Called once, after [`ControlState::set_event_streams`]
+    /// and before any thread runs.
+    pub fn set_lights(
+        &self,
+        lights: Arc<crate::lights::LightTap>,
+        timeline: chorus_audio::MonotonicTimeline,
+    ) {
+        lights.connect(timeline, self.events.waker());
+        let _ = self.lights.set(lights);
+    }
+
     /// The conductor's half of the wake, taken once by the conductor thread.
     pub fn take_conductor_wake(&self) -> Option<Receiver<()>> {
         lock(&self.conductor_woken).take()
@@ -818,7 +835,8 @@ impl ControlState {
     pub fn report(&self) -> String {
         format!(
             "control applied={} refused={} turned_away={} {} {} controller-events \
-             press_subscribers={} press_dropped_subscribers={} press_dropped_events={}",
+             press_subscribers={} press_dropped_subscribers={} press_dropped_events={} \
+             visualizer light_subscribers={} light_frames={} light_superseded={}",
             self.applied.load(Ordering::Relaxed),
             self.refused.load(Ordering::Relaxed),
             self.turned_away.load(Ordering::Relaxed),
@@ -828,7 +846,12 @@ impl ControlState {
             // (`tools/house-soak/report.py`) keeps reading those.
             self.presses.subscribers(),
             self.presses.dropped_subscribers(),
-            self.presses.dropped_messages()
+            self.presses.dropped_messages(),
+            // The visualizer streams: nothing is dropped there, a frame not
+            // sent was superseded by a later one.
+            self.lights.get().map_or(0, |l| l.subscribers()),
+            self.lights.get().map_or(0, |l| l.sent()),
+            self.lights.get().map_or(0, |l| l.superseded())
         )
     }
 
@@ -2171,6 +2194,7 @@ fn serve_connection(connection: TcpStream, state: &Arc<ControlState>) {
         ),
         ("GET", "/api/events") => serve_events(connection, state, version),
         ("GET", "/api/controller-events") => serve_controller_events(connection, state),
+        ("GET", "/api/visualizer") => serve_visualizer(connection, state, &request.path),
         ("POST", "/api/command") => {
             match state.apply(request.body.trim()) {
                 Ok(applied) => respond(&mut connection, "200 OK", "application/json", &applied),
@@ -2289,6 +2313,85 @@ fn serve_controller_events(mut connection: TcpStream, state: &Arc<ControlState>)
     // Written as they are: the writer renders nothing for a stream at the
     // build's own version.
     claim.hand_over(connection, inbox, chorus_control::CATALOG_VERSION);
+}
+
+/// Open one room's visualizer stream and hand it to the event writer
+/// (`crate::lights`, `docs/visualizer.md`, "The HTTP stream").
+///
+/// `GET /api/visualizer?zone=<room>`: a server-sent event stream, one of the
+/// event writer's `--event-streams`, refused `503` past that ceiling, kept
+/// alive and dropped when stalled by the same rules as the other two kinds.
+/// It opens with one comment line and no frame; from then on it carries one
+/// `data: <visualizer message>` per frame it is sent, at most one every
+/// [`crate::lights::MIN_FRAME_INTERVAL`], each the room's latest. A request
+/// that names no room is refused `400` and one that names a room this server
+/// does not have `404`, both before anything is held.
+fn serve_visualizer(mut connection: TcpStream, state: &Arc<ControlState>, target: &str) {
+    let query = target.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let zone = query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("zone="))
+        .unwrap_or("");
+    if zone.is_empty() {
+        state.refused.fetch_add(1, Ordering::Relaxed);
+        respond(
+            &mut connection,
+            "400 Bad Request",
+            "application/json",
+            &error_body("name the room: GET /api/visualizer?zone=<room id>"),
+        );
+        return;
+    }
+    if !state.locked().zones.zones().iter().any(|z| z.id == zone) {
+        state.refused.fetch_add(1, Ordering::Relaxed);
+        respond(
+            &mut connection,
+            "404 Not Found",
+            "application/json",
+            &error_body("this server has no room of that id"),
+        );
+        return;
+    }
+    let Some(lights) = state.lights.get() else {
+        respond(
+            &mut connection,
+            "503 Service Unavailable",
+            "application/json",
+            &error_body("this server has no visualizer stream yet"),
+        );
+        return;
+    };
+    let Some(claim) = state.events.claim() else {
+        state.turned_away.fetch_add(1, Ordering::Relaxed);
+        let detail = format!(
+            "every one of this server's {} event streams is held; try again, or start the \
+             server with a higher --event-streams",
+            state.events.ceiling()
+        );
+        respond(
+            &mut connection,
+            "503 Service Unavailable",
+            "application/json",
+            &error_body(&detail),
+        );
+        return;
+    };
+    // Subscribed before the headers go out, and the conductor told at once:
+    // its pass says which slot the room is on, which is what makes the audio
+    // thread analyse that slot.
+    let subscription = lights.subscribe(zone);
+    let _ = state.conductor_wake.try_send(());
+    if write!(
+        connection,
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\n\
+         Connection: close\r\n\r\n: visualizer\n\n"
+    )
+    .is_err()
+        || connection.flush().is_err()
+    {
+        return;
+    }
+    claim.hand_over_light(connection, subscription);
 }
 
 /// The catalog version a `GET` asks its state in: `?v=1` is the v1 shape, and
