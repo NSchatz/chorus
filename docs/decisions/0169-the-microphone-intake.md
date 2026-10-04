@@ -1,4 +1,4 @@
-# 0000: chorus-server keeps a speaker's microphone audio only while its room has `voice_enabled` and the speaker reports its gate live, in a bounded buffer in memory that nothing else can read; `voice_enabled` is a per-room command, off by default and persisted in state-file format 8, and `mic_muted` is read-only room state
+# 0169: chorus-server keeps a speaker's microphone audio only while its room has `voice_enabled` and the speaker reports its gate live, in a bounded buffer in memory that nothing else can read; `voice_enabled` is a per-room command, off by default and persisted in state-file format 8, and `mic_muted` is read-only room state
 
 - Status: accepted, 2026-10-04
 - Decided by: the owner for the rule (K73: "speakers stream mic audio to chorus-server only

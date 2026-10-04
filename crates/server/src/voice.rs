@@ -1,6 +1,6 @@
 //! The voice path's intake: what the server does with a speaker's microphone
 //! audio (proposal P8, Option A; K73, I4; `docs/decisions/0166-*` for the
-//! wire, the record this change adds for the intake).
+//! wire, `docs/decisions/0169-*` for the intake).
 //!
 //! # The rule
 //!

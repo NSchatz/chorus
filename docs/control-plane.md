@@ -420,7 +420,7 @@ of its windows.
 
 **Voice switched on per room.** `voice_enabled` is the software half of the
 rule that a speaker's microphone is heard only while it is unmuted and voice is
-enabled (`docs/decisions/0000-the-microphone-intake.md`; proposal P8). It is
+enabled (`docs/decisions/0169-the-microphone-intake.md`; proposal P8). It is
 one flag per room, `false` until a person switches it on, persisted (state-file
 format 8) and shown on the room as `voice_enabled`. The other half is the
 speaker's own: its hardware switch, which it reports and the room shows as
