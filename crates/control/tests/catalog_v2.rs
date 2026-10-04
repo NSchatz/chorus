@@ -15,13 +15,15 @@ mod vectors;
 
 use std::collections::BTreeSet;
 
-use chorus_control::catalog::{decode_command, decode_message, Command, Refusal, Volume};
+use chorus_control::catalog::{
+    decode_command, decode_message, is_server_id, Command, Refusal, ServerInfo, Volume,
+};
 use chorus_control::firmware::{Image, Report, SpeakerFirmware};
 use chorus_control::json;
 use chorus_control::rooms::{
     Alarm, Autoplay, BondMember, CivilTime, ClockTime, Days, InputId, InputLabel, InputRole, Link,
-    NowPlaying, PlayState, PlaybackAction, QuietWindow, Role, SoloistBuild, SoloistReceiver,
-    SoloistState, Source, StoredKind, StoredSource,
+    NowPlaying, Origin, PlayState, PlaybackAction, QuietWindow, Role, SoloistBuild,
+    SoloistReceiver, SoloistState, Source, StoredKind, StoredSource,
 };
 use chorus_control::sound::{EqFilter, FixedPoint, Polarity};
 use chorus_control::speakers::KeyChange;
@@ -68,6 +70,8 @@ const EVERY_V2_MESSAGE_TYPE: &[&str] = &[
     "input_label",
     "soloist_restart",
     "playback",
+    "announce",
+    "server",
     "state",
     "error",
     "refused",
@@ -135,7 +139,7 @@ fn decoding_every_v2_command_vector_recovers_its_committed_fields() {
         let fields = read_fields_in(&v2_dir(), &name);
         if matches!(
             fields.get("message_type").as_str(),
-            "state" | "error" | "refused"
+            "state" | "error" | "refused" | "server"
         ) {
             continue;
         }
@@ -192,6 +196,16 @@ fn server_from(fields: &Fields) -> Zones {
         zones.add(Zone::new(&id)).unwrap();
     }
     zones.set_transports(ZoneTransports::new(&declared));
+    // (goal 18) The server's `--announce-origin` list:
+    // `announce_origins = <origin>,<origin>`.
+    if fields.has("announce_origins") {
+        zones.set_announce_origins(
+            list(&fields.get("announce_origins"))
+                .iter()
+                .map(|o| Origin::parse(o).unwrap())
+                .collect(),
+        );
+    }
     // (goal 14) What the session layer said before the commands: the ids it
     // adopted, each with its key's fingerprint (`adopted.N = <id> <key>`).
     let mut n = 0;
@@ -372,6 +386,25 @@ fn encode_from(fields: &Fields) -> String {
             }
             soloist_from(fields, &mut zones);
             zones.encode_state()
+        }
+        // (goal 18) What `GET /api/server` answers: `catalogs` and
+        // `announce_origins` are comma-separated lists, the second possibly
+        // empty.
+        "server" => {
+            let info = ServerInfo {
+                id: fields.get("id"),
+                software: fields.get("software"),
+                catalogs: list(&fields.get("catalogs"))
+                    .iter()
+                    .map(|v| v.parse().unwrap())
+                    .collect(),
+                announce_origins: list(&fields.get("announce_origins"))
+                    .iter()
+                    .map(|o| Origin::parse(o).unwrap().literal())
+                    .collect(),
+            };
+            assert!(is_server_id(&info.id), "{} is not a server id", info.id);
+            info.encode()
         }
         "error" | "refused" => {
             let mut zones = server_from(fields);
@@ -558,6 +591,11 @@ fn command_from(fields: &Fields) -> Command {
             name: get("name"),
         }),
         "source_forget" => Command::SourceForget { id: get("id") },
+        "announce" => Command::Announce {
+            target: get("target"),
+            url: get("url"),
+            volume: fields.has("volume").then(|| vol("volume")),
+        },
         "input_label" => Command::InputLabel(InputLabel {
             input: InputId::parse(&get("input")).unwrap(),
             name: get("name"),

@@ -1,0 +1,15 @@
+# Canonical input for the catalog v2 server vector.
+#
+# Encoding these field values must produce exactly server.json: what a server
+# answers `GET /api/server` with. It is not a state and no command produces it.
+#
+# (goal 18) A server started with one `--announce-origin`. `id` is `chorus-server-` and the 16 hexadecimal digits of the fingerprint of its public key (a made-up one here).
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = server
+id = chorus-server-0123456789abcdef
+software = chorus-server 0.1.0
+catalogs = 1,2
+announce_origins = http://ha.example:8123

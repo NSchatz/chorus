@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"url","detail":"no-announce-origin: this server was started without --announce-origin, so it announces no URL; start it with --announce-origin <scheme://host[:port]>, the home automation's own address"}

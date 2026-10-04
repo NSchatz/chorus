@@ -1155,3 +1155,200 @@ pub struct SoloistState {
     /// The targets that have no receiver because the pool is too small.
     pub exhausted: Vec<String>,
 }
+
+/// (goal 18) An origin an announcement's URL may come from: a scheme, a host
+/// and a port (`--announce-origin <scheme://host[:port]>`). Brief section
+/// 4.8 names "HA's media and TTS URLs from HA's own address" as an input
+/// path; this is that address, as the server's operator configured it.
+///
+/// Compared whole: the scheme, the host (ASCII case-insensitive; a name is
+/// compared as text and never resolved here) and the port, the scheme's
+/// default (80 or 443) when none is written.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Origin {
+    scheme: &'static str,
+    host: String,
+    port: u16,
+}
+
+impl Origin {
+    /// Read `scheme://host[:port]`, nothing after it but an optional single
+    /// `/`. Says why not when it is not one.
+    pub fn parse(text: &str) -> Result<Origin, String> {
+        let (origin, rest) = Origin::split(text)?;
+        if !(rest.is_empty() || rest == "/") {
+            return Err(format!(
+                "'{}' carries a path, a query or a fragment; an origin is \
+                 scheme://host[:port] and nothing else",
+                text.escape_debug()
+            ));
+        }
+        Ok(origin)
+    }
+
+    /// The origin of an `http` or `https` URL. Says why not when the URL
+    /// has none this type can hold (another scheme, no host, userinfo, a
+    /// port that is not one).
+    pub fn of_url(url: &str) -> Result<Origin, String> {
+        Origin::split(url).map(|(origin, _)| origin)
+    }
+
+    fn split(text: &str) -> Result<(Origin, &str), String> {
+        let lower = text.get(..8).unwrap_or(text).to_ascii_lowercase();
+        let (scheme, default_port, rest) = if lower.starts_with("http://") {
+            ("http", 80, &text[7..])
+        } else if lower.starts_with("https://") {
+            ("https", 443, &text[8..])
+        } else {
+            return Err("the scheme is not 'http' or 'https'".to_string());
+        };
+        let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+        let (authority, rest) = rest.split_at(end);
+        if authority.contains('@') {
+            return Err("it carries userinfo ('user@'), which is never fetched".to_string());
+        }
+        let (host, port) = if let Some(inner) = authority.strip_prefix('[') {
+            // An IPv6 literal, in brackets (RFC 3986 section 3.2.2).
+            let Some((address, after)) = inner.split_once(']') else {
+                return Err("an address in brackets has no closing bracket".to_string());
+            };
+            if address.is_empty()
+                || !address
+                    .bytes()
+                    .all(|b| b.is_ascii_hexdigit() || b == b':' || b == b'.')
+            {
+                return Err("the address in brackets is not an IPv6 address".to_string());
+            }
+            let port = match after.strip_prefix(':') {
+                Some(port) => Some(port),
+                None if after.is_empty() => None,
+                None => return Err("text follows the address in brackets".to_string()),
+            };
+            (format!("[{}]", address.to_ascii_lowercase()), port)
+        } else {
+            let (host, port) = match authority.split_once(':') {
+                Some((host, port)) => (host, Some(port)),
+                None => (authority, None),
+            };
+            if host.is_empty() {
+                return Err("it names no host".to_string());
+            }
+            if host.len() > 253
+                || !host
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
+            {
+                return Err(
+                    "the host is not ASCII letters, digits, hyphens and dots (at most 253)"
+                        .to_string(),
+                );
+            }
+            (host.to_ascii_lowercase(), port)
+        };
+        let port = match port {
+            None => default_port,
+            Some(digits) => {
+                let number = if !digits.is_empty()
+                    && digits.len() <= 5
+                    && digits.bytes().all(|b| b.is_ascii_digit())
+                {
+                    digits.parse::<u32>().ok()
+                } else {
+                    None
+                };
+                match number {
+                    Some(n) if (1..=65535).contains(&n) => n as u16,
+                    _ => return Err("the port is not a number from 1 to 65535".to_string()),
+                }
+            }
+        };
+        Ok((Origin { scheme, host, port }, rest))
+    }
+
+    /// `http` or `https`.
+    pub fn scheme(&self) -> &str {
+        self.scheme
+    }
+
+    /// The host, lower-cased; an IPv6 address keeps its brackets.
+    pub fn host(&self) -> &str {
+        &self.host
+    }
+
+    /// The port, the scheme's default when none was written.
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    /// The one spelling: `scheme://host`, then `:port` unless it is the
+    /// scheme's default.
+    pub fn literal(&self) -> String {
+        let default_port = if self.scheme == "https" { 443 } else { 80 };
+        if self.port == default_port {
+            format!("{}://{}", self.scheme, self.host)
+        } else {
+            format!("{}://{}:{}", self.scheme, self.host, self.port)
+        }
+    }
+}
+
+#[cfg(test)]
+mod origin_tests {
+    use super::Origin;
+
+    #[test]
+    fn an_origin_is_a_scheme_a_host_and_a_port_and_has_one_spelling() {
+        let o = Origin::parse("http://HA.example:8123").unwrap();
+        assert_eq!(
+            (o.scheme(), o.host(), o.port()),
+            ("http", "ha.example", 8123)
+        );
+        assert_eq!(o.literal(), "http://ha.example:8123");
+        assert_eq!(
+            Origin::parse("https://ha.example:443/").unwrap().literal(),
+            "https://ha.example"
+        );
+        assert_eq!(
+            Origin::parse("http://[2001:DB8::1]:8123")
+                .unwrap()
+                .literal(),
+            "http://[2001:db8::1]:8123"
+        );
+        for bad in [
+            "ha.example:8123",
+            "ftp://ha.example",
+            "http://",
+            "http://ha.example:8123/api",
+            "http://ha.example:0",
+            "http://ha.example:65536",
+            "http://ha.example:",
+            "http://user@ha.example",
+            "http://ha exam.ple",
+            "http://[::1",
+            "http://[::1]x",
+        ] {
+            assert!(Origin::parse(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_urls_origin_is_what_precedes_its_path_and_userinfo_never_passes() {
+        let allowed = Origin::parse("http://ha.example:8123").unwrap();
+        let of = |url: &str| Origin::of_url(url);
+        assert_eq!(
+            of("http://ha.example:8123/api/tts_proxy/abc.mp3").unwrap(),
+            allowed
+        );
+        assert_eq!(of("HTTP://HA.EXAMPLE:8123?x=1").unwrap(), allowed);
+        // The same host on another port or scheme is another origin.
+        assert_ne!(of("http://ha.example/abc.mp3").unwrap(), allowed);
+        assert_ne!(of("https://ha.example:8123/abc.mp3").unwrap(), allowed);
+        assert_ne!(
+            of("http://ha.example.evil.example:8123/a").unwrap(),
+            allowed
+        );
+        // The classic confusion: the allowed origin written as userinfo.
+        assert!(of("http://ha.example:8123@evil.example/abc.mp3").is_err());
+        assert!(of("file:///etc/passwd").is_err());
+    }
+}
