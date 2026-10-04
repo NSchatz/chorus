@@ -292,8 +292,9 @@ reached by reference only.
 (`/cache/chorus-private/identity-terms.txt`, or `CHORUS_IDENTITY_TERMS`; never committed,
 never printed) matched case-sensitively over tracked files and every commit message from goal 3
 on; a scan for private IPv4 and non-documentation MAC addresses; and `gitleaks` over the history
-and the tree. The term list missing fails the gate; under CI, where it cannot exist, the step
-prints `SKIPPED` with the reason.
+and the tree. The term list missing fails the gate. Under CI it comes from the repository secret
+`CHORUS_IDENTITY_TERMS_LIST` (decision 0140); a fork's pull request gets no secrets, and only
+there the step prints `SKIPPED` with the reason.
 
 ## 20. The flash guard
 
@@ -346,8 +347,9 @@ since goal 3 began (the older history keeps its subjects); identity terms are
 
 **Review-only (no check):** the area names what changed (a crate, `firmware`, `tools`, `docs`,
 `deploy`, `ci`, or `goals` for ledger commits); branches are `chorus-g<n>/<topic>`; changes merge
-as squashed pull requests after `make gate` passes on the branch up to date with `main`; history
-is never rewritten.
+as squashed pull requests once an independent reviewer passes them, without waiting for CI, which
+runs `make gate` on every pull request, on main and nightly; a red main gets a fix-forward task
+(decision 0140); history is never rewritten.
 
 ## 22. Every rule has a check
 

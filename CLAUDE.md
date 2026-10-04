@@ -40,13 +40,18 @@ umbrella's section, its specs, stages and pointers, is removed.)
   parameters, §4 the engineering rules), goal files and ledgers are pinned at
   https://github.com/NSchatz/chorus/tree/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals. A phase's acceptance comes from
   BRIEF.md section 8's "success looks like" and the program's done-when lines.
-- Conventions and the rule-to-check table: `docs/conventions.md`. The gate is
-  `make gate` (a caller holds `goals-heavy`, then `chorus-heavy`:
-  `goals lock goals-heavy -- goals lock chorus-heavy -- make gate`); `make gate-fast`
-  is the conventions checks alone. Tiers: `make tier-fast` (conventions, fmt,
-  clippy, the workspace tests) on every PR, `make tier-full` (= `make gate`) at a
-  goal's end and nightly on main, except where a goal file names its gate.
-- Heavy jobs and the disk (request #230 from the goals program, 2026-10-03: the development container's disk is its bottleneck): every cargo build, test or clippy of the workspace, every gate tier and every image build runs under `goals lock goals-heavy -- goals lock chorus-heavy -- ...`, subagents' runs included; only a single crate's focused test on a built tree runs outside it. A throwaway build (an image's, a one-off worktree's) keeps its cargo target directory where `tools/build-dir.sh` says: under `/scratch` (tmpfs) when it fits, else the lane's one shared `/cache/wt/chorus/target/shared`, never a private directory of its own on the disk.
+- Conventions and the rule-to-check table: `docs/conventions.md`. CI is the gate
+  (`docs/decisions/0140-ci-is-the-gate.md`, decided by the owner 2026-10-04):
+  `.github/workflows/ci.yml` runs `make gate` (= `make tier-full`) on every pull request,
+  on every push to main and nightly. A PR merges when an independent reviewer passes it;
+  the merge does not wait for CI, and a red main gets a fix-forward task. `make gate-fast`
+  is the conventions checks alone.
+- Local runs are narrow tests only: one crate's focused test on a built tree, or one
+  `tools/conventions/check-*.sh`. No gate, tier, whole-workspace cargo build or test, or
+  image build runs on the development host. A measurement that has to run here (a QEMU
+  run, a soak) holds `goals lock goals-heavy -- goals lock chorus-heavy -- ...`, subagents'
+  included; a throwaway build keeps its cargo target directory where `tools/build-dir.sh`
+  says (`/scratch` when it fits, else `/cache/wt/chorus/target/shared`).
 - Flashing, eFuses, deploys to the homelab and OTA installs on installed speakers are the owner's actions (K4, K28, K93); nothing in this repo sets `CHORUS_OWNER_AT_BENCH`. Each one is an issue in the owner's queue in the owner's agent harness (`goals needs add`, `/goals:needs`), and a request to another repository is a `from:chorus` issue (`goals request add`).
 - BRIEF.md is kept current by the work: verified corrections and the owner's
   decisions are written into it, each dated with its decision IDs. Its section

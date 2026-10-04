@@ -279,9 +279,13 @@ check_deb() {
     echo "  systemd-analyze verify: exit 0, no findings ($(systemd-analyze --version | head -n 1))"
     # The check's own teeth: the same unit with one misspelt directive must
     # draw a finding, or an empty output above proves nothing.
+    # systemd 256 and later write "Unknown key 'X' in section [Service]"; 255 and earlier (the
+    # CI runner's Ubuntu 24.04) "Unknown key name 'X' in section 'Service'". Either names the key.
     sed 's/^LimitRTTIME=/LimitRTTYME=/' "$vroot/$unit" > "$vroot/usr/lib/systemd/system/chorus-selftest.service"
-    systemd-analyze verify --man=no --root="$vroot" "$vroot/usr/lib/systemd/system/chorus-selftest.service" 2>&1 |
-        command grep -q "Unknown key 'LimitRTTYME'" || fail "systemd-analyze verify did not flag a misspelt directive"
+    local selftest
+    selftest="$(systemd-analyze verify --man=no --root="$vroot" "$vroot/usr/lib/systemd/system/chorus-selftest.service" 2>&1 || true)"
+    printf '%s\n' "$selftest" | command grep -q -E "Unknown key (name )?'LimitRTTYME'" ||
+        { printf '%s\n' "$selftest"; fail "systemd-analyze verify did not flag a misspelt directive"; }
     echo "  self-test: a misspelt directive in a copy of the unit is flagged"
     # The front-panel drop-in, installed where the owner installs it, verified with the unit.
     install -D -m 0644 "$unpacked/usr/share/doc/$PACKAGE/examples/front-panel.conf" \
