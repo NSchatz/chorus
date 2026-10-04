@@ -315,6 +315,96 @@ per frame, at most ten a second, the latest only.
 - **Nothing is sent, and no light is driven.** The mapping is the owner's automation; the
   integration ships none and no blueprint.
 
+## The dashboard: stock cards only
+
+The model is `docs/decisions/0163-the-home-assistant-dashboard-is-stock-cards-only.md`; the
+choice is the owner's (proposal P10, Option A, approved at Checkpoint K). The file is
+`integrations/homeassistant/dashboard/chorus.yaml`: one Sections view, "Music", made of
+Home Assistant's own cards and tile features. There is no custom card, no resource, no
+script and no link in it, and the integration serves nothing to the frontend. It is an
+example to copy, not something the integration installs.
+
+### What it shows
+
+| Section | Cards |
+|---|---|
+| Groups | A tile per saved group: on and off, the volume slider with mute, the source. The slider is the group volume, which scales every room of the group relatively (K77) |
+| Now playing | A media control card per room, with the title, the artist and the artwork. A room's card shows only while its group has a now-playing record (state `playing`, `paused` or `buffering`); a room that plays the server's stream or a line-in has none |
+| One per room | The room's tile (on and off, volume with mute, source; pause, next and previous while a Spotify receiver plays); **Group volume**, shown only while the room is grouped; Bass and Treble; Loudness, Night mode, Speech enhancement and Quiet hours |
+
+The features used are `media-player-playback`, `media-player-volume-slider`,
+`media-player-source`, `numeric-input` and `toggle`; the cards are `heading`, `tile` and
+`media-control`.
+
+**The group-volume tile** is a tile for the room's group-volume `number` with a visibility
+condition `numeric_state`, `above: -1` on that number. The number is unavailable while the
+room is alone, and `unavailable` is not a number, so the tile is hidden then and appears
+when the room joins a group, live or saved. Its slider is the volume of the group the room
+is in.
+
+**Not on it:** the room's Input `select` (the tile's source control sends the same command),
+the autoplay switches (their ids carry the input's id; they are on the room's device page),
+the speakers' firmware, diagnostics and buttons, and the visualizer.
+
+### Grouping
+
+Grouping from Home Assistant is its own join dialog: open a room's tile, press the join
+button, tick the rooms. The dialog lists the chorus rooms and nothing else: not the saved
+groups, which cannot be joined, and not another brand's players. Join is "take the room"
+and unjoin is `take` on the room, as above. Which rooms play together shows as the group
+volume tile appearing and in the dialog's ticks; Home Assistant has no map of groups.
+
+Drag-to-group is the chorus app's, not Home Assistant's: no stock card does it, and a
+custom card was declined (P10, Options B and C). Home Assistant 2026.9, and the 2026.10
+beta read on 2026-10-04, have no group volume and no grouping control of their own
+(0163, "What was read").
+
+### Adapting it to a house
+
+The entity ids in the file are the ones Home Assistant 2026.9 gives the rooms of the tests'
+house: a living room, a kitchen, a study, a bedroom, and one saved group, Downstairs. A
+default id is the area, then the device, then the entity, and the area and the device are
+both the room's name, so the name appears twice: `media_player.living_room_living_room`,
+`number.living_room_living_room_group_volume`, `switch.kitchen_kitchen_night_mode`. A saved
+group has no area: `media_player.downstairs`.
+
+1. Find your ids on each room's device page (Settings, Devices and services, chorus). If
+   you renamed an entity or assigned the room to another area before the entity was made,
+   the id is what the page says, not the pattern.
+2. In a copy of the file, replace each room's prefix (`living_room_living_room`) by yours,
+   and the `heading`, `name` and `icon` of its section. A room's section is one block from
+   `- type: grid` to the next; copy it for a room more, delete it for a room less, and do
+   the same with the room's card in "Now playing".
+3. In "Groups", list a tile per saved group.
+4. To offer only some sources on a tile, give `media-player-source` a `sources:` list of
+   the labels in the player's `source_list`.
+5. Register the copy as a YAML dashboard (`lovelace: dashboards:` with `mode: yaml`), or
+   paste the view into a dashboard's raw configuration editor.
+
+Home Assistant shows a warning in place of a card whose entity does not exist, except the
+conditional ones, which
+stay hidden; so a wrong id is seen at once.
+
+### The test
+
+`tests/test_dashboard.py` (`make ha-test HA_TEST_ARGS="-k dashboard"`) holds the file
+without a browser:
+
+- it parses with Home Assistant's YAML loader into one Sections view;
+- every entity it names, in a card or in a visibility condition, is an enabled entity of
+  the integration with a state, after setup against the fake server; every media player of
+  that house and every room's group volume is on it; each feature sits on the kind of
+  entity it is for;
+- every view, section, card, badge and feature `type` and every visibility `condition` is
+  on an explicit list of stock types, and no mapping with a `type` escapes the walk;
+- no `resources`, no action, no URL and no `custom:` anywhere, comments included;
+- the group-volume tiles' conditions hold while the rooms are grouped and fail for a room
+  that left its group;
+- each check names a bad example made for it (a custom card, a missing entity, a link).
+
+It does not render the dashboard: how it looks was not seen here, and that the frontend
+treats `unavailable` as failing a numeric test is ASSUMED from the documentation.
+
 ## The security rules
 
 Home Assistant is reachable from more places than chorus is, and anyone logged into it can
