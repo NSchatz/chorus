@@ -33,6 +33,8 @@ _FIELD_KEYS = {
     "group": "refused_group",
     "zone": "refused_zone",
     "volume": "refused_volume",
+    # The command itself cannot be served now (no player, or none free).
+    "t": "refused_unavailable",
 }
 
 
@@ -168,6 +170,13 @@ class ChorusCoordinator(DataUpdateCoordinator[State]):
         if self.last_update_success:
             self.handle_state(state)
         return state
+
+    async def async_refresh_server(self) -> None:
+        """Ask the server again who it is; keep what is known if it cannot say."""
+        try:
+            self.server = await self.client.server()
+        except ChorusError:
+            return
 
     @callback
     def async_create_unsupported_issue(self) -> None:

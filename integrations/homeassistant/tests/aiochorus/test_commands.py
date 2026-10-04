@@ -8,7 +8,7 @@ import pytest
 
 from custom_components.chorus._aiochorus import commands
 
-from ..fake_server import local, shared
+from ..fake_server import shared
 
 
 def test_bytes_equal_the_shared_vectors() -> None:
@@ -38,8 +38,8 @@ def test_bytes_equal_the_shared_vectors() -> None:
 
 def test_announce_bytes() -> None:
     url = "http://ha.example:8123/api/tts_proxy/abc.mp3"
-    assert commands.announce("kitchen", url) == local("announce.json")
-    assert commands.announce("downstairs", url, 300) == local("announce-volume.json")
+    assert commands.announce("kitchen", url) == shared("announce.json")
+    assert commands.announce("kitchen", url, 300) == shared("announce-volume.json")
 
 
 @pytest.mark.parametrize(

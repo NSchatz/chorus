@@ -22,7 +22,7 @@ from custom_components.chorus._aiochorus import (
 from custom_components.chorus._aiochorus.client import Backoff
 
 from ..conftest import wait_for
-from ..fake_server import FakeChorusServer, local, shared
+from ..fake_server import FakeChorusServer, shared
 
 
 @pytest.fixture
@@ -55,7 +55,7 @@ def big_state() -> bytes:
 
 async def test_server_and_state(client: ChorusClient, server: FakeChorusServer) -> None:
     info = await client.server()
-    assert info.id == "chorus-test-0001"
+    assert info.id == "chorus-server-0123456789abcdef"
     assert info.catalogs == (1, 2)
     state = await client.state()
     assert state == State.parse(shared("state-rich.json"))
@@ -109,7 +109,7 @@ async def test_an_error_names_its_field(
     assert caught.value.field == "target"
     assert "attic" in caught.value.detail
 
-    server.script(400, local("error-announce-origin.json"))
+    server.script(400, shared("error-announce-origin.json"))
     with pytest.raises(ChorusCommandError) as caught:
         await client.announce("kitchen", "http://elsewhere.example:8123/a.mp3")
     assert caught.value.field == "url"

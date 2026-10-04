@@ -79,6 +79,9 @@
     "announce_origin": {
       "message": "chorus announces only media that Home Assistant itself serves: the address is not on this Home Assistant's internal or external URL."
     },
+    "announce_origin_not_on_server": {
+      "message": "The chorus server does not announce from this Home Assistant ({origin}). Start chorus-server with --announce-origin {origin}."
+    },
     "announce_volume": {
       "message": "The announcement volume is a number from 0 to 1."
     },
@@ -108,6 +111,9 @@
     },
     "refused_target": {
       "message": "The chorus server refused the room or group: {detail}"
+    },
+    "refused_unavailable": {
+      "message": "The chorus server cannot do that right now: {detail}"
     },
     "refused_url": {
       "message": "The chorus server refused the announcement's address: {detail}"

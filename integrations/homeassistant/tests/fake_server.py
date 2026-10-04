@@ -1,6 +1,7 @@
 """A fake chorus control plane on loopback, driven by the shared vectors.
 
-It serves the repository's `fixtures/control/v2/state-*.json` bytes, records
+It serves the repository's `fixtures/control/v2/` bytes (the state vectors and
+the server's identity, read from the repository and never copied), records
 every command it is sent byte for byte (with its headers), and applies the
 commands the integration sends to an in-memory model of the house so a test
 can see Home Assistant's entities follow. The model is a test double written
@@ -22,7 +23,6 @@ from aiohttp import web
 REPO = Path(__file__).resolve().parents[3]
 SHARED = REPO / "fixtures" / "control"
 SHARED_V2 = SHARED / "v2"
-LOCAL = Path(__file__).resolve().parent / "fixtures"
 
 
 _SERIAL = re.compile(rb'"serial": ?(\d+)')
@@ -39,11 +39,6 @@ def shared(name: str) -> bytes:
         if path.is_file():
             return path.read_bytes().removesuffix(b"\n")
     raise FileNotFoundError(name)
-
-
-def local(name: str) -> bytes:
-    """Read one of the fixtures kept here until the server's change lands."""
-    return (LOCAL / name).read_bytes().removesuffix(b"\n")
 
 
 def _half_up(value: float) -> int:
@@ -63,7 +58,7 @@ class FakeChorusServer:
     """The fake: routes, a recorded command list and a small house model."""
 
     state_bytes: bytes
-    server_bytes: bytes = field(default_factory=lambda: local("server.json"))
+    server_bytes: bytes = field(default_factory=lambda: shared("server.json"))
     commands: list[Received] = field(default_factory=list)
     scripted: list[tuple[int, bytes]] = field(default_factory=list)
     requests: list[str] = field(default_factory=list)

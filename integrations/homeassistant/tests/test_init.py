@@ -61,7 +61,7 @@ async def test_devices(hass: HomeAssistant, setup: MockConfigEntry) -> None:
     hub = device(hass, setup, SERVER_ID)
     assert hub is not None
     assert hub.entry_type is dr.DeviceEntryType.SERVICE
-    assert hub.sw_version == "0.18.0"
+    assert hub.sw_version == "chorus-server 0.1.0"
     living = device(hass, setup, f"{SERVER_ID}:room:living")
     assert living is not None
     assert living.name == "Living Room"
@@ -96,7 +96,7 @@ async def test_not_ready_when_the_server_does_not_answer(
 @pytest.mark.parametrize(
     "answer",
     [
-        b'{"v":1,"t":"server","id":"chorus-test-0001","software":"0.9.0","catalogs":[1]}',
+        b'{"v":1,"t":"server","id":"chorus-server-0123456789abcdef","software":"0.9.0","catalogs":[1]}',
         None,
     ],
     ids=["catalog-1-only", "no-server-route"],

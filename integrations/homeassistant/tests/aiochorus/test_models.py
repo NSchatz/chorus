@@ -12,7 +12,7 @@ from custom_components.chorus._aiochorus import (
     State,
 )
 
-from ..fake_server import SHARED_V2, local, shared
+from ..fake_server import SHARED_V2, shared
 
 
 @pytest.mark.parametrize(
@@ -94,10 +94,10 @@ def test_now_playing_and_labels() -> None:
 
 
 def test_the_server_message() -> None:
-    info = ServerInfo.parse(local("server.json"))
+    info = ServerInfo.parse(shared("server.json"))
     assert info == ServerInfo(
-        id="chorus-test-0001",
-        software="0.18.0",
+        id="chorus-server-0123456789abcdef",
+        software="chorus-server 0.1.0",
         catalogs=(1, 2),
         announce_origins=("http://ha.example:8123",),
     )

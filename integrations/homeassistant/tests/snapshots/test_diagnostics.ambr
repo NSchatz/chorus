@@ -24,11 +24,12 @@
     }),
     'server': dict({
       'announce_origins': 1,
+      'announces_from_this_home_assistant': False,
       'catalogs': list([
         1,
         2,
       ]),
-      'software': '0.18.0',
+      'software': 'chorus-server 0.1.0',
     }),
     'state': dict({
       'counts': dict({

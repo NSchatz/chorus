@@ -64,7 +64,13 @@ ha-test: tools-executable
 ha-hassfest: tools-executable
 	bash tools/ha-hassfest.sh
 
-.PHONY: ha-test ha-hassfest
+# The integration against the real chorus-server on loopback, alone:
+# `CHORUS_SERVER_BIN=<a built chorus-server> make ha-live`. Without the variable the test is
+# skipped by name, visibly (pytest prints the reason).
+ha-live: tools-executable
+	bash tools/ha-test.sh --live
+
+.PHONY: ha-test ha-hassfest ha-live
 
 # Regenerate fixtures/decode (goal 16): one short file per settled input format with what a
 # reference decoder made of it. Never run by the gate. REFDEC is a conda-forge prefix holding

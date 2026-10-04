@@ -14,8 +14,7 @@
 Goal 18 puts chorus into Home Assistant: a media player per room and per saved group, with
 join, unjoin, group volume, inputs and announcements, held to Home Assistant's own quality
 bar and to brief section 4.8 (no unauthenticated endpoint). The server side (the server's
-identity, the `announce` command, the TXT `id=`) is ADR 0133's track; this record is the
-Python side, written against that contract.
+identity, the `announce` command, the TXT `id=`) is ADR 0136; this record is the Python side.
 
 ## What was read
 
@@ -147,8 +146,11 @@ there could only be announced, never played, and a browser that offers what cann
 is worse than none.
 
 **Refusals.** An `error` becomes a translated `HomeAssistantError` chosen by `field` (`url`,
-`target`, `source`, `group`, `zone`, `volume`, else a general one), with the server's
-`detail` as a placeholder; a `refused` (426) and a server without catalog 2 become a repair
+`target`, `source`, `group`, `zone`, `volume`, `t` for "no player", else a general one), with
+the server's `detail` as a placeholder. A `url` refusal of an announcement makes the
+integration read `GET /api/server` again; when this Home Assistant's origin is not in
+`announce_origins` the error says so and names `--announce-origin` (the list is read at the
+moment of the refusal, never trusted from setup, because a restart can change it); a `refused` (426) and a server without catalog 2 become a repair
 issue.
 
 **No endpoint.** The integration registers no HTTP view, no webhook, no static path and no
@@ -176,11 +178,17 @@ state: a field the catalog adds later cannot leak by default.
 
 ## Consequences
 
-- What is ASSUMED, to be confirmed by `tests/test_live_server.py` against the real server
-  once the server side lands (`CHORUS_SERVER_BIN`): the server's command line in that test;
-  that `join` to a room in a saved group keeps the saved group's id (the fake does); what a
-  room plays after a `take` without a source; that the real `/api/server`, `announce` and its
-  `url` refusal are the bytes in `tests/fixtures/` (they move to `fixtures/control/v2/` then).
+- The identity, `announce` and its refusals are read from the shared vectors of ADR 0136
+  (`fixtures/control/v2/server*.json`, `announce*.json`, `error-announce-*.json`); the tests
+  keep no copy.
+- What is ASSUMED until `tests/test_live_server.py` has run against the real server
+  (`CHORUS_SERVER_BIN=<path> make ha-live`; this track built no server and did not run it):
+  the server's command line in that test (the tone source with `--slots 4`); that `join` to
+  a room in a saved group keeps the saved group's id (the tests' fake does); what a room
+  plays after a `take` without a source; that a 1.5 s WAV is seen as `Announcement` in the
+  state for long enough to be observed.
+- An announcement that the server accepts and then cannot fetch is invisible to Home
+  Assistant (the command was answered 200; ADR 0136). The README says so.
 - The gate has two new steps, `ha-integration` (both tiers) and `ha-hassfest` (full tier),
   each under a minute warm; both fetch once and then need no network.
 - Default entity ids repeat the room's name (area, then device) on Home Assistant 2026.9;

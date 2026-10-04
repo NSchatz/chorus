@@ -13,7 +13,7 @@ from custom_components.chorus.const import DOMAIN
 
 from .fake_server import FakeChorusServer, shared
 
-SERVER_ID = "chorus-test-0001"
+SERVER_ID = "chorus-server-0123456789abcdef"
 
 
 @pytest.fixture(autouse=True)

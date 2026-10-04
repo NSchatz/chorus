@@ -66,6 +66,12 @@ uv sync --locked --all-groups --quiet
 run() { uv run --locked --all-groups --no-sync "$@"; }
 echo "ha-test: $(run python --version), $(run python -c 'import homeassistant.const as c; print("Home Assistant", c.__version__)')"
 
+if [ "${1:-}" = --live ]; then
+    # `make ha-live`: the live-server test alone, with its skip reason shown.
+    run pytest -rs -p no:cov tests/test_live_server.py
+    exit
+fi
+
 echo "ha-test: ruff check"
 run ruff check --no-cache custom_components tests
 echo "ha-test: ruff format --check"

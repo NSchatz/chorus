@@ -30,7 +30,10 @@ it is shaped this way is `docs/decisions/0138-the-home-assistant-integration.md`
 `id` is the config entry's unique id (and the `id=` of the advertisement's TXT record), so a
 server cannot be set up twice and a discovered server that moved updates its entry. A server
 whose `catalogs` lack 2, that has no such route, or that answers a command `refused` (426), is
-a translated error in the flow and a repair issue at run time.
+a translated error in the flow and a repair issue at run time. The id is opaque to the
+integration (`chorus-server-` and 16 hex digits, derived from the server's key); a server
+started with `--ephemeral-identity` has a new one at every start, so it is a new server to
+Home Assistant each time.
 
 ## What becomes what
 
@@ -95,7 +98,11 @@ operate every entity. The control plane has no authentication. So:
    refuses before any request is sent. The server holds its own list (`--announce-origin`)
    and refuses too. `play_media` without `announce` takes `chorus://input/...` only.
 3. **The server's clamps win.** The integration never caches a volume it asked for.
-4. **Refusals are mapped by `field`**, never by the wording of `detail`.
+4. **Refusals are mapped by `field`**, never by the wording of `detail`: `url`, `target`,
+   `source`, `group`, `zone`, `volume`, `t` (the server cannot serve the command now: no
+   player, or none free), and a general one for any other. When an announcement's `url` is
+   refused, the integration asks `GET /api/server` again and, if this Home Assistant's
+   origin is not among `announce_origins`, says exactly that and names the flag.
 5. **No runtime pip**, as above.
 6. **Diagnostics are an allowlist**: named fields of the state, never the state itself. No
    host, URL, key fingerprint, speaker or endpoint id, stored source value or track title.
@@ -113,12 +120,13 @@ test fixtures for exactly one Home Assistant version. The pin is recorded once, 
 
 The tests' fake server serves the repository's shared vectors (`fixtures/control/v2/state-*.json`,
 read from the repository, not copied) and the command bytes are compared with the shared
-command vectors, so the Python client and the Rust server cannot drift apart. The four
-messages goal 18 adds are in `integrations/homeassistant/tests/fixtures/` until the server's
-change lands them in `fixtures/control/v2/`.
+command vectors (the server's identity, `announce` and its refusals among them), so the
+Python client and the Rust server cannot drift apart. The integration's tests keep no copy of
+any message.
 
 `tests/test_live_server.py` drives the real `chorus-server` on loopback when
-`CHORUS_SERVER_BIN` names one, and is skipped by name otherwise.
+`CHORUS_SERVER_BIN` names one (`CHORUS_SERVER_BIN=<path> make ha-live`, or `make ha-test`),
+and is skipped by name otherwise.
 
 ```sh
 make ha-test        # uv sync --locked, ruff, mypy --strict, pytest with coverage

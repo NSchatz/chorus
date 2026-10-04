@@ -15,6 +15,7 @@ from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 
 from .coordinator import ChorusConfigEntry
+from .media_player import own_origins, server_origins
 
 TO_REDACT = {CONF_HOST, "unique_id", "title"}
 
@@ -37,6 +38,11 @@ async def async_get_config_entry_diagnostics(
             "software": server.software,
             "catalogs": list(server.catalogs),
             "announce_origins": len(server.announce_origins),
+            # Whether the server would fetch an announcement from this Home
+            # Assistant; the origins themselves are addresses and stay out.
+            "announces_from_this_home_assistant": bool(
+                own_origins(hass) & server_origins(coordinator)
+            ),
         },
         "connected": coordinator.last_update_success,
         "state": {

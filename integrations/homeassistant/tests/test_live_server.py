@@ -10,21 +10,29 @@ set up through its config flow, and join, unjoin, volume, group volume and
 select_source go through Home Assistant service calls; every assertion is on
 what Home Assistant's entities then show, which is what the real server said.
 
-`CHORUS_LIVE_ANNOUNCE=1` adds the announce refusal, which needs a server with
-`--announce-origin` (goal 18's server change). `CHORUS_SERVER_ARGS` appends
-arguments to the server's command line.
+The announce part serves a generated WAV from a loopback port that stands in
+for Home Assistant's own address, starts the server with that port as its one
+`--announce-origin` (and `--players 1 --media-allow-loopback`, as
+`crates/server/tests/announce.rs` does), and watches the room's now-playing
+record say `Announcement` and then go. `CHORUS_LIVE_ANNOUNCE=0` leaves it out.
+`CHORUS_SERVER_ARGS` appends arguments to the server's command line.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+import io
+import math
 import os
 from pathlib import Path
 import re
 import shlex
+import struct
 import subprocess
 import time
+import wave
 
+from aiohttp import web
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
@@ -39,8 +47,7 @@ from custom_components.chorus.const import DOMAIN
 from .conftest import wait_for
 
 SERVER_BIN = os.environ.get("CHORUS_SERVER_BIN", "")
-LIVE_ANNOUNCE = os.environ.get("CHORUS_LIVE_ANNOUNCE", "") == "1"
-ANNOUNCE_ORIGIN = "http://127.0.0.1:8123"
+LIVE_ANNOUNCE = os.environ.get("CHORUS_LIVE_ANNOUNCE", "1") != "0"
 
 pytestmark = pytest.mark.skipif(
     not SERVER_BIN,
@@ -54,8 +61,38 @@ ROOMS = ("kitchen", "den", "patio")
 _LISTENING = re.compile(r"control listening on=\S*?:(\d+)")
 
 
+def _wav(seconds: float = 1.5) -> bytes:
+    """A short 440 Hz tone: 48 kHz, stereo, 16 bits."""
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as out:
+        out.setnchannels(2)
+        out.setsampwidth(2)
+        out.setframerate(48000)
+        for n in range(int(48000 * seconds)):
+            sample = int(8000 * math.sin(2 * math.pi * 440 * n / 48000))
+            out.writeframes(struct.pack("<hh", sample, sample))
+    return buffer.getvalue()
+
+
 @pytest.fixture
-def live_server(tmp_path: Path, socket_enabled: None) -> Iterator[int]:
+async def clip_origin(socket_enabled: None) -> AsyncIterator[str]:
+    """A loopback origin serving one clip: what Home Assistant's URL would be."""
+    clip = _wav()
+
+    async def serve(request: web.Request) -> web.Response:
+        return web.Response(body=clip, content_type="audio/wav")
+
+    app = web.Application()
+    app.router.add_get("/api/tts_proxy/clip.wav", serve)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    await web.TCPSite(runner, "127.0.0.1", 0).start()
+    yield f"http://127.0.0.1:{runner.addresses[0][1]}"
+    await runner.cleanup()
+
+
+@pytest.fixture
+def live_server(tmp_path: Path, clip_origin: str) -> Iterator[int]:
     """Start the real server; yield its control port; stop it."""
     log = tmp_path / "chorus-server.log"
     args = [
@@ -67,11 +104,13 @@ def live_server(tmp_path: Path, socket_enabled: None) -> Iterator[int]:
         "--allow-unlocked-memory",
         "--source", "tone",
         "--serve-forever",
+        "--slots", "4",
+        "--players", "1",
+        "--media-allow-loopback",
+        "--announce-origin", clip_origin,
     ]  # fmt: skip
     for zone in ROOMS:
         args += ["--zone", zone]
-    if LIVE_ANNOUNCE:
-        args += ["--announce-origin", ANNOUNCE_ORIGIN]
     args += shlex.split(os.environ.get("CHORUS_SERVER_ARGS", ""))
     with log.open("wb") as out:
         process = subprocess.Popen(args, stdout=out, stderr=subprocess.STDOUT)  # noqa: S603
@@ -110,7 +149,9 @@ def _entity(hass: HomeAssistant, platform: str, suffix: str) -> str:
     raise AssertionError(f"no {platform} entity with a unique id ending {suffix}")
 
 
-async def test_live_server(hass: HomeAssistant, live_server: int) -> None:
+async def test_live_server(
+    hass: HomeAssistant, live_server: int, clip_origin: str
+) -> None:
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
         context={"source": SOURCE_USER},
@@ -171,19 +212,43 @@ async def test_live_server(hass: HomeAssistant, live_server: int) -> None:
         assert hass.states.get(den).state == "on"
 
         if LIVE_ANNOUNCE:
-            # An origin that is Home Assistant's own but not on the server's
+            # The clip is served from "Home Assistant's own address", which is
+            # the server's one announce origin: it plays, the room says so, and
+            # the room goes back to what it played.
+            await async_process_ha_core_config(hass, {"internal_url": clip_origin})
+            await call(
+                "media_player", "play_media", kitchen,
+                media_content_type="music",
+                media_content_id=f"{clip_origin}/api/tts_proxy/clip.wav",
+                announce=True,
+                extra={"volume": 0.2},
+            )  # fmt: skip
+            await wait_for(
+                lambda: (
+                    hass.states.get(kitchen).attributes.get("media_title")
+                    == "Announcement"
+                ),
+                timeout=20,
+            )
+            await wait_for(
+                lambda: hass.states.get(kitchen).attributes.get("media_title") is None,
+                timeout=30,
+            )
+            assert hass.states.get(kitchen).attributes["volume_level"] == 0.4
+
+            # An address that is Home Assistant's own but not on the server's
             # list passes the integration's check and is refused by the server.
             await async_process_ha_core_config(
-                hass, {"internal_url": "http://127.0.0.1:8124"}
+                hass, {"internal_url": "http://127.0.0.1:9"}
             )
             with pytest.raises(HomeAssistantError) as caught:
                 await call(
                     "media_player", "play_media", kitchen,
                     media_content_type="music",
-                    media_content_id="http://127.0.0.1:8124/api/tts_proxy/x.mp3",
+                    media_content_id="http://127.0.0.1:9/api/tts_proxy/clip.wav",
                     announce=True,
                 )  # fmt: skip
-            assert caught.value.translation_key == "refused_url"
+            assert caught.value.translation_key == "announce_origin_not_on_server"
     finally:
         assert await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()

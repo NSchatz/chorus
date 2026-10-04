@@ -15,7 +15,8 @@ How it maps chorus to Home Assistant, the security rules and the test harness ar
 ## Supported devices
 
 - A **chorus server** speaking control catalog version 2 that answers `GET /api/server`
-  (chorus-server from goal 18 on). It appears as one service device.
+  (chorus-server from goal 18 on). It appears as one service device. For announcements it
+  needs `--players` (at least one) and `--announce-origin <this Home Assistant's URL>`.
 - Every **room** of that server: one device, named for the room, with the room's name
   suggested as its area.
 - Every **saved group** of that server: one device under the server.
@@ -161,6 +162,19 @@ Bring the den and the patio into the kitchen's music, then let the den go:
   able to reach Home Assistant's internal or external URL, and that URL must be on the
   server's own list (`--announce-origin`). An address anywhere else is refused twice: by the
   integration before anything is sent, and by the server.
+- An announcement interrupts and restores; it is not mixed over the music (no ducking yet).
+  The stream, a line-in and a chime come back afterwards. A UPnP cast or a Spotify receiver
+  does **not** come back: the group plays nothing after the clip and is started again from
+  the app that drove it.
+- An announcement in a room that is in a group is heard by the whole group. One for a saved
+  group that is not assembled assembles it, and it stays assembled.
+- With a volume, every room of that group plays the clip at it (clamped to each room's
+  limit) and gets its own volume back afterwards.
+- A clip the server cannot fetch or decode (a 404, an unsupported file) fails **silently**
+  as far as Home Assistant can tell: the server accepts the command and the reason is only
+  in the server's log.
+- An announcement needs a free player on the server (`--players`); while every player is in
+  use it is refused, and so is one for a room where an alarm is ringing.
 - There is no stop, seek, shuffle or repeat: the server has no such command. Pause, play,
   next and previous exist only for a Spotify receiver.
 - A saved group's volume can be set only while it is assembled.
@@ -183,7 +197,11 @@ Bring the den and the patio into the kitchen's music, then let the den go:
 | "Something answered, and it was not a chorus control plane" | Another service is on that port |
 | A repair issue "The chorus server speaks an unsupported control catalog" | The server is older than this integration needs. Update the server (or install the matching integration), then reload the entry |
 | Every entity is unavailable | The event stream was lost. The log has one line saying so and one when the server is back; the integration reconnects on its own |
-| "The chorus server refused the announcement's address" | The server does not list this Home Assistant's URL as an announce origin |
+| "The chorus server does not announce from this Home Assistant" | Start chorus-server with `--announce-origin` set to the URL in the message (Home Assistant's internal or external URL, scheme, host and port) |
+| "The chorus server refused the announcement's address" | The address is on the server's list but not of a shape it plays (the message carries the server's words) |
+| "The chorus server cannot do that right now" on an announcement | The server runs no player (`--players`), or every player is in use |
+| An announcement is accepted and nothing is heard | The server could not fetch or decode the clip; the reason is in the server's log |
+| After a server restart Home Assistant offers the server as a new device and the old entry cannot connect or reconfigure ("a different chorus server") | The server runs with `--ephemeral-identity`, which gives it a new id at every start. Run it with a kept identity (`--identity-dir`) |
 | "chorus announces only media that Home Assistant itself serves" | The media id resolved to an address that is not this Home Assistant's internal or external URL. Set the internal URL under Settings > System > Network |
 | The group volume number is unavailable | The room is playing alone |
 

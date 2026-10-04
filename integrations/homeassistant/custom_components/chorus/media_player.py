@@ -146,8 +146,12 @@ def source_from_media_id(state: State, media_id: str) -> str:
     )
 
 
-def _origin(url: str) -> tuple[str, str | None, int | None] | None:
-    parsed = URL(url)
+def origin_of(url: str) -> tuple[str, str | None, int | None] | None:
+    """Return the scheme, host and port of an http(s) URL, or None."""
+    try:
+        parsed = URL(url)
+    except ValueError:
+        return None
     if parsed.scheme not in ("http", "https") or not parsed.host:
         return None
     return (parsed.scheme, parsed.host, parsed.port)
@@ -166,9 +170,16 @@ def own_origins(hass: HomeAssistant) -> set[tuple[str, str | None, int | None]]:
             )
         except NoURLAvailableError:
             continue
-        if (origin := _origin(url)) is not None:
+        if (origin := origin_of(url)) is not None:
             origins.add(origin)
     return origins
+
+
+def server_origins(
+    coordinator: ChorusCoordinator,
+) -> set[tuple[str, str | None, int | None] | None]:
+    """Return the origins the server said it announces from."""
+    return {origin_of(listed) for listed in coordinator.server.announce_origins}
 
 
 class ChorusMediaPlayer(ChorusEntity, MediaPlayerEntity):
@@ -326,9 +337,9 @@ class ChorusMediaPlayer(ChorusEntity, MediaPlayerEntity):
         # Home Assistant itself (and holds its own list as well).
         try:
             url = async_process_play_media_url(self.hass, media_id)
-            origin = _origin(url)
         except ValueError:
-            origin = None
+            url = ""
+        origin = origin_of(url)
         if origin is None or origin not in own_origins(self.hass):
             raise ServiceValidationError(
                 translation_domain=DOMAIN, translation_key="announce_origin"
@@ -345,9 +356,26 @@ class ChorusMediaPlayer(ChorusEntity, MediaPlayerEntity):
                     translation_domain=DOMAIN, translation_key="announce_volume"
                 )
             thousandths = commands.volume_from_level(level)
-        await self.coordinator.async_command(
-            commands.announce(self._target, url, thousandths)
-        )
+        try:
+            await self.coordinator.async_command(
+                commands.announce(self._target, url, thousandths)
+            )
+        except HomeAssistantError as err:
+            if err.translation_key != "refused_url":
+                raise
+            # The server refused the address. If its own list of announce
+            # origins does not hold this Home Assistant, say that: it is a
+            # server setting (--announce-origin), not something about the clip.
+            await self.coordinator.async_refresh_server()
+            if origin in server_origins(self.coordinator):
+                raise
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="announce_origin_not_on_server",
+                translation_placeholders={
+                    "origin": f"{origin[0]}://{origin[1]}:{origin[2]}"
+                },
+            ) from err
 
     async def async_browse_media(
         self,

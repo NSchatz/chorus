@@ -42,7 +42,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.chorus.const import DOMAIN
 
 from .conftest import room, saved_group, wait_for
-from .fake_server import FakeChorusServer, local, shared
+from .fake_server import FakeChorusServer, shared
 
 HA_URL = "http://ha.example:8123"
 CLIP = f"{HA_URL}/api/tts_proxy/abc.mp3"
@@ -486,7 +486,7 @@ async def test_announce_in_a_room(
         media_content_id=CLIP,
         **{ATTR_MEDIA_ANNOUNCE: True},
     )
-    assert server.bodies == [local("announce.json")]
+    assert server.bodies == [shared("announce.json")]
     assert server.bodies == [
         b'{"v":2,"t":"announce","target":"kitchen",'
         b'"url":"http://ha.example:8123/api/tts_proxy/abc.mp3"}'
@@ -504,7 +504,9 @@ async def test_announce_in_a_saved_group_with_a_volume(
         media_content_id=CLIP,
         **{ATTR_MEDIA_ANNOUNCE: True, ATTR_MEDIA_EXTRA: {"volume": 0.3}},
     )
-    assert server.bodies == [local("announce-volume.json")]
+    assert server.bodies == [
+        shared("announce-volume.json").replace(b'"kitchen"', b'"downstairs"')
+    ]
     assert server.bodies[0].endswith(b'"volume":0.300}')
 
 
@@ -524,7 +526,7 @@ async def test_announce_resolves_a_media_source_inside_home_assistant(
             **{ATTR_MEDIA_ANNOUNCE: True},
         )
     assert resolve.call_args.args[1] == "media-source://tts/demo?message=dinner"
-    assert server.bodies == [local("announce.json")]
+    assert server.bodies == [shared("announce.json")]
 
 
 async def test_announce_signs_a_path_that_needs_auth(
@@ -600,26 +602,108 @@ async def test_announce_from_the_external_url_is_home_assistants_own_too(
     )
 
 
+async def announce_clip(hass: HomeAssistant, **extra) -> None:
+    await call(
+        hass,
+        "play_media",
+        room(hass, "kitchen"),
+        media_content_type="music",
+        media_content_id=CLIP,
+        **{ATTR_MEDIA_ANNOUNCE: True, **extra},
+    )
+
+
 async def test_the_servers_url_refusal_is_a_translated_error(
     hass: HomeAssistant, server: FakeChorusServer, setup: MockConfigEntry, ha_url: None
 ) -> None:
-    server.script(400, local("error-announce-origin.json"))
+    """The server lists this Home Assistant and still refuses the URL."""
+    server.script(400, shared("error-announce-url.json"))
     with pytest.raises(HomeAssistantError) as caught:
-        await call(
-            hass,
-            "play_media",
-            room(hass, "kitchen"),
-            media_content_type="music",
-            media_content_id=CLIP,
-            **{ATTR_MEDIA_ANNOUNCE: True},
-        )
+        await announce_clip(hass)
     assert not isinstance(caught.value, ServiceValidationError)
     assert caught.value.translation_domain == DOMAIN
     assert caught.value.translation_key == "refused_url"
     placeholders = caught.value.translation_placeholders
     assert placeholders is not None
     assert placeholders["field"] == "url"
-    assert server.bodies == [local("announce.json")]
+    assert server.bodies == [shared("announce.json")]
+
+
+@pytest.mark.parametrize(
+    ("identity", "refusal"),
+    [
+        ("server-no-origin.json", "error-announce-no-origin.json"),
+        (None, "error-announce-origin.json"),
+    ],
+)
+async def test_a_server_that_does_not_list_this_home_assistant_says_so(
+    hass: HomeAssistant,
+    server: FakeChorusServer,
+    setup: MockConfigEntry,
+    ha_url: None,
+    identity: str | None,
+    refusal: str,
+) -> None:
+    """The refusal names the fix: the server's --announce-origin."""
+    if identity is None:
+        raw = json.loads(shared("server.json"))
+        raw["announce_origins"] = ["http://media.example"]
+        server.server_bytes = json.dumps(raw).encode()
+    else:
+        server.server_bytes = shared(identity)
+    server.script(400, shared(refusal))
+    with pytest.raises(HomeAssistantError) as caught:
+        await announce_clip(hass)
+    assert caught.value.translation_key == "announce_origin_not_on_server"
+    placeholders = caught.value.translation_placeholders
+    assert placeholders is not None
+    assert placeholders["origin"] == HA_URL
+    # The integration asked the server again who it is, to say this.
+    assert server.requests[-1] == "GET /api/server"
+    assert setup.runtime_data.server.announce_origins != ("http://ha.example:8123",)
+
+
+async def test_a_url_refusal_when_the_server_cannot_be_asked_again(
+    hass: HomeAssistant, server: FakeChorusServer, setup: MockConfigEntry, ha_url: None
+) -> None:
+    server.server_status = 500
+    server.script(400, shared("error-announce-origin.json"))
+    with pytest.raises(HomeAssistantError) as caught:
+        await announce_clip(hass)
+    assert caught.value.translation_key == "refused_url"
+
+
+@pytest.mark.parametrize(
+    ("refusal", "key"),
+    [
+        ("error-announce-target.json", "refused_target"),
+        ("error-announce-volume.json", "refused_volume"),
+    ],
+)
+async def test_the_other_announce_refusals_by_field(
+    hass: HomeAssistant,
+    server: FakeChorusServer,
+    setup: MockConfigEntry,
+    ha_url: None,
+    refusal: str,
+    key: str,
+) -> None:
+    server.script(400, shared(refusal))
+    with pytest.raises(HomeAssistantError) as caught:
+        await announce_clip(hass)
+    assert caught.value.translation_key == key
+
+
+async def test_no_free_player_is_its_own_translated_error(
+    hass: HomeAssistant, server: FakeChorusServer, setup: MockConfigEntry, ha_url: None
+) -> None:
+    server.script(
+        400,
+        b'{"v":2,"t":"error","field":"t","detail":"no-free-player: every player is in use"}',
+    )
+    with pytest.raises(HomeAssistantError) as caught:
+        await announce_clip(hass)
+    assert caught.value.translation_key == "refused_unavailable"
 
 
 @pytest.mark.parametrize("volume", [1.5, -0.1, "loud", True])
