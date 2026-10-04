@@ -1,5 +1,5 @@
 //! The `announce` command and the server's identity route, on the real
-//! binary (goal 18, ADR 0133; brief section 4.8's "HA's media and TTS URLs
+//! binary (goal 18, ADR 0136; brief section 4.8's "HA's media and TTS URLs
 //! from HA's own address").
 //!
 //! Every test runs the real `chorus-server` with stream slots and a control
@@ -18,7 +18,8 @@
 //!   announcement's volume CLAMPED to its limit; the room hears the clip's
 //!   own samples; and when the clip ends the group plays the stream again
 //!   and the room has the volume it had. A URL from another origin is
-//!   refused naming `url` and changes nothing;
+//!   refused naming `url` and changes nothing; and an announcement during
+//!   another replaces it and still restores what played before the first;
 //! - a clip that answers 404, and one whose URL redirects out of the
 //!   origin, put the room back at once;
 //! - `GET /api/server` answers the committed shape, its `id` survives a
@@ -523,6 +524,25 @@ fn an_announcement_plays_in_the_room_then_what_it_played_and_its_volume_come_bac
     });
     assert_eq!(volume_in(&server.state(), "kitchen"), "0.250");
     server.wait_for_all(&["announce owner=announce:2 ended", "restored=stream"]);
+
+    // An announcement during another, in the same group: it replaces the
+    // one playing on the same player, and what comes back at the end is
+    // what the room played, and the volume it had, before the first.
+    server.applied(&announce("kitchen", &clip, Some("0.350")));
+    let answer = server.applied(&announce("kitchen", &short, Some("0.300")));
+    assert_eq!(playing_in(&answer, "kitchen").0, "player:p0", "{}", answer);
+    assert_eq!(volume_in(&answer, "kitchen"), "0.300");
+    server.wait_for_all(&["announce owner=announce:3", "replaces=the-one-playing"]);
+    wait_for("the replacing clip ends", || {
+        playing_in(&server.state(), "kitchen").0 == "stream"
+    });
+    assert_eq!(volume_in(&server.state(), "kitchen"), "0.250");
+    server.wait_for_all(&["announce owner=announce:3 ended", "restored=stream"]);
+    assert_eq!(
+        without_serial(&server.state()),
+        without_serial(&before),
+        "the house is as it was before any announcement"
+    );
     let _ = std::fs::remove_file(&source);
 }
 

@@ -1,5 +1,5 @@
 //! Announcements: a clip from the home automation's own address, played in a
-//! room or a group and then gone (goal 18, ADR 0133).
+//! room or a group and then gone (goal 18, ADR 0136).
 //!
 //! The `announce` command names a target, a URL and, optionally, a volume.
 //! Brief section 4.8 names "HA's media and TTS URLs from HA's own address"
@@ -121,14 +121,16 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     }
 }
 
-/// What the group goes back to: what it played, except a player source,
-/// which is given back the moment its group stops playing it (a cast's
-/// session ends there), so going back to it would leave the group on a
-/// player nothing drives.
+/// What the group goes back to: what it played, except a source that plays
+/// in one group at a time and is let go the moment its group stops playing
+/// it. A player is given back then (a cast's session ends there) and a
+/// Spotify receiver is paused by its manager, so going back to either would
+/// leave the group on a source nothing drives: it plays `none` instead.
 fn back_to(previous: &Source) -> Source {
-    match previous {
-        Source::Player(_) => Source::None,
-        other => other.clone(),
+    if previous.is_exclusive() {
+        Source::None
+    } else {
+        previous.clone()
     }
 }
 
@@ -209,10 +211,11 @@ impl Announcer {
         // on its own player, and what the group goes back to stays what it
         // was before the first of them.
         let group = state.announce_group(target);
+        // (Whether or not its clip is still playing: one that just ended and
+        // was not settled yet is replaced the same way, so the group never
+        // goes back to that one's own player.)
         let replaced = table.live.iter().position(|live| {
-            sessions.in_session(&live.owner)
-                && state.player_group(&player_id(live.player)) == group
-                && group.is_some()
+            group.is_some() && state.player_group(&player_id(live.player)) == group
         });
         let owner = match replaced {
             Some(at) => table.live[at].owner.clone(),
@@ -454,8 +457,13 @@ mod tests {
     }
 
     #[test]
-    fn a_group_never_goes_back_to_a_player() {
+    fn a_group_never_goes_back_to_a_player_or_a_receiver() {
         assert_eq!(back_to(&Source::Player("p0".to_string())), Source::None);
+        assert_eq!(back_to(&Source::Soloist("r0".to_string())), Source::None);
+        assert_eq!(
+            back_to(&Source::Chime("bell".to_string())),
+            Source::Chime("bell".to_string())
+        );
         assert_eq!(back_to(&Source::Stream), Source::Stream);
         assert_eq!(back_to(&Source::None), Source::None);
     }

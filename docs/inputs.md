@@ -12,10 +12,14 @@ Brief section 4.8, quoted:
 > No arbitrary URL fetch except the input paths the decisions name (UPnP renders, HA's media and
 > TTS URLs from HA's own address, stored alarm stream URLs).
 
-So the server has no command that plays a URL in a room, and it never will get one by accident:
+So the server has no command that plays an ARBITRARY URL in a room, and it never will get one by
+accident:
 
-- A URL reaches the server through the control API in exactly one way: `source_store`, which
-  stores it under a name and plays nothing.
+- A URL reaches the server through the control API in exactly two ways: `source_store`, which
+  stores it under a name and plays nothing, and (goal 18) `announce`, which plays a clip at once
+  and only from an origin the server was started with (`--announce-origin`, the home
+  automation's own address), the fetch held to that origin through every redirect
+  (`docs/control-plane.md`, "Announcements"). A server started with no origin announces nothing.
 - A stored URL is played in exactly one situation: an alarm whose `source` is `stored:<id>`
   rings. A `take` naming `stored:<id>` is refused by name, and the room model refuses the
   spelling as a group's source however it is asked.
@@ -24,7 +28,7 @@ So the server has no command that plays a URL in a room, and it never will get o
   loopback, never one of this server's own ports, redirects followed under the same rule, a
   resolved address checked before it is dialled.
 - The other two named paths are not this document's: the UPnP renderer (`docs/upnp.md`) and the
-  home automation's URLs (a later goal).
+  home automation's URLs (goal 18: the `announce` command, `docs/control-plane.md`).
 - There is no microphone input: a source is a line-in, an optical input or HDMI ARC, and an
   input's role is `line-in` or `streamer` (the speaker microphone goes to the voice path only).
 

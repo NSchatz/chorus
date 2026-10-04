@@ -1208,7 +1208,7 @@ impl Origin {
             return Err("it carries userinfo ('user@'), which is never fetched".to_string());
         }
         let (host, port) = if let Some(inner) = authority.strip_prefix('[') {
-            // An IPv6 literal, in brackets (RFC 3986 section 3.2.2).
+            // An IPv6 literal, in brackets, as a URL writes one.
             let Some((address, after)) = inner.split_once(']') else {
                 return Err("an address in brackets has no closing bracket".to_string());
             };

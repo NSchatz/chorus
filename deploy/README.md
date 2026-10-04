@@ -49,6 +49,22 @@ A Linux endpoint (`chorus-client`) needs `--identity-dir <dir>` (its
 endpoint's key to that id. `--ephemeral-identity` is the same escape hatch for
 tests.
 
+## Announcements from a home automation (off by default)
+
+The control API's `announce` command plays a short clip (spoken text, a
+doorbell) in a room or a group and then puts back what was playing
+(`docs/control-plane.md`, "Announcements"). It fetches a URL, so it is held to
+the address the operator names: `--announce-origin <scheme://host[:port]>`,
+repeatable, is the list of origins a clip may come from, and it should be the
+home automation's own address and nothing else, for example
+`--announce-origin http://homeassistant.example:8123`. Only a URL with that
+scheme, host and port is fetched, and a redirect out of it fails the fetch.
+Neither compose file passes the flag: with no origin every `announce` is
+refused by name. It also needs `--players <n>` (and `--slots`), because a clip
+plays through a network media player; `deploy/compose.yaml` carries the lines,
+commented out. `GET /api/server` on the control port lists the origins in
+force (`announce_origins`) beside the server's stable `id`.
+
 ## The healthcheck
 
 The released image is distroless: no shell and no curl. `chorus-server
