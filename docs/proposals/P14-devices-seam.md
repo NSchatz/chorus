@@ -258,7 +258,7 @@ program and drafts that must be re-gated against a devices `main` that keeps mov
 
 - devices `CLAUDE.md` ("Out of scope", "Commands", "Where things live"), NSchatz/devices `origin/main` `29f9e3c`, read 2026-09-30
 - devices brief `.claude/goals/2026-09-devices.md` §0 (goal table), §0.3, §0.4, §0.8, §0.13, §4.2, §4.7, §4.8, §9, §12, read 2026-09-30
-- devices ledgers `.claude/goals/2026-09-devices-g1.status.md` (items 1.2, 3.1, 3.2, 5.1, 13.1), `-g2` (10.3), `-g3` (8.1, 8.2), `-g4` (2.4, 3.1, "Resume here"), and `CHECKPOINT-D.approved`, read 2026-09-30
+- devices ledgers `devices@29f9e3c:.claude/goals/2026-09-devices-g1.status.md` (items 1.2, 3.1, 3.2, 5.1, 13.1), `-g2` (10.3), `-g3` (8.1, 8.2), `-g4` (2.4, 3.1, "Resume here"), and `CHECKPOINT-D.approved`, read 2026-09-30
 - devices `Makefile` lines 75, 453-510 (`check`, `invariants`, `INVARIANTS_LOCK`, `INVARIANTS_CPUS`), 546-739 (node-v1, house-sensors, cars checks), read 2026-09-30
 - devices `builds/README.md`, `builds/_template/{log.md,bom.csv}`, `builds/node-v1/log.md`, `shopkit.toml`, `hardware/mouse/glide6/pick.toml`, read 2026-09-30
 - inventory `CLAUDE.md`, `Makefile`, `data/parts/electronic.yml` (record format), NSchatz/inventory (local clone `9f9b491`; `origin/main` `5b57402` differs by one commit touching tools, consumables and receipts only, via `gh api .../compare`), read 2026-09-30
