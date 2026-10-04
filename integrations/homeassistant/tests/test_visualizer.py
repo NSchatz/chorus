@@ -393,8 +393,10 @@ async def test_visualizer_beat_held_back_by_the_cap_rides_in_the_next_write(
     await clock.advance(CAP)
     # The latest frame's level, and the beat nothing had shown yet.
     assert says(hass) == KICK | {"state": "59", "beat": 200, "lead_ms": 7}
-    # Shown once: the next frame carries none.
-    await clock.advance(CAP)
+    # Shown once: the next frame carries none. The step goes past the cap's
+    # interval, not onto its edge: there the frozen clock's float rounding
+    # (a fraction of a microsecond) decides whether this write is held back.
+    await clock.advance(CAP + 0.01)
     await clock.send(frame(peak=149, beat=0, lead_ms=7))
     assert says(hass)["beat"] == 0
 
