@@ -159,6 +159,23 @@ impl Rig {
         self.dir.join("flash.bin")
     }
 
+    /// Wait until the endpoint has cleared its rollback note, the file the
+    /// host build keeps beside the flash as `<flash>.note`.
+    fn wait_for_note_cleared(&self) {
+        let mut note = self.flash().into_os_string();
+        note.push(".note");
+        let note = PathBuf::from(note);
+        let deadline = Instant::now() + STEP;
+        while note.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "the endpoint reported its rollback and never cleared {}",
+                note.display()
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     /// An application image of `version` that the endpoint's flash accepts.
     fn image(&self, version: &str, bytes: usize) -> Vec<u8> {
         let path = self.dir.join(format!("image-{}.bin", version));
@@ -574,6 +591,11 @@ fn a_good_image_installs_and_confirms_and_a_bad_one_is_rolled_back_over_a_real_s
         &lines,
         "ota state=rolled_back transfer=9 received=0 slot=1 version=2.0.0 reason=not_confirmed image=3.0.0"
     ));
+    // The endpoint clears its note once the status is on the wire, a moment
+    // after this side has read it. A power cut in between is allowed to
+    // report the rollback twice (firmware/src/ota.c, note_clear); this boot
+    // is not cut short, so it is stopped only once the note is gone.
+    rig.wait_for_note_cleared();
     boot.stop();
 
     // Boot 5: reported once, the next boot is quiet.
