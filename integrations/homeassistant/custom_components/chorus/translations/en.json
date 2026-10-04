@@ -193,7 +193,7 @@
       "message": "The chorus server has no verified staged image to install on the speaker {speaker}."
     },
     "firmware_owner_not_at_bench": {
-      "message": "The chorus server installs firmware on a real speaker only while the owner is at the bench (CHORUS_OWNER_AT_BENCH=1 in the server's environment). Nothing was sent to the speaker: {detail}"
+      "message": "The chorus server installs firmware on a real speaker only while the owner is at the bench (docs/firmware-updates.md names the server setting). Nothing was sent to the speaker: {detail}"
     },
     "group_not_active": {
       "message": "This saved group is not assembled, so it has no group volume. Turn it on or select a source to assemble it."
