@@ -73,6 +73,12 @@ static const type_entry_t TYPES[] = {
     {CHORUS_V2_ROOM_VOLUME, "room_volume", 2 + 2 + 2},
     /* bass, treble, flags, role, sub_present, crossover, sub level, eq_count */
     {CHORUS_V2_SOUND, "sound", 1 + 1 + 1 + 1 + 1 + 2 + 2 + 1},
+    /* format, sequence, timestamp, one sample */
+    {CHORUS_V2_MIC_AUDIO, "mic_audio", 1 + 4 + 8 + CHORUS_V2_MIC_BYTES_PER_SAMPLE},
+    /* gate */
+    {CHORUS_V2_MIC_STATE, "mic_state", 1},
+    /* uplink, listening */
+    {CHORUS_V2_VOICE_CONTROL, "voice_control", 1 + 1},
 };
 #define TYPE_COUNT (sizeof(TYPES) / sizeof(TYPES[0]))
 
@@ -115,6 +121,33 @@ int chorus_v2_type_is_plaintext(uint8_t wire)
            wire == CHORUS_V2_SECURE_RECORD;
 }
 
+uint16_t chorus_v2_type_role(uint8_t wire)
+{
+    switch (wire) {
+    case CHORUS_V2_METADATA:
+    case CHORUS_V2_ARTWORK:
+        return CHORUS_V2_ROLE_METADATA;
+    case CHORUS_V2_CONTROLLER_COMMAND:
+    case CHORUS_V2_CONTROLLER_STATE:
+        return CHORUS_V2_ROLE_CONTROLLER;
+    case CHORUS_V2_VISUALIZER_FRAME:
+    case CHORUS_V2_COLOR:
+        return CHORUS_V2_ROLE_VISUALIZER;
+    case CHORUS_V2_SOURCE_OFFER:
+    case CHORUS_V2_SOURCE_CONTROL:
+        return CHORUS_V2_ROLE_SOURCE;
+    case CHORUS_V2_ROOM_VOLUME:
+    case CHORUS_V2_SOUND:
+        return CHORUS_V2_ROLE_PLAYER;
+    case CHORUS_V2_MIC_AUDIO:
+    case CHORUS_V2_MIC_STATE:
+    case CHORUS_V2_VOICE_CONTROL:
+        return CHORUS_V2_ROLE_VOICE;
+    default:
+        return 0;
+    }
+}
+
 static int is_v1(uint8_t wire)
 {
     return wire == CHORUS_V2_TIME_SYNC || wire == CHORUS_V2_AUDIO_CHUNK ||
@@ -138,7 +171,8 @@ static const char *const COMMANDS[] = {NULL,       "play",     "pause",      "to
 static const char *const KINDS[] = {NULL, "line_in", "optical", "hdmi_arc"};
 static const char *const ACTIONS[] = {NULL, "start", "stop"};
 static const char *const LINKS[] = {"unknown", "wired", "wireless"};
-static const char *const ROLES[] = {"player", "metadata", "controller", "visualizer", "source"};
+static const char *const ROLES[] = {"player",     "metadata", "controller",
+                                    "visualizer", "source",   "voice"};
 static const char *const DIRECTIONS[] = {"end", "to_endpoint", "from_endpoint"};
 static const char *const STATUSES[] = {"accepted", "refused_wireless", "refused_no_socket",
                                        "refused_fec"};
@@ -148,6 +182,8 @@ static const char *const FIRMWARE_STATES[] = {
 static const char *const FIRMWARE_REASONS[] = {"none",          "too_large",  "bad_digest",
                                                "write_failed",  "busy",       "wrong_board",
                                                "not_confirmed", "bad_offset", "medium_refused"};
+static const char *const MIC_GATES[] = {"muted", "live"};
+static const char *const MIC_FORMATS[] = {NULL, "pcm_s16le_16k_mono"};
 
 static const char *const *enum_table(chorus_v2_enum_t which, size_t *count)
 {
@@ -213,6 +249,14 @@ static const char *const *enum_table(chorus_v2_enum_t which, size_t *count)
     case CHORUS_V2_ENUM_FIRMWARE_REASON:
         table = FIRMWARE_REASONS;
         n = sizeof(FIRMWARE_REASONS) / sizeof(FIRMWARE_REASONS[0]);
+        break;
+    case CHORUS_V2_ENUM_MIC_GATE:
+        table = MIC_GATES;
+        n = sizeof(MIC_GATES) / sizeof(MIC_GATES[0]);
+        break;
+    case CHORUS_V2_ENUM_MIC_FORMAT:
+        table = MIC_FORMATS;
+        n = sizeof(MIC_FORMATS) / sizeof(MIC_FORMATS[0]);
         break;
     }
     *count = n;
@@ -836,6 +880,25 @@ static int decode_payload(uint8_t type, const uint8_t *payload, size_t len, chor
         }
         return 0;
     }
+    case CHORUS_V2_MIC_AUDIO: {
+        chorus_v2_mic_audio_t *a = &m->as.mic_audio;
+        if (read_u8(&r, "format", &a->format) != 0 || read_u32(&r, "sequence", &a->sequence) != 0 ||
+            read_u64(&r, "timestamp_ns", &a->timestamp_ns) != 0) {
+            return -1;
+        }
+        read_rest(&r, &a->data);
+        return 0;
+    }
+    case CHORUS_V2_MIC_STATE:
+        return read_enum(&r, "gate", CHORUS_V2_ENUM_MIC_GATE, &m->as.mic_state.gate);
+    case CHORUS_V2_VOICE_CONTROL: {
+        chorus_v2_voice_control_t *v = &m->as.voice_control;
+        if (read_bool(&r, "uplink", &v->uplink) != 0 ||
+            read_bool(&r, "listening", &v->listening) != 0) {
+            return -1;
+        }
+        return 0;
+    }
     default:
         return fail(error, "type", CHORUS_V2_PROBLEM_UNDEFINED, NULL);
     }
@@ -1386,6 +1449,35 @@ int chorus_v2_validate(const chorus_v2_message_t *message, chorus_v2_field_error
     }
     case CHORUS_V2_SOUND:
         return validate_sound(&message->as.sound, error);
+    case CHORUS_V2_MIC_AUDIO: {
+        const chorus_v2_mic_audio_t *a = &message->as.mic_audio;
+        if (enum_ok("format", CHORUS_V2_ENUM_MIC_FORMAT, a->format, error) != 0 ||
+            bytes_ok("data", &a->data, error) != 0) {
+            return -1;
+        }
+        /* Whole samples, at least one. Rejected, never trimmed: half a
+         * sample dropped here would shift every sample after it. */
+        if (a->data.len == 0 || a->data.len % CHORUS_V2_MIC_BYTES_PER_SAMPLE != 0) {
+            return fail(error, "data", CHORUS_V2_PROBLEM_INCONSISTENT,
+                        "is one or more whole 16-bit samples");
+        }
+        if (a->data.len > CHORUS_V2_MIC_MAX_SAMPLES * CHORUS_V2_MIC_BYTES_PER_SAMPLE) {
+            return fail(error, "data", CHORUS_V2_PROBLEM_TOO_LONG, NULL);
+        }
+        return 0;
+    }
+    case CHORUS_V2_MIC_STATE:
+        return enum_ok("gate", CHORUS_V2_ENUM_MIC_GATE, message->as.mic_state.gate, error);
+    case CHORUS_V2_VOICE_CONTROL: {
+        const chorus_v2_voice_control_t *v = &message->as.voice_control;
+        if (v->uplink > 1) {
+            return fail(error, "uplink", CHORUS_V2_PROBLEM_UNDEFINED, NULL);
+        }
+        if (v->listening > 1) {
+            return fail(error, "listening", CHORUS_V2_PROBLEM_UNDEFINED, NULL);
+        }
+        return 0;
+    }
     default:
         return fail(error, "type", CHORUS_V2_PROBLEM_UNDEFINED, NULL);
     }
@@ -1803,6 +1895,19 @@ static void write_payload(writer_t *w, const chorus_v2_message_t *m)
         }
         break;
     }
+    case CHORUS_V2_MIC_AUDIO:
+        put_u8(w, m->as.mic_audio.format);
+        put_u32(w, m->as.mic_audio.sequence);
+        put_u64(w, m->as.mic_audio.timestamp_ns);
+        put_bytes(w, &m->as.mic_audio.data);
+        break;
+    case CHORUS_V2_MIC_STATE:
+        put_u8(w, m->as.mic_state.gate);
+        break;
+    case CHORUS_V2_VOICE_CONTROL:
+        put_u8(w, m->as.voice_control.uplink);
+        put_u8(w, m->as.voice_control.listening);
+        break;
     default:
         break;
     }

@@ -1,0 +1,17 @@
+# Canonical input for the hello_voice golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly hello_voice.hex, and decoding hello_voice.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+#
+# An endpoint with a microphone: the voice role (bit 5) beside the roles its buttons and
+# status light already take.
+
+message_type = hello
+protocol_version = 2
+roles = player controller visualizer voice
+name = Study
+software = chorus-client 0.2.0

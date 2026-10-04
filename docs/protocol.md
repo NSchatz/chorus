@@ -13,7 +13,9 @@ half in `crates/protocol/src/v2/`).
 Why it is shaped this way: `docs/decisions/0003-wire-protocol-framing.md` (the
 frame), `docs/decisions/0041-protocol-v2-framing.md` (what v2 keeps, adds and
 encrypts, and v1 refused by name), `docs/decisions/0039-the-v2-key-exchange.md` (the session, and the
-vendored crypto primitives) and `docs/decisions/0040-codec-negotiation.md` (codecs).
+vendored crypto primitives), `docs/decisions/0040-codec-negotiation.md` (codecs) and
+`docs/decisions/0166-the-voice-role-on-the-wire.md` (the voice role and the
+microphone audio's format).
 What a decoder does when it cannot accept a frame:
 `docs/decisions/0005-decoder-frame-validation.md`.
 
@@ -28,7 +30,9 @@ What a decoder does when it cannot accept a frame:
   adoption; everything after it encrypted), hello and capabilities, a stream
   format with an explicit channel map, FLAC and Opus beside PCM, a per-endpoint
   output delay, telemetry, and the four roles: metadata and artwork,
-  controller, visualizer and colour, and source.
+  controller, visualizer and colour, and source. A fifth role, voice
+  (2026-10-04), carries a speaker's microphone to the server ("The voice
+  role").
 - **A v1 peer is refused by name.** A v2 server whose first frame from a peer
   is a v1 message answers `session_refused` with reason `protocol_version` and
   the detail "refused a chorus protocol v1 peer (its first frame was
@@ -89,6 +93,9 @@ What a decoder does when it cannot accept a frame:
 | 0x37 | `source_control` | v2 | in a record | start or stop sending an input |
 | 0x38 | `room_volume` | v2 (goal 11) | in a record | 6 bytes, fixed: gain, limit, ramp |
 | 0x39 | `sound` | v2 (goal 12) | in a record | tone, flags, bonded role, bass management, up to 8 correction filters |
+| 0x3A | `mic_audio` | v2 (voice) | in a record | format, sequence, timestamp, then 16 kHz mono 16-bit PCM |
+| 0x3B | `mic_state` | v2 (voice) | in a record | 1 byte, fixed: the mic gate, muted or live |
+| 0x3C | `voice_control` | v2 (voice) | in a record | 2 bytes, fixed: uplink on or off, room listening |
 | all others | unassigned | | | skipped by a decoder that meets one |
 
 Common field encodings:
@@ -366,8 +373,13 @@ The first message inside the session, in both directions.
 | 2 | `controller` | sends controller commands and shows controller state |
 | 3 | `visualizer` | takes visualizer frames and colours |
 | 4 | `source` | offers inputs and streams them upstream |
+| 5 | `voice` | sends its microphone's audio and its mic gate's state, and takes `voice_control` ("The voice role") |
 
 The server's `hello` sets no role bits.
+
+Bit 5 was added on 2026-10-04. A decoder built before it rejects a `hello`
+that sets it (an undefined bit), so an endpoint declares `voice` only to a
+server that knows the role; `v2/hello_voice.hex` is the vector.
 
 ### 0x11 capabilities
 
@@ -853,7 +865,8 @@ session without the role is sent neither.
 
 Any endpoint can offer an input (line-in, optical, HDMI ARC) as a source any
 room or group can play. A speaker microphone is never a source: it feeds only
-the voice path (brief section 4.8, I4), so there is no microphone kind.
+the voice path (brief section 4.8, I4), so there is no microphone kind. Its
+audio has a role and a message of its own ("The voice role").
 
 #### 0x36 source offer
 
@@ -925,6 +938,117 @@ Clarified in goal 11 (ADR 0079, the server accepting a line-in):
   session move between slots with no timestamp jump. Upstream frames past what
   the server holds (one second, ASSUMED) are dropped whole and counted.
 - The input's session ending is the input going: whatever plays it stops.
+
+## The voice role
+
+A speaker with a microphone is a voice endpoint: it sends what the microphone
+hears to the server, which runs the wake word and hands a run to the voice
+pipeline (proposal P8, Option A; decisions K71, K73). The role is bit 5 of
+`hello.roles` and has three messages. Why each is shaped as it is:
+`docs/decisions/0166-the-voice-role-on-the-wire.md`.
+
+**Microphone audio is not a source kind.** `source_offer.kind` has no
+microphone value and gets none; `mic_audio` is not announced by a
+`stream_format`, is not an `audio_chunk` or a `coded_chunk`, and is never an
+input a room or group can play (brief section 4.8, I4). A receiver hands it
+to the voice path and to nothing else. An upstream `audio_chunk` is a
+source's audio and a `mic_audio` is a microphone's, by type, so neither can
+be taken for the other.
+
+The role rule of "The four roles" holds here as for every role: the three
+messages are exchanged only on a session whose endpoint declared `voice`. A
+`mic_audio` or `mic_state` from an endpoint that did not declare it is
+refused (that frame only; nothing in it is handed on), and a `voice_control`
+reaching an endpoint that did not declare it is skipped. In the Rust library
+that is `decode_frame_for_roles` (`crates/protocol/src/v2/codec.rs`), which
+takes the roles of the session's endpoint and rejects a role message outside
+them as `RoleNotDeclared`; the role of each type is `Type::role` there and
+`chorus_v2_type_role` in the C library.
+
+Three things gate the microphone, and all three must allow it before a
+sample leaves the speaker:
+
+1. the endpoint declared `voice` (it has a microphone at all);
+2. its gate is `live`: the hardware mute switch is in the live position
+   (`docs/decisions/0063-controls-led-and-mic-gate.md`; the gate starts
+   closed). The gate is the endpoint's alone. No message opens it;
+3. the server's last `voice_control` in this session set `uplink` (voice is
+   enabled for the room). Until the first `voice_control` the uplink is off.
+
+### 0x3A mic audio
+
+Endpoint to server, while the gate is live and the uplink is on.
+
+| offset | size | field | notes |
+|---|---|---|---|
+| 0 | 1 | `format` | 1 `pcm_s16le_16k_mono`: 16000 Hz, one channel, 16-bit signed samples, little-endian. 0 and every other value are rejected (undefined) |
+| 1 | 4 | `sequence` | 0 for the first chunk after the uplink turns on (or the gate goes live with it on), then one more per chunk; wraps. A gap is audio that was lost |
+| 5 | 8 | `timestamp_ns` | the instant the first sample was digitized, on the server timeline |
+| 13 | rest | `data` | the samples: 1 to 1600 of them (2 to 3200 bytes), whole. An odd number of bytes is rejected (inconsistent), more than 3200 is rejected (too long); neither is trimmed |
+
+- The samples are little-endian, as `audio_chunk`'s PCM is; every other
+  field is big-endian.
+- A chunk is nominally 20 ms (320 samples, 640 bytes of data, a 656-byte
+  frame); 1600 samples (100 ms) is the most one message carries. ASSUMED
+  bounds, not measured ones.
+- `timestamp_ns` is stamped as a source's chunk is ("0x37 source control",
+  goal 10): the capture instant on the endpoint's monotonic clock, mapped
+  through its sync offset. An endpoint with no offset yet sends no
+  `mic_audio`; it never sends a guessed timestamp.
+- Minimum payload 15 bytes: the 13 fixed bytes and one sample.
+- There is no end message: the audio stops when the uplink goes off, the
+  gate goes muted (a `mic_state` says so) or the session ends.
+
+### 0x3B mic state
+
+Endpoint to server: once after `capabilities` in every session of an
+endpoint that declared `voice`, and at every change.
+
+| offset | size | field | notes |
+|---|---|---|---|
+| 0 | 1 | `gate` | 0 `muted`, 1 `live`; any other value is rejected (undefined) |
+
+`muted` means no `mic_audio` follows until a `live`, whatever `voice_control`
+says: the hardware state always wins. An endpoint whose gate goes muted
+sends the `mic_state` after the last `mic_audio` it sends, so a server that
+has `muted` holds every sample there will be. A server that has no
+`mic_state` from an endpoint treats it as muted.
+
+### 0x3C voice control
+
+Server to a voice endpoint, whenever either field changes.
+
+| offset | size | field | notes |
+|---|---|---|---|
+| 0 | 1 | `uplink` | bool: 1 send `mic_audio` while the gate is live, 0 send none |
+| 1 | 1 | `listening` | bool: a voice run is open in the endpoint's room |
+
+- `uplink` is voice enabled for the room (K73: "speakers stream mic audio to
+  chorus-server only while unmuted and voice is enabled"). It is a request
+  the gate can refuse, never an unmute.
+- `listening` is for the endpoint's status light: the room is being listened
+  to by the voice pipeline, not only by the wake word. It may be set while
+  `uplink` is 0 (another speaker of the room carries the run) and says
+  nothing about what this endpoint sends.
+- Both are whole state, not edges: the last `voice_control` received is what
+  holds. A session starts as `uplink` 0, `listening` 0
+  (`v2/voice_control_off.hex`), and a session's end is the same.
+
+The vectors are `fixtures/protocol/v2/mic_audio`, `mic_state_muted`,
+`mic_state_live`, `voice_control_off`, `voice_control_uplink`,
+`voice_control_listening` and `hello_voice`; the rejections are
+`rejected/mic_audio_format_undefined` and `rejected/mic_audio_half_sample`.
+`crates/protocol/tests/v2_voice.rs` and `firmware/tests/test_protocol_v2.c`
+hold both codecs to them, to the role rule and to the bounds.
+
+**A peer that does not know these types** skips them by their length prefix
+(decoder rule 3) and carries on: none of the three is fatal to an older
+server or endpoint, and both test files show it with the v1 decoder, whose
+catalog ends at 0x03.
+
+What this section does not define: the wake word, the voice run and its
+route to Home Assistant, what the server and the firmware do with the
+messages, and microphone capture. Those are later work.
 
 ## Low-latency path
 
@@ -1282,7 +1406,7 @@ real C endpoint binary; its first test,
    new id; a changed key is refused.
 5. From here every frame on the connection is a `secure_record`. The endpoint
    sends `hello` and `capabilities` (and, with the `ota` feature, a
-   `firmware_status`); the server sends `hello`, negotiates, and
+   `firmware_status`; with the `voice` role, a `mic_state`); the server sends `hello`, negotiates, and
    sends `stream_format`, `output_delay` (with a control plane, the room's
    `room_volume` and `sound` for a player and its `controller_state` for a
    controller) and the audio. With stream slots (`docs/control-plane.md`) the audio is the
@@ -1351,9 +1475,11 @@ encoder refuses exactly what the decoder rejects.
   nothing, and a decoder must reject the frame as that field, consume it
   whole and decode the frame after it (goal 11: `room_volume` with each of
   its fields out of range; goal 12: `sound` with each field and bound broken;
-  goal 14: `firmware_offer`, `firmware_chunk` and `firmware_status`).
-  `problem` is `out_of_range` for a number and `undefined` for a bit or a
-  role no version defines (`sound`'s `flags` and `role`).
+  goal 14: `firmware_offer`, `firmware_chunk` and `firmware_status`; the
+  voice role: `mic_audio` with an undefined format and with half a sample).
+  `problem` is `out_of_range` for a number, `undefined` for a bit, a role or
+  a format no version defines (`sound`'s `flags` and `role`, `mic_audio`'s
+  `format`) and `inconsistent` for fields that contradict each other.
 - `fixtures/protocol/v2/noise/cacophony_xx.fields`: the published Noise test
   vector the key exchange is held to.
 - `fixtures/protocol/lowlat/*.fields` (goal 13): the low-latency datagrams.

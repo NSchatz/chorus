@@ -502,6 +502,26 @@ static int build(const char *stem, const char *fields_text, chorus_v2_message_t 
         }
         break;
     }
+    case CHORUS_V2_MIC_AUDIO: {
+        chorus_v2_mic_audio_t *a = &m->as.mic_audio;
+        /* A name for a defined layout; a rejection vector's undefined one is
+         * its number. */
+        const char *format = value(&f, "format");
+        if (chorus_v2_enum_from_name(CHORUS_V2_ENUM_MIC_FORMAT, format, &a->format) != 0) {
+            a->format = (uint8_t)number(&f, "format");
+        }
+        a->sequence = (uint32_t)unsigned_number(&f, "sequence");
+        a->timestamp_ns = unsigned_number(&f, "timestamp_ns");
+        a->data = hex_bytes(&f, "data");
+        break;
+    }
+    case CHORUS_V2_MIC_STATE:
+        m->as.mic_state.gate = named(&f, "gate", CHORUS_V2_ENUM_MIC_GATE);
+        break;
+    case CHORUS_V2_VOICE_CONTROL:
+        m->as.voice_control.uplink = (uint8_t)number(&f, "uplink");
+        m->as.voice_control.listening = (uint8_t)number(&f, "listening");
+        break;
     default:
         chorus_check(0, "%s.fields message_type = %s is a v2 type this test builds", stem,
                      type_name);
@@ -615,9 +635,9 @@ static int the_committed_vectors_round_trip(void)
 
     /* Every type v2 added has at least one vector, and this endpoint has a
      * type for every vector (the directory and the catalog agree). */
-    static const uint8_t ADDED[] = {0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-                                    0x20, 0x21, 0x22, 0x23, 0x24, 0x30, 0x31, 0x32,
-                                    0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39};
+    static const uint8_t ADDED[] = {0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x20,
+                                    0x21, 0x22, 0x23, 0x24, 0x30, 0x31, 0x32, 0x33, 0x34,
+                                    0x35, 0x36, 0x37, 0x38, 0x39, 0x3A, 0x3B, 0x3C};
     for (size_t t = 0; t < sizeof(ADDED); t++) {
         int found = 0;
         for (size_t i = 0; i < vector_count; i++) {
@@ -1235,6 +1255,183 @@ static void the_session_keeps_the_last_sound_it_decoded(void)
                  "the getter returns sound_sub_2_1 field for field");
 }
 
+/* The voice role (docs/protocol.md, "The voice role"): the committed vectors
+ * field for field, the role bit, the rules, and what a peer that does not
+ * know the three types does. Mirrors crates/protocol/tests/v2_voice.rs. */
+static void the_voice_role_messages_are_the_committed_vectors(void)
+{
+    chorus_section("the voice role: mic_audio, mic_state, voice_control");
+    const vector_t *audio = vector("mic_audio");
+    const vector_t *muted = vector("mic_state_muted");
+    const vector_t *live = vector("mic_state_live");
+    const vector_t *off = vector("voice_control_off");
+    const vector_t *uplink = vector("voice_control_uplink");
+    const vector_t *listening = vector("voice_control_listening");
+    const vector_t *hello = vector("hello_voice");
+    if (audio == NULL || muted == NULL || live == NULL || off == NULL || uplink == NULL ||
+        listening == NULL || hello == NULL) {
+        chorus_check(0, "the voice vectors are committed");
+        return;
+    }
+    /* mic_audio, read here field by field (the directory walk compared
+     * encodings): six little-endian samples behind big-endian fields. */
+    chorus_v2_frame_t d = chorus_v2_decode_frame(audio->frame, audio->frame_len);
+    const chorus_v2_mic_audio_t *a = &d.message.as.mic_audio;
+    static const uint8_t samples[12] = {0x00, 0x00, 0x01, 0x00, 0xFF, 0xFF,
+                                        0x39, 0x30, 0x00, 0x80, 0xFF, 0x7F};
+    chorus_check(d.outcome == CHORUS_FRAME_DECODED && d.message.type == CHORUS_V2_MIC_AUDIO &&
+                     a->format == CHORUS_V2_MIC_FORMAT_PCM_S16LE_16K_MONO && a->sequence == 7 &&
+                     a->timestamp_ns == 3000000000ull && a->data.len == sizeof(samples) &&
+                     memcmp(a->data.data, samples, sizeof(samples)) == 0,
+                 "mic_audio.hex: format 1, sequence 7, timestamp 3 s, six samples as committed");
+    d = chorus_v2_decode_frame(muted->frame, muted->frame_len);
+    chorus_check(d.outcome == CHORUS_FRAME_DECODED && d.message.type == CHORUS_V2_MIC_STATE &&
+                     d.message.as.mic_state.gate == CHORUS_V2_MIC_GATE_MUTED,
+                 "mic_state_muted.hex: the gate is muted");
+    d = chorus_v2_decode_frame(live->frame, live->frame_len);
+    chorus_check(d.outcome == CHORUS_FRAME_DECODED &&
+                     d.message.as.mic_state.gate == CHORUS_V2_MIC_GATE_LIVE,
+                 "mic_state_live.hex: the gate is live");
+    const struct {
+        const vector_t *v;
+        uint8_t uplink;
+        uint8_t listening;
+    } controls[] = {{off, 0, 0}, {uplink, 1, 0}, {listening, 1, 1}};
+    for (size_t i = 0; i < sizeof(controls) / sizeof(controls[0]); i++) {
+        d = chorus_v2_decode_frame(controls[i].v->frame, controls[i].v->frame_len);
+        chorus_check(d.outcome == CHORUS_FRAME_DECODED &&
+                         d.message.type == CHORUS_V2_VOICE_CONTROL &&
+                         d.message.as.voice_control.uplink == controls[i].uplink &&
+                         d.message.as.voice_control.listening == controls[i].listening,
+                     "%s.hex: uplink %u, listening %u", controls[i].v->stem, controls[i].uplink,
+                     controls[i].listening);
+    }
+
+    /* The role bit: bit 5, declared by hello_voice, and the role of all
+     * three types (and of no type that every session carries). */
+    d = chorus_v2_decode_frame(hello->frame, hello->frame_len);
+    chorus_check(d.outcome == CHORUS_FRAME_DECODED && d.message.as.hello.roles == 0x002Du &&
+                     (d.message.as.hello.roles & CHORUS_V2_ROLE_VOICE) != 0 &&
+                     CHORUS_V2_ROLE_VOICE == (1u << 5),
+                 "hello_voice.hex declares the voice role, bit 5 (roles 0x%04x)",
+                 d.message.as.hello.roles);
+    chorus_check(chorus_v2_type_role(CHORUS_V2_MIC_AUDIO) == CHORUS_V2_ROLE_VOICE &&
+                     chorus_v2_type_role(CHORUS_V2_MIC_STATE) == CHORUS_V2_ROLE_VOICE &&
+                     chorus_v2_type_role(CHORUS_V2_VOICE_CONTROL) == CHORUS_V2_ROLE_VOICE,
+                 "mic_audio, mic_state and voice_control are the voice role's");
+    chorus_check(chorus_v2_type_role(CHORUS_V2_SOURCE_OFFER) == CHORUS_V2_ROLE_SOURCE &&
+                     chorus_v2_type_role(CHORUS_V2_AUDIO_CHUNK) == 0 &&
+                     chorus_v2_type_role(CHORUS_V2_TELEMETRY) == 0 &&
+                     chorus_v2_type_role(0x7F) == 0,
+                 "a source message is the source role's, and audio_chunk, telemetry and an "
+                 "unassigned byte are no role's");
+    static uint8_t frame[4096];
+    memcpy(frame, hello->frame, hello->frame_len);
+    frame[6] |= 0x40;
+    d = chorus_v2_decode_frame(frame, hello->frame_len);
+    chorus_check(d.outcome == CHORUS_FRAME_INVALID_FIELD && strcmp(d.error.field, "roles") == 0 &&
+                     d.error.problem == CHORUS_V2_PROBLEM_UNDEFINED,
+                 "bit 6 of roles is still no role: rejected as roles, undefined");
+    uint8_t no_mic = 0;
+    chorus_check(chorus_v2_enum_from_name(CHORUS_V2_ENUM_SOURCE_KIND, "microphone", &no_mic) != 0 &&
+                     chorus_v2_enum_name(CHORUS_V2_ENUM_SOURCE_KIND, 4) == NULL,
+                 "there is no microphone source kind: mic audio is not a source");
+
+    /* The rules: the longest chunk and one sample are accepted; one sample
+     * more, none, and half a sample are refused as data. */
+    static uint8_t pcm[(CHORUS_V2_MIC_MAX_SAMPLES + 1u) * CHORUS_V2_MIC_BYTES_PER_SAMPLE];
+    static uint8_t out[FRAME_CAP];
+    size_t written = 0;
+    chorus_v2_field_error_t error = {NULL, CHORUS_V2_PROBLEM_NONE, NULL};
+    chorus_v2_message_t m;
+    memset(&m, 0, sizeof(m));
+    m.type = CHORUS_V2_MIC_AUDIO;
+    m.as.mic_audio.format = CHORUS_V2_MIC_FORMAT_PCM_S16LE_16K_MONO;
+    m.as.mic_audio.data.data = pcm;
+    m.as.mic_audio.data.len = CHORUS_V2_MIC_MAX_SAMPLES * CHORUS_V2_MIC_BYTES_PER_SAMPLE;
+    chorus_check(chorus_v2_encode(&m, out, sizeof(out), &written, NULL) == CHORUS_ENCODE_OK &&
+                     written == 3u + 13u + 3200u,
+                 "mic_audio: 1600 samples (100 ms) is the longest chunk, a 3216-byte frame");
+    d = chorus_v2_decode_frame(out, written);
+    chorus_check(d.outcome == CHORUS_FRAME_DECODED && d.message.as.mic_audio.data.len == 3200u,
+                 "and it decodes");
+    m.as.mic_audio.data.len = CHORUS_V2_MIC_BYTES_PER_SAMPLE;
+    chorus_check(chorus_v2_encode(&m, out, sizeof(out), &written, NULL) == CHORUS_ENCODE_OK &&
+                     written == 3u + chorus_v2_min_payload_len(CHORUS_V2_MIC_AUDIO),
+                 "mic_audio: one sample is the shortest, the type's minimum payload");
+    m.as.mic_audio.data.len = sizeof(pcm);
+    chorus_check(chorus_v2_validate(&m, &error) != 0 && strcmp(error.field, "data") == 0 &&
+                     error.problem == CHORUS_V2_PROBLEM_TOO_LONG,
+                 "mic_audio: 1601 samples is refused as data, too long");
+    refused_both_ways(&m, "data");
+    m.as.mic_audio.data.len = 0;
+    refused_both_ways(&m, "data");
+    m.as.mic_audio.data.len = 3;
+    refused_both_ways(&m, "data");
+    m.as.mic_audio.data.len = 2;
+    m.as.mic_audio.format = 0;
+    refused_both_ways(&m, "format");
+    memset(&m, 0, sizeof(m));
+    m.type = CHORUS_V2_MIC_STATE;
+    m.as.mic_state.gate = 2;
+    refused_both_ways(&m, "gate");
+    memset(&m, 0, sizeof(m));
+    m.type = CHORUS_V2_VOICE_CONTROL;
+    m.as.voice_control.uplink = 2;
+    refused_both_ways(&m, "uplink");
+    m.as.voice_control.uplink = 1;
+    m.as.voice_control.listening = 2;
+    refused_both_ways(&m, "listening");
+
+    /* On the wire: a gate or a bool no version defines is that field, and a
+     * later version's trailing byte is ignored. */
+    const uint8_t gate2[] = {CHORUS_V2_MIC_STATE, 0x00, 0x01, 0x02};
+    d = chorus_v2_decode_frame(gate2, sizeof(gate2));
+    chorus_check(d.outcome == CHORUS_FRAME_INVALID_FIELD && d.consumed == sizeof(gate2) &&
+                     strcmp(d.error.field, "gate") == 0,
+                 "a mic_state gate of 2 is rejected as gate and costs one frame");
+    const uint8_t uplink2[] = {CHORUS_V2_VOICE_CONTROL, 0x00, 0x02, 0x02, 0x00};
+    d = chorus_v2_decode_frame(uplink2, sizeof(uplink2));
+    chorus_check(d.outcome == CHORUS_FRAME_INVALID_FIELD && strcmp(d.error.field, "uplink") == 0,
+                 "a voice_control uplink of 2 is rejected as uplink");
+    const uint8_t listening2[] = {CHORUS_V2_VOICE_CONTROL, 0x00, 0x02, 0x01, 0x02};
+    d = chorus_v2_decode_frame(listening2, sizeof(listening2));
+    chorus_check(d.outcome == CHORUS_FRAME_INVALID_FIELD && strcmp(d.error.field, "listening") == 0,
+                 "a voice_control listening of 2 is rejected as listening");
+    const uint8_t longer[] = {CHORUS_V2_VOICE_CONTROL, 0x00, 0x03, 0x01, 0x01, 0x7F};
+    d = chorus_v2_decode_frame(longer, sizeof(longer));
+    chorus_check(d.outcome == CHORUS_FRAME_DECODED && d.message.as.voice_control.uplink == 1 &&
+                     d.message.as.voice_control.listening == 1,
+                 "a voice_control with a byte after its fields is accepted, the excess ignored");
+
+    /* A peer that does not know the three types: the v1 decoder
+     * (chorus/protocol.h), whose catalog ends at 0x03, steps over each by
+     * its length and decodes what follows. */
+    const vector_t *voice[] = {audio, muted, live, off, uplink, listening};
+    static char text[TEXT_CAP];
+    static uint8_t time_sync[64];
+    char path[512];
+    chorus_repo_path(path, sizeof(path), "fixtures/protocol/time_sync.hex");
+    long ts_len = (fixture_read(path, text, sizeof(text)) < 0)
+                      ? -1
+                      : fixture_parse_hex(text, time_sync, sizeof(time_sync));
+    chorus_check(ts_len > 0, "fixtures/protocol/time_sync.hex is readable");
+    for (size_t i = 0; ts_len > 0 && i < sizeof(voice) / sizeof(voice[0]); i++) {
+        memcpy(frame, voice[i]->frame, voice[i]->frame_len);
+        memcpy(frame + voice[i]->frame_len, time_sync, (size_t)ts_len);
+        chorus_frame_t old = chorus_decode_frame(frame, voice[i]->frame_len + (size_t)ts_len);
+        chorus_frame_t next = chorus_decode_frame(
+            frame + old.consumed, voice[i]->frame_len + (size_t)ts_len - old.consumed);
+        chorus_check(old.outcome == CHORUS_FRAME_SKIPPED_UNKNOWN_TYPE &&
+                         old.consumed == voice[i]->frame_len &&
+                         next.outcome == CHORUS_FRAME_DECODED && next.consumed == (size_t)ts_len,
+                     "%s: a peer that does not know the type skips it and decodes the next frame "
+                     "(%s, then %s)",
+                     voice[i]->stem, chorus_frame_outcome_name(old.outcome),
+                     chorus_frame_outcome_name(next.outcome));
+    }
+}
+
 int main(void)
 {
     the_committed_vectors_round_trip();
@@ -1248,5 +1445,6 @@ int main(void)
     the_v1_types_are_v1s_own();
     the_session_keeps_the_last_sound_it_decoded();
     telemetry_carries_heap_only_when_it_is_known();
+    the_voice_role_messages_are_the_committed_vectors();
     return chorus_test_report("test_protocol_v2");
 }

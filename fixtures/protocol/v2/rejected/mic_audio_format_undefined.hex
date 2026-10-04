@@ -1,0 +1,21 @@
+# chorus rejection vector: mic audio, protocol v2 message type 0x3A, format undefined.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# reject this frame naming format (see mic_audio_format_undefined.fields).
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x3A, payload length 17 (0x0011), big-endian
+3A 00 11
+
+# format = 2: not defined
+02
+
+# sequence = 0
+00 00 00 00
+
+# timestamp_ns = 3000000000
+00 00 00 00 B2 D0 5E 00
+
+# data: two samples
+00 00 01 00

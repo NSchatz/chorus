@@ -1,0 +1,22 @@
+# chorus golden vector: mic audio, protocol v2 message type 0x3A.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# produce these exact bytes from the canonical input in mic_audio.fields, and recover
+# exactly those fields from them (docs/protocol.md, "0x3A mic audio").
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x3A, payload length 25 (0x0019), big-endian
+3A 00 19
+
+# format = 1 (pcm_s16le_16k_mono)
+01
+
+# sequence = 7
+00 00 00 07
+
+# timestamp_ns = 3000000000 (0x00000000B2D05E00), server timeline
+00 00 00 00 B2 D0 5E 00
+
+# data: six 16-bit signed little-endian samples: 0, 1, -1, 12345, -32768, 32767
+00 00 01 00 FF FF 39 30 00 80 FF 7F

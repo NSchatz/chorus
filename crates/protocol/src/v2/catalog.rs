@@ -195,6 +195,30 @@ pub mod signal_reason {
     pub const NAMES: [(u8, &str); 3] = [(NONE, "none"), (STANDBY, "standby"), (NON_PCM, "non_pcm")];
 }
 
+/// `mic_audio` (0x3A): the one PCM layout version 2 defines for microphone
+/// audio, 16 kHz mono 16-bit signed little-endian, which is what the voice
+/// pipeline takes (`docs/decisions/0166-the-voice-role-on-the-wire.md`). A
+/// value past [`mic_format::MAX`], or 0, is rejected (`Problem::Undefined`).
+pub mod mic_format {
+    /// 16 kHz, one channel, 16-bit signed little-endian PCM.
+    pub const PCM_S16LE_16K_MONO: u8 = 1;
+    /// The highest defined.
+    pub const MAX: u8 = PCM_S16LE_16K_MONO;
+    /// Names, for fixtures and diagnostics.
+    pub const NAMES: [(u8, &str); 1] = [(PCM_S16LE_16K_MONO, "pcm_s16le_16k_mono")];
+}
+
+/// `mic_audio`: the sample rate of [`mic_format::PCM_S16LE_16K_MONO`].
+pub const MIC_SAMPLE_RATE_HZ: u32 = 16_000;
+
+/// `mic_audio`: bytes in one sample of [`mic_format::PCM_S16LE_16K_MONO`].
+pub const MIC_BYTES_PER_SAMPLE: usize = 2;
+
+/// `mic_audio`: most samples in one message, 100 ms at 16 kHz. ASSUMED: five
+/// of the nominal 20 ms chunks, so an endpoint can batch a little on a busy
+/// link while a receiver's buffer for one message stays 3200 bytes.
+pub const MIC_MAX_SAMPLES: usize = 1600;
+
 /// A message type in the v2 catalog.
 ///
 /// Types 0x01 to 0x03 are the v1 messages, carried into v2 unchanged
@@ -260,11 +284,18 @@ pub enum Type {
     RoomVolume,
     /// 0x39, the room's sound settings for one player (player role).
     Sound,
+    /// 0x3A, a chunk of microphone audio, endpoint to server (voice role).
+    MicAudio,
+    /// 0x3B, an endpoint's mic gate: muted or live (voice role).
+    MicState,
+    /// 0x3C, the server turning the mic uplink on or off and saying whether
+    /// the room is listening (voice role).
+    VoiceControl,
 }
 
 impl Type {
     /// Every type in the catalog, in wire order.
-    pub const ALL: [Type; 29] = [
+    pub const ALL: [Type; 32] = [
         Type::TimeSync,
         Type::AudioChunk,
         Type::StreamEnd,
@@ -294,6 +325,9 @@ impl Type {
         Type::SourceControl,
         Type::RoomVolume,
         Type::Sound,
+        Type::MicAudio,
+        Type::MicState,
+        Type::VoiceControl,
     ];
 
     /// The wire byte.
@@ -328,6 +362,9 @@ impl Type {
             Type::SourceControl => 0x37,
             Type::RoomVolume => 0x38,
             Type::Sound => 0x39,
+            Type::MicAudio => 0x3A,
+            Type::MicState => 0x3B,
+            Type::VoiceControl => 0x3C,
         }
     }
 
@@ -368,6 +405,9 @@ impl Type {
             Type::SourceControl => "source_control",
             Type::RoomVolume => "room_volume",
             Type::Sound => "sound",
+            Type::MicAudio => "mic_audio",
+            Type::MicState => "mic_state",
+            Type::VoiceControl => "voice_control",
         }
     }
 
@@ -456,6 +496,29 @@ impl Type {
             // bass, treble, flags, role, sub_present, crossover, sub level,
             // eq_count (no filter)
             Type::Sound => 1 + 1 + 1 + 1 + 1 + 2 + 2 + 1,
+            // format, sequence, timestamp, one sample
+            Type::MicAudio => 1 + 4 + 8 + MIC_BYTES_PER_SAMPLE,
+            // gate
+            Type::MicState => 1,
+            // uplink, listening
+            Type::VoiceControl => 1 + 1,
+        }
+    }
+
+    /// The role this type belongs to, as a bit of [`roles`]; `None` for a
+    /// type every session carries (`docs/protocol.md`, "The four roles" and
+    /// "The voice role"). A role's messages are exchanged only on a session
+    /// whose endpoint declared the role in its `hello`:
+    /// [`crate::v2::decode_frame_for_roles`] holds a reader to that.
+    pub fn role(self) -> Option<u16> {
+        match self {
+            Type::Metadata | Type::Artwork => Some(roles::METADATA),
+            Type::ControllerCommand | Type::ControllerState => Some(roles::CONTROLLER),
+            Type::VisualizerFrame | Type::Color => Some(roles::VISUALIZER),
+            Type::SourceOffer | Type::SourceControl => Some(roles::SOURCE),
+            Type::RoomVolume | Type::Sound => Some(roles::PLAYER),
+            Type::MicAudio | Type::MicState | Type::VoiceControl => Some(roles::VOICE),
+            _ => None,
         }
     }
 }
@@ -648,6 +711,21 @@ wire_enum! {
 }
 
 wire_enum! {
+    /// `mic_state.gate`: whether an endpoint's microphone can be heard.
+    ///
+    /// The gate is the endpoint's own (`docs/decisions/0063-controls-led-and-mic-gate.md`):
+    /// it starts closed and follows the hardware mute switch, and nothing a
+    /// server sends opens it.
+    MicGate {
+        /// The gate is closed: the switch is in the muted position, or has
+        /// not yet been read as live. No `mic_audio` is sent.
+        Muted = 0, "muted";
+        /// The gate is open: `mic_audio` flows when the server asked for it.
+        Live = 1, "live";
+    }
+}
+
+wire_enum! {
     /// What the server asks a source endpoint to do.
     SourceAction {
         /// Start sending the input upstream.
@@ -746,8 +824,8 @@ wire_enum! {
 
 /// The roles a peer takes, as bits of `hello.roles`.
 ///
-/// The player role is the base every speaker takes; the other four are the
-/// roles of decision K65.
+/// The player role is the base every speaker takes; the next four are the
+/// roles of decision K65; voice is the microphone's (K71, K73, proposal P8).
 pub mod roles {
     /// Plays a stream (a speaker).
     pub const PLAYER: u16 = 1 << 0;
@@ -759,15 +837,20 @@ pub mod roles {
     pub const VISUALIZER: u16 = 1 << 3;
     /// Offers inputs and streams them upstream.
     pub const SOURCE: u16 = 1 << 4;
+    /// Sends microphone audio and its mic gate state, and takes
+    /// `voice_control`. Never a source: mic audio has its own message and is
+    /// not an input any room can play (brief section 4.8, I4).
+    pub const VOICE: u16 = 1 << 5;
     /// Every defined role bit.
-    pub const DEFINED: u16 = PLAYER | METADATA | CONTROLLER | VISUALIZER | SOURCE;
+    pub const DEFINED: u16 = PLAYER | METADATA | CONTROLLER | VISUALIZER | SOURCE | VOICE;
     /// Names, in bit order, for fixtures and diagnostics.
-    pub const NAMES: [(u16, &str); 5] = [
+    pub const NAMES: [(u16, &str); 6] = [
         (PLAYER, "player"),
         (METADATA, "metadata"),
         (CONTROLLER, "controller"),
         (VISUALIZER, "visualizer"),
         (SOURCE, "source"),
+        (VOICE, "voice"),
     ];
 }
 

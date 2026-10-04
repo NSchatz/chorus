@@ -1,0 +1,13 @@
+# chorus golden vector: mic state (live), protocol v2 message type 0x3B.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# produce these exact bytes from the canonical input in mic_state_live.fields, and recover
+# exactly those fields from them (docs/protocol.md, "0x3B mic state").
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x3B, payload length 1 (0x0001), big-endian
+3B 00 01
+
+# gate = 1 (live)
+01

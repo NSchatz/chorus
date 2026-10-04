@@ -1,0 +1,19 @@
+# Canonical input for the mic_audio_format_undefined rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# mic_audio_format_undefined.hex as that field undefined, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# A format no version defines: 1 (pcm_s16le_16k_mono) is the only one.
+
+message_type = mic_audio
+format = 2
+sequence = 0
+timestamp_ns = 3000000000
+data = 00000100
+rejected_field = format
+problem = undefined

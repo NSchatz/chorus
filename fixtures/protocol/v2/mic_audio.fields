@@ -1,0 +1,18 @@
+# Canonical input for the mic_audio golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly mic_audio.hex, and decoding mic_audio.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+#
+# Six samples (0, 1, -1, 12345, -32768, 32767), short on purpose so the bytes can be read:
+# a real chunk is 20 ms, 320 samples. The samples are little-endian; every other field is
+# big-endian.
+
+message_type = mic_audio
+format = pcm_s16le_16k_mono
+sequence = 7
+timestamp_ns = 3000000000
+data = 00000100ffff39300080ff7f

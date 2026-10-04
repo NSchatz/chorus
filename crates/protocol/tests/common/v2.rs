@@ -421,6 +421,25 @@ pub fn v2_message_from_fields(f: &Fields) -> Message {
                 },
             })
         }
+        Type::MicAudio => Message::MicAudio(MicAudio {
+            // A name for a defined layout; a rejection vector's undefined
+            // one is its number.
+            format: mic_format::NAMES
+                .iter()
+                .find(|(_, n)| *n == f.str("format"))
+                .map(|(v, _)| *v)
+                .unwrap_or_else(|| f.u64("format") as u8),
+            sequence: f.u64("sequence") as u32,
+            timestamp_ns: f.u64("timestamp_ns"),
+            data: f.bytes("data"),
+        }),
+        Type::MicState => Message::MicState(MicState {
+            gate: named("gate", MicGate::from_name(f.str("gate"))),
+        }),
+        Type::VoiceControl => Message::VoiceControl(VoiceControl {
+            uplink: f.u64("uplink") == 1,
+            listening: f.u64("listening") == 1,
+        }),
         Type::TimeSync | Type::AudioChunk | Type::StreamEnd => {
             panic!("v1 messages are vectored at the top of fixtures/protocol/")
         }

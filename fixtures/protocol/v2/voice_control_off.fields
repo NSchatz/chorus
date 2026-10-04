@@ -1,0 +1,14 @@
+# Canonical input for the voice_control_off golden vector (protocol v2).
+#
+# Encoding these field values must produce exactly voice_control_off.hex, and decoding voice_control_off.hex
+# must recover exactly these field values.
+#
+# Format: one "key = value" per line, '#' starts a comment. Text is the rest of the line,
+# trimmed (so it never starts or ends with a space and never holds '#'). Byte strings are
+# hex with no separators. Lists and bit sets are space separated names or numbers.
+#
+# The uplink off and the room not listening: what a session starts as, and what ends a run.
+
+message_type = voice_control
+uplink = 0
+listening = 0
