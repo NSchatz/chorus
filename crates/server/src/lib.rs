@@ -66,6 +66,7 @@
 
 #![warn(missing_docs)]
 
+pub mod announce;
 pub mod clients;
 pub mod conductor;
 pub mod config;

@@ -17,6 +17,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::error::FetchError;
+use crate::url::{Scheme, Url};
 
 /// What a fetch may do and how long it may take.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,6 +40,59 @@ pub struct Policy {
     /// The PEM bundle of trusted roots for https. `None`: the file named by
     /// `SSL_CERT_FILE`, else `/etc/ssl/certs/ca-certificates.crt`.
     pub ca_bundle: Option<PathBuf>,
+    /// (goal 18) The origins this fetch is held to, or empty for no such
+    /// rule. With one or more, every connection the fetch makes (the URL
+    /// itself, each redirect, an HLS playlist and its segments) has to be to
+    /// one of them, so a fetch that starts at an allowed origin cannot be
+    /// sent anywhere else. Checked before the name is resolved, and the
+    /// address rules still apply to what it resolves to.
+    pub origins: Vec<Origin>,
+}
+
+/// A scheme, a host and a port: where a fetch may be held to
+/// ([`Policy::origins`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Origin {
+    /// `http` or `https`.
+    pub scheme: Scheme,
+    /// The host as [`Url::host`] writes it: lower-cased, an IPv6 address
+    /// without its brackets.
+    pub host: String,
+    /// The port.
+    pub port: u16,
+}
+
+impl Origin {
+    /// The origin of `url`.
+    pub fn of(url: &Url) -> Origin {
+        Origin {
+            scheme: url.scheme,
+            host: url.host.clone(),
+            port: url.port,
+        }
+    }
+
+    /// The origin of the URL `text`, parsed as every fetched URL is.
+    pub fn parse(text: &str) -> Result<Origin, FetchError> {
+        Url::parse(text).map(|url| Origin::of(&url))
+    }
+}
+
+/// (goal 18) Whether `url` is at an origin `policy` holds the fetch to; a
+/// policy that names none holds it to nothing.
+pub fn check_origin(url: &Url, policy: &Policy) -> Result<(), FetchError> {
+    if policy.origins.is_empty() || policy.origins.contains(&Origin::of(url)) {
+        return Ok(());
+    }
+    Err(FetchError::Refused(format!(
+        "origin {}://{}:{} is not one this fetch is held to",
+        match url.scheme {
+            Scheme::Http => "http",
+            Scheme::Https => "https",
+        },
+        url.host,
+        url.port
+    )))
 }
 
 impl Default for Policy {
@@ -54,6 +108,7 @@ impl Default for Policy {
             read_timeout: Duration::from_secs(15),
             max_header_bytes: 32 * 1024,
             ca_bundle: None,
+            origins: Vec::new(),
         }
     }
 }
@@ -170,6 +225,30 @@ mod tests {
 
     fn refused(ip: &str, policy: &Policy) -> String {
         verdict(ip, 80, policy, &[]).expect_err(ip)
+    }
+
+    #[test]
+    fn a_fetch_held_to_origins_connects_nowhere_else() {
+        let mut p = policy(false, &[]);
+        let at = |text: &str| Url::parse(text).unwrap();
+        // No origin named: no such rule.
+        assert!(check_origin(&at("http://media.example/a.mp3"), &p).is_ok());
+        p.origins = vec![Origin::parse("http://ha.example:8123").unwrap()];
+        assert!(check_origin(&at("http://ha.example:8123/api/tts_proxy/a.mp3"), &p).is_ok());
+        assert!(check_origin(&at("http://HA.example:8123/b"), &p).is_ok());
+        for elsewhere in [
+            "http://ha.example/a.mp3",
+            "https://ha.example:8123/a.mp3",
+            "http://media.example:8123/a.mp3",
+            "http://ha.example.media.example:8123/a.mp3",
+        ] {
+            match check_origin(&at(elsewhere), &p) {
+                Err(FetchError::Refused(why)) => {
+                    assert!(why.starts_with("origin "), "{elsewhere}: {why}")
+                }
+                other => panic!("{elsewhere}: {other:?}"),
+            }
+        }
     }
 
     #[test]

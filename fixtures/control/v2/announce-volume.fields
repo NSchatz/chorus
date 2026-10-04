@@ -1,0 +1,14 @@
+# Canonical input for the catalog v2 announce-volume vector.
+#
+# Encoding these field values must produce exactly announce-volume.json, and decoding
+# announce-volume.json must recover exactly these field values.
+#
+# (goal 18) An announcement at a volume: the target's rooms play the clip at it, clamped to each room's effective limit, and get their own back afterwards.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = announce
+target = kitchen
+url = http://ha.example:8123/api/tts_proxy/abc.mp3
+volume = 0.300

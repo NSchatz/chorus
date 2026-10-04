@@ -380,6 +380,7 @@ give them.
 | `input_label` | `input` (`<endpoint>/<input>`), `name`, `role` (`"line-in"` or `"streamer"`) | (goal 17) names an input and says what is wired to it; an empty `name` with `role` `line-in` removes the label; below |
 | `soloist_restart` | none | (goal 17) every Spotify Soloist receiver's supervisor reads its binary again and starts again; refused (`no-receivers`) on a server started without `--soloist-receivers`; below |
 | `playback` | `target` (a room, a saved group or a formed group), `action` (`"pause"`, `"resume"`, `"next"` or `"previous"`) | (goal 17) forwarded to the Spotify receiver the target's group is playing; refused for a group that plays anything else; below |
+| `announce` | `target` (a room, a saved group or a formed group), `url`, optional `volume` | (goal 18) plays a clip from a configured origin in the target's group, then puts back what the group played; refused for a URL from any other origin; below |
 
 ```json
 {"v":2,"t":"bond","zone":"living","members":[{"endpoint":"endpoint-a","role":"FL"},{"endpoint":"endpoint-b","role":"FR"}]}
@@ -667,8 +668,9 @@ of them `nothing_installs_until_the_explicit_install_action`.
 {"v":2,"t":"input_label","input":"endpoint-c/line-1","name":"Living room streamer","role":"streamer"}
 ```
 
-A **stored source** is the one way a URL enters the server through this
-catalog, and only an alarm plays it (`"source":"stored:<id>"` in `alarm_set`;
+A **stored source** is the one way a URL is KEPT by the server through this
+catalog (goal 18's `announce`, below, plays a URL from a configured origin
+and keeps nothing), and only an alarm plays it (`"source":"stored:<id>"` in `alarm_set`;
 `docs/inputs.md` says how it is played and what happens when it cannot be).
 `kind` `url`: `value` is `http://` or `https://` followed by a host, holds no
 control character, space, quote or backslash, and is at most 2048 bytes
@@ -725,6 +727,106 @@ it did (the now-playing record's `state`).
 
 `soloist_restart` is what the owner sends, as `chorusctl soloist restart`,
 after replacing an expired Soloist binary.
+
+### Announcements: the `announce` command (goal 18)
+
+```json
+{"v":2,"t":"announce","target":"kitchen","url":"http://ha.example:8123/api/tts_proxy/abc.mp3"}
+{"v":2,"t":"announce","target":"kitchen","url":"http://ha.example:8123/api/tts_proxy/abc.mp3","volume":0.300}
+```
+
+Brief section 4.8 names three paths by which the server may be made to fetch
+a URL: UPnP renders, "HA's media and TTS URLs from HA's own address", and
+stored alarm stream URLs. `announce` is the second, and it is held to those
+words: **only a URL whose scheme, host and port are those of an origin the
+server was started with is played** (`--announce-origin
+<scheme://host[:port]>`, repeatable; the home automation's own address). So
+there is still no command that plays an ARBITRARY URL
+(`docs/decisions/0124-the-media-player-engine.md`), and a server started
+with no origin refuses every `announce` by name.
+
+| field | notes |
+|---|---|
+| `target` | a room, a saved group or a formed group, as `take` names one |
+| `url` | `http://` or `https://`, under the shape rules a stored `url` source has (a host, no control character, space, quote or backslash, at most 2048 bytes), from a configured origin |
+| `volume` | optional: the volume the target's rooms play the clip at, CLAMPED to each room's effective limit like every volume path; the rooms get their own back afterwards. Absent: the rooms keep their volumes |
+
+The answer is `200` with the resulting state (the group's source is the
+player, its now-playing record says `via` `announce`), or `400` with an
+`error` naming the field:
+
+| field | when |
+|---|---|
+| `target` | no room or group has that id; or an alarm is ringing in a room that would hear the announcement (an announcement does not interrupt a ringing alarm) |
+| `url` | not `http`/`https` or not the shape above (the decoder); no origin configured (`no-announce-origin: ...`); an origin that is not on the list, or a URL with userinfo or a port that is not one (the refusal lists the configured origins) |
+| `volume` | outside `0.000` to `1.000` |
+| `t` | the server runs no player (`no-players: ...`, a server started without `--players`), or none is free (`no-free-player: ...`) |
+| `source` | no stream slot is free for the group (the slots' own refusal) |
+
+An origin is compared whole: the scheme, the host as text (ASCII
+case-insensitive; a name is never resolved to compare it) and the port, the
+scheme's default (80, 443) when none is written. `http://ha.example:8123` and
+`http://ha.example` are two origins. The fetch itself goes through the fetch
+policy (`docs/streams.md`) and is **held to the configured origins at every
+connection it makes**: the fetcher follows redirects (up to 5), and a redirect
+that leaves the origin fails the fetch (`refused: origin ...`) without
+connecting to where it points.
+
+**What it does is interrupt and restore, and nothing more** (goal 20 builds
+the ducking mixer, K31, and replaces the playback here, not the command):
+
+1. The clip plays through a held player session, as a ringing alarm's stored
+   URL does (`docs/inputs.md`): the server takes a free player, the target's
+   group plays `player:p<i>`, and the state shows it (`now_playing`, title
+   `Announcement`, `via` `announce`). A room plays in **the group it is in**,
+   so everybody in that group hears it and nobody is regrouped; a saved group
+   that is not active is taken first (K78), as any play on a saved group
+   does, and stays formed afterwards.
+2. With `volume`, every room of the group is set to it, clamped.
+3. When the clip ends, fails (a 404, a refused redirect, an undecodable
+   file), or has played for 10 minutes (ASSUMED bound: a URL that turns out
+   to be an endless stream must not hold a room), the group goes back to the
+   source it had, the player is given back, and each room whose volume is
+   still the one the announcement set goes back to the volume it had. A
+   failed fetch restores at once: the command was answered `200` (the fetch
+   runs on the player's thread), and the server's log has the reason
+   (`announce owner=announce:<n> ended group=<g> restored=<source>
+   failure="<words>"`).
+
+The limits, plainly:
+
+- **No mixing, no ducking.** The music stops for the clip; it is not turned
+  down under it.
+- **Interrupted, not paused.** The stream, a line-in and a chime come back
+  as they are when the clip ends (they are live or generated, so there is no
+  position to keep). A UPnP cast and a Spotify receiver do NOT come back: a
+  player is given back the moment its group stops playing it and a receiver
+  is paused by its manager, so a group that was playing either plays `none`
+  after the announcement and is started again from the app that drove it.
+- **One player per announcement.** A server whose players are all in use (a
+  cast in another room, an alarm's stream) refuses the announcement
+  (`no-free-player`). A group that is casting needs a second player for the
+  clip.
+- **A room target in a multi-room group is heard by the whole group.**
+- **An announcement during another**, in the same group, replaces it on the
+  same player; what the group goes back to is what it played before the
+  first. In another group it needs a player of its own.
+- **An alarm that rings during an announcement** takes its rooms as it always
+  does and the announcement ends; when the alarm ends the rooms go back to
+  what they played, and the volumes they had, BEFORE the announcement. **An
+  announcement for a room an alarm is ringing in** is refused, field
+  `target`.
+- **A person's command during the clip wins.** A `take`, a `join` or a group
+  change that gives the group something else ends the announcement and is
+  not undone; a volume a person set during the clip is kept.
+- A volume the announcement set is persisted like any volume, so a server
+  that stops in the middle of a clip starts again at the clip's volume.
+- The schedule runtime is not told of an `announce` as it is of a person's
+  command: it ends no autoplay and detaches no room.
+
+`crates/server/tests/announce.rs` runs it on the real binary;
+`docs/decisions/0136-a-server-identity-and-an-announce-command.md` records
+the decision.
 
 ### Take the room (K78)
 
@@ -910,11 +1012,27 @@ The catalog above is the contract. The transport is HTTP on the address
 | `GET /` | the control page |
 | `GET /chorus.css`, `GET /chorus.js` | what the page loads |
 | `GET /api/state` | the state message, once (v2; `?v=1` for the v1 shape) |
+| `GET /api/server` | (goal 18) who this server is, once: the `server` message below. Not a state: nothing changes it while the server runs and no state message carries it |
 | `GET /api/events` | a `text/event-stream`, one `data: <state message>` per change, starting with the state as it stands (v2; `?v=1` for the v1 shape, rendered from the state as it stands when each change reaches the stream) |
 | `GET /api/report` | one line of plain text: commands applied, commands refused, connections and streams turned away, and the fanout's ceiling and drops |
 | `GET /metrics` | the Prometheus exporter (goal 15): per-speaker telemetry in text exposition format 0.0.4. Read-only, served by a control worker like any other request; `docs/telemetry.md` lists every series |
 | `POST /api/command` | the body is one control message, sent as `Content-Type: application/json`. `200` with the resulting state (v2, the bytes every subscriber is sent), `400` with an `error` (at the message's version), or `426` with a `refused`; `415` or `403` under the rules below |
 | `POST /api/leaving` | the body is an endpoint identifier, which stops being `present`. The same two rules as a command |
+
+`GET /api/server` answers `200`, `application/json`, with one message in the
+canonical encoding (`fixtures/control/v2/server.json`,
+`server-no-origin.json`):
+
+```json
+{"v":2,"t":"server","id":"chorus-server-0123456789abcdef","software":"chorus-server 0.1.0","catalogs":[1,2],"announce_origins":["http://ha.example:8123"]}
+```
+
+| field | notes |
+|---|---|
+| `id` | a stable identifier of this server, 1 to 64 lower-case ASCII letters, digits and hyphens: `chorus-server-` and the 16 hexadecimal digits of the fingerprint of the server's public key (30 characters). It is the same for as long as the key is: across restarts of a server with an identity directory (`--identity-dir`, or `--state-file`'s directory), and new at every start of a `--ephemeral-identity` server, which is a throwaway run. The control service's TXT record carries the same value as `id=` ("Discovery") |
+| `software` | the server's version string, the one its audio `hello` carries |
+| `catalogs` | every catalog version this build implements |
+| `announce_origins` | the `--announce-origin` list, each in its one spelling (`scheme://host`, then `:port` unless it is the scheme's default), in the order given; `[]` for none, and then every `announce` is refused |
 
 A browser opens `/api/events` with `EventSource` and a shell script opens it
 with a socket and a `GET` line, so **the UI and the verification scripts are the
@@ -1244,8 +1362,14 @@ The server advertises two DNS-SD services when started with `--advertise`:
 Each is a PTR answer naming the instance, with the SRV, TXT and address records
 in the additional section, per RFC 6763 sections 4.1, 5 and 6. The SRV priority
 and weight are both zero, which section 5 says they SHOULD be for one instance
-described by one record. The TXT record carries `v=<catalog version>` and, on
-the audio service, `ctl=<control port>`.
+described by one record. The TXT record carries `v=<catalog version>` and
+then, on the audio service, `ctl=<control port>`, and (goal 18) on the
+control service, `id=<the server's id>`: the `id` of `GET /api/server`, so a
+controller that already knows a server (Home Assistant's zeroconf discovery)
+recognises it when its address changes. `fixtures/discovery/advertisement-control`
+pins the control service's packet and what a resolver makes of it, for the
+Rust crate and the endpoint's C resolver alike. The audio service's record is
+unchanged.
 
 An endpoint started with `--discover` sends a PTR query for
 `_chorus-audio._tcp.local.` to 224.0.0.251:5353 (RFC 6762 sections 2 and 3),
@@ -1279,7 +1403,10 @@ player plays (a stream URL, a service) is not a control message: it is said to
 the player by what drives it (a UPnP AV control point, `docs/upnp.md` once the
 renderer lands). (goal 17) `source_store` stores a URL and plays nothing: the
 one thing that plays a stored source is an alarm ringing, and a `take` naming
-one is refused. What a Spotify receiver plays is chosen in the Spotify app;
+one is refused. (goal 18) `announce` is the one message that carries a
+URL to be played now, and only from an origin the server was started with
+(the home automation's own address): it is not a way to play an arbitrary
+URL, and a server with no `--announce-origin` plays none. What a Spotify receiver plays is chosen in the Spotify app;
 the catalog can pause, resume and skip it (`playback`) and nothing else: no
 message plays a Spotify URI in a room, searches or queues.
 

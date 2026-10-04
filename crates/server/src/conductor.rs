@@ -121,19 +121,12 @@ pub const TICK: Duration = Duration::from_secs(1);
 /// the wired tier); a test holds the two equal.
 pub const WIRED_GROUP_LATENCY_NS: i64 = 180_000_000;
 
-/// The epochs of an alarm's plays: above every renderer's (a renderer's
-/// epoch is its base, counted from 1, in the high half), so a report left
-/// over from a renderer's play of the same player is older than an alarm's
-/// session and ignored, and never one a renderer takes for its own.
-const ALARM_EPOCH_BASE: u64 = 0xffff_ffff_0000_0000;
-
 /// (goal 17) What plays an alarm's stored stream URL: the server's player
 /// sessions, and the players' reports when this thread is the one that
 /// takes them (a server without `--upnp`).
 pub struct StoredStreams {
     sessions: Arc<PlayerSessions>,
     reports: Option<Receiver<PlayerReport>>,
-    plays: u64,
 }
 
 impl StoredStreams {
@@ -144,11 +137,7 @@ impl StoredStreams {
         sessions: Arc<PlayerSessions>,
         reports: Option<Receiver<PlayerReport>>,
     ) -> StoredStreams {
-        StoredStreams {
-            sessions,
-            reports,
-            plays: 0,
-        }
+        StoredStreams { sessions, reports }
     }
 }
 
@@ -282,6 +271,8 @@ pub struct Conductor {
     stored: Option<StoredStreams>,
     /// (goal 17) The Soloist receivers, on a server that runs them.
     soloist: Option<Arc<crate::soloist::Link>>,
+    /// (goal 18) The announcements, which this thread ends.
+    announcer: Option<Arc<crate::announce::Announcer>>,
 }
 
 /// When an endpoint of a room on `transport` plays audio stamped `t` on the
@@ -322,7 +313,15 @@ impl Conductor {
             players: 0,
             stored: None,
             soloist: None,
+            announcer: None,
         }
+    }
+
+    /// (goal 18) End the announcements of `announcer` as part of every pass
+    /// (`crate::announce`).
+    pub fn with_announcer(mut self, announcer: Arc<crate::announce::Announcer>) -> Conductor {
+        self.announcer = Some(announcer);
+        self
     }
 
     /// (goal 17) This server runs Soloist receivers, reached through `link`
@@ -400,6 +399,7 @@ impl Conductor {
         effects.extend(self.run_schedule());
         let answers = self.stored_requests(&effects);
         effects.extend(answers);
+        self.settle_announcements();
         let snapshot = self.state.snapshot();
         let mut report = PassReport::default();
         self.apply_effects(&effects, &snapshot, &mut report);
@@ -621,6 +621,34 @@ impl Conductor {
         effects
     }
 
+    /// (goal 18) End the announcements that are over, after the schedule
+    /// ran (so an alarm that fired in this pass has already taken its
+    /// rooms), and tell the runtime of each one it displaced: a room it
+    /// holds goes back to what played before the announcement, never to the
+    /// announcement's player.
+    fn settle_announcements(&mut self) {
+        let Some(announcer) = &self.announcer else {
+            return;
+        };
+        for over in announcer.settle(&self.state) {
+            if let Some(schedule) = self.schedule.as_mut() {
+                let rooms =
+                    schedule
+                        .runtime
+                        .announcement_over(&over.player, &over.previous, &over.volumes);
+                if rooms > 0 {
+                    println!(
+                        "chorus-server: schedule announcement over player={} rooms={} \
+                         go-back-to={}",
+                        over.player.literal(),
+                        rooms,
+                        over.previous.literal()
+                    );
+                }
+            }
+        }
+    }
+
     /// (goal 17) The receiver manager's answers to the alarms' Spotify
     /// requests: a receiver that plays becomes its alarm's source (and the
     /// manager is told whether the alarm still wanted it), and every way it
@@ -714,7 +742,7 @@ impl Conductor {
     /// (`on_alarm_source_started`), and every way it cannot start is
     /// answered with a reason, which rings the fallback chime.
     fn play_stored(&mut self, alarm: &str, target: &str, url: &str, name: &str) -> Vec<Effect> {
-        let Some(streams) = self.stored.as_mut() else {
+        let Some(streams) = self.stored.as_ref() else {
             return self.alarm_source_failed(
                 alarm,
                 "no-players",
@@ -724,18 +752,19 @@ impl Conductor {
         let Some(schedule) = self.schedule.as_mut() else {
             return Vec::new();
         };
-        streams.plays += 1;
         let request = PlayRequest {
             owner: format!("alarm:{}", alarm),
             target: target.to_string(),
             uri: url.to_string(),
             mime: None,
             via: "alarm".to_string(),
-            epoch: ALARM_EPOCH_BASE | (streams.plays & 0xffff_ffff),
+            // One counter for every held play (`PlayerSessions::held_epoch`).
+            epoch: streams.sessions.held_epoch(),
             metadata: Metadata {
                 title: Some(name.to_string()),
                 ..Metadata::default()
             },
+            origins: Vec::new(),
         };
         let (mono, _) = schedule.clocks.now();
         let runtime = &mut schedule.runtime;

@@ -125,6 +125,16 @@ also asserts the other direction of the drift guard: every message type in the
 catalog must have a vector here, and every vector here must be a type in the
 catalog.
 
+Goal 18's vectors are under `control/v2/`: `announce` and `announce-volume`
+(the command, without and with its optional `volume`), `server` and
+`server-no-origin` (what `GET /api/server` answers; a `message_type = server`
+vector is encoded from its fields and has no decoder, as a state has none),
+and five refusals, `error-announce-origin` (a URL from an origin that is not on
+the server's `announce_origins` list), `error-announce-no-origin`,
+`error-announce-target`, `error-announce-url` and `error-announce-volume`.
+`discovery/advertisement-control` is the control service's advertisement with
+`id=` in its TXT record.
+
 Three of the vectors are refusals. Their `.fields` carries an `input` line
 holding a whole control message; decoding it must be refused and encoding the
 refusal must produce the committed bytes, so the WORDING of an error is part of

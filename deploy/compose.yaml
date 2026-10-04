@@ -61,6 +61,18 @@ services:
     # Spotify Soloist receivers are opt-in: deploy/soloist/server.compose.yaml
     # is the override that mounts the receiver directory and adds --slots,
     # --soloist-dir and --soloist-receivers to this command.
+    # Announcements from a home automation (the control API's `announce`
+    # command) are off: with no --announce-origin every one is refused. To
+    # allow them, add the automation's own address as an origin, and players
+    # to play the clips (which need stream slots), for example:
+    #   - --slots
+    #   - "8"
+    #   - --players
+    #   - "2"
+    #   - --announce-origin
+    #   - http://homeassistant.example:8123
+    # Only URLs from that scheme, host and port are fetched, redirects
+    # included (docs/control-plane.md, "Announcements").
     command:
       - --listen
       - 0.0.0.0:4010

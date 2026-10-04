@@ -40,7 +40,7 @@ use std::time::Instant;
 pub use error::FetchError;
 pub use http::{Cancel, CANCEL_SLICE, USER_AGENT};
 pub use icy::IcyInfo;
-pub use policy::Policy;
+pub use policy::{Origin, Policy};
 pub use tls::{ca_bundle_path, DEFAULT_CA_BUNDLE};
 
 use hls::HlsStream;

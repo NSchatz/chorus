@@ -1,7 +1,9 @@
 # Streams: what URLs chorus plays
 
 chorus fetches media by URL when something hands it one: the UPnP renderer of goal 16
-first, and since goal 17 an alarm whose source is a stored stream URL (`docs/inputs.md`). This page says which URLs play, which are
+first, since goal 17 an alarm whose source is a stored stream URL (`docs/inputs.md`), and since
+goal 18 the `announce` command, for a clip from an origin the server was started with
+(`docs/control-plane.md`, "Announcements"). This page says which URLs play, which are
 refused, and the exact words of each refusal. The decision record is
 `docs/decisions/0120-the-media-fetcher.md`; the code is `crates/fetch`.
 
@@ -30,6 +32,7 @@ A refusal is one line. The first word says the kind.
 | `refused: link-local address <ip>` | `169.254.x.x` or `fe80::` addresses |
 | `refused: unspecified address <ip>`, `refused: multicast address <ip>`, `refused: broadcast address <ip>` | not addresses a media server has |
 | `refused: the server's own port <port> at <ip>` | the URL points at one of chorus's own listeners |
+| `refused: origin <scheme>://<host>:<port> is not one this fetch is held to` | (goal 18) an announcement's fetch, held to the server's `--announce-origin` list, was sent somewhere else: by the URL itself, by a redirect, or by an HLS playlist or segment. Nothing is fetched from there. Every other fetch (a cast, an alarm's stream) is held to no origin |
 | `refused: more than <n> redirects` | a redirect chain longer than the bound (5), or a loop |
 | `refused: response headers larger than <n> bytes` | a server sending more than 32 KiB of headers |
 

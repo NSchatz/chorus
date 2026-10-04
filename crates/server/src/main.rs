@@ -317,6 +317,10 @@ control plane:
   --media-allow-loopback        let the players fetch media from this machine's loopback
                                 (tests and development only, never a deployment; needs
                                 --players; the server's own ports stay refused)
+  --announce-origin <origin>    where the announce command's URLs may come from, as
+                                scheme://host[:port] (the home automation's own address);
+                                repeatable; with none every announce is refused (needs
+                                --control-listen, and --players to play one)
   --advertise --instance <label>  advertise by multicast DNS
 
 soloist (goal 17; docs/soloist.md; off unless --soloist-receivers is above 0: Spotify Connect
@@ -691,6 +695,19 @@ fn main() -> ExitCode {
         // Catalog v2: a room declared wireless cannot hold a bonded set (K91),
         // so the room model is told each room's declared tier.
         zones.set_transports(transports.clone());
+        // (goal 18) Where an announcement's URL may come from.
+        zones.set_announce_origins(config.announce_origins.clone());
+        if !config.announce_origins.is_empty() {
+            println!(
+                "chorus-server: announce origins={}",
+                config
+                    .announce_origins
+                    .iter()
+                    .map(|origin| origin.literal())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+        }
         let zone_count = zones.zones().len();
         let mut state = ControlState::new(zones, config.state_file.as_ref().map(|_| state_path));
         state.set_event_streams(config.event_streams);
@@ -740,6 +757,56 @@ fn main() -> ExitCode {
         .as_ref()
         .map_or(0, |(plane, _)| port_of(plane.address()));
 
+    // The server's protocol v2 identity: its long-term key and the endpoints
+    // it has adopted. Loaded before any client thread exists, and refused by
+    // name when there is nowhere to keep it.
+    let Some(source) = identity_source(
+        config.identity_dir.as_deref(),
+        config.state_file.as_deref(),
+        config.ephemeral_identity,
+    ) else {
+        report(
+            "configuration refused",
+            "this server has no identity to present: pass --identity-dir <dir> (or --state-file, \
+             whose directory is then used) so its key and adopted endpoints survive a restart, \
+             or --ephemeral-identity for a throwaway run",
+        );
+        println!("chorus-server: stopped reason=no-identity chunks_sent=0 played=0");
+        return ExitCode::from(EXIT_CONFIG);
+    };
+    if config.server_id.is_empty() || config.server_id.len() > 255 {
+        report(
+            "configuration refused",
+            &format!(
+                "--server-id is 1 to 255 bytes, not {}",
+                config.server_id.len()
+            ),
+        );
+        println!("chorus-server: stopped reason=identity-refused chunks_sent=0 played=0");
+        return ExitCode::from(EXIT_CONFIG);
+    }
+    let (identity, adoptions) = match load_identity(&source, &config.server_id) {
+        Ok(v) => v,
+        Err(e) => {
+            report("the server identity could not be loaded", &e);
+            println!("chorus-server: stopped reason=identity-refused chunks_sent=0 played=0");
+            return ExitCode::from(EXIT_CONFIG);
+        }
+    };
+    // (goal 18) Who this server is to a controller that has to recognise it
+    // again at another address (Home Assistant's zeroconf discovery): `id`,
+    // derived from the fingerprint of the server's public key, the identity
+    // the renderers' UDNs derive from too. It survives a restart exactly
+    // when the key does: with `--ephemeral-identity` the key is made anew
+    // at every start, and so is the id (a throwaway run is a new server).
+    let server_id = chorus_server::announce::server_id(&identity.keypair.public);
+    if let Some((_, state)) = &control {
+        state.set_server(
+            &server_id,
+            &format!("chorus-server {}", env!("CARGO_PKG_VERSION")),
+        );
+    }
+
     // The multicast socket, opened before any thread too, and for the same
     // reason: a server told to advertise and unable to must say so rather than
     // start and be quietly undiscoverable.
@@ -767,7 +834,7 @@ fn main() -> ExitCode {
                 host: format!("{}.local.", config.instance),
                 port: port_of(&control_address),
                 addresses: advertisable_addresses(&control_address),
-                txt: vec![("v".to_string(), chorus_control::CATALOG_VERSION.to_string())],
+                txt: chorus_server::announce::control_txt(&server_id),
             },
         ];
         match Advertiser::open(advertisements) {
@@ -1071,42 +1138,6 @@ fn main() -> ExitCode {
         memory: memory.phrase(),
     };
 
-    // The server's protocol v2 identity: its long-term key and the endpoints
-    // it has adopted. Loaded before any client thread exists, and refused by
-    // name when there is nowhere to keep it.
-    let Some(source) = identity_source(
-        config.identity_dir.as_deref(),
-        config.state_file.as_deref(),
-        config.ephemeral_identity,
-    ) else {
-        report(
-            "configuration refused",
-            "this server has no identity to present: pass --identity-dir <dir> (or --state-file, \
-             whose directory is then used) so its key and adopted endpoints survive a restart, \
-             or --ephemeral-identity for a throwaway run",
-        );
-        println!("chorus-server: stopped reason=no-identity chunks_sent=0 played=0");
-        return ExitCode::from(EXIT_CONFIG);
-    };
-    if config.server_id.is_empty() || config.server_id.len() > 255 {
-        report(
-            "configuration refused",
-            &format!(
-                "--server-id is 1 to 255 bytes, not {}",
-                config.server_id.len()
-            ),
-        );
-        println!("chorus-server: stopped reason=identity-refused chunks_sent=0 played=0");
-        return ExitCode::from(EXIT_CONFIG);
-    }
-    let (identity, adoptions) = match load_identity(&source, &config.server_id) {
-        Ok(v) => v,
-        Err(e) => {
-            report("the server identity could not be loaded", &e);
-            println!("chorus-server: stopped reason=identity-refused chunks_sent=0 played=0");
-            return ExitCode::from(EXIT_CONFIG);
-        }
-    };
     status.say(&format!(
         "identity id={} key={} store={}",
         identity.id,
@@ -1372,6 +1403,21 @@ fn main() -> ExitCode {
         _ => None,
     };
 
+    // (goal 18) The announcer: what carries out the `announce` command, on
+    // the worker that takes the command (the start) and on the conductor
+    // (the end). No thread. A server without `--players` has one too, so
+    // the command is refused by name (`no-players`) after the same checks.
+    let announcer = control.as_ref().map(|(_, state)| {
+        let status = status.clone();
+        let announcer = Arc::new(chorus_server::announce::Announcer::new(
+            player_sessions.clone(),
+            &config.announce_origins,
+            Box::new(move |line: &str| status.say(line)),
+        ));
+        state.announce_through(Arc::clone(&announcer));
+        announcer
+    });
+
     // The control plane's whole thread population, created here, on this
     // thread, which holds no real-time policy for any of them to inherit, and
     // before the scheduling report below. Nothing a subscriber does creates a
@@ -1417,6 +1463,9 @@ fn main() -> ExitCode {
                 conductor = conductor.with_stored_streams(
                     chorus_server::conductor::StoredStreams::new(Arc::clone(sessions), reports),
                 );
+            }
+            if let Some(announcer) = &announcer {
+                conductor = conductor.with_announcer(Arc::clone(announcer));
             }
             if let Some(relay) = &tv_relay {
                 conductor = conductor.with_tv_relay(Arc::clone(relay));

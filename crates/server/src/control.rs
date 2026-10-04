@@ -261,6 +261,13 @@ pub struct ControlState {
     /// metrics endpoint prints. Unset on a server without
     /// `--soloist-receivers`.
     soloist: OnceLock<Arc<crate::soloist::Link>>,
+    /// (goal 18) Who this server is, for `GET /api/server`
+    /// ([`ControlState::set_server`]): its `id` and its version string.
+    server: OnceLock<(String, String)>,
+    /// (goal 18) What carries out an `announce`
+    /// ([`ControlState::announce_through`]); a state without one refuses
+    /// the command by name.
+    announcer: OnceLock<Arc<crate::announce::Announcer>>,
 }
 
 /// The files the browser is served: the page, what it loads, and the document
@@ -323,7 +330,120 @@ impl ControlState {
             mqtt_events: OnceLock::new(),
             players: AtomicUsize::new(0),
             soloist: OnceLock::new(),
+            server: OnceLock::new(),
+            announcer: OnceLock::new(),
         }
+    }
+
+    /// (goal 18) Say who this server is: its stable `id`
+    /// (`chorus_control::catalog::is_server_id`) and its version string.
+    /// Called once, at start, before any request is served.
+    pub fn set_server(&self, id: &str, software: &str) {
+        let _ = self.server.set((id.to_string(), software.to_string()));
+    }
+
+    /// (goal 18) The `server` message `GET /api/server` answers with, or
+    /// `None` on a state nobody gave an identity.
+    pub fn server_info(&self) -> Option<String> {
+        let (id, software) = self.server.get()?;
+        let announce_origins = self
+            .locked()
+            .zones
+            .announce_origins()
+            .iter()
+            .map(|origin| origin.literal())
+            .collect();
+        Some(
+            chorus_control::catalog::ServerInfo {
+                id: id.clone(),
+                software: software.clone(),
+                catalogs: chorus_control::catalog::IMPLEMENTED_VERSIONS.to_vec(),
+                announce_origins,
+            }
+            .encode(),
+        )
+    }
+
+    /// (goal 18) Carry out `announce` commands through `announcer`. Called
+    /// once, at start, before any command is served.
+    pub fn announce_through(&self, announcer: Arc<crate::announce::Announcer>) {
+        let _ = self.announcer.set(announcer);
+    }
+
+    /// (goal 18) Whether the room model would let `url` be announced on
+    /// `target` (`Zones::announce_check`).
+    pub fn announce_check(&self, target: &str, url: &str) -> Result<(), Refusal> {
+        self.locked().zones.announce_check(target, url)
+    }
+
+    /// (goal 18) The formed group an announcement to `target` would play in
+    /// as things stand (`Zones::announce_group`).
+    pub fn announce_group(&self, target: &str) -> Option<String> {
+        self.locked().zones.announce_group(target)
+    }
+
+    /// (goal 18) The room model's half of starting an announcement
+    /// (`Zones::announce_begin`), committed like a command: planned onto the
+    /// stream slots (refused by name when none is free), persisted, fanned
+    /// out and counted as applied. The schedule runtime is NOT told, as it
+    /// is of a person's command: an announcement is temporary and puts back
+    /// what it changed, so it ends no autoplay and detaches no room.
+    pub fn announce_begin(
+        &self,
+        target: &str,
+        player: Source,
+        volume: Option<chorus_control::Volume>,
+    ) -> Result<chorus_control::zones::Announced, Refusal> {
+        let (announced, state) = {
+            let mut held = self.locked();
+            let mut announced = None;
+            Self::commit(&mut held, |zones| {
+                announced = Some(zones.announce_begin(target, player, volume)?);
+                Ok(())
+            })?;
+            self.persist(&held.zones);
+            (announced, held.zones.encode_state())
+        };
+        self.applied.fetch_add(1, Ordering::Relaxed);
+        self.publish(state);
+        announced
+            .ok_or_else(|| Refusal::rejected("t", "the announcement did not start".to_string()))
+    }
+
+    /// (goal 18) The end of an announcement: the group that plays `player`
+    /// now, if one still does, goes back to `back` (to `none` when the room
+    /// model refuses `back`), and every room in `volumes` (the room, the
+    /// volume it had, the volume the announcement gave it) whose volume is
+    /// still the announcement's goes back to the one it had, clamped like
+    /// every volume. Never refused for want of a slot
+    /// ([`ControlState::runtime`]). Returns what the group was put back on,
+    /// or `None` when no group played the player any more.
+    pub fn announce_end(
+        &self,
+        player: &Source,
+        back: &Source,
+        volumes: &[(String, chorus_control::Volume, chorus_control::Volume)],
+    ) -> Option<Source> {
+        let mut restored = None;
+        self.runtime(|zones| {
+            if let Some(group) = zones.source_group(player) {
+                let source = match zones.set_group_source(&group, back.clone()) {
+                    Ok(()) => back.clone(),
+                    Err(_) => {
+                        let _ = zones.set_group_source(&group, Source::None);
+                        Source::None
+                    }
+                };
+                restored = Some(source);
+            }
+            for (room, before, set) in volumes {
+                if zones.zone(room).is_some_and(|z| z.volume == *set) {
+                    let _ = zones.runtime_volume(room, *before);
+                }
+            }
+            vec![Effect::Persist]
+        });
+        restored
     }
 
     /// (goal 17) This server runs Soloist receivers, reached through `link`:
@@ -741,6 +861,28 @@ impl ControlState {
     }
 
     fn apply_decoded(&self, version: i64, command: Command) -> Result<String, Refusal> {
+        // (goal 18) An announcement is carried out by the announcer, which
+        // needs a player before the room model changes: it commits through
+        // `announce_begin` once it has one.
+        if let Command::Announce {
+            target,
+            url,
+            volume,
+        } = &command
+        {
+            let Some(announcer) = self.announcer.get() else {
+                self.announce_check(target, url)
+                    .map_err(|r| r.at(version))?;
+                return Err(Refusal::rejected(
+                    "t",
+                    "no-players: this server has nothing to play an announcement with".to_string(),
+                )
+                .at(version));
+            };
+            return announcer
+                .announce(self, target, url, *volume)
+                .map_err(|r| r.at(version));
+        }
         let state = {
             let mut held = self.locked();
             Self::commit(&mut held, |zones| {
@@ -1956,6 +2098,17 @@ fn serve_connection(connection: TcpStream, state: &Arc<ControlState>) {
             "text/plain; charset=utf-8",
             state.ui.doc,
         ),
+        // (goal 18) Who this server is and what it accepts: not a state,
+        // and nothing changes it while the server runs.
+        ("GET", "/api/server") => match state.server_info() {
+            Some(info) => respond(&mut connection, "200 OK", "application/json", &info),
+            None => respond(
+                &mut connection,
+                "503 Service Unavailable",
+                "application/json",
+                &error_body("this server has not loaded its identity yet"),
+            ),
+        },
         ("GET", "/api/state") => respond(
             &mut connection,
             "200 OK",

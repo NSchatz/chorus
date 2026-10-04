@@ -1,0 +1,17 @@
+# Canonical input for the catalog v2 error-announce-origin vector.
+#
+# `input` is refused, by the decoder or by the room state the lines below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-announce-origin.json. Nothing of it is applied.
+#
+# (goal 18) An announcement whose URL is not from an origin the server was started with (`announce_origins = <origin>,<origin>` is its `--announce-origin` list).
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+zones = kitchen
+announce_origins = http://ha.example:8123
+input = {"v":2,"t":"announce","target":"kitchen","url":"http://media.example/clip.mp3"}
+field = url
+ends_the_session = 0

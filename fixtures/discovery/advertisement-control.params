@@ -1,0 +1,18 @@
+# What a chorus server answers a browse for the control service with (goal 18).
+#
+# The control service's TXT record carries `v=<catalog version>` and then
+# `id=<the server's id>`: the stable identifier `GET /api/server` answers
+# with, so a controller that already knows this server (Home Assistant's
+# zeroconf discovery) recognises it when its address changes. The id here is a
+# made-up one of the real shape: `chorus-server-` and 16 hexadecimal digits.
+#
+# Format: key = value, '#' starts a comment.
+
+kind = response
+service = _chorus-ctl._tcp.local.
+instance = chorus
+host = chorus.local.
+port = 4020
+address.0 = 192.0.2.40
+txt.0 = v=2
+txt.1 = id=chorus-server-0123456789abcdef

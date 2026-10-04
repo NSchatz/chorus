@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"url","detail":"the origin 'http://media.example' is not one this server announces from; its announce origins are http://ha.example:8123"}

@@ -1088,6 +1088,7 @@ impl Renderers {
             via: "upnp".to_string(),
             epoch: tag,
             metadata: hints,
+            origins: Vec::new(),
         };
         if let Err(reason) = self.sessions.start_loaded(&request) {
             (self.log)(&format!(

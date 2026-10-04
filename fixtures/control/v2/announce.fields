@@ -1,0 +1,13 @@
+# Canonical input for the catalog v2 announce vector.
+#
+# Encoding these field values must produce exactly announce.json, and decoding
+# announce.json must recover exactly these field values.
+#
+# (goal 18) An announcement with no volume: the target's rooms keep theirs.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = announce
+target = kitchen
+url = http://ha.example:8123/api/tts_proxy/abc.mp3

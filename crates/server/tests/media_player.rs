@@ -1724,6 +1724,7 @@ fn request(owner: &str, target: &str, uri: &str) -> PlayRequest {
         via: "upnp".to_string(),
         epoch: 7,
         metadata: Metadata::default(),
+        origins: Vec::new(),
     }
 }
 

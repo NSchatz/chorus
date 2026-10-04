@@ -1,0 +1,15 @@
+# Canonical input for the catalog v2 server-no-origin vector.
+#
+# Encoding these field values must produce exactly server-no-origin.json: what a server
+# answers `GET /api/server` with. It is not a state and no command produces it.
+#
+# (goal 18) A server started with no `--announce-origin`: the list is empty, not absent, and every `announce` is refused.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = server
+id = chorus-server-0123456789abcdef
+software = chorus-server 0.1.0
+catalogs = 1,2
+announce_origins = 
