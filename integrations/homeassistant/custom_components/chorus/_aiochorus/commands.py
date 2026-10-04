@@ -53,8 +53,7 @@ def volume(zone: str, thousandths: int) -> bytes:
 def mute(zone: str, muted: bool) -> bytes:
     """Mute or unmute a room (catalog v1)."""
     return (
-        f'{{"v":1,"t":"mute","zone":{_string(zone)},'
-        f'"muted":{"true" if muted else "false"}}}'
+        f'{{"v":1,"t":"mute","zone":{_string(zone)},"muted":{_bool(muted)}}}'
     ).encode()
 
 
@@ -113,3 +112,69 @@ def announce(target: str, url: str, thousandths: int | None = None) -> bytes:
     if thousandths is None:
         return (head + "}").encode()
     return (head + f',"volume":{encode_volume(thousandths)}}}').encode()
+
+
+def _bool(value: bool) -> str:
+    return "true" if value else "false"
+
+
+def _tone(name: str, value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not -10 <= value <= 10:
+        raise ValueError(f"{name} is a whole number of dB from -10 to 10")
+    return value
+
+
+def sound(  # noqa: PLR0913 (the catalog's command has five optional fields)
+    zone: str,
+    *,
+    bass: int | None = None,
+    treble: int | None = None,
+    loudness: bool | None = None,
+    night: bool | None = None,
+    speech: bool | None = None,
+) -> bytes:
+    """Change the fields of a room's sound that are given; the rest keep."""
+    parts = [f'{{"v":2,"t":"sound","zone":{_string(zone)}']
+    if bass is not None:
+        parts.append(f'"bass":{_tone("bass", bass)}')
+    if treble is not None:
+        parts.append(f'"treble":{_tone("treble", treble)}')
+    if loudness is not None:
+        parts.append(f'"loudness":{_bool(loudness)}')
+    if night is not None:
+        parts.append(f'"night":{_bool(night)}')
+    if speech is not None:
+        parts.append(f'"speech":{_bool(speech)}')
+    return (",".join(parts) + "}").encode()
+
+
+def quiet_hours_enabled(zone: str, enabled: bool) -> bytes:
+    """Switch a room's quiet hours on or off; its windows keep."""
+    return (
+        f'{{"v":2,"t":"quiet_hours_enabled","zone":{_string(zone)},'
+        f'"enabled":{_bool(enabled)}}}'
+    ).encode()
+
+
+def autoplay(
+    input_id: str,
+    target: str,
+    enabled: bool,
+    *,
+    stop_on_standby: bool = True,
+    low_latency: bool = True,
+) -> bytes:
+    """Create or replace the autoplay rule of an input.
+
+    The command replaces the whole rule, so a rule's TV fields are sent again
+    with it; each is written only when false.
+    """
+    text = (
+        f'{{"v":2,"t":"autoplay","input":{_string(input_id)},'
+        f'"target":{_string(target)},"enabled":{_bool(enabled)}'
+    )
+    if not stop_on_standby:
+        text += ',"stop_on_standby":false'
+    if not low_latency:
+        text += ',"low_latency":false'
+    return (text + "}").encode()

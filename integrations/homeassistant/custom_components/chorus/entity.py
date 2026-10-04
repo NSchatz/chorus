@@ -10,6 +10,32 @@ from .const import DOMAIN
 from .coordinator import ChorusCoordinator, room_identifier, saved_group_identifier
 
 
+def room_device_info(coordinator: ChorusCoordinator, zone: Zone) -> DeviceInfo:
+    """Return the device of a room."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, room_identifier(coordinator.server.id, zone.id))},
+        manufacturer="chorus",
+        model="Room",
+        name=zone.name,
+        # A suggestion only: areas are Home Assistant's, never created here.
+        suggested_area=zone.name,
+        via_device_id=coordinator.server_device_id,
+    )
+
+
+def saved_group_device_info(
+    coordinator: ChorusCoordinator, saved: SavedGroup
+) -> DeviceInfo:
+    """Return the device of a saved group."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, saved_group_identifier(coordinator.server.id, saved.id))},
+        manufacturer="chorus",
+        model="Saved group",
+        name=saved.name,
+        via_device_id=coordinator.server_device_id,
+    )
+
+
 class ChorusEntity(CoordinatorEntity[ChorusCoordinator]):
     """An entity fed by the server's state messages."""
 
@@ -23,16 +49,7 @@ class ChorusRoomEntity(ChorusEntity):
         """Attach to the room's device."""
         super().__init__(coordinator)
         self._zone_id = zone.id
-        server_id = coordinator.server.id
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, room_identifier(server_id, zone.id))},
-            manufacturer="chorus",
-            model="Room",
-            name=zone.name,
-            # A suggestion only: areas are Home Assistant's, never created here.
-            suggested_area=zone.name,
-            via_device_id=coordinator.server_device_id,
-        )
+        self._attr_device_info = room_device_info(coordinator, zone)
 
     @property
     def zone(self) -> Zone | None:
@@ -57,14 +74,7 @@ class ChorusSavedGroupEntity(ChorusEntity):
         """Attach to the saved group's device."""
         super().__init__(coordinator)
         self._group_id = saved.id
-        server_id = coordinator.server.id
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, saved_group_identifier(server_id, saved.id))},
-            manufacturer="chorus",
-            model="Saved group",
-            name=saved.name,
-            via_device_id=coordinator.server_device_id,
-        )
+        self._attr_device_info = saved_group_device_info(coordinator, saved)
 
     @property
     def saved(self) -> SavedGroup | None:

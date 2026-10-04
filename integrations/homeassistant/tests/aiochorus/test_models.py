@@ -152,3 +152,52 @@ def test_members_a_later_catalog_adds_are_ignored() -> None:
     assert group is not None
     assert group.now_playing is not None
     assert (group.now_playing.state, group.now_playing.duration_ms) == ("playing", None)
+
+
+def test_sound_controls_in_the_rich_state() -> None:
+    state = State.parse(shared("state-rich.json"))
+    living = state.zone("living")
+    assert living is not None
+    assert living.sound is not None
+    sound = living.sound
+    assert (sound.bass, sound.treble) == (3, -2)
+    assert (sound.loudness, sound.night, sound.speech) == (True, False, True)
+    bedroom = state.zone("bedroom")
+    assert bedroom is not None
+    assert bedroom.quiet_enabled is True
+    line, tv = state.autoplay
+    assert (line.input, line.target, line.enabled) == (
+        "endpoint-c/line-1",
+        "living",
+        True,
+    )
+    assert (line.stop_on_standby, line.low_latency) == (True, True)
+    assert (tv.input, tv.stop_on_standby, tv.low_latency) == ("hub/tv", False, True)
+    assert state.autoplay_rule("hub/tv", "living") is tv
+    assert state.autoplay_rule("hub/tv", "kitchen") is None
+
+
+def test_sound_controls_quiet_hours_switched_off() -> None:
+    state = State.parse(shared("state-quiet-disabled.json"))
+    bedroom = state.zone("bedroom")
+    assert bedroom is not None
+    assert bedroom.quiet_enabled is False
+
+
+def test_sound_controls_absent_members_are_their_defaults() -> None:
+    state = State.parse(
+        b'{"v":2,"t":"state","serial":1,"zones":[{"id":"a","name":"a","group":"a",'
+        b'"volume":0.5,"sound":{"bass":true,"night":1}},{"id":"b","name":"b",'
+        b'"group":"b","volume":0.5}],"groups":[],"saved_groups":[],"inputs":[]}'
+    )
+    first, second = state.zones
+    assert first.sound is not None
+    assert (first.sound.bass, first.sound.treble) == (0, 0)
+    assert (first.sound.loudness, first.sound.night, first.sound.speech) == (
+        True,
+        False,
+        False,
+    )
+    assert second.sound is None
+    assert second.quiet_enabled is True
+    assert state.autoplay == ()

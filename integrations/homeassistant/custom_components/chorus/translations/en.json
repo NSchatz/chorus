@@ -70,8 +70,39 @@
       }
     },
     "number": {
+      "bass": {
+        "name": "Bass"
+      },
       "group_volume": {
         "name": "Group volume"
+      },
+      "treble": {
+        "name": "Treble"
+      }
+    },
+    "select": {
+      "input": {
+        "name": "Input",
+        "state": {
+          "stream": "Server stream"
+        }
+      }
+    },
+    "switch": {
+      "autoplay": {
+        "name": "Autoplay {input}"
+      },
+      "loudness": {
+        "name": "Loudness"
+      },
+      "night_mode": {
+        "name": "Night mode"
+      },
+      "quiet_hours": {
+        "name": "Quiet hours"
+      },
+      "speech_enhancement": {
+        "name": "Speech enhancement"
       }
     }
   },
@@ -84,6 +115,9 @@
     },
     "announce_volume": {
       "message": "The announcement volume is a number from 0 to 1."
+    },
+    "autoplay_gone": {
+      "message": "The chorus server no longer has an autoplay rule for the input {input}."
     },
     "browse_unknown": {
       "message": "There is nothing to browse at {media_id}: chorus offers its inputs and nothing below them."
@@ -105,6 +139,12 @@
     },
     "refused_group": {
       "message": "The chorus server refused the group: {detail}"
+    },
+    "refused_input": {
+      "message": "The chorus server refused the input: {detail}"
+    },
+    "refused_sound": {
+      "message": "The chorus server refused the sound setting ({field}): {detail}"
     },
     "refused_source": {
       "message": "The chorus server refused the source: {detail}"

@@ -17,8 +17,42 @@
       }
     },
     "number": {
+      "bass": {
+        "default": "mdi:music-clef-bass"
+      },
       "group_volume": {
         "default": "mdi:volume-equal"
+      },
+      "treble": {
+        "default": "mdi:music-clef-treble"
+      }
+    },
+    "select": {
+      "input": {
+        "default": "mdi:audio-input-rca"
+      }
+    },
+    "switch": {
+      "autoplay": {
+        "default": "mdi:play-circle-outline",
+        "state": {
+          "on": "mdi:play-circle"
+        }
+      },
+      "loudness": {
+        "default": "mdi:bullhorn-outline"
+      },
+      "night_mode": {
+        "default": "mdi:weather-night"
+      },
+      "quiet_hours": {
+        "default": "mdi:sleep",
+        "state": {
+          "off": "mdi:sleep-off"
+        }
+      },
+      "speech_enhancement": {
+        "default": "mdi:account-voice"
       }
     }
   }

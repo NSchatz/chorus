@@ -92,6 +92,39 @@ def group_volume(hass: HomeAssistant, zone_id: str, server_id: str = SERVER_ID) 
     return _entity_id(hass, "number", f"{server_id}:room:{zone_id}:group_volume")
 
 
+def room_entity(
+    hass: HomeAssistant,
+    platform: str,
+    zone_id: str,
+    key: str,
+    server_id: str = SERVER_ID,
+) -> str:
+    """Return the entity id of one of a room's controls (`bass`, `night`, ...)."""
+    return _entity_id(hass, platform, f"{server_id}:room:{zone_id}:{key}")
+
+
+def autoplay_switch(
+    hass: HomeAssistant, input_id: str, target: str, server_id: str = SERVER_ID
+) -> str:
+    """Return the entity id of an autoplay rule's switch."""
+    return _entity_id(hass, "switch", f"{server_id}:autoplay:{input_id}:{target}")
+
+
+def only(vector: bytes, *members: str) -> bytes:
+    """Return a shared command vector cut down to `v`, `t` and these members.
+
+    The catalog's partial commands carry only the fields they change, in the
+    order the full vector has them, so the bytes one control sends are the
+    vector's with the other fields left out.
+    """
+    import json  # noqa: PLC0415
+
+    fields = json.loads(vector)
+    kept = {k: v for k, v in fields.items() if k in ("v", "t", *members)}
+    assert set(kept) == {"v", "t", *members}, members
+    return json.dumps(kept, separators=(",", ":"), ensure_ascii=False).encode()
+
+
 def _entity_id(hass: HomeAssistant, platform: str, unique_id: str) -> str:
     from homeassistant.helpers import entity_registry as er  # noqa: PLC0415
 

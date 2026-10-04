@@ -32,6 +32,10 @@ at setup with a repair issue saying so.
 - Automations that announce (a doorbell, a timer, a spoken message) in a room or a saved
   group, with the announcement's own volume.
 - Switching a room to a line-in (a turntable, a TV, a streamer box) by name.
+- Night mode and speech enhancement on a schedule or from a scene (a film night, a sleeping
+  child), and a room's bass and treble from a dashboard.
+- Switching a room's quiet hours off for a party, or its line-in autoplay off while a
+  turntable is being set up.
 
 ## Installation instructions
 
@@ -103,6 +107,20 @@ select source, turn on, play media and announce **assemble** the group. Attribut
 
 The group volume of whatever group the room plays in, in percent. Available only while the
 room plays with at least one other room.
+
+### Sound controls (one set per room, on the room's device)
+
+| Entity | What it is |
+|---|---|
+| Bass, Treble (`number`) | The room's tone, in whole dB from -10 to 10. A setting |
+| Loudness, Night mode, Speech enhancement (`switch`) | The three switches of the room's sound. Loudness is on by default, the other two off. Settings |
+| Input (`select`) | What the room plays, picked from the inputs the server offers now: the server's stream, then each line-in by its label. Picking one takes the room and plays it, exactly as the media player's select source does. It shows nothing while the room plays something that is not an input (a cast, a Spotify receiver, nothing) |
+| Quiet hours (`switch`) | Whether the room's quiet-hours windows cap its volume. Off keeps every window as it was set and caps nothing; on again inside a window applies the cap at once. The windows themselves are set in chorus. A setting |
+| Autoplay *input* (`switch`, one per autoplay rule) | Whether the rule that starts an input in this room when its signal arrives is enabled. It is on the device of the room the rule targets, or of the saved group when the rule targets one. Rules are made and deleted in chorus: a new rule gets its switch at once and a deleted rule's switch is removed. A setting |
+
+Each change is one command that carries only what changed, so setting the bass never touches
+the treble. Bass management, room EQ, the quiet-hours windows, alarms and sleep timers are
+not entities.
 
 ## Data updates
 
@@ -182,6 +200,12 @@ Bring the den and the patio into the kitchen's music, then let the den go:
   what "take the room" means). To change what a whole group plays, select the source on the
   saved group, or on a room and join the others again.
 - Live groups are not entities; they are the room players' members.
+- The Input select, like select source, takes the room out of its group.
+- An autoplay switch is named for its input's label as it was when the switch was created; a
+  label changed later shows after the integration is reloaded. A rule given another target
+  is a new switch on the other device, and the old one is removed.
+- Quiet hours and autoplay rules can be switched here, not edited: their windows, inputs and
+  targets are set in chorus.
 - On Home Assistant 2026.9 a new entity's id is built from the area, the device and the
   entity name. The room's name is suggested as its area, so a default id reads
   `media_player.kitchen_kitchen`; rename the entity or the area to taste. (The examples above
@@ -204,6 +228,9 @@ Bring the den and the patio into the kitchen's music, then let the den go:
 | After a server restart Home Assistant offers the server as a new device and the old entry cannot connect or reconfigure ("a different chorus server") | The server runs with `--ephemeral-identity`, which gives it a new id at every start. Run it with a kept identity (`--identity-dir`) |
 | "chorus announces only media that Home Assistant itself serves" | The media id resolved to an address that is not this Home Assistant's internal or external URL. Set the internal URL under Settings > System > Network |
 | The group volume number is unavailable | The room is playing alone |
+| "The chorus server refused the sound setting" | The server did not accept a bass, treble, loudness, night mode or speech value; the message carries the server's own reason |
+| An autoplay switch disappeared | The rule was deleted in chorus, or given another target (its switch is then on that room's or saved group's device) |
+| The Input select shows nothing | The room plays something that is not an input: a cast, a Spotify receiver, or nothing |
 
 Download diagnostics from the entry's menu when reporting a problem: the file holds no host,
 URL, key or stored source.

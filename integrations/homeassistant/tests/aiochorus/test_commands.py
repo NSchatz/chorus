@@ -42,6 +42,38 @@ def test_announce_bytes() -> None:
     assert commands.announce("kitchen", url, 300) == shared("announce-volume.json")
 
 
+def test_sound_controls_bytes_equal_the_shared_vectors() -> None:
+    assert commands.sound(
+        "living", bass=3, treble=-2, loudness=False, night=True, speech=True
+    ) == shared("sound.json")
+    assert commands.sound("kitchen", night=True) == shared("sound-partial.json")
+    # A command with only the room changes nothing and is still a command.
+    assert commands.sound("den") == b'{"v":2,"t":"sound","zone":"den"}'
+    assert commands.sound("den", bass=-10, treble=10) == (
+        b'{"v":2,"t":"sound","zone":"den","bass":-10,"treble":10}'
+    )
+    assert commands.quiet_hours_enabled("bedroom", False) == shared(
+        "quiet_hours_enabled.json"
+    )
+    assert commands.quiet_hours_enabled("bedroom", True) == (
+        b'{"v":2,"t":"quiet_hours_enabled","zone":"bedroom","enabled":true}'
+    )
+    assert commands.autoplay("endpoint-c/line-1", "living", True) == shared(
+        "autoplay.json"
+    )
+    assert commands.autoplay(
+        "hub/tv", "living", True, stop_on_standby=False, low_latency=False
+    ) == shared("autoplay-tv.json")
+
+
+def test_sound_controls_tone_outside_the_catalog_is_refused() -> None:
+    for bad in (11, -11, True, 1.5):
+        with pytest.raises(ValueError, match="bass"):
+            commands.sound("den", bass=bad)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="treble"):
+        commands.sound("den", treble=-11)
+
+
 @pytest.mark.parametrize(
     ("thousandths", "text"),
     [

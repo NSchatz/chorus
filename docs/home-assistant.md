@@ -19,7 +19,7 @@ it is shaped this way is `docs/decisions/0138-the-home-assistant-integration.md`
   for chorus.
 - Written to every rule of the Bronze, Silver, Gold and Platinum tiers of Home Assistant's
   Integration Quality Scale as core 2026.9.3 lists them (54 rules), self-certified in
-  `quality_scale.yaml`: 44 done, 10 exempt, each exemption with its reason. A custom
+  `quality_scale.yaml`: 45 done, 9 exempt, each exemption with its reason. A custom
   integration cannot hold a tier; `make ha-hassfest` has Home Assistant's own hassfest grade
   the file.
 
@@ -40,8 +40,8 @@ Home Assistant each time.
 | chorus | Home Assistant |
 |---|---|
 | The server | One device (a service), the hub of the entry |
-| A room (zone) | One device named for the room, `suggested_area` its name, with a `media_player` and a group-volume `number` |
-| A saved group | One device under the server with a `media_player`, always present |
+| A room (zone) | One device named for the room, `suggested_area` its name, with a `media_player`, a group-volume `number`, and its sound controls: bass and treble (`number`), loudness, night mode and speech enhancement (`switch`), an input `select`, a quiet-hours `switch`, and an autoplay `switch` for each autoplay rule that targets it |
+| A saved group | One device under the server with a `media_player`, always present, and an autoplay `switch` for each autoplay rule that targets it |
 | A live group | No entity: the `group_members` of its rooms' players, leader first |
 | A speaker | Nothing yet (goal 19) |
 
@@ -69,6 +69,16 @@ device.
 | saved group `volume_up` / `volume_down` | `group_volume_step`, `step` 50 or -50 |
 | saved group `volume_mute` | `mute` for each of its rooms |
 | the room's group-volume `number` | `group_volume` for the room's formed group |
+| the room's Bass or Treble `number` | `{"v":2,"t":"sound","zone":Z,"bass":3}` (or `"treble"`): that field alone |
+| the room's Loudness, Night mode or Speech enhancement `switch` | `{"v":2,"t":"sound","zone":Z,"night":true}` (or `"loudness"`, `"speech"`): that field alone |
+| the room's Input `select` | `{"v":2,"t":"take","target":Z,"source":S}`, as `select_source` |
+| the room's Quiet hours `switch` | `{"v":2,"t":"quiet_hours_enabled","zone":Z,"enabled":false}` |
+| an Autoplay `switch` | `{"v":2,"t":"autoplay","input":I,"target":T,"enabled":false}`, with the rule's `stop_on_standby` and `low_latency` written again when they are `false`: the command replaces the rule |
+
+The sound controls' bytes are in `tests/test_sound_controls.py`, each held to the vector in
+`fixtures/control/v2/` (`sound.json`, `sound-partial.json`, `take-source.json`,
+`quiet_hours_enabled.json`, `autoplay.json`); the entity model is
+`docs/decisions/0152-the-home-assistant-sound-controls.md`.
 
 A volume is Home Assistant's 0..1 level as the catalog's amplitude factor, written with
 exactly three decimals. The server clamps every volume to the room's limits; the entity shows

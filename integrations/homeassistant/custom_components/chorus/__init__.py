@@ -17,7 +17,12 @@ from .coordinator import (
     unsupported_issue_id,
 )
 
-PLATFORMS: list[Platform] = [Platform.MEDIA_PLAYER, Platform.NUMBER]
+PLATFORMS: list[Platform] = [
+    Platform.MEDIA_PLAYER,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.SWITCH,
+]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ChorusConfigEntry) -> bool:
