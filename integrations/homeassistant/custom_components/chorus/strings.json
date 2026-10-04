@@ -1,0 +1,149 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "This chorus server is already set up.",
+      "cannot_connect": "The chorus server did not answer.",
+      "invalid_response": "The answer did not come from a chorus control plane.",
+      "reconfigure_successful": "The chorus server's address was updated.",
+      "unsupported_catalog": "This chorus server does not offer control catalog version 2, or is too old to say who it is. Update the server.",
+      "wrong_server": "That address belongs to a different chorus server. To add it, set it up as a new entry."
+    },
+    "error": {
+      "cannot_connect": "The chorus server did not answer. Check the host, the control port, and that the server is running.",
+      "invalid_response": "Something answered, and it was not a chorus control plane. Check the port: it is the server's control port, not its audio port.",
+      "unsupported_catalog": "This chorus server does not offer control catalog version 2, or is too old to say who it is. Update the server."
+    },
+    "flow_title": "chorus ({host})",
+    "step": {
+      "reconfigure": {
+        "data": {
+          "host": "Host",
+          "port": "Control port"
+        },
+        "data_description": {
+          "host": "The hostname or IP address of the chorus server.",
+          "port": "The port of the server's control plane (its --control-listen port)."
+        },
+        "description": "Change where Home Assistant reaches this chorus server."
+      },
+      "user": {
+        "data": {
+          "host": "Host",
+          "port": "Control port"
+        },
+        "data_description": {
+          "host": "The hostname or IP address of the chorus server.",
+          "port": "The port of the server's control plane (its --control-listen port)."
+        },
+        "description": "Enter where the chorus server's control plane listens."
+      },
+      "zeroconf_confirm": {
+        "description": "Do you want to add the chorus server at {host}:{port}?"
+      }
+    }
+  },
+  "entity": {
+    "media_player": {
+      "room": {
+        "state_attributes": {
+          "source": {
+            "state": {
+              "stream": "Server stream"
+            }
+          }
+        }
+      },
+      "saved_group": {
+        "state_attributes": {
+          "active": {
+            "name": "Assembled"
+          },
+          "rooms": {
+            "name": "Rooms"
+          },
+          "source": {
+            "state": {
+              "stream": "Server stream"
+            }
+          }
+        }
+      }
+    },
+    "number": {
+      "group_volume": {
+        "name": "Group volume"
+      }
+    }
+  },
+  "exceptions": {
+    "announce_origin": {
+      "message": "chorus announces only media that Home Assistant itself serves: the address is not on this Home Assistant's internal or external URL."
+    },
+    "announce_origin_not_on_server": {
+      "message": "The chorus server does not announce from this Home Assistant ({origin}). Start chorus-server with --announce-origin {origin}."
+    },
+    "announce_volume": {
+      "message": "The announcement volume is a number from 0 to 1."
+    },
+    "browse_unknown": {
+      "message": "There is nothing to browse at {media_id}: chorus offers its inputs and nothing below them."
+    },
+    "cannot_connect": {
+      "message": "The chorus server did not answer: {error}"
+    },
+    "group_not_active": {
+      "message": "This saved group is not assembled, so it has no group volume. Turn it on or select a source to assemble it."
+    },
+    "join_not_a_room": {
+      "message": "{entity_id} is not a room of this chorus server and cannot join a chorus group."
+    },
+    "join_saved_group": {
+      "message": "{entity_id} is a saved group, and a saved group cannot join a room. Join rooms, or turn the saved group on to assemble it."
+    },
+    "refused_command": {
+      "message": "The chorus server refused the command ({field}): {detail}"
+    },
+    "refused_group": {
+      "message": "The chorus server refused the group: {detail}"
+    },
+    "refused_source": {
+      "message": "The chorus server refused the source: {detail}"
+    },
+    "refused_target": {
+      "message": "The chorus server refused the room or group: {detail}"
+    },
+    "refused_unavailable": {
+      "message": "The chorus server cannot do that right now: {detail}"
+    },
+    "refused_url": {
+      "message": "The chorus server refused the announcement's address: {detail}"
+    },
+    "refused_volume": {
+      "message": "The chorus server refused the volume: {detail}"
+    },
+    "refused_zone": {
+      "message": "The chorus server refused the room: {detail}"
+    },
+    "room_gone": {
+      "message": "The chorus server no longer has the room {room}."
+    },
+    "unknown_input": {
+      "message": "The chorus server offers no input {input} right now."
+    },
+    "unknown_source": {
+      "message": "{source} is not a source this chorus server offers right now."
+    },
+    "unsupported_catalog": {
+      "message": "The chorus server does not offer control catalog version 2. Update the server."
+    },
+    "unsupported_media": {
+      "message": "chorus plays its inputs (chorus://input/...) and announcements; it cannot play {media_id}."
+    }
+  },
+  "issues": {
+    "unsupported_catalog": {
+      "description": "The chorus server of the entry {title} does not offer control catalog version 2, which this integration needs, or is too old to say who it is. Update chorus-server, or install the integration version that matches it, then reload the entry.",
+      "title": "The chorus server speaks an unsupported control catalog"
+    }
+  }
+}

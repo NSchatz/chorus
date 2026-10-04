@@ -1,0 +1,60 @@
+# The Integration Quality Scale rules, by tier, as Home Assistant core 2026.9.3 lists them
+# in script/hassfest/quality_scale.py (ALL_RULES).
+# Source: https://raw.githubusercontent.com/home-assistant/core/2026.9.3/script/hassfest/quality_scale.py
+# Read 2026-10-04 at tag 2026.9.3, commit 6de5eb18cd4502f94af44cfff3a02250d88716ed.
+# One "<tier> <rule>" per line. quality_scale.yaml lists exactly these rule names
+# (tools/conventions/check-ha-integration.sh); the list moves with the harness pin.
+bronze action-setup
+bronze appropriate-polling
+bronze brands
+bronze common-modules
+bronze config-flow
+bronze config-flow-test-coverage
+bronze dependency-transparency
+bronze docs-actions
+bronze docs-conditions
+bronze docs-high-level-description
+bronze docs-installation-instructions
+bronze docs-removal-instructions
+bronze docs-triggers
+bronze entity-event-setup
+bronze entity-unique-id
+bronze has-entity-name
+bronze runtime-data
+bronze test-before-configure
+bronze test-before-setup
+bronze unique-config-entry
+silver action-exceptions
+silver config-entry-unloading
+silver docs-configuration-parameters
+silver docs-installation-parameters
+silver entity-unavailable
+silver integration-owner
+silver log-when-unavailable
+silver parallel-updates
+silver reauthentication-flow
+silver test-coverage
+gold devices
+gold diagnostics
+gold discovery
+gold discovery-update-info
+gold docs-data-update
+gold docs-examples
+gold docs-known-limitations
+gold docs-supported-devices
+gold docs-supported-functions
+gold docs-troubleshooting
+gold docs-use-cases
+gold dynamic-devices
+gold entity-category
+gold entity-device-class
+gold entity-disabled-by-default
+gold entity-translations
+gold exception-translations
+gold icon-translations
+gold reconfiguration-flow
+gold repair-issues
+gold stale-devices
+platinum async-dependency
+platinum inject-websession
+platinum strict-typing

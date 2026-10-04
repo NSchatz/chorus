@@ -19,7 +19,7 @@ fi
 # its subject from the PR title, after the branch's own commits were checked, so a long title
 # lands unchecked; history is never rewritten, so the commit is excused here rather than fixed.
 # Nothing is ever added to this list for a branch's own commit.
-long_on_main=" a19a713e1f86bc43b8925cf79dced5e1a4572c22 123ffa330bb7cb134e431b580f8e344f66a2a88e "
+long_on_main=" a19a713e1f86bc43b8925cf79dced5e1a4572c22 123ffa330bb7cb134e431b580f8e344f66a2a88e fde4dcaba9ec089556e16edf95f40acfe106739c "
 rc=0
 n=0
 dash="$(printf '\342\200\224')"

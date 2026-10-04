@@ -22,7 +22,8 @@
 #
 #   make gate             # everything
 #   make gate-fast        # the conventions checks only, for docs-only changes
-#   make tier-fast        # the conventions checks, fmt, clippy and the workspace tests: the fast
+#   make tier-fast        # the conventions checks, fmt, clippy, the Home Assistant
+#                         # integration's tests and the workspace tests: the fast
 #                         # tier run on every PR (the goals program's gate tiers, W15, W36);
 #                         # `make tier-full` is `make gate`, run at goal end and nightly on main
 #
@@ -41,6 +42,14 @@
 #   CHORUS_ALSA_PREFIX        a rootless alsa-lib for the alsa-null step when the
 #                             system has no libasound.so.2 (default /cache/opt/chorus-alsa;
 #                             SKIPPED under CI when neither exists)
+#   UV_PROJECT_ENVIRONMENT    where the ha-test and ha-hassfest steps keep the Home
+#                             Assistant integration's virtual environment (default
+#                             /cache/venvs/chorus-ha; never inside the repository); they fetch
+#                             the pinned Python and the locked packages once, then need no
+#                             network (SKIPPED under CI when uv is absent)
+#   CHORUS_HA_CORE            where the ha-hassfest step keeps its checkout of Home Assistant
+#                             core at the pinned tag (default /cache/chorus-ha-core); cloned
+#                             once, then no network
 #   NEXTEST_TEST_THREADS      how many tests run at once (default: .config/nextest.toml)
 #   CHORUS_FIRMWARE_JOBS      make's job count for the firmware host build (default 8)
 
@@ -245,17 +254,34 @@ if [ "$MODE" = tier-fast ]; then
     # separate build step is left to the full tier.
     step fmt              cargo fmt --all --check
     step clippy           cargo clippy --workspace --all-targets --locked -- -D warnings
-    stop_if_cheap_steps_failed test
+    stop_if_cheap_steps_failed ha-test test
+    # The Home Assistant integration's own lint, types and tests (goal 18): under a minute,
+    # so before the workspace tests. (The conventions check of the same rule,
+    # check-ha-integration.sh, ran above as step ha-integration.)
+    step ha-test          make --no-print-directory ha-test
+    sed -n -e 's/^ha-test: \(PASS.*\|SKIPPED.*\)/gate: ha-test \1/p' -e 's/^\(SKIPPED: .*\)/gate: ha-test \1/p' "$LOG/ha-test.log" | tee -a "$LOG/summary.txt"
     step test             workspace_tests
 fi
 
 if [ "$MODE" = full ]; then
     step fmt              cargo fmt --all --check
     step clippy           cargo clippy --workspace --all-targets --locked -- -D warnings
-    stop_if_cheap_steps_failed build test determinism firmware-check verify alsa-null \
+    stop_if_cheap_steps_failed ha-test ha-hassfest build ha-live test determinism firmware-check verify alsa-null \
         firmware-esp32s3-wired firmware-esp32s3-wifi firmware-esp32s3-qemu firmware-profiles \
         qemu-boot ota-qemu image soloist-image soloist-lists endpoint-packages
+    # The Home Assistant integration (goal 18): its lint, types and tests under the pinned
+    # harness, then Home Assistant's own hassfest over it from the pinned core checkout.
+    # Both are under a minute warm, so they come before the builds.
+    step ha-test          make --no-print-directory ha-test
+    sed -n -e 's/^ha-test: \(PASS.*\|SKIPPED.*\)/gate: ha-test \1/p' -e 's/^\(SKIPPED: .*\)/gate: ha-test \1/p' "$LOG/ha-test.log" | tee -a "$LOG/summary.txt"
+    step ha-hassfest      make --no-print-directory ha-hassfest
+    sed -n -e 's/^ha-hassfest: \(PASS.*\|SKIPPED.*\)/gate: ha-hassfest \1/p' -e 's/^\(SKIPPED: .*\)/gate: ha-hassfest \1/p' "$LOG/ha-hassfest.log" | tee -a "$LOG/summary.txt"
     step build            cargo build --workspace --all-targets --locked
+    # The integration against the chorus-server the build step just made, on loopback: join,
+    # unjoin, volume, group volume, sources and an announcement through Home Assistant's
+    # service calls (goal 18; tests/test_live_server.py).
+    step ha-live          env CHORUS_SERVER_BIN="${CARGO_TARGET_DIR:-$ROOT/target}/debug/chorus-server" \
+        make --no-print-directory ha-live
     step test             workspace_tests
     step determinism      make --no-print-directory verify-control-determinism
     step firmware-check   env CHORUS_OUTAGE_SECONDS="${CHORUS_GATE_OUTAGE_SECONDS:-30}" \
