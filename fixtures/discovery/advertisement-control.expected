@@ -1,0 +1,16 @@
+# What a resolver must make of advertisement-control.hex (goal 18).
+#
+# The control service's instance, where it is, and its TXT record: the
+# catalog version and the server's id.
+#
+# Format: key = value, '#' starts a comment.
+
+service = _chorus-ctl._tcp.local.
+instances = 1
+instance.0.name = chorus._chorus-ctl._tcp.local.
+instance.0.label = chorus
+instance.0.host = chorus.local.
+instance.0.port = 4020
+instance.0.address = 192.0.2.40:4020
+instance.0.txt.v = 2
+instance.0.txt.id = chorus-server-0123456789abcdef
