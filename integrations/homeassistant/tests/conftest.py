@@ -117,6 +117,15 @@ def speaker_firmware(
     return _entity_id(hass, "update", f"{server_id}:speaker:{speaker_id}:firmware")
 
 
+def speaker_button(
+    hass: HomeAssistant, speaker_id: str, button: str, server_id: str = SERVER_ID
+) -> str:
+    """Return the entity id of one of a speaker's button event entities."""
+    return _entity_id(
+        hass, "event", f"{server_id}:speaker:{speaker_id}:button:{button}"
+    )
+
+
 def only(vector: bytes, *members: str) -> bytes:
     """Return a shared command vector cut down to `v`, `t` and these members.
 

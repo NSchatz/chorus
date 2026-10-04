@@ -3,7 +3,8 @@
 ``docs/control-plane.md``, "How the messages travel": ``GET /api/state`` once,
 ``GET /api/events`` as server-sent events with one full state per change, and
 ``POST /api/command`` with ``Content-Type: application/json`` and no ``Origin``
-header. Every response is ``Connection: close``. ``GET /metrics`` is the
+header. ``GET /api/controller-events`` is a second stream of the same kind, one
+``controller_event`` per button press the server accepted and nothing kept. Every response is ``Connection: close``. ``GET /metrics`` is the
 speakers' telemetry (``docs/telemetry.md``), read on request.
 """
 
@@ -26,7 +27,7 @@ from .errors import (
     ChorusUnsupportedError,
 )
 from .metrics import Metrics
-from .models import ServerInfo, State, loads
+from .models import ControllerEvent, ServerInfo, State, loads
 from .sse import MAX_EVENT_BYTES, SSEParser
 
 REQUEST_TIMEOUT = 10.0
@@ -183,6 +184,18 @@ class ChorusClient:
         """Return a subscriber to this server's event stream."""
         return EventStream(self, idle_probe=idle_probe, sleep=sleep, rand=rand)
 
+    def controller_events(
+        self,
+        *,
+        idle_probe: float = IDLE_PROBE_SECONDS,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        rand: Callable[[], float] = _random.random,
+    ) -> ControllerEventStream:
+        """Return a subscriber to this server's button presses."""
+        return ControllerEventStream(
+            self, idle_probe=idle_probe, sleep=sleep, rand=rand
+        )
+
 
 async def _read_bounded(resp: aiohttp.ClientResponse) -> bytes:
     body = bytearray()
@@ -214,8 +227,15 @@ class Backoff:
         return step * (0.5 + 0.5 * self._rand())
 
 
-class EventStream:
-    """One subscriber: reads the stream, reconnects with backoff and jitter."""
+class _Subscriber:
+    """One server-sent event stream: read, and reconnect with backoff and jitter.
+
+    The line splitter and its bound on one event (``sse.py``), the idle probe
+    and the reconnect rule are the same for every stream of the control plane.
+    """
+
+    _path: str
+    _what: str
 
     def __init__(
         self,
@@ -231,6 +251,66 @@ class EventStream:
         self._sleep = sleep
         self._backoff = Backoff(rand)
 
+    async def _run(
+        self,
+        on_open: Callable[[], None],
+        on_event: Callable[[str], None],
+        on_idle: Callable[[], Awaitable[None]],
+        on_disconnect: Callable[[ChorusError], None],
+    ) -> None:
+        while True:
+            try:
+                await self._once(on_open, on_event, on_idle)
+            except ChorusError as err:
+                on_disconnect(err)
+            await self._sleep(self._backoff.next())
+
+    async def _once(
+        self,
+        on_open: Callable[[], None],
+        on_event: Callable[[str], None],
+        on_idle: Callable[[], Awaitable[None]],
+    ) -> None:
+        client = self._client
+        parser = SSEParser()
+        try:
+            async with client.session.get(
+                client.url(self._path),
+                headers={"Accept": "text/event-stream"},
+                timeout=aiohttp.ClientTimeout(total=None, sock_connect=REQUEST_TIMEOUT),
+            ) as resp:
+                if resp.status != 200:
+                    raise ChorusConnectionError(
+                        f"GET {self._path} answered {resp.status}"
+                    )
+                on_open()
+                while True:
+                    try:
+                        async with asyncio.timeout(self._idle_probe):
+                            chunk = await resp.content.readany()
+                    except TimeoutError:
+                        # Silence: ask once. A failure raises and ends the stream.
+                        await on_idle()
+                        continue
+                    if not chunk:
+                        raise ChorusConnectionError(
+                            f"the server closed the {self._what}"
+                        )
+                    for event in parser.feed(chunk):
+                        on_event(event)
+        except (aiohttp.ClientError, TimeoutError, OSError) as err:
+            raise ChorusConnectionError(
+                f"the {self._what} from {client.url('/')} was lost: "
+                f"{err or type(err).__name__}"
+            ) from err
+
+
+class EventStream(_Subscriber):
+    """The subscriber to the state: every change, as the complete state."""
+
+    _path = "/api/events"
+    _what = "event stream"
+
     async def run(
         self,
         on_state: Callable[[State], None],
@@ -240,43 +320,56 @@ class EventStream:
 
         Returns only by cancellation.
         """
-        while True:
-            try:
-                await self._once(on_state)
-            except ChorusError as err:
-                on_disconnect(err)
-            await self._sleep(self._backoff.next())
 
-    async def _once(self, on_state: Callable[[State], None]) -> None:
-        client = self._client
-        parser = SSEParser()
-        try:
-            async with client.session.get(
-                client.url("/api/events"),
-                headers={"Accept": "text/event-stream"},
-                timeout=aiohttp.ClientTimeout(total=None, sock_connect=REQUEST_TIMEOUT),
-            ) as resp:
-                if resp.status != 200:
-                    raise ChorusConnectionError(
-                        f"GET /api/events answered {resp.status}"
-                    )
-                while True:
-                    try:
-                        async with asyncio.timeout(self._idle_probe):
-                            chunk = await resp.content.readany()
-                    except TimeoutError:
-                        # Silence: ask once. A failure raises and ends the stream.
-                        on_state(await client.state())
-                        continue
-                    if not chunk:
-                        raise ChorusConnectionError(
-                            "the server closed the event stream"
-                        )
-                    for event in parser.feed(chunk):
-                        on_state(State.parse(event))
-                        self._backoff.reset()
-        except (aiohttp.ClientError, TimeoutError, OSError) as err:
-            raise ChorusConnectionError(
-                f"the event stream from {client.url('/')} was lost: "
-                f"{err or type(err).__name__}"
-            ) from err
+        def on_event(event: str) -> None:
+            on_state(State.parse(event))
+            # The stream opens with the state: one delivered is a stream that
+            # worked, and the next loss waits the first step again.
+            self._backoff.reset()
+
+        async def on_idle() -> None:
+            on_state(await self._client.state())
+
+        await self._run(lambda: None, on_event, on_idle, on_disconnect)
+
+
+class ControllerEventStream(_Subscriber):
+    """The subscriber to button presses: each one the server accepted, once.
+
+    The server keeps no press: a stream opens with a comment line and no
+    message, so one that is opened again after a loss is sent nothing that
+    happened before it, and this reader keeps nothing to send again either. A
+    press accepted while no stream is attached is never delivered.
+    """
+
+    _path = "/api/controller-events"
+    _what = "controller event stream"
+
+    async def run(
+        self,
+        on_event: Callable[[ControllerEvent], None],
+        on_disconnect: Callable[[ChorusError], None],
+        on_connect: Callable[[], None] = lambda: None,
+    ) -> None:
+        """Deliver every press, for ever; say when the stream is open and lost.
+
+        Returns only by cancellation.
+        """
+
+        def on_open() -> None:
+            # A stream of presses opens empty, so the answer itself is what
+            # says it worked: the next loss waits the first step again.
+            self._backoff.reset()
+            on_connect()
+
+        async def on_idle() -> None:
+            # No press is no news; the state is asked for as a sign of life
+            # and its answer is not used.
+            await self._client.state()
+
+        await self._run(
+            on_open,
+            lambda event: on_event(ControllerEvent.parse(event)),
+            on_idle,
+            on_disconnect,
+        )

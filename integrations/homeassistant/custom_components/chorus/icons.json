@@ -1,5 +1,22 @@
 {
   "entity": {
+    "event": {
+      "next": {
+        "default": "mdi:skip-next"
+      },
+      "play_pause": {
+        "default": "mdi:play-pause"
+      },
+      "previous": {
+        "default": "mdi:skip-previous"
+      },
+      "volume_down": {
+        "default": "mdi:volume-minus"
+      },
+      "volume_up": {
+        "default": "mdi:volume-plus"
+      }
+    },
     "media_player": {
       "room": {
         "default": "mdi:speaker",

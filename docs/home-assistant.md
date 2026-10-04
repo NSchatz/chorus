@@ -45,7 +45,7 @@ Home Assistant each time.
 | A room (zone) | One device named for the room, `suggested_area` its name, with a `media_player`, a group-volume `number`, and its sound controls: bass and treble (`number`), loudness, night mode and speech enhancement (`switch`), an input `select`, a quiet-hours `switch`, and an autoplay `switch` for each autoplay rule that targets it |
 | A saved group | One device under the server with a `media_player`, always present, and an autoplay `switch` for each autoplay rule that targets it |
 | A live group | No entity: the `group_members` of its rooms' players, leader first |
-| An adopted speaker | One device named for the speaker, `via` its room's device while it has a room and the server otherwise, a firmware `update` entity once it has reported what it runs, and eight diagnostic `sensor`s |
+| An adopted speaker | One device named for the speaker, `via` its room's device while it has a room and the server otherwise, a firmware `update` entity once it has reported what it runs, eight diagnostic `sensor`s, and five button `event` entities once it has declared the controller role |
 
 Home Assistant's areas are Home Assistant's: the integration only suggests one and never
 creates, renames or assigns an area.
@@ -182,6 +182,68 @@ category:
 - The tests' sample (`tests/fixtures/metrics-scrape.txt`) is in the exporter's format, held
   to the families, HELP and TYPE lines of `crates/server/src/metrics.rs` by
   `tests/aiochorus/test_metrics.py`. It is not a capture of a running server.
+
+## Speaker buttons: one event entity per button, one event per accepted press
+
+The model is `docs/decisions/0161-the-home-assistant-speaker-button-events.md`. K83 asks for
+button presses as event entities; K65 is the controller role they come from. The
+source is the server's `GET /api/controller-events` (`docs/control-plane.md`, "How the
+messages travel"; `docs/decisions/0151-controller-events-on-the-http-control-plane.md`): one
+`controller_event` message per controller command the server accepted, sent once to whoever
+is subscribed and never kept.
+
+- **Which speakers.** One whose `speakers[].roles` contains `controller` gets five `event`
+  entities on its device (`event.py`), device class `button`: play/pause, volume up, volume
+  down, next and previous, the buttons of the compact speaker and the streaming amp
+  (`firmware/include/chorus/controls.h`). `roles` are the speaker's latest hello's and empty
+  while it is away, so the entities are added the first time the role is seen and stay until
+  the speaker is forgotten (its device and entities are removed then).
+- **Which entity, which event type.** The message carries the command, not the button, and
+  `ControllerEvent.button` maps it by what the firmware's buttons send
+  (`firmware/src/controls.c`):
+
+  | `command` (and `value`) | entity | event type |
+  |---|---|---|
+  | `toggle` | Play/pause button | `press` |
+  | `join`, `leave` | Play/pause button | `long_press` |
+  | `volume_step`, above zero | Volume up button | `press` |
+  | `volume_step`, below zero | Volume down button | `press` |
+  | `next` | Next button | `press` |
+  | `previous` | Previous button | `press` |
+
+  The event's attributes are the message's other members: `command`, `value`, `target`,
+  `room` (its `zone`) and `outcome`. The speaker is the message's `endpoint`, which is the
+  adopted speaker's id.
+- **Exactly one event per press.** The coordinator hands a message to the one entity
+  registered for its (speaker, button) and to nothing else
+  (`test_button_one_press_fires_exactly_one_event`, sent as the shared vector's bytes;
+  `test_button_two_speakers_do_not_cross`).
+- **A reconnect never replays or invents a press.** The server's stream opens with a comment
+  line and no message, the reader (`ControllerEventStream`) keeps nothing between
+  connections, and the entity fires only from a message. Losing the stream makes the button
+  entities unavailable, since a press would be missed; coming back restores the last event's
+  time and fires nothing (`test_button_stream_drop_and_reconnect_fires_nothing`: the press
+  stream alone, the whole server, then a reload, with a press made while detached that is
+  never delivered).
+- **What is ignored.** A command no speaker button sends (`play`, `pause`, `volume_set`,
+  `mute_set`, a later server's name), and an endpoint with no enabled button entity (a wall
+  remote that is not an adopted speaker, a speaker that never declared the role), are dropped
+  with one debug log line each and change nothing
+  (`test_button_unknown_button_or_speaker_is_ignored_with_one_log_line`).
+- **The reader.** `_aiochorus/client.py` reads both streams with the same code: the line
+  splitter and its 8 MiB bound on one event (`sse.py`), a liveness check with `GET /api/state`
+  after 45 s of silence, and the backoff from one second to one minute with jitter. A stream
+  of presses is silent most of the time, so its backoff starts over when the stream opens,
+  not at its first message. A message that is not a `controller_event` ends the stream, as a
+  message that is not a state does. `tests/aiochorus/test_controller_events.py` reads the
+  shared vectors `fixtures/control/v2/controller_event.json` and
+  `controller_event-transport.json` (and their `.fields`), never a copy.
+- **A server without the route** (older than the route) answers 404: the button entities stay
+  unavailable, one log line says so, and everything else works
+  (`test_button_server_without_the_route_leaves_the_rest_working`).
+- **Nothing is sent.** The platform sends no command; what a button does in chorus is the
+  server's. Device triggers are not provided: an automation triggers on the entity's state
+  (the README has one).
 
 ## The security rules
 

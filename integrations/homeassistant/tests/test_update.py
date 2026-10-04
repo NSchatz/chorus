@@ -173,8 +173,10 @@ async def test_firmware_refusals_are_translated_errors(
         await install(hass, first)
     assert caught.value.translation_domain == DOMAIN
     assert caught.value.translation_key == "firmware_owner_not_at_bench"
-    assert "owner-at-bench variable" in messages["firmware_owner_not_at_bench"]["message"]
-    assert "owner-at-bench variable" in str(caught.value)
+    assert (
+        "docs/firmware-updates.md" in messages["firmware_owner_not_at_bench"]["message"]
+    )
+    assert "owner is at the bench" in str(caught.value)
     server.remote_speakers.clear()
 
     # The server's own refusals, byte for byte from the shared vectors.
