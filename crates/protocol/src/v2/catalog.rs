@@ -197,7 +197,7 @@ pub mod signal_reason {
 
 /// `mic_audio` (0x3A): the one PCM layout version 2 defines for microphone
 /// audio, 16 kHz mono 16-bit signed little-endian, which is what the voice
-/// pipeline takes (`docs/decisions/0000-the-voice-role-on-the-wire.md`). A
+/// pipeline takes (`docs/decisions/0166-the-voice-role-on-the-wire.md`). A
 /// value past [`mic_format::MAX`], or 0, is rejected (`Problem::Undefined`).
 pub mod mic_format {
     /// 16 kHz, one channel, 16-bit signed little-endian PCM.

@@ -14,7 +14,7 @@ Why it is shaped this way: `docs/decisions/0003-wire-protocol-framing.md` (the
 frame), `docs/decisions/0041-protocol-v2-framing.md` (what v2 keeps, adds and
 encrypts, and v1 refused by name), `docs/decisions/0039-the-v2-key-exchange.md` (the session, and the
 vendored crypto primitives), `docs/decisions/0040-codec-negotiation.md` (codecs) and
-`docs/decisions/0000-the-voice-role-on-the-wire.md` (the voice role and the
+`docs/decisions/0166-the-voice-role-on-the-wire.md` (the voice role and the
 microphone audio's format).
 What a decoder does when it cannot accept a frame:
 `docs/decisions/0005-decoder-frame-validation.md`.
@@ -945,7 +945,7 @@ A speaker with a microphone is a voice endpoint: it sends what the microphone
 hears to the server, which runs the wake word and hands a run to the voice
 pipeline (proposal P8, Option A; decisions K71, K73). The role is bit 5 of
 `hello.roles` and has three messages. Why each is shaped as it is:
-`docs/decisions/0000-the-voice-role-on-the-wire.md`.
+`docs/decisions/0166-the-voice-role-on-the-wire.md`.
 
 **Microphone audio is not a source kind.** `source_offer.kind` has no
 microphone value and gets none; `mic_audio` is not announced by a

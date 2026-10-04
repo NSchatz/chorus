@@ -1,4 +1,4 @@
-# 0000: protocol v2's voice role is bit 5 of hello with three messages of its own; microphone audio is 16 kHz mono 16-bit little-endian PCM in `mic_audio`, never a source stream, and a role message from a session that did not declare its role is refused
+# 0166: protocol v2's voice role is bit 5 of hello with three messages of its own; microphone audio is 16 kHz mono 16-bit little-endian PCM in `mic_audio`, never a source stream, and a role message from a session that did not declare its role is refused
 
 - Status: accepted, 2026-10-04
 - Decided by: the owner for the path (proposal P8, Option A, approved: the speaker sends
