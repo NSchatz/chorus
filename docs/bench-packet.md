@@ -2,8 +2,9 @@
 
 What the owner buys, how it is wired, the exact commands each bench session runs, and the result
 each one should print. Written in chorus goal 7 (2026-09-30) against proposal P4's recommended
-tier, which Checkpoint K deferred: the buy list is **awaiting the owner's choice** (Needs item
-"The bench buy list, awaiting your choice"), and nothing is ordered by the program (K4, K38).
+tier; rewritten on 2026-10-04 to the owner's final list (P4, "Decision: the owner's final list"),
+which puts a prototype wired from modules (ESP32-S3, W5500, TAS5825M) where the Audio Brick was
+and PCM5102 boards where the DAC+ was. Nothing is ordered by the program (K4, K38).
 Every session here is the owner's (brief §0.6); each has its own item in the owner's queue (issues
 in the owner's agent harness; `goals needs add`, `/goals:needs`). How a bench script turns a run into a report and a
 pull request is `docs/bench.md`.
@@ -12,73 +13,72 @@ Nothing in this file is a measurement. Every expected result below is a criterio
 `ASSUMED` estimate, and only a report under `docs/measurements/` with `Source: hardware` is timing
 evidence (BRIEF.md section 3.1 rule 3).
 
-## 1. The buy list (P4 Option B, recommended tier, awaiting choice)
+## 1. The buy list (P4's final list, decided by the owner on 2026-10-04)
 
-Prices, sellers, ship-from and URLs are P4's picks, re-evaluated from the offers of 2026-10-04
-(`docs/proposals/P4-bench-purchase.md`: the offers per line, Options A and B with their "Basis"
-column, and the cheaper equivalent of each line with what it would change here); confirm every
-"snippet", "search page" and `ASSUMED` line in a browser before buying. Shipping is in no total
-except B2.
+Prices, sellers, bases and URLs are P4's final list (`docs/proposals/P4-bench-purchase.md`,
+"Decision: the owner's final list", lines F1 to F32, G1 to G9 and H1 to H4); confirm every
+snippet, search-page and at-cart line in the cart. Shipping and tax are in no total.
 
-| # | Part | Sessions that need it | Qty | Line |
-|---|---|---|---|---|
-| A1 | Raspberry Pi 5 2GB (CanaKit, one order with A3) | S0-S4 (endpoints A and B) | 2 | $155.00 |
-| A2 | Raspberry Pi DAC+ (PCM5122, RCA line out; PiShop.us) | S1-S4 | 2 | $59.90 |
-| A3 | Raspberry Pi 27 W USB-C PSU (CanaKit) | S0-S4 | 2 | $25.90 |
-| A4 | Raspberry Pi SD card 32 GB (PiShop.us) | S0 | 2 | $39.90 |
-| A5 | Behringer UMC202HD (2 in, 96 kHz capture used; Amazon US, snippet) | S1-S4 | 1 | $59.00 |
-| A6 | 24 MHz 8-channel USB logic analyzer, the Cypress FX2 design (sigrok fx2lafw; AliExpress, **NON-US EXCEPTION**; fallback: SparkFun TOL-18627, $26.95) | S7.5 only (the GPIO marker) | 1 | $5.83 |
-| A7 | 40 male/male jumper wires, 10 cm (AliExpress, **NON-US EXCEPTION**) | S7.5 only | 1 | $4.70 |
-| A8 | Hosa CPR-202 (dual RCA to dual 1/4" TS, 2 m) and Hosa YRA-104 (RCA male to two RCA female, the Y splitter) | S1-S4 | 1 set | $22.90 |
-| B1, B2 | Esparagus Audio Brick, "Single DAC, ESP32-S3" x2 (Elecrow, in stock, **NON-US EXCEPTION**) and its shipping (`ASSUMED`) | S7 | 2 | $138.00 |
-| B3 | Waveshare ESP32-S3-POE-ETH-M x2 (AliExpress or Waveshare's store, **NON-US EXCEPTION**) | S7.5 (the second ESP32-S3 endpoint) and the EMBEDDED-5 and WIFI-7 packets of goals 8 and 9 | 2 | $51.98 |
-| B4 | Adafruit PCM5102 I2S DAC (6250) | the line output of B3 | 2 | $9.90 |
-| B5 | TP-Link TL-POE160S PoE+ injector (CDW) | S7.1-S7.3 (the PoE+ path) | 1 | $22.00 |
-| B6 | PoE Texas GAT-24V25W splitter (its Amazon listing; the maker's store is sold out) | S7.1-S7.3 (the PoE+ path) | 1 | $31.99 |
-| B7 | Mean Well GST60A24-P1J, 24 V 2.5 A, 2.1 mm plug | S7.1-S7.3 (the mains path) | 1 | $18.60 |
-| B8 | Passive 4-8 ohm speaker pair (`ASSUMED` price) | S7.1-S7.3 | 1 pair | $70.00 |
-| B9 | 2 x 8 ohm 50 W resistors (AliExpress, **NON-US EXCEPTION**), divider resistors, DC-blocking capacitors (`ASSUMED` price) | S7.4 | 1 set | $10.00 |
-| B10 | Cat6 patch cables, 3 ft (Monoprice) | S7.1-S7.3 | 4 | $9.16 |
-| | **Recommended total** | | | **$734.76** |
+| # | Part | Sessions that need it | Qty |
+|---|---|---|---|
+| F1, F2 | Raspberry Pi 5 4GB (endpoint A) and 2GB (endpoint B), CanaKit | S0-S4; afterwards the two TV hubs (S8) | 1 each |
+| F3 | Raspberry Pi 27 W USB-C supply | S0-S4 | 2 |
+| F4 | Behringer UMC202HD (2 in, 96 kHz capture used) | S1-S4, S7.4, and the speaker-design measurements | 1 |
+| F6 | Adafruit PCM5102 I2S DAC (6250), one per Pi | S1-S4 | 2 |
+| F8, F9 | Talent 3.5 mm TRS to dual 1/4" TS cable, 10 ft (x3), and an Audtek 3.5 mm stereo Y | S1-S4 (two cables; the Y for S2 step 1); the third cable feeds the measurement amp | 3 + 1 |
+| F5 | AITRIP ESP32-S3 DevKitC N16R8, 3-pack: the module prototypes and a spare | S5, S6, S7, S9-S11 | 1 |
+| F18 | Louder Raspberry Hat Plus 1X (TAS5825M), one per prototype | S7, S9-S11 | 2 |
+| F20 | W5500 SPI Ethernet module (INT and RST broken out), one per prototype and a spare | S7, S10, S11 | 3 |
+| F19 | Korad KA3005D lab supply: 24 V, current-limited, for the Hat Plus amplifiers | S7, S9-S11 | 1 |
+| F21, F24 | FX2 24 MHz logic analyzer (and a spare), Dupont jumper set | S7 (the module wiring), S7.5 | 2, 1 |
+| F13, F14, F16, F23 | Two load-and-divider sets: 4 x 8 ohm 50 W, 4 x 10 uF non-polarized, 1k and 9.1k resistors, 2 TRS plugs | S7.4 | 2 sets |
+| F7, F25-F28 | ICS-43434 microphone, breadboard, tactile buttons, WS2812B LED, DPDT switch | the prototype's controls and mic gate (no session yet) | 1 each |
+| F29, F30 | USB-A to USB-C data cables, 63/37 solder | S5-S7, S9-S11 | 2, 1 |
+| F10-F12, F15, F17, F22, F31, F32 | The measurement kit: EMM-6, TRS patch cable, test leads, Caddock 100 ohm, 100 ohm reference, TPA3116 amplifier (and a spare), microphone stand, XLR cable | the speaker-design measurements (no session yet) | as in P4 |
+| H1-H4 | The TV hubs: HiFiBerry Digi+ I/O, TOSLINK, micro-HDMI to HDMI, printed cases (bought at install) | S8 | 2 each |
 
-The Minimal tier (A1-A8, $373.13) is enough for sessions S0-S4. B-lines serve the embedded
-sessions (S7 here, and the packets goals 8 and 9 turn into their own). The Audio Brick is no longer
-a pre-order: its campaign store closed, and the pick is an in-stock listing.
-
-Also needed, not bought: a pair of headphones for listening through the UMC202HD's front
-headphone output (`ASSUMED` the owner has one; any wired pair with a 1/4" plug or adapter), a
-laptop or desktop with SSH to reach the Pis, and two free house-LAN ports (or one switch).
+The priced lines bought now total $548.46 to $583.32 (P4). Owned, not bought: two microSD cards
+(32 GB or larger), headphones for the UMC202HD's front output, a passive speaker, speaker wire.
+Also needed: a laptop or desktop with SSH to reach the Pis; four Ethernet patch cables, crimped by
+the owner; free house-LAN ports (or a switch); a USB-A to USB-B cable for the UMC202HD if its box
+has none; the lead from the Korad to the Hat Plus, chosen once the Hat's power connector is seen
+(no page read documents it); isopropyl alcohol.
 
 ## 2. Wiring
 
-The bench machine is **endpoint A**: a Pi 5 with a DAC+, which also runs `chorus-server` and has
-the UMC202HD plugged into its USB. **Endpoint B** is the second Pi 5 with a DAC+, reached over SSH
-from A (`CHORUS_SECOND_ENDPOINT=user@endpoint-b`, the form every rig script reads). Both Pis are
-on the wired house LAN.
+The bench machine is **endpoint A**: a Pi 5 (4GB) with a PCM5102 board on its I2S pins, which
+also runs `chorus-server` and has the UMC202HD plugged into its USB. **Endpoint B** is the second
+Pi 5 (2GB) with a PCM5102 board, reached over SSH from A (`CHORUS_SECOND_ENDPOINT=user@endpoint-b`,
+the form every rig script reads). Both Pis are on the wired house LAN.
 
 ```
- endpoint A (Pi 5 + DAC+) --RCA L--> RCA-to-TS --> UMC202HD input 1 (combo jack, 1/4")
-      |  USB                                          UMC202HD input 2 <-- RCA-to-TS <--RCA L-- endpoint B (Pi 5 + DAC+)
+ endpoint A (Pi 5 + PCM5102) --3.5 mm--> Talent cable, left plug --> UMC202HD input 1 (combo jack, 1/4")
+      |  USB                                    UMC202HD input 2 <-- left plug, Talent cable <--3.5 mm-- endpoint B (Pi 5 + PCM5102)
       +---- UMC202HD (USB audio, capture device)
       |
    Ethernet ---- house LAN ---- Ethernet
                                                      headphones -> UMC202HD front phones out (listening only)
 ```
 
-- Only the left RCA channel of each DAC+ goes into the interface: input 1 is endpoint A, input 2
-  is endpoint B. The rig reads the interface's left capture channel as A and right as B.
-- Line level into the combo jacks: the DAC+ outputs 0-2 V RMS (Raspberry Pi DAC+ product brief,
-  https://datasheets.raspberrypi.com/audio/dac-plus-hat-product-brief.pdf, search summary read
-  2026-09-30), about +8 dBu at full scale; the UMC202HD's line inputs take up to +20 dBu (retailer
+- Each PCM5102 board to its Pi, with jumpers: VIN to 3.3 V (header pin 1) or 5 V (pin 2), the
+  board takes 3-5 V (Adafruit's page, read 2026-10-04); GND to pin 6; BCLK to GPIO18 (pin 12);
+  WSEL to GPIO19 (pin 35); DIN to GPIO21 (pin 40). The board needs no MCLK ("auto-generate it
+  internally from the bit clock", the same page).
+- Only the left channel of each DAC goes into the interface: on each Talent cable the left
+  1/4" plug goes in and the right plug stays out. Input 1 is endpoint A, input 2 is endpoint B;
+  the rig reads the interface's left capture channel as A and right as B.
+- Line level into the combo jacks: the PCM5102A's full scale is about 2.1 V RMS, about +8.7 dBu
+  (`ASSUMED` from the chip family's datasheet figure; confirm with the multimeter on a full-scale
+  tone); the UMC202HD's line inputs take up to +20 dBu (retailer
   specification summaries, https://www.bhphotovideo.com/c/product/1113600-REG/behringer_umc202hd_audiophile_2x2_24_bit_192_khz.html
   and https://higherhz.org/reviews/equipment/behringer-u-phoria-umc202hd/, search summaries read
   2026-09-30; confirm on the unit's own manual). Set both GAIN knobs fully down, both
   INST switches off, 48 V phantom **off**. The chirp is held at 0.25 of full scale
   (`config/measure.conf` `chirp_amplitude_ceiling`); raise interface gain only if a capture
   refuses for level, never the ceiling.
-- **Self-calibration variant (session S2, step 1):** the Y splitter takes endpoint A's left RCA
-  into both RCA-to-TS cables, so both inputs see the same signal; endpoint B is unplugged from the
-  interface.
+- **Self-calibration variant (session S2, step 1):** the Audtek Y on endpoint A's 3.5 mm jack
+  takes both Talent cables, and the left plug of each goes into inputs 1 and 2, so both inputs
+  see the same signal; endpoint B is unplugged from the interface.
 - Listening: the UMC202HD's direct-monitor knob fully to INPUT, headphones in the front jack.
 
 ## 3. The sessions
@@ -91,7 +91,8 @@ validates and merges it (K45). Device names below are examples: take the real on
 
 ### S0. The bench machine (one-time setup)
 
-Needs: A1, A3, A4 (both Pis), the house LAN, a GitHub login on the owner's account.
+Needs: F1, F2, F3 (both Pis), the owner's two microSD cards, the house LAN, a GitHub login on the
+owner's account.
 
 1. Flash Raspberry Pi OS Lite (64-bit) onto both SD cards with Raspberry Pi Imager, enabling SSH
    and a user (names are the owner's; none is written here). Boot both Pis wired.
@@ -104,34 +105,36 @@ Needs: A1, A3, A4 (both Pis), the house LAN, a GitHub login on the owner's accou
    `ssh-copy-id user@endpoint-b`, then `ssh user@endpoint-b mkdir -p .local/bin` and
    `scp target/release/chorus-client user@endpoint-b:.local/bin/` (B needs `chorus-client` on its
    `PATH`, built from the same commit, and passwordless SSH from A, per `docs/bench.md`).
-6. Enable the DAC on both Pis: add `dtoverlay=hifiberry-dacplus-std` to `/boot/firmware/config.txt`
-   (the overlay the Raspberry Pi audio documentation names for the DAC+,
-   https://www.raspberrypi.com/documentation/accessories/audio.html, search summary read
-   2026-09-30; confirm there), reboot, and run `aplay -l` on both and `arecord -l` on A.
+6. Enable the DAC on both Pis: wire the PCM5102 board (section 2), add `dtoverlay=hifiberry-dac`
+   to `/boot/firmware/config.txt` (an overlay in Raspberry Pi's overlay README,
+   https://raw.githubusercontent.com/raspberrypi/firmware/master/boot/overlays/README, read
+   2026-10-04: "Configures the HifiBerry DAC audio cards"; that it drives this board is `ASSUMED`
+   from the shared PCM5102A chip, and `aplay -l` here checks it), reboot, and run `aplay -l` on
+   both and `arecord -l` on A.
 
-Expected: `gh auth status` says logged in; `cargo build` ends `Finished`; `aplay -l` lists the DAC+
+Expected: `gh auth status` says logged in; `cargo build` ends `Finished`; `aplay -l` lists the DAC's
 card on both Pis; `arecord -l` on A lists the UMC202HD ("U-PHORIA UMC202HD" or similar).
 What changes: nothing in the repo; every later session can run. Record the card names in the
 Needs item (no hostnames, no addresses).
 
 ### S1. SOUND-2: first sound and the ten-minute run
 
-Needs: S0, endpoint A with A2, A5, headphones. BRIEF.md section 8 item 2: "clean audio, plausible
+Needs: S0, endpoint A with its PCM5102 (F6) and the UMC202HD (F4), headphones. BRIEF.md section 8 item 2: "clean audio, plausible
 reported DAC delay, stable buffer".
 
 1. The software check first (nothing is recorded): `make verify-null-device` (it runs on the
    ALSA `null` device whatever `CHORUS_CLIENT_DEVICE` says). Then the device-class checks of
-   `docs/sound-2.md` on the DAC+, which open one pull request per script (four:
+   `docs/sound-2.md` on the PCM5102, which open one pull request per script (four:
    `sound2-stream-end-and-loss`, `sound2-start-fill`, `sound2-delay-log-shape`,
    `sound2-overflow`; a failing script still opens its PR, with `Result: FAIL`):
    ```
-   CHORUS_BENCH_PR=1 CHORUS_BENCH_DEVICE_NOTE='Raspberry Pi 5 2GB, Raspberry Pi DAC+' \
+   CHORUS_BENCH_PR=1 CHORUS_BENCH_DEVICE_NOTE='Raspberry Pi 5 4GB, Adafruit PCM5102' \
 CHORUS_CLIENT_DEVICE=hw:<dac card>,0 make verify-device
    ```
    Listen on the headphones while it plays.
 2. The evidence run, ten minutes, report and pull request:
    ```
-   CHORUS_BENCH_PR=1 CHORUS_BENCH_DEVICE_NOTE='Raspberry Pi 5 2GB, Raspberry Pi DAC+' \
+   CHORUS_BENCH_PR=1 CHORUS_BENCH_DEVICE_NOTE='Raspberry Pi 5 4GB, Adafruit PCM5102' \
 CHORUS_CLIENT_DEVICE=hw:<dac card>,0 ./tools/ten-minute-run.sh
    ```
 
@@ -142,7 +145,7 @@ step 2's log grades with at least 600 graded seconds, zero underruns and no rate
 the reported delay inside the configured buffer bounds (`config/transport.conf`), and a pull
 request `bench/<date>-sound2-ten-minute` opens. "Plausible DAC delay": the logged delay is the
 buffer the client configured plus a device delay of a few milliseconds (`ASSUMED`; the report
-records what the DAC+ reports). What changes: `docs/sound-2.md`'s three NOT PASSED rows.
+records what the PCM5102 reports). What changes: `docs/sound-2.md`'s three NOT PASSED rows.
 
 ### S2. RIG-3: the rig proves itself, then a free-run baseline
 
@@ -160,13 +163,13 @@ drift baseline between two clients".
    10); anything else is the interface's own inter-channel skew, recorded in the report.
 2. Rewire to A on input 1 and B on input 2. The capture run, both endpoints synced:
    ```
-   CHORUS_BENCH_PR=1 CHORUS_BENCH_DEVICE_NOTE='2 x Raspberry Pi 5 2GB with Raspberry Pi DAC+, UMC202HD' \
+   CHORUS_BENCH_PR=1 CHORUS_BENCH_DEVICE_NOTE='Raspberry Pi 5 4GB and 2GB with Adafruit PCM5102, UMC202HD' \
    CHORUS_SECOND_ENDPOINT=user@endpoint-b CHORUS_CAPTURE_DEVICE=hw:<umc card>,0 \
    CHORUS_CLIENT_DEVICE=hw:<dac card>,0 ./tools/measure/capture-run.sh
    ```
 3. The free-run baseline, correction disabled on both clients (audit A-4):
    ```
-   CHORUS_BENCH_PR=1 CHORUS_BENCH_DEVICE_NOTE='2 x Raspberry Pi 5 2GB with Raspberry Pi DAC+' \
+   CHORUS_BENCH_PR=1 CHORUS_BENCH_DEVICE_NOTE='Raspberry Pi 5 4GB and 2GB with Adafruit PCM5102' \
    CHORUS_SECOND_ENDPOINT=user@endpoint-b CHORUS_CLIENT_DEVICE=hw:<dac card>,0 \
        ./tools/measure/free-run-run.sh
    ```
@@ -185,7 +188,7 @@ Needs: S2 passed (the rig is trusted). BRIEF.md section 8 item 4; SYNC-4 AC-1 in
 harness and ... no hard resync after the first minute".
 
 ```
-CHORUS_BENCH_PR=1 CHORUS_BENCH_DEVICE_NOTE='2 x Raspberry Pi 5 2GB with Raspberry Pi DAC+, UMC202HD' \
+CHORUS_BENCH_PR=1 CHORUS_BENCH_DEVICE_NOTE='Raspberry Pi 5 4GB and 2GB with Adafruit PCM5102, UMC202HD' \
 CHORUS_SECOND_ENDPOINT=user@endpoint-b CHORUS_CAPTURE_DEVICE=hw:<umc card>,0 \
 CHORUS_CLIENT_DEVICE=hw:<dac card>,0 ./tools/sync-hour-run.sh
 ```
@@ -211,13 +214,14 @@ CHORUS_CAPTURE_DEVICE=hw:<umc card>,0 CHORUS_CLIENT_DEVICE=hw:<dac card>,0 \
 Expected: the sync bound of S3 still held at the end and no unexplained resync (PRODUCT-6 AC-4);
 a pull request `bench/<date>-product6-soak` opens.
 
-### S5. The ESP32-S3 on ESP-IDF v6.1: boot check (the owner's own board)
+### S5. The ESP32-S3 on ESP-IDF v6.1: boot check (a prototype's DevKitC)
 
-Needs: one of the owner's ESP32-S3 boards with 8 MB of flash or more (since goal 14 the image's
-layout is two 3 MiB update slots, `firmware/partitions.csv`, and the build declares 8 MB; the
-board's flash size is ASSUMED until this session's read-only chip report says; a board with less
-cannot hold this layout, and that is a finding to paste back, not something to work around), a USB cable, ESP-IDF v6.1 on endpoint A or a laptop (the pin in
-`firmware/config/endpoint.conf`). No bought part.
+Needs: one of the AITRIP ESP32-S3 DevKitC N16R8 boards (F5; 16 MB of flash per its module code,
+above the 8 MB the image declares: since goal 14 the image's layout is two 3 MiB update slots,
+`firmware/partitions.csv`; the board's flash size is ASSUMED until this session's read-only chip
+report says, and a board with less is a finding to paste back, not something to work around), a
+USB-C data cable (F29), ESP-IDF v6.1 on endpoint A or a laptop (the pin in
+`firmware/config/endpoint.conf`). The owner's own, unidentified S3 boards are not used.
 
 This is the goal-6 follow-up: the first run of the v6.1 image on silicon. It flashes with chorus's
 guarded tool (goal 9, `tools/firmware-flash.sh`), which refuses unless you set
@@ -241,18 +245,19 @@ whose ADR strap is not the ASSUMED 0 ohm one, the bring-up stops by name with
 `amp=amplifier-did-not-answer` and the output stage dead (PDN low, no clock); on a TAS5825M board
 it reaches Play, or stops naming the fault register and its bits, then stops at the link or the
 session if no server is configured. From goal 8 the default image is the `brick-s3-wired` board
-profile (ADR 0057, its board model ASSUMED until the boards Needs item is answered), so it
-configures that board's pins as outputs (the amplifier power-down line driven low then high, the
-I2S pins, the I2C pins); on a bare development board wire nothing to them for this session. Paste
+profile (ADR 0057; the Brick it names is not bought), so it configures that board's pins as
+outputs (the amplifier power-down line driven low then high, the I2S pins, the I2C pins); on the
+bare DevKitC wire nothing to them for this session, which runs before the prototype's own profile
+(S7) exists and stops at `amp=amplifier-did-not-answer` by design. Paste
 the log lines from the ESP-IDF version line to the stop into the Needs item, with any `MAC:` line
 deleted (K27). What changes: goal 9 knows the v6.1
 image boots on this board, and S6 below can run on the same board right after, through the
 console.
 
-### S6. The ESP32-S3's decode cost and DSP chain cost, on the chip (the owner's own board, after S5)
+### S6. The ESP32-S3's decode cost and DSP chain cost, on the chip (the DevKitC of S5, after S5)
 
 Needs: the board from S5, flashed with an image from the same checkout, on USB; S0's checkout on
-the machine it is plugged into. No bought part. Goal 8 adds this (ADR 0060): the image carries one
+the machine it is plugged into. Nothing beyond S5's parts. Goal 8 adds this (ADR 0060): the image carries one
 FLAC and one Opus stream from `fixtures/codec` and times their decode on its monotonic clock. Goal
 12 adds the DSP chain to the same run (`dsp-cost`, ADR 0086): the image runs the endpoint's chain in
 four configurations (flat; all-on: tone, loudness, speech, night and eight room-EQ filters; the LFE
@@ -279,7 +284,7 @@ figures are still in it. What changes: goal 6's host-only decode cost gets its S
 the DSP chain gets its first figure anywhere on the chip, so a headroom claim for the chain can
 cite a report; if the stack figure is small, the console's 16 KB stack (ASSUMED) grows.
 
-### S7. EMBEDDED-5: the ESP32-S3 endpoint plays, syncs and survives abuse (after S0; the Audio Brick)
+### S7. EMBEDDED-5: the ESP32-S3 endpoint plays, syncs and survives abuse (after S0; the module prototype)
 
 The EMBEDDED-5 packet (chorus goal 9; BRIEF.md section 8 item 5: "ESP32-S3 firmware: I2S out,
 TAS5825M alive, network playback, sync core ported and measured against a Linux client. Success:
@@ -291,29 +296,48 @@ rig. A fifth, the GPIO marker cross-check, needs a logic analyzer and a free pin
 
 | Step | What | Lines |
 |---|---|---|
-| S7.1-S7.3 | one Esparagus Audio Brick (ESP32-S3, TAS5825M, W5500): the `brick-s3-wired` board profile | B1 (+ B2 shipping) |
-| S7.1-S7.3 | its power: a 24 V DC supply, or PoE+ through the injector and splitter (the compact speaker's path, K90) | B7, or B5 + B6 |
-| S7.1-S7.3 | a passive speaker pair on its terminals, and a USB-C data cable to endpoint A | B8 |
-| S7.1-S7.3 | Ethernet to the house LAN (or to B5's data-in port) | B10 |
-| S7.4 | S2's trusted rig (endpoint A, endpoint B, the UMC202HD) and a load and divider for the Brick's speaker-level output | A1-A5, A8, B9 |
-| S7.5 | the logic analyzer and jumpers, and a second ESP32-S3 endpoint (a second B1, or B3) | A6, A7 |
+| S7.1-S7.3 | one module prototype: an AITRIP DevKitC, a W5500 module and a Louder Raspberry Hat Plus 1X (TAS5825M), wired with jumpers; its board profile (below) | F5, F18, F20, F24 |
+| S7.1-S7.3 | the Hat Plus's power: 24 V from the Korad, current-limited, through the lead chosen once the Hat's connector is seen | F19 |
+| S7.1-S7.3 | the owner's passive speaker on the Hat's terminals, and a USB-C data cable to endpoint A | owned, F29 |
+| S7.1-S7.3 | Ethernet to the house LAN (a patch cable the owner crimps) | owned |
+| S7.4 | S2's trusted rig (endpoint A, endpoint B, the UMC202HD) and a load-and-divider set for the Hat's speaker-level output | F1-F4, F6, F8, F13, F14, F16, F23 |
+| S7.5 | the logic analyzer and jumpers, and the second module prototype (the second DevKitC, W5500 and Hat Plus) | F21, F24, and S7.1's lines again |
 
-The board model is **ASSUMED**: `firmware/boards/brick-s3-wired.conf` names P1's reference board
-until the Needs item "Your ESP32-S3 boards: module markings and a read-only chip report" is
-answered. If your board is not an Audio Brick, stop and answer that item first: a different board
-needs its own profile (pins, amplifier) before it is flashed.
+**A board profile comes first.** No profile in `firmware/boards/` describes the module prototype:
+`brick-s3-wired.conf` names the Brick, which is not bought; `compact-s3-wifi.conf` is its Wi-Fi
+twin; `qemu-s3-openeth.conf` is the emulator's. Before S7.1 a firmware change adds the
+prototype's profile with:
+- the DevKitC GPIOs for the W5500 (SPI clock, MOSI, MISO, CS, INT, RST);
+- the DevKitC GPIOs for the Hat Plus (I2S bit clock, word select and data; I2C SDA and SCL; PDN);
+- the I2C address the Hat answers on: its listing says "0x4C-0x4F auto-detected", and the
+  endpoint's default is 0x4C with ADR to ground (`ASSUMED`);
+- a free GPIO as `pin_marker` (S7.5);
+- the octal-PSRAM pins left alone (GPIO33-37, ADR 0015).
 
-**Wiring** (`brick-s3-wired`; pins from the maker's Apache-2.0 configuration, cited in
-`firmware/config/endpoint.conf`; everything below is on the board, nothing is jumpered):
+Below, `<prototype>` stands for that profile's name. Every command builds and flashes it with
+`CHORUS_BOARD_PROFILE=<prototype>`, as S9 does with its profile. Until the profile exists, S7
+cannot run.
+
+**Wiring** (the GPIO numbers on the DevKitC side are the profile's):
 
 ```
- 24 V supply (B7) --or-- PoE+ injector (B5) -> Cat6 -> splitter (B6) -> 24 V out --+
-                                                        splitter data out --Cat6--+--> Brick RJ45 (W5500)
-                                                                                   +--> Brick DC in (5-26 V)
- Brick speaker terminals L+/L-, R+/R- ---- speaker pair (B8), 4-8 ohm
- Brick USB-C ---- endpoint A (flashing and the serial console, /dev/ttyACM0)
+ Korad KA3005D (F19): 24 V, current limit set low --> Hat Plus power input (the lead chosen on arrival)
+ Hat Plus 40-pin header <--jumpers--> DevKitC: I2S bit clock, word select, data; I2C SDA, SCL; PDN; GND
+ W5500 module (3.3 V, GND, SCLK, MOSI, MISO, CS, INT, RST) <--jumpers--> DevKitC (its 3V3 and GPIOs)
+ W5500 RJ45 --Cat6--> house LAN
+ Hat Plus speaker terminals L+/L-, R+/R- ---- the owner's passive speaker, 4-8 ohm
+ DevKitC USB-C ---- endpoint A (flashing and the serial console, /dev/ttyACM0)
 ```
 
+- The Hat Plus's header, per Sonocotta's README (read 2026-10-04):
+  - I2S bit clock on header pin 12 (a Pi's GPIO18), word select on pin 35 (GPIO19), data on
+    pin 40 (GPIO21);
+  - I2C data on pin 3 (GPIO2), clock on pin 5 (GPIO3), PDN on pin 7 (GPIO4), and a ground pin
+    such as pin 6;
+  - its 5 V pins (2 and 4) stay unconnected: the Hat's own converter drives them (P4, F18).
+- Keep the SPI and I2S jumpers short (the set's 10 cm). The Korad's current limit stays low for
+  the first power-up (for example 0.5 A, `ASSUMED`; the Hat's idle draw is unknown) and is raised
+  only once the board idles normally.
 - Speakers or loads only on the speaker terminals: the TAS5825M's outputs are bridge-tied (both
   terminals of a channel switch; neither is ground). Never join a speaker terminal to endpoint A,
   the interface or any ground.
@@ -329,14 +353,15 @@ On endpoint A, in S0's checkout, with ESP-IDF v6.1 exported (the pin in
 ```
 . <esp-idf v6.1>/export.sh
 git pull --ff-only
-make firmware-image                                   # builds firmware/build/image (brick-s3-wired)
-tools/firmware-flash.sh --print --port /dev/ttyACM0   # shows the esptool command, runs nothing
-CHORUS_OWNER_AT_BENCH=1 tools/firmware-flash.sh --port /dev/ttyACM0
+CHORUS_BOARD_PROFILE=<prototype> make firmware-image     # builds firmware/build/image
+CHORUS_BOARD_PROFILE=<prototype> tools/firmware-flash.sh --print --port /dev/ttyACM0   # shows the esptool command, runs nothing
+CHORUS_BOARD_PROFILE=<prototype> CHORUS_OWNER_AT_BENCH=1 tools/firmware-flash.sh --port /dev/ttyACM0
 ```
 
 `tools/firmware-flash.sh` refuses unless you set `CHORUS_OWNER_AT_BENCH=1` on its own command line
 (nothing in the repository sets it), and it never runs an eFuse, Secure Boot, Flash Encryption or
-anti-rollback command. Never run `espefuse` (BRIEF.md section 3.1 rule 2).
+anti-rollback command. Never run `espefuse` (BRIEF.md section 3.1 rule 2). Flash the second
+prototype the same way for S7.5.
 
 #### S7.2 Watch it boot, and keep the log
 
@@ -348,9 +373,11 @@ cd firmware && idf.py -B build/image -p /dev/ttyACM0 monitor | tee ../embedded5-
 order (tags `chorus`, `chorus-console`, `chorus-playout`, `chorus-marker`; timestamps differ):
 
 1. ESP-IDF's own boot lines, including `ESP-IDF:          v6.1`.
-2. `chorus: board profile=brick-s3-wired model="Sonocotta Esparagus Audio Brick (ESP32-S3), TAS5825M, W5500" status=ASSUMED needs_item="Your ESP32-S3 boards: module markings and a read-only chip report" link=wired`
+2. The board line, `chorus: board profile=<prototype> model="..." ... link=wired`, with the
+   profile's own model and status.
 3. `chorus-console: console up: power-save, server, status, decode-cost, resources (values are runtime only)`
-4. `chorus-marker: marker off (pin_marker = none)`
+4. `chorus-marker: marker on GPIO<n> every <ms> ms of the server timeline` (the profile's
+   `pin_marker`; `firmware/main/esp_marker.c`)
 5. `chorus-playout: jitter buffer 57600 bytes (9600 frames), internal RAM free after it: <n> bytes`
 6. The amplifier's bring-up (the TAS5825M's datasheet sequence, ADR 0064):
    `chorus: the amplifier at I2C address 0x4c answered as device 0x95, reported no fault, took 0.000 dB of analog gain against a ceiling of 0.000 dB, and reached Play after its clock was applied in Deep Sleep`.
@@ -359,7 +386,8 @@ order (tags `chorus`, `chorus-console`, `chorus-playout`, `chorus-marker`; times
    stage dead, naming the address.
 7. `chorus: chorus-endpoint: link=... transport=wired ... amp=ok amp_fault_bits=0x00 ...` (the
    telemetry line), then
-   `chorus: link=wired phy=w5500 status=up spi=spi2 clock_mhz=20 sclk=12 mosi=11 miso=13 cs=10 int=6 address_timeout_ms=30000`.
+   `chorus: link=wired phy=w5500 status=up spi=... clock_mhz=... sclk=... mosi=... miso=... cs=... int=... address_timeout_ms=30000`,
+   with the profile's SPI host, clock and pins.
 8. Silence from the speakers: the image dials its committed server address (`127.0.0.1:4010`,
    itself) until S7.3 points it at a real one.
 
@@ -369,7 +397,7 @@ refusal instead, it names the key and the datasheet page to re-check in
 
 #### S7.3 The bring-up and abuse run (unattended, about 10 minutes)
 
-With the monitor closed (the script needs the serial port) and the Brick still on the LAN:
+With the monitor closed (the script needs the serial port) and the prototype still on the LAN:
 
 ```
 CHORUS_ESP32S3_PORT=/dev/ttyACM0 CHORUS_EMBEDDED5_BOOT_LOG=embedded5-boot.log \
@@ -384,7 +412,7 @@ after, then kills and restarts the server 10 times (`CHORUS_EMBEDDED5_CYCLES`), 
 time without anyone touching it. **Expected:** you hear the tone, with a gap at each outage; the
 report `embedded5-bringup-<date>` is **PASS** with `amp_status = ok`, `cycles_recovered = 10 of
 10`, and figures in `heap_internal_min_free`, `stack_min_free` and `fifo_us` (records, not graded);
-a pull request `bench/<date>-embedded5-bringup` opens. Then, by hand: pull the Brick's Ethernet
+a pull request `bench/<date>-embedded5-bringup` opens. Then, by hand: pull the W5500's Ethernet
 cable for 30 s and plug it back; `status` on the console (`printf 'status\r\n' > /dev/ttyACM0`
 while `idf.py monitor` shows the reply, or rerun the script) should show `audio=running` again
 within 15 s. Note the result in the Needs item. What changes: a stack figure near zero grows that
@@ -392,26 +420,26 @@ task's stack (ADRs 0058 and 0060); a FAIL names the round and the status line it
 
 #### S7.4 The sync against a Linux client, on the rig (after S2)
 
-The rig compares the Brick with endpoint B (a Linux client) on the UMC202HD, as SYNC-4 compares
-two Pis. The Brick's output is speaker level and bridge-tied, and each terminal sits at a DC level
+The rig compares the prototype with endpoint B (a Linux client) on the UMC202HD, as SYNC-4 compares
+two Pis. The Hat Plus's output is speaker level and bridge-tied, and each terminal sits at a DC level
 of about half the supply at idle (both legs of a bridge-tied class-D stage switch around the
 middle of the supply; `ASSUMED` from the output-stage type, confirm with the multimeter below), so
-it goes into the interface through a load, DC-blocking capacitors and a divider (B9), never
+it goes into the interface through a load, DC-blocking capacitors and a divider (one load-and-divider set: F13, F14, F16, F23), never
 directly. One channel (L) is enough:
 
 ```
- Brick L+ --+-------------------- 8 ohm 50 W load --------------------+-- Brick L-
+ Hat L+ ----+-------------------- 8 ohm 50 W load --------------------+-- Hat L-
             |                                                        |
-          10 uF 50 V (film or bipolar)                             10 uF 50 V
+          10 uF non-polarized (F13)                                10 uF
             |                                                        |
           9.1 k                                                    9.1 k
             |                                                        |
  TRS tip ---+--- 1 k --- TRS sleeve --- 1 k ---+------------------- TRS ring
                                                (the plug into UMC202HD input 1)
- endpoint B (Pi 5 + DAC+) RCA L --> RCA-to-TS --> UMC202HD input 2 (as in S2)
+ endpoint B (Pi 5 + PCM5102) --3.5 mm--> Talent cable, left plug --> UMC202HD input 2 (as in S2)
 ```
 
-- Before the plug goes into the interface, with the Brick powered and playing nothing: measure DC
+- Before the plug goes into the interface, with the prototype powered and playing nothing: measure DC
   between tip and sleeve and between ring and sleeve with the multimeter. Both must read below
   0.1 V; if not, a capacitor is missing or wrong and nothing is plugged in.
 - `ASSUMED` values: about 10:1 on each leg into the interface's balanced line input, sized for the
@@ -419,7 +447,7 @@ directly. One channel (L) is enough:
   is far below the chirp. That the UMC202HD's combo inputs take a balanced TRS line signal is
   `ASSUMED` from its retailer specifications (section 2): confirm in its manual. Start with the
   GAIN knob fully down.
-- Speakers off the Brick for this step (the load replaces them).
+- Speakers off the Hat for this step (the load replaces them).
 
 ```
 CHORUS_ESP32S3_PORT=/dev/ttyACM0 CHORUS_SECOND_ENDPOINT=<user>@<endpoint-b> \
@@ -432,14 +460,18 @@ bound) and `produced_rate` inside the servo's authority (AC-3); a pull request
 `bench/<date>-embedded5-endpoint-rig` opens. What changes: EMBEDDED-5's "syncs comparably to
 Linux" is graded; a FAIL is the finding the sync engine's next goal starts from.
 
-#### S7.5 The GPIO marker cross-check (optional: a logic analyzer and a free pin)
+The second load-and-divider set lets both prototypes into the rig at once (the stereo-pair case,
+two ESP32 endpoints), but no script captures that yet: `tools/endpoint-rig-run.sh` compares an
+endpoint with a Linux client. Until a later goal adds one, the pair is checked with the marker
+(S7.5).
 
-The firmware can drive a marker pin at every server-timeline second (ADR 0065,
-`firmware/main/esp_marker.c`), but `pin_marker` is `none` on the Brick: its maker documents no
-free broken-out GPIO (the S3 display header's GPIO38 is a candidate on a board with no display,
-unverified). If you find a free pin on both S3 endpoints: set `pin_marker = <gpio>` in each one's
-board profile, rebuild and flash both (S7.1), wire each marker pin and a common ground to the
-analyzer's D0 and D1, and capture a minute:
+#### S7.5 The GPIO marker cross-check (the logic analyzer and both prototypes)
+
+The firmware drives a marker pin at every server-timeline second (ADR 0065,
+`firmware/main/esp_marker.c`). The prototype's profile names a free DevKitC GPIO as `pin_marker`
+(S7), which the Brick could not offer. With both prototypes flashed (S7.1) and synced to the same
+server, wire each marker pin and a common ground to the analyzer's D0 and D1 (F21, F24), and
+capture a minute:
 
 ```
 sigrok-cli -d fx2lafw --config samplerate=24m --channels D0,D1 --time 60s -O csv -o marker.csv
@@ -460,28 +492,30 @@ answers it, and each step below names the value its answer replaces. Nothing her
 burns or changes a TV setting beyond its own audio menu; run it at the owner's pace, one TV at a
 time.
 
-**First, the TVs (no hardware).** Answer the Needs item "The three TVs: model, eARC port, optical
-out and audio menu" for each of the owner's three TVs before buying anything: the model (from
-the label or Settings > System > About), which HDMI port says ARC or eARC, whether it has an
-optical (TOSLINK) output, and the audio menu's choices for its digital output (on a Roku TV:
-Settings > System > Audio > S/PDIF and ARC, P2 [S1]). Until it is answered every TV value in
-the code and the docs is `ASSUMED` (ADRs 0087, 0088, 0090, 0091). What changes: which TV gets
-optical and which needs the ARC extractor (B-lines below), and whether one TV is skipped (no
-optical and no ARC).
+**First, the TVs (no hardware).** The owner answered part of the Needs item "The three TVs:
+model, eARC port, optical out and audio menu" on 2026-10-04: chorus plays two of them (the living
+room's and the master bedroom's), and both have an optical (TOSLINK) output. Still open, per TV:
+the model (from the label or Settings > System > About), which HDMI port says ARC or eARC, and
+the audio menu's choices for its digital output (on a Roku TV: Settings > System > Audio >
+S/PDIF and ARC, P2 [S1]). Until then every TV value in the code and the docs stays `ASSUMED`
+(ADRs 0087, 0088, 0090, 0091). What changes: nothing on the buy list, since optical needs no ARC
+extractor; the models fill the device notes and P2's open inputs.
 
-**Needs** (prices, sellers and URLs are P2's, re-checked 2026-09-30,
-`docs/proposals/P2-theater-scope.md` section "Re-check" and its source list; confirm each in a
-browser before buying; nothing is ordered by the program, K4):
+**Needs** (P4's final list, lines H1 to H4, bought at install by the owner's choice, so this
+session waits for them; nothing is ordered by the program, K4):
 
 | # | Part | Steps | Qty | Line |
 |---|---|---|---|---|
-| A1, A3, A4 | Raspberry Pi 5 2GB, its PSU and SD card, as the hub (section 1, P4) | all | 1 | from section 1 |
-| T1 | HiFiBerry Digi+ I/O (optical and coax in and out, Pi HAT), P2 [H7] https://www.hifiberry.com/shop/boards/hifiberry-digi-io/ (**NON-US EXCEPTION**, Swiss seller `ASSUMED`; PiShop.us US$44.75 not re-read) | S8.1-S8.8 | 1 | US$54.90 |
-| T2 | or a DIR9001 receiver module (TI DIR9001, P2 [H5], [H6]) instead of T1 | S8.1-S8.8 | 1 | `ASSUMED` US$10-20 |
-| T3 | OREI BK-931 HDMI ARC/eARC audio extractor, for a TV without optical, P2 [H4] https://www.orei.com/products/8k-hdmi-or-earc-audio-extractor-bk-931 | S8.8, S8.9 | 1 | US$109.99 |
-| T4 | Pulse-Eight USB-CEC adapter, only if the hub's own HDMI port cannot reach the TV, P2 [H8] https://www.pulse-eight.com/p/104/usb-hdmi-cec-adapter (**NON-US EXCEPTION**, UK seller `ASSUMED`) | S8.2, S8.9 | 1 | US$48.08 |
-| T5 | a TOSLINK cable and a micro-HDMI to HDMI cable (the Pi 5's port) | all | 1 each | `ASSUMED` US$10-15 |
-| A2, A5, A8 | S1's DAC+, the UMC202HD and its cables, for the lip-sync step (S8.7) | S8.7 | | from section 1 |
+| F1 or F2, F3 | one of the bench Pis and its supply, as the hub (section 1) | all | 1 | from section 1 |
+| H1 | HiFiBerry Digi+ I/O (optical and coax in and out, Pi HAT), https://www.hifiberry.com/shop/boards/hifiberry-digi-io/ (**NON-US EXCEPTION**, Switzerland; shipping and duties extra) | S8.1-S8.8 | 1 (2 at install) | US$54.90 |
+| H2 | TOSLINK cable, 6 ft (Parts Express) | all | 1 (2 at install) | US$3.29 |
+| H3 | Raspberry Pi micro-HDMI to HDMI cable, 2 m (PiShop.us), for CEC | all | 1 (2 at install) | US$7.95 |
+| T3 | OREI BK-931 ARC extractor: not bought, since both chorus TVs have optical; S8.8 is skipped unless one turns out not to | S8.8, S8.9 | 0 | |
+| T4 | Pulse-Eight USB-CEC adapter, only if the hub's own HDMI port cannot reach the TV, P2 [H8] https://www.pulse-eight.com/p/104/usb-hdmi-cec-adapter (**NON-US EXCEPTION**, UK seller `ASSUMED`) | S8.2, S8.9 | 0 or 1 | US$48.08 |
+| F4, F6, F8 | S1's PCM5102, the UMC202HD and its cables, for the lip-sync step (S8.7) | S8.7 | | from section 1 |
+
+The DIR9001 module (P2's T2) is not chosen: it would need a device-tree overlay nobody has
+written; the Digi+ I/O has a stock one.
 
 Also needed, not bought: a phone that films at 240 frames a second (BRIEF.md section 10), a
 second wired host on the house LAN for S8.6 (endpoint A of S0, or any Linux machine).
@@ -664,13 +698,16 @@ validates it and replaces each `ASSUMED` value it answers.
 
 ### S9. Wi-Fi provisioning from a phone (goal 14; after S5; the compact Wi-Fi profile)
 
-Needs: one ESP32-S3 board that S5 showed reaching Play (a TAS5825M board, the Audio Brick or the
-owner's own: the image brings the amplifier up before the link, so a bare development board stops
-at `amp=amplifier-did-not-answer` and never reaches provisioning), its USB cable and serial
+Needs: a module prototype that S7.2 showed reaching Play (its Hat Plus answering: the image
+brings the amplifier up before the link, so a bare development board stops at
+`amp=amplifier-did-not-answer` and never reaches provisioning), its USB cable and serial
 console, ESP-IDF v6.1 (the pin in `firmware/config/endpoint.conf`), a phone, and the house's
 Wi-Fi network on 2.4 GHz with a WPA2 passphrase (the ESP32-S3's radio is 2.4 GHz only: ASSUMED
-from the chip family, verify against the datasheet; an open network is refused by design). No
-bought part. A chorus server on the network is not needed for this session.
+from the chip family, verify against the datasheet; an open network is refused by design).
+Nothing beyond S7's parts. A chorus server on the network is not needed for this session. The
+owner keeps the Wi-Fi option but plans no Wi-Fi speaker (2026-10-04), so this session is
+optional. `compact-s3-wifi` below is the Brick's Wi-Fi twin: on the prototype, use a Wi-Fi twin
+of the prototype's profile (its pins with `link_transport = wireless`), added with it.
 
 This is goal 14's hardware step for the compact Wi-Fi speakers (K91): the speaker learns its
 network at run time from a phone, because the repository declares `link_wifi_ssid` and
@@ -770,11 +807,12 @@ was waiting for.
 
 ### S10. OTA on the board: identity kept, adopted, a good install, a bad image rolled back (goal 14; after S5; the wired profile)
 
-Needs: the board of S5 and S7 (a TAS5825M board that reached Play; the default `brick-s3-wired`
-profile, its W5500 on the audio network), 8 MB of flash or more (S5 says), its USB cable and
+Needs: a module prototype of S7 that reached Play (the prototype's profile, `<prototype>` in S7,
+its W5500 on the audio network), 8 MB of flash or more (S5 says), its USB cable and
 serial console, ESP-IDF v6.1, and a chorus server on the audio network that the owner runs with
 the bench variable in its environment for this session only (`docs/firmware-updates.md`, "The
-bench variable"). No bought part.
+bench variable"). Nothing beyond S7's parts. Every build and flash below takes
+`CHORUS_BOARD_PROFILE=<prototype>`, as in S7.1.
 
 This is goal 14's hardware step for OTA (K93): the board keeps its id and key across power
 cycles (ADR 0104), is adopted and named, installs a newer image only when the install command is
@@ -795,7 +833,7 @@ cd firmware && idf.py -B build/image -p /dev/ttyACM0 monitor
 ```
 
 The good and bad images are built into their own build directories the way
-`tools/ota-qemu-run.sh` builds them for the emulator (with the board profile `brick-s3-wired`
+`tools/ota-qemu-run.sh` builds them for the emulator (with the board profile `<prototype>`
 in place of the emulator's), then staged on the server with `tools/firmware-stage.sh <build-dir>
 <firmware-dir> good` and `... bad` and a `firmware_rescan` (`docs/firmware-updates.md`).
 
@@ -937,12 +975,13 @@ port answer decides whether the homelab deploy needs `--upnp-ssdp-port`.
 ## 4. Order and what each session unblocks
 
 S0 first; S1 needs one Pi; S2 needs both and the interface; S3 needs S2's rig trusted; S4 after
-S3. S5 is independent (the owner's own board) and can run any time; S6 follows S5 on the same
-board. S7 needs an Audio Brick (B1): S7.1-S7.3 after S0 alone, S7.4 after S2's rig is trusted,
-S7.5 whenever a logic analyzer and a free pin exist. S8 needs the three TVs' answers first, then
-one Pi as the hub (S0) and a receiver HAT (T1 or T2); S8.5 and S8.7 also need S1's endpoint. S9
-follows S5 on a board whose amplifier bring-up reaches Play, flashed with the compact Wi-Fi
-profile; it needs a phone and the house's 2.4 GHz network and no chorus server, and it unblocks
+S3. S5 is independent (a bare DevKitC) and can run any time; S6 follows S5 on the same
+board. S7 needs the module prototype and its board profile (a firmware change first): S7.1-S7.3
+after S0 alone, S7.4 after S2's rig is trusted, S7.5 once both prototypes play. S8 waits for the
+hub parts bought at install (H1 to H3), then one Pi as the hub (S0); the TVs' models stay open
+in their Needs item; S8.5 and S8.7 also need S1's endpoint. S9 (optional: no Wi-Fi speaker is
+planned) follows S7.2 on a prototype whose amplifier bring-up reaches Play, flashed with the
+Wi-Fi twin of its profile; it needs a phone and the house's 2.4 GHz network and no chorus server, and it unblocks
 WIFI-7's characterization run (section 6). S10 follows S5 (and S7.1, so the board is known to
 play) on the wired profile with a chorus server on the audio network. S11 follows S10 on the
 same board and server (its Wi-Fi half follows S9). S12 needs only a server with `--upnp` and two

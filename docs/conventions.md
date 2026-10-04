@@ -39,7 +39,7 @@ How the rules work:
 | 10 | Tests need no device | gate steps `test`, `verify`, `firmware-check` (run with no device, sound card or network); `make verify` (`unrun-checks-are-visibly-unrun.sh`) |
 | 11 | Measurement provenance | `tools/conventions/check-measurements.sh` |
 | 12 | Licence | `tools/conventions/check-licence.sh` |
-| 13 | Dependencies and licences | `tools/conventions/check-licence.sh` (cargo-deny over `deny.toml`) |
+| 13 | Dependencies and licences | `tools/conventions/check-licence.sh` (cargo-deny over `deny.toml`); `tools/conventions/check-wakeword.sh` (the wake-word models against their licence list) |
 | 14 | Pins | `tools/conventions/check-pins.sh` |
 | 15 | Decision records | `tools/conventions/check-adrs.sh` |
 | 16 | Clean-room provenance | `tools/conventions/check-provenance.sh` |
@@ -158,6 +158,9 @@ regenerated only by `make decode-fixtures`.
 `fixtures/upnp` (goal 16) is Rust-only by declaration too: the UPnP AV media renderer runs in
 chorus-server alone, and `crates/upnp/tests/fixtures.rs` reads every vector and fails on a file
 it does not read.
+`fixtures/wakeword` is Rust-only by declaration too: the wake-word detector runs in
+chorus-server alone (`crates/wakeword`, ADR 0167), and `crates/wakeword/tests/reference.rs` reads
+every file and fails on one it does not read.
 `fixtures/soloist` (goal 17) is Rust-only by declaration too: the Soloist WebSocket API model,
 the supervisor protocol and the `--version` shapes are spoken by `chorus-soloistd` and
 chorus-server alone, and `crates/soloist/tests/fixtures.rs` reads every vector and fails on a
@@ -211,6 +214,12 @@ root, and `license.workspace = true` in every crate, which the workspace sets to
   0039), MPL-2.0 for the four Symphonia crates FLAC decoding uses (ADR 0044, P9), and MPL-2.0
   for the eight further Symphonia crates of the server's decoders (ADR 0122, P9).
 - Crates come from crates.io only, one version of each (`cargo deny check sources bans`).
+- Wake-word models (ADR 0167): the detector runs only the files in `third_party/wakeword`, and
+  `third_party/wakeword/LICENCES.md` lists each with its source URL, commit, SHA-256, licence and
+  the date read, beside the runtime's own licences. `check-wakeword.sh` fails on a file without
+  a row or with another checksum, on a licence that is not Apache-2.0, MIT, BSD or CC0 (so on
+  openWakeWord's CC BY-NC-SA models), and on a name on the list's excluded names (another
+  party's product or character, such as `alexa`); it tests itself on damaged copies each run.
 - **Review-only (no check):** a new external crate comes with an ADR answering BRIEF §3.2's
   question (why not build it); cargo-deny checks its licence and source, not the ADR.
 - JavaScript, when the app arrives (P5): exact versions beside a committed lockfile

@@ -39,6 +39,9 @@
 # supervisor protocol and the --version shapes are spoken by chorus-soloistd and chorus-server
 # alone (crates/soloist, read by crates/soloist/tests/fixtures.rs, which also fails on a file no
 # test reads); no endpoint speaks them and there is no C implementation.
+# fixtures/wakeword is Rust-only by declaration: the wake-word detector runs in chorus-server
+# alone (crates/wakeword, read by crates/wakeword/tests/reference.rs, which also fails on a file
+# no test reads); no endpoint runs it and there is no C implementation.
 . "$(dirname "$0")/lib.sh"
 # directory | extensions both sides read | where Rust reads it | where C reads it
 shared=(

@@ -88,3 +88,11 @@ Its own commit: fetch the new release, check its digest against the upstream's p
 replace the files, re-run `make firmware-check` (the fixtures must stay green) and the full
 conformance run of `tools/codec-fixtures/opus_ref.c`, and update this table with the URL and
 the date read.
+
+## Wake-word models
+
+`wakeword/` is not C and is not compiled: it holds the microWakeWord model the wake-word detector
+(`crates/wakeword`) runs, its manifest, and the upstream `LICENSE` and `NOTICE`, each byte for
+byte the upstream file. Its own list, `wakeword/LICENCES.md`, names every file with its source,
+commit, SHA-256, licence and the date read, and `tools/conventions/check-wakeword.sh` holds the
+directory to it (`docs/decisions/0167-the-wake-word-runtime.md`).
