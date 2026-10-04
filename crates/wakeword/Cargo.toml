@@ -1,0 +1,13 @@
+[package]
+name = "chorus-wakeword"
+description = "the chorus wake-word detector: the microWakeWord audio frontend and a small integer interpreter for the streaming TFLite models it runs, over 16 kHz mono PCM; no I/O, no clock, no dependency"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true
