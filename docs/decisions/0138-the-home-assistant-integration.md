@@ -195,6 +195,8 @@ state: a field the catalog adds later cannot leak by default.
   that is Home Assistant's naming applied to the owner's choice of suggested areas.
 - Left to goal 19: speaker devices and every other entity (sound controls, firmware,
   diagnostics sensors, buttons), the homelab's pinned copy and read-only mount, the voice
-  path. Left to goal 20: the dashboard and anything served to the frontend, which is where
-  the first HTTP view or static path would appear and where the endpoint test's allowlist
-  would first be used.
+  path. The dashboard is not left to goal 20 (corrected 2026-10-04): it is stock cards
+  only (P10, Option A, approved at Checkpoint K), built as
+  `integrations/homeassistant/dashboard/chorus.yaml` (0163), and serves nothing to the
+  frontend, so no HTTP view or static path appears and the endpoint test's allowlist stays
+  unused.

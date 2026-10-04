@@ -1,0 +1,376 @@
+---
+# Music: the chorus dashboard, built from Home Assistant's stock cards and tile
+# features only (proposal P10, Option A). No custom card, no resource, no
+# browser code, no link.
+#
+# One Sections view: a section for the saved groups, one for what is playing,
+# and one per room. A room's section has its tile (on and off, volume with mute,
+# source), the volume of the group the room is in, shown only while the room is
+# grouped, and its sound controls.
+#
+# Grouping is Home Assistant's own join dialog: open a room's tile and press the
+# join button. It lists the chorus rooms and nothing else. Drag-to-group is the
+# chorus app's.
+#
+# The entity ids are the ones Home Assistant 2026.9 gives the rooms of the
+# tests' house (a living room, a kitchen, a study and a bedroom; one saved
+# group, Downstairs): the area then the device, both the room's name, so the
+# name appears twice. To adapt it, replace each room's prefix
+# (`living_room_living_room`) by your room's, add or remove a room's section,
+# and list your saved groups. docs/home-assistant.md, "The dashboard", says how;
+# tests/test_dashboard.py holds every entity here to the integration's entity
+# set.
+#
+# A card that is not always meant to show carries a visibility condition that
+# names the states in which it shows (or a numeric test), never `state_not`, so
+# a card whose entity is missing or unavailable stays hidden.
+title: Music
+views:
+  - title: Music
+    path: music
+    icon: mdi:speaker-multiple
+    type: sections
+    max_columns: 3
+    sections:
+      # Saved groups: turning one on assembles it; its slider is the group
+      # volume, which scales every room of the group relatively.
+      - type: grid
+        cards:
+          - type: heading
+            heading: Groups
+            icon: mdi:speaker-multiple
+          - type: tile
+            entity: media_player.downstairs
+            name: Downstairs
+            state_content:
+              - state
+              - source
+            features:
+              - type: media-player-playback
+              - type: media-player-volume-slider
+              - type: media-player-source
+
+      # Now playing, with artwork: a room's card shows only while its group has
+      # a now-playing record (a Spotify receiver, a media renderer). Rooms of
+      # one group show the same record.
+      - type: grid
+        cards:
+          - type: heading
+            heading: Now playing
+            icon: mdi:music-circle
+          - type: media-control
+            entity: media_player.living_room_living_room
+            name: Living room
+            visibility:
+              - condition: state
+                entity: media_player.living_room_living_room
+                state: [playing, paused, buffering]
+          - type: media-control
+            entity: media_player.kitchen_kitchen
+            name: Kitchen
+            visibility:
+              - condition: state
+                entity: media_player.kitchen_kitchen
+                state: [playing, paused, buffering]
+          - type: media-control
+            entity: media_player.study_study
+            name: Study
+            visibility:
+              - condition: state
+                entity: media_player.study_study
+                state: [playing, paused, buffering]
+          - type: media-control
+            entity: media_player.bedroom_bedroom
+            name: Bedroom
+            visibility:
+              - condition: state
+                entity: media_player.bedroom_bedroom
+                state: [playing, paused, buffering]
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Living room
+            icon: mdi:sofa
+          - type: tile
+            entity: media_player.living_room_living_room
+            name: Living room
+            state_content:
+              - state
+              - source
+            features:
+              - type: media-player-playback
+              - type: media-player-volume-slider
+              - type: media-player-source
+          # The volume of the group the room is in. The number is unavailable
+          # while the room is alone, which is not a number, so the tile is
+          # hidden then.
+          - type: tile
+            entity: number.living_room_living_room_group_volume
+            name: Group volume
+            icon: mdi:speaker-multiple
+            visibility:
+              - condition: numeric_state
+                entity: number.living_room_living_room_group_volume
+                above: -1
+            features:
+              - type: numeric-input
+                style: slider
+          - type: tile
+            entity: number.living_room_living_room_bass
+            name: Bass
+            icon: mdi:music-clef-bass
+            grid_options:
+              columns: 6
+            features:
+              - type: numeric-input
+                style: buttons
+          - type: tile
+            entity: number.living_room_living_room_treble
+            name: Treble
+            icon: mdi:music-clef-treble
+            grid_options:
+              columns: 6
+            features:
+              - type: numeric-input
+                style: buttons
+          - type: tile
+            entity: switch.living_room_living_room_loudness
+            name: Loudness
+            features_position: inline
+            features:
+              - type: toggle
+          - type: tile
+            entity: switch.living_room_living_room_night_mode
+            name: Night mode
+            features_position: inline
+            features:
+              - type: toggle
+          - type: tile
+            entity: switch.living_room_living_room_speech_enhancement
+            name: Speech enhancement
+            features_position: inline
+            features:
+              - type: toggle
+          - type: tile
+            entity: switch.living_room_living_room_quiet_hours
+            name: Quiet hours
+            features_position: inline
+            features:
+              - type: toggle
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Kitchen
+            icon: mdi:countertop
+          - type: tile
+            entity: media_player.kitchen_kitchen
+            name: Kitchen
+            state_content:
+              - state
+              - source
+            features:
+              - type: media-player-playback
+              - type: media-player-volume-slider
+              - type: media-player-source
+          # The volume of the group the room is in. The number is unavailable
+          # while the room is alone, which is not a number, so the tile is
+          # hidden then.
+          - type: tile
+            entity: number.kitchen_kitchen_group_volume
+            name: Group volume
+            icon: mdi:speaker-multiple
+            visibility:
+              - condition: numeric_state
+                entity: number.kitchen_kitchen_group_volume
+                above: -1
+            features:
+              - type: numeric-input
+                style: slider
+          - type: tile
+            entity: number.kitchen_kitchen_bass
+            name: Bass
+            icon: mdi:music-clef-bass
+            grid_options:
+              columns: 6
+            features:
+              - type: numeric-input
+                style: buttons
+          - type: tile
+            entity: number.kitchen_kitchen_treble
+            name: Treble
+            icon: mdi:music-clef-treble
+            grid_options:
+              columns: 6
+            features:
+              - type: numeric-input
+                style: buttons
+          - type: tile
+            entity: switch.kitchen_kitchen_loudness
+            name: Loudness
+            features_position: inline
+            features:
+              - type: toggle
+          - type: tile
+            entity: switch.kitchen_kitchen_night_mode
+            name: Night mode
+            features_position: inline
+            features:
+              - type: toggle
+          - type: tile
+            entity: switch.kitchen_kitchen_speech_enhancement
+            name: Speech enhancement
+            features_position: inline
+            features:
+              - type: toggle
+          - type: tile
+            entity: switch.kitchen_kitchen_quiet_hours
+            name: Quiet hours
+            features_position: inline
+            features:
+              - type: toggle
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Study
+            icon: mdi:desk
+          - type: tile
+            entity: media_player.study_study
+            name: Study
+            state_content:
+              - state
+              - source
+            features:
+              - type: media-player-playback
+              - type: media-player-volume-slider
+              - type: media-player-source
+          # The volume of the group the room is in. The number is unavailable
+          # while the room is alone, which is not a number, so the tile is
+          # hidden then.
+          - type: tile
+            entity: number.study_study_group_volume
+            name: Group volume
+            icon: mdi:speaker-multiple
+            visibility:
+              - condition: numeric_state
+                entity: number.study_study_group_volume
+                above: -1
+            features:
+              - type: numeric-input
+                style: slider
+          - type: tile
+            entity: number.study_study_bass
+            name: Bass
+            icon: mdi:music-clef-bass
+            grid_options:
+              columns: 6
+            features:
+              - type: numeric-input
+                style: buttons
+          - type: tile
+            entity: number.study_study_treble
+            name: Treble
+            icon: mdi:music-clef-treble
+            grid_options:
+              columns: 6
+            features:
+              - type: numeric-input
+                style: buttons
+          - type: tile
+            entity: switch.study_study_loudness
+            name: Loudness
+            features_position: inline
+            features:
+              - type: toggle
+          - type: tile
+            entity: switch.study_study_night_mode
+            name: Night mode
+            features_position: inline
+            features:
+              - type: toggle
+          - type: tile
+            entity: switch.study_study_speech_enhancement
+            name: Speech enhancement
+            features_position: inline
+            features:
+              - type: toggle
+          - type: tile
+            entity: switch.study_study_quiet_hours
+            name: Quiet hours
+            features_position: inline
+            features:
+              - type: toggle
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Bedroom
+            icon: mdi:bed
+          - type: tile
+            entity: media_player.bedroom_bedroom
+            name: Bedroom
+            state_content:
+              - state
+              - source
+            features:
+              - type: media-player-playback
+              - type: media-player-volume-slider
+              - type: media-player-source
+          # The volume of the group the room is in. The number is unavailable
+          # while the room is alone, which is not a number, so the tile is
+          # hidden then.
+          - type: tile
+            entity: number.bedroom_bedroom_group_volume
+            name: Group volume
+            icon: mdi:speaker-multiple
+            visibility:
+              - condition: numeric_state
+                entity: number.bedroom_bedroom_group_volume
+                above: -1
+            features:
+              - type: numeric-input
+                style: slider
+          - type: tile
+            entity: number.bedroom_bedroom_bass
+            name: Bass
+            icon: mdi:music-clef-bass
+            grid_options:
+              columns: 6
+            features:
+              - type: numeric-input
+                style: buttons
+          - type: tile
+            entity: number.bedroom_bedroom_treble
+            name: Treble
+            icon: mdi:music-clef-treble
+            grid_options:
+              columns: 6
+            features:
+              - type: numeric-input
+                style: buttons
+          - type: tile
+            entity: switch.bedroom_bedroom_loudness
+            name: Loudness
+            features_position: inline
+            features:
+              - type: toggle
+          - type: tile
+            entity: switch.bedroom_bedroom_night_mode
+            name: Night mode
+            features_position: inline
+            features:
+              - type: toggle
+          - type: tile
+            entity: switch.bedroom_bedroom_speech_enhancement
+            name: Speech enhancement
+            features_position: inline
+            features:
+              - type: toggle
+          - type: tile
+            entity: switch.bedroom_bedroom_quiet_hours
+            name: Quiet hours
+            features_position: inline
+            features:
+              - type: toggle
