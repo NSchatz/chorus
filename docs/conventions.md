@@ -385,7 +385,7 @@ without them.
 ## 25. The Home Assistant integration
 
 The integration under `integrations/homeassistant/custom_components/chorus` (goal 18,
-`docs/home-assistant.md`, ADR 0000) runs inside Home Assistant, which is reachable from more
+`docs/home-assistant.md`, ADR 0138) runs inside Home Assistant, which is reachable from more
 places than chorus is, so what it may be is held by checks:
 
 - **No runtime requirement.** The manifest's `requirements` is `[]` and the client library is
