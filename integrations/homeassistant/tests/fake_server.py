@@ -2,7 +2,9 @@
 
 It serves the repository's `fixtures/control/v2/` bytes (the state vectors and
 the server's identity, read from the repository and never copied), records
-every command it is sent byte for byte (with its headers), and applies the
+every command it is sent byte for byte (with its headers), sends a button press
+to the subscribers of `GET /api/controller-events` when a test makes one, and
+applies the
 commands the integration sends to an in-memory model of the house so a test
 can see Home Assistant's entities follow. The model is a test double written
 from `docs/control-plane.md`, not the server: what the real server does is
@@ -96,12 +98,14 @@ class FakeChorusServer:
     server_status: int = 200
     state_status: int = 200
     events_status: int = 200
+    controller_events_status: int = 200
     # `GET /metrics`: these bytes when set, else the three series the real
     # exporter has for a speaker that sent no telemetry (docs/telemetry.md).
     metrics_bytes: bytes | None = None
     metrics_status: int = 200
     port: int = 0
     _streams: list[asyncio.Queue[bytes | None]] = field(default_factory=list)
+    _press_streams: list[asyncio.Queue[bytes | None]] = field(default_factory=list)
     _runner: web.AppRunner | None = None
     _model: dict[str, Any] | None = None
 
@@ -112,6 +116,7 @@ class FakeChorusServer:
         app.router.add_get("/api/server", self._server)
         app.router.add_get("/api/state", self._state)
         app.router.add_get("/api/events", self._events)
+        app.router.add_get("/api/controller-events", self._controller_events)
         app.router.add_post("/api/command", self._command)
         app.router.add_get("/metrics", self._metrics)
         # No access log: nobody reads it, and it cannot format a frozen clock.
@@ -147,8 +152,28 @@ class FakeChorusServer:
             queue.put_nowait(state)
 
     def drop_streams(self) -> None:
-        """Close every event stream, as a server going away does."""
+        """Close every stream of both kinds, as a server going away does."""
         for queue in self._streams:
+            queue.put_nowait(None)
+        self.drop_press_streams()
+
+    @property
+    def press_subscribers(self) -> int:
+        return len(self._press_streams)
+
+    def press(self, event: bytes) -> None:
+        """Send one `controller_event` to every subscriber attached right now.
+
+        As the server does (docs/control-plane.md), nothing is kept: a press
+        made while nobody is subscribed is sent to nobody, and a stream opened
+        afterwards starts empty.
+        """
+        for queue in self._press_streams:
+            queue.put_nowait(event)
+
+    def drop_press_streams(self) -> None:
+        """Close every stream of button presses and leave the state's alone."""
+        for queue in self._press_streams:
             queue.put_nowait(None)
 
     def script(self, status: int, body: bytes) -> None:
@@ -250,6 +275,34 @@ class FakeChorusServer:
                 await response.write(b"data: " + item + b"\n\n")
         finally:
             self._streams.remove(queue)
+        return response
+
+    async def _controller_events(self, request: web.Request) -> web.StreamResponse:
+        self.requests.append("GET /api/controller-events")
+        self._gone()
+        if self.controller_events_status != 200:
+            return web.Response(status=self.controller_events_status, text="no")
+        response = web.StreamResponse(
+            headers={"Content-Type": "text/event-stream", "Connection": "close"}
+        )
+        await response.prepare(request)
+        queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+        self._press_streams.append(queue)
+        try:
+            # One comment line and no message: a press is not a state.
+            await response.write(b": controller events\n\n")
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), 0.02)
+                except TimeoutError:
+                    if request.transport is None or request.transport.is_closing():
+                        break
+                    continue
+                if item is None:
+                    break
+                await response.write(b"data: " + item + b"\n\n")
+        finally:
+            self._press_streams.remove(queue)
         return response
 
     async def _command(self, request: web.Request) -> web.Response:

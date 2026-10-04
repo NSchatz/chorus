@@ -21,6 +21,28 @@ SOURCE_NONE = "none"
 LINE_IN_PREFIX = "line-in:"
 SOLOIST_PREFIX = "soloist:"
 
+# The role a speaker with buttons declares (docs/protocol.md, "Roles").
+ROLE_CONTROLLER = "controller"
+
+# A speaker's buttons (firmware/include/chorus/controls.h: the compact speaker
+# and the streaming amp have these five; the other classes have none).
+BUTTON_PLAY_PAUSE = "play_pause"
+BUTTON_VOLUME_UP = "volume_up"
+BUTTON_VOLUME_DOWN = "volume_down"
+BUTTON_NEXT = "next"
+BUTTON_PREVIOUS = "previous"
+BUTTONS = (
+    BUTTON_PLAY_PAUSE,
+    BUTTON_VOLUME_UP,
+    BUTTON_VOLUME_DOWN,
+    BUTTON_NEXT,
+    BUTTON_PREVIOUS,
+)
+
+# How a button was pressed. Only play/pause has a long press.
+PRESS = "press"
+LONG_PRESS = "long_press"
+
 
 def _obj(value: Any, what: str) -> dict[str, Any]:
     if not isinstance(value, dict):
@@ -361,6 +383,13 @@ class Speaker:
     # None until the speaker has reported what it runs (it takes no updates,
     # or has not said yet).
     firmware: SpeakerFirmware | None = None
+    # The roles of its latest ``hello``, by name; empty before one.
+    roles: tuple[str, ...] = ()
+
+    @property
+    def controller(self) -> bool:
+        """Whether the speaker declared the controller role: it has buttons."""
+        return ROLE_CONTROLLER in self.roles
 
     @classmethod
     def from_obj(cls, obj: dict[str, Any]) -> Speaker:
@@ -378,6 +407,7 @@ class Speaker:
                 if isinstance(firmware, dict)
                 else None
             ),
+            roles=_str_tuple(obj, "roles"),
         )
 
 
@@ -544,3 +574,65 @@ class State:
             (label.name for label in self.input_labels if label.input == input_id),
             None,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class ControllerEvent:
+    """One controller command the server accepted: a press of a speaker's button.
+
+    ``docs/control-plane.md``, ``GET /api/controller-events``. It is an event
+    and not a state: the server keeps none and sends each once.
+    """
+
+    endpoint: str
+    zone: str
+    command: str
+    value: int
+    target: str
+    outcome: str
+
+    @classmethod
+    def parse(cls, text: str | bytes) -> ControllerEvent:
+        """Read a ``controller_event`` message."""
+        what = "the controller event"
+        obj = loads(text, what)
+        if obj.get("t") != "controller_event":
+            raise ChorusProtocolError("the message is not a controller event")
+        if obj.get("v") != 2:
+            raise ChorusProtocolError(f"{what} is not catalog version 2")
+        value = obj.get("value")
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ChorusProtocolError(f"{what} has no whole 'value'")
+        return cls(
+            endpoint=_str(obj, "endpoint", what),
+            zone=_str(obj, "zone", what),
+            command=_str(obj, "command", what),
+            value=value,
+            target=_str(obj, "target", what),
+            outcome=_str(obj, "outcome", what),
+        )
+
+    def button(self) -> tuple[str, str] | None:
+        """Return the button that sends this command and how it was pressed.
+
+        What a speaker's buttons send (``firmware/src/controls.c``): play/pause
+        sends ``toggle``, and held it sends ``join`` or ``leave``; volume up
+        and down send a ``volume_step`` above and below zero, again for each
+        repeat while held; next and previous send ``next`` and ``previous``.
+        None for a command no button of a speaker sends (``play``, ``pause``,
+        ``volume_set``, ``mute_set``, a ``volume_step`` of zero, or a name this
+        client does not know).
+        """
+        if self.command == "toggle":
+            return BUTTON_PLAY_PAUSE, PRESS
+        if self.command in ("join", "leave"):
+            return BUTTON_PLAY_PAUSE, LONG_PRESS
+        if self.command == "volume_step" and self.value > 0:
+            return BUTTON_VOLUME_UP, PRESS
+        if self.command == "volume_step" and self.value < 0:
+            return BUTTON_VOLUME_DOWN, PRESS
+        if self.command == "next":
+            return BUTTON_NEXT, PRESS
+        if self.command == "previous":
+            return BUTTON_PREVIOUS, PRESS
+        return None

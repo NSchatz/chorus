@@ -1,12 +1,15 @@
 """The chorus server's state, pushed over one event stream per config entry.
 
+Beside it, the button presses the server accepted, pushed over a second stream
+and handed to the event entity of the speaker and button each came from.
+
 Beside it, the speakers' telemetry, read from `GET /metrics` at a bounded rate
 and only while a diagnostic sensor is enabled (`ChorusMetricsCoordinator`).
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 import logging
 import time
 
@@ -22,6 +25,7 @@ from ._aiochorus import (
     ChorusCommandError,
     ChorusError,
     ChorusRefusedError,
+    ControllerEvent,
     Metrics,
     ServerInfo,
     Speaker,
@@ -96,6 +100,14 @@ class ChorusCoordinator(DataUpdateCoordinator[State]):
         self.server_device_id = ""
         self.metrics = ChorusMetricsCoordinator(hass, entry, client)
         self._stream_lost = False
+        # Whether the stream of button presses is attached. While it is not, a
+        # press is never delivered, so the event entities say unavailable.
+        self.presses_connected = False
+        self._presses_lost_logged = False
+        # (speaker id, button) to the event entity that takes its presses.
+        self._press_listeners: dict[
+            tuple[str, str], Callable[[str, ControllerEvent], None]
+        ] = {}
 
     async def _async_update_data(self) -> State:
         try:
@@ -143,6 +155,97 @@ class ChorusCoordinator(DataUpdateCoordinator[State]):
         )
         self.last_exception = err
         self.last_update_success = False
+        self.async_update_listeners()
+
+    async def async_listen_presses(self) -> None:
+        """Run the stream of button presses until cancelled."""
+        await self.client.controller_events().run(
+            self.handle_controller_event,
+            self.handle_presses_disconnect,
+            self.handle_presses_connect,
+        )
+
+    @callback
+    def async_add_press_listener(
+        self,
+        speaker_id: str,
+        button: str,
+        listener: Callable[[str, ControllerEvent], None],
+    ) -> Callable[[], None]:
+        """Send the presses of one speaker's button to `listener`.
+
+        It is called with how the button was pressed and the event. Returns
+        the function that stops it.
+        """
+        key = (speaker_id, button)
+        self._press_listeners[key] = listener
+
+        @callback
+        def remove() -> None:
+            if self._press_listeners.get(key) is listener:
+                del self._press_listeners[key]
+
+        return remove
+
+    @callback
+    def handle_controller_event(self, event: ControllerEvent) -> None:
+        """Hand one accepted press to the entity of its speaker and button.
+
+        Exactly one entity fires, once. An event that is no button of a
+        speaker this integration has an entity for (a wall remote, a speaker
+        that is not adopted, a command no button sends, a disabled entity) is
+        ignored with one log line.
+        """
+        pressed = event.button()
+        if pressed is None:
+            _LOGGER.debug(
+                "Ignored a controller event from %s: no speaker button sends "
+                "the command %s (value %s)",
+                event.endpoint,
+                event.command,
+                event.value,
+            )
+            return
+        button, press = pressed
+        listener = self._press_listeners.get((event.endpoint, button))
+        if listener is None:
+            _LOGGER.debug(
+                "Ignored a controller event (%s) from %s: it is not a speaker "
+                "with an enabled %s button entity",
+                event.command,
+                event.endpoint,
+                button,
+            )
+            return
+        listener(press, event)
+
+    @callback
+    def handle_presses_connect(self) -> None:
+        """Take note that the stream of button presses is attached."""
+        if self._presses_lost_logged:
+            _LOGGER.info(
+                "The button presses of the chorus server at %s:%s are back",
+                self.client.host,
+                self.client.port,
+            )
+            self._presses_lost_logged = False
+        self.presses_connected = True
+        self.async_update_listeners()
+
+    @callback
+    def handle_presses_disconnect(self, err: ChorusError) -> None:
+        """Mark the event entities unavailable: presses would be missed."""
+        if not self._presses_lost_logged:
+            _LOGGER.info(
+                "The button presses of the chorus server at %s:%s are unavailable: %s",
+                self.client.host,
+                self.client.port,
+                err,
+            )
+            self._presses_lost_logged = True
+        if not self.presses_connected:
+            return
+        self.presses_connected = False
         self.async_update_listeners()
 
     def room_device_info(self, zone: Zone) -> DeviceInfo:

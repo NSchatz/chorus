@@ -18,6 +18,7 @@ from .coordinator import (
 )
 
 PLATFORMS: list[Platform] = [
+    Platform.EVENT,
     Platform.MEDIA_PLAYER,
     Platform.NUMBER,
     Platform.SELECT,
@@ -74,9 +75,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ChorusConfigEntry) -> bo
     entry.async_create_background_task(
         hass, coordinator.async_listen(), f"{DOMAIN} event stream {entry.entry_id}"
     )
+    entry.async_create_background_task(
+        hass,
+        coordinator.async_listen_presses(),
+        f"{DOMAIN} button presses {entry.entry_id}",
+    )
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ChorusConfigEntry) -> bool:
-    """Unload one chorus server; the event stream's task ends with the entry."""
+    """Unload one chorus server; its two streams' tasks end with the entry."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

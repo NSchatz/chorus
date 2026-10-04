@@ -24,10 +24,11 @@ How it maps chorus to Home Assistant, the security rules and the test harness ar
 
 - Every **adopted speaker** of that server: one device, named for the speaker, linked to its
   room's device while it has a room and to the server otherwise. A speaker that takes
-  firmware updates and has said what it runs has a firmware `update` entity, and every
-  speaker has its diagnostic sensors.
+  firmware updates and has said what it runs has a firmware `update` entity, every
+  speaker has its diagnostic sensors, and a speaker with buttons (the compact speaker and
+  the streaming amp) has one `event` entity per button.
 
-Not supported (yet): a speaker's buttons. An older server, or one that only speaks catalog version 1, is refused
+An older server, or one that only speaks catalog version 1, is refused
 at setup with a repair issue saying so.
 
 ## Use cases
@@ -43,6 +44,9 @@ at setup with a repair issue saying so.
   it on one speaker from its device page, watching the transfer.
 - Seeing how a speaker reaches the network and what it runs, and, for the ones you enable,
   charting its signal strength, buffer and drift while you chase a dropout.
+- Automations that start from a speaker's own buttons: a long press of play/pause in the
+  kitchen that also turns the lights on, a "next" press that advances something chorus does
+  not play.
 - Switching a room's quiet hours off for a party, or its line-in autoplay off while a
   turntable is being set up.
 
@@ -191,6 +195,36 @@ firmware, nothing is made up in their place): a **count of corrections** (the ex
 correction in force, shown as Rate correction, and no count), and a **real temperature** (the
 series exists, and no speaker has a sensor to fill it).
 
+### Speaker buttons (`event`, five per speaker that has buttons)
+
+A speaker that declares the controller role (the compact speaker and the streaming amp: the
+classes with front buttons) has five event entities on its device, one per button. Each fires
+once for every press of that button the chorus server accepted, and at no other time.
+
+| Entity | Event types | The press the speaker sent (`command`) |
+|---|---|---|
+| Play/pause button | `press`, `long_press` | `press`: `toggle`. `long_press`: `leave` when the room plays in a group, else `join` (its `target` is the group) |
+| Volume up button | `press` | `volume_step` with a `value` above zero. A held button repeats, and each repeat is a press |
+| Volume down button | `press` | `volume_step` with a `value` below zero. A held button repeats, and each repeat is a press |
+| Next button | `press` | `next` |
+| Previous button | `press` | `previous` |
+
+Every event carries, beside `event_type`: `command` and `value` (what the button asked the
+server for), `target` (the group of a `join`, otherwise empty), `room` (the room the speaker
+plays in) and `outcome` (`applied` when the press changed the room, `waits-for-an-input` for
+play/pause, next and previous, which act on what the room plays).
+
+The entities only report. What a button does in chorus is unchanged and is the server's: the
+integration sends nothing when one is pressed. A press the server refused is no event.
+
+**A reconnect fires nothing.** The server keeps no press and the integration keeps none
+either: a press made while Home Assistant was not connected to the server is never delivered
+later, and coming back from unavailable is not an event. While the integration cannot hear
+presses the button entities are **unavailable**.
+
+A press from something that is not one of these buttons (a wall remote that is not an adopted
+speaker, a command no speaker button sends) is ignored, with one debug log line.
+
 ## Data updates
 
 Local push. The integration holds one event stream (`GET /api/events`) per server and the
@@ -199,6 +233,11 @@ answered with the new state, which is applied immediately. If the stream is lost
 become unavailable and the integration reconnects with an exponential backoff from one second
 to one minute, with jitter. A stream that has been silent for 45 seconds is checked once with
 `GET /api/state`; that is a liveness check, not polling.
+
+Button presses arrive the same way on a second stream (`GET /api/controller-events`), which
+carries one message per accepted press and never a past one. It reconnects by the same
+backoff and is checked for liveness the same way; while it is not attached the button
+entities are unavailable (one log line says so) and nothing else is affected.
 
 The speakers' diagnostic sensors are the one exception, because the server's state carries no
 telemetry: they are polled from `GET /metrics` every 60 seconds, by one request for all
@@ -247,7 +286,36 @@ Bring the den and the patio into the kitchen's music, then let the den go:
     entity_id: media_player.den
 ```
 
+Turn the kitchen lights on with a long press of the kitchen speaker's play/pause button (the
+speaker still joins or leaves its group, as it always does):
+
+```yaml
+automation:
+  - alias: Kitchen speaker long press turns the lights on
+    triggers:
+      - trigger: state
+        entity_id: event.kitchen_kitchen_left_play_pause_button
+        not_from: unavailable
+    conditions:
+      - condition: state
+        entity_id: event.kitchen_kitchen_left_play_pause_button
+        attribute: event_type
+        state: long_press
+    actions:
+      - action: light.turn_on
+        target:
+          entity_id: light.kitchen
+```
+
+`not_from: unavailable` matters: an event entity's state is the time of its last event, and
+it shows that time again when it comes back from unavailable, which is not a press.
+
 ## Known limitations
+
+- A button press made while Home Assistant is not connected to the chorus server is lost:
+  the server keeps none. Two-way speakers and subwoofers have no front buttons and no button
+  entities; a pairing button and a microphone mute switch are local to the speaker and are
+  not events. A wall remote that is not an adopted speaker has no entities.
 
 - chorus plays inputs and announcements. `play_media` with a stream URL, a radio station or
   any other media source is refused: content is chosen in the apps that cast to chorus.

@@ -43,6 +43,59 @@
     }
   },
   "entity": {
+    "event": {
+      "next": {
+        "name": "Next button",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "press": "Press"
+            }
+          }
+        }
+      },
+      "play_pause": {
+        "name": "Play/pause button",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "long_press": "Long press",
+              "press": "Press"
+            }
+          }
+        }
+      },
+      "previous": {
+        "name": "Previous button",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "press": "Press"
+            }
+          }
+        }
+      },
+      "volume_down": {
+        "name": "Volume down button",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "press": "Press"
+            }
+          }
+        }
+      },
+      "volume_up": {
+        "name": "Volume up button",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "press": "Press"
+            }
+          }
+        }
+      }
+    },
     "media_player": {
       "room": {
         "state_attributes": {
