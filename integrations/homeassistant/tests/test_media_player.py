@@ -203,6 +203,15 @@ async def test_join_takes_each_room_into_the_leaders_group(
     assert len(server.bodies) == 2
 
 
+async def test_join_of_a_room_named_twice_sends_one_command(
+    hass: HomeAssistant, server: FakeChorusServer, setup: MockConfigEntry
+) -> None:
+    """Each member is judged against the state the command before it left."""
+    kitchen, study = room(hass, "kitchen"), room(hass, "study")
+    await call(hass, "join", kitchen, group_members=[study, study])
+    assert server.bodies == [b'{"v":2,"t":"join","zone":"study","target":"kitchen"}']
+
+
 async def test_join_from_a_room_alone_forms_a_live_group(
     hass: HomeAssistant, server: FakeChorusServer, setup: MockConfigEntry
 ) -> None:
@@ -285,6 +294,26 @@ async def test_unjoin_takes_the_room_and_the_live_group_dissolves(
     assert len(server.bodies) == 1
 
 
+async def test_unjoin_of_a_room_alone_in_a_group_that_is_not_its_own(
+    hass: HomeAssistant, server: FakeChorusServer, setup: MockConfigEntry
+) -> None:
+    """A live group of one room (v1 `ungroup` leaves one) is still left."""
+    raw = json.loads(shared("state-rich.json"))
+    for zone in raw["zones"]:
+        if zone["id"] == "bedroom":
+            zone["group"] = "live-2"
+    live = next(g for g in raw["groups"] if g["id"] == "live-1")
+    live["zones"] = ["study"]
+    raw["groups"].append({**live, "id": "live-2", "zones": ["bedroom"]})
+    server.set_state(json.dumps(raw).encode())
+    bedroom = room(hass, "bedroom")
+    await wait_for(lambda: setup.runtime_data.data.zone("bedroom").group == "live-2")
+    await hass.async_block_till_done()
+    assert attr(hass, bedroom, ATTR_GROUP_MEMBERS) == [bedroom]
+    await call(hass, "unjoin", bedroom)
+    assert server.bodies == [b'{"v":2,"t":"take","target":"bedroom"}']
+
+
 async def test_unjoin_from_a_saved_group_leaves_it_inactive(
     hass: HomeAssistant, server: FakeChorusServer, setup: MockConfigEntry
 ) -> None:
@@ -347,6 +376,17 @@ async def test_saved_group_volume_is_the_group_volume(
         b'{"v":1,"t":"mute","zone":"living","muted":true}',
         b'{"v":1,"t":"mute","zone":"kitchen","muted":true}',
     ]
+    assert attr(hass, downstairs, ATTR_MEDIA_VOLUME_MUTED) is True
+
+
+async def test_a_saved_group_is_muted_only_when_every_room_is(
+    hass: HomeAssistant, server: FakeChorusServer, setup: MockConfigEntry
+) -> None:
+    downstairs = saved_group(hass, "downstairs")
+    await call(hass, "volume_mute", room(hass, "living"), is_volume_muted=True)
+    assert attr(hass, room(hass, "living"), ATTR_MEDIA_VOLUME_MUTED) is True
+    assert attr(hass, downstairs, ATTR_MEDIA_VOLUME_MUTED) is False
+    await call(hass, "volume_mute", room(hass, "kitchen"), is_volume_muted=True)
     assert attr(hass, downstairs, ATTR_MEDIA_VOLUME_MUTED) is True
 
 
@@ -613,7 +653,7 @@ async def announce_clip(hass: HomeAssistant, **extra) -> None:
     )
 
 
-async def test_the_servers_url_refusal_is_a_translated_error(
+async def test_the_servers_url_refusal_of_an_announce_is_a_translated_error(
     hass: HomeAssistant, server: FakeChorusServer, setup: MockConfigEntry, ha_url: None
 ) -> None:
     """The server lists this Home Assistant and still refuses the URL."""
@@ -636,7 +676,7 @@ async def test_the_servers_url_refusal_is_a_translated_error(
         (None, "error-announce-origin.json"),
     ],
 )
-async def test_a_server_that_does_not_list_this_home_assistant_says_so(
+async def test_announce_to_a_server_that_does_not_list_this_home_assistant_says_so(
     hass: HomeAssistant,
     server: FakeChorusServer,
     setup: MockConfigEntry,
@@ -663,7 +703,7 @@ async def test_a_server_that_does_not_list_this_home_assistant_says_so(
     assert setup.runtime_data.server.announce_origins != ("http://ha.example:8123",)
 
 
-async def test_a_url_refusal_when_the_server_cannot_be_asked_again(
+async def test_a_url_refusal_of_an_announce_when_the_server_cannot_be_asked_again(
     hass: HomeAssistant, server: FakeChorusServer, setup: MockConfigEntry, ha_url: None
 ) -> None:
     server.server_status = 500
@@ -688,13 +728,17 @@ async def test_the_other_announce_refusals_by_field(
     refusal: str,
     key: str,
 ) -> None:
+    # A server that does not list this Home Assistant: only a refusal of the
+    # URL is explained by that, and only then is the server asked who it is.
+    server.server_bytes = shared("server-no-origin.json")
     server.script(400, shared(refusal))
     with pytest.raises(HomeAssistantError) as caught:
         await announce_clip(hass)
     assert caught.value.translation_key == key
+    assert server.requests[-1] == "POST /api/command"
 
 
-async def test_no_free_player_is_its_own_translated_error(
+async def test_announce_with_no_free_player_is_its_own_translated_error(
     hass: HomeAssistant, server: FakeChorusServer, setup: MockConfigEntry, ha_url: None
 ) -> None:
     server.script(

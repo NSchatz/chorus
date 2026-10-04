@@ -25,9 +25,9 @@ rules:
   dependency-transparency:
     status: exempt
     comment: >-
-      The repository is private, so the client cannot be an open PyPI
-      package built by public CI. It is vendored in _aiochorus and the
-      manifest lists no requirement.
+      The manifest lists no requirement, so there is no dependency to
+      publish. The client is vendored in _aiochorus, in this repository
+      and under its licence, so that Home Assistant installs nothing.
   docs-actions:
     status: exempt
     comment: >-

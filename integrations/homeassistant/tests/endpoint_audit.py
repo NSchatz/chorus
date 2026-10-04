@@ -30,6 +30,24 @@ from homeassistant.helpers.http import HomeAssistantView
 STATIC_PATH_ALLOWLIST: frozenset[tuple[str, str]] = frozenset()
 
 _STATIC_CALLS = {"async_register_static_paths", "register_static_path"}
+# What puts a route on an aiohttp router (or a redirect on Home Assistant's)
+# without a view the scan can read: the scan cannot tell that such a route
+# requires auth, so each one is a finding. A view goes through `register_view`.
+_ROUTER_CALLS = {
+    "add_delete",
+    "add_get",
+    "add_head",
+    "add_patch",
+    "add_post",
+    "add_put",
+    "add_resource",
+    "add_route",
+    "add_routes",
+    "add_static",
+    "add_subapp",
+    "add_view",
+    "register_redirect",
+}
 
 
 @dataclass(frozen=True)
@@ -144,6 +162,10 @@ def scan_source(
                     findings.append(Finding("static-path", url, where))
             elif called == "add_extra_js_url":
                 findings.append(Finding("extra-js-url", _static_url(node), where))
+            elif called in _ROUTER_CALLS and isinstance(node.func, ast.Attribute):
+                findings.append(
+                    Finding("route-not-auditable", ast.unparse(node.func), where)
+                )
             elif called == "register_view":
                 viewed = _name(node.args[0]) if node.args else ""
                 if viewed not in view_classes:
@@ -233,7 +255,11 @@ def audit_added(
     """Report what was added since `before` and is not provably authenticated.
 
     Returns the findings, the number of resources (URL paths) added to the
-    router and the number of webhooks added for the domain.
+    router and the number of webhooks added. Every webhook added since `before`
+    is audited, whatever domain it was registered under: the caller sets up
+    what the integration depends on before it takes `before`, so what is added
+    afterwards is the integration's, and one registered under another domain's
+    name is reported for that as well.
     """
     found: set[Finding] = set()
     routes = 0
@@ -270,9 +296,11 @@ def audit_added(
     findings = sorted(found, key=lambda f: (f.kind, f.name))
     webhooks = 0
     for webhook_id, data in _webhooks(hass).items():
-        if webhook_id in before.webhooks or data.domain != webhook_domain:
+        if webhook_id in before.webhooks:
             continue
         webhooks += 1
+        if data.domain != webhook_domain:
+            findings.append(Finding("webhook-foreign-domain", webhook_id, "runtime"))
         if data.local_only is not True:
             findings.append(Finding("webhook-not-local-only", webhook_id, "runtime"))
     return findings, routes, webhooks

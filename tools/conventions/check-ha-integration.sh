@@ -11,7 +11,8 @@
 #     locked package comes from PyPI with a sha256;
 #   - quality_scale.yaml lists exactly the rule names of the pinned tier list
 #     (quality-scale-rules.txt), each `done` or `exempt` with a comment;
-#   - no view, webhook, static path or injected script (the grep-level backstop of
+#   - no view, route put on the router directly, webhook, static path or injected script
+#     (the grep-level backstop of
 #     tests/test_no_unauthenticated_endpoint.py, which is the real check and runs in the
 #     gate step `ha-integration`). The first authenticated view or local-only webhook comes
 #     with a change to this pattern and to that test's expectations.
@@ -114,17 +115,19 @@ if printf '%s\n' "$verdicts" | command grep -v '^counts '; then
 fi
 
 # --- no endpoint (the backstop) ---------------------------------------------------------
-pattern='HomeAssistantView|register_view|register_static_path|async_register_static_paths|StaticPathConfig|add_extra_js_url|components[. ]+(import[[:space:]]+)?webhook|requires_auth|register_redirect'
+pattern='HomeAssistantView|register_view|register_static_path|async_register_static_paths|StaticPathConfig|add_extra_js_url|components[. ]+(import[[:space:]]+)?webhook|requires_auth|register_redirect|\.router\.|add_static|add_subapp'
 for probe in 'class ArtView(HomeAssistantView):' 'hass.http.register_view(ArtView)' \
     '    requires_auth = False' 'hass.http.register_static_path("/x", "/y")' \
     'await hass.http.async_register_static_paths([StaticPathConfig("/x", "/y", True)])' \
     'add_extra_js_url(hass, "/x.js")' 'from homeassistant.components import webhook' \
-    'from homeassistant.components.webhook import async_register' 'hass.http.register_redirect("/a", "/b")'; do
+    'from homeassistant.components.webhook import async_register' 'hass.http.register_redirect("/a", "/b")' \
+    'hass.http.app.router.add_get("/api/chorus/x", handler)' 'router.add_static("/x", "/y")' \
+    'app.add_subapp("/x", sub)'; do
     printf '%s\n' "$probe" | command grep -q -E "$pattern" ||
         bad "the endpoint pattern no longer matches '$probe' (the check is broken, not the tree)"
 done
 if git grep -n -E "$pattern" -- "$C" ':!*.json' ':!*.yaml'; then
-    bad "the integration registers an HTTP view, a webhook, a static path or a script; it has none (brief 4.8). A view requires auth and a webhook is local-only, and each comes with a change to this check and to tests/test_no_unauthenticated_endpoint.py"
+    bad "the integration registers an HTTP view, a route, a webhook, a static path or a script; it has none (brief 4.8). A view requires auth and a webhook is local-only, and each comes with a change to this check and to tests/test_no_unauthenticated_endpoint.py"
 fi
 
 [ "$rc" = 0 ] && echo "home assistant integration: no requirement, client stands alone, translations equal, harness $harness $hv (Home Assistant $ha, Python $py) with $files hashed files locked, $(printf '%s\n' "$want" | wc -l) quality-scale rules ($(printf '%s\n' "$verdicts" | sed -n 's/^counts \([0-9]*\) \([0-9]*\)$/\1 done, \2 exempt/p')), no endpoint"

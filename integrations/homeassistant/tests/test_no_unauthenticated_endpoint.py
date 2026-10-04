@@ -7,8 +7,15 @@ would catch the first one that did it wrong:
 1. at run time, the router and the webhook registry are compared before and
    after the integration and every one of its platforms is set up;
 2. statically, every file of the integration is read for the constructs;
-3. the same checker is fed a bad view, a webhook that is not local-only and a
-   static path, and must name each one, so neither half passes by seeing nothing.
+3. the same checker is fed a bad view, a webhook that is not local-only, a
+   static path and a route put on the router directly, and must name each one,
+   so neither half passes by seeing nothing.
+
+The two halves cover each other: a registration written so that the static
+scan cannot read it (built with `getattr`, say) is seen at run time when it is
+made during setup, and one made later (in a service call) is seen statically.
+`docs/audit/2026-10-ha-integration.md` has the planted registrations each half
+was shown to catch.
 """
 
 from __future__ import annotations
@@ -122,6 +129,27 @@ async def setup(hass):
 """
 
 
+BAD_ROUTE = """
+async def setup(hass, handler):
+    hass.http.app.router.add_get("/api/chorus/bare", handler)
+    hass.http.app.router.add_route("POST", "/api/chorus/post", handler)
+    hass.http.app.router.add_static("/chorus_files", "/config/www")
+    hass.http.register_redirect("/chorus", "/api/chorus/bare")
+    names = set()
+    names.add_get = None
+"""
+
+
+def test_the_static_checker_names_a_route_put_on_the_router_directly() -> None:
+    findings = scan_source(BAD_ROUTE, "bad_route.py")
+    assert [(f.kind, f.name) for f in findings] == [
+        ("route-not-auditable", "hass.http.app.router.add_get"),
+        ("route-not-auditable", "hass.http.app.router.add_route"),
+        ("route-not-auditable", "hass.http.app.router.add_static"),
+        ("route-not-auditable", "hass.http.register_redirect"),
+    ]
+
+
 def test_the_static_checker_names_a_view_without_auth() -> None:
     findings = scan_source(BAD_VIEW, "bad_view.py")
     assert {(f.kind, f.name) for f in findings} == {
@@ -199,7 +227,9 @@ async def test_the_runtime_checker_names_each_bad_registration(
     )
     webhook.async_register(hass, DOMAIN, "Open", "chorus-open", hook)
     webhook.async_register(hass, DOMAIN, "Good", "chorus-good", hook, local_only=True)
+    # Registered under another domain's name: still audited, and named for it.
     webhook.async_register(hass, "other", "Other", "other-open", hook)
+    webhook.async_register(hass, "other", "Other", "other-good", hook, local_only=True)
 
     findings, routes, webhooks = audit_added(hass, before, DOMAIN)
     assert set(findings) == {
@@ -207,8 +237,11 @@ async def test_the_runtime_checker_names_each_bad_registration(
         Finding("view-not-auditable", "/api/chorus/bare", "runtime"),
         Finding("static-path", "/chorus_static", "runtime"),
         Finding("webhook-not-local-only", "chorus-open", "runtime"),
+        Finding("webhook-foreign-domain", "other-open", "runtime"),
+        Finding("webhook-not-local-only", "other-open", "runtime"),
+        Finding("webhook-foreign-domain", "other-good", "runtime"),
     }
     # Four URL paths: two views, a bare route, and the static path, which Home
     # Assistant registers as a directory resource and a route of the same path.
     assert routes == 5
-    assert webhooks == 2
+    assert webhooks == 4
