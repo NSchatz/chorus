@@ -47,3 +47,28 @@ ran. Two things made the Home Assistant steps weak evidence and a poor inner loo
   `mise.toml`, and the gate's build step makes the server before `ha-live`.
 - A narrowed run proves only the tests it selected. Lint, types and coverage are proved by the
   whole run, which CI makes on every pull request.
+
+## What was read
+
+All on 2026-10-04. No GPL source and no reciprocally licensed design file was opened; nothing
+outside this repository's own files and its own Actions runs informed this record.
+
+- `tools/ha-test.sh` at `20a79ca` (the `CI=true` branch that printed `SKIPPED` when `uv` was
+  absent; the pytest step with `--cov-fail-under=95` and the config flow's
+  `coverage report --fail-under=100` after it) and `tools/ha-hassfest.sh` at `20a79ca` (the
+  `SKIPPED` branches for an absent `uv` and for a core tag that could not be cloned).
+- `tools/gate.sh` at `20a79ca`: the `ha-test`, `ha-hassfest` and `ha-live` steps, the `sed`
+  lines that copied a step's `PASS` or `SKIPPED` line into the summary, and the build step that
+  makes `chorus-server` before `ha-live`.
+- `Makefile` (the `ha-test`, `ha-hassfest` and `ha-live` targets and `HA_TEST_ARGS`).
+- `docs/decisions/0140-ci-is-the-gate.md` (CI is the gate; local runs are narrow tests only;
+  item 5, the identity scan's skip on a fork's pull request) and
+  `docs/decisions/0138-the-home-assistant-integration.md` (the two coverage thresholds and the
+  skip behaviour this record changes).
+- `.github/workflows/ci.yml` (the `Pinned tools` step, which installs what `mise.toml` pins)
+  and `mise.toml` (uv 0.12.22).
+- `docs/home-assistant.md`, `docs/conventions.md` (rule 25) and
+  `integrations/homeassistant/README.md`, the text this change keeps in step.
+- This repository's Actions run 37180007058 (`gh run view --log`), the first run on this pull
+  request: its `provenance` step failed for want of this section and the gate stopped before
+  the Home Assistant steps, so that run is no evidence for them.
