@@ -5,7 +5,7 @@ location. It imports nothing from Home Assistant and takes an injected
 ``aiohttp.ClientSession``. The contract it speaks is ``docs/control-plane.md``.
 """
 
-from .client import ChorusClient, EventStream
+from .client import ChorusClient, ControllerEventStream, EventStream
 from .commands import (
     announce,
     autoplay,
@@ -33,7 +33,11 @@ from .errors import (
 )
 from .metrics import Metrics, SpeakerMetrics
 from .models import (
+    BUTTONS,
+    LONG_PRESS,
+    PRESS,
     AutoplayRule,
+    ControllerEvent,
     FirmwareImage,
     Group,
     InputLabel,
@@ -49,6 +53,9 @@ from .models import (
 from .sse import SSEParser
 
 __all__ = [
+    "BUTTONS",
+    "LONG_PRESS",
+    "PRESS",
     "AutoplayRule",
     "ChorusClient",
     "ChorusCommandError",
@@ -57,6 +64,8 @@ __all__ = [
     "ChorusProtocolError",
     "ChorusRefusedError",
     "ChorusUnsupportedError",
+    "ControllerEvent",
+    "ControllerEventStream",
     "EventStream",
     "FirmwareImage",
     "Group",
