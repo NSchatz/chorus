@@ -1,0 +1,25 @@
+{
+  "entity": {
+    "media_player": {
+      "room": {
+        "default": "mdi:speaker",
+        "state": {
+          "off": "mdi:speaker-off",
+          "playing": "mdi:speaker-play",
+          "paused": "mdi:speaker-pause"
+        }
+      },
+      "saved_group": {
+        "default": "mdi:speaker-multiple",
+        "state": {
+          "off": "mdi:speaker-off"
+        }
+      }
+    },
+    "number": {
+      "group_volume": {
+        "default": "mdi:volume-equal"
+      }
+    }
+  }
+}

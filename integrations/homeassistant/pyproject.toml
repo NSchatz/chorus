@@ -1,0 +1,74 @@
+[project]
+name = "chorus-homeassistant"
+version = "0.18.0"
+description = "The chorus Home Assistant custom integration and its vendored client"
+requires-python = "==3.14.8"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest-homeassistant-custom-component==0.13.366",
+    "mypy==2.3.1",
+    "ruff==0.16.3",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = ["-p", "no:cacheprovider", "-ra"]
+
+[tool.coverage.run]
+source = ["custom_components.chorus"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_also = ["raise NotImplementedError"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+files = ["custom_components/chorus"]
+cache_dir = "/dev/null"
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-self", "truthy-iterable"]
+
+# Home Assistant's own mypy.ini lets its components re-export what they import
+# (media_player's entity, features and browse types are imported from it).
+[[tool.mypy.overrides]]
+module = "homeassistant.components.*"
+implicit_reexport = true
+
+[tool.ruff]
+target-version = "py314"
+line-length = 88
+cache-dir = "/tmp/.chorus-ha-ruff"
+
+[tool.ruff.lint]
+select = [
+    "A", "ASYNC", "B", "BLE", "C4", "D", "E", "F", "FURB", "G", "I", "ICN", "LOG",
+    "N", "PERF", "PGH", "PIE", "PL", "PT", "PTH", "RET", "RSE", "RUF", "S", "SIM",
+    "SLF", "T20", "TRY", "UP", "W",
+]
+ignore = [
+    "D203",    # one blank line before a class docstring: D211 is the one kept
+    "D213",    # a docstring's summary on the second line: D212 is the one kept
+    "PLR0911", # many returns: the state mapping reads better flat
+    "PLR2004", # magic values: HTTP status codes are named by their numbers
+    "TRY003",  # long messages in exceptions: the message is for a person
+    "E501",    # the formatter holds the line length
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D", "S101", "S104", "SLF001", "PLR0913", "PLR0915", "ASYNC110", "S105", "S106"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["custom_components"]
+combine-as-imports = true
