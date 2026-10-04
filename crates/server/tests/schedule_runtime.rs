@@ -676,6 +676,87 @@ fn quiet_window_start_pulls_volume_down_and_the_alarm_ramp_stops_at_the_quiet_ca
     assert_eq!(h.volume("kitchen"), 300);
 }
 
+/// The `quiet` member of a room's object in the v2 state, as its bytes.
+fn quiet_in_state(zones: &Zones, room: &str) -> String {
+    let state = zones.encode_state();
+    let from = state.find(&format!(r#""id":"{room}""#)).unwrap();
+    let start = from + state[from..].find(r#""quiet":"#).unwrap();
+    let end = start + state[start..].find(r#","quiet_enabled":"#).unwrap();
+    state[start..end].to_string()
+}
+
+#[test]
+fn quiet_hours_switched_off_cap_nothing_and_switched_back_on_cap_again_with_the_same_windows() {
+    let mut h = House::new(Zone::utc(), thursday(6, 29, 0), &[("kitchen", 800)]);
+    h.command(Command::Limit {
+        zone: "kitchen".into(),
+        limit: vol(900),
+    });
+    h.command(Command::QuietHours {
+        zone: "kitchen".into(),
+        windows: vec![
+            QuietWindow::from_persisted("mon,tue,wed,thu,fri,sat,sun 06:30-08:00 0.300").unwrap(),
+        ],
+    });
+    h.command(Command::QuietHoursEnabled {
+        zone: "kitchen".into(),
+        enabled: false,
+    });
+    // 06:30: the window starts. Switched off, it caps nothing: the room's
+    // effective limit is its own limit, and nothing is sent to pull it down.
+    let inside = h.run(61_000, 100);
+    let kitchen = h.zones.zone("kitchen").unwrap();
+    assert_eq!(kitchen.quiet_active, [true], "the clock is inside it");
+    assert_eq!(kitchen.limit, vol(900));
+    assert_eq!(kitchen.effective_limit(), kitchen.limit);
+    assert_eq!(gains(&inside, "kitchen"), []);
+    assert_eq!(h.volume("kitchen"), 800);
+    assert_eq!(h.logged("quiet-hours zone=kitchen"), 0);
+    let windows = quiet_in_state(&h.zones, "kitchen");
+    assert_eq!(
+        windows,
+        r#""quiet":[{"days":["mon","tue","wed","thu","fri","sat","sun"],"start":"06:30","end":"08:00","limit":0.300,"active":true}]"#
+    );
+    assert!(h.zones.encode_state().contains(
+        r#""limit":0.900,"effective_limit":0.900,"quiet":[{"days":["mon","tue","wed","thu","fri","sat","sun"],"start":"06:30","end":"08:00","limit":0.300,"active":true}],"quiet_enabled":false"#
+    ));
+    // A volume above the window's cap is honoured up to the room's limit.
+    h.command(Command::Volume {
+        zone: "kitchen".into(),
+        volume: vol(1000),
+    });
+    assert_eq!(h.volume("kitchen"), 900);
+
+    // Switched back on, still inside the window: the cap applies again, the
+    // endpoints are told, and the windows are the bytes they were.
+    let mut back = h.command(Command::QuietHoursEnabled {
+        zone: "kitchen".into(),
+        enabled: true,
+    });
+    back.extend(h.run(2_000, 100));
+    assert_eq!(
+        h.zones.effective_limit("kitchen"),
+        Some(vol(300)),
+        "the window's cap"
+    );
+    assert_eq!(h.volume("kitchen"), 300);
+    let sent = gains(&back, "kitchen");
+    assert_eq!(
+        sent,
+        [(300, 1000), (300, 0)],
+        "the gain ramps down, then the lower limit follows: {back:?}"
+    );
+    assert!(
+        back.iter().any(|e| matches!(
+            e,
+            Effect::RoomVolume { zone, limit: 300, .. } if zone == "kitchen"
+        )),
+        "{back:?}"
+    );
+    assert_eq!(quiet_in_state(&h.zones, "kitchen"), windows);
+    assert!(h.zones.encode_state().contains(r#""quiet_enabled":true"#));
+}
+
 #[test]
 fn quiet_window_starting_mid_ramp_holds_the_alarm_ramp_within_one_step() {
     let mut h = House::new(Zone::utc(), thursday(6, 59, 0), &[("kitchen", 200)]);

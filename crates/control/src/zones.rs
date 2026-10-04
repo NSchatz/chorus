@@ -144,6 +144,10 @@ pub struct Zone {
     /// (v2) Which of `quiet` are active now, one flag per window. Never
     /// persisted: it is a fact about now, set by the runtime.
     pub quiet_active: Vec<bool>,
+    /// (v2) Whether the room's quiet hours are switched on. While they are
+    /// off the windows stay stored and keep their `quiet_active` flags (the
+    /// clock is still inside them or not), and none of them caps the room.
+    pub quiet_enabled: bool,
     /// (v2) The bonded set, or empty where the room has none and plays the
     /// stream's channels as v1 did.
     pub bond: Vec<BondMember>,
@@ -177,6 +181,7 @@ impl Zone {
             limit: Volume::FULL,
             quiet: Vec::new(),
             quiet_active: Vec::new(),
+            quiet_enabled: true,
             bond: Vec::new(),
             ramp: None,
             sound: SoundSettings::default(),
@@ -210,8 +215,12 @@ impl Zone {
         }
     }
 
-    /// `min(limit, the cap of every active quiet-hours window)`.
+    /// `min(limit, the cap of every active quiet-hours window)`, and `limit`
+    /// alone while the room's quiet hours are switched off.
     pub fn effective_limit(&self) -> Volume {
+        if !self.quiet_enabled {
+            return self.limit;
+        }
         self.quiet
             .iter()
             .zip(self.quiet_active.iter().chain(std::iter::repeat(&false)))
@@ -764,6 +773,13 @@ impl Zones {
                     .iter()
                     .map(|w| now.is_some_and(|t| w.contains(t)))
                     .collect();
+                zone.clamp();
+            }
+            Command::QuietHoursEnabled { enabled, .. } => {
+                // Switching them back on inside a window pulls the volume
+                // down to the cap; switching them off raises nothing.
+                let zone = &mut self.zones[room()];
+                zone.quiet_enabled = *enabled;
                 zone.clamp();
             }
             Command::AlarmSet(alarm) => {
@@ -2500,6 +2516,7 @@ impl Zones {
                 Value::Num(z.effective_limit().literal()),
             ),
             ("quiet".to_string(), Value::Arr(quiet)),
+            ("quiet_enabled".to_string(), Value::Bool(z.quiet_enabled)),
             ("bond".to_string(), members_value(&z.bond)),
             (
                 "ramp".to_string(),

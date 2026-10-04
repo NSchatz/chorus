@@ -1,0 +1,14 @@
+# Canonical input for the catalog v2 quiet_hours_enabled vector.
+#
+# Encoding these field values must produce exactly quiet_hours_enabled.json,
+# and decoding quiet_hours_enabled.json must recover exactly these field values.
+#
+# Switches a room's quiet hours off (0) or on (1). The room's windows stay
+# stored either way; while off, none of them caps the room.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = quiet_hours_enabled
+zone = bedroom
+enabled = 0

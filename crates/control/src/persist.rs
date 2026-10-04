@@ -97,6 +97,14 @@
 //! with neither; the next write is format 6. What a stored source's player
 //! is playing, and whether a labelled input is offered, are facts about now
 //! and stay out.
+//!
+//! # Format 7 (quiet hours switched off and on)
+//!
+//! Format 7 adds one field to `[zone]`, required: `quiet_enabled` (0 or 1,
+//! whether the room's quiet-hours windows cap it). The windows in `quiet`
+//! are stored either way. A format 1 to 6 file loads unchanged with every
+//! room's quiet hours enabled, which is what those formats meant; the next
+//! write is format 7.
 
 use std::fmt;
 use std::io::{self, Write};
@@ -116,10 +124,10 @@ use crate::theater::{TvUpmix, AV_TRIM_MS};
 use crate::zones::{Zone, Zones};
 
 /// The version of this file format, which is what every write produces.
-pub const STATE_FORMAT: u32 = 6;
+pub const STATE_FORMAT: u32 = 7;
 
 /// Every format this build reads.
-pub const READ_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6];
+pub const READ_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7];
 
 /// Why persisted state could not be read.
 #[derive(Debug)]
@@ -239,7 +247,8 @@ pub fn render(zones: &Zones) -> String {
     out.push_str("# format 3 a room's sound, bass management and correction EQ; format 4\n");
     out.push_str("# a room's TV upmix and A/V trim and an autoplay rule's TV behaviour;\n");
     out.push_str("# format 5 the adopted speakers ([speaker]: name, named, room);\n");
-    out.push_str("# format 6 stored sources ([stored-source]) and input labels ([input-label]).\n");
+    out.push_str("# format 6 stored sources ([stored-source]) and input labels ([input-label]);\n");
+    out.push_str("# format 7 whether a room's quiet hours are switched on (quiet_enabled).\n");
     out.push('\n');
     out.push_str(&format!("format = {}\n", STATE_FORMAT));
     out.push_str(&format!("serial = {}\n", zones.serial()));
@@ -298,6 +307,10 @@ pub fn render(zones: &Zones) -> String {
         ));
         out.push_str(&format!("tv_upmix = {}\n", zone.sound.tv_upmix));
         out.push_str(&format!("av_trim_ms = {}\n", zone.av_trim_ms));
+        out.push_str(&format!(
+            "quiet_enabled = {}\n",
+            u8::from(zone.quiet_enabled)
+        ));
     }
     for (endpoint, link) in zones.links() {
         out.push('\n');
@@ -888,6 +901,9 @@ fn load_zone(
     if format >= 4 {
         load_theater(section, &mut zone)?;
     }
+    if format >= 7 {
+        zone.quiet_enabled = section.flag("quiet_enabled")?;
+    }
     Ok(zone)
 }
 
@@ -1097,9 +1113,9 @@ mod tests {
 
     #[test]
     fn a_state_file_this_build_does_not_understand_is_refused_rather_than_guessed() {
-        // Format 6 is this build's own since goal 17; the next one is not.
-        let err = load("format = 7\nserial = 1\n", "x").unwrap_err();
-        assert!(err.to_string().contains("declares format 7"), "{}", err);
+        // Format 7 is this build's own; the next one is not.
+        let err = load("format = 8\nserial = 1\n", "x").unwrap_err();
+        assert!(err.to_string().contains("declares format 8"), "{}", err);
         let err = load("serial = 1\n", "x").unwrap_err();
         assert!(err.to_string().contains("no format version"), "{}", err);
     }

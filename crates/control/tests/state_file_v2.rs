@@ -199,3 +199,84 @@ fn a_write_is_synced_renamed_and_leaves_no_temporary() {
     );
     let _ = std::fs::remove_dir_all(&directory);
 }
+
+// --- format 7: quiet hours switched off and on --------------------------------
+
+const BEDROOM_WINDOWS: &str = "quiet = mon,fri 22:00-07:00 0.200; sun 13:00-15:00 0.300\n";
+
+fn friday_night() -> Option<CivilTime> {
+    Some(CivilTime {
+        weekday: 4,
+        time: ClockTime::parse("23:00").unwrap(),
+    })
+}
+
+#[test]
+fn quiet_hours_switched_off_and_their_windows_survive_a_restart() {
+    let directory =
+        std::env::temp_dir().join(format!("chorus-state-quiet-enabled-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("zones.state");
+    let mut zones = configured();
+    apply(
+        &mut zones,
+        r#"{"v":2,"t":"quiet_hours_enabled","zone":"bedroom","enabled":false}"#,
+    );
+    write_file(&path, &zones).expect("it writes");
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(STATE_FORMAT, 7);
+    assert!(saved.contains("format = 7\n"), "{}", saved);
+    assert!(saved.contains(BEDROOM_WINDOWS), "{}", saved);
+    assert!(saved.contains("quiet_enabled = 0\n"), "{}", saved);
+
+    // The server that replaces it reads the file once, at start.
+    let mut back = persist::read_file(&path, "127.0.0.1:4010")
+        .unwrap()
+        .expect("it is there");
+    std::fs::remove_dir_all(&directory).unwrap();
+    assert_eq!(render(&back), saved, "the same file, byte for byte");
+    let bedroom = back.zone("bedroom").unwrap();
+    assert!(!bedroom.quiet_enabled, "still switched off");
+    assert_eq!(bedroom.quiet, zones.zone("bedroom").unwrap().quiet);
+    assert!(back.zone("kitchen").unwrap().quiet_enabled, "the default");
+    // Inside a window the restarted server still does not cap the room...
+    back.set_civil_time(friday_night());
+    assert_eq!(back.effective_limit("bedroom"), Some(Volume::FULL));
+    // ...until they are switched back on, with the windows it had.
+    apply(
+        &mut back,
+        r#"{"v":2,"t":"quiet_hours_enabled","zone":"bedroom","enabled":true}"#,
+    );
+    assert_eq!(back.effective_limit("bedroom").unwrap().literal(), "0.200");
+    assert!(render(&back).contains(BEDROOM_WINDOWS));
+    assert!(render(&back).contains("quiet_enabled = 1\n"));
+}
+
+#[test]
+fn a_format_6_file_loads_with_quiet_hours_enabled_and_is_written_back_as_format_7() {
+    // What the build before this one wrote: format 6, no `quiet_enabled`.
+    let seven = render(&configured());
+    let six = seven
+        .replace("format = 7\n", "format = 6\n")
+        .replace("quiet_enabled = 1\n", "");
+    assert!(six.contains("format = 6\n") && !six.contains("quiet_enabled ="));
+    let mut back = load(&six, "127.0.0.1:4010").expect("format 6 still loads");
+    assert!(back.zones().iter().all(|z| z.quiet_enabled));
+    assert_eq!(back.zone("bedroom").unwrap().quiet.len(), 2);
+    back.set_civil_time(friday_night());
+    assert_eq!(
+        back.effective_limit("bedroom").unwrap().literal(),
+        "0.200",
+        "its windows cap the room as they did"
+    );
+    assert_eq!(
+        render(&load(&six, "x").unwrap()),
+        seven,
+        "the next write is format 7"
+    );
+    // A format 7 file says it for every room: a missing field is refused,
+    // not defaulted.
+    let missing = seven.replacen("quiet_enabled = 1\n", "", 1);
+    let error = load(&missing, "x").unwrap_err();
+    assert!(error.to_string().contains("quiet_enabled"), "{}", error);
+}
