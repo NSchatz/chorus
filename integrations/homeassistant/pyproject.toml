@@ -11,6 +11,11 @@ dev = [
     "mypy==2.3.1",
     "ruff==0.16.3",
 ]
+# What Home Assistant's own hassfest imports beyond the harness, at the versions
+# core 2026.9.3 pins in requirements_all.txt (`make ha-hassfest`).
+hassfest = [
+    "infrared-protocols==9.0.0",
+]
 
 [tool.uv]
 package = false
@@ -48,7 +53,6 @@ implicit_reexport = true
 [tool.ruff]
 target-version = "py314"
 line-length = 88
-cache-dir = "/tmp/.chorus-ha-ruff"
 
 [tool.ruff.lint]
 select = [
@@ -66,7 +70,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["D", "S101", "S104", "SLF001", "PLR0913", "PLR0915", "ASYNC110", "S105", "S106"]
+"tests/**" = ["D", "S101", "SLF001", "PLR0912", "PLR0913", "PLR0915", "PLR0917", "PT012", "N818", "ASYNC110", "C901"]
 
 [tool.ruff.lint.isort]
 force-sort-within-sections = true

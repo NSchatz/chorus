@@ -35,7 +35,10 @@ def test_the_rich_state() -> None:
     living = state.zone("living")
     assert living is not None
     assert (living.name, living.group, living.volume, living.muted) == (
-        "Living Room", "downstairs", 0.857, False,
+        "Living Room",
+        "downstairs",
+        0.857,
+        False,
     )
     assert living.present == ("endpoint-a", "endpoint-b", "endpoint-c")
     kitchen = state.zone("kitchen")
@@ -44,12 +47,18 @@ def test_the_rich_state() -> None:
     group = state.group_of("bedroom")
     assert group is not None
     assert (group.id, group.kind, group.zones, group.volume, group.source) == (
-        "live-1", "live", ("study", "bedroom"), 0.6, "stream",
+        "live-1",
+        "live",
+        ("study", "bedroom"),
+        0.6,
+        "stream",
     )
     saved = state.saved_group("downstairs")
     assert saved is not None
     assert (saved.name, saved.zones, saved.active) == (
-        "Downstairs", ("living", "kitchen"), True,
+        "Downstairs",
+        ("living", "kitchen"),
+        True,
     )
     assert state.zone("attic") is None
     assert state.group_of("attic") is None
@@ -64,7 +73,9 @@ def test_now_playing_and_labels() -> None:
     record = group.now_playing
     assert record is not None
     assert (record.title, record.artist, record.album) == (
-        "Morning Light", "The Example Quartet", "First Takes",
+        "Morning Light",
+        "The Example Quartet",
+        "First Takes",
     )
     assert (record.duration_ms, record.state, record.via) == (215000, "playing", "upnp")
     study = state.group("study")

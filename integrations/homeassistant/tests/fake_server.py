@@ -14,6 +14,7 @@ import asyncio
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from aiohttp import web
@@ -22,6 +23,9 @@ REPO = Path(__file__).resolve().parents[3]
 SHARED = REPO / "fixtures" / "control"
 SHARED_V2 = SHARED / "v2"
 LOCAL = Path(__file__).resolve().parent / "fixtures"
+
+
+_SERIAL = re.compile(rb'"serial": ?(\d+)')
 
 
 def shared(name: str) -> bytes:
@@ -99,7 +103,13 @@ class FakeChorusServer:
         return len(self._streams)
 
     def set_state(self, state: bytes) -> None:
-        """Replace the state and send it to every subscriber."""
+        """Replace the state and send it to every subscriber.
+
+        A server's serial only grows while it runs, so the new state is given
+        the next serial; every other byte of it is the vector's.
+        """
+        serial = int(_SERIAL.search(self.state_bytes).group(1)) + 1  # type: ignore[union-attr]
+        state = _SERIAL.sub(b'"serial":%d' % serial, state, count=1)
         self.state_bytes = state
         self._model = None
         for queue in self._streams:
@@ -159,7 +169,16 @@ class FakeChorusServer:
         self._streams.append(queue)
         try:
             await response.write(b"data: " + self.state_bytes + b"\n\n")
-            while (item := await queue.get()) is not None:
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), 0.02)
+                except TimeoutError:
+                    # Notice a subscriber that went away, as the server does.
+                    if request.transport is None or request.transport.is_closing():
+                        break
+                    continue
+                if item is None:
+                    break
                 await response.write(b"data: " + item + b"\n\n")
         finally:
             self._streams.remove(queue)
@@ -312,7 +331,7 @@ class FakeChorusServer:
                     room, _half_up(_half_up(room["volume"] * 1000) * wanted / current)
                 )
 
-    def _apply(self, command: dict[str, Any]) -> None:  # noqa: C901, PLR0912
+    def _apply(self, command: dict[str, Any]) -> None:
         kind = command["t"]
         sources = self._sources()
         if kind == "volume":
@@ -340,9 +359,10 @@ class FakeChorusServer:
             target = command["target"]
             if target in {z["id"] for z in self.model["zones"]}:
                 leader = self._zone(target)
-                if leader["group"] == leader["id"] and len(
-                    self._formed(leader["id"])
-                ) == 1:
+                if (
+                    leader["group"] == leader["id"]
+                    and len(self._formed(leader["id"])) == 1
+                ):
                     live = self._live_id()
                     sources[live] = sources.get(leader["id"], "stream")
                     leader["group"] = live

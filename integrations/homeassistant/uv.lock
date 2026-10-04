@@ -718,6 +718,9 @@ dev = [
     { name = "pytest-homeassistant-custom-component" },
     { name = "ruff" },
 ]
+hassfest = [
+    { name = "infrared-protocols" },
+]
 
 [package.metadata]
 
@@ -727,6 +730,7 @@ dev = [
     { name = "pytest-homeassistant-custom-component", specifier = "==0.13.366" },
     { name = "ruff", specifier = "==0.16.3" },
 ]
+hassfest = [{ name = "infrared-protocols", specifier = "==9.0.0" }]
 
 [[package]]
 name = "ciso8601"
@@ -1220,6 +1224,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e8/ac/fb4c578f4a3256561548cd825646680edcadb9440f3f68add95ade1eb791/ifaddr-0.2.0.tar.gz", hash = "sha256:cc0cbfcaabf765d44595825fb96a99bb12c79716b73b44330ea38ee2b0c4aed4", size = 10485, upload-time = "2022-06-15T21:40:27.561Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9c/1f/19ebc343cc71a7ffa78f17018535adc5cbdd87afb31d7c34874680148b32/ifaddr-0.2.0-py3-none-any.whl", hash = "sha256:085e0305cfe6f16ab12d72e2024030f5d52674afad6911bb1eee207177b8a748", size = 12314, upload-time = "2022-06-15T21:40:25.756Z" },
+]
+
+[[package]]
+name = "infrared-protocols"
+version = "9.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/8b/aa/fb324f9072974ef77004334ae46eec0498f4448bcb653799ce7291fb8c3c/infrared_protocols-9.0.0.tar.gz", hash = "sha256:3734faf7faf382f20c310905cd2548a3a14c6f0b9d62625b34b1782839f1ea3b", size = 30501, upload-time = "2026-08-03T10:09:10.203Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/09/c7/3824d41eb8fac446b6d272c5e4a3fe47cc7f9f0d434ff59e7989f2591d31/infrared_protocols-9.0.0-py3-none-any.whl", hash = "sha256:84d9236bc43991d11df4ff884caa1f154edc5d9bb92cac5b15c804f64f80a73f", size = 47732, upload-time = "2026-08-03T10:09:09.107Z" },
 ]
 
 [[package]]

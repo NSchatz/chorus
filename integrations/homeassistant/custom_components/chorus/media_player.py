@@ -147,10 +147,7 @@ def source_from_media_id(state: State, media_id: str) -> str:
 
 
 def _origin(url: str) -> tuple[str, str | None, int | None] | None:
-    try:
-        parsed = URL(url)
-    except ValueError:
-        return None
+    parsed = URL(url)
     if parsed.scheme not in ("http", "https") or not parsed.host:
         return None
     return (parsed.scheme, parsed.host, parsed.port)
@@ -189,6 +186,15 @@ class ChorusMediaPlayer(ChorusEntity, MediaPlayerEntity):
     def formed_group(self) -> Group | None:
         """Return the formed group this entity speaks for."""
         raise NotImplementedError
+
+    async def async_added_to_hass(self) -> None:
+        """Let the players added before this one name it among their members.
+
+        Members are entity ids, and an entity id exists only once its entity is
+        registered: the first room of a group is written before the second is.
+        """
+        await super().async_added_to_hass()
+        self.coordinator.async_update_listeners()
 
     @property
     def _record(self) -> NowPlaying | None:
@@ -316,10 +322,13 @@ class ChorusMediaPlayer(ChorusEntity, MediaPlayerEntity):
                 self.hass, media_id, self.entity_id
             )
             media_id = item.url
-        url = async_process_play_media_url(self.hass, media_id)
         # Refused here, before any request leaves: the server fetches only from
         # Home Assistant itself (and holds its own list as well).
-        origin = _origin(url)
+        try:
+            url = async_process_play_media_url(self.hass, media_id)
+            origin = _origin(url)
+        except ValueError:
+            origin = None
         if origin is None or origin not in own_origins(self.hass):
             raise ServiceValidationError(
                 translation_domain=DOMAIN, translation_key="announce_origin"
@@ -454,6 +463,7 @@ class ChorusRoomMediaPlayer(ChorusRoomEntity, ChorusMediaPlayer):
         server_id = self.coordinator.server.id
         if (
             entry is not None
+            and entry.domain == "media_player"
             and entry.platform == DOMAIN
             and entry.config_entry_id == self.coordinator.config_entry.entry_id
         ):

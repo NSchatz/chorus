@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
+from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.core import HomeAssistant
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.chorus.const import DOMAIN
-from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.core import HomeAssistant
 
 from .fake_server import FakeChorusServer, shared
 
@@ -61,3 +61,26 @@ async def wait_for(condition, timeout: float = 5.0) -> None:  # noqa: ASYNC109
     async with asyncio.timeout(timeout):
         while not condition():
             await asyncio.sleep(0.005)
+
+
+def room(hass: HomeAssistant, zone_id: str, server_id: str = SERVER_ID) -> str:
+    """Return the entity id of a room's media player."""
+    return _entity_id(hass, "media_player", f"{server_id}:room:{zone_id}")
+
+
+def saved_group(hass: HomeAssistant, group_id: str, server_id: str = SERVER_ID) -> str:
+    """Return the entity id of a saved group's media player."""
+    return _entity_id(hass, "media_player", f"{server_id}:group:{group_id}")
+
+
+def group_volume(hass: HomeAssistant, zone_id: str, server_id: str = SERVER_ID) -> str:
+    """Return the entity id of a room's group-volume number."""
+    return _entity_id(hass, "number", f"{server_id}:room:{zone_id}:group_volume")
+
+
+def _entity_id(hass: HomeAssistant, platform: str, unique_id: str) -> str:
+    from homeassistant.helpers import entity_registry as er  # noqa: PLC0415
+
+    entity_id = er.async_get(hass).async_get_entity_id(platform, DOMAIN, unique_id)
+    assert entity_id is not None, unique_id
+    return entity_id

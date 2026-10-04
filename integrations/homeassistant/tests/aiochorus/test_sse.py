@@ -14,13 +14,24 @@ def test_one_event_in_one_chunk() -> None:
 @pytest.mark.parametrize("ending", [b"\n", b"\r\n", b"\r"])
 def test_split_at_every_byte_boundary(ending: bytes) -> None:
     stream = (
-        b": a comment" + ending
-        + b"data: first" + ending + ending
-        + b"event: ignored" + ending
-        + b"data:second" + ending
-        + b"data: line two" + ending + ending
-        + b"data" + ending + ending
-        + b"data: third" + ending + ending
+        b": a comment"
+        + ending
+        + b"data: first"
+        + ending
+        + ending
+        + b"event: ignored"
+        + ending
+        + b"data:second"
+        + ending
+        + b"data: line two"
+        + ending
+        + ending
+        + b"data"
+        + ending
+        + ending
+        + b"data: third"
+        + ending
+        + ending
     )
     for cut in range(len(stream) + 1):
         parser = SSEParser()

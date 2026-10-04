@@ -40,7 +40,9 @@ def big_state() -> bytes:
     """A valid state message larger than 64 KiB: a house of 150 rooms."""
     raw = json.loads(shared("state-rich.json"))
     zone = raw["zones"][1]
-    raw["zones"] = [zone | {"id": f"room-{n}", "group": f"room-{n}"} for n in range(150)]
+    raw["zones"] = [
+        zone | {"id": f"room-{n}", "group": f"room-{n}"} for n in range(150)
+    ]
     raw["groups"] = [
         raw["groups"][1] | {"id": f"room-{n}", "kind": "room", "zones": [f"room-{n}"]}
         for n in range(150)

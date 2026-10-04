@@ -1,0 +1,135 @@
+# serializer version: 1
+# name: test_diagnostics_snapshot
+  dict({
+    'connected': True,
+    'entry': dict({
+      'data': dict({
+        'host': '**REDACTED**',
+      }),
+      'disabled_by': None,
+      'discovery_keys': dict({
+      }),
+      'domain': 'chorus',
+      'minor_version': 1,
+      'options': dict({
+      }),
+      'pref_disable_new_entities': False,
+      'pref_disable_polling': False,
+      'source': 'user',
+      'subentries': list([
+      ]),
+      'title': '**REDACTED**',
+      'unique_id': '**REDACTED**',
+      'version': 1,
+    }),
+    'server': dict({
+      'announce_origins': 1,
+      'catalogs': list([
+        1,
+        2,
+      ]),
+      'software': '0.18.0',
+    }),
+    'state': dict({
+      'counts': dict({
+        'alarms': 1,
+        'autoplay': 2,
+        'endpoints': 5,
+        'groups': 2,
+        'inputs': 1,
+        'saved_groups': 1,
+        'sleep': 1,
+        'zones': 4,
+      }),
+      'groups': list([
+        dict({
+          'id': 'downstairs',
+          'kind': 'saved',
+          'now_playing': None,
+          'source': 'line-in',
+          'volume': 0.6,
+          'zones': list([
+            'living',
+            'kitchen',
+          ]),
+        }),
+        dict({
+          'id': 'live-1',
+          'kind': 'live',
+          'now_playing': None,
+          'source': 'stream',
+          'volume': 0.6,
+          'zones': list([
+            'study',
+            'bedroom',
+          ]),
+        }),
+      ]),
+      'input_labels': list([
+      ]),
+      'inputs': 1,
+      'saved_groups': list([
+        dict({
+          'active': True,
+          'id': 'downstairs',
+          'name': 'Downstairs',
+          'zones': list([
+            'living',
+            'kitchen',
+          ]),
+        }),
+      ]),
+      'serial': 31,
+      'zones': list([
+        dict({
+          'effective_limit': 1.0,
+          'endpoints': 3,
+          'group': 'downstairs',
+          'id': 'living',
+          'limit': 1.0,
+          'muted': False,
+          'name': 'Living Room',
+          'present': 3,
+          'transport': 'wired',
+          'volume': 0.857,
+        }),
+        dict({
+          'effective_limit': 0.4,
+          'endpoints': 0,
+          'group': 'downstairs',
+          'id': 'kitchen',
+          'limit': 0.4,
+          'muted': False,
+          'name': 'kitchen',
+          'present': 0,
+          'transport': 'wired',
+          'volume': 0.343,
+        }),
+        dict({
+          'effective_limit': 1.0,
+          'endpoints': 1,
+          'group': 'live-1',
+          'id': 'study',
+          'limit': 1.0,
+          'muted': False,
+          'name': 'study',
+          'present': 1,
+          'transport': 'wired',
+          'volume': 1.0,
+        }),
+        dict({
+          'effective_limit': 0.2,
+          'endpoints': 1,
+          'group': 'live-1',
+          'id': 'bedroom',
+          'limit': 1.0,
+          'muted': False,
+          'name': 'bedroom',
+          'present': 1,
+          'transport': 'wireless',
+          'volume': 0.2,
+        }),
+      ]),
+    }),
+  })
+# ---
