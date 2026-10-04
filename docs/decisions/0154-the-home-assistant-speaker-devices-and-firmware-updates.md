@@ -1,4 +1,4 @@
-# 0000: every adopted speaker is a Home Assistant device linked to its room, and a speaker that reports its firmware has an update entity whose install action is the only sender of `firmware_install`, offering only a verified image above the running version
+# 0154: every adopted speaker is a Home Assistant device linked to its room, and a speaker that reports its firmware has an update entity whose install action is the only sender of `firmware_install`, offering only a verified image above the running version
 
 - Status: accepted, 2026-10-04. Extends 0138 (the Home Assistant integration), which left
   speaker devices and firmware to this goal; uses 0110 (explicit firmware installs) as it is.

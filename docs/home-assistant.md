@@ -97,7 +97,7 @@ one-room live group behind; `join` has no form that means "leave".
 
 ## Speakers and firmware: nothing installs without the install action
 
-The model is `docs/decisions/0000-the-home-assistant-speaker-devices-and-firmware-updates.md`;
+The model is `docs/decisions/0154-the-home-assistant-speaker-devices-and-firmware-updates.md`;
 the server's side is `docs/firmware-updates.md` and `docs/control-plane.md`, "Firmware: staged
 images and explicit installs". K93 and I13 hold here as they do on the server.
 
