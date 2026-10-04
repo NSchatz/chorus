@@ -1,9 +1,152 @@
 # P4: The bench purchase packet
 
 - Decisions: K38
-- Status: PROPOSED (chorus goal 1, 2026-09-30); decided at Checkpoint K; every line re-evaluated from the day's offers on 2026-10-04, at the owner's request, for the owner's choice of tier
-- If deferred: The recommended tier is filed as the Needs packet, marked "awaiting choice"
+- Status: DECIDED 2026-10-04 by the owner: the final list in "Decision: the owner's final list" below replaces Options A to C (first PROPOSED in chorus goal 1, 2026-09-30; deferred at Checkpoint K; every line re-evaluated from the day's offers on 2026-10-04)
+- If deferred: The recommended tier is filed as the Needs packet, marked "awaiting choice" (moot since 2026-10-04)
 - Builds on: goal 7 (§11 item 5: "Bench packet (P4 as settled): the buy list, wiring, the exact commands for SOUND-2, RIG-3 and SYNC-4"), goal 8 and goal 9 (§12, §13: the P1 board and the EMBEDDED-5 packet), goal 10 (§14: the Linux tier), goal 24 (§28: the compact speaker's PoE+ power path)
+
+## Decision: the owner's final list (2026-10-04)
+
+The owner went through every line in an interactive session on 2026-10-04 and fixed the list
+below. It replaces Options A to C, which stay as the record of that day's offers. The program
+never orders (K4): buying is the owner's, and so is telling a session what was bought.
+
+What shaped it (the owner's words where quoted):
+
+- **The speakers carry the owner's own main board:** "My own main board. I do not want to buy
+  the esparagus brick if I dont have to." The embedded bench is therefore a prototype wired from
+  modules with the chips that board will carry (ESP32-S3 module, W5500, TAS5825M), not the
+  Brick. This departs from the devices repo's buy-the-module rule for the speaker boards;
+  recording that departure where the rule lives is a separate step.
+- **Power, Wi-Fi and the rack:** K90 stands (PoE+ for compact speakers, mains for two-ways,
+  subs and the theater front). K91 stays an option with no Wi-Fi speaker planned (the firmware
+  keeps its Wi-Fi path; every speaker gets Ethernet). The rack amp (K70, K74) is dropped: no
+  room in the plan wires speakers back to the rack.
+- **The house plan** (the room-list Needs item): six rooms and 19 speakers.
+  - The living room and the master bedroom are each 5.1 with a TV: two-way L, C and R and a sub
+    on mains, compact surrounds on PoE+.
+  - A compact pair each in the kitchen and the garage, one compact in the primary bath, and an
+    outdoor pair on the deck, all on PoE+.
+  - Both chorus TVs have an optical output, so each TV hub is a Pi with an S/PDIF receiver and
+    needs no ARC extractor. The two bench Pis become those hubs, which leaves the rig's two
+    DAC boards as the only lines with no later job.
+- **The speaker designs are measured, not only simulated:** a measurement mic, an impedance
+  jig and a small measurement amp join the bench.
+- **AliExpress first:** "I would like to create a large ali express order and get everything we
+  can off of it". Every AliExpress line is a NON-US EXCEPTION the owner grants. US sellers keep
+  the lines that cost less there (the Pis, their supplies, the UMC202HD) or that come from their
+  maker (Chip Quik, Andonstar, Adafruit parts).
+- **The owner hand-assembles the boards:** the assembly tools are bought with the first PCB
+  order and the oscilloscope when the first PCB arrives.
+- **Owned, not bought:** microSD cards, headphones, a passive speaker and speaker wire. The
+  owner's own ESP32-S3 boards stay unidentified and are not used.
+- **Out of this list by the owner's choice:** the speakers' own parts (drivers, supplies,
+  enclosures) and the cable pull and network gear.
+
+Price bases are as in the offers tables, plus **at cart**: an AliExpress price that no
+automated read could see (a login redirect or a blank page), read by the owner in the cart.
+
+### Buy now
+
+| # | Item | Seller, ship-from | Qty | Unit | Line | Basis | Job on the bench, then in the house |
+|---|---|---|---|---|---|---|---|
+| F1 | Raspberry Pi 5 4GB | CanaKit, US `ASSUMED` | 1 | $110.00 | $110.00 | read | endpoint A: the bench server, the builds (`tools/lib.sh` compiles the workspace with all targets) and the interface's host; then the living-room TV hub |
+| F2 | Raspberry Pi 5 2GB | CanaKit | 1 | $77.50 | $77.50 | read | endpoint B; then the master-bedroom TV hub |
+| F3 | Raspberry Pi 27 W USB-C supply | CanaKit | 2 | $12.95 | $25.90 | read | the Pis (endpoint A powers the interface over USB); then the hubs |
+| F4 | Behringer UMC202HD | Amazon US | 1 | $59.00 | $59.00 | snippet; sold-by to check | the rig's capture; then the measurement interface (the mic's phantom power, REW's loopback, the impedance jig) |
+| F5 | AITRIP ESP32-S3 DevKitC N16R8, 3-pack | Amazon US (ships from Amazon) | 1 | $18.99 | $18.99 | read | the two module prototypes and a spare; N16R8 is the module the owner's board would carry (LCSC stocks it; not the N8R8) |
+| F6 | Adafruit PCM5102 I2S DAC (6250) | Adafruit, US | 2 | $4.95 | $9.90 | read | each Pi's line output into the rig; no job after the bench |
+| F7 | Adafruit ICS-43434 I2S microphone (6049) | Adafruit, US | 1 | $8.95 | $8.95 | read | the prototype's microphone and the firmware's mic gate |
+| F8 | Talent Y35Q210, 3.5 mm TRS to dual 1/4" TS, 10 ft | Parts Express | 3 | $6.98 | $20.94 | read | two rig cables; one from the interface's outputs to the measurement amp |
+| F9 | Audtek 3.5 mm stereo Y (one male, two female) | Parts Express | 1 | $3.29 | $3.29 | read | the rig's self-calibration: one source into both inputs |
+| F10 | Dayton Audio EMM-6 | Parts Express | 1 | $59.98 | $59.98 | read | measuring the speaker designs (an individual calibration file; XLR with phantom power keeps REW's loopback timing) |
+| F11 | Talent PCQ03, 1/4" TRS patch, 3 ft | Parts Express | 1 | $6.59 | $6.59 | read | the impedance jig and REW's loopback |
+| F12 | Alligator-clip test leads, 10 | Parts Express | 1 | $2.12 | $2.12 | read | the impedance jig |
+| F13 | 10 uF 100 V non-polarized capacitor | Parts Express | 4 | $1.09 | $4.36 | read | two load-and-divider sets (DC blocking, bench packet S7.4) |
+| F14 | Rean NYS228 1/4" TRS plug | Parts Express | 2 | $2.09 | $4.18 | read | the two divider sets into the interface |
+| F15 | Caddock MP915-100-1% (100 ohm, non-inductive, 1.25 W) | DigiKey | 1 | $4.45 | $4.45 | snippet | the impedance jig's sense resistor |
+| F16 | 1 kohm and 9.1 kohm 1/4 W 1% metal film, 5-packs | Amplified Parts | 1 each | $0.50 | $1.00 | read | the divider sets |
+| F17 | 100 ohm 1/4 W 1% metal film, 5-pack | Amplified Parts | 1 | $0.50 | $0.50 | read; the value list to check | the impedance jig's calibration reference |
+| F18 | Louder Raspberry Hat Plus 1X (TAS5825M, 7-26 V, no MCU) | Elecrow, sold by Sonocotta; ship-from not stated; **NON-US EXCEPTION** | 2 | $25.00 | $50.00 | read | the prototypes' amplifiers (the owner's board's amplifier chip); then the known-good amplifier the first PCBs are compared against |
+| F19 | Korad KA3005D (30 V 5 A, linear), set to 110 V | AliExpress; **NON-US EXCEPTION** | 1 | $53.85 to $88.71 | same | search page (lowest variant) | 24 V for the Hat Plus amplifiers; then every board's first current-limited power-up |
+| F20 | W5500 SPI Ethernet module, INT and RST broken out | AliExpress | 3 | $3.99 | $11.97 | search page | the two prototypes and a spare |
+| F21 | 24 MHz 8-channel FX2 logic analyzer (sigrok fx2lafw) | AliExpress | 2 | $5.83 | $11.66 | search page | the GPIO marker cross-check (S7.5), I2C and I2S debugging, and a spare; then PCB bring-up |
+| F22 | TPA3116 class-D amplifier board with a 3.5 mm input | AliExpress | 2 | at cart | at cart | not read | the measurement amplifier (interface to a driver under test, powered by F19) and a spare |
+| F23 | RX24 8 ohm 50 W aluminium-housed resistor | AliExpress | 4 | from $0.75 | from $3.00 | search page (lowest option) | the dummy loads of the two divider sets |
+| F24 | Dupont jumper set (M-M, M-F, F-F) | AliExpress | 1 | at cart | at cart | not read | the module wiring and the analyzer |
+| F25 | Full-size solderless breadboard | AliExpress | 1 | at cart | at cart | not read | the prototype's controls |
+| F26 | 6 x 6 mm tactile buttons, 50 | AliExpress | 1 | $0.33 | $0.33 | search page (sale price) | the firmware's buttons on the prototype |
+| F27 | WS2812B RGB LED module | AliExpress | 1 | at cart | at cart | not read | the status LED on the prototype |
+| F28 | DPDT slide switch | AliExpress | 1 | at cart | at cart | not read | the mic mute switch's hardware rule (`docs/hardware/controls.md`) on the prototype |
+| F29 | USB-A to USB-C data cable | AliExpress | 2 | at cart | at cart | not read | flashing and the serial console of the prototypes |
+| F30 | 63/37 rosin-core solder wire, 0.5 to 0.8 mm | AliExpress | 1 | at cart | at cart | not read | the module wiring and the divider sets |
+| F31 | Microphone boom stand | AliExpress | 1 | at cart | at cart | not read | the EMM-6 |
+| F32 | XLR cable, about 5 m | AliExpress | 1 | at cart | at cart | not read | the EMM-6 into the UMC202HD |
+| | **Total of the priced lines** | | | | **$548.46 to $583.32** | | plus the at-cart lines, shipping and tax |
+
+Also: 99% isopropyl alcohol from a local store (flux cleanup; not priced). On arrival: a USB-A to
+USB-B cable only if the UMC202HD comes without one; the Hat Plus power lead once its connector is
+seen (no page read documents it: "7..26V from external source", Sonocotta's README); four
+Ethernet patch cables, crimped by the owner from the cable pull's Cat6.
+
+### With the first PCB order
+
+| # | Item | Seller | Price | Basis | Job |
+|---|---|---|---|---|---|
+| G1 | YIHUA 959D I hot-air station, 110 V | Amazon, YIHUA's store | $53.99 | read | rework, and the QFN and module ground pads |
+| G2 | Soiiw hot plate, 200 x 200 mm, 850 W, 110 V | Amazon | $49.59 | read | reflowing a pasted board |
+| G3 | Chip Quik SMD291AX10 (Sn63/Pb37, 10 cc) | Amazon, sold by Chip Quik | $20.95 | read | solder paste |
+| G4 | Chip Quik SMD291 tack flux, 10 cc | Amazon, sold by Chip Quik | $15.95 | read | flux |
+| G5 | Andonstar AD407 digital microscope | Amazon, sold by Andonstar | $199.99 | read | soldering and inspection under magnification |
+| G6 | GemOro 10x triplet loupe | Amazon, sold by GemOro | $16.95 | read | quick joint checks |
+| G7 | ESD tweezers, 2 mm solder wick, Kapton tape | AliExpress | at cart | not read | hand assembly |
+| G8 | Frameless stencil with each board order | JLCPCB | $3.00 (to 100 x 100 mm) to $10.72 | read | paste application |
+| G9 | Rigol DHO802 (2 channels, 12-bit, 70 MHz), when the first PCB arrives | Rigol NA | $329.00 | read | PoE startup, supply ripple, the class-D output, resets |
+
+G1 to G6 total $357.42; with G9, $686.42, plus G7, G8, shipping and tax.
+
+### At install: the two TV hubs
+
+| # | Item | Seller | Qty | Line | Basis |
+|---|---|---|---|---|---|
+| H1 | HiFiBerry Digi+ I/O | HiFiBerry, Switzerland; **NON-US EXCEPTION** (shipping and duties extra) | 2 | $109.80 | read |
+| H2 | TOSLINK cable, 6 ft | Parts Express | 2 | $6.58 | read |
+| H3 | Raspberry Pi micro-HDMI to HDMI cable, 2 m (CEC) | PiShop.us | 2 | $15.90 | read |
+| H4 | Hub cases | printed from the owner's PLA | 2 | none | |
+
+Total $132.28 plus shipping. The TV bench session (bench packet S8) waits for these.
+
+### Only if a test calls for it
+
+- ESP32-P4X-Function-EV-Board ($59.74, snippet): if two S3 prototypes miss the 0.5 ms
+  stereo-pair bound (P1's named escalation).
+- Kingst LA2016 ($138, read): if 20 MHz SPI has to be captured at speed; otherwise the board
+  profile's SPI clock is lowered while debugging.
+- A second PoE+ switch: if the ES228GP reserves 30 W per port and the measured draw of eleven
+  PoE+ speakers does not fit its 250 W.
+- Pulse-Eight USB-CEC adapter ($48.08): if a hub's own HDMI CEC cannot reach its TV.
+
+### Dropped from Option B, and why
+
+- B1, B2 (the Brick and its shipping): the owner's own board; the module prototype replaces it.
+- B3, B4 (Waveshare boards and their PCM5102s): no firmware board profile plays through a
+  DAC-only board (`board_audio_output` is `amplifier`, or `none` on the emulator only,
+  `firmware/src/endpoint_config.c`), and the Brick's W5500 INT pin, their other reason, is
+  confirmed on GPIO6 (`firmware/config/endpoint.conf`).
+- A2 (Raspberry Pi DAC+): F6 does the rig's job, and the Pis become hubs with a different HAT.
+- A4 (SD cards), B8 (speakers): owned. A8 (Hosa RCA cables): the DACs have 3.5 mm jacks.
+- B5 (PoE injector): the ES228GP. B6 (PoE splitter): the lab supply's current readout measures
+  the amplifier's draw. B7 (24 V supply): F19. B10 (patch cables): crimped by the owner.
+- C1 and C5 move to "Only if a test calls for it"; C2, C3 and C4 are not bought.
+
+### Checks at checkout
+
+- F19: the variant is the KA3005D or KA3005P, set to 110 V.
+- F20: the listing's photo shows the INT and RST pins.
+- F22: the board has a 3.5 mm input jack.
+- F4: sold by Amazon, not a reseller. F18: Elecrow's shipping cost and ship-from.
+- F17: 100 ohm is in Amplified Parts' value list.
+- The AliExpress sale seen on 2026-10-04 ends 2026-10-08 03:59 UTC.
 
 ## Question
 
@@ -177,6 +320,9 @@ URL and how it was read. All rows were read 2026-10-04. The price-basis words:
 
 ## Options
 
+Superseded on 2026-10-04 by the owner's final list ("Decision: the owner's final list" above);
+kept as the record of the offers and the reasoning of 2026-10-04.
+
 Every line: the pick, why it is the best value that meets the line's requirement, and the cheaper
 equivalent with what it would change in `docs/bench-packet.md`. Prices are the 2026-10-04 offers
 above; "Basis" is the pick's price basis. Shipping is not in any total except B2.
@@ -287,6 +433,9 @@ stock. New flags: B6 is sold out at its maker's store, and the Pi 5 2GB costs US
 
 ## Recommendation
 
+Superseded on 2026-10-04: the owner's final list ("Decision: the owner's final list" above)
+replaces Option B.
+
 **Recommendation:** Option B, the recommended tier at $734.76, because it is the smallest set that runs every bench phase through EMBEDDED-5 on the platform and link P1 recommends, including the compact speaker's PoE+ power path, and after the re-evaluation none of it waits on a pre-order.
 
 Why: Minimal proves Linux sync but leaves EMBEDDED-5 and the TAS register map unmeasured, which is
@@ -304,6 +453,8 @@ either dearer than the US one or not worth the risk, and each such line says so.
 
 ## If the owner defers
 
+Moot since 2026-10-04: the owner chose the final list above.
+
 The recommended tier (Option B) is filed as the Needs packet, marked "awaiting choice"; goal 7's
 bench packet, wiring and commands are written against it. Nothing is ordered (K4). The cost: bench
 sessions cannot start until the owner buys. B1's stock at Elecrow is described as limited, and
@@ -311,6 +462,11 @@ every other seller of the S3 variant is out, so a long deferral may bring back t
 2026-09-30 list had.
 
 ## Open inputs
+
+Since 2026-10-04 the final list's open inputs are its "Checks at checkout", the Hat Plus power
+connector (seen on arrival) and whether the UMC202HD ships with a USB cable. The inputs below
+concern Options A to C; the ones about the Brick, B3, B5 to B8 and the owner's own S3 boards no
+longer apply to anything bought.
 
 - The owner's ESP32-S3 boards' module marking and `esptool.py chip_id` (goal-1 Needs item): decides
   whether one fits WIFI-7 (needs PSRAM, `ASSUMED`).
@@ -383,6 +539,25 @@ Read or tried on 2026-10-04 (the re-evaluation; "not read" pages are named in th
 - AliExpress search-results pages (titles, lowest-variant prices and item URLs; no store, ship-from or shipping): https://www.aliexpress.com/w/wholesale-usb-logic-analyzer-24mhz-8ch.html, https://www.aliexpress.com/w/wholesale-waveshare-esp32-s3-eth.html, https://www.aliexpress.com/w/wholesale-poe-splitter-24v-gigabit.html, https://www.aliexpress.com/w/wholesale-pcm5122-raspberry-pi-dac-hat.html, https://www.aliexpress.com/w/wholesale-pcm5102a-i2s-dac.html, https://www.aliexpress.com/w/wholesale-behringer-umc202hd.html, https://www.aliexpress.com/w/wholesale-esp32-p4-function-ev-board.html, https://www.aliexpress.com/w/wholesale-dslogic-plus.html, https://www.aliexpress.com/w/wholesale-24v-3a-power-adapter-5.5x2.1.html, https://www.aliexpress.com/w/wholesale-raspberry-pi-5-27w-power-supply.html, https://www.aliexpress.com/w/wholesale-100w-8-ohm-dummy-load-resistor.html, https://www.aliexpress.com/w/wholesale-cat6-patch-cable-1m.html, https://www.aliexpress.com/w/wholesale-rca-to-6.35mm-mono-cable.html, https://www.aliexpress.com/w/wholesale-dupont-jumper-wire-male-to-male-10cm.html, https://www.aliexpress.com/w/wholesale-poe-injector-802.3at-30w-gigabit.html, https://www.aliexpress.com/w/wholesale-micro-sd-card-32gb-a1.html, https://www.aliexpress.com/w/wholesale-esparagus-audio-brick.html, read 2026-10-04
 - Not readable on 2026-10-04 (HTTP 403, a CAPTCHA, a timeout or a script-only page): Amazon product pages, AliExpress item pages (a login redirect), Sweetwater, B&H, Mouser, DigiKey, Jameco, Monoprice, Micro Center, Parts Express, Crutchfield
 
+Read or tried on 2026-10-04 for the owner's final list (Parts Express read through its product
+data feed; AliExpress through search pages only):
+
+- CanaKit, Raspberry Pi 5 4GB: https://www.canakit.com/raspberry-pi-5-4gb.html, read
+- Amazon, AITRIP ESP32-S3 DevKitC N16R8 3-pack: https://www.amazon.com/dp/B0CGYXJB6Y, read
+- Adafruit ICS-43434 I2S microphone: https://www.adafruit.com/product/6049, read
+- Parts Express: Talent Y35Q210 https://www.parts-express.com/Talent-Y35Q210-3.5mm-Stereo-Male-to-Dual-1-4-TS-Left-Righ-240-9462, Audtek YMFS35 https://www.parts-express.com/Audtek-YMFS35-6-Premium-Y-Cable-1-Slim-3.5-mm-Stereo-Male-to-Two-3.5-mm-Stereo-Females-181-977, Dayton EMM-6 https://www.parts-express.com/Dayton-Audio-EMM-6-Electret-Measurement-Microphone-390-801, Talent PCQ03 https://www.parts-express.com/Talent-PCQ03-Patch-Cable-1-4-TRS-Male-Male-3-ft.-240-911, test leads https://www.parts-express.com/Small-Alligator-Clip-Test-Lead-Set-10-Pcs.-360-150, 10 uF non-polarized https://www.parts-express.com/10uF-100V-Non-Polarized-Capacitor-027-340, Rean NYS228 https://www.parts-express.com/Rean-NYS228-1-4-Stereo-Phone-Plug-092-132, TOSLINK 6 ft https://www.parts-express.com/Toslink-Digital-Optical-Audio-Cable-6-ft.-240-1062, read
+- DigiKey, Caddock MP915-100-1%: https://www.digikey.com/en/products/detail/caddock-electronics-inc/MP915-100-1/1284403, snippet (the page refused the read)
+- Amplified Parts, 1/4 W 1% metal film resistors: https://www.amplifiedparts.com/products/resistors-14-watt-metal-film-1-tolerance, read
+- Elecrow and Lectronz, Louder Raspberry Hat Plus: https://www.elecrow.com/louder-raspberry-hat-plus.html and https://lectronz.com/products/louder-raspberry-hat-plus, read; Sonocotta's README (product documentation only, no design file): https://github.com/sonocotta/raspberry-media-center, read
+- AliExpress search pages, read: https://www.aliexpress.com/w/wholesale-korad-ka3005d.html, https://www.aliexpress.com/w/wholesale-yihua-959d.html, https://www.aliexpress.com/w/wholesale-uyue-946c-hot-plate.html; and the listings https://www.aliexpress.us/item/3256806809087310.html (W5500), https://www.aliexpress.us/item/3256805202626131.html (FX2), https://www.aliexpress.us/item/3256805230664798.html (RX24), https://www.aliexpress.us/item/3256808746038111.html (buttons) as search-page entries. Blank or redirected to a login: the Rigol, Siglent, Hantek, TPA3116, microphone stand, XLR cable and solder paste searches
+- Amazon: YIHUA 959D I https://www.amazon.com/dp/B0F3XK88CR, Soiiw hot plate https://www.amazon.com/dp/B083Z38S9P, Chip Quik SMD291AX10 https://www.amazon.com/dp/B01N9W3I86, Chip Quik SMD291 flux https://www.amazon.com/dp/B00CM2A97S, Andonstar AD407 https://www.amazon.com/dp/B07VK52X9C, GemOro loupe https://www.amazon.com/dp/B00E4XWNEU, read
+- JLCPCB stencils: https://jlcpcb.com/resources/small-stencil and https://jlcpcb.com/help/article/extra-charge-for-stencil, read
+- Rigol DHO800 series: https://www.rigolna.com/products/rigol-digital-oscilloscopes/dho800/, read
+- HiFiBerry Digi+ I/O: https://www.hifiberry.com/shop/boards/hifiberry-digi-io/, read; PiShop.us micro-HDMI to HDMI 2 m: https://www.pishop.us/product/micro-hdmi-to-standard-hdmi-a-m-2m-cable-black/, read
+- Kingst products: https://www.qdkingst.com/en/products, read
+- Raspberry Pi overlays README (the `hifiberry-dac` overlay): https://raw.githubusercontent.com/raspberrypi/firmware/master/boot/overlays/README, read
+- Focusrite Scarlett Solo 3rd and 4th Gen specifications (considered as the rig's interface; the owner chose the UMC202HD): https://userguides.focusrite.com/hc/en-gb/articles/23031457381138-Solo-3rd-Gen-specifications and https://userguides.focusrite.com/hc/en-gb/articles/17505454908562-Solo-4th-Gen-Specifications, snippets
+
 ## What was read
 
 Local: `/cache/tmp/chorus-g1/agent-rules.md`, `/cache/tmp/chorus-g1/proposal-format.md`;
@@ -396,4 +571,15 @@ CERN-OHL-S or GPL hardware design file was opened.
 
 Web (2026-10-04, the re-evaluation): every URL in the offers tables and in the 2026-10-04 block of
 Sources, plus web searches per line for current prices and for AliExpress listings. No GPL source
+file and no CERN-OHL-S or GPL hardware design file was opened.
+
+The final list (2026-10-04): the owner's answers in the interactive session; local files in this
+repository (`firmware/config/endpoint.conf`, `firmware/boards/*.conf`,
+`firmware/src/endpoint_config.c`, `firmware/main/app_main.c`, `tools/lib.sh`, `docs/bench.md`,
+`docs/bench-packet.md`, `docs/hardware/controls.md`, `docs/hardware/linux-multichannel.md`,
+proposals P1, P2, P3 and P8); the owner's home repository (`spaces/`,
+`systems/14-low-voltage/README.md`, `projects/workstreams/2026-08-low-voltage.md`,
+`data/assets/14-low-voltage.yml`), homelab repository (`docs/network.md`,
+`home-automation/homeassistant/registry.json`) and inventory repository (`data/spools.yml`,
+`data/parts/`, `data/tools/`); and every URL in the final-list block of Sources. No GPL source
 file and no CERN-OHL-S or GPL hardware design file was opened.
