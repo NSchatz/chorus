@@ -1,4 +1,4 @@
-# 0000: a speaker's diagnostics are eight Home Assistant sensors read from `GET /metrics` by a second coordinator, one scrape a minute and only while one of them is enabled, all in the diagnostic category and all but the link and the firmware version disabled by default
+# 0157: a speaker's diagnostics are eight Home Assistant sensors read from `GET /metrics` by a second coordinator, one scrape a minute and only while one of them is enabled, all in the diagnostic category and all but the link and the firmware version disabled by default
 
 - Status: accepted, 2026-10-04. Extends 0138 (the Home Assistant integration) and 0154 (the
   speaker devices); uses 0115 (the Prometheus exporter on the control listener) as it is.

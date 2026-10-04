@@ -134,7 +134,7 @@ images and explicit installs". K93 and I13 hold here as they do on the server.
 
 ## Speaker diagnostics: read from `/metrics`, rate-limited, mostly disabled
 
-The model is `docs/decisions/0000-the-home-assistant-speaker-diagnostics.md`; the server's
+The model is `docs/decisions/0157-the-home-assistant-speaker-diagnostics.md`; the server's
 side is `docs/telemetry.md`. The state message carries no telemetry (a report a second per
 speaker never reaches a control subscriber), so the sensors read the exporter's text.
 
