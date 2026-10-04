@@ -185,7 +185,8 @@ category:
 
 ## Speaker buttons: one event entity per button, one event per accepted press
 
-K83 asks for button presses as event entities; K65 is the controller role they come from. The
+The model is `docs/decisions/0161-the-home-assistant-speaker-button-events.md`. K83 asks for
+button presses as event entities; K65 is the controller role they come from. The
 source is the server's `GET /api/controller-events` (`docs/control-plane.md`, "How the
 messages travel"; `docs/decisions/0151-controller-events-on-the-http-control-plane.md`): one
 `controller_event` message per controller command the server accepted, sent once to whoever
