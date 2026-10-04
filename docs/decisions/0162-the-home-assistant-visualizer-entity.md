@@ -1,4 +1,4 @@
-# 0000: a room's visualizer stream is one Home Assistant sensor per room, disabled by default, whose state is the level and whose attributes are the colour and the beat as `light.turn_on` takes them, written at most five times a second, with no state class and no recorded attribute
+# 0162: a room's visualizer stream is one Home Assistant sensor per room, disabled by default, whose state is the level and whose attributes are the colour and the beat as `light.turn_on` takes them, written at most five times a second, with no state class and no recorded attribute
 
 - Status: accepted, 2026-10-04. Extends 0138 (the Home Assistant integration); uses 0153 (the
   visualizer stream over HTTP) as it is.

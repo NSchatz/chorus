@@ -247,7 +247,7 @@ is subscribed and never kept.
 
 ## The room visualizer: one sensor per room, disabled by default, five states a second at most
 
-The model is `docs/decisions/0000-the-home-assistant-visualizer-entity.md`. Brief section 23
+The model is `docs/decisions/0162-the-home-assistant-visualizer-entity.md`. Brief section 23
 item 1 asks for "the visualizer stream exposed so HA automations can map it to lights"; the
 source is the server's `GET /api/visualizer?zone=<room>` (`docs/visualizer.md`, "The HTTP
 stream"; `docs/decisions/0153-the-visualizer-stream-over-http.md`): one `visualizer` message

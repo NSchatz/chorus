@@ -28,8 +28,8 @@ VOLUME_STEP_THOUSANDTHS: Final = 50
 METRICS_SCAN_INTERVAL: Final = timedelta(seconds=60)
 METRICS_MIN_GAP_SECONDS: Final = 55.0
 
-# A room's visualizer sensor (docs/decisions, "the Home Assistant visualizer
-# entity"). The server sends a subscriber at most ten frames a second
+# A room's visualizer sensor
+# (docs/decisions/0162-the-home-assistant-visualizer-entity.md). The server sends a subscriber at most ten frames a second
 # (docs/visualizer.md, "The rate cap"); the entity writes its state at most
 # once in this many seconds whatever arrives, the latest frame superseding the
 # ones before. ASSUMED, not measured: five writes a second, half the server's
