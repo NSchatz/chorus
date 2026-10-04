@@ -1,0 +1,18 @@
+# Canonical input for the catalog v2 controller_event-transport vector.
+#
+# Encoding these field values must produce exactly controller_event-transport.json: what a server
+# sends a `GET /api/controller-events` subscriber for one controller command it
+# accepted. It is not a state, no command produces it and nothing decodes it.
+#
+# A play/pause press: a transport command acts on an input and changes no room, so the outcome is `waits-for-an-input`; it is still an event.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = controller_event
+endpoint = endpoint-a
+zone = kitchen
+command = toggle
+value = 0
+target = 
+outcome = waits-for-an-input

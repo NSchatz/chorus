@@ -1,0 +1,18 @@
+# Canonical input for the catalog v2 controller_event vector.
+#
+# Encoding these field values must produce exactly controller_event.json: what a server
+# sends a `GET /api/controller-events` subscriber for one controller command it
+# accepted. It is not a state, no command produces it and nothing decodes it.
+#
+# A volume-down press on `endpoint-a` in the kitchen: the command changed the room, so the outcome is `applied`. The members after `t` are the MQTT event's (docs/mqtt.md), in its order.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = controller_event
+endpoint = endpoint-a
+zone = kitchen
+command = volume_step
+value = -5
+target = 
+outcome = applied

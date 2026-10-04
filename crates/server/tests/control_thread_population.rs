@@ -1409,6 +1409,142 @@ fn a_subscriber_past_the_ceiling_is_refused_by_name_rather_than_served_by_a_new_
     drop(server);
 }
 
+/// Attach one subscriber of `GET /api/controller-events`, and hand back the
+/// socket only if the stream was SERVED: the status line, the content type and
+/// the comment line that opens it. That stream opens with no message at all (a
+/// press is not a state), so [`attach`]'s opening `data:` is not there to ask
+/// for.
+fn attach_to_controller_events(address: &str, peek: bool) -> Attempt<TcpStream> {
+    const OPENED: &str = "\r\n\r\n: controller events\n\n";
+    let mut socket = match TcpStream::connect(address) {
+        Ok(socket) => socket,
+        Err(cause) => {
+            return Attempt::NotServed(format!(
+                "the control channel did not accept a connection: {}",
+                cause
+            ))
+        }
+    };
+    let _ = socket.set_read_timeout(Some(READ_TIMEOUT));
+    if peek {
+        if let Some(early) = volunteered(&mut socket, REFUSAL_PEEK) {
+            return Attempt::NotServed(early);
+        }
+    }
+    if let Err(cause) =
+        write!(socket, "{}", get_request("/api/controller-events")).and_then(|()| socket.flush())
+    {
+        return Attempt::NotServed(format!(
+            "the control channel closed the connection before the request could go up ({})",
+            cause
+        ));
+    }
+    let mut opening = String::new();
+    let mut scratch = [0u8; 4_096];
+    loop {
+        match socket.read(&mut scratch) {
+            Ok(0) => break,
+            Ok(read) => {
+                opening.push_str(&String::from_utf8_lossy(&scratch[..read]));
+                if opening.contains(BUSY_STATUS) || opening.contains(OPENED) {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    if opening.starts_with("HTTP/1.1 200 OK")
+        && opening.contains("text/event-stream")
+        && opening.ends_with(OPENED)
+    {
+        Attempt::Served(socket)
+    } else {
+        Attempt::NotServed(format!(
+            "a controller-events attachment was answered with '{}', which is not a served \
+             event stream with nothing on it yet",
+            one_line(&opening)
+        ))
+    }
+}
+
+/// The second subscriber kind: a `GET /api/controller-events` stream is one of
+/// the event writer's streams, like a `GET /api/events` one. It costs no
+/// worker and no thread, and it counts against the same `--event-streams`
+/// ceiling, so the two kinds together cannot hold more than the declared
+/// number of sockets.
+#[test]
+fn controller_event_subscribers_are_the_event_writers_and_create_no_thread() {
+    let (server, pid, _rest, startup) = start(&[
+        "--max-clients".to_string(),
+        "1".to_string(),
+        "--control-workers".to_string(),
+        "1".to_string(),
+        "--event-streams".to_string(),
+        "3".to_string(),
+        "--zone".to_string(),
+        "kitchen".to_string(),
+    ]);
+    let plane = Plane::new(control_address(&startup), 1, Some(3), "kitchen");
+    let before = kernel_threads(pid);
+    assert_eq!(before.len(), population(1, 1));
+
+    // Two streams of presses and one of state, on a server with ONE control
+    // worker: none of them holds it, so a command is still served.
+    let presses: Vec<TcpStream> = (0..2)
+        .map(|_| {
+            plane.serve("a controller-events attachment", |peek| {
+                attach_to_controller_events(&plane.address, peek)
+            })
+        })
+        .collect();
+    let state = plane.subscriber();
+    let response = plane.command(&volume_body("kitchen", "0.300"));
+    assert!(response.contains("200 OK"), "{}", response);
+    let report = plane.serve("the report", |peek| {
+        exchange(&plane.address, &get_request("/api/report"), peek)
+    });
+    assert!(
+        report.contains("events held=3 ceiling=3") && report.contains("press_subscribers=2"),
+        "{}",
+        one_line(&report)
+    );
+    thread::sleep(SETTLE);
+    assert_eq!(
+        kernel_threads(pid),
+        before,
+        "two controller-event subscribers and a state subscriber created a thread the \
+         scheduling report never saw"
+    );
+
+    // The ceiling is one ceiling: a fourth stream, of either kind, is refused
+    // by name.
+    for path in ["/api/controller-events", "/api/events"] {
+        let body = plane.serve("the event writer's answer past its ceiling", |_| {
+            let (status, body) = common::http(plane.address.as_str(), &get_request(path));
+            if body.contains(BUSY_REASON) {
+                Attempt::NotServed(body)
+            } else {
+                Attempt::Served(format!("{} {}", status, body))
+            }
+        });
+        assert!(body.contains(BUSY_STATUS), "{}: {}", path, body);
+        assert!(
+            body.contains(STREAMS_HELD_REASON) && body.contains("3 event streams"),
+            "{}: the refusal has to say why: {}",
+            path,
+            body
+        );
+    }
+    assert_eq!(
+        kernel_threads(pid),
+        before,
+        "refusing a stream past the ceiling created a thread"
+    );
+    drop(presses);
+    drop(state);
+    drop(server);
+}
+
 #[test]
 fn a_control_address_that_cannot_be_bound_stops_the_server_before_it_serves_audio() {
     // AC-9: "IF the control channel cannot bind its configured address, or is

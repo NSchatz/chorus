@@ -816,6 +816,50 @@ impl ServerInfo {
     }
 }
 
+/// What a speaker's button asked for and the server accepted, as an HTTP
+/// subscriber of `GET /api/controller-events` is sent it (docs/control-plane.md,
+/// "How the messages travel"). Not a state and not a command: nothing decodes
+/// it, no state message carries it, and it is never kept for a subscriber that
+/// attaches later. The members after `t` are the MQTT event's own
+/// (docs/mqtt.md), in the same order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControllerEvent {
+    /// The endpoint whose button it was: its authenticated id.
+    pub endpoint: String,
+    /// The room that endpoint plays in, which the command acted on.
+    pub zone: String,
+    /// The protocol's name for the command (`volume_step`, `toggle`, ...).
+    pub command: String,
+    /// The command's argument; 0 where it takes none.
+    pub value: i64,
+    /// The group for `join`; empty otherwise.
+    pub target: String,
+    /// `applied` when the command changed the room, `waits-for-an-input` for
+    /// a transport command.
+    pub outcome: String,
+}
+
+impl ControllerEvent {
+    /// The message, in the declared member order.
+    pub fn value(&self) -> Value {
+        Value::Obj(vec![
+            ("v".to_string(), Value::int(CATALOG_VERSION)),
+            ("t".to_string(), Value::text("controller_event")),
+            ("endpoint".to_string(), Value::text(&self.endpoint)),
+            ("zone".to_string(), Value::text(&self.zone)),
+            ("command".to_string(), Value::text(&self.command)),
+            ("value".to_string(), Value::int(self.value)),
+            ("target".to_string(), Value::text(&self.target)),
+            ("outcome".to_string(), Value::text(&self.outcome)),
+        ])
+    }
+
+    /// The bytes it is on the wire.
+    pub fn encode(&self) -> String {
+        json::write(&self.value())
+    }
+}
+
 /// A list of strings as a JSON array.
 pub fn texts(items: &[String]) -> Value {
     Value::Arr(items.iter().map(|s| Value::text(s)).collect())

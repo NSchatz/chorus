@@ -16,7 +16,8 @@ mod vectors;
 use std::collections::BTreeSet;
 
 use chorus_control::catalog::{
-    decode_command, decode_message, is_server_id, Command, Refusal, ServerInfo, Volume,
+    decode_command, decode_message, is_server_id, Command, ControllerEvent, Refusal, ServerInfo,
+    Volume,
 };
 use chorus_control::firmware::{Image, Report, SpeakerFirmware};
 use chorus_control::json;
@@ -73,6 +74,7 @@ const EVERY_V2_MESSAGE_TYPE: &[&str] = &[
     "playback",
     "announce",
     "server",
+    "controller_event",
     "state",
     "error",
     "refused",
@@ -140,7 +142,7 @@ fn decoding_every_v2_command_vector_recovers_its_committed_fields() {
         let fields = read_fields_in(&v2_dir(), &name);
         if matches!(
             fields.get("message_type").as_str(),
-            "state" | "error" | "refused" | "server"
+            "state" | "error" | "refused" | "server" | "controller_event"
         ) {
             continue;
         }
@@ -407,6 +409,17 @@ fn encode_from(fields: &Fields) -> String {
             assert!(is_server_id(&info.id), "{} is not a server id", info.id);
             info.encode()
         }
+        // What `GET /api/controller-events` sends for one accepted button
+        // press: the MQTT event's members behind the catalog's `v` and `t`.
+        "controller_event" => ControllerEvent {
+            endpoint: fields.get("endpoint"),
+            zone: fields.get("zone"),
+            command: fields.get("command"),
+            value: fields.get("value").parse().unwrap(),
+            target: fields.get("target"),
+            outcome: fields.get("outcome"),
+        }
+        .encode(),
         "error" | "refused" => {
             let mut zones = server_from(fields);
             soloist_from(fields, &mut zones);
