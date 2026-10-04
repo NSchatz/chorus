@@ -31,6 +31,7 @@ from .errors import (
     ChorusRefusedError,
     ChorusUnsupportedError,
 )
+from .metrics import Metrics, SpeakerMetrics
 from .models import (
     AutoplayRule,
     FirmwareImage,
@@ -60,6 +61,7 @@ __all__ = [
     "FirmwareImage",
     "Group",
     "InputLabel",
+    "Metrics",
     "NowPlaying",
     "SSEParser",
     "SavedGroup",
@@ -67,6 +69,7 @@ __all__ = [
     "Sound",
     "Speaker",
     "SpeakerFirmware",
+    "SpeakerMetrics",
     "State",
     "Zone",
     "announce",

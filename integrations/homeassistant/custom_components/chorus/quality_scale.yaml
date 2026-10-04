@@ -11,13 +11,18 @@ rules:
     status: exempt
     comment: >-
       The integration registers no action of its own; it implements the
-      media_player, number, select and switch platforms' entity actions.
+      media_player, number, select, switch and update platforms' entity
+      actions.
   appropriate-polling:
-    status: exempt
+    status: done
     comment: >-
-      Local push. The state arrives on one server-sent event stream;
-      nothing is polled. A stream silent for 45 s is probed once for
-      liveness.
+      The state is pushed (one server-sent event stream) and is never
+      polled; a stream silent for 45 s is probed once for liveness. The
+      speakers' diagnostic sensors are the one thing polled: one GET
+      /metrics every 60 s for the whole server, only while at least one
+      diagnostic sensor is enabled, and never two less than 55 s apart.
+      The server keeps each speaker's latest report and renders it on
+      request, so a faster poll would only fill the recorder.
   brands: done
   common-modules: done
   config-flow: done
@@ -83,14 +88,7 @@ rules:
   dynamic-devices: done
   entity-category: done
   entity-device-class: done
-  entity-disabled-by-default:
-    status: exempt
-    comment: >-
-      The integration has no noisy or diagnostic entity. A room's sound
-      settings are few, change only when someone sets them, and are what
-      the owner asked to have in Home Assistant, so none starts disabled.
-      A speaker's firmware update entity is the one place an install can
-      be asked for, so it does not start disabled either.
+  entity-disabled-by-default: done
   entity-translations: done
   exception-translations: done
   icon-translations: done

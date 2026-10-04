@@ -14,25 +14,36 @@ evidence (BRIEF.md section 3.1 rule 3).
 
 ## 1. The buy list (P4 Option B, recommended tier, awaiting choice)
 
-Prices, sellers, ship-from and URLs are P4's, read 2026-09-30
-(`docs/proposals/P4-bench-purchase.md`, Options A and B, with its "Price basis" column); confirm
-every "snippet" and `ASSUMED` line in a browser before buying.
+Prices, sellers, ship-from and URLs are P4's picks, re-evaluated from the offers of 2026-10-04
+(`docs/proposals/P4-bench-purchase.md`: the offers per line, Options A and B with their "Basis"
+column, and the cheaper equivalent of each line with what it would change here); confirm every
+"snippet", "search page" and `ASSUMED` line in a browser before buying. Shipping is in no total
+except B2.
 
 | # | Part | Sessions that need it | Qty | Line |
 |---|---|---|---|---|
-| A1 | Raspberry Pi 5 2GB (PiShop.us, 1 per order) | S0-S4 (endpoints A and B) | 2 | $130.00 |
-| A2 | Raspberry Pi DAC+ (PCM5122, RCA line out) | S1-S4 | 2 | $59.90 |
-| A3 | Raspberry Pi 27 W USB-C PSU | S0-S4 | 2 | $25.90 |
-| A4 | Raspberry Pi SD card 32 GB | S0 | 2 | $39.90 |
-| A5 | Behringer UMC202HD (2 in, 96 kHz capture used) | S1-S4 | 1 | $86.90 |
-| A6 | SparkFun USB logic analyzer 24 MHz (sigrok fx2lafw) | S7.5 only (the GPIO marker) | 1 | $26.95 |
-| A7 | Jumper wires | S7.5 only | 2 | $3.90 |
-| A8 | 2 x RCA to 1/4" TS cable, 1 x RCA Y splitter | S1-S4 | 1 set | $30.00 |
-| B1-B10 | Esparagus Audio Brick x2 (pre-order, est. 2027-01-25), Waveshare ESP32-S3-ETH x2, PCM5102 DACs, PoE+ injector and splitter, 24 V supply, passive speaker pair, dummy loads, Cat6 | S5 and the EMBEDDED-5 and WIFI-7 packets of goals 8 and 9 | | $387.86 |
-| | **Recommended total** | | | **$791.31** |
+| A1 | Raspberry Pi 5 2GB (CanaKit, one order with A3) | S0-S4 (endpoints A and B) | 2 | $155.00 |
+| A2 | Raspberry Pi DAC+ (PCM5122, RCA line out; PiShop.us) | S1-S4 | 2 | $59.90 |
+| A3 | Raspberry Pi 27 W USB-C PSU (CanaKit) | S0-S4 | 2 | $25.90 |
+| A4 | Raspberry Pi SD card 32 GB (PiShop.us) | S0 | 2 | $39.90 |
+| A5 | Behringer UMC202HD (2 in, 96 kHz capture used; Amazon US, snippet) | S1-S4 | 1 | $59.00 |
+| A6 | 24 MHz 8-channel USB logic analyzer, the Cypress FX2 design (sigrok fx2lafw; AliExpress, **NON-US EXCEPTION**; fallback: SparkFun TOL-18627, $26.95) | S7.5 only (the GPIO marker) | 1 | $5.83 |
+| A7 | 40 male/male jumper wires, 10 cm (AliExpress, **NON-US EXCEPTION**) | S7.5 only | 1 | $4.70 |
+| A8 | Hosa CPR-202 (dual RCA to dual 1/4" TS, 2 m) and Hosa YRA-104 (RCA male to two RCA female, the Y splitter) | S1-S4 | 1 set | $22.90 |
+| B1, B2 | Esparagus Audio Brick, "Single DAC, ESP32-S3" x2 (Elecrow, in stock, **NON-US EXCEPTION**) and its shipping (`ASSUMED`) | S7 | 2 | $138.00 |
+| B3 | Waveshare ESP32-S3-POE-ETH-M x2 (AliExpress or Waveshare's store, **NON-US EXCEPTION**) | S7.5 (the second ESP32-S3 endpoint) and the EMBEDDED-5 and WIFI-7 packets of goals 8 and 9 | 2 | $51.98 |
+| B4 | Adafruit PCM5102 I2S DAC (6250) | the line output of B3 | 2 | $9.90 |
+| B5 | TP-Link TL-POE160S PoE+ injector (CDW) | S7.1-S7.3 (the PoE+ path) | 1 | $22.00 |
+| B6 | PoE Texas GAT-24V25W splitter (its Amazon listing; the maker's store is sold out) | S7.1-S7.3 (the PoE+ path) | 1 | $31.99 |
+| B7 | Mean Well GST60A24-P1J, 24 V 2.5 A, 2.1 mm plug | S7.1-S7.3 (the mains path) | 1 | $18.60 |
+| B8 | Passive 4-8 ohm speaker pair (`ASSUMED` price) | S7.1-S7.3 | 1 pair | $70.00 |
+| B9 | 2 x 8 ohm 50 W resistors (AliExpress, **NON-US EXCEPTION**), divider resistors, DC-blocking capacitors (`ASSUMED` price) | S7.4 | 1 set | $10.00 |
+| B10 | Cat6 patch cables, 3 ft (Monoprice) | S7.1-S7.3 | 4 | $9.16 |
+| | **Recommended total** | | | **$734.76** |
 
-The Minimal tier (A1-A8, $403.45) is enough for sessions S0-S4. B-lines serve the embedded
-sessions, which goals 8 and 9 turn into their own packets.
+The Minimal tier (A1-A8, $373.13) is enough for sessions S0-S4. B-lines serve the embedded
+sessions (S7 here, and the packets goals 8 and 9 turn into their own). The Audio Brick is no longer
+a pre-order: its campaign store closed, and the pick is an in-stock listing.
 
 Also needed, not bought: a pair of headphones for listening through the UMC202HD's front
 headphone output (`ASSUMED` the owner has one; any wired pair with a 1/4" plug or adapter), a

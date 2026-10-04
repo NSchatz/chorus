@@ -11,7 +11,9 @@ it is shaped this way is `docs/decisions/0138-the-home-assistant-integration.md`
   (`_chorus-ctl._tcp.local.`).
 - Transport: the control plane as it is (`docs/control-plane.md`). One event-stream
   subscriber per config entry; commands by `POST /api/command` with
-  `Content-Type: application/json` and no `Origin` header.
+  `Content-Type: application/json` and no `Origin` header. The state is never polled. The
+  speakers' diagnostic sensors alone are, from `GET /metrics`, once a minute and only while
+  one of them is enabled ("Speaker diagnostics" below).
 - **No runtime requirement.** The client library is vendored at
   `custom_components/chorus/_aiochorus/`: async only, fully typed (`py.typed`), no Home
   Assistant import, an injected `aiohttp.ClientSession`. That directory is its one source
@@ -19,7 +21,7 @@ it is shaped this way is `docs/decisions/0138-the-home-assistant-integration.md`
   for chorus.
 - Written to every rule of the Bronze, Silver, Gold and Platinum tiers of Home Assistant's
   Integration Quality Scale as core 2026.9.3 lists them (54 rules), self-certified in
-  `quality_scale.yaml`: 45 done, 9 exempt, each exemption with its reason. A custom
+  `quality_scale.yaml`: 47 done, 7 exempt, each exemption with its reason. A custom
   integration cannot hold a tier; `make ha-hassfest` has Home Assistant's own hassfest grade
   the file.
 
@@ -43,7 +45,7 @@ Home Assistant each time.
 | A room (zone) | One device named for the room, `suggested_area` its name, with a `media_player`, a group-volume `number`, and its sound controls: bass and treble (`number`), loudness, night mode and speech enhancement (`switch`), an input `select`, a quiet-hours `switch`, and an autoplay `switch` for each autoplay rule that targets it |
 | A saved group | One device under the server with a `media_player`, always present, and an autoplay `switch` for each autoplay rule that targets it |
 | A live group | No entity: the `group_members` of its rooms' players, leader first |
-| An adopted speaker | One device named for the speaker, `via` its room's device while it has a room and the server otherwise, and a firmware `update` entity once it has reported what it runs |
+| An adopted speaker | One device named for the speaker, `via` its room's device while it has a room and the server otherwise, a firmware `update` entity once it has reported what it runs, and eight diagnostic `sensor`s |
 
 Home Assistant's areas are Home Assistant's: the integration only suggests one and never
 creates, renames or assigns an area.
@@ -129,6 +131,57 @@ images and explicit installs". K93 and I13 hold here as they do on the server.
 - **The bench guard is the server's.** Nothing here sets `CHORUS_OWNER_AT_BENCH`. A refusal
   `owner-not-at-bench` is a translated error that names the variable; the tests' fake server
   refuses a speaker it is told is not on its host, and no test installs on anything.
+
+## Speaker diagnostics: read from `/metrics`, rate-limited, mostly disabled
+
+The model is `docs/decisions/0157-the-home-assistant-speaker-diagnostics.md`; the server's
+side is `docs/telemetry.md`. The state message carries no telemetry (a report a second per
+speaker never reaches a control subscriber), so the sensors read the exporter's text.
+
+Every adopted speaker has these eight sensors on its device, all with the diagnostic entity
+category:
+
+| Sensor | Series of `GET /metrics` | Unit, state class | Enabled by default |
+|---|---|---|---|
+| Sync error | `chorus_speaker_sync_error_seconds` | microseconds, measurement | no |
+| Buffer fill | `chorus_speaker_buffer_fill_seconds` | milliseconds, measurement | no |
+| Rate correction | `chorus_speaker_rate_correction_ratio` | ppm, measurement | no |
+| Resyncs | `chorus_speaker_resyncs_total` | a count, total increasing | no |
+| Link | `chorus_speaker_link_info{link}` | `wired`, `wifi` or `unknown` | **yes** |
+| Signal strength | `chorus_speaker_rssi_dbm` | dBm, measurement | no |
+| Temperature | `chorus_speaker_temperature_celsius` | °C, measurement | no |
+| Firmware version | `chorus_speaker_firmware_info{version}` | text | **yes** |
+
+- **The poll interval is 60 s** (`METRICS_SCAN_INTERVAL`), one scrape for all speakers, by a
+  second coordinator (`ChorusMetricsCoordinator`) that the state's coordinator does not
+  depend on. With no diagnostic sensor enabled there is no scrape at all. The first enabled
+  sensor added starts one scrape at once; a refresh asked for less than 55 s after the last
+  scrape (`METRICS_MIN_GAP_SECONDS`, on a monotonic clock) is answered from that scrape, so
+  within one loading of the entry no two scrapes are less than 55 s apart.
+  `tests/test_sensor.py::test_sensor_scrapes_never_exceed_the_documented_rate` counts the fake
+  server's `/metrics` requests over ten simulated minutes while something asks for a refresh
+  every 5 s, and `test_sensor_no_scrape_while_no_diagnostic_entity_is_enabled` holds the
+  count at zero.
+- **A failed or malformed scrape** makes the diagnostic sensors unavailable, is logged once,
+  and touches nothing else: the media players, the event stream and the entry stay as they
+  are (`test_sensor_failed_or_malformed_scrape_leaves_the_media_players_alone`).
+- **Unknown is not zero.** A series the exporter omits for a connected speaker (the signal
+  strength of a wired speaker, a temperature nobody measures) is the state `unknown`. A
+  speaker whose session ended keeps only its firmware version; its other sensors are
+  unavailable.
+- **The sync error is not timing evidence.** It is the speaker's own estimate of its playout
+  error, never a measured error between speakers (`docs/telemetry.md`, "What is ASSUMED").
+- **What the exporter does not carry, as follow-ups, not invented here.** K83 says
+  "corrections": the exporter has the rate correction in force (a gauge) and no count of
+  corrections, so the sensor is the gauge; a count would be a new server series. K83 says
+  "temperature": the series exists, and no board profile has a temperature sensor, so no real
+  speaker fills it and the sensor reads unknown until one does (`docs/telemetry.md` names
+  wiring one as a follow-up). The exporter's underruns and heap figures are not in K83's list
+  and are not sensors. A scrape of the real server through the integration is not in
+  `tests/test_live_server.py` yet.
+- The tests' sample (`tests/fixtures/metrics-scrape.txt`) is in the exporter's format, held
+  to the families, HELP and TYPE lines of `crates/server/src/metrics.rs` by
+  `tests/aiochorus/test_metrics.py`. It is not a capture of a running server.
 
 ## The security rules
 

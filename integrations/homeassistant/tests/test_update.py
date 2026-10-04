@@ -176,7 +176,7 @@ async def test_firmware_refusals_are_translated_errors(
     assert (
         "docs/firmware-updates.md" in messages["firmware_owner_not_at_bench"]["message"]
     )
-    assert "docs/firmware-updates.md" in str(caught.value)
+    assert "owner is at the bench" in str(caught.value)
     server.remote_speakers.clear()
 
     # The server's own refusals, byte for byte from the shared vectors.

@@ -32,6 +32,30 @@
         "default": "mdi:audio-input-rca"
       }
     },
+    "sensor": {
+      "buffer_fill": {
+        "default": "mdi:database-clock-outline"
+      },
+      "firmware_version": {
+        "default": "mdi:chip"
+      },
+      "link": {
+        "default": "mdi:lan",
+        "state": {
+          "wifi": "mdi:wifi",
+          "wired": "mdi:ethernet"
+        }
+      },
+      "rate_correction": {
+        "default": "mdi:tune-variant"
+      },
+      "resyncs": {
+        "default": "mdi:restart-alert"
+      },
+      "sync_error": {
+        "default": "mdi:timer-sync-outline"
+      }
+    },
     "switch": {
       "autoplay": {
         "default": "mdi:play-circle-outline",
