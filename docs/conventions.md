@@ -415,7 +415,7 @@ places than chorus is, so what it may be is held by checks:
 - **The install copy is a reproducible export of one commit.** `tools/ha-export.sh <dir>
   [<commit>]` writes the integration as that commit has it, read from git's objects, and a lock
   naming the commit and every file's sha256; an installation vendors that copy and never edits
-  it (`docs/home-assistant.md`, "Installing: the pinned copy"; decision 0000).
+  it (`docs/home-assistant.md`, "Installing: the pinned copy"; decision 0164).
   `check-ha-export.sh` holds that two exports of one commit are the same bytes, that the lock is
   the commit's blobs, that the working tree cannot reach an export, and that `--verify` refuses
   a changed, a missing, an extra and a linked file, a lock naming an unknown commit, and a file

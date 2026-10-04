@@ -1,4 +1,4 @@
-# 0000: the Home Assistant integration is installed from a reproducible export of one commit, vendored and mounted read-only, never through HACS; the first pin is 180bbf8
+# 0164: the Home Assistant integration is installed from a reproducible export of one commit, vendored and mounted read-only, never through HACS; the first pin is 180bbf8
 
 - Status: accepted, 2026-10-04. Builds the install of goal 19 (program brief section 23,
   item 3) on 0138 (the integration) and 0163 (the dashboard).

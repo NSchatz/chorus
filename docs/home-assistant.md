@@ -411,7 +411,7 @@ treats `unavailable` as failing a numeric test is ASSUMED from the documentation
 
 ## Installing: the pinned copy
 
-The decision is `docs/decisions/0000-the-home-assistant-integration-is-installed-from-a-pinned-export.md`.
+The decision is `docs/decisions/0164-the-home-assistant-integration-is-installed-from-a-pinned-export.md`.
 
 **HACS is not used.** HACS installs from a public repository's releases and updates on its
 own schedule; the integration is installed instead as a copy of one chorus commit that the
