@@ -1,4 +1,4 @@
-# 0000: the Home Assistant integration's `dependency-transparency` exemption rests on the manifest listing no requirement, not on the repository being private, and the endpoint audit covers every webhook added and every route put on a router directly
+# 0146: the Home Assistant integration's `dependency-transparency` exemption rests on the manifest listing no requirement, not on the repository being private, and the endpoint audit covers every webhook added and every route put on a router directly
 
 - Status: accepted, 2026-10-04; corrects two statements of 0138. The decisions of 0138 (the
   tier, the vendored client, no endpoint) are unchanged.

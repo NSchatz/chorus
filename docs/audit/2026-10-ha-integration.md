@@ -368,7 +368,7 @@ Every one appears in `quality_scale.yaml`:
 | platinum | strict-typing | done | `mypy --strict` in `make ha-test` (row G2); hassfest fails with the rule removed (tail above). |
 
 Nine of the ten exemptions' reasons are true as written; one was false and is corrected, and
-`docs/decisions/0000-the-ha-integration-audit-corrections.md` records the correction to
+`docs/decisions/0146-the-ha-integration-audit-corrections.md` records the correction to
 ADR 0138. BRIEF.md does not state the reason and needs no change.
 
 ## Open
