@@ -1,0 +1,19 @@
+# Canonical input for the mic_audio_half_sample rejection vector (protocol v2).
+#
+# A REJECTION vector: these fields are not a message the format accepts, so an encoder must
+# refuse them (emitting nothing) naming `rejected_field`, and a decoder must reject
+# mic_audio_half_sample.hex as that field inconsistent, consuming the whole frame and carrying on with the
+# next one (docs/protocol.md, "Decoder behaviour", step 5).
+#
+# Format: as the vectors one directory up, plus `rejected_field` (the field named) and
+# `problem` (what is wrong with it).
+#
+# Three bytes of data: one sample and half of another. Rejected, never trimmed.
+
+message_type = mic_audio
+format = pcm_s16le_16k_mono
+sequence = 0
+timestamp_ns = 3000000000
+data = 000001
+rejected_field = data
+problem = inconsistent

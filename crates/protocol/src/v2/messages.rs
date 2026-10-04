@@ -7,7 +7,7 @@
 use crate::message::{AudioChunk, SampleFormat, StreamEnd, TimeSync};
 use crate::v2::catalog::{
     ChannelPosition, Codec, Command, FirmwareReason, FirmwareState, Link, LowLatencyDirection,
-    LowLatencyStatus, Playback, RefusalReason, SourceAction, SourceKind, Suite, Type,
+    LowLatencyStatus, MicGate, Playback, RefusalReason, SourceAction, SourceKind, Suite, Type,
 };
 
 /// Who a peer is and which roles it takes. The first message inside a
@@ -475,6 +475,50 @@ pub struct Sound {
     pub fold: u8,
 }
 
+/// A chunk of microphone audio, endpoint to server (`docs/protocol.md`,
+/// "0x3A mic audio"). Sent only by an endpoint that declared the voice role,
+/// only while its gate is live and the server's last `voice_control` turned
+/// the uplink on. Not a source stream: it has no `stream_format`, and nothing
+/// a room plays is ever made of it (brief section 4.8, I4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MicAudio {
+    /// The PCM layout, a [`crate::v2::catalog::mic_format`] value; 1
+    /// (`pcm_s16le_16k_mono`) is the only one defined.
+    pub format: u8,
+    /// Per uplink: 0 for the first chunk after the uplink turns on, then one
+    /// more per chunk, wrapping. A gap is audio that was lost.
+    pub sequence: u32,
+    /// The instant the first sample was digitized, on the server timeline
+    /// (the endpoint's monotonic capture time through its sync offset).
+    pub timestamp_ns: u64,
+    /// The samples, 16-bit signed little-endian, 1 to
+    /// [`crate::v2::MIC_MAX_SAMPLES`] of them.
+    pub data: Vec<u8>,
+}
+
+/// An endpoint's mic gate, endpoint to server: sent once after
+/// `capabilities` by an endpoint that declared the voice role, and at every
+/// change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MicState {
+    /// Muted or live.
+    pub gate: MicGate,
+}
+
+/// The server's word to a voice endpoint: whether to send microphone audio,
+/// and whether the room is listening (`docs/protocol.md`, "0x3C voice
+/// control"). Until the first one in a session the uplink is off and the
+/// room is not listening.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VoiceControl {
+    /// Whether the endpoint sends `mic_audio` while its gate is live. Never
+    /// an unmute: a muted endpoint sends nothing whatever this says.
+    pub uplink: bool,
+    /// Whether a voice run is open in the endpoint's room, for its status
+    /// light.
+    pub listening: bool,
+}
+
 /// Any message in the v2 catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Message {
@@ -536,6 +580,12 @@ pub enum Message {
     RoomVolume(RoomVolume),
     /// 0x39.
     Sound(Sound),
+    /// 0x3A.
+    MicAudio(MicAudio),
+    /// 0x3B.
+    MicState(MicState),
+    /// 0x3C.
+    VoiceControl(VoiceControl),
 }
 
 impl Message {
@@ -571,6 +621,9 @@ impl Message {
             Message::SourceControl(_) => Type::SourceControl,
             Message::RoomVolume(_) => Type::RoomVolume,
             Message::Sound(_) => Type::Sound,
+            Message::MicAudio(_) => Type::MicAudio,
+            Message::MicState(_) => Type::MicState,
+            Message::VoiceControl(_) => Type::VoiceControl,
         }
     }
 }

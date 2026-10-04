@@ -120,6 +120,19 @@ extern const uint8_t CHORUS_V2_MAGIC[CHORUS_V2_MAGIC_LEN];
 #define CHORUS_V2_SOUND_FOLD_CENTRE 0x01u
 #define CHORUS_V2_SOUND_FOLD_SURROUND 0x02u
 #define CHORUS_V2_SOUND_FOLD_DEFINED 0x03u
+/* mic_audio (0x3A, docs/protocol.md "The voice role"): the one PCM layout
+ * version 2 defines, 16 kHz mono 16-bit signed little-endian (a format of 0
+ * or past MAX is rejected, UNDEFINED), and the most samples one message
+ * carries: 100 ms, an ASSUMED bound that keeps a receiver's buffer for one
+ * message at 3200 bytes. */
+#define CHORUS_V2_MIC_FORMAT_PCM_S16LE_16K_MONO 1u
+#define CHORUS_V2_MIC_FORMAT_MAX 1u
+#define CHORUS_V2_MIC_SAMPLE_RATE_HZ 16000u
+#define CHORUS_V2_MIC_BYTES_PER_SAMPLE 2u
+#define CHORUS_V2_MIC_MAX_SAMPLES 1600u
+/* mic_state.gate. */
+#define CHORUS_V2_MIC_GATE_MUTED 0u
+#define CHORUS_V2_MIC_GATE_LIVE 1u
 
 /* The Noise and record sizes the frame layer knows about. */
 #define CHORUS_V2_KEY_LEN 32u
@@ -159,7 +172,10 @@ typedef enum {
     CHORUS_V2_SOURCE_OFFER = 0x36,
     CHORUS_V2_SOURCE_CONTROL = 0x37,
     CHORUS_V2_ROOM_VOLUME = 0x38,
-    CHORUS_V2_SOUND = 0x39
+    CHORUS_V2_SOUND = 0x39,
+    CHORUS_V2_MIC_AUDIO = 0x3A,
+    CHORUS_V2_MIC_STATE = 0x3B,
+    CHORUS_V2_VOICE_CONTROL = 0x3C
 } chorus_v2_type_t;
 
 /* Short stable name of a catalogued type, or NULL for an unassigned byte. */
@@ -175,6 +191,12 @@ size_t chorus_v2_min_payload_len(uint8_t wire);
 /* Whether a type travels in the clear, outside any secure_record: the
  * handshake, the refusal and the record envelope itself. */
 int chorus_v2_type_is_plaintext(uint8_t wire);
+
+/* The role a type belongs to, as its CHORUS_V2_ROLE_* bit, or 0 for a type
+ * every session carries (and for an unassigned byte). A role's messages are
+ * exchanged only on a session whose endpoint declared the role in its hello
+ * (docs/protocol.md, "The four roles", "The voice role"). */
+uint16_t chorus_v2_type_role(uint8_t wire);
 
 /* The one-byte enumerations, and their stable names (the `.fields` files'). */
 typedef enum {
@@ -192,11 +214,13 @@ typedef enum {
     CHORUS_V2_ENUM_LOW_LATENCY_STATUS,
     CHORUS_V2_ENUM_FEATURE_BIT,
     CHORUS_V2_ENUM_FIRMWARE_STATE,
-    CHORUS_V2_ENUM_FIRMWARE_REASON
+    CHORUS_V2_ENUM_FIRMWARE_REASON,
+    CHORUS_V2_ENUM_MIC_GATE,
+    CHORUS_V2_ENUM_MIC_FORMAT
 } chorus_v2_enum_t;
 
 /* The name of a value, or NULL when the value is not defined. For ROLE_BIT
- * the value is a bit index, 0 to 4; for FEATURE_BIT, 0 or 1. */
+ * the value is a bit index, 0 to 5; for FEATURE_BIT, 0 or 1. */
 const char *chorus_v2_enum_name(chorus_v2_enum_t which, uint8_t value);
 
 /* The value with this name. Returns 0 and sets *out, or -1. */
@@ -231,7 +255,9 @@ typedef enum {
 #define CHORUS_V2_ROLE_CONTROLLER (1u << 2)
 #define CHORUS_V2_ROLE_VISUALIZER (1u << 3)
 #define CHORUS_V2_ROLE_SOURCE (1u << 4)
-#define CHORUS_V2_ROLES_DEFINED 0x1Fu
+/* Sends mic_audio and mic_state, takes voice_control. Never a source. */
+#define CHORUS_V2_ROLE_VOICE (1u << 5)
+#define CHORUS_V2_ROLES_DEFINED 0x3Fu
 
 /* A length and a pointer the struct does not own: a text (UTF-8, not
  * NUL-terminated) or bytes. */
@@ -449,6 +475,32 @@ typedef struct {
     uint8_t fold;     /* goal 13, CHORUS_V2_SOUND_FOLD_* */
 } chorus_v2_sound_t;
 
+/* A chunk of microphone audio, endpoint to server (docs/protocol.md, "0x3A
+ * mic audio"). `data` is whole 16-bit little-endian samples, 1 to
+ * CHORUS_V2_MIC_MAX_SAMPLES of them; `timestamp_ns` is when the first was
+ * digitized, on the server timeline. Not a source stream: no stream_format
+ * announces it and nothing a room plays is made of it. */
+typedef struct {
+    uint8_t format;
+    uint32_t sequence;
+    uint64_t timestamp_ns;
+    chorus_v2_bytes_t data;
+} chorus_v2_mic_audio_t;
+
+/* The endpoint's mic gate, CHORUS_V2_MIC_GATE_*: the endpoint's own
+ * (chorus/controls.h), which nothing a server sends opens. */
+typedef struct {
+    uint8_t gate;
+} chorus_v2_mic_state_t;
+
+/* The server's word to a voice endpoint: whether to send mic_audio while the
+ * gate is live, and whether the room is listening (for the status light).
+ * Both are bools. Before the first one in a session both are 0. */
+typedef struct {
+    uint8_t uplink;
+    uint8_t listening;
+} chorus_v2_voice_control_t;
+
 /* The server offering a firmware image, or (transfer 0, all else zero or
  * empty) cancelling the transfer in progress (docs/protocol.md, "0x18
  * firmware offer"). `sha256` is CHORUS_V2_SHA256_LEN bytes. */
@@ -516,6 +568,9 @@ typedef struct {
         chorus_v2_source_control_t source_control;
         chorus_v2_room_volume_t room_volume;
         chorus_v2_sound_t sound;
+        chorus_v2_mic_audio_t mic_audio;
+        chorus_v2_mic_state_t mic_state;
+        chorus_v2_voice_control_t voice_control;
     } as;
 } chorus_v2_message_t;
 

@@ -67,6 +67,16 @@ nothing; a decoder must reject the frame as that field, consume the whole
 frame, and decode the frame after it. `crates/protocol/tests/v2_rules.rs` and
 `firmware/tests/test_protocol_v2.c` both walk the directory.
 
+The voice role's vectors (`mic_audio`, `mic_state_muted`, `mic_state_live`,
+`voice_control_off`, `voice_control_uplink`, `voice_control_listening`,
+`hello_voice`, and `rejected/mic_audio_format_undefined` and
+`rejected/mic_audio_half_sample`) were written from the tables in
+`docs/protocol.md` ("The voice role") by a script independent of both codecs.
+`mic_audio.fields` names its `format` (`pcm_s16le_16k_mono`); a rejection
+vector's undefined format is its number. Besides the directory walks,
+`crates/protocol/tests/v2_voice.rs` and `firmware/tests/test_protocol_v2.c`
+read them by name.
+
 `protocol/v2/noise/cacophony_xx.fields` is the published Noise test vector for
 `Noise_XX_25519_ChaChaPoly_SHA256`, converted from cacophony's JSON with its
 source, date read and licence (Unlicense) in its header;

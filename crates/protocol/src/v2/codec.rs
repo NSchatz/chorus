@@ -16,10 +16,11 @@ use crate::codec::{
 };
 use crate::message::{Message as V1Message, SampleFormat, MAX_CHANNELS};
 use crate::message::{MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ};
+use crate::v2::catalog::{mic_format, MIC_BYTES_PER_SAMPLE, MIC_MAX_SAMPLES};
 use crate::v2::catalog::{
     roles, ChannelPosition, Codec, Command, FirmwareReason, FirmwareState, Link,
-    LowLatencyDirection, LowLatencyStatus, Playback, RefusalReason, SourceAction, SourceKind,
-    Suite, Type, FIRMWARE_MAX_CHUNK_BYTES, FIRMWARE_MAX_SIZE, FIRMWARE_MAX_TEXT,
+    LowLatencyDirection, LowLatencyStatus, MicGate, Playback, RefusalReason, SourceAction,
+    SourceKind, Suite, Type, FIRMWARE_MAX_CHUNK_BYTES, FIRMWARE_MAX_SIZE, FIRMWARE_MAX_TEXT,
     FIRMWARE_SLOT_UNKNOWN, FLAC_STREAMINFO_LEN, LOW_LATENCY_FEC_DEPTH, LOW_LATENCY_FEC_K,
     LOW_LATENCY_MAX_CHUNK_FRAMES, LOW_LATENCY_MAX_LATENCY_NS, MAGIC, MAX_ARTWORK_LEN,
     MAX_LONG_TEXT, MAX_OUTPUT_DELAY_NS, MAX_RATES, MAX_ROOM_VOLUME_RAMP_MS, MAX_SHORT_TEXT,
@@ -118,6 +119,15 @@ pub enum DecodeError {
         /// What was wrong.
         error: FieldError,
     },
+    /// A well-formed message of a role the session's endpoint did not
+    /// declare in its `hello` ([`decode_frame_for_roles`]). The frame is
+    /// refused and nothing in it is handed on.
+    RoleNotDeclared {
+        /// The type, which is in the catalog.
+        message_type: Type,
+        /// The role bit the type belongs to ([`roles`]).
+        role: u16,
+    },
 }
 
 impl fmt::Display for DecodeError {
@@ -151,6 +161,15 @@ impl fmt::Display for DecodeError {
                 message_type,
                 error,
             } => write!(f, "{}: {}", message_type.name(), error),
+            DecodeError::RoleNotDeclared { message_type, role } => write!(
+                f,
+                "{} refused: the session did not declare the {} role",
+                message_type.name(),
+                roles::NAMES
+                    .iter()
+                    .find(|(bit, _)| bit == role)
+                    .map_or("?", |(_, name)| name)
+            ),
         }
     }
 }
@@ -452,6 +471,19 @@ pub fn encode_payload(message: &Message) -> Result<Vec<u8>, EncodeError> {
                 w.u8(m.fold);
             }
         }
+        Message::MicAudio(m) => {
+            w.u8(m.format);
+            w.u32(m.sequence);
+            w.u64(m.timestamp_ns);
+            w.bytes(&m.data);
+        }
+        Message::MicState(m) => {
+            w.u8(m.gate.to_wire());
+        }
+        Message::VoiceControl(m) => {
+            w.u8(m.uplink as u8);
+            w.u8(m.listening as u8);
+        }
     }
     Ok(w.out)
 }
@@ -533,6 +565,40 @@ pub fn decode_frame(buf: &[u8]) -> Decoded {
     Decoded {
         outcome,
         consumed: frame_len,
+    }
+}
+
+/// Decode the v2 frame at the front of `buf` on a session whose endpoint
+/// declared `session_roles` in its `hello`.
+///
+/// As [`decode_frame`], and then the role rule of `docs/protocol.md` ("The
+/// four roles", "The voice role"): a message of a role
+/// ([`Type::role`]) the endpoint did not declare is rejected as
+/// [`DecodeError::RoleNotDeclared`], whichever side reads it. A server
+/// reading an endpoint passes that endpoint's `hello.roles`; an endpoint
+/// reading its server passes its own. So `mic_audio` from a peer that never
+/// took the voice role is refused before anything hears it. Like every
+/// rejection it costs that one frame: `consumed` is the whole frame and the
+/// next one is still found. A frame that is malformed is reported as that,
+/// before its role is looked at.
+pub fn decode_frame_for_roles(buf: &[u8], session_roles: u16) -> Decoded {
+    let decoded = decode_frame(buf);
+    let refused = match &decoded.outcome {
+        Outcome::Decoded(m) => {
+            let message_type = m.message_type();
+            message_type
+                .role()
+                .filter(|role| session_roles & role == 0)
+                .map(|role| DecodeError::RoleNotDeclared { message_type, role })
+        }
+        _ => None,
+    };
+    match refused {
+        Some(error) => Decoded {
+            outcome: Outcome::Rejected(error),
+            consumed: decoded.consumed,
+        },
+        None => decoded,
     }
 }
 
@@ -960,6 +1026,25 @@ fn decode_payload(message_type: Type, payload: &[u8]) -> Result<Message, FieldEr
                 fold,
             })
         }
+        Type::MicAudio => Message::MicAudio(MicAudio {
+            format: r.u8("format")?,
+            sequence: r.u32("sequence")?,
+            timestamp_ns: r.u64("timestamp_ns")?,
+            data: r.rest().to_vec(),
+        }),
+        Type::MicState => {
+            let b = r.u8("gate")?;
+            Message::MicState(MicState {
+                gate: MicGate::from_wire(b).ok_or(FieldError {
+                    field: "gate",
+                    problem: Problem::Undefined(b as u64),
+                })?,
+            })
+        }
+        Type::VoiceControl => Message::VoiceControl(VoiceControl {
+            uplink: r.bool("uplink")?,
+            listening: r.bool("listening")?,
+        }),
     };
     // Bytes past the last known field are a later version's fields: ignored.
     Ok(m)
@@ -1273,6 +1358,31 @@ pub fn validate(message: &Message) -> Result<(), FieldError> {
             Ok(())
         }
         Message::Sound(m) => validate_sound(m),
+        Message::MicAudio(m) => {
+            if m.format == 0 || m.format > mic_format::MAX {
+                return err("format", Problem::Undefined(m.format as u64));
+            }
+            // Whole samples, at least one. Rejected, never trimmed: half a
+            // sample dropped here would shift every sample after it.
+            if m.data.is_empty() || m.data.len() % MIC_BYTES_PER_SAMPLE != 0 {
+                return err(
+                    "data",
+                    Problem::Inconsistent("is one or more whole 16-bit samples"),
+                );
+            }
+            let max = MIC_MAX_SAMPLES * MIC_BYTES_PER_SAMPLE;
+            if m.data.len() > max {
+                return err(
+                    "data",
+                    Problem::TooLong {
+                        len: m.data.len(),
+                        max,
+                    },
+                );
+            }
+            Ok(())
+        }
+        Message::MicState(_) | Message::VoiceControl(_) => Ok(()),
     }
 }
 

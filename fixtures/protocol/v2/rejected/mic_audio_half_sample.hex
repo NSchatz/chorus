@@ -1,0 +1,21 @@
+# chorus rejection vector: mic audio, protocol v2 message type 0x3A, data not whole samples.
+#
+# Committed, and never written by a test. Any implementation of chorus protocol v2 must
+# reject this frame naming data (see mic_audio_half_sample.fields).
+#
+# Format: whitespace separated hex bytes, '#' starts a comment.
+
+# frame header: type 0x3A, payload length 16 (0x0010), big-endian
+3A 00 10
+
+# format = 1 (pcm_s16le_16k_mono)
+01
+
+# sequence = 0
+00 00 00 00
+
+# timestamp_ns = 3000000000
+00 00 00 00 B2 D0 5E 00
+
+# data: three bytes, one sample and a half
+00 00 01
