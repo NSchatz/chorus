@@ -47,16 +47,22 @@ async def async_setup_entry(
 
     @callback
     def _add_new() -> None:
-        reported = [s for s in coordinator.data.speakers if s.firmware is not None]
+        speakers = coordinator.data.speakers
+        # A speaker is forgotten only when it leaves `speakers[]`: its device
+        # and its entity are removed then. One that is still adopted but whose
+        # firmware is not reported (after a server restart, until its session
+        # reports again) keeps its entity, unavailable, and gets no second one.
+        known.intersection_update(speaker.id for speaker in speakers)
         new = [
-            ChorusFirmwareUpdate(coordinator, speaker)
-            for speaker in reported
-            if speaker.id not in known
+            speaker
+            for speaker in speakers
+            if speaker.firmware is not None and speaker.id not in known
         ]
-        known.clear()
-        known.update(speaker.id for speaker in reported)
+        known.update(speaker.id for speaker in new)
         if new:
-            async_add_entities(new)
+            async_add_entities(
+                ChorusFirmwareUpdate(coordinator, speaker) for speaker in new
+            )
 
     _add_new()
     entry.async_on_unload(coordinator.async_add_listener(_add_new))

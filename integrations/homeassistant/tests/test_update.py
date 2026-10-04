@@ -323,6 +323,37 @@ async def test_firmware_entity_absent_until_reported_and_progress_follows_receiv
     assert server.bodies == []
 
 
+async def test_firmware_reported_again_after_a_server_restart_adds_no_second_entity(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    server: FakeChorusServer,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    raw = house()
+    await start(hass, entry, server, raw)
+    first = speaker_firmware(hass, FIRST)
+    assert hass.states.get(first).state == "on"
+    count = len(hass.states.async_entity_ids("update"))
+
+    # The server restarted: the speaker is still adopted, but what it runs is
+    # not known until its session reports again. Its entity stays, unavailable.
+    silent = house()
+    del silent["speakers"][0]["firmware"]
+    server.set_state(encode(silent))
+    await wait_for(lambda: hass.states.get(first).state == "unavailable")
+    assert len(hass.states.async_entity_ids("update")) == count
+
+    # It reports again: the same entity comes back, and no second one is built.
+    server.set_state(encode(raw))
+    await wait_for(lambda: hass.states.get(first).state == "on")
+    await hass.async_block_till_done()
+    assert len(hass.states.async_entity_ids("update")) == count
+    assert speaker_firmware(hass, FIRST) == first
+    assert "does not generate unique IDs" not in caplog.text
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]
+    assert server.bodies == []
+
+
 async def test_firmware_outcomes_are_shown(
     hass: HomeAssistant, entry: MockConfigEntry, server: FakeChorusServer
 ) -> None:
