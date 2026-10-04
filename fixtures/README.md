@@ -135,6 +135,14 @@ the server's `announce_origins` list), `error-announce-no-origin`,
 `discovery/advertisement-control` is the control service's advertisement with
 `id=` in its TXT record.
 
+`control/v2/controller_event` and `controller_event-transport` are what a
+`GET /api/controller-events` subscriber is sent for one accepted controller
+command: a press that changed a room (`outcome` `applied`) and a transport
+command (`waits-for-an-input`). Like `server`, a `message_type =
+controller_event` vector is encoded from its fields and has no decoder;
+`crates/server/tests/controller_events.rs` holds the running server to the
+same bytes, with the endpoint's id replaced by the test's own.
+
 Three of the vectors are refusals. Their `.fields` carries an `input` line
 holding a whole control message; decoding it must be refused and encoding the
 refusal must produce the committed bytes, so the WORDING of an error is part of

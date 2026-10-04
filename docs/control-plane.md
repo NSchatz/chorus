@@ -1032,7 +1032,8 @@ The catalog above is the contract. The transport is HTTP on the address
 | `GET /api/state` | the state message, once (v2; `?v=1` for the v1 shape) |
 | `GET /api/server` | (goal 18) who this server is, once: the `server` message below. Not a state: nothing changes it while the server runs and no state message carries it |
 | `GET /api/events` | a `text/event-stream`, one `data: <state message>` per change, starting with the state as it stands (v2; `?v=1` for the v1 shape, rendered from the state as it stands when each change reaches the stream) |
-| `GET /api/report` | one line of plain text: commands applied, commands refused, connections and streams turned away, and the fanout's ceiling and drops |
+| `GET /api/controller-events` | a `text/event-stream`, one `data: <controller_event message>` per controller command the server accepts (a button press on a speaker), from the moment the stream is opened. It starts with no message: a press is not a state, and one made before the stream was opened is never sent to it. Catalog version 2's message alone; `?v=1` changes nothing |
+| `GET /api/report` | one line of plain text: commands applied, commands refused, connections and streams turned away, the fanout's ceiling and drops, the event writer's streams, and the controller-event subscribers and their drops |
 | `GET /metrics` | the Prometheus exporter (goal 15): per-speaker telemetry in text exposition format 0.0.4. Read-only, served by a control worker like any other request; `docs/telemetry.md` lists every series |
 | `POST /api/command` | the body is one control message, sent as `Content-Type: application/json`. `200` with the resulting state (v2, the bytes every subscriber is sent), `400` with an `error` (at the message's version), or `426` with a `refused`; `415` or `403` under the rules below |
 | `POST /api/leaving` | the body is an endpoint identifier, which stops being `present`. The same two rules as a command |
@@ -1056,6 +1057,40 @@ A browser opens `/api/events` with `EventSource` and a shell script opens it
 with a socket and a `GET` line, so **the UI and the verification scripts are the
 same subscriber**. That is deliberate: a check that exercised a second, private
 subscriber protocol would not be checking the thing the browser uses.
+
+`GET /api/controller-events` is the same subscriber protocol with a different
+payload: what a speaker's button asked for, as an event
+(`docs/decisions/0000-controller-events-on-the-http-control-plane.md`). The
+response is `200`, `text/event-stream`, then one comment line
+(`: controller events`) and nothing else until a press. Every controller
+command the server accepts (`docs/protocol.md`, "controller command") is then
+one `data:` line holding one message in the canonical encoding
+(`fixtures/control/v2/controller_event.json`,
+`controller_event-transport.json`):
+
+```json
+{"v":2,"t":"controller_event","endpoint":"endpoint-a","zone":"kitchen","command":"volume_step","value":-5,"target":"","outcome":"applied"}
+```
+
+| field | notes |
+|---|---|
+| `endpoint` | the endpoint whose button it was: its session's authenticated id |
+| `zone` | the room that endpoint plays in, which the command acted on |
+| `command` | the protocol's name for the command: `play`, `pause`, `toggle`, `next`, `previous`, `volume_set`, `volume_step`, `mute_set`, `join`, `leave` |
+| `value` | its argument, an integer; `0` where the command takes none |
+| `target` | the group for `join`; `""` otherwise |
+| `outcome` | `applied` when the command changed the room; `waits-for-an-input` for a transport command, which acts on an input and changes no room |
+
+The members after `t` are the MQTT event's, in its order, with the same values
+(`docs/mqtt.md`, "The topics"); the MQTT payload is unchanged and carries no
+`v` or `t`. An event is not a state change and rides in no state message: a
+press that changes a room is one `controller_event` on this route AND one state
+message on `/api/events`, the event fanned out first; a transport command is
+the event alone. A command the server refused (an endpoint attached to no room, a `join`
+whose target is not a group name) is no event. Nothing is kept: a press
+accepted while nobody is subscribed is sent to nobody, and a stream opened
+afterwards starts empty. It is a message the server sends and never one it
+accepts: `POST /api/command` refuses it as an unknown message type.
 
 Every request is answered with `Connection: close`. A connection arriving when
 every worker is busy is answered `503` naming the ceiling and closed, rather
@@ -1112,6 +1147,15 @@ drops its stream once it has made no write progress for 5 s, counted as
 `stalled_dropped` in `GET /api/report`. Every other stream is written on every
 pass regardless (`crates/server/tests/control_stalled_peer.rs`).
 
+A `GET /api/controller-events` stream is held by the same writer under the same
+rules: its worker writes the headers and the opening comment line and hands the
+socket over, it counts against the same `--event-streams` ceiling as the state
+streams (the two kinds together never hold more sockets than that), it is sent
+the same keepalive comment, and it is dropped after 5 s without write progress
+and counted in the same `stalled_dropped`. It differs in what it is fed, a
+second fanout that carries `controller_event` messages, and in its opening:
+nothing (`crates/server/tests/controller_events.rs`).
+
 ## The bound on a subscriber
 
 There is no back pressure: one subscriber that has stopped reading must not
@@ -1124,6 +1168,21 @@ is **dropped**, with what it never received counted and reported by
 That is the opposite of what the audio fanout does with a slow client, which
 drops the ITEM and keeps the subscriber. `docs/decisions/0017` records why the
 two differ.
+
+A subscriber of `GET /api/controller-events` is held to the same bound by the
+same code, on a queue of its own: at most 32 `controller_event` messages wait
+for it (a few hundred bytes each, so on the order of 10 kB per stalled subscriber), and one
+that reaches the ceiling is **dropped**, its stream closed, never the event
+skipped for it: a subscriber that stays attached has been sent every press
+accepted since it attached, in order. `GET /api/report` counts them apart from
+the state subscribers, as `press_subscribers` (attached now),
+`press_dropped_subscribers` (dropped at the ceiling) and
+`press_dropped_events` (events a dropped or departed subscriber never
+received). There is no replay on either side of a drop: a subscriber that was
+dropped and opens a new stream is sent the presses accepted from then on, and
+the ones in between are gone. A press is never delayed or refused because a
+subscriber is slow: the fanout is one non-blocking `try_send` per subscriber,
+on the session's reader thread, before the endpoint is answered.
 
 ## The thread population
 

@@ -1,0 +1,1 @@
+{"v":2,"t":"controller_event","endpoint":"endpoint-a","zone":"kitchen","command":"volume_step","value":-5,"target":"","outcome":"applied"}

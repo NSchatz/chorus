@@ -1,0 +1,1 @@
+{"v":2,"t":"controller_event","endpoint":"endpoint-a","zone":"kitchen","command":"toggle","value":0,"target":"","outcome":"waits-for-an-input"}

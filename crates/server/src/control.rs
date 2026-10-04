@@ -38,6 +38,11 @@
 //! SUBSCRIBER. That is deliberate: a check that exercised a second, private
 //! subscriber protocol would not be checking the thing the browser uses.
 //!
+//! `GET /api/controller-events` is the same subscriber for a different
+//! payload: one `controller_event` message per controller command accepted (a
+//! speaker's button press), nothing at the start and nothing replayed. An
+//! event is not a state change, so it rides in no state message.
+//!
 //! The catalog is unchanged by that choice. `docs/control-plane.md` defines the
 //! messages, `fixtures/control/` pins their bytes, and HTTP is the envelope
 //! they arrive in.
@@ -58,7 +63,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use chorus_control::catalog::{decode_message, Refusal};
+use chorus_control::catalog::{decode_message, ControllerEvent, Refusal};
 use chorus_control::fanout::ControlFanout;
 use chorus_control::persist;
 use chorus_control::rooms::{CivilTime, NowPlaying, PlayState, Role, Source};
@@ -211,6 +216,12 @@ struct Held {
 pub struct ControlState {
     held: Mutex<Held>,
     fanout: Arc<ControlFanout>,
+    /// The second fanout: one `controller_event` per controller command
+    /// accepted, to every `GET /api/controller-events` stream. The same
+    /// bounded queue and the same drop of a subscriber at its ceiling as the
+    /// state's, and nothing kept: a broadcast with nobody attached is gone,
+    /// so a stream opened afterwards is never sent a past press.
+    presses: Arc<ControlFanout>,
     state_file: Option<PathBuf>,
     /// Commands applied since the process started.
     applied: AtomicU64,
@@ -309,6 +320,7 @@ impl ControlState {
         ControlState {
             held: Mutex::new(Held { zones, slots: None }),
             fanout: Arc::new(ControlFanout::new()),
+            presses: Arc::new(ControlFanout::new()),
             state_file,
             applied: AtomicU64::new(0),
             refused: AtomicU64::new(0),
@@ -805,12 +817,18 @@ impl ControlState {
     /// The line a run prints about what the control plane did.
     pub fn report(&self) -> String {
         format!(
-            "control applied={} refused={} turned_away={} {} {}",
+            "control applied={} refused={} turned_away={} {} {} controller-events \
+             press_subscribers={} press_dropped_subscribers={} press_dropped_events={}",
             self.applied.load(Ordering::Relaxed),
             self.refused.load(Ordering::Relaxed),
             self.turned_away.load(Ordering::Relaxed),
             self.fanout.report(),
-            self.events.report()
+            self.events.report(),
+            // Its own keys: a reader of the state fanout's counters
+            // (`tools/house-soak/report.py`) keeps reading those.
+            self.presses.subscribers(),
+            self.presses.dropped_subscribers(),
+            self.presses.dropped_messages()
         )
     }
 
@@ -982,6 +1000,10 @@ impl ControlState {
                 return Err(refusal);
             }
         };
+        let outcome = match &applied.action {
+            ControllerAction::Apply(_) => "applied",
+            ControllerAction::Transport(_) => "waits-for-an-input",
+        };
         // (goal 15) The MQTT publisher's event, left before the state is
         // fanned out so the publisher is woken with it already waiting.
         // Never blocks: this runs on a client reader thread.
@@ -992,12 +1014,26 @@ impl ControlState {
                 command.command.name(),
                 command.value,
                 &command.target,
-                match &applied.action {
-                    ControllerAction::Apply(_) => "applied",
-                    ControllerAction::Transport(_) => "waits-for-an-input",
-                },
+                outcome,
             );
         }
+        // The same press to every `GET /api/controller-events` stream, as its
+        // own message and before the state it may have changed: an event is
+        // not a state change and rides in no state message. Never blocks (a
+        // bounded `try_send` per subscriber), and with nobody attached the
+        // message is built and dropped, kept for no one.
+        self.presses.broadcast(Arc::new(
+            ControllerEvent {
+                endpoint: endpoint.to_string(),
+                zone: applied.zone.clone(),
+                command: command.command.name().to_string(),
+                value: i64::from(command.value),
+                target: command.target.clone(),
+                outcome: outcome.to_string(),
+            }
+            .encode(),
+        ));
+        self.events.wake();
         if let Some(state) = changed {
             self.applied.fetch_add(1, Ordering::Relaxed);
             self.publish(state);
@@ -2134,6 +2170,7 @@ fn serve_connection(connection: TcpStream, state: &Arc<ControlState>) {
             &state.metrics(),
         ),
         ("GET", "/api/events") => serve_events(connection, state, version),
+        ("GET", "/api/controller-events") => serve_controller_events(connection, state),
         ("POST", "/api/command") => {
             match state.apply(request.body.trim()) {
                 Ok(applied) => respond(&mut connection, "200 OK", "application/json", &applied),
@@ -2208,6 +2245,50 @@ fn serve_events(mut connection: TcpStream, state: &Arc<ControlState>, version: i
         return;
     }
     claim.hand_over(connection, inbox, version);
+}
+
+/// Open one stream of controller events and hand it to the event writer.
+///
+/// The same subscriber as `GET /api/events` in everything but what it is
+/// sent: a server-sent event stream, one of the event writer's
+/// `--event-streams`, refused `503` past that ceiling, kept alive and dropped
+/// when stalled by the same rules. It carries one `data: <controller_event>`
+/// per controller command the server accepts from now on and NOTHING at the
+/// start: a press is not a state, there is no "press as it stands", and one
+/// made before this stream was opened is never sent to it. The message is
+/// catalog version 2's alone, so `?v=1` changes nothing here.
+fn serve_controller_events(mut connection: TcpStream, state: &Arc<ControlState>) {
+    let Some(claim) = state.events.claim() else {
+        state.turned_away.fetch_add(1, Ordering::Relaxed);
+        let detail = format!(
+            "every one of this server's {} event streams is held; try again, or start the \
+             server with a higher --event-streams",
+            state.events.ceiling()
+        );
+        respond(
+            &mut connection,
+            "503 Service Unavailable",
+            "application/json",
+            &error_body(&detail),
+        );
+        return;
+    };
+    // Attached before the headers go out, so a subscriber that has read them
+    // is sent every press accepted after that.
+    let inbox = state.presses.subscribe();
+    if write!(
+        connection,
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\n\
+         Connection: close\r\n\r\n: controller events\n\n"
+    )
+    .is_err()
+        || connection.flush().is_err()
+    {
+        return;
+    }
+    // Written as they are: the writer renders nothing for a stream at the
+    // build's own version.
+    claim.hand_over(connection, inbox, chorus_control::CATALOG_VERSION);
 }
 
 /// The catalog version a `GET` asks its state in: `?v=1` is the v1 shape, and

@@ -12,6 +12,14 @@
 //! many subscribers there are, they cost no worker, and the thread population
 //! stays the declared one (`crates/server/src/main.rs`).
 //!
+//! # Two kinds of stream, one writer
+//!
+//! A `GET /api/controller-events` stream (one `controller_event` per button
+//! press the server accepted) is held here too, as one more peer: the same
+//! ceiling, the same keepalive, the same stall bound, and no thread. It is
+//! fed by a second fanout (`ControlState`'s `presses`) and its messages are
+//! written as they are; nothing else about it is different to this module.
+//!
 //! # A ceiling, and a stalled peer
 //!
 //! The writer holds at most `--event-streams` streams (default
@@ -151,7 +159,9 @@ pub struct Claim<'a> {
 
 impl Claim<'_> {
     /// Give the writer an opened stream: its socket, its fanout queue and the
-    /// catalog version it is written at.
+    /// catalog version it is written at. A stream whose messages are not
+    /// states (`GET /api/controller-events`) is handed over at the build's
+    /// own version, at which a message is written as it is.
     pub fn hand_over(mut self, socket: TcpStream, inbox: Receiver<Arc<String>>, version: i64) {
         let sent = self
             .streams
