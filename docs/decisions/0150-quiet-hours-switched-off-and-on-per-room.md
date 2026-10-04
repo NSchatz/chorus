@@ -1,4 +1,4 @@
-# 0000: quiet hours are switched off and on per room, by a `quiet_hours_enabled` command and a `quiet_enabled` state field, with the windows kept and the flag persisted in state-file format 7
+# 0150: quiet hours are switched off and on per room, by a `quiet_hours_enabled` command and a `quiet_enabled` state field, with the windows kept and the flag persisted in state-file format 7
 
 - Status: accepted, 2026-10-04. Extends 0075 (catalog v2) and 0018 (the persisted zone
   state); the clamp rule of 0075 and the runtime of 0076 and 0079 are unchanged.

@@ -393,7 +393,7 @@ give them.
 ```
 
 **Quiet hours switched off and on.** `quiet_hours_enabled` is one flag per
-room (`docs/decisions/0000-quiet-hours-switched-off-and-on-per-room.md`), so
+room (`docs/decisions/0150-quiet-hours-switched-off-and-on-per-room.md`), so
 that one switch in a home-automation system can drive it without knowing the
 windows. The default is enabled: a room nobody switched off behaves as it
 always did. While it is off the room keeps every window exactly as it was set,
