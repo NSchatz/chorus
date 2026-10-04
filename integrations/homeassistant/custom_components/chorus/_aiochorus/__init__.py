@@ -5,7 +5,12 @@ location. It imports nothing from Home Assistant and takes an injected
 ``aiohttp.ClientSession``. The contract it speaks is ``docs/control-plane.md``.
 """
 
-from .client import ChorusClient, ControllerEventStream, EventStream
+from .client import (
+    ChorusClient,
+    ControllerEventStream,
+    EventStream,
+    VisualizerStream,
+)
 from .commands import (
     announce,
     autoplay,
@@ -48,6 +53,7 @@ from .models import (
     Speaker,
     SpeakerFirmware,
     State,
+    VisualizerFrame,
     Zone,
 )
 from .sse import SSEParser
@@ -80,6 +86,8 @@ __all__ = [
     "SpeakerFirmware",
     "SpeakerMetrics",
     "State",
+    "VisualizerFrame",
+    "VisualizerStream",
     "Zone",
     "announce",
     "autoplay",

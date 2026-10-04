@@ -71,6 +71,9 @@
       },
       "sync_error": {
         "default": "mdi:timer-sync-outline"
+      },
+      "visualizer": {
+        "default": "mdi:led-strip-variant"
       }
     },
     "switch": {

@@ -1,4 +1,9 @@
-"""A speaker's diagnostics: what it reports about itself, read from `GET /metrics`.
+"""The sensors: a speaker's diagnostics, and a room's visualizer.
+
+A room's visualizer (`visualizer.py`) is one sensor per room, disabled by
+default, fed by the room's visualizer stream and written at a bounded rate.
+
+A speaker's diagnostics: what it reports about itself, read from `GET /metrics`.
 
 Every sensor here has the diagnostic entity category, and all but the two that
 almost never change (the link and the firmware version) start disabled: a
@@ -41,6 +46,7 @@ from .coordinator import (
     ChorusMetricsCoordinator,
     speaker_identifier,
 )
+from .visualizer import ChorusVisualizerSensor
 
 # Read-only entities fed by one coordinator: nothing to serialise.
 PARALLEL_UPDATES = 0
@@ -135,7 +141,7 @@ async def async_setup_entry(
     entry: ChorusConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Add the diagnostic sensors of every adopted speaker, as speakers appear."""
+    """Add each speaker's diagnostic sensors and each room's visualizer, as they appear."""
     coordinator = entry.runtime_data
     known: set[str] = set()
 
@@ -154,8 +160,23 @@ async def async_setup_entry(
                 for description in SENSORS
             )
 
+    rooms: set[str] = set()
+
+    @callback
+    def _add_rooms() -> None:
+        zones = coordinator.data.zones
+        new = [zone for zone in zones if zone.id not in rooms]
+        rooms.clear()
+        rooms.update(zone.id for zone in zones)
+        if new:
+            async_add_entities(
+                ChorusVisualizerSensor(coordinator, zone) for zone in new
+            )
+
     _add_new()
+    _add_rooms()
     entry.async_on_unload(coordinator.async_add_listener(_add_new))
+    entry.async_on_unload(coordinator.async_add_listener(_add_rooms))
 
 
 class ChorusSpeakerSensor(CoordinatorEntity[ChorusMetricsCoordinator], SensorEntity):

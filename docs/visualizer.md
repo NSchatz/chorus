@@ -210,7 +210,8 @@ stamp). `fixtures/visualizer/http-frame.{fields,json,sse}` pin one frame's bytes
 
 - The one-stream shape (`--slots 0`) sends no visualizer stream.
 - Brightness is unweighted; K-weighting through `crates/dsp`'s biquads (BS.1770) when wanted.
-- The Home Assistant integration's lights reading `GET /api/visualizer` ("The HTTP stream";
-  the server's half is done, the integration's entity is its own task).
+- The Home Assistant integration reads `GET /api/visualizer` into one sensor per room
+  (`docs/home-assistant.md`, "The room visualizer"); it writes a state when a frame arrives
+  and does not wait for `lead_ms`.
 - No measurement of a light against a sound: a bench report would say how far an LED's flash is
   from the kick a microphone hears.

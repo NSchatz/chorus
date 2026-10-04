@@ -47,6 +47,8 @@ at setup with a repair issue saying so.
 - Automations that start from a speaker's own buttons: a long press of play/pause in the
   kitchen that also turns the lights on, a "next" press that advances something chorus does
   not play.
+- A lamp that follows the music: a room's Visualizer sensor carries the colour, the level
+  and the beat of what the room plays, for an automation of yours to map to a light.
 - Switching a room's quiet hours off for a party, or its line-in autoplay off while a
   turntable is being set up.
 
@@ -225,6 +227,49 @@ presses the button entities are **unavailable**.
 A press from something that is not one of these buttons (a wall remote that is not an adopted
 speaker, a command no speaker button sends) is ignored, with one debug log line.
 
+### Room visualizer (`sensor`, one per room, disabled by default)
+
+The colour, the level and the beat of what a room plays, for an automation to map to a light
+(`docs/visualizer.md`). It is on the room's device, named **Visualizer**, and it starts
+**disabled**: enable it on the room's device page for the rooms whose lights should follow.
+While it is disabled the integration holds no visualizer stream open to the server for that
+room.
+
+| | |
+|---|---|
+| State | The level, in percent: the frame's peak (0 to 255, a 60 dB span) as a percentage |
+| `rgb_color` | The colour, `[red, green, blue]`, each 0 to 255, as `light.turn_on` takes it |
+| `brightness` | The colour's brightness, 0 to 255, as `light.turn_on` takes it |
+| `transition` | How long the light should take to reach the colour, in seconds, as `light.turn_on` takes it (the server says 0.5) |
+| `beat` | 0, or the strength of a beat, 1 to 255 (128 and up is a strong one). Shown in one state and gone in the next |
+| `lead_ms` | How many milliseconds after the server wrote the frame the room hears it. Zero or negative: heard already |
+
+**The rate cap: at most one state every 200 ms, five a second**, whatever the server sends
+(the server itself sends at most ten frames a second). The latest frame is the one shown, never
+a backlog; a beat that fell between two states is shown in the next one.
+
+**Idle.** While the room plays nothing, or plays silence, the sensor is idle: the state is `0`,
+`rgb_color` is `[0, 0, 0]`, `brightness` is 0 and `beat` is 0. It is idle as soon as the
+server says the room went silent, or two seconds after the last frame when the server just
+stops sending (the room was given nothing to play). A light mapped to it goes off:
+`light.turn_on` with a brightness of 0 turns a light off.
+
+**The recorder.** The sensor has no state class, so Home Assistant never compiles long-term
+statistics for it, and none of its attributes is recorded (no colour, no beat). Its state (the
+level) still goes into the recorder's short-term history like any entity's, at most five rows
+a second while the room plays, until the recorder purges it (after ten days by default). An
+integration cannot keep an entity's state out of the recorder; you can:
+
+```yaml
+recorder:
+  exclude:
+    entity_globs:
+      - sensor.*_visualizer
+```
+
+The sensor only reports. The integration drives no light: the mapping is your automation
+("Examples" has one). While its stream is not attached the sensor is **unavailable**.
+
 ## Data updates
 
 Local push. The integration holds one event stream (`GET /api/events`) per server and the
@@ -238,6 +283,11 @@ Button presses arrive the same way on a second stream (`GET /api/controller-even
 carries one message per accepted press and never a past one. It reconnects by the same
 backoff and is checked for liveness the same way; while it is not attached the button
 entities are unavailable (one log line says so) and nothing else is affected.
+
+An enabled Visualizer sensor holds one more stream of the same kind, its room's
+(`GET /api/visualizer?zone=<room>`), with the same backoff and liveness check. A disabled one
+holds none. The server pushes at most ten frames a second on it and the sensor writes at most
+five states a second.
 
 The speakers' diagnostic sensors are the one exception, because the server's state carries no
 telemetry: they are polled from `GET /metrics` every 60 seconds, by one request for all
@@ -310,12 +360,50 @@ automation:
 `not_from: unavailable` matters: an event entity's state is the time of its last event, and
 it shows that time again when it comes back from unavailable, which is not a press.
 
+Have the den's lamp follow the den's music (enable the den's **Visualizer** sensor first: it
+starts disabled):
+
+```yaml
+automation:
+  - alias: Den lamp follows the music
+    mode: restart
+    triggers:
+      - trigger: state
+        entity_id: sensor.den_visualizer
+    conditions:
+      - condition: template
+        value_template: "{{ has_value('sensor.den_visualizer') }}"
+    actions:
+      - action: light.turn_on
+        target:
+          entity_id: light.den_lamp
+        data:
+          rgb_color: "{{ state_attr('sensor.den_visualizer', 'rgb_color') }}"
+          brightness: "{{ state_attr('sensor.den_visualizer', 'brightness') }}"
+          transition: "{{ state_attr('sensor.den_visualizer', 'transition') }}"
+```
+
+The trigger has no `to` or `from`, so it also fires when only the colour changed. The
+condition skips the moments the sensor is unavailable, when it has no colour. When the room
+goes quiet the sensor's brightness is 0, and `light.turn_on` with a brightness of 0 turns the
+light off. For a flash on the beat, add a condition on the `beat` attribute (128 and up is a
+strong one).
+
 ## Known limitations
 
 - A button press made while Home Assistant is not connected to the chorus server is lost:
   the server keeps none. Two-way speakers and subwoofers have no front buttons and no button
   entities; a pairing button and a microphone mute switch are local to the speaker and are
   not events. A wall remote that is not an adopted speaker has no entities.
+
+- The Visualizer sensor says when the room HEARS a frame only as `lead_ms`; it does not wait
+  for it. A state is written when the frame arrives (or up to 200 ms later, held by the rate
+  cap), and Home Assistant, the light's integration and the lamp each add their own delay.
+  Nothing here has been measured against a lamp: do not expect a light to land on the beat,
+  least of all in a wired room, where a frame arrives only a few tens of milliseconds before
+  it is heard.
+- The Visualizer carries one colour and one level for the room, no spectrum. Rooms of one
+  group show the same frames.
 
 - chorus plays inputs and announcements. `play_media` with a stream URL, a radio station or
   any other media source is refused: content is chosen in the apps that cast to chorus.
@@ -397,6 +485,9 @@ it shows that time again when it comes back from unavailable, which is not a pre
 | Most of a speaker's diagnostic sensors are unavailable and its Firmware version is not | The speaker is disconnected |
 | Signal strength or Temperature says "Unknown" | The speaker has no such value: it is wired, or has no temperature sensor |
 | A speaker's diagnostic sensor is missing from the dashboard | All but Link and Firmware version start disabled: enable it on the speaker's device page |
+| A room has no Visualizer sensor on the dashboard | It starts disabled: enable it on the room's device page |
+| The Visualizer sensor is unavailable while the room's media player works | Its stream is not attached: the server is older than the route (`GET /api/visualizer`), or the stream was lost and is being opened again. The log has one line with the reason |
+| The Visualizer sensor stays at 0 while music plays | The server computes no visualizer stream in its one-stream shape (`--slots 0`), and none for a room whose group plays nothing |
 | The Firmware entity says "Rolled back" | The new image did not rejoin the server in time, so the speaker started the previous one again. Nothing retries it |
 
 Download diagnostics from the entry's menu when reporting a problem: the file holds no host,

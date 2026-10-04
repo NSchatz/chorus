@@ -4,7 +4,10 @@
 ``GET /api/events`` as server-sent events with one full state per change, and
 ``POST /api/command`` with ``Content-Type: application/json`` and no ``Origin``
 header. ``GET /api/controller-events`` is a second stream of the same kind, one
-``controller_event`` per button press the server accepted and nothing kept. Every response is ``Connection: close``. ``GET /metrics`` is the
+``controller_event`` per button press the server accepted and nothing kept.
+``GET /api/visualizer?zone=<room>`` is a third: one room's visualizer frames,
+at most ten a second, the latest only (``docs/visualizer.md``, "The HTTP
+stream"). Every response is ``Connection: close``. ``GET /metrics`` is the
 speakers' telemetry (``docs/telemetry.md``), read on request.
 """
 
@@ -27,7 +30,7 @@ from .errors import (
     ChorusUnsupportedError,
 )
 from .metrics import Metrics
-from .models import ControllerEvent, ServerInfo, State, loads
+from .models import ControllerEvent, ServerInfo, State, VisualizerFrame, loads
 from .sse import MAX_EVENT_BYTES, SSEParser
 
 REQUEST_TIMEOUT = 10.0
@@ -196,6 +199,19 @@ class ChorusClient:
             self, idle_probe=idle_probe, sleep=sleep, rand=rand
         )
 
+    def visualizer(
+        self,
+        zone: str,
+        *,
+        idle_probe: float = IDLE_PROBE_SECONDS,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        rand: Callable[[], float] = _random.random,
+    ) -> VisualizerStream:
+        """Return a subscriber to one room's visualizer stream."""
+        return VisualizerStream(
+            self, zone, idle_probe=idle_probe, sleep=sleep, rand=rand
+        )
+
 
 async def _read_bounded(resp: aiohttp.ClientResponse) -> bytes:
     body = bytearray()
@@ -251,6 +267,10 @@ class _Subscriber:
         self._sleep = sleep
         self._backoff = Backoff(rand)
 
+    def _url(self) -> URL:
+        """Return the address of the stream."""
+        return self._client.url(self._path)
+
     async def _run(
         self,
         on_open: Callable[[], None],
@@ -275,7 +295,7 @@ class _Subscriber:
         parser = SSEParser()
         try:
             async with client.session.get(
-                client.url(self._path),
+                self._url(),
                 headers={"Accept": "text/event-stream"},
                 timeout=aiohttp.ClientTimeout(total=None, sock_connect=REQUEST_TIMEOUT),
             ) as resp:
@@ -373,3 +393,66 @@ class ControllerEventStream(_Subscriber):
             on_idle,
             on_disconnect,
         )
+
+
+class VisualizerStream(_Subscriber):
+    """The subscriber to one room's visualizer stream: the latest frame, as sent.
+
+    The server keeps one frame per room and sends a subscriber the latest, at
+    most ten a second (``docs/visualizer.md``, "The rate cap", "The drop
+    rule"); this reader hands each frame on as it arrives and keeps none. A
+    stream opens with a comment line and no frame, and stays empty while the
+    room plays nothing.
+    """
+
+    _path = "/api/visualizer"
+    _what = "visualizer stream"
+
+    def __init__(
+        self,
+        client: ChorusClient,
+        zone: str,
+        *,
+        idle_probe: float,
+        sleep: Callable[[float], Awaitable[None]],
+        rand: Callable[[], float],
+    ) -> None:
+        """Hold the room whose stream this is."""
+        super().__init__(client, idle_probe=idle_probe, sleep=sleep, rand=rand)
+        self._zone = zone
+
+    def _url(self) -> URL:
+        return self._client.url(self._path).with_query(zone=self._zone)
+
+    async def run(
+        self,
+        on_frame: Callable[[VisualizerFrame], None],
+        on_disconnect: Callable[[ChorusError], None],
+        on_connect: Callable[[], None] = lambda: None,
+    ) -> None:
+        """Deliver every frame, for ever; say when the stream is open and lost.
+
+        Returns only by cancellation.
+        """
+
+        def on_open() -> None:
+            # The stream opens empty and stays so while the room is quiet, so
+            # the answer itself says it worked.
+            self._backoff.reset()
+            on_connect()
+
+        def on_event(event: str) -> None:
+            frame = VisualizerFrame.parse(event)
+            if frame.zone != self._zone:
+                raise ChorusProtocolError(
+                    f"a visualizer frame for '{frame.zone}' on the stream of "
+                    f"'{self._zone}'"
+                )
+            on_frame(frame)
+
+        async def on_idle() -> None:
+            # A quiet room sends nothing; the state is asked for as a sign of
+            # life and its answer is not used.
+            await self._client.state()
+
+        await self._run(on_open, on_event, on_idle, on_disconnect)

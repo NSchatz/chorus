@@ -42,7 +42,7 @@ Home Assistant each time.
 | chorus | Home Assistant |
 |---|---|
 | The server | One device (a service), the hub of the entry |
-| A room (zone) | One device named for the room, `suggested_area` its name, with a `media_player`, a group-volume `number`, and its sound controls: bass and treble (`number`), loudness, night mode and speech enhancement (`switch`), an input `select`, a quiet-hours `switch`, and an autoplay `switch` for each autoplay rule that targets it |
+| A room (zone) | One device named for the room, `suggested_area` its name, with a `media_player`, a group-volume `number`, a visualizer `sensor` (disabled by default), and its sound controls: bass and treble (`number`), loudness, night mode and speech enhancement (`switch`), an input `select`, a quiet-hours `switch`, and an autoplay `switch` for each autoplay rule that targets it |
 | A saved group | One device under the server with a `media_player`, always present, and an autoplay `switch` for each autoplay rule that targets it |
 | A live group | No entity: the `group_members` of its rooms' players, leader first |
 | An adopted speaker | One device named for the speaker, `via` its room's device while it has a room and the server otherwise, a firmware `update` entity once it has reported what it runs, eight diagnostic `sensor`s, and five button `event` entities once it has declared the controller role |
@@ -245,6 +245,76 @@ is subscribed and never kept.
   server's. Device triggers are not provided: an automation triggers on the entity's state
   (the README has one).
 
+## The room visualizer: one sensor per room, disabled by default, five states a second at most
+
+The model is `docs/decisions/0162-the-home-assistant-visualizer-entity.md`. Brief section 23
+item 1 asks for "the visualizer stream exposed so HA automations can map it to lights"; the
+source is the server's `GET /api/visualizer?zone=<room>` (`docs/visualizer.md`, "The HTTP
+stream"; `docs/decisions/0153-the-visualizer-stream-over-http.md`): one `visualizer` message
+per frame, at most ten a second, the latest only.
+
+- **The entity.** One `sensor` per room on the room's device (`visualizer.py`, added by
+  `sensor.py`), unique id `<server>:room:<room>:visualizer`, no entity category, and
+  `entity_registry_enabled_default` false. Its state is the frame's `peak` as a percentage of
+  the level byte; its attributes are `rgb_color` (`red`, `green`, `blue`), `brightness`,
+  `transition` (`transition_ms` in seconds), `beat` and `lead_ms`. The first three are the
+  names and units `light.turn_on` takes, so an automation passes them through
+  (`test_visualizer_frame_becomes_a_state_with_a_colour_for_a_light`, sent as the shared
+  vector `fixtures/visualizer/http-frame.json`).
+- **No stream while disabled.** The stream is opened in the entity's `async_added_to_hass`
+  and closed when the entity is removed; Home Assistant never adds a disabled entity. So a
+  room whose visualizer is disabled has no subscriber on the server, which then does not
+  analyse the room's slot for it (`docs/visualizer.md`, "Where it is computed")
+  (`test_visualizer_disabled_holds_no_stream_open`: no request to the route at all until one
+  room is enabled, then that room's stream alone, closed again on disable and on unload).
+- **The rate cap is the entity's own.** At most one state write every
+  `VISUALIZER_MIN_WRITE_INTERVAL` (200 ms: five a second), on the event loop's monotonic
+  clock, whatever arrives. The rule is the server's ("The drop rule"): the latest frame
+  supersedes the ones before it and nothing is queued; a write that the cap holds back
+  happens when its interval runs out, not at the next frame; and a beat no write has shown
+  rides in the next one. Every write of the entity goes through the cap, a change of
+  availability and a change of the house's state included, and a write that would say what
+  the last one said is not made.
+  `test_visualizer_state_writes_never_exceed_the_cap_whatever_the_frame_rate` counts the
+  calls of `async_write_ha_state` over simulated time against a fake server with no cap of
+  its own, at 100 frames a second, in bursts of 20 at one instant, and at the server's ten a
+  second: no two writes are closer than the interval.
+  `test_visualizer_beat_held_back_by_the_cap_rides_in_the_next_write` holds the beat rule.
+  200 ms is ASSUMED, not measured: half the server's rate, and no report in
+  `docs/measurements/` says what a Home Assistant host or a lamp takes.
+- **Idle.** State `0`, `rgb_color` `(0, 0, 0)`, `brightness` 0, `beat` 0, `transition` 0,
+  `lead_ms` 0: before the first frame, at a silent frame (`peak` 0 and `beat` 0, which is
+  the first of a run of silence and the last thing the server sends, still carrying the
+  colour in force), and `VISUALIZER_IDLE_AFTER` (2 s, ASSUMED) after the last frame when no
+  silent one came, which is what a room whose group was given no source looks like
+  (`test_visualizer_silence_leaves_the_idle_value`).
+- **The recorder.** No state class, so the sensor platform's statistics compiler never
+  takes it and it has no long-term statistics; `_unrecorded_attributes` is `MATCH_ALL`, so
+  the recorder stores none of its attributes (`test_visualizer_keeps_out_of_long_term_history`
+  holds both on the entity; it does not run a recorder). The state itself is recorded in the
+  short-term history like any entity's, at most five rows a second while the room plays,
+  until the purge: an integration has no way to exclude its own entity's states, and the
+  README gives the owner the `recorder: exclude:` lines.
+- **Unavailable while the stream is not attached**: lost, or a server older than the route
+  (404). One info log line says so and one that it is back; the reader reconnects with the
+  same backoff. Coming back is idle, never the last frame
+  (`test_visualizer_stream_lost_is_unavailable_then_idle_and_logged_once`).
+- **The reader** is the third use of `_aiochorus/client.py`'s one subscriber class
+  (`VisualizerStream`): the same line splitter and bound, liveness check and backoff, which
+  starts over when the stream opens because a quiet room's stream is empty. `VisualizerFrame`
+  reads the members a lamp needs and not `timestamp_ns`, which is on a clock a subscriber
+  does not have. A frame that names another room ends the stream.
+  `tests/aiochorus/test_visualizer.py` reads the shared vector and its `.fields`, never a
+  copy.
+- **The example automation is tested as written.**
+  `test_visualizer_documented_automation_calls_the_light_with_the_frames_colour` takes the
+  YAML out of the README, sets it up in Home Assistant with the sensor's entity id put in,
+  sends the shared frame and checks that `light.turn_on` was called with the frame's colour.
+- **Timing.** A state is written when a frame arrives or when the cap lets it; `lead_ms` is
+  passed on and not waited for. This is not a claim about a light: nothing has measured one.
+- **Nothing is sent, and no light is driven.** The mapping is the owner's automation; the
+  integration ships none and no blueprint.
+
 ## The security rules
 
 Home Assistant is reachable from more places than chorus is, and anyone logged into it can
@@ -273,8 +343,9 @@ operate every entity. The control plane has no authentication. So:
 5. **No runtime pip**, as above.
 6. **Diagnostics are an allowlist**: named fields of the state, never the state itself. No
    host, URL, key fingerprint, speaker or endpoint id, stored source value or track title.
-7. **Bounded use of Home Assistant.** One subscriber per entry, reconnect with backoff and
-   jitter, one event bounded at 8 MiB, commands one at a time per platform.
+7. **Bounded use of Home Assistant.** One subscriber per entry (and one per enabled
+   visualizer sensor, whose state writes are capped at five a second), reconnect with backoff
+   and jitter, one event bounded at 8 MiB, commands one at a time per platform.
 
 ## The test harness and its pin
 
