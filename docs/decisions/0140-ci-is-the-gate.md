@@ -35,8 +35,12 @@ where it runs (CI, not the development host) and what a merge waits for (a revie
    (`target/gate/*.log`, kept 7 days): the job log shows only a failing step's last 15 lines, and
    no local run reproduces it.
 7. **Each change runs once.** `push` is main only, so a push to a pull request's branch starts
-   only the `pull_request` run; the concurrency group is the branch's name (`main` for a push to
-   main), and the nightly run has a group of its own, so a merge never cancels it.
+   only the `pull_request` run; a pull request's concurrency group is its branch's name, so a
+   newer push cancels the run in progress, and the nightly run has a group of its own, so a merge
+   never cancels it. A push to main is never cancelled: its group is its own commit and
+   `cancel-in-progress` is off for `push`, because pull requests merge without waiting for the
+   run, main moves while its run is in progress, and every commit on main needs a finished result
+   (a shared `main` group holds one pending run, so a third push would cancel the second's).
 
 ## Why
 
