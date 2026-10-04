@@ -1,0 +1,22 @@
+# Canonical input for the catalog v2 state-quiet-disabled vector.
+#
+# Applying the commands below, in order, to a server configured with these
+# zones, then the runtime hooks below, must produce exactly
+# state-quiet-disabled.json. A room whose quiet hours are switched off inside
+# one of its windows: the window is stored and `active` (the clock is inside
+# it), `quiet_enabled` is false, and the room's `effective_limit` is its
+# `limit`, so the volume set above the window's cap stays where it was put.
+# `time` is the civil time the quiet-hours windows are judged at (weekday
+# HH:MM); the model reads no clock.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = state
+default_audio = 127.0.0.1:4010
+zones = bedroom
+command.0 = {"v":2,"t":"limit","zone":"bedroom","limit":0.800}
+command.1 = {"v":1,"t":"volume","zone":"bedroom","volume":0.600}
+command.2 = {"v":2,"t":"quiet_hours","zone":"bedroom","windows":[{"days":["fri"],"start":"22:00","end":"07:00","limit":0.200}]}
+command.3 = {"v":2,"t":"quiet_hours_enabled","zone":"bedroom","enabled":false}
+time = fri 23:30

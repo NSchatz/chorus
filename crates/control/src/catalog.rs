@@ -282,6 +282,14 @@ pub enum Command {
         /// The windows, at most [`MAX_QUIET_WINDOWS`].
         windows: Vec<QuietWindow>,
     },
+    /// (v2) Switch a room's quiet hours off or on. The windows stay stored
+    /// either way; while off, none of them caps the room.
+    QuietHoursEnabled {
+        /// The room.
+        zone: String,
+        /// Whether the room's windows cap it when they are active.
+        enabled: bool,
+    },
     /// (v2) Create or replace an alarm.
     AlarmSet(Alarm),
     /// (v2) Forget an alarm.
@@ -457,6 +465,7 @@ impl Command {
             Command::VolumeStep { .. } => "volume_step",
             Command::Limit { .. } => "limit",
             Command::QuietHours { .. } => "quiet_hours",
+            Command::QuietHoursEnabled { .. } => "quiet_hours_enabled",
             Command::AlarmSet(_) => "alarm_set",
             Command::AlarmDelete { .. } => "alarm_delete",
             Command::AlarmStop { .. } => "alarm_stop",
@@ -515,6 +524,7 @@ impl Command {
             | Command::VolumeStep { zone, .. }
             | Command::Limit { zone, .. }
             | Command::QuietHours { zone, .. }
+            | Command::QuietHoursEnabled { zone, .. }
             | Command::Sound { zone, .. }
             | Command::BassManagement { zone, .. }
             | Command::RoomEq { zone, .. }
@@ -603,6 +613,10 @@ impl Command {
                     "windows".to_string(),
                     Value::Arr(windows.iter().map(window_value).collect()),
                 ));
+            }
+            Command::QuietHoursEnabled { zone, enabled } => {
+                text("zone", zone);
+                m.push(("enabled".to_string(), Value::Bool(*enabled)));
             }
             Command::AlarmSet(alarm) => {
                 if let Value::Obj(fields) = alarm_value(alarm) {
@@ -1384,6 +1398,13 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
             Command::QuietHours {
                 zone,
                 windows: quiet_windows(value).map_err(at)?,
+            }
+        }
+        "quiet_hours_enabled" => {
+            fields(&["v", "t", "zone", "enabled"], &[])?;
+            Command::QuietHoursEnabled {
+                zone: id("zone")?,
+                enabled: boolean(value, "enabled").map_err(at)?,
             }
         }
         "alarm_set" => {

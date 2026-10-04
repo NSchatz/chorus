@@ -50,6 +50,7 @@ const EVERY_V2_MESSAGE_TYPE: &[&str] = &[
     "volume_step",
     "limit",
     "quiet_hours",
+    "quiet_hours_enabled",
     "alarm_set",
     "alarm_delete",
     "alarm_stop",
@@ -509,6 +510,10 @@ fn command_from(fields: &Fields) -> Command {
                 windows,
             }
         }
+        "quiet_hours_enabled" => Command::QuietHoursEnabled {
+            zone: get("zone"),
+            enabled: get("enabled") == "1",
+        },
         "alarm_set" => Command::AlarmSet(Alarm {
             id: get("alarm"),
             target: get("target"),
@@ -1277,6 +1282,70 @@ fn setting_quiet_hours_inside_a_window_applies_it_at_once() {
         r#"{"v":2,"t":"quiet_hours","zone":"kitchen","windows":[]}"#,
     );
     assert_eq!(zones.effective_limit("kitchen"), Some(Volume::FULL));
+}
+
+#[test]
+fn quiet_hours_switched_off_keep_their_windows_and_cap_nothing() {
+    let mut zones = house();
+    apply(
+        &mut zones,
+        r#"{"v":2,"t":"quiet_hours","zone":"kitchen","windows":[{"days":["mon"],"start":"22:00","end":"23:30","limit":0.300}]}"#,
+    );
+    let quiet_of = |zones: &Zones| {
+        let state = zones.encode_state();
+        let from = state.find(r#""id":"kitchen""#).unwrap();
+        let start = from + state[from..].find(r#""quiet":"#).unwrap();
+        let end = start + state[start..].find(r#","quiet_enabled""#).unwrap();
+        state[start..end].to_string()
+    };
+    apply(
+        &mut zones,
+        r#"{"v":2,"t":"quiet_hours_enabled","zone":"kitchen","enabled":false}"#,
+    );
+    // The window starts while they are off: flagged, and not a cap.
+    zones.set_civil_time(at("mon", "23:00"));
+    assert_eq!(zones.effective_limit("kitchen"), Some(Volume::FULL));
+    assert_eq!(volume_of(&zones, "kitchen"), "1.000");
+    let windows = quiet_of(&zones);
+    assert_eq!(
+        windows,
+        r#""quiet":[{"days":["mon"],"start":"22:00","end":"23:30","limit":0.300,"active":true}]"#
+    );
+    assert!(zones.encode_state().contains(r#""quiet_enabled":false"#));
+    // No volume path is capped by it either.
+    apply(
+        &mut zones,
+        r#"{"v":1,"t":"volume","zone":"kitchen","volume":0.900}"#,
+    );
+    assert_eq!(volume_of(&zones, "kitchen"), "0.900");
+    // Switched back on inside the window: the cap applies at once.
+    apply(
+        &mut zones,
+        r#"{"v":2,"t":"quiet_hours_enabled","zone":"kitchen","enabled":true}"#,
+    );
+    assert_eq!(zones.effective_limit("kitchen"), Some(v(300)));
+    assert_eq!(volume_of(&zones, "kitchen"), "0.300");
+    assert_eq!(quiet_of(&zones), windows, "the same windows, byte for byte");
+    // Replacing the windows does not switch them back on or off.
+    apply(
+        &mut zones,
+        r#"{"v":2,"t":"quiet_hours_enabled","zone":"kitchen","enabled":false}"#,
+    );
+    apply(
+        &mut zones,
+        r#"{"v":2,"t":"quiet_hours","zone":"kitchen","windows":[{"days":["mon"],"start":"22:00","end":"23:30","limit":0.100}]}"#,
+    );
+    assert_eq!(zones.effective_limit("kitchen"), Some(Volume::FULL));
+    refused(
+        &mut zones,
+        r#"{"v":2,"t":"quiet_hours_enabled","zone":"kitchen"}"#,
+        "enabled",
+    );
+    refused(
+        &mut zones,
+        r#"{"v":1,"t":"quiet_hours_enabled","zone":"kitchen","enabled":true}"#,
+        "t",
+    );
 }
 
 #[test]

@@ -74,13 +74,15 @@ A **zone** is a room (catalog v2's documents say "room"; the wire keeps the key
 | `present` | the subset attached right now, never persisted |
 | `limit` (v2) | the room's maximum volume, `1.000` unless set |
 | `quiet` (v2) | the room's quiet-hours windows, each with its own cap |
+| `quiet_enabled` (v2) | whether the room's quiet hours are switched on, `true` unless switched off; the windows are stored either way |
 | `bond` (v2) | the room's bonded set: endpoints each playing a channel role, or none |
 | `sound` (v2, goal 12) | tone, loudness, night mode and speech enhancement |
 | `bass_management` (v2, goal 12) | crossover, sub level and sub polarity, in force when the set has an `LFE` member |
 | `room_eq` (v2, goal 12) | up to 8 room-correction filters and whether they are applied |
 
 **The clamp rule (v2).** A room's **effective limit** is
-`min(limit, the cap of every quiet-hours window active now)`. Every volume path
+`min(limit, the cap of every quiet-hours window active now)`, and `limit` alone
+while the room's quiet hours are switched off (`quiet_enabled` false). Every volume path
 is CLAMPED to it, never refused: `volume`, `volume_step`, `group_volume`,
 `group_volume_step`, a speaker's buttons (the controller role, which becomes a
 `volume` command), and the server runtime's own ramps and steps. A volume above
@@ -366,7 +368,8 @@ give them.
 | `group_volume_step` | `group` (formed), `step` | the same, from the group volume plus `step`, held to `0.000` to `1.000` |
 | `volume_step` | `zone`, `step` | the room's volume plus `step`, held to `0.000` to `1.000`, then clamped |
 | `limit` | `zone`, `limit` (a volume) | the room's maximum; pulls its volume down to it |
-| `quiet_hours` | `zone`, `windows`: `[{"days","start","end","limit"}]`, at most 8 | replaces the room's windows; `[]` removes them. Days are never empty |
+| `quiet_hours` | `zone`, `windows`: `[{"days","start","end","limit"}]`, at most 8 | replaces the room's windows; `[]` removes them. Days are never empty. Does not change whether they are switched on |
+| `quiet_hours_enabled` | `zone`, `enabled` (`true` or `false`) | switches the room's quiet hours on or off and keeps its windows. They are on by default. Off: no window caps the room, and nothing is raised. On again inside a window: the cap applies at once and the volume is pulled down to it |
 | `alarm_set` | `alarm`, `target` (a room or a saved group), `time`, `days` (empty is once), `source`, `volume`, `ramp_s` (0 to 600), `duration_min` (0 to 720; 0 plays until stopped), `enabled` | creates or replaces an alarm |
 | `alarm_delete` | `alarm` | forgets it |
 | `alarm_stop` | `alarm` | stops it ringing; one not ringing is not an error |
@@ -386,7 +389,22 @@ give them.
 {"v":2,"t":"bond","zone":"living","members":[{"endpoint":"endpoint-a","role":"FL"},{"endpoint":"endpoint-b","role":"FR"}]}
 {"v":2,"t":"take","target":"downstairs","source":"line-in:endpoint-c/line-1"}
 {"v":2,"t":"quiet_hours","zone":"bedroom","windows":[{"days":["mon","tue","wed","thu","fri"],"start":"22:00","end":"07:00","limit":0.250}]}
+{"v":2,"t":"quiet_hours_enabled","zone":"bedroom","enabled":false}
 ```
+
+**Quiet hours switched off and on.** `quiet_hours_enabled` is one flag per
+room (`docs/decisions/0000-quiet-hours-switched-off-and-on-per-room.md`), so
+that one switch in a home-automation system can drive it without knowing the
+windows. The default is enabled: a room nobody switched off behaves as it
+always did. While it is off the room keeps every window exactly as it was set,
+the state still says which of them the clock is inside (`active`), and the
+room's `effective_limit` is its `limit`. The flag is persisted (state-file
+format 7), so a restart inside a window does not bring the cap back.
+`quiet_hours` replaces the windows and leaves the flag alone; sending
+`enabled` the value it already has is accepted and changes nothing but the
+serial. `fixtures/control/v2/quiet_hours_enabled.json` pins the command and
+`fixtures/control/v2/state-quiet-disabled.json` a room switched off inside one
+of its windows.
 
 An alarm, an autoplay rule and a saved group outlive a restart, so their
 targets are rooms or saved groups; a live group's id names nothing once it
@@ -908,7 +926,7 @@ of each, `fixtures/control/v2/state-empty.json` the empty house):
 
 | field | notes |
 |---|---|
-| `zones[]` | v1's fields, then `transport` (`wired` or `wireless`, as declared), `limit`, `effective_limit`, `quiet` (`[{"days","start","end","limit","active"}]`), `bond` (`[{"endpoint","role"}]`, `[]` for none), `ramp` (a running ramp's target, or `null`), and (goal 12) `sound` (`{"bass","treble","loudness","night","speech"}`), `bass_management` (`{"crossover_hz","sub_level_db","sub_polarity","active"}`) and `room_eq` (`{"enabled","filters"}`) |
+| `zones[]` | v1's fields, then `transport` (`wired` or `wireless`, as declared), `limit`, `effective_limit`, `quiet` (`[{"days","start","end","limit","active"}]`; `active` says the clock is inside the window, whether or not the room's quiet hours are switched on), `quiet_enabled` (`true` or `false`: whether an active window caps the room; `true` unless `quiet_hours_enabled` switched it off), `bond` (`[{"endpoint","role"}]`, `[]` for none), `ramp` (a running ramp's target, or `null`), and (goal 12) `sound` (`{"bass","treble","loudness","night","speech"}`), `bass_management` (`{"crossover_hz","sub_level_db","sub_polarity","active"}`) and `room_eq` (`{"enabled","filters"}`) |
 | `zones[].source`, `zones[].now_playing` | (goal 16) **written only while the room's group has a now-playing record**, last in the room's object, in that order: the group's `source` (a `player:<id>`) and the record, below |
 | `groups[]` | every formed group, in the order its first room was configured: `id`, `kind`, `zones`, `volume` (the group volume), `source`, `audio` |
 | `groups[].now_playing` | (goal 16) **written only while the group has a now-playing record**, after `audio`: `title`, `artist`, `album`, `art_url` (each a string, or `null` where not known), `duration_ms` (a whole number, or `null` for a live stream or an unknown length), `state` (`playing`, `paused` or `buffering`), `via` (an identifier: `upnp` for a UPnP AV control point). Never persisted |
@@ -1256,7 +1274,10 @@ rules the catalog configures (ADR 0079 wires it):
   turning a fading room's volume cancels the timer.
 - **Quiet hours** follow the civil clock: a window starting pulls a room's
   volume down to its cap (and holds an alarm's rise under it); a window ending
-  raises nothing.
+  raises nothing. A room whose quiet hours are switched off
+  (`quiet_hours_enabled`) is not pulled down by a window starting and its
+  ramps rise to its `limit`; switching them back on inside a window pulls it
+  down then, by the same ramp-then-limit pair of reports.
 - **Line-in autoplay**: an input whose signal arrives with an enabled rule
   takes the rule's target and plays the input (goal 17: whether or not
   another group already plays it; only a target that already plays it,
@@ -1414,7 +1435,7 @@ No firmware image travels over this channel (goal 14): a request is at most
 16 KiB and an image is megabytes. Images are staged as files in
 `--firmware-dir`, and the bytes go to a speaker inside its own audio session.
 
-## What survives a restart (state-file format 6)
+## What survives a restart (state-file format 7)
 
 The server persists, in `--state-file`, everything a person configured: each
 room's name, group, volume, mute, endpoints, `limit`, quiet-hours windows,
@@ -1425,7 +1446,9 @@ endpoint's link; saved groups; alarms; autoplay rules (with, from format 4,
 speaker's `name`, `named` and `room`, in a `[speaker <id>]` section; and
 (format 6, goal 17) each stored source (`[stored-source <id>]`: `kind`,
 `value`, `name`) and each input label (`[input-label <endpoint>/<input>]`:
-`name`, `role`). It does
+`name`, `role`); and (format 7) whether each room's quiet hours are switched
+on (`quiet_enabled`, 0 or 1, in its `[zone]` section, required in a format 7
+file). It does
 not persist what is a fact about now: which endpoints are present, which quiet
 window is active, which alarm is ringing, a running ramp, what a group is
 playing (its source and, goal 16, its now-playing record), a sleep timer,
@@ -1440,6 +1463,8 @@ before catalog v2) loads unchanged with the v2 defaults, and a format 2 file
 builds) with no trim, the upmix off and every rule's TV fields true, and a
 format 4 file (goal 13's builds) with no speaker record (the server lists
 every id it has pinned when it starts), and a format 5 file (goal 14 to 16's
-builds) with no stored source and no input label; the next write is format 6. A write goes to a temporary that is `fsync`ed, renamed over the file, and the
+builds) with no stored source and no input label, and a format 6 file (goal
+17's builds and later, before `quiet_hours_enabled`) with every room's quiet
+hours enabled, which is what its windows meant then; the next write is format 7. A write goes to a temporary that is `fsync`ed, renamed over the file, and the
 directory is `fsync`ed, and a render that would not read back as the same state
 is never installed (`crates/control/src/persist.rs`).

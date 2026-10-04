@@ -180,8 +180,8 @@ fn everything_goal_13_holds_survives_the_state_file_as_format_4() {
     }
     let text = render(&zones);
     // Format 5 (goal 14) still holds every format 4 field, in its place.
-    assert_eq!(STATE_FORMAT, 6);
-    assert!(text.contains("format = 6\n"));
+    assert_eq!(STATE_FORMAT, 7);
+    assert!(text.contains("format = 7\n"));
     assert!(
         text.contains("tv_upmix = ambient\nav_trim_ms = -35\n"),
         "{}",
@@ -210,7 +210,7 @@ fn a_format_3_file_loads_unchanged_with_the_goal_13_defaults() {
     );
     let four = render(&zones);
     let three = four
-        .replace("format = 6\n", "format = 3\n")
+        .replace("format = 7\n", "format = 3\n")
         .replace("tv_upmix = off\n", "")
         .replace("av_trim_ms = 0\n", "")
         .replace("stop_on_standby = 1\n", "")

@@ -378,8 +378,8 @@ fn configured() -> Zones {
 fn stored_sources_and_labels_come_back_from_the_state_file_byte_for_byte() {
     let zones = configured();
     let text = render(&zones);
-    assert_eq!(STATE_FORMAT, 6);
-    assert!(text.contains("format = 6\n"));
+    assert_eq!(STATE_FORMAT, 7);
+    assert!(text.contains("format = 7\n"));
     assert!(
         text.contains(
             "[stored-source radio]\nkind = url\nvalue = https://radio.example/live?x=1&y=%20\\#top\nname = A name\n"
@@ -414,13 +414,13 @@ fn a_format_5_file_loads_unchanged_and_has_neither_section() {
     let mut plain = house();
     apply(&mut plain, &alarm("chime:bell"));
     let six = render(&plain);
-    let five = six.replace("format = 6\n", "format = 5\n");
+    let five = six.replace("format = 7\n", "format = 5\n");
     let back = load(&five, "127.0.0.1:4010").expect("a format 5 file loads");
     assert!(back.stored_sources().is_empty() && back.input_labels().is_empty());
     assert_eq!(render(&back), six, "the next write is format 6");
     // A format 6 section in a file that says it is format 5 is refused by
     // name, not guessed at.
-    let mixed = render(&configured()).replace("format = 6\n", "format = 5\n");
+    let mixed = render(&configured()).replace("format = 7\n", "format = 5\n");
     let error = load(&mixed, "127.0.0.1:4010").expect_err("format 5 has no such section");
     assert!(
         error.to_string().contains("it was added in format 6"),
