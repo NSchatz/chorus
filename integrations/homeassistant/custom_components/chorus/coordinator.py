@@ -1,9 +1,14 @@
-"""The chorus server's state, pushed over one event stream per config entry."""
+"""The chorus server's state, pushed over one event stream per config entry.
+
+Beside it, the speakers' telemetry, read from `GET /metrics` at a bounded rate
+and only while a diagnostic sensor is enabled (`ChorusMetricsCoordinator`).
+"""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 import logging
+import time
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -17,12 +22,13 @@ from ._aiochorus import (
     ChorusCommandError,
     ChorusError,
     ChorusRefusedError,
+    Metrics,
     ServerInfo,
     Speaker,
     State,
     Zone,
 )
-from .const import DOMAIN
+from .const import DOMAIN, METRICS_MIN_GAP_SECONDS, METRICS_SCAN_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,6 +94,7 @@ class ChorusCoordinator(DataUpdateCoordinator[State]):
         self.client = client
         self.server = server
         self.server_device_id = ""
+        self.metrics = ChorusMetricsCoordinator(hass, entry, client)
         self._stream_lost = False
 
     async def _async_update_data(self) -> State:
@@ -272,6 +279,76 @@ class ChorusCoordinator(DataUpdateCoordinator[State]):
     def async_create_unsupported_issue(self) -> None:
         """Tell the owner the server does not speak the catalog this needs."""
         async_create_unsupported_issue(self.hass, self.config_entry)
+
+
+class ChorusMetricsCoordinator(DataUpdateCoordinator[Metrics | None]):
+    """Holds the latest scrape of the speakers' telemetry.
+
+    A coordinator polls only while it has a listener, and an entity that is
+    disabled is never added, so with no diagnostic sensor enabled the server is
+    never asked. The state's coordinator does not depend on this one: a scrape
+    that fails makes the diagnostic sensors unavailable and nothing else.
+    """
+
+    config_entry: ChorusConfigEntry
+
+    def __init__(
+        self, hass: HomeAssistant, entry: ChorusConfigEntry, client: ChorusClient
+    ) -> None:
+        """Take the client; nothing is read until a sensor asks."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            config_entry=entry,
+            name=f"{DOMAIN} speaker diagnostics",
+            update_interval=METRICS_SCAN_INTERVAL,
+        )
+        self.client = client
+        self.data = None
+        self._started = False
+        self._scraped_at: float | None = None
+        self._failure: UpdateFailed | None = None
+
+    @callback
+    def async_start(self) -> None:
+        """Scrape once now, for the first sensor that is added.
+
+        Without it an enabled sensor would have no value until the first
+        scheduled scrape, a whole interval after the entry loaded.
+        """
+        if self._started:
+            return
+        self._started = True
+        self.config_entry.async_create_background_task(
+            self.hass,
+            self.async_refresh(),
+            f"{DOMAIN} first metrics scrape {self.config_entry.entry_id}",
+        )
+
+    async def _async_update_data(self) -> Metrics | None:
+        # A monotonic clock: the gap is an interval, never a time of day.
+        now = time.monotonic()
+        if (
+            self._scraped_at is not None
+            and now - self._scraped_at < METRICS_MIN_GAP_SECONDS
+        ):
+            # Asked again too soon (an `update_entity` action, a second
+            # sensor): the last scrape is the answer, good or bad.
+            if self._failure is not None:
+                raise self._failure
+            return self.data
+        self._scraped_at = now
+        try:
+            metrics = await self.client.metrics()
+        except ChorusError as err:
+            self._failure = UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="metrics_unavailable",
+                translation_placeholders={"error": str(err)},
+            )
+            raise self._failure from err
+        self._failure = None
+        return metrics
 
 
 @callback

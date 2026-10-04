@@ -41,6 +41,33 @@ def shared(name: str) -> bytes:
     raise FileNotFoundError(name)
 
 
+def metrics_sample(disconnected: str | None = None) -> bytes:
+    """Return the sample scrape, in the server's own format (`docs/telemetry.md`).
+
+    `tests/aiochorus/test_metrics.py` holds its families, HELP and TYPE lines to
+    `crates/server/src/metrics.rs`. With `disconnected`, that speaker's session
+    has ended: the exporter keeps `connected` (0), `info` and `firmware_info`
+    of it and nothing else.
+    """
+    text = (Path(__file__).parent / "fixtures" / "metrics-scrape.txt").read_text()
+    if disconnected is None:
+        return text.encode()
+    kept = (
+        "chorus_speaker_connected{",
+        "chorus_speaker_info{",
+        "chorus_speaker_firmware_info{",
+    )
+    lines = []
+    for line in text.splitlines():
+        if f'speaker="{disconnected}"' in line:
+            if not line.startswith(kept):
+                continue
+            if line.startswith(kept[0]):
+                line = line.removesuffix(" 1") + " 0"  # noqa: PLW2901
+        lines.append(line)
+    return ("\n".join(lines) + "\n").encode()
+
+
 def _half_up(value: float) -> int:
     return int(value + 0.5)
 
@@ -69,6 +96,10 @@ class FakeChorusServer:
     server_status: int = 200
     state_status: int = 200
     events_status: int = 200
+    # `GET /metrics`: these bytes when set, else the three series the real
+    # exporter has for a speaker that sent no telemetry (docs/telemetry.md).
+    metrics_bytes: bytes | None = None
+    metrics_status: int = 200
     port: int = 0
     _streams: list[asyncio.Queue[bytes | None]] = field(default_factory=list)
     _runner: web.AppRunner | None = None
@@ -82,7 +113,9 @@ class FakeChorusServer:
         app.router.add_get("/api/state", self._state)
         app.router.add_get("/api/events", self._events)
         app.router.add_post("/api/command", self._command)
-        self._runner = web.AppRunner(app, shutdown_timeout=0.1)
+        app.router.add_get("/metrics", self._metrics)
+        # No access log: nobody reads it, and it cannot format a frozen clock.
+        self._runner = web.AppRunner(app, shutdown_timeout=0.1, access_log=None)
         await self._runner.setup()
         site = web.TCPSite(self._runner, "127.0.0.1", port)
         await site.start()
@@ -153,6 +186,43 @@ class FakeChorusServer:
             content_type="application/json",
             headers={"Connection": "close"},
         )
+
+    async def _metrics(self, request: web.Request) -> web.Response:
+        self.requests.append("GET /metrics")
+        self._gone()
+        if self.metrics_status != 200:
+            return web.Response(status=self.metrics_status, text="no")
+        body = self.metrics_bytes
+        if body is None:
+            body = self._bare_metrics()
+        return web.Response(
+            body=body,
+            headers={
+                "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
+                "Connection": "close",
+            },
+        )
+
+    def _bare_metrics(self) -> bytes:
+        """The scrape of a server whose speakers have reported no telemetry."""
+        speakers = json.loads(self.state_bytes).get("speakers", [])
+        lines = [
+            'chorus_server_build_info{version="0.1.0"} 1',
+            f"chorus_speakers {len(speakers)}",
+        ]
+        lines += [
+            f'chorus_speaker_connected{{speaker="{s["id"]}"}} {int(s["present"])}'
+            for s in speakers
+        ]
+        for speaker in speakers:
+            running = speaker.get("firmware")
+            version = running["version"] if running else speaker.get("software", "")
+            if version:
+                lines.append(
+                    f'chorus_speaker_firmware_info{{speaker="{speaker["id"]}",'
+                    f'version="{version}"}} 1'
+                )
+        return ("\n".join(lines) + "\n").encode()
 
     async def _events(self, request: web.Request) -> web.StreamResponse:
         self.requests.append("GET /api/events")

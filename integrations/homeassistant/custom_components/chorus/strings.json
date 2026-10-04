@@ -88,6 +88,31 @@
         }
       }
     },
+    "sensor": {
+      "buffer_fill": {
+        "name": "Buffer fill"
+      },
+      "firmware_version": {
+        "name": "Firmware version"
+      },
+      "link": {
+        "name": "Link",
+        "state": {
+          "unknown": "Unknown",
+          "wifi": "Wi-Fi",
+          "wired": "Wired"
+        }
+      },
+      "rate_correction": {
+        "name": "Rate correction"
+      },
+      "resyncs": {
+        "name": "Resyncs"
+      },
+      "sync_error": {
+        "name": "Sync error"
+      }
+    },
     "switch": {
       "autoplay": {
         "name": "Autoplay {input}"
@@ -178,6 +203,9 @@
     },
     "join_saved_group": {
       "message": "{entity_id} is a saved group, and a saved group cannot join a room. Join rooms, or turn the saved group on to assemble it."
+    },
+    "metrics_unavailable": {
+      "message": "The chorus server's speaker diagnostics could not be read: {error}"
     },
     "refused_command": {
       "message": "The chorus server refused the command ({field}): {detail}"

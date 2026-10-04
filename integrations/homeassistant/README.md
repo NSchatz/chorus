@@ -6,7 +6,8 @@ join and unjoin rooms, set room and group volume, pick inputs and play announcem
 
 It talks to `chorus-server`'s control plane (`docs/control-plane.md`) over the local network:
 HTTP for commands and one server-sent event stream for state. Nothing goes through a cloud,
-nothing is polled, and the integration installs no Python package into Home Assistant.
+the state is never polled (only the speakers' diagnostic sensors are, once a minute, while one
+is enabled), and the integration installs no Python package into Home Assistant.
 
 How it maps chorus to Home Assistant, the security rules and the test harness are in
 [`docs/home-assistant.md`](../../docs/home-assistant.md); the decisions are in
@@ -23,9 +24,10 @@ How it maps chorus to Home Assistant, the security rules and the test harness ar
 
 - Every **adopted speaker** of that server: one device, named for the speaker, linked to its
   room's device while it has a room and to the server otherwise. A speaker that takes
-  firmware updates and has said what it runs has a firmware `update` entity.
+  firmware updates and has said what it runs has a firmware `update` entity, and every
+  speaker has its diagnostic sensors.
 
-Not supported (yet): a speaker's diagnostics and buttons. An older server, or one that only speaks catalog version 1, is refused
+Not supported (yet): a speaker's buttons. An older server, or one that only speaks catalog version 1, is refused
 at setup with a repair issue saying so.
 
 ## Use cases
@@ -39,6 +41,8 @@ at setup with a repair issue saying so.
   child), and a room's bass and treble from a dashboard.
 - Seeing which speakers run which firmware and that a staged image is waiting, and installing
   it on one speaker from its device page, watching the transfer.
+- Seeing how a speaker reaches the network and what it runs, and, for the ones you enable,
+  charting its signal strength, buffer and drift while you chase a dropout.
 - Switching a room's quiet hours off for a party, or its line-in autoplay off while a
   turntable is being set up.
 
@@ -156,6 +160,37 @@ send an image to a speaker that is not on the server's own host unless it was st
 Install action fails with a message saying so and nothing is sent to the speaker; everything
 the entity shows still works.
 
+### Speaker diagnostics (`sensor`, eight per adopted speaker)
+
+What a speaker reports about itself, read from the server's `GET /metrics`
+(`docs/telemetry.md`). All eight are in the **Diagnostic** section of the speaker's device.
+Two are enabled when the speaker is added; the others are there, disabled, for you to enable
+on the device page when you want them.
+
+| Sensor | What it is | Enabled by default |
+|---|---|---|
+| Link | How the speaker says it reaches the network: Wired, Wi-Fi or Unknown | **Yes** |
+| Firmware version | The version the speaker last said it runs. Kept while the speaker is disconnected | **Yes** |
+| Sync error | The speaker's own estimate of its playout error against the server's timeline, signed, in microseconds. Not a measured error between two speakers | No |
+| Buffer fill | Audio queued ahead of the speaker's playout point, in milliseconds | No |
+| Rate correction | The rate correction the speaker's clock servo has in force, signed, in ppm. A gauge, not a count of corrections | No |
+| Resyncs | Hard resynchronisations since the speaker's session began. It starts again at 0 when the speaker reconnects | No |
+| Signal strength | Wi-Fi signal strength in dBm. Unknown for a wired speaker | No |
+| Temperature | Degrees Celsius. Unknown on every speaker today: no board has a temperature sensor yet | No |
+
+**The poll interval is 60 seconds**: one request for all speakers. While no diagnostic sensor
+is enabled the server is not asked at all. Asking for an update sooner (the
+`homeassistant.update_entity` action) does not ask the server sooner: within 55 seconds of
+the last request the last answer is used.
+
+A value the speaker does not have is **unknown**, never zero. While a speaker is disconnected
+only its firmware version is kept; the others are unavailable.
+
+Not carried by the server's exporter, and so not here (follow-ups on the server and the
+firmware, nothing is made up in their place): a **count of corrections** (the exporter has the
+correction in force, shown as Rate correction, and no count), and a **real temperature** (the
+series exists, and no speaker has a sensor to fill it).
+
 ## Data updates
 
 Local push. The integration holds one event stream (`GET /api/events`) per server and the
@@ -164,6 +199,12 @@ answered with the new state, which is applied immediately. If the stream is lost
 become unavailable and the integration reconnects with an exponential backoff from one second
 to one minute, with jitter. A stream that has been silent for 45 seconds is checked once with
 `GET /api/state`; that is a liveness check, not polling.
+
+The speakers' diagnostic sensors are the one exception, because the server's state carries no
+telemetry: they are polled from `GET /metrics` every 60 seconds, by one request for all
+speakers, and only while at least one of them is enabled. If that request fails, or the
+answer is not the server's metrics text, the diagnostic sensors become unavailable (one log
+line says so) until the next good answer; nothing else is affected.
 
 ## Examples
 
@@ -254,6 +295,11 @@ Bring the den and the patio into the kitchen's music, then let the den go:
   entity name. The room's name is suggested as its area, so a default id reads
   `media_player.kitchen_kitchen`; rename the entity or the area to taste. (The examples above
   use the short form.)
+- The diagnostic sensors are at most a minute old, and they are what each speaker says about
+  itself: the Sync error is not a measurement of how far apart two speakers are. For history
+  at a second's resolution, scrape the server's `/metrics` with Prometheus
+  (`docs/telemetry.md`).
+- There is no sensor for a speaker's underruns or free heap; the server's `/metrics` has them.
 - The control plane has no authentication (it is a local-network service by design), so there
   is nothing to re-authenticate.
 
@@ -279,6 +325,10 @@ Bring the den and the patio into the kitchen's music, then let the den go:
 | "The speaker already has a firmware install in progress" | An install is under way for that speaker (the entity shows it); wait for its outcome |
 | "The chorus server did not verify the staged image, or it changed on disk since" | The image file is not the one the server verified. Stage it again and send the server `firmware_rescan` |
 | A speaker has a device and no Firmware entity | It has not reported what it runs: it is absent since the server started, or its firmware takes no updates |
+| A speaker's diagnostic sensors are all unavailable while its media players work | The server's `/metrics` did not answer, or answered with something that is not its metrics text (a proxy in between, an older server). The log has one line with the reason |
+| Most of a speaker's diagnostic sensors are unavailable and its Firmware version is not | The speaker is disconnected |
+| Signal strength or Temperature says "Unknown" | The speaker has no such value: it is wired, or has no temperature sensor |
+| A speaker's diagnostic sensor is missing from the dashboard | All but Link and Firmware version start disabled: enable it on the speaker's device page |
 | The Firmware entity says "Rolled back" | The new image did not rejoin the server in time, so the speaker started the previous one again. Nothing retries it |
 
 Download diagnostics from the entry's menu when reporting a problem: the file holds no host,
