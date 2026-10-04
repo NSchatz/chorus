@@ -3,6 +3,7 @@ name = "chorus-homeassistant"
 version = "0.18.0"
 description = "The chorus Home Assistant custom integration and its vendored client"
 requires-python = "==3.14.8"
+license = "MIT OR Apache-2.0"
 dependencies = []
 
 [dependency-groups]

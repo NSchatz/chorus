@@ -51,6 +51,7 @@ How the rules work:
 | 22 | Every rule has a check | `tools/conventions/check-conventions.sh` |
 | 23 | Datasheet-cited amplifier map | `tools/conventions/check-amp-map.sh`; gate step `firmware-check` (`test_amp` drives the datasheet-modelled part with the committed map) |
 | 24 | No Soloist file is shipped | gate step `soloist-lists`: `make soloist-lists` (`tools/soloist-lists.py`, after gate steps `image` and `soloist-image` built what it lists) |
+| 25 | The Home Assistant integration | `tools/conventions/check-ha-integration.sh`; gate step `ha-integration`: `make ha-test` (ruff, `mypy --strict`, the tests under the pinned harness with coverage, the no-unauthenticated-endpoint test); gate step `ha-hassfest`: `make ha-hassfest` (Home Assistant's own hassfest from the pinned core checkout) |
 
 The rest of this file is each rule in full, in table order.
 
@@ -232,6 +233,7 @@ exists (brief section 0.9):
 | Crates | `Cargo.lock`, `--locked` | the lockfile checksums |
 | The emulator (goal 14) | `tools/qemu/pins.conf` (the QEMU release, micromamba), `tools/qemu/libs.explicit.txt` (its conda-forge libraries, each an exact build) | the release archive's, the program's and micromamba's sha256; a sha256 per library package |
 | The `chorus-soloist` image (goal 17) | `tools/soloist-image.sh` (the Debian base: a dated tag and its digest), `deploy/soloist/debian-packages.pins` (every Debian package: exact version, the snapshot.debian.org timestamp it is fetched at) | the base image digest; a sha256 and a size per package file |
+| The Home Assistant integration's Python, test harness and tools (goal 18) | `integrations/homeassistant/harness.pin` (the harness, the Home Assistant it requires, the core tag hassfest runs from, the Python), `integrations/homeassistant/pyproject.toml` (every development dependency `==x.y.z`), `mise.toml` (uv) | the harness wheel's sha256 and the core tag's commit in `harness.pin`; a sha256 per file of every locked package in `integrations/homeassistant/uv.lock`; uv's in `mise.lock` |
 
 `check-pins.sh` checks the table: exact versions, the digests, the three Rust toolchain names
 agreeing, the ESP-IDF tag and commit, each ESP-IDF component's exact version with its hash in
@@ -379,3 +381,40 @@ a `[[bin]]` of this workspace, or when a tracked file naming soloist is a binary
 of no known kind. It proves itself first on scratch trees with each fault planted. It builds
 nothing: it reads what the gate steps `image` and `soloist-image` left, and refuses by name
 without them.
+
+## 25. The Home Assistant integration
+
+The integration under `integrations/homeassistant/custom_components/chorus` (goal 18,
+`docs/home-assistant.md`, ADR 0000) runs inside Home Assistant, which is reachable from more
+places than chorus is, so what it may be is held by checks:
+
+- **No runtime requirement.** The manifest's `requirements` is `[]` and the client library is
+  vendored in `_aiochorus` (which imports nothing from Home Assistant): Home Assistant would
+  otherwise `uv pip install` a requirement into its container at start-up and again after every
+  recreate, outside the homelab's digest-pinned image.
+- **No unauthenticated endpoint** (brief section 4.8). Every HTTP view requires auth, every
+  webhook is local-only, and the integration serves no static path and injects no script. Today
+  it registers none of them. `tests/test_no_unauthenticated_endpoint.py` (in the gate step
+  `ha-integration`) compares Home Assistant's router and webhook registry before and after the
+  integration is set up, reads every file of the integration with `ast`, and proves its checker
+  on a bad view, a bad webhook and a static path; `check-ha-integration.sh` is the grep-level
+  backstop that runs without a virtual environment.
+- **The harness pin moves with the homelab's Home Assistant pin, and only then.**
+  `integrations/homeassistant/harness.pin` records it in one place: the harness version and its
+  wheel's sha256, the Home Assistant version it requires, the core tag and commit hassfest runs
+  from, and the Python. `check-ha-integration.sh` holds `pyproject.toml`, `uv.lock` and
+  `.python-version` to it, and every locked file to a sha256 from PyPI.
+- **The quality scale is the pinned list.** `quality_scale.yaml` lists exactly the rule names of
+  `integrations/homeassistant/quality-scale-rules.txt` (Home Assistant core's own list at the
+  pinned tag, with its source and date), each `done` or `exempt` with a comment; `make
+  ha-hassfest` has Home Assistant's hassfest grade the file in a core checkout and proves that
+  it did.
+- `strings.json` and `translations/en.json` are the same bytes.
+
+The virtual environment lives outside the repository (`UV_PROJECT_ENVIRONMENT`, default
+`/cache/venvs/chorus-ha`), and so does the core checkout (`CHORUS_HA_CORE`). Both steps fetch
+once and then run with no network; where uv is absent under CI they print `SKIPPED` with the
+reason, and anywhere else they fail. **Review-only (no check):** the test harness and its
+transitive packages are development tools, never shipped and never imported by the
+integration at run time, so the licence allowlist of rule 13 (what chorus builds and ships)
+does not range over them; the direct ones and their licences are in the ADR.

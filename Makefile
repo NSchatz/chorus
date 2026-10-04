@@ -48,6 +48,24 @@ soloist-lists: tools-executable
 
 .PHONY: soloist-image soloist-lists
 
+# The Home Assistant integration (goal 18; integrations/homeassistant, docs/home-assistant.md).
+# ha-test: the pinned Python and the hash-locked harness synced into a virtual environment
+# outside the repository, then ruff, mypy --strict and pytest under the pinned Home Assistant
+# test harness with coverage held above 95 % (the config flow at 100 %); it prints its
+# wall-clock. HA_TEST_ARGS goes to pytest (`make ha-test HA_TEST_ARGS="-k announce"`).
+# CHORUS_SERVER_BIN=<a built chorus-server> also runs tests/test_live_server.py against the
+# real server; without it that file is skipped by name. Gate step `ha-integration`.
+# ha-hassfest: Home Assistant's own hassfest over the integration, as a core integration in a
+# throwaway worktree of the pinned core checkout (so quality_scale.yaml is graded), a proof
+# that it was graded, and as a custom integration. Gate step `ha-hassfest` (full tier).
+ha-test: tools-executable
+	bash tools/ha-test.sh $(HA_TEST_ARGS)
+
+ha-hassfest: tools-executable
+	bash tools/ha-hassfest.sh
+
+.PHONY: ha-test ha-hassfest
+
 # Regenerate fixtures/decode (goal 16): one short file per settled input format with what a
 # reference decoder made of it. Never run by the gate. REFDEC is a conda-forge prefix holding
 # the pinned reference programs (ffmpeg, lame, mpg123, flac, opusdec, sndfile-convert);

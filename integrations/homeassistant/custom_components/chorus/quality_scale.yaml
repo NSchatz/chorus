@@ -1,3 +1,4 @@
+---
 # The Integration Quality Scale rules of Home Assistant core 2026.9.3
 # (script/hassfest/quality_scale.py), all four tiers, self-certified: a custom
 # integration cannot hold a tier, it can only be written to one. hassfest
@@ -8,20 +9,30 @@ rules:
   # Bronze
   action-setup:
     status: exempt
-    comment: The integration registers no action of its own; it implements the media_player and number platforms' entity actions.
+    comment: >-
+      The integration registers no action of its own; it implements the
+      media_player and number platforms' entity actions.
   appropriate-polling:
     status: exempt
-    comment: Local push. The state arrives on one server-sent event stream; nothing is polled. A stream silent for 45 s is probed once for liveness.
+    comment: >-
+      Local push. The state arrives on one server-sent event stream;
+      nothing is polled. A stream silent for 45 s is probed once for
+      liveness.
   brands: done
   common-modules: done
   config-flow: done
   config-flow-test-coverage: done
   dependency-transparency:
     status: exempt
-    comment: The repository is private, so the client cannot be an open PyPI package built by public CI. It is vendored in _aiochorus and the manifest lists no requirement.
+    comment: >-
+      The repository is private, so the client cannot be an open PyPI
+      package built by public CI. It is vendored in _aiochorus and the
+      manifest lists no requirement.
   docs-actions:
     status: exempt
-    comment: The integration registers no action of its own. The entity actions it supports are documented in the README's supported functions.
+    comment: >-
+      The integration registers no action of its own. The entity actions
+      it supports are documented in the README's supported functions.
   docs-conditions:
     status: exempt
     comment: The integration provides no condition.
@@ -43,7 +54,9 @@ rules:
   config-entry-unloading: done
   docs-configuration-parameters:
     status: exempt
-    comment: The integration has no options flow, so there is no configuration parameter to document.
+    comment: >-
+      The integration has no options flow, so there is no configuration
+      parameter to document.
   docs-installation-parameters: done
   entity-unavailable: done
   integration-owner: done
@@ -51,7 +64,9 @@ rules:
   parallel-updates: done
   reauthentication-flow:
     status: exempt
-    comment: The chorus control API has no credentials, so there is nothing to re-authenticate.
+    comment: >-
+      The chorus control API has no credentials, so there is nothing to
+      re-authenticate.
   test-coverage: done
   # Gold
   devices: done
@@ -68,11 +83,15 @@ rules:
   dynamic-devices: done
   entity-category:
     status: exempt
-    comment: Every entity is a primary control (a media player or a group volume); none is a configuration or diagnostic entity.
+    comment: >-
+      Every entity is a primary control (a media player or a group
+      volume); none is a configuration or diagnostic entity.
   entity-device-class: done
   entity-disabled-by-default:
     status: exempt
-    comment: The integration has no noisy or rarely used entity; every entity is a primary control.
+    comment: >-
+      The integration has no noisy or rarely used entity; every entity
+      is a primary control.
   entity-translations: done
   exception-translations: done
   icon-translations: done
