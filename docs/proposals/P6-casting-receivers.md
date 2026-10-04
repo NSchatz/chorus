@@ -283,7 +283,7 @@ can. Adding OpenHome later is additive on the same devices.
 
 - Rules and format: `/cache/tmp/chorus-g1/agent-rules.md`, `/cache/tmp/chorus-g1/proposal-format.md`,
   `/cache/tmp/chorus-g1/prompt-PC.md`.
-- The brief `/workspace/.claude/goals/2026-09-chorus.md`: §0.1, §0.8, §0.9, §1 (K26, K33, K34,
+- The brief [`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md): §0.1, §0.8, §0.9, §1 (K26, K33, K34,
   K53 to K66, K75 to K80, K95, R1 to R17, I1 to I20), §2, §3.2 to §3.4, §4.8, §5, §20, §21, §22,
   §34, §35.
 - Planning research: `research-casting-decoders.md`, `verify-ha-casting.md`, `review-homelab.md`.

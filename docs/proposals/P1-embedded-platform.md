@@ -318,8 +318,8 @@ only. The hardware path and its bench packet are the same as the recommendation'
 ## What was read
 
 Local: `/cache/tmp/chorus-g1/agent-rules.md`, `/cache/tmp/chorus-g1/proposal-format.md`;
-`/workspace/.claude/goals/2026-09-chorus.md` (header, §0.6-§0.13, §1 incl. 1.1 and 1.2, §2, §5,
-§10-§14, §28-§30); `/workspace/.claude/goals/2026-09-chorus-research/research-endpoint-hardware.md`,
+[`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md) (header, §0.6-§0.13, §1 incl. 1.1 and 1.2, §2, §5,
+§10-§14, §28-§30); [`.claude/goals/2026-09-chorus-research/research-endpoint-hardware.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus-research/research-endpoint-hardware.md),
 `research-platform-network.md`, `verify-theater-platform.md` (whole); baseline
 `/cache/wt/chorus/chorus/baseline/BRIEF.md` §2.2, §5.3-§5.5, §6, §8, §10;
 `firmware/config/endpoint.conf` (grep), `firmware/sdkconfig.defaults`, `config/transport.conf`

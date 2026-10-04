@@ -290,7 +290,8 @@ pub fn report(
     }
     o.push_str(
         "- Sources: the router hop's \"tens of microseconds idle\" is the planning research's own \
-         ASSUMED figure (`.claude/goals/2026-09-chorus-research/research-platform-network.md` \
+         ASSUMED figure \
+         (https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus-research/research-platform-network.md \
          section 4.2); the Wi-Fi burst model is `fixtures/sync/07-wifi-burst.cfg`'s, ASSUMED \
          until WIFI-7's characterization on hardware; the 50 ms burst cap is half the client's \
          100 ms round-trip admission bound (`max_rtt_us`, `config/sync.conf`). The models are \

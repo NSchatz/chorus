@@ -64,7 +64,7 @@ while IFS= read -r f; do
     fi
     bad "$f reads the owner-at-bench guard or calls a flashing program but is not a flashing tool this test runs nor a listed guard reader"
 done < <(git ls-files -z | xargs -0 grep -l -I -E "\\\$\\{$name:-\\}|env::var\\(\"$name\"\\)|getenv\\(\"$name\"\\)|\\besptool|\\bespefuse|idf\\.py[^#]*\\bflash\\b" -- 2> /dev/null |
-    command grep -v -E '^(docs/|\.claude/goals/|tools/conventions/fixtures/|tools/conventions/check-flash-tools-refuse\.sh$|tools/conventions/check-flash-guard\.sh$|firmware/check/endpoint_scan\.c$)' |
+    command grep -v -E '^(docs/|tools/conventions/fixtures/|tools/conventions/check-flash-tools-refuse\.sh$|tools/conventions/check-flash-guard\.sh$|firmware/check/endpoint_scan\.c$)' |
     command grep -v -E '\.md$')
 # (firmware/check/endpoint_scan.c is the endpoint safety scanner: it names the eFuse tool in the
 # list of names it refuses in the endpoint tree, as these checks name the variable.)

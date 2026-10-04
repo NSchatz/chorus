@@ -22,8 +22,8 @@
 # finding. What a lexical scan cannot see (a name decoded from hex escapes at run time) is why
 # tools/conventions/check-flash-tools-refuse.sh also runs every flashing tool without the value.
 #
-# Not scanned: docs/ (the owner's command lines), the program's plan (.claude/goals/) and this
-# check's fixtures, which quote the forbidden forms, and exactly two scripts that must build the
+# Not scanned: docs/ (the owner's command lines) and this check's fixtures, which quote the
+# forbidden forms, and exactly two scripts that must build the
 # name from pieces to do their job: this file and check-flash-tools-refuse.sh (which sets it to
 # values other than 1). check-flash-guard-fixtures.sh fails if that list ever grows.
 #
@@ -42,7 +42,7 @@ fi
 
 # Built from pieces so this file holds no occurrence of the name itself.
 name="CHORUS_OWNER_AT_""BENCH"
-excluded='^(docs/|\.claude/goals/|tools/conventions/fixtures/flash-guard/|tools/conventions/check-flash-guard\.sh$|tools/conventions/check-flash-tools-refuse\.sh$)'
+excluded='^(docs/|tools/conventions/fixtures/flash-guard/|tools/conventions/check-flash-guard\.sh$|tools/conventions/check-flash-tools-refuse\.sh$)'
 
 kind_of() {
     case "$1" in

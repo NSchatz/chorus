@@ -377,7 +377,7 @@ beyond the recommendation's own.
 
 ## What was read
 
-- The program brief `/workspace/.claude/goals/2026-09-chorus.md`: §0.8, §0.9, §0.11, §1 (K9, K16,
+- The program brief [`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md): §0.8, §0.9, §0.11, §1 (K9, K16,
   K18, K26, K27, K28, K30, K33, K40, K42, K43, K46, K54, K56, K59, K60, K61, K62, K64, K65, K77,
   K78, K81, K82, K83, K84, K85, K86, K87, K92, K93, K95), §1.2 (I1-I20), §3.3, §4, §5, §19 (goal 15),
   §22 (goal 18), §23 (goal 19), §25 and §26 (goals 21, 22).

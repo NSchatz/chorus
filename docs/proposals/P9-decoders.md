@@ -263,9 +263,9 @@ All read 2026-09-30 unless marked.
 ## What was read
 
 - Files: `/cache/tmp/chorus-g1/agent-rules.md`, `/cache/tmp/chorus-g1/proposal-format.md`,
-  `/cache/tmp/chorus-g1/prompt-PB.md`; `/workspace/.claude/goals/2026-09-chorus.md` (§0.3 releases,
+  `/cache/tmp/chorus-g1/prompt-PB.md`; [`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md) (§0.3 releases,
   §0.8, §0.9, §0.11, §0.13, §1, §2, §3.2, §5, §10, §20, §21, §24);
-  `/workspace/.claude/goals/2026-09-chorus-research/research-casting-decoders.md` (header, §4-§7),
+  [`.claude/goals/2026-09-chorus-research/research-casting-decoders.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus-research/research-casting-decoders.md) (header, §4-§7),
   `verify-ha-casting.md` (whole), `research-theater.md` and `verify-theater-platform.md` (for P2);
   `/cache/wt/chorus/chorus/baseline/BRIEF.md` §2.3, §3, §5.7.
 - URLs: every entry in Sources marked read 2026-09-30, and one web search (the `LEAD` above).

@@ -298,8 +298,8 @@ All read 2026-09-30 unless marked.
 
 - Files: `/cache/tmp/chorus-g1/agent-rules.md`, `/cache/tmp/chorus-g1/proposal-format.md`,
   `/cache/tmp/chorus-g1/prompt-PB.md`, `/cache/tmp/chorus-g1/needs-items-1.md` (the TV item);
-  `/workspace/.claude/goals/2026-09-chorus.md` (§0.8, §0.9, §0.11, §0.13, §1, §1.1, §1.2, §2,
-  §3.2-3.4, §5, §14, §17, §20, §30); `/workspace/.claude/goals/2026-09-chorus-research/`
+  [`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md) (§0.8, §0.9, §0.11, §0.13, §1, §1.1, §1.2, §2,
+  §3.2-3.4, §5, §14, §17, §20, §30); [`.claude/goals/2026-09-chorus-research/`](https://github.com/NSchatz/chorus/tree/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus-research)
   `research-theater.md` (whole), `verify-theater-platform.md` (whole), `verify-ha-casting.md`
   (whole), `research-casting-decoders.md` (header and §4-§7); `/cache/wt/chorus/chorus/baseline/BRIEF.md`
   §2, §3, §5.7, §6, §8, §12.

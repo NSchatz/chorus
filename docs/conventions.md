@@ -310,7 +310,7 @@ name in backticks. None of those lines may supply a default or a go-ahead other 
 (`unwrap_or`, `map_or`, `or_else`, `is_err`, `is_ok`, `.ok()`, `.or(`, `?:`, Python `or`, `:=`),
 a shell read assigned to a variable fails (the two-line default), any other kind of file may not
 name it, and the name built from pieces fails anywhere. Owner-facing command lines that set it
-live only under `docs/`. Not scanned: `docs/`, the program's plan under `.claude/goals/`, the
+live only under `docs/`. Not scanned: `docs/`, the
 fixtures, and exactly the two scripts that build the name from pieces to do their job
 (`check-flash-guard.sh` and `check-flash-tools-refuse.sh`); the fixture test fails if that list
 grows.

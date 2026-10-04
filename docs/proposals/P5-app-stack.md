@@ -301,8 +301,8 @@ read as Svelte.
 ## What was read
 
 - `/cache/tmp/chorus-g1/agent-rules.md`, `/cache/tmp/chorus-g1/proposal-format.md`, `/cache/tmp/chorus-g1/prompt-PD.md`, `/cache/tmp/chorus-g1/verify/verify-3.md` (P5 section)
-- `/workspace/.claude/goals/2026-09-chorus.md`: header, §0.8, §0.9, §0.11, §1 (K10, K16, K18, K19, K26, K40, K43, K46, K51, K54, K56, K59-K64, K77, K81-K87, K92, K93, K95, I1-I20), §3.3, §4, §5, §19, §22, §23, §25, §26
-- `/workspace/.claude/goals/2026-09-chorus-research/research-pwa-conventions.md` (§1, C10, the recommendation list), `verify-toolchain-conventions.md` (claims 1-10 and corrections), `research-toolchain-env.md` (§2 Chromium/Playwright, §5 OCI), `research-ha-integration.md`, `verify-ha-casting.md`
+- [`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md): header, §0.8, §0.9, §0.11, §1 (K10, K16, K18, K19, K26, K40, K43, K46, K51, K54, K56, K59-K64, K77, K81-K87, K92, K93, K95, I1-I20), §3.3, §4, §5, §19, §22, §23, §25, §26
+- [`.claude/goals/2026-09-chorus-research/research-pwa-conventions.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus-research/research-pwa-conventions.md) (§1, C10, the recommendation list), `verify-toolchain-conventions.md` (claims 1-10 and corrections), `research-toolchain-env.md` (§2 Chromium/Playwright, §5 OCI), `research-ha-integration.md`, `verify-ha-casting.md`
 - `/cache/wt/chorus/chorus/baseline/BRIEF.md` §5.8; `crates/server/src/control.rs` (CSP, responders, `include_str!` embedding); `crates/server/src/ui/` (sizes, `index.html`); `docs/control-page.md` (first 80 lines)
 - The planning scaffolds in `/cache/tmp/plan-2026-09-chorus/scratch/pwa/` (`app.sh`, `verify-s8/package.json`)
 - The URLs listed under Sources

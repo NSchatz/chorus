@@ -305,7 +305,7 @@ arrive, and K92's auto-adoption then trusts whatever network the owner patches t
 
 ## What was read
 
-chorus: `/workspace/.claude/goals/2026-09-chorus.md` (§0.1, §0.3, §0.7, §0.13, §1, §2, §3.4, §4.8,
+chorus: [`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md) (§0.1, §0.3, §0.7, §0.13, §1, §2, §3.4, §4.8,
 §5, §11), the research files `research-platform-network.md`, `review-homelab.md`,
 `review-cross-program-v1.md`, `research-ha-ma-sources.md` §4-§5 (MQTT and security facts only),
 `/cache/tmp/chorus-g1/agent-rules.md`, `/cache/tmp/chorus-g1/proposal-format.md`, `/cache/tmp/chorus-g1/verify/verify-3.md`, and the baseline
