@@ -239,7 +239,9 @@ for f in TONES:
 # second holding one reads up to 0.69 dB low; on a loaded host the servo slips
 # frames at up to max_correction_ppm (config/sync.conf: 300, a frame every
 # 69 ms), so most spans hold one and their median is smeared with them (CI's
-# runner: FL at 6000 Hz -0.55 dB with FR beside it at -0.00). A fiftieth of a
+# runner: FL at 6000 Hz -0.55 dB with FR beside it at -0.00; a run later, on
+# the spans still, the two-way's tweeter at 6000 Hz 0.60 dB under its LR4 and
+# woofer + tweeter at -0.624 dB, every other tone in place). A fiftieth of a
 # second holds one less than a third of the time at that rate, so the median
 # piece holds none. The Hann weights keep the low tones, which are not whole
 # cycles in a piece, out of the bin: the nearest is 14 bins off, under -70 dB.
