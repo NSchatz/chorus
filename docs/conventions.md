@@ -51,7 +51,7 @@ How the rules work:
 | 22 | Every rule has a check | `tools/conventions/check-conventions.sh` |
 | 23 | Datasheet-cited amplifier map | `tools/conventions/check-amp-map.sh`; gate step `firmware-check` (`test_amp` drives the datasheet-modelled part with the committed map) |
 | 24 | No Soloist file is shipped | gate step `soloist-lists`: `make soloist-lists` (`tools/soloist-lists.py`, after gate steps `image` and `soloist-image` built what it lists) |
-| 25 | The Home Assistant integration | `tools/conventions/check-ha-integration.sh`; gate step `ha-test`: `make ha-test` (ruff, `mypy --strict`, the tests under the pinned harness with coverage, the no-unauthenticated-endpoint test); gate step `ha-hassfest`: `make ha-hassfest` (Home Assistant's own hassfest from the pinned core checkout); gate step `ha-live`: `make ha-live` (the integration against the built `chorus-server` on loopback, full tier) |
+| 25 | The Home Assistant integration | `tools/conventions/check-ha-integration.sh`; gate step `ha-test`: `make ha-test` (ruff, `mypy --strict`, the tests under the pinned harness with coverage, the no-unauthenticated-endpoint test; a run narrowed with `HA_TEST_ARGS` is the inner loop, not this step); gate step `ha-hassfest`: `make ha-hassfest` (Home Assistant's own hassfest from the pinned core checkout); gate step `ha-live`: `make ha-live` (the integration against the built `chorus-server` on loopback, full tier); each of the three runs or is red, never `SKIPPED` |
 
 The rest of this file is each rule in full, in table order.
 
@@ -415,8 +415,9 @@ places than chorus is, so what it may be is held by checks:
 
 The virtual environment lives outside the repository (`UV_PROJECT_ENVIRONMENT`, default
 `/cache/venvs/chorus-ha`), and so does the core checkout (`CHORUS_HA_CORE`). Both steps fetch
-once and then run with no network; where uv is absent under CI they print `SKIPPED` with the
-reason, and anywhere else they fail. **Review-only (no check):** the test harness and its
+once and then run with no network. Where uv or the checkout cannot be had they fail naming it,
+under CI as anywhere else, and the gate holds `ha-test`, `ha-hassfest` and `ha-live` to their
+own `PASS` line: these steps are never `SKIPPED` (decision 0000). **Review-only (no check):** the test harness and its
 transitive packages are development tools, never shipped and never imported by the
 integration at run time, so the licence allowlist of rule 13 (what chorus builds and ships)
 does not range over them; the direct ones and their licences are in the ADR.

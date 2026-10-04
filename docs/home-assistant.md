@@ -131,7 +131,25 @@ and is skipped by name otherwise.
 ```sh
 make ha-test        # uv sync --locked, ruff, mypy --strict, pytest with coverage
 make ha-hassfest    # hassfest as core (in a throwaway worktree), its proof, and as custom
+make ha-test HA_TEST_ARGS="-k announce"                                    # a narrowed run
+make ha-test HA_TEST_ARGS="tests/test_no_unauthenticated_endpoint.py"      # one file
 ```
+
+**The whole run and a narrowed run.** `make ha-test` with no arguments is the gate step: ruff,
+`mypy --strict`, every test, coverage held above 95 % overall and at 100 % for the config flow,
+and a last line `ha-test: PASS`. With `HA_TEST_ARGS` it is the inner loop: pytest alone with
+those arguments, passing or failing on the selected tests, with no ruff, no mypy and no coverage
+threshold (pass `--cov` to see a report), and a last line `ha-test: NARROWED PASS`, which the
+gate does not take for a pass.
+
+**In the gate these steps run or they are red.** A missing `uv`, a core checkout that cannot be
+cloned, or (under `CI=true`) an unset `CHORUS_SERVER_BIN` for `make ha-live` fails the step
+naming what is missing; none of them prints a green `SKIPPED`. The gate also holds each of
+`ha-test`, `ha-hassfest` and `ha-live` to its own `<step>: PASS` line, so a step that exits 0
+without having run is red too
+([0000](decisions/0000-the-home-assistant-gate-steps-run-or-fail.md)). Outside the gate and
+CI, `make ha-live` without `CHORUS_SERVER_BIN` still skips the test by name and ends with
+`ha-live: SKIPPED`.
 
 The virtual environment (`UV_PROJECT_ENVIRONMENT`, default `/cache/venvs/chorus-ha`) and the
 core checkout (`CHORUS_HA_CORE`, default `/cache/chorus-ha-core`) live outside the repository.

@@ -213,7 +213,9 @@ URL, key or stored source.
 ```sh
 make ha-test        # ruff, mypy --strict, pytest under the pinned harness, coverage
 make ha-hassfest    # Home Assistant's hassfest, as core and as custom
+make ha-test HA_TEST_ARGS="-k announce"   # a narrowed run: the selected tests alone
 ```
 
 Both need `uv` (pinned in `mise.toml`) and keep their virtual environment outside the
-repository. `docs/home-assistant.md` has the details.
+repository; without it they fail naming it, under CI too. A narrowed run holds no lint, types
+or coverage threshold and ends with `ha-test: NARROWED PASS`; only the whole run is the gate's. `docs/home-assistant.md` has the details.

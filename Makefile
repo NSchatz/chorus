@@ -52,7 +52,10 @@ soloist-lists: tools-executable
 # ha-test: the pinned Python and the hash-locked harness synced into a virtual environment
 # outside the repository, then ruff, mypy --strict and pytest under the pinned Home Assistant
 # test harness with coverage held above 95 % (the config flow at 100 %); it prints its
-# wall-clock. HA_TEST_ARGS goes to pytest (`make ha-test HA_TEST_ARGS="-k announce"`).
+# wall-clock. HA_TEST_ARGS narrows the run (`make ha-test HA_TEST_ARGS="-k announce"`): pytest
+# alone with those arguments, no ruff, no mypy and no coverage threshold, ending with
+# `ha-test: NARROWED PASS`; only the whole run prints `ha-test: PASS` and is gate evidence.
+# A missing uv fails both targets, under CI too: no step here ends in a green SKIPPED.
 # CHORUS_SERVER_BIN=<a built chorus-server> also runs tests/test_live_server.py against the
 # real server; without it that file is skipped by name. Gate step `ha-test`.
 # ha-hassfest: Home Assistant's own hassfest over the integration, as a core integration in a
@@ -65,8 +68,9 @@ ha-hassfest: tools-executable
 	bash tools/ha-hassfest.sh
 
 # The integration against the real chorus-server on loopback, alone:
-# `CHORUS_SERVER_BIN=<a built chorus-server> make ha-live`. Without the variable the test is
-# skipped by name, visibly (pytest prints the reason).
+# `CHORUS_SERVER_BIN=<a built chorus-server> make ha-live`, ending with `ha-live: PASS`.
+# Without the variable the test is skipped by name, visibly (pytest prints the reason and the
+# run ends with `ha-live: SKIPPED`); under CI (CI=true) and in the gate that is a failure.
 ha-live: tools-executable
 	bash tools/ha-test.sh --live
 
