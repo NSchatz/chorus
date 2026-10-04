@@ -3,7 +3,8 @@
 ``docs/control-plane.md``, "How the messages travel": ``GET /api/state`` once,
 ``GET /api/events`` as server-sent events with one full state per change, and
 ``POST /api/command`` with ``Content-Type: application/json`` and no ``Origin``
-header. Every response is ``Connection: close``.
+header. Every response is ``Connection: close``. ``GET /metrics`` is the
+speakers' telemetry (``docs/telemetry.md``), read on request.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from .errors import (
     ChorusRefusedError,
     ChorusUnsupportedError,
 )
+from .metrics import Metrics
 from .models import ServerInfo, State, loads
 from .sse import MAX_EVENT_BYTES, SSEParser
 
@@ -83,6 +85,17 @@ class ChorusClient:
         if status != 200:
             raise ChorusProtocolError(f"GET /api/state answered {status}")
         return State.parse(body)
+
+    async def metrics(self) -> Metrics:
+        """Read the speakers' telemetry once (``GET /metrics``, ``docs/telemetry.md``).
+
+        The caller decides how often: the server renders the text on every
+        request and keeps no history.
+        """
+        status, body = await self._get("/metrics")
+        if status != 200:
+            raise ChorusProtocolError(f"GET /metrics answered {status}")
+        return Metrics.parse(body)
 
     async def command(self, message: bytes) -> State:
         """Send one control message and return the state it resulted in."""

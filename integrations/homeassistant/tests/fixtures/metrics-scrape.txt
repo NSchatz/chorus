@@ -1,0 +1,58 @@
+# HELP chorus_server_build_info The chorus-server build that answered this scrape; the value is always 1.
+# TYPE chorus_server_build_info gauge
+chorus_server_build_info{version="0.1.0"} 1
+# HELP chorus_speakers Speakers this server has adopted, connected or not.
+# TYPE chorus_speakers gauge
+chorus_speakers 2
+# HELP chorus_speaker_connected Whether a session of the speaker is up: 1 connected, 0 not. Present for every adopted speaker.
+# TYPE chorus_speaker_connected gauge
+chorus_speaker_connected{speaker="chorus-0123456789ab"} 1
+chorus_speaker_connected{speaker="chorus-ba9876543210"} 1
+# HELP chorus_speaker_info The speaker's display name and assigned room (empty when it has none); the value is always 1.
+# TYPE chorus_speaker_info gauge
+chorus_speaker_info{speaker="chorus-0123456789ab",name="Kitchen \"left\"",room="kitchen"} 1
+chorus_speaker_info{speaker="chorus-ba9876543210",name="Speaker 3210",room="kitchen"} 1
+# HELP chorus_speaker_firmware_info The firmware version the speaker last said it runs, kept while it is disconnected; the value is always 1. Absent until the speaker has said.
+# TYPE chorus_speaker_firmware_info gauge
+chorus_speaker_firmware_info{speaker="chorus-0123456789ab",version="1.0.0"} 1
+chorus_speaker_firmware_info{speaker="chorus-ba9876543210",version="chorus-client 0.1.0"} 1
+# HELP chorus_speaker_telemetry_age_seconds Seconds since the speaker's latest telemetry report arrived, on the server's monotonic clock.
+# TYPE chorus_speaker_telemetry_age_seconds gauge
+chorus_speaker_telemetry_age_seconds{speaker="chorus-0123456789ab"} 0.412
+chorus_speaker_telemetry_age_seconds{speaker="chorus-ba9876543210"} 0.087
+# HELP chorus_speaker_sync_error_seconds The speaker's own estimate of its playout error against the server timeline, signed, in seconds. Not a measured inter-speaker error. Absent while unknown.
+# TYPE chorus_speaker_sync_error_seconds gauge
+chorus_speaker_sync_error_seconds{speaker="chorus-0123456789ab"} 0.000018500
+chorus_speaker_sync_error_seconds{speaker="chorus-ba9876543210"} -0.000042000
+# HELP chorus_speaker_buffer_fill_seconds Audio buffered ahead of the speaker's playout point, in seconds.
+# TYPE chorus_speaker_buffer_fill_seconds gauge
+chorus_speaker_buffer_fill_seconds{speaker="chorus-0123456789ab"} 0.251333
+chorus_speaker_buffer_fill_seconds{speaker="chorus-ba9876543210"} 0.120000
+# HELP chorus_speaker_rate_correction_ratio The rate correction the speaker's servo has in force, signed, as a ratio (1e-6 is 1 ppm).
+# TYPE chorus_speaker_rate_correction_ratio gauge
+chorus_speaker_rate_correction_ratio{speaker="chorus-0123456789ab"} -0.000003100
+chorus_speaker_rate_correction_ratio{speaker="chorus-ba9876543210"} 0.000001250
+# HELP chorus_speaker_resyncs_total Hard resynchronisations the speaker reports since its session began.
+# TYPE chorus_speaker_resyncs_total counter
+chorus_speaker_resyncs_total{speaker="chorus-0123456789ab"} 2
+chorus_speaker_resyncs_total{speaker="chorus-ba9876543210"} 0
+# HELP chorus_speaker_underruns_total Playback underruns the speaker reports since its session began.
+# TYPE chorus_speaker_underruns_total counter
+chorus_speaker_underruns_total{speaker="chorus-0123456789ab"} 1
+chorus_speaker_underruns_total{speaker="chorus-ba9876543210"} 0
+# HELP chorus_speaker_link_info How the speaker says it reaches the network: link is wired, wifi or unknown; the value is always 1.
+# TYPE chorus_speaker_link_info gauge
+chorus_speaker_link_info{speaker="chorus-0123456789ab",link="wifi"} 1
+chorus_speaker_link_info{speaker="chorus-ba9876543210",link="wired"} 1
+# HELP chorus_speaker_rssi_dbm The Wi-Fi signal strength the speaker reports, in decibel-milliwatts (dBm). Absent when unknown or wired.
+# TYPE chorus_speaker_rssi_dbm gauge
+chorus_speaker_rssi_dbm{speaker="chorus-0123456789ab"} -58
+# HELP chorus_speaker_heap_free_bytes The speaker's free heap, in bytes. Absent when the endpoint does not report it.
+# TYPE chorus_speaker_heap_free_bytes gauge
+chorus_speaker_heap_free_bytes{speaker="chorus-0123456789ab"} 187432
+# HELP chorus_speaker_heap_min_free_bytes The least free heap the speaker has seen since it booted, in bytes. Absent when the endpoint does not report it.
+# TYPE chorus_speaker_heap_min_free_bytes gauge
+chorus_speaker_heap_min_free_bytes{speaker="chorus-0123456789ab"} 141200
+# HELP chorus_speaker_temperature_celsius The temperature the speaker reports, in degrees Celsius. Absent when unknown.
+# TYPE chorus_speaker_temperature_celsius gauge
+chorus_speaker_temperature_celsius{speaker="chorus-0123456789ab"} 41.50
