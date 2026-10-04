@@ -303,6 +303,122 @@ class InputLabel:
         )
 
 
+# What a speaker's `firmware.state` says while an install is in progress.
+FIRMWARE_BUSY_STATES = frozenset(
+    {"requested", "receiving", "verified", "pending_verify"}
+)
+IMAGE_VERIFIED = "verified"
+
+
+@dataclass(frozen=True, slots=True)
+class SpeakerFirmware:
+    """What a speaker that takes updates runs, and the install its state is about."""
+
+    version: str
+    board: str
+    slot: int | None
+    state: str
+    reason: str
+    update_available: bool
+    image: str | None
+    image_version: str | None
+    received: int
+    size: int
+
+    @classmethod
+    def from_obj(cls, obj: dict[str, Any]) -> SpeakerFirmware:
+        """Read a speaker's ``firmware`` object."""
+        what = "a speaker's firmware"
+        slot = obj.get("slot")
+        return cls(
+            version=_str(obj, "version", what),
+            board=_str(obj, "board", what),
+            slot=slot if isinstance(slot, int) and not isinstance(slot, bool) else None,
+            state=_opt_str(obj, "state") or "idle",
+            reason=_opt_str(obj, "reason") or "none",
+            update_available=obj.get("update_available") is True,
+            image=_opt_str(obj, "image"),
+            image_version=_opt_str(obj, "image_version") or None,
+            received=max(0, _whole(obj, "received", 0)),
+            size=max(0, _whole(obj, "size", 0)),
+        )
+
+    @property
+    def busy(self) -> bool:
+        """Whether an install is in progress, from ``requested`` to ``pending_verify``."""
+        return self.state in FIRMWARE_BUSY_STATES
+
+
+@dataclass(frozen=True, slots=True)
+class Speaker:
+    """An adopted speaker."""
+
+    id: str
+    name: str
+    room: str | None
+    present: bool
+    software: str
+    # None until the speaker has reported what it runs (it takes no updates,
+    # or has not said yet).
+    firmware: SpeakerFirmware | None = None
+
+    @classmethod
+    def from_obj(cls, obj: dict[str, Any]) -> Speaker:
+        """Read one element of ``speakers``."""
+        what = "a speaker"
+        firmware = obj.get("firmware")
+        return cls(
+            id=_str(obj, "id", what),
+            name=_str(obj, "name", what),
+            room=_opt_str(obj, "room"),
+            present=obj.get("present") is True,
+            software=_opt_str(obj, "software") or "",
+            firmware=(
+                SpeakerFirmware.from_obj(firmware)
+                if isinstance(firmware, dict)
+                else None
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class FirmwareImage:
+    """A staged image and the verdict the server gave it."""
+
+    name: str
+    version: str
+    board: str
+    size: int
+    verdict: str
+
+    @classmethod
+    def from_obj(cls, obj: dict[str, Any]) -> FirmwareImage:
+        """Read one element of ``firmware.images``."""
+        what = "a firmware image"
+        return cls(
+            name=_str(obj, "name", what),
+            version=_str(obj, "version", what),
+            board=_str(obj, "board", what),
+            size=max(0, _whole(obj, "size", 0)),
+            # An image without a verdict this client knows is not a verified one.
+            verdict=_opt_str(obj, "verdict") or "",
+        )
+
+    @property
+    def verified(self) -> bool:
+        """Whether the server verified the image: the only kind ever offered."""
+        return self.verdict == IMAGE_VERIFIED
+
+
+def _version_key(version: str) -> tuple[tuple[int, int | str], ...]:
+    # Runs of digits compare as numbers, everything else as text: 2.10.0 is
+    # above 2.9.0. It decides which staged image is above the running version.
+    return tuple(
+        (0, int(part)) if part.isdigit() else (1, part)
+        for part in re.findall(r"\d+|\D+", version)
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class State:
     """The v2 state message: a complete snapshot."""
@@ -315,6 +431,9 @@ class State:
     input_labels: tuple[InputLabel, ...]
     counts: tuple[tuple[str, int], ...] = field(default=())
     autoplay: tuple[AutoplayRule, ...] = field(default=())
+    speakers: tuple[Speaker, ...] = field(default=())
+    # Empty on a server without a firmware directory.
+    firmware_images: tuple[FirmwareImage, ...] = field(default=())
 
     @classmethod
     def parse(cls, text: str | bytes) -> State:
@@ -327,6 +446,7 @@ class State:
         serial = obj.get("serial")
         if isinstance(serial, bool) or not isinstance(serial, int):
             raise ChorusProtocolError("the state message has no whole 'serial'")
+        firmware = obj.get("firmware")
         return cls(
             serial=serial,
             zones=tuple(Zone.from_obj(z) for z in _objects(obj, "zones")),
@@ -346,6 +466,13 @@ class State:
             autoplay=tuple(
                 AutoplayRule.from_obj(rule) for rule in _objects(obj, "autoplay")
             ),
+            speakers=tuple(Speaker.from_obj(s) for s in _objects(obj, "speakers")),
+            firmware_images=tuple(
+                FirmwareImage.from_obj(image)
+                for image in _objects(
+                    firmware if isinstance(firmware, dict) else {}, "images"
+                )
+            ),
         )
 
     def zone(self, zone_id: str) -> Zone | None:
@@ -364,6 +491,41 @@ class State:
     def saved_group(self, group_id: str) -> SavedGroup | None:
         """Return the saved definition with this id."""
         return next((g for g in self.saved_groups if g.id == group_id), None)
+
+    def speaker(self, speaker_id: str) -> Speaker | None:
+        """Return the adopted speaker with this id."""
+        return next((s for s in self.speakers if s.id == speaker_id), None)
+
+    def firmware_offer(self, speaker_id: str) -> FirmwareImage | None:
+        """Return the staged image a speaker could be asked to install.
+
+        A verified image for the speaker's board whose version is above the
+        one it runs, and only while the server says an update is available. A
+        refused image, or one with no verdict, is never returned, and neither
+        is an older image: the server would install one (going back is an
+        install like any other), but this client never offers it. Of several,
+        the one with the highest version (then the first name).
+        """
+        speaker = self.speaker(speaker_id)
+        if speaker is None or speaker.firmware is None:
+            return None
+        running = speaker.firmware
+        if not running.update_available:
+            return None
+        offers = [
+            image
+            for image in self.firmware_images
+            if image.verified
+            and image.board == running.board
+            and _version_key(image.version) > _version_key(running.version)
+        ]
+        if not offers:
+            return None
+        best = max(_version_key(image.version) for image in offers)
+        return min(
+            (image for image in offers if _version_key(image.version) == best),
+            key=lambda image: image.name,
+        )
 
     def autoplay_rule(self, input_id: str, target: str) -> AutoplayRule | None:
         """Return the autoplay rule of an input, while it has this target."""

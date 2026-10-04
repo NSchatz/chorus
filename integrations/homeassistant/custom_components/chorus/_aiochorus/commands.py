@@ -178,3 +178,15 @@ def autoplay(
     if not low_latency:
         text += ',"low_latency":false'
     return (text + "}").encode()
+
+
+def firmware_install(speaker: str, image: str) -> bytes:
+    """Install a staged, verified image on one speaker.
+
+    The only command that starts a transfer. This client writes neither
+    ``all`` nor ``force``: one speaker, one image, by name.
+    """
+    return (
+        f'{{"v":2,"t":"firmware_install","speaker":{_string(speaker)},'
+        f'"image":{_string(image)}}}'
+    ).encode()

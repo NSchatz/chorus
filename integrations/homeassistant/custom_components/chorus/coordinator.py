@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr, issue_registry as ir
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from ._aiochorus import (
@@ -16,7 +18,9 @@ from ._aiochorus import (
     ChorusError,
     ChorusRefusedError,
     ServerInfo,
+    Speaker,
     State,
+    Zone,
 )
 from .const import DOMAIN
 
@@ -34,6 +38,8 @@ _FIELD_KEYS = {
     "zone": "refused_zone",
     "volume": "refused_volume",
     "input": "refused_input",
+    "speaker": "refused_speaker",
+    "image": "refused_image",
     # The members of a room's sound (`sound`).
     "bass": "refused_sound",
     "treble": "refused_sound",
@@ -53,6 +59,11 @@ def room_identifier(server_id: str, zone_id: str) -> str:
 def saved_group_identifier(server_id: str, group_id: str) -> str:
     """Return the unique id of a saved group's device and media player."""
     return f"{server_id}:group:{group_id}"
+
+
+def speaker_identifier(server_id: str, speaker_id: str) -> str:
+    """Return the unique id of an adopted speaker's device."""
+    return f"{server_id}:speaker:{speaker_id}"
 
 
 def unsupported_issue_id(entry: ChorusConfigEntry) -> str:
@@ -127,9 +138,58 @@ class ChorusCoordinator(DataUpdateCoordinator[State]):
         self.last_update_success = False
         self.async_update_listeners()
 
+    def room_device_info(self, zone: Zone) -> DeviceInfo:
+        """Return the device of a room."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, room_identifier(self.server.id, zone.id))},
+            manufacturer="chorus",
+            model="Room",
+            name=zone.name,
+            # A suggestion only: areas are Home Assistant's, never created here.
+            suggested_area=zone.name,
+            via_device_id=self.server_device_id,
+        )
+
+    def speaker_device_info(self, state: State, speaker: Speaker) -> DeviceInfo:
+        """Return the device of an adopted speaker.
+
+        It hangs under its room's device while it has a room, and under the
+        server otherwise. The room's device must exist first (`sync_devices`).
+        """
+        zone = None if speaker.room is None else state.zone(speaker.room)
+        via = self.server_device_id
+        if zone is not None:
+            room = dr.async_get(self.hass).async_get_device_by_identifier(
+                (DOMAIN, room_identifier(self.server.id, zone.id)),
+                config_entry_id=self.config_entry.entry_id,
+            )
+            if room is not None:
+                via = room.id
+        running = speaker.firmware
+        info = DeviceInfo(
+            identifiers={(DOMAIN, speaker_identifier(self.server.id, speaker.id))},
+            manufacturer="chorus",
+            model="Speaker",
+            name=speaker.name,
+            sw_version=(
+                running.version if running is not None else speaker.software or None
+            ),
+            via_device_id=via,
+        )
+        if running is not None:
+            info["model_id"] = running.board
+        if zone is not None:
+            info["suggested_area"] = zone.name
+        return info
+
     @callback
     def sync_devices(self, state: State) -> None:
-        """Rename devices that were renamed and remove the ones that are gone."""
+        """Make the devices the state names, rename them, remove the ones gone.
+
+        A room's device and a speaker's device exist whether or not they have
+        an entity: a speaker that takes no updates is still a device, and a
+        speaker's device is linked to its room's.
+        """
         server_id = self.server.id
         names = {(DOMAIN, server_id): None} | {
             (DOMAIN, room_identifier(server_id, zone.id)): zone.name
@@ -138,6 +198,10 @@ class ChorusCoordinator(DataUpdateCoordinator[State]):
         names |= {
             (DOMAIN, saved_group_identifier(server_id, group.id)): group.name
             for group in state.saved_groups
+        }
+        names |= {
+            (DOMAIN, speaker_identifier(server_id, speaker.id)): speaker.name
+            for speaker in state.speakers
         }
         registry = dr.async_get(self.hass)
         for device in dr.async_entries_for_config_entry(
@@ -152,15 +216,34 @@ class ChorusCoordinator(DataUpdateCoordinator[State]):
             name = names[identifier]
             if name is not None and device.name != name:
                 registry.async_update_device(device.id, name=name)
+        entry_id = self.config_entry.entry_id
+        for speaker in state.speakers:
+            zone = None if speaker.room is None else state.zone(speaker.room)
+            if zone is not None:
+                # The room's device first: the speaker's is linked to it.
+                registry.async_get_or_create(
+                    config_entry_id=entry_id, **self.room_device_info(zone)
+                )
+            registry.async_get_or_create(
+                config_entry_id=entry_id, **self.speaker_device_info(state, speaker)
+            )
 
-    async def async_command(self, message: bytes) -> State:
-        """Send one command; a refusal becomes a translated error."""
+    async def async_command(
+        self, message: bytes, refusals: Mapping[str, str] | None = None
+    ) -> State:
+        """Send one command; a refusal becomes a translated error.
+
+        `refusals` maps the names a command's refusals start their detail with
+        (the catalog's contract for them) to messages; any other refusal is
+        mapped by the field it names.
+        """
         try:
             state = await self.client.command(message)
         except ChorusCommandError as err:
+            key = (refusals or {}).get(err.name or "")
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
-                translation_key=_FIELD_KEYS.get(err.field, "refused_command"),
+                translation_key=key or _FIELD_KEYS.get(err.field, "refused_command"),
                 translation_placeholders={"field": err.field, "detail": err.detail},
             ) from err
         except ChorusRefusedError as err:

@@ -7,6 +7,7 @@ import json
 import pytest
 
 from custom_components.chorus._aiochorus import (
+    ChorusCommandError,
     ChorusProtocolError,
     ServerInfo,
     State,
@@ -201,3 +202,94 @@ def test_sound_controls_absent_members_are_their_defaults() -> None:
     assert second.sound is None
     assert second.quiet_enabled is True
     assert state.autoplay == ()
+
+
+def test_firmware_members_of_the_shared_state() -> None:
+    state = State.parse(shared("state-firmware.json"))
+    assert [s.id for s in state.speakers] == [
+        "chorus-0123456789ab",
+        "chorus-ba9876543210",
+    ]
+    first = state.speaker("chorus-0123456789ab")
+    assert first is not None
+    assert first.name == "Speaker 89ab"
+    assert first.room is None
+    assert first.present
+    running = first.firmware
+    assert running is not None
+    assert (running.version, running.board, running.slot) == (
+        "1.0.0",
+        "brick-s3-wired",
+        0,
+    )
+    assert (running.state, running.reason, running.busy) == ("requested", "none", True)
+    assert (running.image, running.image_version) == ("brick-2-0-0", "2.0.0")
+    assert (running.received, running.size) == (0, 1536000)
+    back = state.speaker("chorus-ba9876543210")
+    assert back is not None
+    assert back.firmware is not None
+    assert (back.firmware.state, back.firmware.reason) == (
+        "rolled_back",
+        "not_confirmed",
+    )
+    assert not back.firmware.busy
+    assert back.firmware.image is None
+    assert [(i.name, i.verified) for i in state.firmware_images] == [
+        ("brick-2-0-0", True),
+        ("brick-tampered", False),
+        ("compact-2-0-0", True),
+        ("brick-1-0-0", True),
+    ]
+    # The verified image for the board with another version; never the refused
+    # one, the other board's, or the version it runs.
+    offer = state.firmware_offer("chorus-0123456789ab")
+    assert offer is not None
+    assert offer.name == "brick-2-0-0"
+    assert state.firmware_offer("nobody") is None
+
+
+def test_firmware_absent_members_and_the_offer_among_several() -> None:
+    # No speakers and no firmware directory: nothing, and nothing offered.
+    assert State.parse(shared("state-rich.json")).speakers == ()
+    assert State.parse(shared("state-rich.json")).firmware_images == ()
+    # A speaker that has not reported has no firmware.
+    plain = State.parse(shared("state-speakers.json"))
+    assert [s.firmware for s in plain.speakers] == [None, None]
+    assert plain.firmware_offer("chorus-0123456789ab") is None
+
+    raw = json.loads(shared("state-firmware.json"))
+    brick = raw["firmware"]["images"][0]
+    raw["firmware"]["images"] += [
+        brick | {"name": "brick-2-10-0", "version": "2.10.0"},
+        brick | {"name": "brick-2-9-0", "version": "2.9.0"},
+        brick | {"name": "a-brick-2-10-0", "version": "2.10.0"},
+        brick | {"name": "brick-9-0-0", "version": "9.0.0", "verdict": "refused"},
+        brick | {"name": "brick-8-0-0", "version": "8.0.0", "verdict": "staged"},
+    ]
+    del raw["firmware"]["images"][-1]["verdict"]
+    state = State.parse(json.dumps(raw))
+    offer = state.firmware_offer("chorus-0123456789ab")
+    # Digits compare as numbers; of two images of one version, the first name.
+    assert offer is not None
+    assert (offer.name, offer.version) == ("a-brick-2-10-0", "2.10.0")
+    # An older verified image is never offered: going back is the server's
+    # command to send, not this client's to suggest.
+    raw["speakers"][0]["firmware"]["version"] = "2.10.0"
+    assert State.parse(json.dumps(raw)).firmware_offer("chorus-0123456789ab") is None
+    raw["speakers"][0]["firmware"]["version"] = "1.0.0"
+    # The server's word wins: no update available, nothing offered.
+    raw["speakers"][0]["firmware"]["update_available"] = False
+    assert State.parse(json.dumps(raw)).firmware_offer("chorus-0123456789ab") is None
+
+
+def test_a_refusal_name_is_the_start_of_the_detail() -> None:
+    busy = json.loads(shared("error-firmware-install-busy.json"))
+    assert ChorusCommandError(busy["field"], busy["detail"]).name == "busy"
+    refused = json.loads(shared("error-firmware-install-not-verified.json"))
+    assert (
+        ChorusCommandError(refused["field"], refused["detail"]).name
+        == "image-not-verified"
+    )
+    assert ChorusCommandError("zone", "'den' is not a room").name is None
+    assert ChorusCommandError("url", "http://x.example: not allowed").name is None
+    assert ChorusCommandError("t", ": nothing").name is None

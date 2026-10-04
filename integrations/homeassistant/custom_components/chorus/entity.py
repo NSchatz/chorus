@@ -5,22 +5,9 @@ from __future__ import annotations
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from ._aiochorus import Group, SavedGroup, Zone
+from ._aiochorus import Group, SavedGroup, Speaker, SpeakerFirmware, Zone
 from .const import DOMAIN
-from .coordinator import ChorusCoordinator, room_identifier, saved_group_identifier
-
-
-def room_device_info(coordinator: ChorusCoordinator, zone: Zone) -> DeviceInfo:
-    """Return the device of a room."""
-    return DeviceInfo(
-        identifiers={(DOMAIN, room_identifier(coordinator.server.id, zone.id))},
-        manufacturer="chorus",
-        model="Room",
-        name=zone.name,
-        # A suggestion only: areas are Home Assistant's, never created here.
-        suggested_area=zone.name,
-        via_device_id=coordinator.server_device_id,
-    )
+from .coordinator import ChorusCoordinator, saved_group_identifier
 
 
 def saved_group_device_info(
@@ -49,7 +36,7 @@ class ChorusRoomEntity(ChorusEntity):
         """Attach to the room's device."""
         super().__init__(coordinator)
         self._zone_id = zone.id
-        self._attr_device_info = room_device_info(coordinator, zone)
+        self._attr_device_info = coordinator.room_device_info(zone)
 
     @property
     def zone(self) -> Zone | None:
@@ -93,3 +80,26 @@ class ChorusSavedGroupEntity(ChorusEntity):
     def available(self) -> bool:
         """Available while the server is reachable and still has the group."""
         return super().available and self.saved is not None
+
+
+class ChorusSpeakerEntity(ChorusEntity):
+    """An entity of one adopted speaker."""
+
+    def __init__(self, coordinator: ChorusCoordinator, speaker: Speaker) -> None:
+        """Attach to the speaker's device."""
+        super().__init__(coordinator)
+        self._speaker_id = speaker.id
+        self._attr_device_info = coordinator.speaker_device_info(
+            coordinator.data, speaker
+        )
+
+    @property
+    def speaker(self) -> Speaker | None:
+        """Return the speaker as the server last described it."""
+        return self.coordinator.data.speaker(self._speaker_id)
+
+    @property
+    def firmware(self) -> SpeakerFirmware | None:
+        """Return what the speaker runs, once it has reported it."""
+        speaker = self.speaker
+        return None if speaker is None else speaker.firmware

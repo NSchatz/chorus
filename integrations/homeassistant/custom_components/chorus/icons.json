@@ -54,6 +54,11 @@
       "speech_enhancement": {
         "default": "mdi:account-voice"
       }
+    },
+    "update": {
+      "firmware": {
+        "default": "mdi:chip"
+      }
     }
   }
 }
