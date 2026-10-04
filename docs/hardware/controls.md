@@ -31,7 +31,7 @@ source role of goal 17, not controls.
 | pairing | press | nothing yet: a local event (adoption is trust-on-first-use, K92, and goal 14 decides what a press asks for); the LED shows pairing |
 | sub level knob | turn | nothing: a local setting, -12.0 dB to 0.0 dB in 0.5 dB steps, a cut never a boost (K81, I10) |
 | sub phase knob | turn | nothing: a local setting, 0 to 180 degrees in 15 degree steps |
-| mic mute switch | latching | nothing; the microphone gate closes (below) |
+| mic mute switch | latching | a `mic_state` (the gate, muted or live) on a voice endpoint's session; the microphone gate closes or opens (below) |
 
 A contact is believed after 20 ms at one level (ASSUMED debounce). Every volume a button asks
 for is a request the server clamps by the room's limits (docs/protocol.md, K81, I10).
@@ -39,9 +39,9 @@ for is a request the server clamps by the room's limits (docs/protocol.md, K81, 
 ## The status LED
 
 One state at a time, in this priority: fault, pairing, microphone muted, booting, link down,
-playing, idle. Each has a fixed dim colour (ASSUMED palette in `firmware/src/controls.c`): fault
-red, pairing blue, muted orange-red, booting white, link down amber, playing and idle white at
-different brightness. While playing, a light that follows the visualizer shows the last `color`
+listening, playing, idle. Each has a fixed dim colour (ASSUMED palette in
+`firmware/src/controls.c`): fault red, pairing blue, muted orange-red, booting white, link down
+amber, listening green-cyan, playing and idle white at different brightness. While playing, a light that follows the visualizer shows the last `color`
 message heard, scaled by the last `visualizer_frame`'s peak, with a beat of 128 or more at the
 colour's full brightness; with no frame for 500 ms it returns to the steady playing colour.
 Frames carry server-timeline timestamps and are shown when heard. A `color` message's
@@ -59,6 +59,43 @@ Frames carry server-timeline timestamps and are shown when heard. A `color` mess
   before the switch has been read at all (the gate starts closed). The LED shows mute over
   every state but a fault or pairing. A speaker microphone is never a shareable source (I4); it
   feeds only the voice path (goal 20).
+
+## The uplink, the switch and the listening light (compact class)
+
+The session's voice path (`firmware/include/chorus/session.h`, `chorus_session_voice_*`;
+docs/protocol.md, "The voice role") is where the switch meets the server's request. Host-tested
+against a fake capture source (`firmware/tests/test_controls.c`, `make -C firmware controls`); no
+microphone part or driver is chosen, so on a board the capture seam is empty and no audio is sent.
+
+- **The uplink is the server's request; the switch is the endpoint's answer.** The server asks
+  for microphone audio with `voice_control.uplink` (voice is enabled for the room). The endpoint
+  sends `mic_audio` only while that request stands AND the gate is live. Neither is enough alone:
+
+  | Switch (gate) | `uplink` | What leaves the speaker |
+  |---|---|---|
+  | muted, or not read yet | 0 or 1 | no `mic_audio`, for any input |
+  | live | 0 | no `mic_audio` |
+  | live | 1 | `mic_audio`: the captured samples, 16 kHz mono, stamped with the capture instant on the server timeline |
+
+- **The switch always wins.** No message opens the gate: `uplink` is a request the gate can
+  refuse, never an unmute. The samples the encoder is handed are the output buffer of
+  `chorus_controls_mic_pass` and nothing else, so with the switch at mute there is nothing to
+  encode. On the designed hardware the same switch has already cut the microphone's supply.
+- **The switch is reported.** A voice endpoint tells the server its gate with a `mic_state` once
+  after `capabilities` in every session and at every debounced change of the switch. A `muted`
+  goes after the last `mic_audio`; a `live` goes before the first, and no sample leaves until it
+  has been sent. The report tells the server what the switch says. It does not ask for anything.
+- **A new session starts with the uplink off.** The request is the session's: after a reconnect
+  nothing is sent until that session's server asks again. With no sync offset yet nothing is
+  sent either (a capture instant is never guessed).
+- **The listening light is the server's word, and only a light.** `voice_control.listening` says
+  a voice run is open in the room; the LED then shows listening (above playing and idle, below
+  everything else). It may be lit while this speaker sends nothing (`uplink` 0: another speaker
+  of the room carries the run), and it changes nothing about what is sent. A speaker whose
+  switch is at mute shows muted, not listening: the light a person reads for "this microphone
+  is cut" is never replaced by the room's state. When the session ends the light goes out with it.
+- **Classes without a microphone** (two-way, subwoofer, streaming amp) do not declare the voice
+  role, never send a `mic_state` or a `mic_audio`, and never show listening.
 
 ## The Linux front panel (the rack amp and other Linux endpoints)
 

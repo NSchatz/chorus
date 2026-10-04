@@ -7,13 +7,16 @@
  * crates/server/tests/controller_role.rs decodes and applies to a room: that
  * pair is the controller role end to end. The LED is fed
  * fixtures/controls/visualizer-sequence.hex and held, moment by moment, to
- * visualizer-sequence.led. No pin, no clock and no network. */
+ * visualizer-sequence.led. The session's voice path (chorus/session.h) is fed
+ * by a fake capture source and held to the voice role's own vectors in
+ * fixtures/protocol/v2. No pin, no clock and no network. */
 
 #include <stdint.h>
 #include <string.h>
 
 #include "chorus/controls.h"
 #include "chorus/protocol_v2.h"
+#include "chorus/session.h"
 #include "fixture_text.h"
 #include "harness.h"
 
@@ -281,7 +284,7 @@ static void the_mute_switch_cuts_the_microphone(void)
                      chorus_controls_level(&sub, CHORUS_INPUT_MIC_MUTE_SWITCH, 0, 0) == -1,
                  "a class with no microphone passes nothing and has no switch");
 
-    chorus_led_inputs_t li = {1, 1, 1, 1, 1, 0, 0};
+    chorus_led_inputs_t li = {1, 1, 1, 1, 1, 0, 0, 0};
     chorus_check(chorus_led_decide(&li) == CHORUS_LED_MUTED,
                  "while muted the LED shows mute, even while playing");
 }
@@ -461,18 +464,422 @@ static void the_led_follows_the_visualizer_fixture(void)
     }
     chorus_check(same, "the two-way's rear status light stays steady through the sequence");
 
-    chorus_led_inputs_t order[] = {
-        {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 0}, {1, 1, 1, 1, 1, 0, 0}, {0, 0, 0, 0, 0, 0, 0},
-        {1, 0, 1, 1, 0, 0, 0}, {1, 1, 1, 1, 0, 0, 0}, {1, 1, 0, 1, 0, 0, 0}};
-    chorus_led_state_t want[] = {CHORUS_LED_FAULT, CHORUS_LED_PAIRING,   CHORUS_LED_MUTED,
-                                 CHORUS_LED_BOOT,  CHORUS_LED_LINK_DOWN, CHORUS_LED_PLAYING,
-                                 CHORUS_LED_IDLE};
+    chorus_led_inputs_t order[] = {{1, 1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 0, 1},
+                                   {1, 1, 1, 1, 1, 0, 0, 1}, {0, 0, 0, 0, 0, 0, 0, 1},
+                                   {1, 0, 1, 1, 0, 0, 0, 1}, {1, 1, 1, 1, 0, 0, 0, 1},
+                                   {1, 1, 1, 1, 0, 0, 0, 0}, {1, 1, 0, 1, 0, 0, 0, 0}};
+    chorus_led_state_t want[] = {CHORUS_LED_FAULT,   CHORUS_LED_PAIRING,   CHORUS_LED_MUTED,
+                                 CHORUS_LED_BOOT,    CHORUS_LED_LINK_DOWN, CHORUS_LED_LISTENING,
+                                 CHORUS_LED_PLAYING, CHORUS_LED_IDLE};
     int ok = 1;
     for (size_t i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
         ok &= chorus_led_decide(&order[i]) == want[i];
     }
-    chorus_check(ok, "state priority: fault, pairing, muted, boot, link down, playing, idle "
-                     "(not adopted is idle)");
+    chorus_check(ok, "state priority: fault, pairing, muted, boot, link down, listening, playing, "
+                     "idle (not adopted is idle)");
+}
+
+/* --- the voice path: mic audio through the gate, and the gate report --------- */
+
+/* A fake capture source with the session seam's signature
+ * (chorus_session_config_t.mic_capture): a deterministic signal, `chunk`
+ * samples per ask, stamped on a fake monotonic clock that advances by the
+ * samples handed out. Everything it ever produced is kept, so a test can hold
+ * what left the endpoint to what was captured. */
+#define MIC_KEPT 32768u
+typedef struct {
+    uint32_t seed;
+    size_t chunk;
+    uint64_t now_ns;
+    int16_t kept[MIC_KEPT];
+    size_t kept_count;
+} fake_mic_t;
+
+static size_t fake_mic_capture(void *ctx, int16_t *samples, size_t max, uint64_t *captured_ns)
+{
+    fake_mic_t *mic = ctx;
+    size_t n = (mic->chunk < max) ? mic->chunk : max;
+    if (mic->kept_count + n > MIC_KEPT) {
+        return 0;
+    }
+    for (size_t i = 0; i < n; i++) {
+        mic->seed = mic->seed * 1664525u + 1013904223u;
+        samples[i] = (int16_t)(mic->seed >> 16);
+        mic->kept[mic->kept_count++] = samples[i];
+    }
+    *captured_ns = mic->now_ns;
+    mic->now_ns += (uint64_t)n * 1000000000ull / CHORUS_V2_MIC_SAMPLE_RATE_HZ;
+    return n;
+}
+
+/* What the voice path produced: the frames, and each decoded message kind. */
+#define VOICE_CAP 65536u
+typedef struct {
+    uint8_t bytes[VOICE_CAP];
+    size_t len;
+    size_t audio_frames;
+    size_t state_frames;
+    size_t other_frames;
+} voice_sink_t;
+
+static void voice_count(voice_sink_t *sink)
+{
+    sink->audio_frames = sink->state_frames = sink->other_frames = 0;
+    size_t at = 0;
+    while (at < sink->len) {
+        chorus_v2_frame_t f = chorus_v2_decode_frame(sink->bytes + at, sink->len - at);
+        if (f.consumed == 0) {
+            sink->other_frames++;
+            break;
+        }
+        at += f.consumed;
+        if (f.outcome == CHORUS_FRAME_DECODED && f.message_type == CHORUS_V2_MIC_AUDIO) {
+            sink->audio_frames++;
+        } else if (f.outcome == CHORUS_FRAME_DECODED && f.message_type == CHORUS_V2_MIC_STATE) {
+            sink->state_frames++;
+        } else {
+            sink->other_frames++;
+        }
+    }
+}
+
+/* One pass, in the session's order (firmware/src/session.c, pump_voice): the
+ * gate report, then `asks` asks of the capture source. */
+static void voice_pump(chorus_session_voice_t *voice, fake_mic_t *mic, int asks, int offset_known,
+                       int64_t offset_ns, voice_sink_t *sink)
+{
+    sink->len += chorus_session_voice_report(voice, sink->bytes + sink->len, VOICE_CAP - sink->len);
+    static int16_t captured[CHORUS_SESSION_VOICE_MAX_CAPTURE];
+    for (int i = 0; i < asks; i++) {
+        uint64_t captured_ns = 0;
+        size_t got =
+            fake_mic_capture(mic, captured, CHORUS_SESSION_VOICE_MAX_CAPTURE, &captured_ns);
+        sink->len +=
+            chorus_session_voice_capture(voice, captured, got, captured_ns, offset_known, offset_ns,
+                                         sink->bytes + sink->len, VOICE_CAP - sink->len);
+    }
+    voice_count(sink);
+}
+
+/* Every mic_audio in the sink, decoded: the samples equal `want` in order,
+ * sequences count from `first_sequence`, and each timestamp is the capture
+ * instant of its first sample through the offset. */
+static int voice_decodes_to(const voice_sink_t *sink, const int16_t *want, size_t want_count,
+                            uint32_t first_sequence, uint64_t first_captured_ns, int64_t offset_ns)
+{
+    size_t at = 0;
+    size_t samples = 0;
+    uint32_t sequence = first_sequence;
+    int ok = 1;
+    while (at < sink->len) {
+        chorus_v2_frame_t f = chorus_v2_decode_frame(sink->bytes + at, sink->len - at);
+        if (f.consumed == 0) {
+            return 0;
+        }
+        at += f.consumed;
+        if (f.outcome != CHORUS_FRAME_DECODED || f.message_type != CHORUS_V2_MIC_AUDIO) {
+            continue;
+        }
+        const chorus_v2_mic_audio_t *a = &f.message.as.mic_audio;
+        size_t n = a->data.len / 2;
+        uint64_t local_ns =
+            first_captured_ns + (uint64_t)samples * 1000000000ull / CHORUS_V2_MIC_SAMPLE_RATE_HZ;
+        ok &= a->format == CHORUS_V2_MIC_FORMAT_PCM_S16LE_16K_MONO && a->sequence == sequence &&
+              a->timestamp_ns == (uint64_t)((int64_t)local_ns + offset_ns) &&
+              a->data.len % 2 == 0 && n >= 1 && n <= CHORUS_V2_MIC_MAX_SAMPLES &&
+              samples + n <= want_count;
+        if (!ok) {
+            return 0;
+        }
+        for (size_t i = 0; i < n; i++) {
+            int16_t got =
+                (int16_t)(uint16_t)(a->data.data[2 * i] | ((uint16_t)a->data.data[2 * i + 1] << 8));
+            ok &= got == want[samples + i];
+        }
+        samples += n;
+        sequence++;
+    }
+    return ok && samples == want_count;
+}
+
+static void set_switch(chorus_controls_t *c, int muted, uint64_t at, sink_t *sink)
+{
+    chorus_controls_level(c, CHORUS_INPUT_MIC_MUTE_SWITCH, muted, at);
+    run(c, at, at + 30 * MS, sink);
+}
+
+static void the_voice_path_sends_mic_audio_only_through_the_gate(void)
+{
+    chorus_section("voice: mic audio leaves only with the gate live and the uplink requested");
+    static chorus_controls_t c;
+    static sink_t actions;
+    static chorus_session_voice_t voice;
+    static fake_mic_t mic;
+    static voice_sink_t out;
+    static uint8_t expected[64];
+    memset(&actions, 0, sizeof(actions));
+    memset(&mic, 0, sizeof(mic));
+    memset(&out, 0, sizeof(out));
+    mic.seed = 20261004u;
+    mic.chunk = 320;
+    mic.now_ns = 5000000000ull;
+    const int64_t offset = -1234567890ll;
+    const chorus_v2_voice_control_t on = {1, 0};
+    const chorus_v2_voice_control_t off = {0, 0};
+    const chorus_v2_voice_control_t listening_only = {0, 1};
+
+    chorus_controls_init(&c, CHORUS_CLASS_COMPACT, "kitchen", "");
+    chorus_session_voice_init(&voice, &c);
+    chorus_session_voice_begin(&voice);
+    chorus_check(chorus_session_voice_roles(&voice) == CHORUS_V2_ROLE_VOICE &&
+                     chorus_session_voice_roles(NULL) == 0,
+                 "a compact speaker declares the voice role; no voice path declares none");
+
+    /* The gate closed (the switch not read yet), the uplink requested, the
+     * offset known: only the gate stands in the way. */
+    chorus_session_voice_control(&voice, &on);
+    voice_pump(&voice, &mic, 1, 1, offset, &out);
+    long n = load_hex("fixtures/protocol/v2/mic_state_muted.hex", expected, sizeof(expected));
+    chorus_check(n > 0 && out.len == (size_t)n && memcmp(out.bytes, expected, out.len) == 0 &&
+                     out.audio_frames == 0,
+                 "a session's first report, the switch unread: exactly mic_state_muted.hex, and "
+                 "no mic_audio (%zu bytes)",
+                 out.len);
+    out.len = 0;
+    static int16_t shapes[CHORUS_SESSION_VOICE_MAX_CAPTURE];
+    const size_t sizes[] = {1, 2, 319, 320, 1600, 1601, 4000, CHORUS_SESSION_VOICE_MAX_CAPTURE};
+    size_t produced = 0;
+    size_t tried = 0;
+    for (int shape = 0; shape < 5; shape++) {
+        for (size_t i = 0; i < CHORUS_SESSION_VOICE_MAX_CAPTURE; i++) {
+            shapes[i] = shape == 0   ? 0
+                        : shape == 1 ? INT16_MAX
+                        : shape == 2 ? INT16_MIN
+                        : shape == 3 ? (int16_t)(i * 37u)
+                                     : (int16_t)((i & 1u) ? -12345 : 12345);
+        }
+        for (size_t k = 0; k < sizeof(sizes) / sizeof(sizes[0]); k++) {
+            produced += chorus_session_voice_capture(&voice, shapes, sizes[k], 7 * MS, 1, offset,
+                                                     out.bytes, VOICE_CAP);
+            tried++;
+        }
+    }
+    voice_pump(&voice, &mic, 8, 1, offset, &out);
+    chorus_check(produced == 0 && out.len == 0 && voice.chunks_sent == 0 && voice.samples_sent == 0,
+                 "the gate closed (switch unread): zero mic messages for %zu inputs of five "
+                 "signals and eight lengths, and eight asks of the capture source",
+                 tried);
+
+    /* The switch read live: the gate report, then the captured samples. */
+    set_switch(&c, 0, 0, &actions);
+    size_t first = mic.kept_count;
+    uint64_t first_ns = mic.now_ns;
+    voice_pump(&voice, &mic, 3, 1, offset, &out);
+    n = load_hex("fixtures/protocol/v2/mic_state_live.hex", expected, sizeof(expected));
+    chorus_check(n > 0 && out.len > (size_t)n && memcmp(out.bytes, expected, (size_t)n) == 0 &&
+                     out.state_frames == 1,
+                 "the switch going live produces the gate report first: mic_state_live.hex");
+    chorus_check(out.audio_frames == 3 && out.other_frames == 0 &&
+                     voice_decodes_to(&out, mic.kept + first, 960, 0, first_ns, offset),
+                 "gate live and uplink requested: three 20 ms asks leave as three mic_audio that "
+                 "decode to the captured samples, sequences 0 to 2, capture instants through the "
+                 "offset");
+
+    /* A capture longer than one message is split, never trimmed. */
+    out.len = 0;
+    mic.chunk = 4000;
+    first = mic.kept_count;
+    first_ns = mic.now_ns;
+    voice_pump(&voice, &mic, 1, 1, offset, &out);
+    chorus_check(out.audio_frames == 3 && out.state_frames == 0 &&
+                     voice_decodes_to(&out, mic.kept + first, 4000, 3, first_ns, offset),
+                 "4000 samples in one capture leave as 1600 + 1600 + 800, decoding to the "
+                 "captured samples, sequences 3 to 5, each stamped at its own first sample");
+    mic.chunk = 320;
+
+    /* The uplink not requested: nothing, whatever the gate says. */
+    out.len = 0;
+    chorus_session_voice_control(&voice, &off);
+    uint64_t sent_before = voice.chunks_sent;
+    voice_pump(&voice, &mic, 4, 1, offset, &out);
+    chorus_check(out.len == 0 && voice.chunks_sent == sent_before && chorus_controls_mic_live(&c),
+                 "gate live, uplink not requested: nothing is sent");
+    chorus_session_voice_control(&voice, &listening_only);
+    voice_pump(&voice, &mic, 4, 1, offset, &out);
+    chorus_check(out.len == 0 && chorus_session_voice_listening(&voice),
+                 "listening without uplink (another speaker carries the run): nothing is sent");
+    chorus_session_voice_control(&voice, &on);
+    first = mic.kept_count;
+    first_ns = mic.now_ns;
+    voice_pump(&voice, &mic, 2, 1, offset, &out);
+    chorus_check(out.audio_frames == 2 &&
+                     voice_decodes_to(&out, mic.kept + first, 640, 0, first_ns, offset),
+                 "the uplink requested again: audio resumes at sequence 0");
+
+    /* No offset: a timestamp is never guessed. */
+    out.len = 0;
+    voice_pump(&voice, &mic, 2, 0, 0, &out);
+    chorus_check(out.len == 0, "no sync offset yet: nothing is sent");
+
+    /* The mute switch: the gate report, after the last audio, and no more. */
+    voice_pump(&voice, &mic, 1, 1, offset, &out);
+    size_t audio_bytes = out.len;
+    chorus_controls_level(&c, CHORUS_INPUT_MIC_MUTE_SWITCH, 1, 100 * MS);
+    run(&c, 100 * MS, 110 * MS, &actions);
+    voice_pump(&voice, &mic, 1, 1, offset, &out);
+    chorus_check(out.state_frames == 0 && out.audio_frames == 2,
+                 "a muting edge not yet debounced: no report, and the audio still flows");
+    audio_bytes = out.len;
+    run(&c, 111 * MS, 130 * MS, &actions);
+    voice_pump(&voice, &mic, 4, 1, offset, &out);
+    n = load_hex("fixtures/protocol/v2/mic_state_muted.hex", expected, sizeof(expected));
+    chorus_check(n > 0 && out.len == audio_bytes + (size_t)n &&
+                     memcmp(out.bytes + audio_bytes, expected, (size_t)n) == 0,
+                 "the mute switch produces the gate report, mic_state_muted.hex, after the last "
+                 "mic_audio, and four more asks produce nothing");
+    out.len = 0;
+    produced = 0;
+    for (size_t k = 0; k < sizeof(sizes) / sizeof(sizes[0]); k++) {
+        produced += chorus_session_voice_capture(&voice, shapes, sizes[k], 9 * MS, 1, offset,
+                                                 out.bytes, VOICE_CAP);
+    }
+    voice_pump(&voice, &mic, 4, 1, offset, &out);
+    chorus_check(produced == 0 && out.len == 0,
+                 "muted with the uplink still requested: zero mic messages, and no second report "
+                 "of the same state");
+
+    /* The gate, not the report, is what holds samples back: closed after the
+     * server was told `live` and before it is told `muted`, nothing leaves. */
+    set_switch(&c, 0, 140 * MS, &actions);
+    voice_pump(&voice, &mic, 1, 1, offset, &out);
+    chorus_check(out.audio_frames == 1 && voice.reported == CHORUS_V2_MIC_GATE_LIVE,
+                 "live and reported live: audio flows");
+    set_switch(&c, 1, 170 * MS, &actions);
+    produced = 0;
+    for (size_t k = 0; k < sizeof(sizes) / sizeof(sizes[0]); k++) {
+        produced += chorus_session_voice_capture(&voice, shapes, sizes[k], 9 * MS, 1, offset,
+                                                 out.bytes, VOICE_CAP);
+    }
+    chorus_check(produced == 0 && voice.reported == CHORUS_V2_MIC_GATE_LIVE,
+                 "the switch at mute before the report has gone: the gate alone passes nothing, "
+                 "for eight lengths");
+    out.len = 0;
+    voice_pump(&voice, &mic, 1, 1, offset, &out);
+    chorus_check(out.state_frames == 1 && out.audio_frames == 0, "and then the muted report");
+    out.len = 0;
+
+    /* Live again: the server is told before a sample leaves. */
+    set_switch(&c, 0, 200 * MS, &actions);
+    static int16_t one[320];
+    uint8_t early[1024];
+    chorus_check(chorus_session_voice_capture(&voice, one, 320, 250 * MS, 1, offset, early,
+                                              sizeof(early)) == 0,
+                 "live again but not yet reported: no mic_audio precedes the live report");
+    first = mic.kept_count;
+    first_ns = mic.now_ns;
+    voice_pump(&voice, &mic, 1, 1, offset, &out);
+    {
+        voice_sink_t *o = &out;
+        chorus_v2_frame_t f = chorus_v2_decode_frame(o->bytes, o->len);
+        chorus_check(f.outcome == CHORUS_FRAME_DECODED && f.message_type == CHORUS_V2_MIC_STATE &&
+                         f.message.as.mic_state.gate == CHORUS_V2_MIC_GATE_LIVE &&
+                         out.state_frames == 1 && out.audio_frames == 1 &&
+                         voice_decodes_to(&out, mic.kept + first, 320, 0, first_ns, offset),
+                     "the switch back to live: the live report, then audio from sequence 0");
+    }
+    chorus_check(voice.reports_sent == 6,
+                 "six gate reports in all, one per change: muted, live, muted, live, muted, "
+                 "live (%u)",
+                 voice.reports_sent);
+
+    /* The voice role's own audio vector, produced by the voice path. */
+    out.len = 0;
+    chorus_session_voice_begin(&voice);
+    chorus_session_voice_control(&voice, &on);
+    uint8_t scratch[64];
+    (void)chorus_session_voice_report(&voice, scratch, sizeof(scratch));
+    static uint8_t burn[1024];
+    for (int i = 0; i < 7; i++) {
+        (void)chorus_session_voice_capture(&voice, one, 320, 0, 1, 0, burn, sizeof(burn));
+    }
+    const int16_t six[6] = {0, 1, -1, 12345, -32768, 32767};
+    out.len = chorus_session_voice_capture(&voice, six, 6, 4234567890ull, 1, offset, out.bytes,
+                                           VOICE_CAP);
+    static uint8_t vector[64];
+    n = load_hex("fixtures/protocol/v2/mic_audio.hex", vector, sizeof(vector));
+    chorus_check(n > 0 && out.len == (size_t)n && memcmp(out.bytes, vector, out.len) == 0,
+                 "the eighth chunk of a run, six samples captured at 3 s on the server "
+                 "timeline: exactly fixtures/protocol/v2/mic_audio.hex (%zu bytes)",
+                 out.len);
+
+    /* A new session forgets the request and owes the server the gate. */
+    out.len = 0;
+    chorus_session_voice_begin(&voice);
+    voice_pump(&voice, &mic, 2, 1, offset, &out);
+    chorus_check(out.state_frames == 1 && out.audio_frames == 0 && !voice.uplink,
+                 "a new session: the gate is reported again and nothing is sent until this "
+                 "session's server requests the uplink");
+
+    /* The LED. */
+    chorus_led_inputs_t li = {1, 1, 1, 1, 0, 0, 0, 0};
+    chorus_session_voice_control(&voice, &listening_only);
+    li.listening = chorus_session_voice_listening(&voice);
+    chorus_check(chorus_led_decide(&li) == CHORUS_LED_LISTENING &&
+                     strcmp(chorus_led_state_name(CHORUS_LED_LISTENING), "listening") == 0,
+                 "voice_control listening: the LED shows listening, over playing");
+    static chorus_led_t led;
+    chorus_led_init(&led, chorus_controls_profile(CHORUS_CLASS_COMPACT));
+    chorus_led_output_t lit = chorus_led_render(&led, CHORUS_LED_LISTENING, 0);
+    chorus_led_output_t playing = chorus_led_render(&led, CHORUS_LED_PLAYING, 0);
+    chorus_led_output_t muted = chorus_led_render(&led, CHORUS_LED_MUTED, 0);
+    chorus_check(memcmp(&lit, &playing, sizeof(lit)) != 0 &&
+                     memcmp(&lit, &muted, sizeof(lit)) != 0 && lit.brightness > 0,
+                 "listening has a colour of its own: %u %u %u @%u", lit.red, lit.green, lit.blue,
+                 lit.brightness);
+    li.mic_muted = 1;
+    chorus_check(chorus_led_decide(&li) == CHORUS_LED_MUTED,
+                 "the switch at mute while the room listens: the LED shows mute");
+    li.mic_muted = 0;
+    chorus_session_voice_begin(&voice);
+    li.listening = chorus_session_voice_listening(&voice);
+    chorus_check(chorus_led_decide(&li) == CHORUS_LED_PLAYING,
+                 "the session ended: listening is over and the LED returns to playing");
+}
+
+static void a_class_without_a_microphone_never_sends_voice(void)
+{
+    chorus_section("voice: a class without a microphone never produces a voice message");
+    const chorus_speaker_class_t classes[] = {CHORUS_CLASS_TWO_WAY, CHORUS_CLASS_SUBWOOFER,
+                                              CHORUS_CLASS_STREAMING_AMP};
+    const chorus_v2_voice_control_t on = {1, 1};
+    for (size_t k = 0; k < sizeof(classes) / sizeof(classes[0]); k++) {
+        static chorus_controls_t c;
+        static sink_t actions;
+        static chorus_session_voice_t voice;
+        static fake_mic_t mic;
+        static voice_sink_t out;
+        memset(&actions, 0, sizeof(actions));
+        memset(&mic, 0, sizeof(mic));
+        memset(&out, 0, sizeof(out));
+        mic.seed = 7u + (uint32_t)k;
+        mic.chunk = 320;
+        chorus_controls_init(&c, classes[k], "den", "");
+        chorus_session_voice_init(&voice, &c);
+        chorus_session_voice_begin(&voice);
+        /* Everything a server and a binding could do to ask for audio. */
+        chorus_session_voice_control(&voice, &on);
+        int refused = chorus_controls_level(&c, CHORUS_INPUT_MIC_MUTE_SWITCH, 0, 0) == -1;
+        run(&c, 0, 30 * MS, &actions);
+        voice_pump(&voice, &mic, 8, 1, 0, &out);
+        chorus_led_inputs_t li = {1, 1, 1, 1, 0, 0, 0, 0};
+        li.listening = chorus_session_voice_listening(&voice);
+        chorus_check(chorus_session_voice_roles(&voice) == 0 && refused && out.len == 0 &&
+                         voice.chunks_sent == 0 && voice.reports_sent == 0 && !voice.uplink &&
+                         chorus_led_decide(&li) == CHORUS_LED_PLAYING,
+                     "%s: no voice role, no switch, and with the uplink asked for and eight asks "
+                     "of a capture source: no mic_state, no mic_audio, no listening light",
+                     chorus_speaker_class_name(classes[k]));
+    }
 }
 
 int main(void)
@@ -485,5 +892,7 @@ int main(void)
     the_subwoofer_class();
     the_streaming_amp_class();
     the_led_follows_the_visualizer_fixture();
+    the_voice_path_sends_mic_audio_only_through_the_gate();
+    a_class_without_a_microphone_never_sends_voice();
     return chorus_test_report("test_controls");
 }

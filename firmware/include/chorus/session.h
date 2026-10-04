@@ -28,6 +28,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "chorus/controls.h"
 #include "chorus/noise.h"
 #include "chorus/ota.h"
 #include "chorus/playout.h"
@@ -63,6 +64,92 @@ typedef struct {
 
 /* A health record in which nothing is known. */
 void chorus_session_health_unknown(chorus_session_health_t *health);
+
+/* --- the voice path (docs/protocol.md, "The voice role") ---------------------
+ *
+ * What the session does with a microphone: it declares the `voice` role when
+ * the class has one, reports the gate (mic_state) once after capabilities and
+ * at every change, keeps the server's last voice_control, and sends captured
+ * samples as mic_audio. Three things must all allow a sample out, and this is
+ * where they meet:
+ *
+ *   1. the class has a microphone (chorus_controls_profile);
+ *   2. the gate is live: the hardware switch, debounced, in the live position
+ *      (chorus/controls.h). Nothing the server sends opens it;
+ *   3. the server's last voice_control in THIS session set `uplink`.
+ *
+ * Samples reach the encoder only by way of chorus_controls_mic_pass: the
+ * capture source's samples are handed to the gate, and what is encoded is
+ * the gate's output buffer and nothing else. Pure: no clock, no pin, no
+ * socket. The capture source is a seam (chorus_session_config_t.mic_capture)
+ * with no driver behind it yet; firmware/tests/test_controls.c drives a fake
+ * one. */
+
+/* The most one capture call takes: ten of the wire's largest chunk. More than
+ * that in one call is refused whole (counted), never trimmed. */
+#define CHORUS_SESSION_VOICE_MAX_CAPTURE (10u * CHORUS_V2_MIC_MAX_SAMPLES)
+/* The gate's state has not been told to this session's server yet. */
+#define CHORUS_SESSION_VOICE_NOT_REPORTED 0xFFu
+
+typedef struct {
+    /* The endpoint's controls, whose gate this is. Read, never written. */
+    const chorus_controls_t *controls;
+    /* The server's last voice_control in this session; both 0 before one. */
+    uint8_t uplink;
+    uint8_t listening;
+    /* The gate the server was last told, CHORUS_V2_MIC_GATE_*, or
+     * CHORUS_SESSION_VOICE_NOT_REPORTED. */
+    uint8_t reported;
+    /* Whether the last capture was sent, and the next chunk's sequence: 0
+     * for the first chunk after a stretch in which nothing was sent. */
+    int streaming;
+    uint32_t next_sequence;
+    /* Since init: what was sent, and samples that did not leave (and why is
+     * one of: gate closed, uplink off, gate not yet reported, no offset). */
+    uint64_t chunks_sent;
+    uint64_t samples_sent;
+    uint64_t samples_withheld;
+    uint32_t reports_sent;
+    uint32_t refused_captures;
+    /* The gate's output, and the same samples as the wire's bytes. */
+    int16_t passed[CHORUS_V2_MIC_MAX_SAMPLES];
+    uint8_t wire[CHORUS_V2_MIC_MAX_SAMPLES * CHORUS_V2_MIC_BYTES_PER_SAMPLE];
+} chorus_session_voice_t;
+
+/* `controls` outlives the voice path. */
+void chorus_session_voice_init(chorus_session_voice_t *voice, const chorus_controls_t *controls);
+
+/* CHORUS_V2_ROLE_VOICE when the class has a microphone, else 0: what the
+ * session adds to hello.roles. NULL is 0. */
+uint16_t chorus_session_voice_roles(const chorus_session_voice_t *voice);
+
+/* A session began (or ended): uplink and listening are 0 again, the gate has
+ * not been reported, and the next chunk is sequence 0. */
+void chorus_session_voice_begin(chorus_session_voice_t *voice);
+
+/* The server's voice_control. Skipped when the role was not declared. */
+void chorus_session_voice_control(chorus_session_voice_t *voice,
+                                  const chorus_v2_voice_control_t *control);
+
+/* Whether the LED shows listening (chorus_led_inputs_t.listening). */
+int chorus_session_voice_listening(const chorus_session_voice_t *voice);
+
+/* The gate report: writes one mic_state frame to `out` and returns its
+ * length when the gate differs from what this session's server was told (or
+ * it was told nothing yet), else 0. A class without a microphone never
+ * reports. */
+size_t chorus_session_voice_report(chorus_session_voice_t *voice, uint8_t *out, size_t out_len);
+
+/* `count` samples (16 kHz mono) whose first was digitized at `captured_ns`
+ * on the endpoint's monotonic clock. Writes whole mic_audio frames to `out`
+ * (one per CHORUS_V2_MIC_MAX_SAMPLES) and returns their total length; 0 when
+ * nothing may leave: the gate is closed, the uplink is not requested, the
+ * server has not been told the gate is live, or there is no sync offset yet
+ * (`offset_known` 0: a timestamp is never guessed). `offset_ns` is the server
+ * clock minus the endpoint's. */
+size_t chorus_session_voice_capture(chorus_session_voice_t *voice, const int16_t *samples,
+                                    size_t count, uint64_t captured_ns, int offset_known,
+                                    int64_t offset_ns, uint8_t *out, size_t out_len);
 
 typedef struct {
     char server[CHORUS_SESSION_ADDRESS_MAX];
@@ -161,6 +248,23 @@ typedef struct {
      * and sends no heap block. It must not block. */
     void (*health)(void *ctx, chorus_session_health_t *health);
     void *health_ctx;
+
+    /* The voice path (above), optional. With it, and a class that has a
+     * microphone, the endpoint declares the `voice` role, reports its gate
+     * after capabilities and at every change, and takes voice_control. NULL:
+     * no role, and voice_control is stepped over.
+     *
+     * `mic_capture` is the capture source's seam: asked on the session's own
+     * task, it writes up to `max` samples (16 kHz mono) and the monotonic
+     * instant the first was digitized, and returns how many (0: none now).
+     * It must not block. No driver stands behind it yet (the microphone part
+     * is not chosen); NULL sends no audio, and the gate is still reported.
+     * The task that feeds the controls' switch readings and this one share
+     * the gate's one flag; the binding that adds a second task serialises
+     * them. */
+    chorus_session_voice_t *voice;
+    size_t (*mic_capture)(void *ctx, int16_t *samples, size_t max, uint64_t *captured_ns);
+    void *mic_capture_ctx;
 } chorus_session_config_t;
 
 /* Why a run ended. Never "the server went away": that is not an end, it is a
