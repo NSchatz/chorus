@@ -28,8 +28,9 @@
 #   UV_PROJECT_ENVIRONMENT  as tools/ha-test.sh
 #
 # A gate step of the full tier (`ha-hassfest`), about a quarter of a minute warm. Where uv or
-# the checkout cannot be had: under CI (CI=true) it prints SKIPPED with the reason, as the
-# identity scan does for its term list; anywhere else it fails by name.
+# the checkout cannot be had it fails by name, under CI as anywhere else: a gate step that did
+# not run is red, never a green SKIPPED
+# (docs/decisions/0142-the-home-assistant-gate-steps-run-or-fail.md).
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -46,11 +47,7 @@ if ! command -v uv > /dev/null 2>&1 && command -v mise > /dev/null 2>&1; then
     eval "$(MISE_TRUSTED_CONFIG_PATHS="$ROOT" mise env -s bash 2> /dev/null)"
 fi
 command -v uv > /dev/null 2>&1 || {
-    if [ "${CI:-}" = true ]; then
-        echo "SKIPPED: uv is not on PATH; hassfest runs on the integration's environment, which the pinned uv of mise.toml installs, and this CI run did not install it"
-        exit 0
-    fi
-    echo "FAIL: uv is not on PATH; install the pinned tools rootless with \`mise install\` (mise.toml)"
+    echo "FAIL: uv is not on PATH; hassfest runs on the integration's environment, which the pinned uv of mise.toml installs: install the pinned tools rootless with \`mise install\`"
     exit 1
 }
 if [ -d /cache ] && [ -w /cache ]; then
@@ -67,10 +64,6 @@ if [ ! -d "$CORE/.git" ]; then
     mkdir -p "$(dirname "$CORE")"
     git clone --quiet --depth 1 --branch "$TAG" https://github.com/home-assistant/core.git "$CORE" || {
         rm -rf "$CORE"
-        if [ "${CI:-}" = true ]; then
-            echo "SKIPPED: could not clone home-assistant/core at $TAG; hassfest needs that checkout and this CI run has no cache holding it"
-            exit 0
-        fi
         echo "FAIL: could not clone home-assistant/core at $TAG; hassfest needs the checkout at $CORE (the network, once)"
         exit 1
     }

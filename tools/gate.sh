@@ -46,7 +46,7 @@
 #                             Assistant integration's virtual environment (default
 #                             /cache/venvs/chorus-ha; never inside the repository); they fetch
 #                             the pinned Python and the locked packages once, then need no
-#                             network (SKIPPED under CI when uv is absent)
+#                             network (a missing uv fails the step, under CI too)
 #   CHORUS_HA_CORE            where the ha-hassfest step keeps its checkout of Home Assistant
 #                             core at the pinned tag (default /cache/chorus-ha-core); cloned
 #                             once, then no network
@@ -244,6 +244,38 @@ profiles_all_built() {
     return "$rc"
 }
 
+# A Home Assistant step (ha-test, ha-hassfest, ha-live) is green only when it ran: its make
+# target exits 0 AND its output carries the step's own `<name>: PASS` line and no SKIPPED
+# line. A run that skipped (no uv, no built server, a narrowed test run) is red
+# (docs/decisions/0142-the-home-assistant-gate-steps-run-or-fail.md). HA_TEST_ARGS is passed
+# empty so a value in the environment cannot narrow the gate's run.
+ha_step() {
+    local name="$1" out rc=0
+    out="$(mktemp "${TMPDIR:-/tmp}/chorus-gate-$name.XXXXXX")"
+    make --no-print-directory "$name" HA_TEST_ARGS= > "$out" 2>&1 || rc=$?
+    cat "$out"
+    if [ "$rc" -eq 0 ]; then
+        # (pytest's own `SKIPPED [1] <file>` summary lines are a test's, not the step's.)
+        if grep -q -e '^SKIPPED:' -e "^$name: SKIPPED" "$out"; then
+            echo "FAIL: the $name step printed SKIPPED; in the gate it runs or it is red"
+            rc=1
+        elif ! grep -q "^$name: PASS" "$out"; then
+            echo "FAIL: the $name step exited 0 without its '$name: PASS' line; it did not run whole"
+            rc=1
+        fi
+    fi
+    rm -f "$out"
+    return "$rc"
+}
+# The live-server test against the chorus-server the build step made.
+ha_live() {
+    CHORUS_SERVER_BIN="${CARGO_TARGET_DIR:-$ROOT/target}/debug/chorus-server" ha_step ha-live
+}
+# The step's verdict line into the summary.
+ha_summary() {
+    sed -n -e "s/^$1: \\(PASS.*\\)/gate: $1 \\1/p" -e "s/^\\(FAIL: .*\\)/gate: $1 \\1/p" "$LOG/$1.log" | tee -a "$LOG/summary.txt"
+}
+
 echo "gate: $MODE, $(git rev-parse --short HEAD 2>/dev/null), $(cargo --version), IDF_PY_BUILD_JOBS=${IDF_PY_BUILD_JOBS:-2}" | tee -a "$LOG/summary.txt"
 
 conventions
@@ -258,8 +290,8 @@ if [ "$MODE" = tier-fast ]; then
     # The Home Assistant integration's own lint, types and tests (goal 18): under a minute,
     # so before the workspace tests. (The conventions check of the same rule,
     # check-ha-integration.sh, ran above as step ha-integration.)
-    step ha-test          make --no-print-directory ha-test
-    sed -n -e 's/^ha-test: \(PASS.*\|SKIPPED.*\)/gate: ha-test \1/p' -e 's/^\(SKIPPED: .*\)/gate: ha-test \1/p' "$LOG/ha-test.log" | tee -a "$LOG/summary.txt"
+    step ha-test          ha_step ha-test
+    ha_summary ha-test
     step test             workspace_tests
 fi
 
@@ -272,16 +304,16 @@ if [ "$MODE" = full ]; then
     # The Home Assistant integration (goal 18): its lint, types and tests under the pinned
     # harness, then Home Assistant's own hassfest over it from the pinned core checkout.
     # Both are under a minute warm, so they come before the builds.
-    step ha-test          make --no-print-directory ha-test
-    sed -n -e 's/^ha-test: \(PASS.*\|SKIPPED.*\)/gate: ha-test \1/p' -e 's/^\(SKIPPED: .*\)/gate: ha-test \1/p' "$LOG/ha-test.log" | tee -a "$LOG/summary.txt"
-    step ha-hassfest      make --no-print-directory ha-hassfest
-    sed -n -e 's/^ha-hassfest: \(PASS.*\|SKIPPED.*\)/gate: ha-hassfest \1/p' -e 's/^\(SKIPPED: .*\)/gate: ha-hassfest \1/p' "$LOG/ha-hassfest.log" | tee -a "$LOG/summary.txt"
+    step ha-test          ha_step ha-test
+    ha_summary ha-test
+    step ha-hassfest      ha_step ha-hassfest
+    ha_summary ha-hassfest
     step build            cargo build --workspace --all-targets --locked
     # The integration against the chorus-server the build step just made, on loopback: join,
     # unjoin, volume, group volume, sources and an announcement through Home Assistant's
     # service calls (goal 18; tests/test_live_server.py).
-    step ha-live          env CHORUS_SERVER_BIN="${CARGO_TARGET_DIR:-$ROOT/target}/debug/chorus-server" \
-        make --no-print-directory ha-live
+    step ha-live          ha_live
+    ha_summary ha-live
     step test             workspace_tests
     step determinism      make --no-print-directory verify-control-determinism
     step firmware-check   env CHORUS_OUTAGE_SECONDS="${CHORUS_GATE_OUTAGE_SECONDS:-30}" \
