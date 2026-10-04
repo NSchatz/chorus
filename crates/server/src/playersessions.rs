@@ -12,11 +12,14 @@
 //! It is in-process only, on purpose. Brief section 4.8 allows no arbitrary
 //! URL fetch but the input paths the decisions name (UPnP renders, the home
 //! automation's media and TTS URLs from its own address, stored alarm stream
-//! URLs), so there is no command on the control API that plays a URL: the
-//! callers of [`PlayerSessions::play`] are those named paths, the first of
-//! them the UPnP renderer and (goal 17) the second an alarm whose source is
-//! a stored stream URL ([`PlayerSessions::play_held`], called by the
-//! conductor for the schedule runtime).
+//! URLs), so there is no command on the control API that plays an ARBITRARY
+//! URL: the callers of [`PlayerSessions::play`] are those named paths, the
+//! first of them the UPnP renderer, (goal 17) the second an alarm whose
+//! source is a stored stream URL ([`PlayerSessions::play_held`], called by
+//! the conductor for the schedule runtime), and (goal 18) the third the
+//! `announce` command, which plays a URL only from an origin the server was
+//! started with (`--announce-origin`, the home automation's own address) and
+//! holds the fetch to that origin (`crate::announce`, a held session too).
 //!
 //! One instance serves every caller (goal 17): the players have one report
 //! stream, so the sessions it feeds are one table. It runs no thread. With
@@ -29,7 +32,8 @@
 //! A session started with [`PlayerSessions::play`] sets its group's source
 //! itself, with `take` commands, as a person would: that is what a cast is.
 //! A HELD session ([`PlayerSessions::play_held`]) belongs to a caller that
-//! owns what its group plays (the schedule runtime, for a ringing alarm):
+//! owns what its group plays (the schedule runtime, for a ringing alarm;
+//! goal 18: the announcer, for a clip):
 //! the caller makes the group play the player, and when the track ends or
 //! fails the session touches no group; it gives the player back, leaves the
 //! end in [`PlayerSessions::take_ended`] and wakes the conductor, and the
@@ -38,6 +42,7 @@
 //! Control code, off the audio path: `audio-path.conf` records it as
 //! excluded.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -84,6 +89,9 @@ pub struct PlayRequest {
     pub epoch: u64,
     /// What the caller knows about the media.
     pub metadata: Metadata,
+    /// (goal 18) The origins the fetch is held to (an announcement's), or
+    /// empty for the players' fetch policy alone.
+    pub origins: Vec<chorus_fetch::Origin>,
 }
 
 #[derive(Debug, Clone)]
@@ -154,8 +162,19 @@ pub struct PlayerSessions {
     /// (goal 17) Held sessions that ended by themselves, until their caller
     /// takes them.
     ended: Mutex<Vec<Ended>>,
+    /// (goal 18) Held plays started, for their epochs.
+    held_plays: AtomicU64,
     log: Box<dyn Fn(&str) + Send + Sync>,
 }
+
+/// The epochs of held plays (an alarm's stored stream, an announcement):
+/// above every renderer's (a renderer's epoch is its base, counted from 1,
+/// in the high half), so a report left over from a renderer's play of the
+/// same player is older than a held session and ignored, and never one a
+/// renderer takes for its own. One counter for every held play (goal 18),
+/// so a report left over from one held play is older than the next,
+/// whoever started either.
+const HELD_EPOCH_BASE: u64 = 0xffff_ffff_0000_0000;
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     match m.lock() {
@@ -187,8 +206,16 @@ impl PlayerSessions {
             held: Mutex::new(vec![None; count]),
             failures: Mutex::new(vec![None; count]),
             ended: Mutex::new(Vec::new()),
+            held_plays: AtomicU64::new(0),
             log,
         }
+    }
+
+    /// (goal 18) The epoch for the next held play: larger than every one
+    /// handed out before, and above every renderer's.
+    pub fn held_epoch(&self) -> u64 {
+        let play = self.held_plays.fetch_add(1, Ordering::SeqCst) + 1;
+        HELD_EPOCH_BASE | (play & 0xffff_ffff)
     }
 
     /// The players these sessions run on.
@@ -280,9 +307,17 @@ impl PlayerSessions {
             if load {
                 handle.send(
                     request.epoch,
-                    Action::Load {
-                        uri: request.uri.clone(),
-                        mime: request.mime.clone(),
+                    if request.origins.is_empty() {
+                        Action::Load {
+                            uri: request.uri.clone(),
+                            mime: request.mime.clone(),
+                        }
+                    } else {
+                        Action::LoadWithin {
+                            uri: request.uri.clone(),
+                            mime: request.mime.clone(),
+                            origins: request.origins.clone(),
+                        }
                     },
                 );
             }

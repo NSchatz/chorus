@@ -420,6 +420,19 @@ pub enum Command {
         /// What to do.
         action: PlaybackAction,
     },
+    /// (v2, goal 18) Play a short clip (a home automation's announcement or
+    /// spoken text) in a target's group, then put back what the group played.
+    /// The URL's origin has to be one the server was started with
+    /// (`--announce-origin`).
+    Announce {
+        /// A room, a saved group or a formed group.
+        target: String,
+        /// The clip: an `http` or `https` URL from a configured origin.
+        url: String,
+        /// The volume the target's rooms play the clip at, clamped to each
+        /// room's effective limit; absent keeps their volumes.
+        volume: Option<Volume>,
+    },
 }
 
 impl Command {
@@ -464,6 +477,7 @@ impl Command {
             Command::InputLabel(_) => "input_label",
             Command::SoloistRestart => "soloist_restart",
             Command::Playback { .. } => "playback",
+            Command::Announce { .. } => "announce",
         }
     }
 
@@ -712,11 +726,77 @@ impl Command {
                 text("target", target);
                 text("action", action.name());
             }
+            Command::Announce {
+                target,
+                url,
+                volume,
+            } => {
+                text("target", target);
+                text("url", url);
+                if let Some(volume) = volume {
+                    m.push(("volume".to_string(), Value::Num(volume.literal())));
+                }
+            }
         }
         Value::Obj(m)
     }
 
     /// The bytes this command is on the wire.
+    pub fn encode(&self) -> String {
+        json::write(&self.value())
+    }
+}
+
+/// Longest a server's `id` may be, in bytes (goal 18).
+pub const MAX_SERVER_ID_LEN: usize = 64;
+
+/// (goal 18) Whether `text` is a server `id`: 1 to [`MAX_SERVER_ID_LEN`]
+/// lower-case ASCII letters, digits and hyphens.
+pub fn is_server_id(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= MAX_SERVER_ID_LEN
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// (goal 18) What a server says about itself on `GET /api/server`: who it
+/// is, what it runs and what it accepts. Not a state: it never changes while
+/// the server runs, nothing fans it out, and no state vector carries it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServerInfo {
+    /// A stable identifier of this server ([`is_server_id`]), the same one
+    /// its control service's TXT record carries as `id=`.
+    pub id: String,
+    /// The server's version string.
+    pub software: String,
+    /// Every catalog version it implements.
+    pub catalogs: Vec<i64>,
+    /// The origins an `announce` URL may come from, each in its one
+    /// spelling, in the order configured; empty when none is.
+    pub announce_origins: Vec<String>,
+}
+
+impl ServerInfo {
+    /// The message, in the declared member order.
+    pub fn value(&self) -> Value {
+        Value::Obj(vec![
+            ("v".to_string(), Value::int(CATALOG_VERSION)),
+            ("t".to_string(), Value::text("server")),
+            ("id".to_string(), Value::text(&self.id)),
+            ("software".to_string(), Value::text(&self.software)),
+            (
+                "catalogs".to_string(),
+                Value::Arr(self.catalogs.iter().map(|v| Value::int(*v)).collect()),
+            ),
+            (
+                "announce_origins".to_string(),
+                texts(&self.announce_origins),
+            ),
+        ])
+    }
+
+    /// The bytes it is on the wire.
     pub fn encode(&self) -> String {
         json::write(&self.value())
     }
@@ -1544,6 +1624,39 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
                 ))
             })?;
             Command::Playback { target, action }
+        }
+        "announce" => {
+            fields(&["v", "t", "target", "url"], &["volume"])?;
+            let target = id("target")?;
+            let url = match value.get("url").and_then(Value::as_str) {
+                Some(text) => text.to_string(),
+                None => {
+                    return Err(at(Refusal::rejected(
+                        "url",
+                        "the field 'url' is not a string".to_string(),
+                    )))
+                }
+            };
+            // The shape rules a stored `url` source has (goal 17), under
+            // this command's own field name.
+            if let Some(problem) = StoredSource::value_problem(StoredKind::Url, &url) {
+                return Err(at(Refusal::rejected(
+                    "url",
+                    problem
+                        .replace("a stored source of kind 'url'", "an announcement's 'url'")
+                        .replace("the value is", "the URL is")
+                        .replace("a stored source holds", "an announcement's URL holds"),
+                )));
+            }
+            let volume = match value.get("volume") {
+                None => None,
+                Some(_) => Some(volume_field(value, "volume").map_err(at)?),
+            };
+            Command::Announce {
+                target,
+                url,
+                volume,
+            }
         }
         "source_store" => {
             fields(&["v", "t", "id", "kind", "value", "name"], &[])?;

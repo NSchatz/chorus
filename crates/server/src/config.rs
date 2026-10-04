@@ -191,6 +191,12 @@ pub struct ServerConfig {
     /// server fetch from its own host. Needs `--players` of at least 1. The
     /// server's own listeners stay refused either way.
     pub media_allow_loopback: bool,
+    /// (goal 18) `--announce-origin <scheme://host[:port]>`, repeatable: the
+    /// origins an `announce` command's URL may come from (the home
+    /// automation's own address, brief section 4.8). Empty, the default,
+    /// refuses every `announce` by name. Needs `--control-listen`, because
+    /// `announce` is a control command.
+    pub announce_origins: Vec<chorus_control::rooms::Origin>,
     /// (goal 16) The UPnP AV media renderers' flags (`crate::upnp`,
     /// `docs/upnp.md`). Off unless `--upnp` is given.
     pub upnp: UpnpFlags,
@@ -643,6 +649,7 @@ impl Default for ServerConfig {
             mqtt: MqttFlags::default(),
             players: 0,
             media_allow_loopback: false,
+            announce_origins: Vec::new(),
             upnp: UpnpFlags::default(),
             soloist: SoloistFlags::default(),
         }
@@ -712,6 +719,15 @@ pub enum ServerConfigError {
         /// The value as it was given.
         value: String,
     },
+    /// (goal 18) An `--announce-origin` that is not `scheme://host[:port]`.
+    NotAnOrigin {
+        /// The value as it was given.
+        value: String,
+        /// What is wrong with it.
+        detail: String,
+    },
+    /// (goal 18) Announce origins with no control plane to announce through.
+    AnnounceNeedsTheControlPlane,
     /// A zone identifier the catalog does not allow.
     NotAZone {
         /// The value as it was given.
@@ -858,6 +874,18 @@ impl fmt::Display for ServerConfigError {
                 "'{}' is not 'group=address'; --group-audio says where one group's audio stream \
                  is served, for example --group-audio downstairs=127.0.0.1:4011",
                 value
+            ),
+            ServerConfigError::NotAnOrigin { value, detail } => write!(
+                f,
+                "'{}' is not an origin: {}; --announce-origin names where announcements may \
+                 come from as scheme://host[:port], for example \
+                 --announce-origin http://homeassistant.example:8123",
+                value, detail
+            ),
+            ServerConfigError::AnnounceNeedsTheControlPlane => write!(
+                f,
+                "--announce-origin says where the control API's announce command may fetch \
+                 from, and this server has no control API: give --control-listen <address>"
             ),
             ServerConfigError::NotAZone { value } => write!(
                 f,
@@ -1010,6 +1038,18 @@ impl ServerConfig {
                     config.players = usize::try_from(number(&arg, &value()?)?).unwrap_or(usize::MAX)
                 }
                 "--media-allow-loopback" => config.media_allow_loopback = true,
+                "--announce-origin" => {
+                    let text = value()?;
+                    let origin = chorus_control::rooms::Origin::parse(&text).map_err(|detail| {
+                        ServerConfigError::NotAnOrigin {
+                            value: text.clone(),
+                            detail,
+                        }
+                    })?;
+                    if !config.announce_origins.contains(&origin) {
+                        config.announce_origins.push(origin);
+                    }
+                }
                 "--soloist-receivers" => {
                     config.soloist.receivers_given = true;
                     config.soloist.receivers =
@@ -1190,6 +1230,9 @@ impl ServerConfig {
         config
             .soloist
             .check(config.control_listen.is_some(), config.slots)?;
+        if !config.announce_origins.is_empty() && config.control_listen.is_none() {
+            return Err(ServerConfigError::AnnounceNeedsTheControlPlane);
+        }
         if config.media_allow_loopback && config.players == 0 {
             return Err(ServerConfigError::Players {
                 argument: "--media-allow-loopback".to_string(),
@@ -1700,6 +1743,45 @@ mod tests {
         }
         // Port 0 is for a loopback listener (tests) only.
         assert!(ServerConfig::from_args(args(&on(&["--upnp-listen", "127.0.0.1:0"]))).is_ok());
+
+        // (goal 18) --announce-origin: repeatable, one spelling each, a
+        // repeat is one origin; refused by name when it is not an origin and
+        // when there is no control API to announce through.
+        let c = ServerConfig::from_args(args(&[
+            "--control-listen",
+            "127.0.0.1:0",
+            "--announce-origin",
+            "http://HA.example:8123",
+            "--announce-origin",
+            "https://homeassistant.example:443/",
+            "--announce-origin",
+            "http://ha.example:8123",
+        ]))
+        .unwrap();
+        let origins: Vec<String> = c.announce_origins.iter().map(|o| o.literal()).collect();
+        assert_eq!(
+            origins,
+            ["http://ha.example:8123", "https://homeassistant.example"]
+        );
+        assert!(ServerConfig::default().announce_origins.is_empty());
+        match ServerConfig::from_args(args(&[
+            "--control-listen",
+            "127.0.0.1:0",
+            "--announce-origin",
+            "http://ha.example:8123/api",
+        ]))
+        .unwrap_err()
+        {
+            ServerConfigError::NotAnOrigin { value, .. } => {
+                assert_eq!(value, "http://ha.example:8123/api")
+            }
+            other => panic!("{:?}", other),
+        }
+        assert!(matches!(
+            ServerConfig::from_args(args(&["--announce-origin", "http://ha.example:8123"]))
+                .unwrap_err(),
+            ServerConfigError::AnnounceNeedsTheControlPlane
+        ));
 
         // --media-allow-loopback is about the players, and needs some.
         match ServerConfig::from_args(args(&["--media-allow-loopback"])).unwrap_err() {

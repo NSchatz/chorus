@@ -1,1 +1,0 @@
-{"v":2,"t":"error","field":"url","detail":"the origin http://elsewhere.example:8123 is not one of this server's announce origins; it fetches announcements from http://ha.example:8123 only"}

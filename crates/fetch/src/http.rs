@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::error::FetchError;
-use crate::policy::{check_address, is_own_address, Policy};
+use crate::policy::{check_address, check_origin, is_own_address, Policy};
 use crate::tls;
 use crate::url::{Scheme, Url};
 
@@ -699,6 +699,10 @@ fn resolve(url: &Url) -> Result<Vec<SocketAddr>, FetchError> {
 /// refused address is never connected to; when every address is refused the
 /// first refusal is the error and no socket was opened.
 fn connect(ctx: &mut Ctx, url: &Url) -> Result<Transport, FetchError> {
+    // (goal 18) A fetch held to origins goes nowhere else: asked here, where
+    // every connection is made, so a redirect, a playlist and a segment are
+    // held to it like the first URL, and before the name is resolved.
+    check_origin(url, &ctx.policy)?;
     let mut refusal = None;
     let mut allowed = Vec::new();
     for addr in resolve(url)? {

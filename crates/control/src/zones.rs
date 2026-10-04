@@ -110,8 +110,8 @@ use crate::firmware::{self, image_value, Image};
 use crate::json::{self, Value};
 use crate::rooms::{
     Alarm, Autoplay, BondMember, CivilTime, InputId, InputLabel, InputRole, Link, NowPlaying,
-    PlayState, QuietWindow, Role, SavedGroup, SleepTimer, SoloistState, Source, StoredSource,
-    MAX_DEFINITIONS, VIA_STREAMER,
+    Origin, PlayState, QuietWindow, Role, SavedGroup, SleepTimer, SoloistState, Source,
+    StoredSource, MAX_DEFINITIONS, VIA_STREAMER,
 };
 use crate::sound::{BassManagement, RoomEq, SoundSettings};
 use crate::speakers::{key_change_value, speaker_value, KeyChange, NotListed, Speaker, Speakers};
@@ -312,6 +312,24 @@ pub struct Zones {
     /// warning, as the server's receiver manager last said; `None` on a
     /// server without `--soloist-receivers`. Never persisted.
     soloist: Option<SoloistState>,
+    /// (v2, goal 18) The origins an `announce` URL may come from
+    /// (`--announce-origin`), in the order configured. Never persisted and
+    /// never in the state: it is the server's configuration, served on
+    /// `GET /api/server`.
+    announce_origins: Vec<Origin>,
+}
+
+/// (goal 18) What [`Zones::announce_begin`] changed, which is what the end of
+/// the announcement puts back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Announced {
+    /// The formed group that plays the clip.
+    pub group: String,
+    /// What the group played before.
+    pub previous: Source,
+    /// Every room of the group whose volume the announcement set: the room,
+    /// the volume it had, and the volume it was given (clamped).
+    pub volumes: Vec<(String, Volume, Volume)>,
 }
 
 /// What a target names.
@@ -985,6 +1003,13 @@ impl Zones {
             Command::Playback { target, .. } => {
                 self.has_receivers()?;
                 self.playback_group(target)?;
+            }
+            Command::Announce { target, url, .. } => {
+                // The room model agrees or refuses; the clip is the server's
+                // to play (crates/server/src/announce.rs), and it is the
+                // server that changes what the group plays, when it has a
+                // player for it.
+                self.announce_check(target, url)?;
             }
             Command::FirmwareRescan => {
                 if self.firmware_images.is_none() {
@@ -2003,6 +2028,177 @@ impl Zones {
         self.soloist = soloist;
         self.serial += 1;
         true
+    }
+
+    /// (goal 18) The origins an `announce` URL may come from. Set once, at
+    /// start; the state does not carry them, so the serial does not move.
+    pub fn set_announce_origins(&mut self, origins: Vec<Origin>) {
+        self.announce_origins = origins;
+    }
+
+    /// (goal 18) The origins an `announce` URL may come from.
+    pub fn announce_origins(&self) -> &[Origin] {
+        &self.announce_origins
+    }
+
+    /// (goal 18) Whether an `announce` naming `target` and `url` may be
+    /// played: the target is a room, a saved group or a formed group, and
+    /// the URL's scheme, host and port are those of a configured origin.
+    /// Refused by name otherwise, the target first.
+    pub fn announce_check(&self, target: &str, url: &str) -> Result<(), Refusal> {
+        if self.resolve(target).is_none() {
+            return Err(self.no_target(target, "a room, a saved group or a formed group"));
+        }
+        // An alarm that is ringing keeps its rooms: an announcement would
+        // take the group from the alarm's own source, and an alarm must
+        // still wake.
+        let hearers = self.announce_rooms(target);
+        for alarm in &self.alarms {
+            if !self.ringing.contains(&alarm.id) {
+                continue;
+            }
+            let rings_in = self.announce_rooms(&alarm.target);
+            if let Some(room) = hearers.iter().find(|r| rings_in.contains(r)) {
+                return Err(Refusal::rejected(
+                    "target",
+                    format!(
+                        "alarm '{}' is ringing in room '{}'; an announcement does not interrupt \
+                         a ringing alarm (stop it with alarm_stop, or announce when it has \
+                         ended)",
+                        alarm.id, room
+                    ),
+                ));
+            }
+        }
+        if self.announce_origins.is_empty() {
+            return Err(Refusal::rejected(
+                "url",
+                "no-announce-origin: this server was started without --announce-origin, so it \
+                 announces no URL; start it with --announce-origin <scheme://host[:port]>, the \
+                 home automation's own address"
+                    .to_string(),
+            ));
+        }
+        let listed = || {
+            self.announce_origins
+                .iter()
+                .map(Origin::literal)
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        match Origin::of_url(url) {
+            Ok(origin) if self.announce_origins.contains(&origin) => Ok(()),
+            Ok(origin) => Err(Refusal::rejected(
+                "url",
+                format!(
+                    "the origin '{}' is not one this server announces from; its announce \
+                     origins are {}",
+                    origin.literal(),
+                    listed()
+                ),
+            )),
+            Err(why) => Err(Refusal::rejected(
+                "url",
+                format!(
+                    "the URL has no origin this server can compare: {}; its announce origins \
+                     are {}",
+                    why,
+                    listed()
+                ),
+            )),
+        }
+    }
+
+    /// (goal 18) The formed group an `announce` naming `target` would play
+    /// in as things stand: the group a room is in, a saved group's id when
+    /// it is formed, a formed group itself. `None` for an unknown target and
+    /// for a saved group none of whose rooms is in it yet.
+    pub fn announce_group(&self, target: &str) -> Option<String> {
+        let group = match self.resolve(target)? {
+            Target::Room(i) => self.zones[i].group.clone(),
+            Target::Saved(id) | Target::Formed(id) => id,
+        };
+        (!self.members(&group).is_empty()).then_some(group)
+    }
+
+    /// The rooms that would hear an announcement to `target`, or that an
+    /// alarm with that target rings in: a room and whoever shares its
+    /// group, a saved group's rooms and whoever is in it now, a formed
+    /// group's rooms.
+    fn announce_rooms(&self, target: &str) -> Vec<String> {
+        let mut rooms: Vec<String> = Vec::new();
+        let group = match self.resolve(target) {
+            None => return rooms,
+            Some(Target::Room(i)) => self.zones[i].group.clone(),
+            Some(Target::Saved(id)) => {
+                if let Some(saved) = self.saved.iter().find(|g| g.id == id) {
+                    rooms.extend(saved.zones.iter().cloned());
+                }
+                id
+            }
+            Some(Target::Formed(id)) => id,
+        };
+        for at in self.members(&group) {
+            if !rooms.contains(&self.zones[at].id) {
+                rooms.push(self.zones[at].id.clone());
+            }
+        }
+        rooms
+    }
+
+    /// (goal 18) Start an announcement the checks have passed: the target's
+    /// group plays `player` (a `player:<id>` the server took for the clip),
+    /// and with `volume` every room of the group is set to it, clamped to
+    /// the room's effective limit like every volume path. A saved group that
+    /// is not active is taken first (K78), as any play on a saved group
+    /// does; a room plays in the group it is in, and so does everybody else
+    /// in that group. Returns what was changed, for the end to put back.
+    /// Refused by name, with nothing changed, for an unknown target and for
+    /// a player another group is playing.
+    pub fn announce_begin(
+        &mut self,
+        target: &str,
+        player: Source,
+        volume: Option<Volume>,
+    ) -> Result<Announced, Refusal> {
+        let mut next = self.clone();
+        let group = match next.resolve(target) {
+            None => return Err(self.no_target(target, "a room, a saved group or a formed group")),
+            Some(Target::Room(i)) => next.zones[i].group.clone(),
+            Some(Target::Formed(id)) => id,
+            Some(Target::Saved(id)) => {
+                let active = next
+                    .saved
+                    .iter()
+                    .find(|g| g.id == id)
+                    .is_some_and(|g| next.is_active(g));
+                if !active {
+                    next.take(target, None)?;
+                }
+                id
+            }
+        };
+        let members = next.formed_members(&group)?;
+        let previous = next.source(&group);
+        Zones::group_source(&player)?;
+        next.player_is_free(&group, &player)?;
+        next.set_source(&group, player);
+        let mut volumes = Vec::new();
+        if let Some(volume) = volume {
+            for at in members {
+                let before = next.zones[at].volume;
+                next.set_volume(at, volume);
+                volumes.push((next.zones[at].id.clone(), before, next.zones[at].volume));
+            }
+        }
+        next.prune();
+        next.serial += 1;
+        *self = next;
+        Ok(Announced {
+            group,
+            previous,
+            volumes,
+        })
     }
 
     /// (goal 17) What the receiver manager last said, if this server runs

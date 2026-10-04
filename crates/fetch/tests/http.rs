@@ -152,6 +152,43 @@ fn a_compressed_body_is_refused_by_name() {
     );
 }
 
+/// (goal 18) A fetch held to origins (an announcement's) follows a redirect
+/// inside its origin and refuses one that leaves it, without connecting to
+/// where the redirect points.
+#[test]
+fn a_fetch_held_to_an_origin_follows_no_redirect_out_of_it() {
+    let body = pattern(3_000, 9);
+    let served = body.clone();
+    let elsewhere = Server::start(move |_, out| respond(out, "audio/mpeg", &pattern(100, 1)));
+    let away = elsewhere.url("/clip.mp3");
+    let home = Server::start(move |request, out| match request.target.as_str() {
+        "/inside" => redirect(out, 302, "/clip.mp3"),
+        "/clip.mp3" => respond(out, "audio/mpeg", &served),
+        "/outside" => redirect(out, 302, &away),
+        _ => status(out, 404),
+    });
+    let held = Policy {
+        origins: vec![chorus_fetch::Origin::parse(&home.url("/")).unwrap()],
+        ..policy()
+    };
+    let mut stream = open(&home.url("/inside"), &held).unwrap();
+    assert_eq!(read_all(&mut stream).unwrap(), body);
+    assert_eq!(
+        refused(open(&home.url("/outside"), &held)),
+        format!(
+            "origin http://127.0.0.1:{} is not one this fetch is held to",
+            elsewhere.port()
+        )
+    );
+    // A URL that starts elsewhere is refused before anything is fetched.
+    assert!(refused(open(&elsewhere.url("/clip.mp3"), &held)).starts_with("origin "));
+    assert_eq!(
+        elsewhere.connections(),
+        0,
+        "nothing was fetched from outside the origin"
+    );
+}
+
 #[test]
 fn a_redirect_chain_is_followed_to_the_file() {
     let body = pattern(5_000, 4);

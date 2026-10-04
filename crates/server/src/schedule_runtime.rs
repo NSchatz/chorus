@@ -543,6 +543,36 @@ impl Runtime {
         self.sleeping.iter().any(|s| s.target == target)
     }
 
+    /// (goal 18) An announcement that the runtime displaced is over, and
+    /// what it had given a group must not come back: every room the runtime
+    /// holds whose snapshot says it played `player` (the announcement's
+    /// player, given back by now) goes back to `previous` instead, and one
+    /// whose snapshot holds a volume the announcement set goes back to the
+    /// volume it had before (`volumes`: the room, the volume it had, the
+    /// volume the announcement gave it). Returns how many snapshots changed.
+    pub fn announcement_over(
+        &mut self,
+        player: &Source,
+        previous: &Source,
+        volumes: &[(String, Volume, Volume)],
+    ) -> usize {
+        let mut changed = 0;
+        for (room, hold) in self.holds.iter_mut() {
+            let snap = &mut hold.snapshot;
+            if snap.source != *player {
+                continue;
+            }
+            snap.source = previous.clone();
+            if let Some((_, before, set)) = volumes.iter().find(|(r, _, _)| r == room) {
+                if snap.volume == *set {
+                    snap.volume = *before;
+                }
+            }
+            changed += 1;
+        }
+        changed
+    }
+
     /// The earliest monotonic instant something is due: a ramp segment, an
     /// alarm's end, a sleep fade or expiry, an autoplay hold, a lowered
     /// limit. The caller ticks by then (and at least once a second for the

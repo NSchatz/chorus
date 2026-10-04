@@ -111,6 +111,19 @@ pub enum Action {
         /// The media type the caller was told (a hint, never a decision).
         mime: Option<String>,
     },
+    /// (goal 18) [`Action::Load`] for a fetch held to origins: every
+    /// connection it makes (the URI, each redirect, a playlist and its
+    /// segments) has to be to one of `origins`, or the load fails with the
+    /// fetch policy's `refused: origin ...`. What an announcement is loaded
+    /// with.
+    LoadWithin {
+        /// An `http` or `https` URL.
+        uri: String,
+        /// The media type the caller was told (a hint, never a decision).
+        mime: Option<String>,
+        /// The origins the fetch may connect to; never empty.
+        origins: Vec<chorus_fetch::Origin>,
+    },
     /// Play the loaded URI from the start, or from where a `Seek` put it,
     /// opening it again when a `Stop` or its end closed it.
     /// [`Event::Started`] when its first frame is out.
@@ -153,7 +166,11 @@ impl Action {
     fn interrupts(&self) -> bool {
         matches!(
             self,
-            Action::Stop | Action::Load { .. } | Action::Unload | Action::SkipToNext
+            Action::Stop
+                | Action::Load { .. }
+                | Action::LoadWithin { .. }
+                | Action::Unload
+                | Action::SkipToNext
         )
     }
 }
@@ -531,6 +548,8 @@ impl PlayerDriver for MediaPlayer {
 struct Request {
     uri: String,
     mime: Option<String>,
+    /// (goal 18) The origins the fetch is held to; empty for no such rule.
+    origins: Vec<chorus_fetch::Origin>,
 }
 
 /// An open source: the decoder, and where the fetch leaves the latest ICY
@@ -764,8 +783,17 @@ impl<'a> Engine<'a> {
     fn open(&self, req: &Request) -> Result<(Source, MediaInfo), String> {
         let shared = Arc::clone(&self.me.shared);
         let cancel: chorus_fetch::Cancel = Arc::new(move || shared.abort_pending());
-        let stream = chorus_fetch::open_cancellable(&req.uri, &self.me.policy, cancel)
-            .map_err(|e| e.to_string())?;
+        let stream = if req.origins.is_empty() {
+            chorus_fetch::open_cancellable(&req.uri, &self.me.policy, cancel)
+        } else {
+            // (goal 18) The players' policy, and this fetch's origins on top.
+            let held = Policy {
+                origins: req.origins.clone(),
+                ..(*self.me.policy).clone()
+            };
+            chorus_fetch::open_cancellable(&req.uri, &held, cancel)
+        }
+        .map_err(|e| e.to_string())?;
         let opened = stream.opened().clone();
         // The response's own type, unless it says nothing; then the caller's.
         let mime = opened
@@ -887,7 +915,12 @@ impl<'a> Engine<'a> {
         }
         self.epoch = epoch;
         match action {
-            Action::Load { uri, mime } => self.load(Request { uri, mime }),
+            Action::Load { uri, mime } => self.load(Request {
+                uri,
+                mime,
+                origins: Vec::new(),
+            }),
+            Action::LoadWithin { uri, mime, origins } => self.load(Request { uri, mime, origins }),
             Action::Start => {
                 if !self.playing && self.current.is_some() {
                     self.begin();
@@ -913,7 +946,11 @@ impl<'a> Engine<'a> {
             }
             Action::Seek { ms } => self.seek(ms),
             Action::QueueNext { uri, mime } => {
-                self.next = Some(Track::new(Request { uri, mime }));
+                self.next = Some(Track::new(Request {
+                    uri,
+                    mime,
+                    origins: Vec::new(),
+                }));
                 self.open_next();
             }
             Action::ClearNext => self.next = None,

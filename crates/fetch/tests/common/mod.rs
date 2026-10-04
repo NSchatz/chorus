@@ -204,6 +204,7 @@ pub fn policy() -> Policy {
         read_timeout: Duration::from_secs(5),
         max_header_bytes: 8 * 1024,
         ca_bundle: None,
+        origins: Vec::new(),
     }
 }
 
