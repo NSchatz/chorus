@@ -1,0 +1,15 @@
+{
+  "domain": "chorus",
+  "name": "chorus",
+  "codeowners": ["@NSchatz"],
+  "config_flow": true,
+  "dependencies": ["media_source"],
+  "documentation": "https://github.com/NSchatz/chorus/blob/main/integrations/homeassistant/README.md",
+  "integration_type": "hub",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/NSchatz/chorus/issues",
+  "quality_scale": "platinum",
+  "requirements": [],
+  "version": "0.18.0",
+  "zeroconf": ["_chorus-ctl._tcp.local."]
+}

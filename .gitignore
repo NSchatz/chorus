@@ -21,3 +21,11 @@ __pycache__/
 core
 !core/
 core.[0-9]*
+
+# The Home Assistant integration's tools write outside the checkout (tools/ha-test.sh); a
+# pytest or coverage run by hand must not leave these behind.
+/integrations/homeassistant/.coverage
+/integrations/homeassistant/.venv
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/

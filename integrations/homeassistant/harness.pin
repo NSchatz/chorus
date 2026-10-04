@@ -1,0 +1,24 @@
+# The Home Assistant test harness pin, in the one place the checks read
+# (tools/conventions/check-ha-integration.sh, tools/ha-hassfest.sh).
+#
+# The rule: this pin moves when the homelab's Home Assistant pin moves, and
+# only then. The homelab runs the image tag recorded below
+# (home-automation/homeassistant/docker-compose.yml at homelab commit f0284f2);
+# the harness release is the one whose `homeassistant==` requirement is that
+# version. docs/home-assistant.md, "Moving the pin", is the procedure.
+#
+# Sources, read 2026-10-04:
+#   https://pypi.org/pypi/pytest-homeassistant-custom-component/0.13.366/json
+#     (requires homeassistant==2026.9.3; MIT; the wheel's sha256 below)
+#   https://github.com/home-assistant/core/tree/2026.9.3 (the tag's commit below,
+#     from `git ls-remote`; pyproject.toml requires Python >= 3.14.2)
+#
+# Format: one "key = value" per line.
+homeassistant = 2026.9.3
+homelab-commit = f0284f2
+harness = pytest-homeassistant-custom-component
+harness-version = 0.13.366
+harness-wheel-sha256 = 8c5f0554a76e7746e2abee2cc80c80d5e5f13e27c6a31fc1894e36bae4aeafd9
+core-tag = 2026.9.3
+core-commit = 6de5eb18cd4502f94af44cfff3a02250d88716ed
+python = 3.14.8

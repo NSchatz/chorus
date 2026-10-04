@@ -41,9 +41,11 @@ while IFS= read -r f; do
         pr="$(git log --diff-filter=A --format=%s -- "$f" | sed -n 's/.*(#\([0-9]*\))$/\1/p' | tail -n 1)"
         # A record whose own PR landed inside another PR's squash keeps its own PR's number; the
         # list names each one with the squash that carried it (goal 17, D8: PR #129's branch
-        # was merged into PR #132's and landed with it; #129 was closed with a pointer).
+        # was merged into PR #132's and landed with it; #129 was closed with a pointer; goal 18:
+        # PR #138's tree landed as PR #139's one commit, a subject of #138's own being too long).
         case "$num:$pr" in
         0129:132) pr=129 ;;
+        0138:139) pr=138 ;;
         esac
         [ -z "$pr" ] || [ "$((10#$num))" = "$pr" ] || bad "$f: numbered $num but added by PR #$pr"
     fi
