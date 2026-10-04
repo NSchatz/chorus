@@ -76,6 +76,8 @@ A **zone** is a room (catalog v2's documents say "room"; the wire keeps the key
 | `quiet` (v2) | the room's quiet-hours windows, each with its own cap |
 | `quiet_enabled` (v2) | whether the room's quiet hours are switched on, `true` unless switched off; the windows are stored either way |
 | `bond` (v2) | the room's bonded set: endpoints each playing a channel role, or none |
+| `voice_enabled` (v2) | whether the room's voice path is switched on, `false` unless switched on: only then is a microphone of the room asked for audio |
+| `mic_muted` (v2) | read-only: `true` unless a speaker present in the room reports its mic gate live; never persisted, and no command sets it |
 | `sound` (v2, goal 12) | tone, loudness, night mode and speech enhancement |
 | `bass_management` (v2, goal 12) | crossover, sub level and sub polarity, in force when the set has an `LFE` member |
 | `room_eq` (v2, goal 12) | up to 8 room-correction filters and whether they are applied |
@@ -406,6 +408,47 @@ serial. `fixtures/control/v2/quiet_hours_enabled.json` pins the command and
 `fixtures/control/v2/state-quiet-disabled.json` a room switched off inside one
 of its windows.
 
+### Voice: `voice_enabled` and `mic_muted`
+
+```json
+{"v":2,"t":"voice_enabled","zone":"kitchen","enabled":true}
+```
+
+| type | fields | effect |
+|---|---|---|
+| `voice_enabled` | `zone`, `enabled` (`true` or `false`) | switches the room's voice path on or off. Off by default, in every room. On: the server asks the room's voice speakers for their microphone audio. Off: it tells them to stop and drops anything they send |
+
+**Voice switched on per room.** `voice_enabled` is the software half of the
+rule that a speaker's microphone is heard only while it is unmuted and voice is
+enabled (`docs/decisions/0000-the-microphone-intake.md`; proposal P8). It is
+one flag per room, `false` until a person switches it on, persisted (state-file
+format 8) and shown on the room as `voice_enabled`. The other half is the
+speaker's own: its hardware switch, which it reports and the room shows as
+`mic_muted`. `mic_muted` is read-only. It is `true` unless a speaker present in
+the room has said its gate is live, so a room with no microphone, one whose
+speaker is away and one whose speaker has said nothing yet all read `true`; it
+is a fact about now and is never persisted. No command sets it and none opens
+a microphone: `voice_enabled` with `enabled` true leaves `mic_muted` as it was.
+Which rooms have a microphone at all is `speakers[].roles`, which lists
+`voice` for a speaker that declared the role.
+
+What the server does with the audio (`crates/server/src/voice.rs`): a
+microphone frame is kept only when its speaker declared the voice role, is in
+a room, the room has `voice_enabled` true and the speaker's gate is live, all
+at the moment the frame arrives; any other frame is dropped and counted, and
+the log says so once per change (`voice mic id=<speaker> room=<room>
+intake=dropping reason=<no-voice-role|no-room|voice-disabled|gate-muted>
+buffered_frames=<n> dropped_frames=<n>`). A kept frame goes into a buffer in
+memory, at most three seconds per session, wiped when the room is switched
+off, when the gate closes and when the session ends. That buffer is the only
+place the audio is. It is not an input and not a source: the state's `inputs`
+and every `source` never name it, no `take`, `autoplay` or `input_label`
+spelling selects it, and it reaches no audio stream, no visualizer stream, no
+event stream, no log line and no file
+(`crates/server/tests/voice_intake.rs` sends a marker as microphone audio and
+looks for it in all of them). `fixtures/control/v2/voice_enabled.json` pins
+the command.
+
 An alarm, an autoplay rule and a saved group outlive a restart, so their
 targets are rooms or saved groups; a live group's id names nothing once it
 dissolves. A sleep timer does not outlive a restart (its countdown cannot be
@@ -713,7 +756,9 @@ is wired to it. A `streamer` input plays into its endpoint's own room when
 its signal appears, with no `autoplay` rule (an `autoplay` rule for the
 input, enabled or not, is the person's word and wins); the groups playing it
 show the label (`now_playing`, `via` `streamer`); and it is shared to any
-group like any line-in. There is no microphone role (brief section 4.8). A
+group like any line-in. There is no microphone role (brief section 4.8), and
+a speaker's microphone is never an input: its audio goes to the voice path
+alone ("Voice: `voice_enabled` and `mic_muted`"). A
 label is configuration: it is kept whether or not the input is offered now,
 and at most 32 are held. The state lists them as `input_labels`.
 
@@ -926,7 +971,7 @@ of each, `fixtures/control/v2/state-empty.json` the empty house):
 
 | field | notes |
 |---|---|
-| `zones[]` | v1's fields, then `transport` (`wired` or `wireless`, as declared), `limit`, `effective_limit`, `quiet` (`[{"days","start","end","limit","active"}]`; `active` says the clock is inside the window, whether or not the room's quiet hours are switched on), `quiet_enabled` (`true` or `false`: whether an active window caps the room; `true` unless `quiet_hours_enabled` switched it off), `bond` (`[{"endpoint","role"}]`, `[]` for none), `ramp` (a running ramp's target, or `null`), and (goal 12) `sound` (`{"bass","treble","loudness","night","speech"}`), `bass_management` (`{"crossover_hz","sub_level_db","sub_polarity","active"}`) and `room_eq` (`{"enabled","filters"}`) |
+| `zones[]` | v1's fields, then `transport` (`wired` or `wireless`, as declared), `limit`, `effective_limit`, `quiet` (`[{"days","start","end","limit","active"}]`; `active` says the clock is inside the window, whether or not the room's quiet hours are switched on), `quiet_enabled` (`true` or `false`: whether an active window caps the room; `true` unless `quiet_hours_enabled` switched it off), `bond` (`[{"endpoint","role"}]`, `[]` for none), `ramp` (a running ramp's target, or `null`), and (goal 12) `sound` (`{"bass","treble","loudness","night","speech"}`), `bass_management` (`{"crossover_hz","sub_level_db","sub_polarity","active"}`) and `room_eq` (`{"enabled","filters"}`), then `voice_enabled` and `mic_muted` (`true` or `false` each; before `source` and `now_playing` where a room has those) |
 | `zones[].source`, `zones[].now_playing` | (goal 16) **written only while the room's group has a now-playing record**, last in the room's object, in that order: the group's `source` (a `player:<id>`) and the record, below |
 | `groups[]` | every formed group, in the order its first room was configured: `id`, `kind`, `zones`, `volume` (the group volume), `source`, `audio` |
 | `groups[].now_playing` | (goal 16) **written only while the group has a now-playing record**, after `audio`: `title`, `artist`, `album`, `art_url` (each a string, or `null` where not known), `duration_ms` (a whole number, or `null` for a live stream or an unknown length), `state` (`playing`, `paused` or `buffering`), `via` (an identifier: `upnp` for a UPnP AV control point). Never persisted |
@@ -1546,7 +1591,7 @@ No firmware image travels over this channel (goal 14): a request is at most
 16 KiB and an image is megabytes. Images are staged as files in
 `--firmware-dir`, and the bytes go to a speaker inside its own audio session.
 
-## What survives a restart (state-file format 7)
+## What survives a restart (state-file format 8)
 
 The server persists, in `--state-file`, everything a person configured: each
 room's name, group, volume, mute, endpoints, `limit`, quiet-hours windows,
@@ -1559,11 +1604,13 @@ speaker's `name`, `named` and `room`, in a `[speaker <id>]` section; and
 `value`, `name`) and each input label (`[input-label <endpoint>/<input>]`:
 `name`, `role`); and (format 7) whether each room's quiet hours are switched
 on (`quiet_enabled`, 0 or 1, in its `[zone]` section, required in a format 7
+file); and (format 8) whether each room's voice path is switched on
+(`voice_enabled`, 0 or 1, in its `[zone]` section, required in a format 8
 file). It does
 not persist what is a fact about now: which endpoints are present, which quiet
 window is active, which alarm is ringing, a running ramp, what a group is
 playing (its source and, goal 16, its now-playing record), a sleep timer,
-which inputs are offered, or a speaker's presence,
+which inputs are offered, a microphone's gate (`mic_muted`), or a speaker's presence,
 software, roles, key fingerprint and refused key changes (the pins themselves
 are the server's `adopted-endpoints`, beside its key), or anything about
 firmware: the staged images (the directory is read again at start) and a
@@ -1576,6 +1623,8 @@ format 4 file (goal 13's builds) with no speaker record (the server lists
 every id it has pinned when it starts), and a format 5 file (goal 14 to 16's
 builds) with no stored source and no input label, and a format 6 file (goal
 17's builds and later, before `quiet_hours_enabled`) with every room's quiet
-hours enabled, which is what its windows meant then; the next write is format 7. A write goes to a temporary that is `fsync`ed, renamed over the file, and the
+hours enabled, which is what its windows meant then, and a format 7 file
+(before `voice_enabled`) with every room's voice path off, the default; the
+next write is format 8. A write goes to a temporary that is `fsync`ed, renamed over the file, and the
 directory is `fsync`ed, and a render that would not read back as the same state
 is never installed (`crates/control/src/persist.rs`).

@@ -78,13 +78,14 @@ already encoded and not encoded a second time. The two below are the `kitchen` r
 
 A room's payload is the room's object byte for byte, so it gains a field whenever the state
 message does and no topic changes: `quiet_enabled` (whether the room's quiet hours are switched
-on, after `quiet`) arrived that way with the `quiet_hours_enabled` command. The publisher stays
+on, after `quiet`) arrived that way with the `quiet_hours_enabled` command. So did
+`voice_enabled` and `mic_muted` (after `room_eq`), with the `voice_enabled` command. The publisher stays
 read-only; nothing is commanded over MQTT.
 
 `chorus/v1/rooms/kitchen/state`:
 
 ```json
-{"id":"kitchen","name":"kitchen","group":"downstairs","volume":0.343,"muted":false,"endpoints":[],"present":[],"audio":"127.0.0.1:4011","transport":"wired","limit":0.400,"effective_limit":0.400,"quiet":[],"quiet_enabled":true,"bond":[],"ramp":null,"sound":{"bass":0,"treble":0,"loudness":true,"night":false,"speech":false,"tv_upmix":"off"},"av_trim_ms":0,"bass_management":{"crossover_hz":80,"sub_level_db":0.00,"sub_polarity":"normal","active":false},"room_eq":{"enabled":false,"filters":[]}}
+{"id":"kitchen","name":"kitchen","group":"downstairs","volume":0.343,"muted":false,"endpoints":[],"present":[],"audio":"127.0.0.1:4011","transport":"wired","limit":0.400,"effective_limit":0.400,"quiet":[],"quiet_enabled":true,"bond":[],"ramp":null,"sound":{"bass":0,"treble":0,"loudness":true,"night":false,"speech":false,"tv_upmix":"off"},"av_trim_ms":0,"bass_management":{"crossover_hz":80,"sub_level_db":0.00,"sub_polarity":"normal","active":false},"room_eq":{"enabled":false,"filters":[]},"voice_enabled":false,"mic_muted":true}
 ```
 
 `chorus/v1/groups/downstairs/state`:
@@ -150,7 +151,7 @@ bounds. This is the `study` room of `fixtures/control/v2/state-playing.json`, pa
 stream that has a title and nothing else:
 
 ```json
-{"id":"study","name":"study","group":"study","volume":1.000,"muted":false,"endpoints":[],"present":[],"audio":"127.0.0.1:4010","transport":"wired","limit":1.000,"effective_limit":1.000,"quiet":[],"quiet_enabled":true,"bond":[],"ramp":null,"sound":{"bass":0,"treble":0,"loudness":true,"night":false,"speech":false,"tv_upmix":"off"},"av_trim_ms":0,"bass_management":{"crossover_hz":80,"sub_level_db":0.00,"sub_polarity":"normal","active":false},"room_eq":{"enabled":true,"filters":[]},"source":"player:p1","now_playing":{"title":"Evening news","artist":null,"album":null,"art_url":null,"duration_ms":null,"state":"paused","via":"upnp"}}
+{"id":"study","name":"study","group":"study","volume":1.000,"muted":false,"endpoints":[],"present":[],"audio":"127.0.0.1:4010","transport":"wired","limit":1.000,"effective_limit":1.000,"quiet":[],"quiet_enabled":true,"bond":[],"ramp":null,"sound":{"bass":0,"treble":0,"loudness":true,"night":false,"speech":false,"tv_upmix":"off"},"av_trim_ms":0,"bass_management":{"crossover_hz":80,"sub_level_db":0.00,"sub_polarity":"normal","active":false},"room_eq":{"enabled":true,"filters":[]},"voice_enabled":false,"mic_muted":true,"source":"player:p1","now_playing":{"title":"Evening news","artist":null,"album":null,"art_url":null,"duration_ms":null,"state":"paused","via":"upnp"}}
 ```
 
 - The two members are **absent**, not `null`, when there is no record: a room playing the

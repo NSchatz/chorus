@@ -91,7 +91,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use chorus_control::rooms::Source;
 use chorus_control::transport::{Transport, ZoneTransports, WIRELESS_POLICY};
 use chorus_protocol::v2::{
-    features, roles, Codec, Message, RoomVolume, SourceAction, SourceControl,
+    features, roles, Codec, Message, RoomVolume, SourceAction, SourceControl, VoiceControl,
 };
 use chorus_schedule::chime::CHIMES;
 
@@ -158,6 +158,8 @@ pub struct PassReport {
     pub inputs: usize,
     /// Pushes owed to a full queue, to try again.
     pub owed: usize,
+    /// `voice_control` messages sent.
+    pub voice_controls: usize,
 }
 
 /// Where the civil clock comes from.
@@ -275,6 +277,8 @@ pub struct Conductor {
     soloist: Option<Arc<crate::soloist::Link>>,
     /// (goal 18) The announcements, which this thread ends.
     announcer: Option<Arc<crate::announce::Announcer>>,
+    /// (voice, P8) What each voice session was last told, and its buffer.
+    voice: Option<Arc<crate::voice::Voice>>,
 }
 
 /// When an endpoint of a room on `transport` plays audio stamped `t` on the
@@ -316,7 +320,16 @@ impl Conductor {
             stored: None,
             soloist: None,
             announcer: None,
+            voice: None,
         }
+    }
+
+    /// (voice, P8) Tell every voice session whether its room has voice
+    /// switched on (`voice_control`), as part of every pass, and keep what
+    /// it was told in `voice` (`crate::voice`).
+    pub fn with_voice(mut self, voice: Arc<crate::voice::Voice>) -> Conductor {
+        self.voice = Some(voice);
+        self
     }
 
     /// (goal 18) End the announcements of `announcer` as part of every pass
@@ -457,6 +470,7 @@ impl Conductor {
                 }
             }
         }
+        self.voice_controls(&snapshot, &mut report);
         // The rooms an HTTP subscriber watches the visualizer of
         // (`crate::lights`): the slot each is on, and when it hears it. A
         // room whose group has no slot, and every room in the one-stream
@@ -474,6 +488,50 @@ impl Conductor {
         self.route_inputs(&snapshot, &mut report, false);
         self.tv_path(&snapshot);
         report
+    }
+
+    /// (voice, P8) `voice_control` to every voice session whose room's
+    /// `voice_enabled` is not what it was last told: `uplink` on while the
+    /// room has voice switched on, off the moment it has not (or the
+    /// endpoint is in no room). A session starts off, so one in a room with
+    /// voice off is sent nothing. `listening` stays false: no run exists yet
+    /// (the wake word and the run are later tasks). This never opens a
+    /// microphone: the gate is the endpoint's own, and the intake reads the
+    /// room model for every frame whatever the endpoint was told.
+    fn voice_controls(&mut self, snapshot: &Snapshot, report: &mut PassReport) {
+        let Some(voice) = self.voice.clone() else {
+            return;
+        };
+        for session in self.router.sessions() {
+            if session.roles & roles::VOICE == 0 {
+                continue;
+            }
+            let wanted = VoiceControl {
+                uplink: snapshot
+                    .room_of(&session.endpoint)
+                    .is_some_and(|room| room.voice_enabled),
+                listening: false,
+            };
+            match voice.told(session.id) {
+                Some(told) if told == wanted => {}
+                // Not known to the intake yet (its reader is a step behind
+                // the router's registration): tried again on the next pass.
+                None => report.owed += 1,
+                Some(_) => {
+                    if self
+                        .router
+                        .push_message(session.id, &Message::VoiceControl(wanted))
+                    {
+                        if let Some(line) = voice.tell(session.id, wanted) {
+                            println!("chorus-server: {}", line);
+                        }
+                        report.voice_controls += 1;
+                    } else {
+                        report.owed += 1;
+                    }
+                }
+            }
+        }
     }
 
     /// (goal 13) Which TV inputs play in low-latency mode: a TV's input

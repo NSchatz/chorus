@@ -99,6 +99,7 @@ pub mod stream;
 pub mod targets;
 pub mod tvrelay;
 pub mod upnp;
+pub mod voice;
 
 pub use clients::ClientPool;
 pub use config::{ServerConfig, ServerConfigError};

@@ -69,6 +69,9 @@ pub struct SpeakerNow {
     /// an update, from its own `firmware_status`; `None` until it has sent
     /// one (a speaker that never does takes no updates).
     pub firmware: Option<SpeakerFirmware>,
+    /// Whether its mic gate is live, from its own `mic_state`; `false`
+    /// (muted) until it says so, and again when its last session ends.
+    pub mic_live: bool,
 }
 
 impl SpeakerNow {

@@ -120,7 +120,9 @@ fn a_state_with_no_record_says_nothing_about_what_plays() {
         None
     );
     assert!(
-        json::write(&kitchen).ends_with(r#""room_eq":{"enabled":true,"filters":[]}}"#),
+        json::write(&kitchen).ends_with(
+            r#""room_eq":{"enabled":true,"filters":[]},"voice_enabled":false,"mic_muted":true}"#
+        ),
         "the room object still ends where it did: {}",
         json::write(&kitchen)
     );
@@ -156,10 +158,10 @@ fn the_record_is_on_the_group_and_on_each_of_its_rooms_and_nowhere_else() {
         assert_eq!(member(&room, "now_playing").as_deref(), Some(SONG));
         assert!(
             json::write(&room).ends_with(&format!(
-                r#""room_eq":{{"enabled":true,"filters":[]}},"source":"player:p0","now_playing":{}}}"#,
+                r#""room_eq":{{"enabled":true,"filters":[]}},"voice_enabled":false,"mic_muted":true,"source":"player:p0","now_playing":{}}}"#,
                 SONG
             )),
-            "after room_eq, source then now_playing: {}",
+            "after the voice fields, source then now_playing: {}",
             json::write(&room)
         );
     }
