@@ -152,7 +152,7 @@ The integration never calls the action itself: an automation of yours that calls
 
 **Installing on a real speaker is the owner's action at the bench.** The server refuses to
 send an image to a speaker that is not on the server's own host unless it was started with
-`CHORUS_OWNER_AT_BENCH=1` in its environment (`docs/firmware-updates.md`). Without it the
+`CHORUS_OWNER_AT_BENCH` set to `1` in its environment (`docs/firmware-updates.md`). Without it the
 Install action fails with a message saying so and nothing is sent to the speaker; everything
 the entity shows still works.
 
@@ -275,7 +275,7 @@ Bring the den and the patio into the kitchen's music, then let the den go:
 | "The chorus server refused the sound setting" | The server did not accept a bass, treble, loudness, night mode or speech value; the message carries the server's own reason |
 | An autoplay switch disappeared | The rule was deleted in chorus, or given another target (its switch is then on that room's or saved group's device) |
 | The Input select shows nothing | The room plays something that is not an input: a cast, a Spotify receiver, or nothing |
-| "The chorus server installs firmware on a real speaker only while the owner is at the bench" | The speaker is not on the server's own host and the server runs without `CHORUS_OWNER_AT_BENCH=1`. Nothing was sent. Installing on a real speaker is the owner's action |
+| "The chorus server installs firmware on a real speaker only while the owner is at the bench" | The speaker is not on the server's own host and the server runs without `CHORUS_OWNER_AT_BENCH` set to `1`. Nothing was sent. Installing on a real speaker is the owner's action |
 | "The speaker already has a firmware install in progress" | An install is under way for that speaker (the entity shows it); wait for its outcome |
 | "The chorus server did not verify the staged image, or it changed on disk since" | The image file is not the one the server verified. Stage it again and send the server `firmware_rescan` |
 | A speaker has a device and no Firmware entity | It has not reported what it runs: it is absent since the server started, or its firmware takes no updates |
