@@ -51,7 +51,7 @@ How the rules work:
 | 22 | Every rule has a check | `tools/conventions/check-conventions.sh` |
 | 23 | Datasheet-cited amplifier map | `tools/conventions/check-amp-map.sh`; gate step `firmware-check` (`test_amp` drives the datasheet-modelled part with the committed map) |
 | 24 | No Soloist file is shipped | gate step `soloist-lists`: `make soloist-lists` (`tools/soloist-lists.py`, after gate steps `image` and `soloist-image` built what it lists) |
-| 25 | The Home Assistant integration | `tools/conventions/check-ha-integration.sh`; gate step `ha-test`: `make ha-test` (ruff, `mypy --strict`, the tests under the pinned harness with coverage, the no-unauthenticated-endpoint test; a run narrowed with `HA_TEST_ARGS` is the inner loop, not this step); gate step `ha-hassfest`: `make ha-hassfest` (Home Assistant's own hassfest from the pinned core checkout); gate step `ha-live`: `make ha-live` (the integration against the built `chorus-server` on loopback, full tier); each of the three runs or is red, never `SKIPPED` |
+| 25 | The Home Assistant integration | `tools/conventions/check-ha-integration.sh`; `tools/conventions/check-ha-export.sh` (the pinned install copy is reproducible); gate step `ha-test`: `make ha-test` (ruff, `mypy --strict`, the tests under the pinned harness with coverage, the no-unauthenticated-endpoint test; a run narrowed with `HA_TEST_ARGS` is the inner loop, not this step); gate step `ha-hassfest`: `make ha-hassfest` (Home Assistant's own hassfest from the pinned core checkout); gate step `ha-live`: `make ha-live` (the integration against the built `chorus-server` on loopback, full tier); each of the three runs or is red, never `SKIPPED` |
 
 The rest of this file is each rule in full, in table order.
 
@@ -412,6 +412,14 @@ places than chorus is, so what it may be is held by checks:
   ha-hassfest` has Home Assistant's hassfest grade the file in a core checkout and proves that
   it did.
 - `strings.json` and `translations/en.json` are the same bytes.
+- **The install copy is a reproducible export of one commit.** `tools/ha-export.sh <dir>
+  [<commit>]` writes the integration as that commit has it, read from git's objects, and a lock
+  naming the commit and every file's sha256; an installation vendors that copy and never edits
+  it (`docs/home-assistant.md`, "Installing: the pinned copy"; decision 0000).
+  `check-ha-export.sh` holds that two exports of one commit are the same bytes, that the lock is
+  the commit's blobs, that the working tree cannot reach an export, and that `--verify` refuses
+  a changed, a missing, an extra and a linked file, a lock naming an unknown commit, and a file
+  edited together with its hash line.
 
 The virtual environment lives outside the repository (`UV_PROJECT_ENVIRONMENT`, default
 `/cache/venvs/chorus-ha`), and so does the core checkout (`CHORUS_HA_CORE`). Both steps fetch

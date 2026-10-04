@@ -54,12 +54,17 @@ at setup with a repair issue saying so.
 
 ## Installation instructions
 
-The integration is one directory: `custom_components/chorus`. HACS cannot install it (the
-repository is private).
+The integration is one directory: `custom_components/chorus`. HACS is not used: it is
+installed as a pinned copy of one chorus commit.
 
-1. Copy `integrations/homeassistant/custom_components/chorus` into your Home Assistant
-   configuration directory as `custom_components/chorus`, or mount it there read-only (the
-   homelab carries a pinned copy and a read-only bind from goal 19 on).
+1. From a chorus checkout, `tools/ha-export.sh <dir> <commit>` writes `<dir>/chorus` (the
+   directory) and `<dir>/chorus.lock` (the commit and the sha256 of every file). Keep both
+   with your Home Assistant configuration and mount `chorus` read-only at
+   `custom_components/chorus` in Home Assistant's configuration directory, or copy it there.
+   `tools/ha-export.sh --verify <dir>`, or `sha256sum --check --strict chorus.lock` without a
+   checkout, says whether the copy is still the commit's. The owner's installation carries
+   the copy in its own repository with a read-only bind (`docs/home-assistant.md`,
+   "Installing: the pinned copy").
 2. Restart Home Assistant.
 3. **Settings > Devices & services > Add integration > chorus**, or accept the discovered
    server if Home Assistant found one.
@@ -79,6 +84,14 @@ primary way, because multicast does not cross every network. The server's own id
 (from `GET /api/server`, also in the advertisement's `id=`) is what makes an entry unique: the
 same server cannot be added twice, and a server discovered at a new address updates its entry.
 
+### Updating
+
+Nothing updates by itself. A new version is a new pin: export a later commit over the copy
+(`tools/ha-export.sh <dir> <commit>` replaces it whole), check it, and restart Home
+Assistant. Take a new pin when Home Assistant itself is updated (the integration is tested
+against one Home Assistant version, the one `chorus.lock` names), when the chorus server is
+updated past what the integration speaks (a repair issue says so), or for a fix.
+
 ## Configuration parameters
 
 There are none: the integration has no options. To change the host or the port, use
@@ -87,7 +100,8 @@ There are none: the integration has no options. To change the host or the port, 
 ## Removal instructions
 
 1. **Settings > Devices & services > chorus > the entry's menu > Delete.**
-2. Remove the `custom_components/chorus` directory (or the mount) and restart Home Assistant.
+2. Remove the `custom_components/chorus` directory (or the mount) and its `chorus.lock`, and
+   restart Home Assistant.
 
 Nothing is left on the chorus server: the integration stores nothing there.
 
@@ -499,6 +513,7 @@ URL, key or stored source.
 make ha-test        # ruff, mypy --strict, pytest under the pinned harness, coverage
 make ha-hassfest    # Home Assistant's hassfest, as core and as custom
 make ha-test HA_TEST_ARGS="-k announce"   # a narrowed run: the selected tests alone
+tools/ha-export.sh <dir> [<commit>]       # the pinned install copy and its lock
 ```
 
 Both need `uv` (pinned in `mise.toml`) and keep their virtual environment outside the

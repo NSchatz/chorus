@@ -1,8 +1,9 @@
 # chorus and Home Assistant
 
 The integration lives in `integrations/homeassistant/custom_components/chorus` (goal 18). This
-document is how it maps chorus to Home Assistant, the security rules it is held to, and its
-test harness. What a person installing it reads is `integrations/homeassistant/README.md`; why
+document is how it maps chorus to Home Assistant, the security rules it is held to, its
+test harness, how it is installed (a pinned copy, never HACS) and what changes when it is
+submitted to Home Assistant core. What a person installing it reads is `integrations/homeassistant/README.md`; why
 it is shaped this way is `docs/decisions/0138-the-home-assistant-integration.md`.
 
 ## The shape
@@ -379,7 +380,10 @@ group has no area: `media_player.downstairs`.
 4. To offer only some sources on a tile, give `media-player-source` a `sources:` list of
    the labels in the player's `source_list`.
 5. Register the copy as a YAML dashboard (`lovelace: dashboards:` with `mode: yaml`), or
-   paste the view into a dashboard's raw configuration editor.
+   paste the view into a dashboard's raw configuration editor. An installation that hides
+   cards for rooms that do not exist yet adds a visibility condition to each section, naming
+   the states its room's media player has (`"off"`, `"on"`, `idle`, `playing`, `paused`,
+   `buffering`, the first two quoted: bare, YAML reads them as booleans).
 
 Home Assistant shows a warning in place of a card whose entity does not exist, except the
 conditional ones, which
@@ -404,6 +408,126 @@ without a browser:
 
 It does not render the dashboard: how it looks was not seen here, and that the frontend
 treats `unavailable` as failing a numeric test is ASSUMED from the documentation.
+
+## Installing: the pinned copy
+
+The decision is `docs/decisions/0000-the-home-assistant-integration-is-installed-from-a-pinned-export.md`.
+
+**HACS is not used.** HACS installs from a public repository's releases and updates on its
+own schedule; the integration is installed instead as a copy of one chorus commit that the
+installation keeps in its own repository, reviews like any change, and mounts read-only. Home
+Assistant can then load the integration and cannot change it, and what runs is always a
+commit that passed the gate here.
+
+**The pinned copy** is what `tools/ha-export.sh` writes:
+
+```sh
+tools/ha-export.sh <dir> [<commit>]     # <dir>/chorus and <dir>/chorus.lock; default HEAD
+tools/ha-export.sh --verify <dir>       # the copy is the commit its lock names, byte for byte
+```
+
+- `<dir>/chorus` is `integrations/homeassistant/custom_components/chorus` as the commit has
+  it: the directory Home Assistant loads as `custom_components/chorus`. It is read from git's
+  objects, never from the working tree, so an uncommitted edit, an untracked file or byte
+  code cannot reach it.
+- `<dir>/chorus.lock` is the manifest: the commit (the pin), the integration's version, the
+  Home Assistant version of the harness pin at that commit, the file count, and one
+  `sha256sum` line per file. An installation without a chorus checkout checks its copy with
+  `sha256sum --check --strict chorus.lock`; with one, `--verify` also exports the commit
+  again and compares, which catches a file and its hash line edited together.
+- Two exports of one commit are the same bytes: no date, host or user is written, files are
+  `0644` and directories `0755`. `tools/conventions/check-ha-export.sh` holds that, and
+  every way `--verify` must refuse a copy, in the gate.
+
+**The install**, where the copy is vendored (the owner's homelab repo does it this way):
+
+1. The copy and its lock are committed beside the Home Assistant configuration, as
+   `custom_components/chorus` and `custom_components/chorus.lock`, and never edited there.
+   That repository's own check holds the copy to the lock.
+2. The Home Assistant container binds that one directory read-only at
+   `/config/custom_components/chorus`. `/config/custom_components` itself stays as it is.
+3. Home Assistant is restarted (it loads a custom integration at start only).
+4. In Home Assistant: **Settings > Devices & services > Add integration > chorus**, with the
+   server's host and control port (`integrations/homeassistant/README.md`, "Installation
+   parameters"). The form refuses a server older than the integration needs and says so: the
+   server must be a build of the pinned commit or a later one.
+5. The dashboard (`integrations/homeassistant/dashboard/chorus.yaml`) is copied, adapted to
+   the house ("Adapting it to a house" above) and registered as a YAML dashboard. It needs
+   no resource.
+
+Steps 3 and 4, and the merge and deploy before them, are the owner's actions; nothing in
+this repository performs them.
+
+### Updating: how a new pin is made
+
+A pin is a commit on `main` whose gate passed (`ha-test`, `ha-hassfest`, `ha-live`); never a
+branch head, and no release tag is needed.
+
+1. In a chorus checkout that has the commit:
+   `tools/ha-export.sh <the installation's custom_components directory> <commit>`. The export
+   replaces the earlier copy whole, so a file the new commit dropped goes too.
+2. `tools/ha-export.sh --verify <that directory>`, then that repository's own checks.
+3. One change there holding the copy and the lock, reviewed and merged by the owner;
+   Home Assistant restarts when it is deployed, which is what loads the new code.
+4. A decision record here names the new pin when it changes what the installation can do
+   (a new platform, a server version it needs); a pin that only follows fixes needs none.
+
+**When the pin must move:** when the installation's Home Assistant version moves (the harness
+pin moves with it, "Moving the pin" below, and the copy that was tested under the new version
+follows); when the server moves to a control catalog the pinned integration does not speak;
+and when a fix or a feature of the integration is wanted. Between pins nothing updates by
+itself.
+
+**Removing it:** delete the entry in Home Assistant, then the bind, the directory and the
+lock, and restart.
+
+## The upstream draft: what changes for Home Assistant core
+
+The integration is written as a draft for Home Assistant core (K42, K61): it is installed as
+a custom integration and kept in the form core asks for. **Submitting it is the owner's
+choice and the owner's action**; no task of this repository opens a pull request, an issue
+or a comment outside the owner's repositories. The draft is this directory at a commit on
+`main`: `integrations/homeassistant/custom_components/chorus` with its tests in
+`integrations/homeassistant/tests` and its documentation in
+`integrations/homeassistant/README.md`.
+
+**What changes between the custom form and the core form** is exactly what
+`tools/ha-hassfest.sh` already does to the copy it grades as core, in every gate run:
+
+| Change | Why |
+|---|---|
+| The directory becomes `homeassistant/components/chorus` | where core's integrations live |
+| `version` leaves `manifest.json` | core's manifest schema has no such key; a core integration is versioned by the release |
+| `issue_tracker` leaves `manifest.json` | core's schema has none; issues go to core's own tracker |
+| `documentation` becomes `https://www.home-assistant.io/integrations/chorus` | the core form of the URL |
+| `homeassistant.components.chorus.*` joins `.strict-typing` | the `strict-typing` rule; the code already passes `mypy --strict` under core's own mypy version |
+| `brand/` is left out | core's brands live in another repository (`home-assistant/brands`); the icon and logo are submitted there |
+
+With those changes and nothing else, hassfest at the pinned core tag passes the integration
+as a core integration and grades `quality_scale.yaml` (the run proves it graded the file by
+failing the same copy with one rule removed). `make ha-hassfest` prints the three runs.
+
+**What a submission needs beyond that**, none of which `ha-hassfest.sh` does. These come from
+Home Assistant's developer documentation as read for decision 0138 and are to be read again
+when the owner submits, since core's rules move:
+
+- **The client library on PyPI.** Core takes no vendored protocol code: `_aiochorus` would be
+  published as a package of its own, built by public CI, and named in `requirements`
+  (`quality_scale.yaml` exempts `dependency-transparency` for exactly this, with its reason).
+  It is the one change that needs a public repository, and it reverses "no runtime
+  requirement" above for the core form only; the custom form keeps the vendored client.
+- **The tests move** to `tests/components/chorus` and import
+  `homeassistant.components.chorus`; core's own fixtures replace the harness, which exists to
+  give a custom integration those fixtures. The fake server and the shared vectors
+  (`fixtures/control/v2`) the tests read from this repository would be copied in.
+- **The documentation** (`README.md`, which carries the heading each `docs-*` rule names)
+  becomes a page in Home Assistant's documentation repository.
+- **Generated files** (`CODEOWNERS`, the generated config-flow and zeroconf lists, the
+  requirements lists, `mypy.ini`) are regenerated by core's own scripts in the core checkout.
+- **The tier** in the manifest (`quality_scale: platinum`) is a self-certification here; in
+  core it is the reviewers' to grant.
+
+The owner's item for it is in the owner's queue, with this section as what it carries.
 
 ## The security rules
 
