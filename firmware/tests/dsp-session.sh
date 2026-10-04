@@ -27,8 +27,10 @@
 #
 # The source is a known stereo multi-tone, left = right, every tone 0.1 of full
 # scale and a whole number of cycles per tenth of a second, so each tone's level is
-# one DFT bin over a tenth of a second (the median of five such windows). Levels are arithmetic on captured
-# samples: not timing evidence (BRIEF section 3.1 rule 3).
+# one DFT bin over a tenth of a second (the median of five such windows), and
+# from 1 kHz up one Hann-weighted bin over a fiftieth of a second (the median of
+# twenty-five), which the sync loop's frame corrections cannot smear. Levels are
+# arithmetic on captured samples: not timing evidence (BRIEF section 3.1 rule 3).
 #
 # Runs anywhere: no audio device, no privilege, loopback only, about 30 s.
 #
@@ -232,7 +234,37 @@ for f in TONES:
     tables[f] = ([math.cos(2 * math.pi * f * i / RATE) for i in range(SPAN)],
                  [math.sin(2 * math.pi * f * i / RATE) for i in range(SPAN)])
 
+# From FINE_HZ up a tone is measured on PIECE frames at a time instead. One
+# inserted or dropped frame turns a 6 kHz tone 45 degrees, and a tenth of a
+# second holding one reads up to 0.69 dB low; on a loaded host the servo slips
+# frames at up to max_correction_ppm (config/sync.conf: 300, a frame every
+# 69 ms), so most spans hold one and their median is smeared with them (CI's
+# runner: FL at 6000 Hz -0.55 dB with FR beside it at -0.00). A fiftieth of a
+# second holds one less than a third of the time at that rate, so the median
+# piece holds none. The Hann weights keep the low tones, which are not whole
+# cycles in a piece, out of the bin: the nearest is 14 bins off, under -70 dB.
+# Under FINE_HZ a slip costs under 0.1 dB and the spans stand.
+FINE_HZ = 1000
+PIECE = RATE // 50
+PIECES = WIN // PIECE
+fine = {}
+for f in TONES:
+    if f >= FINE_HZ:
+        hann = [0.5 - 0.5 * math.cos(2 * math.pi * i / PIECE) for i in range(PIECE)]
+        fine[f] = ([h * math.cos(2 * math.pi * f * i / RATE) for i, h in enumerate(hann)],
+                   [h * math.sin(2 * math.pi * f * i / RATE) for i, h in enumerate(hann)])
+
 def level(x, f):
+    if f in fine:
+        c, s = fine[f]
+        pieces = []
+        for k in range(PIECES):
+            part = x[k * PIECE:(k + 1) * PIECE]
+            re_ = sum(a * b for a, b in zip(part, c))
+            im_ = sum(a * b for a, b in zip(part, s))
+            # The Hann weights sum to PIECE / 2: 4, where the plain bin has 2.
+            pieces.append(20 * math.log10(4 * math.hypot(re_, im_) / PIECE + 1e-12) - IN_DB)
+        return sorted(pieces)[PIECES // 2]
     c, s = tables[f]
     spans = []
     for k in range(SPANS):

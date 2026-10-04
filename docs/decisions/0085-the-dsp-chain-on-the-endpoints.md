@@ -135,7 +135,9 @@ set (FL, FR, LFE, wired) and a two-way endpoint, every captured frame graded by 
 capture every block; 98 checks, about 24 s). Simulation, not timing evidence: levels are graded,
 never instants. The C run measures each tone as the median of five 0.1 s windows, because its
 sync loop inserts or drops a frame now and then and a single long window straddling one smears
-6 kHz by up to 1.6 dB.
+6 kHz by up to 1.6 dB. From 1 kHz up it is the median of twenty-five Hann-weighted 20 ms
+pieces instead (2026-10-04): on CI's loaded runner the servo slipped a frame in most of the
+five windows, and their median read FL 0.55 dB low at 6 kHz.
 
 ## Not chosen
 
