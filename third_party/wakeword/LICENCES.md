@@ -4,7 +4,7 @@ The wake-word detector (`crates/wakeword`) runs only the model files in this dir
 `tools/conventions/check-wakeword.sh` fails the gate when a file here has no row below, when
 its SHA-256 is not the one in its row, when a row's licence is not on the allowed list, or when
 a model's name is on the excluded list. The choices are recorded in
-`docs/decisions/0000-the-wake-word-runtime.md`.
+`docs/decisions/0167-the-wake-word-runtime.md`.
 
 ## Vendored files
 

@@ -1,5 +1,5 @@
 //! A small integer interpreter for the streaming TFLite models microWakeWord
-//! trains (ADR 0000).
+//! trains (ADR 0167).
 //!
 //! It runs the thirteen operators those models use and nothing else: the
 //! resource-variable operators that hold the streaming state (`CALL_ONCE`,

@@ -13,7 +13,7 @@ crates/wakeword/tests/reference.rs holds the Rust frontend and interpreter to
 these, value for value. The script also prints what TensorFlow Lite's two
 other kernel sets give (the optimized built-in kernels and the XNNPACK
 delegate): they round differently from the reference kernels and from each
-other, which docs/decisions/0000-the-wake-word-runtime.md records.
+other, which docs/decisions/0167-the-wake-word-runtime.md records.
 
 The versions are pinned so a re-run gives the same files:
 

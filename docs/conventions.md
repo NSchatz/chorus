@@ -159,7 +159,7 @@ regenerated only by `make decode-fixtures`.
 chorus-server alone, and `crates/upnp/tests/fixtures.rs` reads every vector and fails on a file
 it does not read.
 `fixtures/wakeword` is Rust-only by declaration too: the wake-word detector runs in
-chorus-server alone (`crates/wakeword`, ADR 0000), and `crates/wakeword/tests/reference.rs` reads
+chorus-server alone (`crates/wakeword`, ADR 0167), and `crates/wakeword/tests/reference.rs` reads
 every file and fails on one it does not read.
 `fixtures/soloist` (goal 17) is Rust-only by declaration too: the Soloist WebSocket API model,
 the supervisor protocol and the `--version` shapes are spoken by `chorus-soloistd` and
@@ -214,7 +214,7 @@ root, and `license.workspace = true` in every crate, which the workspace sets to
   0039), MPL-2.0 for the four Symphonia crates FLAC decoding uses (ADR 0044, P9), and MPL-2.0
   for the eight further Symphonia crates of the server's decoders (ADR 0122, P9).
 - Crates come from crates.io only, one version of each (`cargo deny check sources bans`).
-- Wake-word models (ADR 0000): the detector runs only the files in `third_party/wakeword`, and
+- Wake-word models (ADR 0167): the detector runs only the files in `third_party/wakeword`, and
   `third_party/wakeword/LICENCES.md` lists each with its source URL, commit, SHA-256, licence and
   the date read, beside the runtime's own licences. `check-wakeword.sh` fails on a file without
   a row or with another checksum, on a licence that is not Apache-2.0, MIT, BSD or CC0 (so on

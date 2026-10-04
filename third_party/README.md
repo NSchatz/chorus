@@ -95,4 +95,4 @@ the date read.
 (`crates/wakeword`) runs, its manifest, and the upstream `LICENSE` and `NOTICE`, each byte for
 byte the upstream file. Its own list, `wakeword/LICENCES.md`, names every file with its source,
 commit, SHA-256, licence and the date read, and `tools/conventions/check-wakeword.sh` holds the
-directory to it (`docs/decisions/0000-the-wake-word-runtime.md`).
+directory to it (`docs/decisions/0167-the-wake-word-runtime.md`).

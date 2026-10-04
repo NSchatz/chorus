@@ -1,4 +1,4 @@
-# 0000: the wake word runs microWakeWord's Apache-2.0 "Okay Nabu" model in chorus's own integer interpreter and a port of TensorFlow Lite's micro frontend, held value for value to TensorFlow Lite's reference kernels; the models and their licences are a checked list
+# 0167: the wake word runs microWakeWord's Apache-2.0 "Okay Nabu" model in chorus's own integer interpreter and a port of TensorFlow Lite's micro frontend, held value for value to TensorFlow Lite's reference kernels; the models and their licences are a checked list
 
 - Status: accepted, 2026-10-04
 - Decided by: the owner for the path and the licence rule (proposal P8, Option A: chorus-server

@@ -3,7 +3,7 @@
 What `crates/wakeword/tests/reference.rs` holds the wake-word detector to. Rust-only by
 declaration: the detector runs in chorus-server alone (proposal P8), no endpoint runs it and
 there is no C implementation. Where each file comes from and under which licence is recorded
-in `docs/decisions/0000-the-wake-word-runtime.md`.
+in `docs/decisions/0167-the-wake-word-runtime.md`.
 
 | File | What it is | Origin and licence |
 |---|---|---|

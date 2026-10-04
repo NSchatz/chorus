@@ -14,7 +14,7 @@
 //! Both are held to the upstream implementation's output on committed
 //! fixtures (`fixtures/wakeword/`, `tests/reference.rs`). Why chorus runs the
 //! models with its own interpreter, and where the model and the fixtures come
-//! from, is `docs/decisions/0000-the-wake-word-runtime.md`.
+//! from, is `docs/decisions/0167-the-wake-word-runtime.md`.
 //!
 //! # Which models
 //!

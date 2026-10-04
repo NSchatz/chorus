@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rule "Dependencies and licences", the wake-word models (K73, ADR 0000): the detector runs only
+# Rule "Dependencies and licences", the wake-word models (K73, ADR 0167): the detector runs only
 # the model files in third_party/wakeword, and each one is on the licence list beside them.
 #   1. Every file in third_party/wakeword other than LICENCES.md has a row in the list's
 #      "Vendored files" table, and its SHA-256 is the one in the row. A row without a file fails too.
