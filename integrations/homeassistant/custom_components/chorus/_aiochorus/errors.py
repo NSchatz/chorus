@@ -32,6 +32,19 @@ class ChorusCommandError(ChorusError):
         self.field = field
         self.detail = detail
 
+    @property
+    def name(self) -> str | None:
+        """Return the refusal's name, when the detail starts with one.
+
+        The catalog's later refusals start their detail with a name, a colon
+        and a space (``busy: speaker ...``): the name is the contract, the words
+        after it are not.
+        """
+        head, colon, _ = self.detail.partition(": ")
+        if colon and head and all(c.islower() or c == "-" for c in head):
+            return head
+        return None
+
 
 class ChorusRefusedError(ChorusUnsupportedError):
     """The server answered ``refused`` (HTTP 426): the catalog version is not one it has."""

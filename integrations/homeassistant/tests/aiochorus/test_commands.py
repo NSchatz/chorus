@@ -132,3 +132,11 @@ def test_strings_are_escaped_as_the_catalog_says() -> None:
     assert (
         commands.mute("den", False) == b'{"v":1,"t":"mute","zone":"den","muted":false}'
     )
+
+
+def test_firmware_install_bytes_equal_the_shared_vector() -> None:
+    vector = shared("firmware_install.json")
+    fields = json.loads(vector)
+    assert commands.firmware_install(fields["speaker"], fields["image"]) == vector
+    # One speaker and one image by name: never `all`, never `force`.
+    assert set(fields) == {"v", "t", "speaker", "image"}

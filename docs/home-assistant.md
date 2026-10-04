@@ -43,14 +43,16 @@ Home Assistant each time.
 | A room (zone) | One device named for the room, `suggested_area` its name, with a `media_player`, a group-volume `number`, and its sound controls: bass and treble (`number`), loudness, night mode and speech enhancement (`switch`), an input `select`, a quiet-hours `switch`, and an autoplay `switch` for each autoplay rule that targets it |
 | A saved group | One device under the server with a `media_player`, always present, and an autoplay `switch` for each autoplay rule that targets it |
 | A live group | No entity: the `group_members` of its rooms' players, leader first |
-| A speaker | Nothing yet (goal 19) |
+| An adopted speaker | One device named for the speaker, `via` its room's device while it has a room and the server otherwise, and a firmware `update` entity once it has reported what it runs |
 
 Home Assistant's areas are Home Assistant's: the integration only suggests one and never
 creates, renames or assigns an area.
 
-Rooms and saved groups that appear while Home Assistant runs get their devices and entities
-at once; ones that disappear have their devices removed; a renamed room or group renames its
-device.
+Rooms, saved groups and speakers that appear while Home Assistant runs get their devices and
+entities at once; ones that disappear (a forgotten speaker) have their devices removed; a
+renamed room, group or speaker renames its device. A speaker's device exists whether or not it
+has an entity, and follows its room: assigned to another room it hangs under that room's
+device, unassigned under the server.
 
 ### Which command each action sends
 
@@ -74,11 +76,13 @@ device.
 | the room's Input `select` | `{"v":2,"t":"take","target":Z,"source":S}`, as `select_source` |
 | the room's Quiet hours `switch` | `{"v":2,"t":"quiet_hours_enabled","zone":Z,"enabled":false}` |
 | an Autoplay `switch` | `{"v":2,"t":"autoplay","input":I,"target":T,"enabled":false}`, with the rule's `stop_on_standby` and `low_latency` written again when they are `false`: the command replaces the rule |
+| a speaker's Firmware `update`, `update.install` | `{"v":2,"t":"firmware_install","speaker":S,"image":I}`: that speaker, the verified staged image, never `all`, never `force` |
 
 The sound controls' bytes are in `tests/test_sound_controls.py`, each held to the vector in
 `fixtures/control/v2/` (`sound.json`, `sound-partial.json`, `take-source.json`,
 `quiet_hours_enabled.json`, `autoplay.json`); the entity model is
-`docs/decisions/0152-the-home-assistant-sound-controls.md`.
+`docs/decisions/0152-the-home-assistant-sound-controls.md`. The install's bytes are in
+`tests/test_update.py`, held to `firmware_install.json`.
 
 A volume is Home Assistant's 0..1 level as the catalog's amplitude factor, written with
 exactly three decimals. The server clamps every volume to the room's limits; the entity shows
@@ -90,6 +94,41 @@ a live group when the leader was alone. **Unjoin is `take` on the room**: the ca
 `take` moves the room into the group named for it and dissolves a live group left with one
 room. Catalog v1's `ungroup` also moves the room but "dissolves nothing", which would leave a
 one-room live group behind; `join` has no form that means "leave".
+
+## Speakers and firmware: nothing installs without the install action
+
+The model is `docs/decisions/0000-the-home-assistant-speaker-devices-and-firmware-updates.md`;
+the server's side is `docs/firmware-updates.md` and `docs/control-plane.md`, "Firmware: staged
+images and explicit installs". K93 and I13 hold here as they do on the server.
+
+- **One sender.** `commands.firmware_install` is called from one place,
+  `update.py`'s `async_install`, which Home Assistant calls for the `update.install` action
+  and nothing else. Setup, a state message, a reconnect, a reload and a newly staged image
+  read the state and send nothing.
+  `tests/test_update.py::test_firmware_nothing_installs_until_the_explicit_install_action`
+  is the integration's mirror of the server's
+  `nothing_installs_until_the_explicit_install_action`: set up with an update available,
+  reload, lose and regain the stream, change the state, and the fake server has received no
+  command at all.
+  `test_firmware_install_action_sends_exactly_one_firmware_install` then holds the action to
+  one command whose bytes are `fixtures/control/v2/firmware_install.json`.
+- **What is offered.** `State.firmware_offer`: an image of `firmware.images` whose `verdict`
+  is `verified`, for the speaker's `board`, with a version above the one it runs, and only
+  while the speaker's `update_available` is true. A refused image, and one with no verdict or
+  one this client does not know, is never the latest version. The server compares versions
+  as names and would also install an older image; the integration does not offer one (digits
+  compare as numbers, so 2.10.0 is above 2.9.0; of several the highest, then the first name).
+- **What is shown.** `installed_version` is `speakers[].firmware.version`; `in_progress` is a
+  `state` from `requested` to `pending_verify`; `update_percentage` is `received` of `size`
+  while `requested` or `receiving` and nothing after; the attributes `install_state`,
+  `reason`, `image`, `image_version` and `board` carry the outcome (`confirmed`,
+  `rolled_back`, `refused`, `interrupted`, `cancelled`), which stays until the next install.
+- **No entity without a report.** `speakers[].firmware` is written only once a speaker has
+  reported; until then the speaker has its device and no update entity. If the member goes
+  away the entity is unavailable.
+- **The bench guard is the server's.** Nothing here sets `CHORUS_OWNER_AT_BENCH`. A refusal
+  `owner-not-at-bench` is a translated error that names the variable; the tests' fake server
+  refuses a speaker it is told is not on its host, and no test installs on anything.
 
 ## The security rules
 
@@ -110,7 +149,10 @@ operate every entity. The control plane has no authentication. So:
 3. **The server's clamps win.** The integration never caches a volume it asked for.
 4. **Refusals are mapped by `field`**, never by the wording of `detail`: `url`, `target`,
    `source`, `group`, `zone`, `volume`, `t` (the server cannot serve the command now: no
-   player, or none free), and a general one for any other. When an announcement's `url` is
+   player, or none free), `speaker`, `image`, and a general one for any other. The one
+   exception is a refusal the catalog itself names: `firmware_install`'s start their `detail`
+   with a name and a colon, and `owner-not-at-bench`, `busy` and `image-not-verified` each
+   have their own message, picked by that name and never by the words after it. When an announcement's `url` is
    refused, the integration asks `GET /api/server` again and, if this Home Assistant's
    origin is not among `announce_origins`, says exactly that and names the flag.
 5. **No runtime pip**, as above.

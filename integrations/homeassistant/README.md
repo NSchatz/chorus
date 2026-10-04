@@ -21,8 +21,11 @@ How it maps chorus to Home Assistant, the security rules and the test harness ar
   suggested as its area.
 - Every **saved group** of that server: one device under the server.
 
-Not supported (yet): the speakers themselves as devices, and everything about them (firmware,
-diagnostics, buttons). An older server, or one that only speaks catalog version 1, is refused
+- Every **adopted speaker** of that server: one device, named for the speaker, linked to its
+  room's device while it has a room and to the server otherwise. A speaker that takes
+  firmware updates and has said what it runs has a firmware `update` entity.
+
+Not supported (yet): a speaker's diagnostics and buttons. An older server, or one that only speaks catalog version 1, is refused
 at setup with a repair issue saying so.
 
 ## Use cases
@@ -34,6 +37,8 @@ at setup with a repair issue saying so.
 - Switching a room to a line-in (a turntable, a TV, a streamer box) by name.
 - Night mode and speech enhancement on a schedule or from a scene (a film night, a sleeping
   child), and a room's bass and treble from a dashboard.
+- Seeing which speakers run which firmware and that a staged image is waiting, and installing
+  it on one speaker from its device page, watching the transfer.
 - Switching a room's quiet hours off for a party, or its line-in autoplay off while a
   turntable is being set up.
 
@@ -122,6 +127,35 @@ Each change is one command that carries only what changed, so setting the bass n
 the treble. Bass management, room EQ, the quiet-hours windows, alarms and sleep timers are
 not entities.
 
+### Speaker firmware (`update`, one per speaker that reports its firmware)
+
+Each adopted speaker is a device. A speaker that takes updates and has reported what it runs
+has a **Firmware** update entity on it (a speaker that has not, or cannot take updates, has a
+device and no such entity).
+
+| What it shows | Meaning |
+|---|---|
+| Installed version | The version the speaker runs |
+| Latest version | The version of the staged image the server **verified** for this speaker's board, when it is above the installed one; otherwise the installed version. An image the server refused (a digest that does not match, a bad manifest, ...) is never shown here, and neither is an older one |
+| On / off | On while such an image is waiting |
+| In progress, percentage | An install is under way; the percentage is the bytes the speaker has received of the image's size. While the speaker verifies, reboots and runs the new image on trial there is no percentage |
+| Install state, Reason | What the speaker is doing (`requested`, `receiving`, `verified`, `pending_verify`) or how the last install ended: `confirmed`, `rolled_back` (the new image did not rejoin the server and the previous one runs again), `refused`, `interrupted`, `cancelled`, with the reason the speaker or the server gave |
+| Image, Image version | The staged image the state is about, and its version (after a rollback: the version that was tried) |
+
+**Nothing installs on its own.** The integration sends the server's install command in exactly
+one place: the entity's **Install** action (`update.install`). Setting the integration up,
+reloading it, a reconnect, a restart of Home Assistant or of the server, and a newly staged
+image send nothing to anybody. The action installs the image shown as the latest version on
+that one speaker; there is no "install all", no choosing a version and no reinstall here.
+The integration never calls the action itself: an automation of yours that calls
+`update.install` is an explicit install, and yours.
+
+**Installing on a real speaker is the owner's action at the bench.** The server refuses to
+send an image to a speaker that is not on the server's own host unless it was started with
+`CHORUS_OWNER_AT_BENCH=1` in its environment (`docs/firmware-updates.md`). Without it the
+Install action fails with a message saying so and nothing is sent to the speaker; everything
+the entity shows still works.
+
 ## Data updates
 
 Local push. The integration holds one event stream (`GET /api/events`) per server and the
@@ -206,6 +240,16 @@ Bring the den and the patio into the kitchen's music, then let the den go:
   is a new switch on the other device, and the old one is removed.
 - Quiet hours and autoplay rules can be switched here, not edited: their windows, inputs and
   targets are set in chorus.
+- The firmware entity installs only an image above the running version. Going back to an older
+  image, installing the same version again, installing on every speaker at once, cancelling a
+  transfer and re-reading the firmware directory are the server's own commands
+  (`docs/firmware-updates.md`), not actions here.
+- After a rollback the image is still staged, so the update is still shown as available:
+  remove or replace the image on the server. Skipping a version in Home Assistant hides it
+  there only.
+- A speaker's device takes its room's name as a suggested area when it is first seen; a
+  speaker moved to another room afterwards is linked to the new room's device, and its area
+  is yours to change.
 - On Home Assistant 2026.9 a new entity's id is built from the area, the device and the
   entity name. The room's name is suggested as its area, so a default id reads
   `media_player.kitchen_kitchen`; rename the entity or the area to taste. (The examples above
@@ -231,6 +275,11 @@ Bring the den and the patio into the kitchen's music, then let the den go:
 | "The chorus server refused the sound setting" | The server did not accept a bass, treble, loudness, night mode or speech value; the message carries the server's own reason |
 | An autoplay switch disappeared | The rule was deleted in chorus, or given another target (its switch is then on that room's or saved group's device) |
 | The Input select shows nothing | The room plays something that is not an input: a cast, a Spotify receiver, or nothing |
+| "The chorus server installs firmware on a real speaker only while the owner is at the bench" | The speaker is not on the server's own host and the server runs without `CHORUS_OWNER_AT_BENCH=1`. Nothing was sent. Installing on a real speaker is the owner's action |
+| "The speaker already has a firmware install in progress" | An install is under way for that speaker (the entity shows it); wait for its outcome |
+| "The chorus server did not verify the staged image, or it changed on disk since" | The image file is not the one the server verified. Stage it again and send the server `firmware_rescan` |
+| A speaker has a device and no Firmware entity | It has not reported what it runs: it is absent since the server started, or its firmware takes no updates |
+| The Firmware entity says "Rolled back" | The new image did not rejoin the server in time, so the speaker started the previous one again. Nothing retries it |
 
 Download diagnostics from the entry's menu when reporting a problem: the file holds no host,
 URL, key or stored source.

@@ -89,6 +89,8 @@ rules:
       The integration has no noisy or diagnostic entity. A room's sound
       settings are few, change only when someone sets them, and are what
       the owner asked to have in Home Assistant, so none starts disabled.
+      A speaker's firmware update entity is the one place an install can
+      be asked for, so it does not start disabled either.
   entity-translations: done
   exception-translations: done
   icon-translations: done

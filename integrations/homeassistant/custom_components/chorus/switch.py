@@ -19,7 +19,6 @@ from .coordinator import ChorusConfigEntry, ChorusCoordinator, room_identifier
 from .entity import (
     ChorusEntity,
     ChorusRoomEntity,
-    room_device_info,
     saved_group_device_info,
 )
 
@@ -64,7 +63,7 @@ def _autoplay_device(
     """Return the device of the room or the saved group an autoplay rule targets."""
     zone = state.zone(rule.target)
     if zone is not None:
-        return room_device_info(coordinator, zone)
+        return coordinator.room_device_info(zone)
     saved = state.saved_group(rule.target)
     if saved is not None:
         return saved_group_device_info(coordinator, saved)

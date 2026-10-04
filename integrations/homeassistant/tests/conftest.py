@@ -110,6 +110,13 @@ def autoplay_switch(
     return _entity_id(hass, "switch", f"{server_id}:autoplay:{input_id}:{target}")
 
 
+def speaker_firmware(
+    hass: HomeAssistant, speaker_id: str, server_id: str = SERVER_ID
+) -> str:
+    """Return the entity id of a speaker's firmware update entity."""
+    return _entity_id(hass, "update", f"{server_id}:speaker:{speaker_id}:firmware")
+
+
 def only(vector: bytes, *members: str) -> bytes:
     """Return a shared command vector cut down to `v`, `t` and these members.
 

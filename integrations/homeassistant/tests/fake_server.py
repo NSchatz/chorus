@@ -63,6 +63,9 @@ class FakeChorusServer:
     scripted: list[tuple[int, bytes]] = field(default_factory=list)
     requests: list[str] = field(default_factory=list)
     refuse_connections: bool = False
+    # Speakers whose session is not from this host: the owner-at-bench guard
+    # refuses a transfer to them (no test sets the owner's bench variable).
+    remote_speakers: set[str] = field(default_factory=set)
     server_status: int = 200
     state_status: int = 200
     events_status: int = 200
@@ -326,8 +329,71 @@ class FakeChorusServer:
                     room, _half_up(_half_up(room["volume"] * 1000) * wanted / current)
                 )
 
+    def _firmware_install(self, command: dict[str, Any]) -> None:
+        """`firmware_install` for one speaker, with the server's refusals by name."""
+        speaker_id, name = command["speaker"], command["image"]
+        speaker = next(
+            (s for s in self.model.get("speakers", []) if s["id"] == speaker_id), None
+        )
+        if speaker is None:
+            raise Refusal("speaker", f"'{speaker_id}' is not an adopted speaker")
+        images = self.model.get("firmware", {}).get("images", [])
+        image = next((i for i in images if i["name"] == name), None)
+        if image is None:
+            raise Refusal("image", f"unknown-image: no staged image '{name}'")
+        if image["verdict"] != "verified":
+            raise Refusal(
+                "image",
+                f"image-not-verified: image '{name}' was refused "
+                f"({image['reason']}) and is never offered",
+            )
+        running = speaker.get("firmware")
+        if running is None:
+            raise Refusal(
+                "speaker", f"not-updatable: speaker '{speaker_id}' reported no version"
+            )
+        if not speaker["present"]:
+            raise Refusal(
+                "speaker",
+                f"speaker-absent: speaker '{speaker_id}' has no session that "
+                "takes updates",
+            )
+        if speaker_id in self.remote_speakers:
+            raise Refusal(
+                "speaker",
+                f"owner-not-at-bench: speaker '{speaker_id}' is at 192.0.2.7, which "
+                "is not this host; a transfer to a real device is the owner's "
+                "action at the bench (docs/firmware-updates.md)",
+            )
+        if running["state"] in ("requested", "receiving", "verified", "pending_verify"):
+            raise Refusal(
+                "speaker",
+                f"busy: speaker '{speaker_id}' has an install in progress "
+                f"(its firmware state is {running['state']})",
+            )
+        if image["board"] != running["board"]:
+            raise Refusal(
+                "speaker", f"wrong-board: image '{name}' is for {image['board']}"
+            )
+        if image["version"] == running["version"] and not command.get("force"):
+            raise Refusal(
+                "speaker", f"already-running: speaker '{speaker_id}' runs it already"
+            )
+        running |= {
+            "state": "requested",
+            "reason": "none",
+            "image": name,
+            "image_version": image["version"],
+            "received": 0,
+            "size": image["size"],
+        }
+        self.model["serial"] += 1
+
     def _apply(self, command: dict[str, Any]) -> None:
         kind = command["t"]
+        if kind == "firmware_install":
+            self._firmware_install(command)
+            return
         sources = self._sources()
         if kind == "volume":
             self._set_volume(
