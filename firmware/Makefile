@@ -411,7 +411,12 @@ volume: $(BUILD)/test_volume
 
 # Goal 9: the controls per class (K67-K70) as the controller role, held to
 # fixtures/controls/<class>.hex, the microphone gate, and the status LED held
-# to the visualizer fixture (docs/decisions/0063-*).
+# to the visualizer fixture (docs/decisions/0063-*). And the session's voice
+# path (chorus/session.h) over a fake capture source: no mic_audio with the
+# gate closed or the uplink not requested, the captured samples when both
+# allow, the gate report at every switch change, held to the voice role's
+# vectors in fixtures/protocol/v2, and no voice message from a class without a
+# microphone.
 controls: $(BUILD)/test_controls
 	$(BUILD)/test_controls
 

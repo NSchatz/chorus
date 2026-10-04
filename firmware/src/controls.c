@@ -377,12 +377,12 @@ chorus_encode_status_t chorus_controls_encode(const chorus_control_action_t *act
 
 /* --- the status LED ------------------------------------------------------- */
 
-static const char *const LED_STATE_NAMES[] = {"boot",  "link-down", "idle", "playing",
-                                              "muted", "pairing",   "fault"};
+static const char *const LED_STATE_NAMES[] = {"boot",  "link-down", "idle",  "playing",
+                                              "muted", "pairing",   "fault", "listening"};
 
 const char *chorus_led_state_name(chorus_led_state_t state)
 {
-    return (unsigned)state <= CHORUS_LED_FAULT ? LED_STATE_NAMES[state] : NULL;
+    return (unsigned)state <= CHORUS_LED_LISTENING ? LED_STATE_NAMES[state] : NULL;
 }
 
 chorus_led_state_t chorus_led_decide(const chorus_led_inputs_t *in)
@@ -402,6 +402,9 @@ chorus_led_state_t chorus_led_decide(const chorus_led_inputs_t *in)
     if (!in->link_up) {
         return CHORUS_LED_LINK_DOWN;
     }
+    if (in->listening) {
+        return CHORUS_LED_LISTENING;
+    }
     if (in->playing && in->adopted) {
         return CHORUS_LED_PLAYING;
     }
@@ -414,7 +417,7 @@ static const chorus_led_output_t PALETTE[] = {
     [CHORUS_LED_BOOT] = {255, 255, 255, 32}, [CHORUS_LED_LINK_DOWN] = {255, 160, 0, 48},
     [CHORUS_LED_IDLE] = {255, 255, 255, 8},  [CHORUS_LED_PLAYING] = {255, 255, 255, 24},
     [CHORUS_LED_MUTED] = {255, 64, 0, 48},   [CHORUS_LED_PAIRING] = {0, 96, 255, 64},
-    [CHORUS_LED_FAULT] = {255, 0, 0, 96},
+    [CHORUS_LED_FAULT] = {255, 0, 0, 96},    [CHORUS_LED_LISTENING] = {0, 255, 160, 64},
 };
 
 void chorus_led_init(chorus_led_t *led, const chorus_controls_profile_t *profile)

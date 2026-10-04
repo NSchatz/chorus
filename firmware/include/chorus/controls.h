@@ -228,7 +228,11 @@ typedef enum {
     CHORUS_LED_PLAYING,
     CHORUS_LED_MUTED,
     CHORUS_LED_PAIRING,
-    CHORUS_LED_FAULT
+    CHORUS_LED_FAULT,
+    /* A voice run is open in the room (the server's voice_control said
+     * `listening`, docs/protocol.md "The voice role"). Last in the enum so
+     * the states before it keep their values. */
+    CHORUS_LED_LISTENING
 } chorus_led_state_t;
 
 const char *chorus_led_state_name(chorus_led_state_t state);
@@ -242,10 +246,17 @@ typedef struct {
     int mic_muted;
     int pairing;
     int fault;
+    /* The server's last voice_control in this session said `listening`
+     * (chorus_session_voice_listening). The server's word, never the gate's:
+     * it lights the LED and opens nothing. */
+    int listening;
 } chorus_led_inputs_t;
 
 /* The state those inputs mean: a fault first, then pairing, then a muted
- * microphone, then the link, then boot, then playing, else idle. */
+ * microphone, then boot, then the link, then listening, then playing, else
+ * idle. Muted is above listening on purpose: a speaker whose switch is at
+ * mute shows that its own microphone is cut, even while another speaker of
+ * the room carries a voice run. */
 chorus_led_state_t chorus_led_decide(const chorus_led_inputs_t *inputs);
 
 typedef struct {

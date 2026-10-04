@@ -770,7 +770,8 @@ static int send_greeting(session_state_t *state, int fd, chorus_noise_cipher_t *
     memset(&m, 0, sizeof(m));
     m.type = CHORUS_V2_HELLO;
     m.as.hello.protocol_version = CHORUS_V2_PROTOCOL_VERSION;
-    m.as.hello.roles = CHORUS_V2_ROLE_PLAYER;
+    /* And `voice` when the class has a microphone (chorus/session.h). */
+    m.as.hello.roles = CHORUS_V2_ROLE_PLAYER | chorus_session_voice_roles(state->config->voice);
     /* Named after adoption, so the name is empty (docs/protocol.md). */
     m.as.hello.software.data = (const uint8_t *)CHORUS_SESSION_SOFTWARE;
     m.as.hello.software.len = strlen(CHORUS_SESSION_SOFTWARE);
@@ -803,6 +804,221 @@ static int send_greeting(session_state_t *state, int fd, chorus_noise_cipher_t *
     }
     at += len;
     return send_sealed(state, fd, cipher, frames, at);
+}
+
+/* --- the voice path (chorus/session.h, docs/protocol.md "The voice role") ---- */
+
+void chorus_session_voice_init(chorus_session_voice_t *voice, const chorus_controls_t *controls)
+{
+    memset(voice, 0, sizeof(*voice));
+    voice->controls = controls;
+    voice->reported = CHORUS_SESSION_VOICE_NOT_REPORTED;
+}
+
+uint16_t chorus_session_voice_roles(const chorus_session_voice_t *voice)
+{
+    if (voice == NULL || voice->controls == NULL || voice->controls->profile == NULL ||
+        !voice->controls->profile->has_microphone) {
+        return 0;
+    }
+    return CHORUS_V2_ROLE_VOICE;
+}
+
+void chorus_session_voice_begin(chorus_session_voice_t *voice)
+{
+    voice->uplink = 0;
+    voice->listening = 0;
+    voice->reported = CHORUS_SESSION_VOICE_NOT_REPORTED;
+    voice->streaming = 0;
+    voice->next_sequence = 0;
+}
+
+void chorus_session_voice_control(chorus_session_voice_t *voice,
+                                  const chorus_v2_voice_control_t *control)
+{
+    if (chorus_session_voice_roles(voice) == 0) {
+        return;
+    }
+    voice->uplink = control->uplink ? 1 : 0;
+    voice->listening = control->listening ? 1 : 0;
+}
+
+int chorus_session_voice_listening(const chorus_session_voice_t *voice)
+{
+    return chorus_session_voice_roles(voice) != 0 && voice->listening;
+}
+
+size_t chorus_session_voice_report(chorus_session_voice_t *voice, uint8_t *out, size_t out_len)
+{
+    if (chorus_session_voice_roles(voice) == 0) {
+        return 0;
+    }
+    uint8_t gate = chorus_controls_mic_live(voice->controls) ? CHORUS_V2_MIC_GATE_LIVE
+                                                             : CHORUS_V2_MIC_GATE_MUTED;
+    if (gate == voice->reported) {
+        return 0;
+    }
+    chorus_v2_message_t m;
+    memset(&m, 0, sizeof(m));
+    m.type = CHORUS_V2_MIC_STATE;
+    m.as.mic_state.gate = gate;
+    size_t len = 0;
+    if (chorus_v2_encode(&m, out, out_len, &len, NULL) != CHORUS_ENCODE_OK) {
+        return 0;
+    }
+    voice->reported = gate;
+    voice->reports_sent++;
+    if (gate == CHORUS_V2_MIC_GATE_MUTED) {
+        /* The next chunk, after a later `live`, starts a new run. */
+        voice->streaming = 0;
+    }
+    return len;
+}
+
+size_t chorus_session_voice_capture(chorus_session_voice_t *voice, const int16_t *samples,
+                                    size_t count, uint64_t captured_ns, int offset_known,
+                                    int64_t offset_ns, uint8_t *out, size_t out_len)
+{
+    if (count == 0) {
+        return 0;
+    }
+    if (count > CHORUS_SESSION_VOICE_MAX_CAPTURE) {
+        voice->refused_captures++;
+        voice->samples_withheld += count;
+        voice->streaming = 0;
+        return 0;
+    }
+    /* The server's request, the server knowing the gate is live, and a
+     * timestamp that is not a guess. The gate itself is asked below, per
+     * chunk, by the one function that hands samples on. */
+    if (chorus_session_voice_roles(voice) == 0 || !voice->uplink ||
+        voice->reported != CHORUS_V2_MIC_GATE_LIVE || !offset_known) {
+        voice->samples_withheld += count;
+        voice->streaming = 0;
+        return 0;
+    }
+    size_t at = 0;
+    size_t done = 0;
+    while (done < count) {
+        size_t n = count - done;
+        if (n > CHORUS_V2_MIC_MAX_SAMPLES) {
+            n = CHORUS_V2_MIC_MAX_SAMPLES;
+        }
+        /* THE gate: what is encoded below is `passed`, which only
+         * chorus_controls_mic_pass fills. Closed, it copies nothing. */
+        size_t passed = chorus_controls_mic_pass(voice->controls, samples + done, n, voice->passed);
+        if (passed == 0) {
+            voice->samples_withheld += count - done;
+            voice->streaming = 0;
+            break;
+        }
+        for (size_t i = 0; i < passed; i++) {
+            uint16_t u = (uint16_t)voice->passed[i];
+            voice->wire[2 * i] = (uint8_t)(u & 0xFFu);
+            voice->wire[2 * i + 1] = (uint8_t)(u >> 8);
+        }
+        if (!voice->streaming) {
+            voice->next_sequence = 0;
+        }
+        chorus_v2_message_t m;
+        memset(&m, 0, sizeof(m));
+        m.type = CHORUS_V2_MIC_AUDIO;
+        m.as.mic_audio.format = CHORUS_V2_MIC_FORMAT_PCM_S16LE_16K_MONO;
+        m.as.mic_audio.sequence = voice->next_sequence;
+        /* The capture instant on the server timeline: the endpoint's
+         * monotonic stamp of this chunk's first sample, through the offset. */
+        uint64_t local_ns =
+            captured_ns + (uint64_t)done * 1000000000ull / CHORUS_V2_MIC_SAMPLE_RATE_HZ;
+        m.as.mic_audio.timestamp_ns = (uint64_t)((int64_t)local_ns + offset_ns);
+        m.as.mic_audio.data.data = voice->wire;
+        m.as.mic_audio.data.len = passed * CHORUS_V2_MIC_BYTES_PER_SAMPLE;
+        size_t len = 0;
+        if (chorus_v2_encode(&m, out + at, out_len - at, &len, NULL) != CHORUS_ENCODE_OK) {
+            /* No room for a whole frame: the rest is lost, and the next
+             * chunk says so by starting again at 0. */
+            voice->samples_withheld += count - done;
+            voice->streaming = 0;
+            break;
+        }
+        at += len;
+        done += passed;
+        voice->streaming = 1;
+        voice->next_sequence++;
+        voice->chunks_sent++;
+        voice->samples_sent += passed;
+    }
+    return at;
+}
+
+/* Tell the server the gate when it is not what it was last told. */
+static int send_voice_report(session_state_t *state, int fd, chorus_noise_cipher_t *cipher)
+{
+    chorus_session_voice_t *voice = state->config->voice;
+    if (voice == NULL) {
+        return 0;
+    }
+    uint8_t frame[CHORUS_FRAME_HEADER_LEN + 8];
+    size_t len = chorus_session_voice_report(voice, frame, sizeof(frame));
+    if (len == 0) {
+        return 0;
+    }
+    if (send_sealed(state, fd, cipher, frame, len) != 0) {
+        return -1;
+    }
+    publish_detail(state, "mic-state",
+                   voice->reported == CHORUS_V2_MIC_GATE_LIVE ? "gate=live" : "gate=muted");
+    return 0;
+}
+
+/* Samples per ask of the capture source: the wire's nominal 20 ms chunk, so
+ * one ask is one mic_audio in one record that fits the send buffer. And the
+ * most asks in one pass of the session's loop, so a source that always has
+ * more cannot starve the receive side. ASSUMED, like the chunk's length. */
+#define CHORUS_SESSION_MIC_PULL_SAMPLES 320u
+#define CHORUS_SESSION_MIC_PULLS_PER_PASS 16
+#define CHORUS_SESSION_MIC_FRAME_BYTES                                                             \
+    (CHORUS_FRAME_HEADER_LEN + 13u +                                                               \
+     CHORUS_SESSION_MIC_PULL_SAMPLES * CHORUS_V2_MIC_BYTES_PER_SAMPLE)
+/* The record adds its own frame header and the AEAD tag (16 bytes). */
+_Static_assert(CHORUS_SESSION_MIC_FRAME_BYTES + CHORUS_FRAME_HEADER_LEN + 16u <=
+                   CHORUS_SESSION_SEND_BUFFER,
+               "one captured chunk fits one record of the send buffer");
+
+/* Ask the capture source and send what the voice path lets out. The report
+ * goes first, so a `live` precedes the audio it allows and a `muted` follows
+ * the last audio sent (docs/protocol.md, "0x3B mic state"). */
+static int pump_voice(session_state_t *state, int fd, chorus_noise_cipher_t *cipher)
+{
+    const chorus_session_config_t *config = state->config;
+    if (config->voice == NULL) {
+        return 0;
+    }
+    if (send_voice_report(state, fd, cipher) != 0) {
+        return -1;
+    }
+    if (config->mic_capture == NULL) {
+        return 0;
+    }
+    static int16_t captured[CHORUS_SESSION_MIC_PULL_SAMPLES];
+    static uint8_t frames[CHORUS_SESSION_MIC_FRAME_BYTES];
+    for (int pull = 0; pull < CHORUS_SESSION_MIC_PULLS_PER_PASS; pull++) {
+        uint64_t captured_ns = 0;
+        size_t got = config->mic_capture(config->mic_capture_ctx, captured,
+                                         CHORUS_SESSION_MIC_PULL_SAMPLES, &captured_ns);
+        if (got == 0) {
+            break;
+        }
+        if (got > CHORUS_SESSION_MIC_PULL_SAMPLES) {
+            got = CHORUS_SESSION_MIC_PULL_SAMPLES;
+        }
+        size_t len = chorus_session_voice_capture(
+            config->voice, captured, got, captured_ns, state->telemetry.offset_known,
+            state->telemetry.offset_ns, frames, sizeof(frames));
+        if (len != 0 && send_sealed(state, fd, cipher, frames, len) != 0) {
+            return -1;
+        }
+    }
+    return 0;
 }
 
 /* --- the firmware update (goal 14, chorus/ota.h) ----------------------------
@@ -1188,6 +1404,21 @@ static int handle_inner(session_state_t *state, stream_state_t *stream,
                          chunk->data.len, chorus_monotonic_now_ns());
         return 0;
     }
+    case CHORUS_V2_VOICE_CONTROL: {
+        /* The server's request and the room's listening state. A request
+         * only: the gate is the endpoint's (chorus/session.h). An endpoint
+         * that did not declare `voice` steps over it. */
+        if (chorus_session_voice_roles(config->voice) == 0) {
+            return 0;
+        }
+        const chorus_v2_voice_control_t *vc = &frame->message.as.voice_control;
+        chorus_session_voice_control(config->voice, vc);
+        char detail[48];
+        snprintf(detail, sizeof(detail), "uplink=%u listening=%u", vc->uplink ? 1u : 0u,
+                 vc->listening ? 1u : 0u);
+        publish_detail(state, "voice-control", detail);
+        return 0;
+    }
     case CHORUS_V2_STREAM_END:
         publish(state, "stream-end");
         return 0;
@@ -1470,8 +1701,15 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
         }
 
         const char *why = NULL;
+        if (config->voice != NULL) {
+            /* A new session: the uplink is off and the gate is not yet told. */
+            chorus_session_voice_begin(config->voice);
+        }
         if (send_greeting(&state, fd, &transport.send) != 0) {
             why = "greeting-not-sent";
+        } else if (send_voice_report(&state, fd, &transport.send) != 0) {
+            /* Once after capabilities, in every session of a voice endpoint. */
+            why = "send-failed";
         } else if (ota != NULL) {
             /* Right after capabilities, on every session: what runs here and
              * how any transfer stands (docs/protocol.md, "Firmware update"). */
@@ -1545,6 +1783,11 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
                 consume(&rx, len);
             }
 
+            if (why == NULL && pump_voice(&state, fd, &transport.send) != 0) {
+                why = "send-failed";
+                break;
+            }
+
             if (ota != NULL && why == NULL) {
                 chorus_ota_tick(ota, chorus_monotonic_now_ns());
                 if (send_ota_statuses(&state, fd, &transport.send) != 0) {
@@ -1564,6 +1807,10 @@ int chorus_session_run(const chorus_session_config_t *config, chorus_session_res
         }
 
         close(fd);
+        if (config->voice != NULL) {
+            /* A session's end is uplink 0, listening 0 (docs/protocol.md). */
+            chorus_session_voice_begin(config->voice);
+        }
         chorus_codec_close(stream.decoder);
         chorus_noise_transport_clear(&transport);
         if (why != NULL) {
