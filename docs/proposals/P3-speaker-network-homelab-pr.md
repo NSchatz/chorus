@@ -1,6 +1,6 @@
 # feat(network): chorus speaker network (chorus, never merged by agents)
 
-Branch: `chorus-g7/speaker-network` (NSchatz/homelab), commit `0d03e7c`, based on `main` at `d82e2ae`. Drafted by the chorus program, goal 7; not opened as a PR because the owner deferred the speaker-network decision at chorus's checkpoint. Open it with this body when the owner decides.
+Branch: `chorus-g7/speaker-network` (the owner's homelab repo), commit `0d03e7c`, based on `main` at `d82e2ae`. Drafted by the chorus program, goal 7; not opened as a PR because the owner deferred the speaker-network decision at chorus's checkpoint. Open it with this body when the owner decides.
 
 ## What changes
 
@@ -31,7 +31,7 @@ Creates the chorus speaker network and puts the server on it (this PR). It appli
 **Run** (in your own terminal; sudo asks for your password). Numbered steps, because the switch and UniFi steps are web UIs:
 
 1. Pick the numbers from homelab's plan (a free VLAN tag, a /24, a pool in `.100-.249`, the server at a free `.2-.99`, the firewall at `.1`). Commit them on this branch: `opnsense_audio` (tag, cidr, pool) in `ansible/inventory/host_vars/opnsense.yml`, and `base_audio_leg.address` in the server's host_vars file. Optionally, put them in the "chorus speakers" row of `docs/network.md`.
-2. A homelab session (or you) runs `make ci` on the branch, merges it, and deploys with `scripts/update-all.sh`.
+2. A session in the owner's homelab repo (or you) runs `make ci` on the branch, merges it, and deploys with `scripts/update-all.sh`.
 3. OPNsense:
    ```bash
    bash /opt/homelab/scripts/opnsense-apply.sh --check   # dry run: the VLAN, assignment, DHCP range, alias and two rule interface lists
@@ -67,7 +67,7 @@ chorus speakers' placement: auto-adoption (chorus K92) trusts only this network.
 
 ## Rootless checks (on the branch at `0d03e7c`)
 
-`make ci` itself runs each tool in a Docker container. It was not run here; these are the same tools at homelab's pins, run rootless.
+`make ci` itself runs each tool in a Docker container. It was not run here; these are the same tools at the owner's homelab repo's pins, run rootless.
 
 yamllint (1.38.0, the workflow's `YAMLLINT_VERSION`), `uvx yamllint@1.38.0 --strict .`:
 ```
@@ -119,7 +119,7 @@ No en or em dash, and chorus's proposal is named only by topic.
 
 ## Related open PRs
 
-Checked against every open homelab PR on 2026-09-30. `git merge-tree` of this branch with each PR's head: **no conflict with any of them**. Line numbers below are this branch's hunks against `main`, and each stacked PR's own hunks against its base branch. #229-#233 are stacked on #228.
+Checked against every open PR to the owner's homelab repo on 2026-09-30. `git merge-tree` of this branch with each PR's head: **no conflict with any of them**. Line numbers below are this branch's hunks against `main`, and each stacked PR's own hunks against its base branch. #229-#233 are stacked on #228.
 
 - **#227** feat(ansible): OPNsense plugins (mDNS repeater among them). `host_vars/opnsense.yml`: it adds the plugin block after line 25, including `opnsense_mdns_ifs: [trusted, iot, servers]`; mine touches lines 59 (after the networks), 81 (`house_nets`) and 142 (`opnsense_house_ifs`). `roles/opnsense/tasks/main.yml`: it appends plugin tasks after line 38; mine inserts the assert after line 15. Semantic: `audio` must stay out of `opnsense_mdns_ifs`, and neither PR adds it.
 - **#228** DNS moves to Unbound. `host_vars/opnsense.yml` line 43 (LEGACY's DNS) against mine at 59/81/142. the server's host_vars lines 11 and 13-14 (`base_dns`) against mine after line 20 (after `base_admin_link`). They are separate hunks.
@@ -131,7 +131,7 @@ Checked against every open homelab PR on 2026-09-30. `git merge-tree` of this br
 
 Open PRs touching none of these files: #191, #192, #208, #224, #225.
 
-The owner or a homelab session runs `make ci` and merges (chorus K28). No agent merges, applies or deploys this.
+The owner or a session in the owner's homelab repo runs `make ci` and merges (chorus K28). No agent merges, applies or deploys this.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
@@ -139,12 +139,12 @@ https://claude.ai/code/session_01L4eqGA4w4V1k26wrVSgoKn
 
 ## What was read
 
-Drafted by a chorus goal-7 agent on 2026-09-30. In NSchatz/homelab at `d82e2ae`: `CLAUDE.md`,
+Drafted by a chorus goal-7 agent on 2026-09-30. In the owner's homelab repo at `d82e2ae`: `CLAUDE.md`,
 `README.md`, `docs/network.md`, `docs/security.md`, `docs/owner-actions.md`, the opnsense and
 server host_vars files, `ansible/roles/base`, `ansible/roles/firewall` (`defaults/main.yml`,
 `templates/host.nft.j2`), `ansible/roles/opnsense/tasks/main.yml`,
 `home-automation/mdns-reflector/.env.example`, `.github/workflows/ci.yml`, and the file lists of
-open homelab PRs #191, #192, #208, #224, #225, #227-#233 and #237. In NSchatz/chorus:
+open PRs of the owner's homelab repo, #191, #192, #208, #224, #225, #227-#233 and #237. In NSchatz/chorus:
 `docs/proposals/P3-speaker-network.md`, `crates/server/src/config.rs`, `crates/server/src/main.rs`,
 `crates/discovery/src/net.rs`, `docs/protocol.md`, decision record 0027. No GPL source; homelab is
 the owner's own repository.

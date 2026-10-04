@@ -41,7 +41,7 @@ licensed hardware design, no Soloist file and no external web page was opened.
 - The rules: `CLAUDE.md`, `docs/conventions.md`, the goal's agent rules and design envelope
   (`/cache/tmp/chorus-g17/agent-rules.md`, `design.md` sections 0, 1, 2.5 and 3) and the
   coordinator's code survey (`research/survey.md` sections A, C, D, F, H, I).
-- The program: `.claude/goals/2026-09-chorus.md` section 4.8, section 21, the K80 and K94 rows.
+- The program: [`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md) section 4.8, section 21, the K80 and K94 rows.
 - Decisions: ADR 0066 and ADR 0071, whole; in part and said so: 0075 (headings), 0076 (fire, fallback,
   end), 0079 (item 6), 0119 (headings and its lines about alarms and the restore), 0124 (its
   header and context), 0020 (its lines on the busy-worker refusal). What these records say

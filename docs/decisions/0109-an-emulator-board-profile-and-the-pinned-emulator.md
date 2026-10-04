@@ -25,7 +25,7 @@ ESP32-S3 to prove it on: flashing is the owner's act (K4). ESP-IDF's update path
 a host fake can stand in for entirely, because the part that decides a rollback is the
 second-stage bootloader reading `otadata`. Espressif publishes a QEMU fork with an `esp32s3`
 machine that runs the image as built, bootloader included. The goal's spike
-(`.claude/goals/2026-09-chorus-g14.status.md` cites it) showed that it runs here and that the real
+([`.claude/goals/2026-09-chorus-g14.status.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus-g14.status.md) cites it) showed that it runs here and that the real
 bootloader rolls back an unconfirmed slot.
 
 For the endpoint image to boot there, three things about it had to give. The emulator has no I2C

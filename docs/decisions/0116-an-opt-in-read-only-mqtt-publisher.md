@@ -34,7 +34,7 @@ that must never block.
 - By this track, 2026-10-03: the goal-15 design envelope (section 2 and its rules); the goal's
   MQTT research note, sections 1 to 3 (the MQTT 3.1.1 wire format with the standard's statement
   numbers, the rumqttc measurement, the Mosquitto notes); the goal's code survey (sections C
-  and D); `docs/proposals/P10-ha-dashboard-mqtt.md`; `.claude/goals/CHECKPOINT-K.approved` (the
+  and D); `docs/proposals/P10-ha-dashboard-mqtt.md`; [`.claude/goals/CHECKPOINT-K.approved`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/CHECKPOINT-K.approved) (the
   P10 line); `BRIEF.md` sections 3.1 and 3.2; `docs/conventions.md`; ADRs 0110 and 0112 (the
   format); the code each "Implemented in" names, and `crates/server/src/events.rs`,
   `session.rs`, `controller.rs`, `crates/control/src/fanout.rs`, `json.rs`, `catalog.rs`,

@@ -17,8 +17,8 @@
 # which nextest does not run, run after them with `cargo test --doc`.
 # docs/decisions/0112-a-faster-gate-with-the-same-checks.md says why.
 #
-# The gate never takes chorus-heavy.lock itself; callers do (the merge rule in
-# .claude/goals/2026-09-chorus.md, section 0.3).
+# The gate never takes chorus-heavy.lock itself; callers do (the merge rule in the retired
+# program's brief, section 0.3: https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md).
 #
 #   make gate             # everything
 #   make gate-fast        # the conventions checks only, for docs-only changes

@@ -327,7 +327,7 @@ half is the override `deploy/soloist/server.compose.yaml`, added to `deploy/comp
 a host that runs the receivers: the same receiver directory mounted, and `--slots`,
 `--soloist-dir` and `--soloist-receivers` on the command ("The server side" below; the other
 flags keep their defaults). Nothing in
-this repository deploys anything; the homelab's stack is a PR in the homelab repository.
+this repository deploys anything; the homelab's stack is a PR in the owner's homelab repository.
 
 The owner's steps, on the host that runs both:
 

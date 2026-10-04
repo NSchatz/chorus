@@ -18,8 +18,8 @@ compact speakers that may run on Wi-Fi (K91). Until this goal the endpoint had o
 as its default (`link_transport = wireless`, audit A-14), no Ethernet code at all, and one
 configuration file whose pin map named no real board. The owner's own ESP32-S3 boards are still
 unidentified: the goal-1 Needs item "Your ESP32-S3 boards: module markings and a read-only chip
-report" is unanswered (shopkit `NEEDS-NOAH.md`, read 2026-09-30), so brief section 0.8 applies:
-the board is a parameter and its model is marked ASSUMED, naming that item.
+report" is unanswered (the owner's private queue file, read 2026-09-30), so brief section 0.8
+applies: the board is a parameter and its model is marked ASSUMED, naming that item.
 
 ## What was read
 

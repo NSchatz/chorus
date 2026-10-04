@@ -21,7 +21,7 @@ at `/var/lib/chorus`; `rtprio` 20, `memlock` 64 MiB and one CPU.
   holds UDP 5353 there and the server would refuse by name (exit 9); endpoints
   use their static fallback address.
 
-The homelab runs a copy of `compose.yaml` in the homelab repo's own conventions
+The homelab runs a copy of `compose.yaml` in the owner's homelab repo's own conventions
 (a bind mount instead of the named volume, the control plane bound to the proxy
 bridge only, a healthcheck, the image pinned by digest), opened there as a PR
 that the owner merges and applies (K28). Nothing here deploys anything.
@@ -203,7 +203,7 @@ curl -fsSL https://api.github.com/repos/actions/checkout/commits/v4 | jq -r .sha
 This tree does not deploy onto anyone's production host and does not touch any
 inventory, service definition, reverse proxy or secret. It is the container's
 own scheduling contract, runnable on any Linux host that can hand a container
-an `rtprio` ceiling. The homelab deploy is a PR in the homelab repo that agents
+an `rtprio` ceiling. The homelab deploy is a PR in the owner's homelab repo that agents
 never merge (K28); releases and the registry push are in `docs/release.md`. See `docs/sound-2.md` for which half of the phase's
 outcome that leaves for later.
 

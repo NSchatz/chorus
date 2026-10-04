@@ -111,7 +111,7 @@ environment holds `CHORUS_OWNER_AT_BENCH` set to `1`. Nothing in the repository 
 script, no test, no container file. Tests and the emulator run reach the server on loopback,
 where the guard does not apply.
 
-The owner's deploy carries it. In the homelab's own service definition for the chorus server
+The owner's deploy carries it. In the owner's homelab repo's own service definition for the chorus server
 (which lives outside this repository), the owner adds the variable to the server's
 environment, for example in a compose file:
 

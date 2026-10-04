@@ -20,7 +20,7 @@ standard (ADR 0116 lists what was read).
 ## What is recorded, and from when
 
 - **From 2026-09-29 (the program):** every research file lists what it read
-  (`.claude/goals/2026-09-chorus-research/`, each with a sources or "What I read" section), and
+  ([`.claude/goals/2026-09-chorus-research/`](https://github.com/NSchatz/chorus/tree/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus-research), each with a sources or "What I read" section), and
   every proposal under `docs/proposals/` has `## What was read`.
 - **From goal 3 (2026-09-30):** every proposal, every research note under `docs/research/` and
   every decision record numbered from 0032 carries a `## What was read` section with each

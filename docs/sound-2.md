@@ -49,7 +49,7 @@ outcome differently, as a client playing "through real speakers with a stable bu
 server earning "its place on the household's production host". That wording is not the target;
 BRIEF.md's is. Nothing in this phase deploys onto the production host: everything in `deploy/`
 runs on any Linux host that can hand a container an `rtprio` ceiling, and the deploy itself is
-goal 4's homelab PR.
+goal 4's PR to the owner's homelab repo.
 
 ## How to run it
 

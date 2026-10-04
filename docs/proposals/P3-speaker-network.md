@@ -2,16 +2,16 @@
 
 - Decisions: K35
 - Status: PROPOSED (chorus goal 1, 2026-09-30); decided at Checkpoint K
-- If deferred: The homelab PR is drafted on a branch and not opened; the line reads PROPOSED
-- Deferred at Checkpoint K (2026-09-30). Goal 7 drafted Option B' on the NSchatz/homelab branch `chorus-g7/speaker-network` (commit `0d03e7c`, no pull request); the body to open it with, including the owner action, is `docs/proposals/P3-speaker-network-homelab-pr.md`. Goal 7's house simulation compares the switched (B') and routed (B) paths (`docs/measurements/sim-house-8-rooms.md`, simulation, not timing evidence)
-- Builds on: goal 7 (§11 item 6, "the homelab PR per §0.1, or the drafted branch if P3 was deferred", done-when F; I9 places the speaker-network PR there); goal 14 (§18, adoption and Wi-Fi provisioning onto this network, K92); goal 24 (§28 item 2, the compact speaker's PoE class "against the switch's 250 W at 8 rooms"); the goal-4 deploy PR (§8, K34 host networking) is its prerequisite in homelab
+- If deferred: The PR to the owner's homelab repo is drafted on a branch and not opened; the line reads PROPOSED
+- Deferred at Checkpoint K (2026-09-30). Goal 7 drafted Option B' on the owner's homelab repo, branch `chorus-g7/speaker-network` (commit `0d03e7c`, no pull request); the body to open it with, including the owner action, is `docs/proposals/P3-speaker-network-homelab-pr.md`. Goal 7's house simulation compares the switched (B') and routed (B) paths (`docs/measurements/sim-house-8-rooms.md`, simulation, not timing evidence)
+- Builds on: goal 7 (§11 item 6, "the PR to the owner's homelab repo per §0.1, or the drafted branch if P3 was deferred", done-when F; I9 places the speaker-network PR there); goal 14 (§18, adoption and Wi-Fi provisioning onto this network, K92); goal 24 (§28 item 2, the compact speaker's PoE class "against the switch's 250 W at 8 rooms"); the goal-4 deploy PR (§8, K34 host networking) is its prerequisite in the owner's homelab repo
 
 ## Question
 
-Where do chorus speakers live on the house network, and what homelab PR does that imply? K35:
+Where do chorus speakers live on the house network, and what PR to the owner's homelab repo does that imply? K35:
 "Research and propose: a goal weighs IoT VLAN + rule vs a dedicated audio VLAN vs the Servers VLAN
 against sync (router hop), security and the staged OPNsense cutover, proposes one, and drafts the
-homelab PR without opening it until the owner decides. Not chosen as final: any of the three."
+PR to the owner's homelab repo without opening it until the owner decides. Not chosen as final: any of the three."
 
 The owner decisions that bound it, quoted:
 
@@ -26,7 +26,7 @@ The owner decisions that bound it, quoted:
 - K91: "a few compact speakers may run on Wi-Fi (the house's Wi-Fi 5 AP), held to the Wi-Fi
   tier's looser targets and never bonded into stereo pairs or theater sets; every other class is
   wired."
-- K75: "Up to 8 rooms (about 20 speakers)". K28: homelab PRs are opened, never merged, applied or
+- K75: "Up to 8 rooms (about 20 speakers)". K28: PRs to the owner's homelab repo are opened, never merged, applied or
   deployed by a goal. I9: "the speaker-network PR (P3) in goal 7".
 
 ## Constraints that bind every option
@@ -44,10 +44,10 @@ The owner decisions that bound it, quoted:
 - **homelab rules** (K28, brief §0.1): the PR is titled `<type>(<scope>): <summary> (chorus, never
   merged by agents)`, branch `chorus-g<n>/<topic>`, carries the owner action in homelab's
   owner-action format, the rootless checks and a "Related open PRs" section; homelab text says
-  "chorus speaker network", never "P3" (homelab's own network phase is called P3).
+  "chorus speaker network", never "P3" (the owner's homelab repo's own network phase is called P3).
 - **Identity** (K27): no address, subnet, VLAN tag, hostname or SSID from homelab appears here or
   in the PR body; this proposal names networks by role. The PR leaves the numbers (tag, subnet,
-  server address in it) to the owner's action, as other programs' homelab PRs do with their
+  server address in it) to the owner's action, as other programs' PRs to the owner's homelab repo do with their
   added-line address scan.
 - CLAUDE.md rule 8: fitness for chorus's requirements only.
 
@@ -56,7 +56,7 @@ The owner decisions that bound it, quoted:
 The planning research (`research-platform-network.md` §4, 2026-09-29) recommended "b, a dedicated
 Audio VLAN, routed at first, with b' as the measured escape hatch", confidence medium, "the
 router-hop cost is unmeasured and could make b' the day-one choice". Re-checked 2026-09-30 against
-NSchatz/homelab `origin/main` `d82e2ae` (the sibling clone, pulled; `docs/network.md`, the Ansible
+the owner's homelab repo, `origin/main` `d82e2ae` (the sibling clone, pulled; `docs/network.md`, the Ansible
 host and firewall variables by key name, the open PRs) and the vendor pages:
 
 | Claim | Re-check | Changed? |
@@ -69,7 +69,7 @@ host and firewall variables by key name, the open PRs) and the vendor pages:
 | The server has spare NICs | `docs/network.md` "The server's NICs": one port is the only uplink, one becomes the firewall admin link, two "stay unused"; a trunk to the server is "worth it only once cameras exist" | New detail: b' can use an untagged spare port instead of a trunk |
 | Wi-Fi: one Wi-Fi 5 AP | `docs/network.md` "Switch and Wi-Fi": the same AP, SSIDs tagged into Trusted, IoT and Guest; the IoT SSID is "a new 2.4 GHz WPA2" one | New: the IoT SSID is 2.4 GHz only |
 | The Servers network's DHCP pool | `docs/network.md` "Networks and addresses": the Servers pool holds 20 addresses (the other house networks 150) | New: too small for K75's about 20 speakers without a change |
-| homelab's own open network PRs touch the same files | `gh pr list -R NSchatz/homelab`: #227 (OPNsense plugins incl. the mDNS repeater; `ansible/inventory/host_vars/opnsense.yml`, `ansible/roles/opnsense/*`), #228 (DNS to Unbound; `host_vars/opnsense.yml`, the server's `host_vars` file, ...), #229 (the server readdress; the same two host_vars files, docs), #230 (`ansible/roles/firewall/defaults/main.yml`, `docs/network.md`, `docs/security.md`), #231 and #233 (`docs/network.md` and host_vars files; #231 also `docs/security.md`), all drafts | Adds #228-#233 to the overlap list |
+| the owner's homelab repo's own open network PRs touch the same files | `gh pr list` on the owner's homelab repo: #227 (OPNsense plugins incl. the mDNS repeater; `ansible/inventory/host_vars/opnsense.yml`, `ansible/roles/opnsense/*`), #228 (DNS to Unbound; `host_vars/opnsense.yml`, the server's `host_vars` file, ...), #229 (the server readdress; the same two host_vars files, docs), #230 (`ansible/roles/firewall/defaults/main.yml`, `docs/network.md`, `docs/security.md`), #231 and #233 (`docs/network.md` and host_vars files; #231 also `docs/security.md`), all drafts | Adds #228-#233 to the overlap list |
 | Router-hop cost | Still unmeasured (planning research §4.2: "ASSUMED tens of microseconds idle, more when the shared trunk is busy") | No; stays ASSUMED, goal 7 measures |
 
 Two facts the planning research did not weigh, and which change the recommendation:
@@ -100,9 +100,9 @@ firewall.
   firewall accepts the same ports from the IoT network (after phase B the host's LAN set excludes
   IoT). mDNS already crosses (IoT is in the repeater).
 - Costs: money none (the switch is staged; K38's bench and the speakers are priced elsewhere).
-  Effort: the smallest homelab PR (two aliases, one rule, one host firewall line, docs). Maintenance:
+  Effort: the smallest PR to the owner's homelab repo (two aliases, one rule, one host firewall line, docs). Maintenance:
   the source alias is built from DHCP reservations, so **every new speaker needs a reservation, a
-  homelab PR and an owner apply**, or the rule opens the chorus ports to the whole IoT network.
+  PR to the owner's homelab repo and an owner apply**, or the rule opens the chorus ports to the whole IoT network.
 - Risks: K92's auto-adopt then trusts every IoT device (printers, thermostat, ESPHome devices,
   anything compromised there); speaker traffic hairpins through the firewall on the shared trunk; the
   2.4 GHz IoT SSID is the Wi-Fi tier's only path.
@@ -118,7 +118,7 @@ firewall.
   server). The audio network joins the mDNS repeater (4 of its 5 interfaces) or stays out of it
   (discovery by configured address). A new SSID tagged to the audio network for Wi-Fi speakers.
   The host firewall accepts the audio network on chorus's ports only.
-- Costs: money none. Effort: a medium homelab PR (one network, aliases, three rules, the repeater
+- Costs: money none. Effort: a medium PR to the owner's homelab repo (one network, aliases, three rules, the repeater
   line, docs, the switch and SSID steps as owner actions). Maintenance: none per speaker.
 - Risks: every audio packet and every time-sync exchange crosses the firewall and the one trunk
   twice (in on the audio network, out on the Servers network), sharing its queue with the whole
@@ -172,7 +172,7 @@ firewall.
 
 ### The fallback (the "If deferred" line)
 
-Goal 7 drafts the recommended PR on a pushed homelab branch `chorus-g7/speaker-network` and does
+Goal 7 drafts the recommended PR on a pushed branch `chorus-g7/speaker-network` of the owner's homelab repo and does
 not open it; the goal-7 line reads PROPOSED. Until the owner applies a placement, speakers sit
 wherever the house network puts them (today the flat LAN; after phase B, whatever port the owner
 patches), and the endpoint keeps its configured server address.
@@ -191,7 +191,7 @@ patches), and the endpoint keeps its configured server address.
 | Wi-Fi tier (K91) | existing 2.4 GHz IoT SSID | new audio SSID (4th per band, LEAD) | new audio SSID (4th per band, LEAD) | new SSID into Servers |
 | PoE (K90) | same for all: 250 W, 30 W per port | same | same, one more port used | same |
 | Enforcement point | firewall | firewall | firewall (audio to elsewhere) and host firewall (to the server) | host firewall only |
-| homelab PR size | small | medium | medium | small |
+| size of the PR to the owner's homelab repo | small | medium | medium | small |
 
 PoE, the same for every option: eight Class-4 compact speakers at the 30 W per-port maximum take
 240 W of the datasheet's 250 W (which TP-Link does not guarantee); the AP is also powered from the
@@ -214,14 +214,14 @@ Why: A is ruled out by K92 (auto-adoption would trust the IoT network, or every 
 a PR), C by security (embedded, OTA-updated devices with the Servers network's reach beside an
 unauthenticated control API). Between the two audio-network variants, B' removes the one
 unmeasured risk to the same-room bound (a firewall hop on a trunk shared with the house's internet
-traffic) instead of measuring it and then moving, and it costs about the same homelab PR plus one
+traffic) instead of measuring it and then moving, and it costs about the same PR to the owner's homelab repo plus one
 cable and one switch port. What the owner gives up: the server stops being single-homed, and
 speaker-to-server filtering is done by the host firewall rather than OPNsense. If the owner prefers
 a single-homed server, B is the second choice; goal 7's software measurement of a routed versus a
 switched path (planning research §4.2) then says whether B is enough, and a B-to-B' move later is one
 cable and one host PR.
 
-### The homelab PR this implies (drafted in goal 7, never merged by a goal)
+### The PR to the owner's homelab repo this implies (drafted in goal 7, never merged by a goal)
 
 - Branch `chorus-g7/speaker-network`; title `feat(network): chorus speaker network (chorus, never
   merged by agents)`. Named "chorus speaker network" throughout, never "P3". Based on homelab `main`
@@ -250,7 +250,7 @@ cable and one host PR.
     server's NICs": the spare port's new role.
   - `docs/security.md`: why speakers are isolated (K92's trust-on-first-use adoption, K40's
     unauthenticated control plane) and that the host firewall is the speaker-to-server filter.
-- Body: what changes; the owner action in homelab's owner-action format (pick the tag and subnet;
+- Body: what changes; the owner action in the owner's homelab repo's owner-action format (pick the tag and subnet;
   patch the server's spare port; set the switch ports and the AP port in the switch's UI; add the
   SSID in the UniFi UI; `opnsense-apply.sh --check` then `--apply`; `host-apply.sh --check` then
   `--apply`; the check that a speaker port reaches only chorus's ports on the server and nothing
@@ -259,7 +259,7 @@ cable and one host PR.
   #227 (the repeater and `opnsense.yml`), #228 and #229 (`opnsense.yml`, the server's host_vars file, the
   readdress), #230 (`ansible/roles/firewall/defaults/main.yml`, `docs/network.md`, `docs/security.md`),
   #231 and #233 (`docs/network.md`, host_vars files; #231 also `docs/security.md`), and any other
-  open PR goal 7 finds; a note that the owner or a homelab session runs
+  open PR goal 7 finds; a note that the owner or a session in the owner's homelab repo runs
   `make ci` and merges (K28).
 
 ## If the owner defers
@@ -297,8 +297,8 @@ arrive, and K92's auto-adoption then trusts whatever network the owner patches t
 - Espressif, ESP32-S3 product page, https://www.espressif.com/en/products/socs/esp32-s3, read 2026-09-30
 - Ubiquiti, UniFi AC APs datasheet (UAP-AC-LR: "802.3af/A PoE", "Maximum Power Consumption 6.5W"), https://dl.ui.com/datasheets/unifi/UniFi_AC_APs_DS.pdf, read 2026-09-30
 - Ubiquiti help centre, "Broadcasting Multiple WiFi SSIDs", https://help.ui.com/hc/en-us/articles/15320966415127-Broadcasting-Multiple-WiFi-SSIDs, search snippet only (403 on fetch), 2026-09-30, `LEAD`
-- NSchatz/homelab `docs/network.md` (Status, At a glance, Topology, Networks and addresses, Firewall policy, DHCP NTP and discovery, Switch and Wi-Fi, Configuration as code, Staging, Cutover phase B, MQTT plan, The server's NICs), `ansible/inventory/host_vars/opnsense.yml` (top-level key names), `ansible/roles/firewall/defaults/main.yml`, the server's `ansible/inventory/host_vars/<server>.yml` (firewall keys), `ansible/roles/firewall/templates/host.nft.j2` (`policy drop`), `.github/workflows/ci.yml` ("Ansible syntax and lint": `ansible-playbook --syntax-check` and `ansible-lint` only), `home-automation/mdns-reflector/docker-compose.yml` (`SERVER_ALLOW_INTERFACES`), `origin/main` `d82e2ae`, read 2026-09-30
-- NSchatz/homelab open PRs #191, #192, #208, #224, #225, #227-#231, #233 (`gh pr list`; files of #227, #228, #229 via `gh pr view`, of #230, #231, #233 via `gh pr list --json files`), read 2026-09-30
+- The owner's homelab repo's `docs/network.md` (Status, At a glance, Topology, Networks and addresses, Firewall policy, DHCP NTP and discovery, Switch and Wi-Fi, Configuration as code, Staging, Cutover phase B, MQTT plan, The server's NICs), `ansible/inventory/host_vars/opnsense.yml` (top-level key names), `ansible/roles/firewall/defaults/main.yml`, the server's `ansible/inventory/host_vars/<server>.yml` (firewall keys), `ansible/roles/firewall/templates/host.nft.j2` (`policy drop`), `.github/workflows/ci.yml` ("Ansible syntax and lint": `ansible-playbook --syntax-check` and `ansible-lint` only), `home-automation/mdns-reflector/docker-compose.yml` (`SERVER_ALLOW_INTERFACES`), `origin/main` `d82e2ae`, read 2026-09-30
+- The owner's homelab repo's open PRs #191, #192, #208, #224, #225, #227-#231, #233 (`gh pr list`; files of #227, #228, #229 via `gh pr view`, of #230, #231, #233 via `gh pr list --json files`), read 2026-09-30
 - chorus `BRIEF.md` §2.2, §5.3; `config/transport.conf:40,44`; `config/sync.conf:43`; `firmware/config/endpoint.conf:67` (baseline snapshot of `origin/main`), read 2026-09-30
 - Goal-1 verifier 3 report, `/cache/tmp/chorus-g1/verify/verify-3.md` (P3 section), read 2026-09-30
 - `research-platform-network.md` §0 item 8, §4, §5; `review-homelab.md` §0, §1, §2, §7; `review-cross-program-v1.md` M7 (chorus planning research), read 2026-09-30

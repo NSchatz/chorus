@@ -7,7 +7,7 @@ the same state-update order in both languages, held to one set of committed fixt
 `fixtures/README.md` "dsp/"). Pure libraries: no clock, no I/O, and on the C side no heap.
 
 The decisions: `docs/decisions/` "the DSP library". The research behind the phase B values:
-`docs/research/research-dsp-phase-b.md` and `.claude/goals/2026-09-chorus-research/research-theater.md`
+`docs/research/research-dsp-phase-b.md` and [`.claude/goals/2026-09-chorus-research/research-theater.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus-research/research-theater.md)
 section 5.
 
 ## Numbers

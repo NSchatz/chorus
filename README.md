@@ -5,7 +5,7 @@ From-scratch multiroom and surround audio: a containerized server that cuts PCM 
 The target is sub-millisecond inter-device error on wired endpoints, measured rather than asserted, with a lip-sync-grade TV path later. Snapcast, squeezelite, shairport-sync and Roc are studied as prior art under a clean-room rule, never adopted as dependencies.
 
 - `BRIEF.md` - the guiding document: requirements, measured targets, hard guardrails, design areas with recommendations, the phased roadmap (section 8), and the decisions still open.
-- `CLAUDE.md` - the working agreement and the plan of record (the /goal program in `.claude/goals/`).
+- `CLAUDE.md` - the working agreement; work arrives as tasks from the owner's agent harness.
 - `docs/decisions/` - one file per significant decision. `docs/measurements/` - harness reports; a timing claim without one is not evidence.
 - `docs/protocol.md` - the audio wire format, which is what a second implementation is held to. `docs/control-plane.md` - the control catalog, which is a separate contract on a separate connection and held the same way. `docs/mqtt.md` - the opt-in, read-only MQTT publisher (off by default): its topics, what it does not publish, and the broker notes for the owner. `docs/inputs.md` - the four alarm sources, line-in sharing to any group and a streamer on a line-in, with the rule about URLs. `docs/upnp.md` - the opt-in UPnP AV media renderers (off by default): a renderer per room, saved group and live group, its flags and port, what is refused, and what was and was not tested.
 
@@ -30,8 +30,9 @@ needs hardware is NOT PASSED**, and no report in `docs/measurements/` is a hardw
 | FLEET-10, fleet | not started |
 
 The program's later phases (protocol v2, rooms and groups, inputs, the Home Assistant integration,
-the app, and the hardware designs) are planned in BRIEF.md section 8 (8.1) and the program plan,
-`.claude/goals/2026-09-chorus.md`.
+the app, and the hardware designs) are planned in BRIEF.md section 8 (8.1) and the retired program
+plan, [`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md); since 2026-10-04 they arrive as
+tasks from the owner's agent harness.
 
 ## What exists
 

@@ -311,7 +311,7 @@ stream is endless and the reader's pace bounds what is held.
 
 All on 2026-10-03.
 
-- The program brief, section 4.8 (`.claude/goals/2026-09-chorus.md`); proposal P6, "Fetching
+- The program brief, section 4.8 ([`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md)); proposal P6, "Fetching
   (4.8)" (`docs/proposals/P6-casting-receivers.md`); proposal P9 (AAC off); BRIEF.md
   section 3.2; the goal-16 design envelope and its research notes on decoders and streams.
 - RFC 8216, HTTP Live Streaming, https://www.rfc-editor.org/rfc/rfc8216 : sections 3.4,

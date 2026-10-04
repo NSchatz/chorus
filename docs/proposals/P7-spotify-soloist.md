@@ -51,14 +51,14 @@ The owner decisions that bound it:
   TLS, Origin validation, CSRF protection" (WebSocket reference): it is bound to loopback inside a
   namespace nothing else shares. The API key is a secret: never in the repo, a log or a PR body
   (K27).
-- **homelab rules (cited from `NSchatz/homelab` at `d82e2ae`, read 2026-09-30).** The baseline is
+- **homelab rules (cited from the owner's homelab repo at `d82e2ae`, read 2026-09-30).** The baseline is
   "never `privileged` or the host network" (`CLAUDE.md`, Security baseline); `docs/security.md`
   says "bridge networks, not the host's" and keeps "the one list of deviations", which
   `make ci` enforces "name for name" (`.github/workflows/ci.yml`, `EXCEPT = {... "network_mode
   host": {"mdns-reflector", "plex"} ...}`). Today only plex and the mDNS reflector have host
   networking. Every service needs `cap_drop: [ALL]`, a justified minimal `cap_add`,
   `no-new-privileges`, `mem_limit`, `pids_limit`, `cpus`, a healthcheck, json-file logs and an
-  image pinned by digest. chorus opens homelab PRs and never merges them (K28, §0.1).
+  image pinned by digest. chorus opens PRs to the owner's homelab repo and never merges them (K28, §0.1).
 - **Rule 8.** Every choice below is argued on fitness for chorus's requirements alone.
 
 ## Re-verification of the planning research
@@ -214,7 +214,7 @@ Facts every option faces:
 
 - What: one slot per room (8), on a Docker bridge network; the reflector's interface list gains
   the chorus bridge.
-- Costs: no new homelab deviation; one homelab PR (the stack plus the reflector's
+- Costs: no new homelab deviation; one PR to the owner's homelab repo (the stack plus the reflector's
   `MDNS_INTERFACES`). Effort as for C minus the pool logic.
 - Risks: a container on a bridge advertises its bridge address, which phones on the LAN cannot
   route to, and the ephemeral Connect port cannot be published ahead of time (issue #4, LEAD). Inference,
@@ -225,7 +225,7 @@ Facts every option faces:
 ### Option B: every target, one container, host network (the planning design)
 
 - What: one `chorus-soloist` container with `network_mode: host`, one Soloist process per target.
-- Costs: a **new host-network exception the owner must grant** beyond K34: the homelab PR adds
+- Costs: a **new host-network exception the owner must grant** beyond K34: the PR to the owner's homelab repo adds
   `chorus-soloist` to `docs/security.md`'s "Baseline exceptions" table and to CI's
   `EXCEPT["network_mode host"]` set, with the justification, as K34 did for chorus-server; after the
   cutover, a host-firewall rule (the Ansible `firewall` role) for the ephemeral Connect ports.
@@ -245,12 +245,12 @@ Facts every option faces:
   shared volume (FIFOs and Unix sockets), which also sidesteps macvlan's host-to-child isolation
   (general macvlan behaviour, `ASSUMED`).
 - Costs: about 16 LAN addresses outside the DHCP pool (an owner step today; a Servers-network
-  range after the cutover, parameterised like `LAN_IP`); a homelab PR for the stack; after the
+  range after the cutover, parameterised like `LAN_IP`); a PR to the owner's homelab repo for the stack; after the
   cutover, one OPNsense rule (Trusted to the slot range, TCP, any port, because the Connect port is
   ephemeral); the mDNS repeater carries the records, and the host-network reflector is not
   involved. Effort: goal 17 (the pool, the supervisor, fakes), about one goal-day, as planned.
 - Risks: macvlan is **not** host networking, so CI's `EXCEPT` set does not cover or catch it, but
-  the baseline says "bridge networks, not the host's" and homelab's `CLAUDE.md` says "Docker bridge
+  the baseline says "bridge networks, not the host's" and the owner's homelab repo's `CLAUDE.md` says "Docker bridge
   networks": the owner must approve it as a new kind of deviation, and the PR adds a row to "Baseline
   exceptions" (inference that homelab would want one; its session may add a CI check). 16 replicas
   of PipeWire cost memory (`ASSUMED` above).
@@ -282,7 +282,7 @@ Facts every option faces:
 Every room, saved group and live group gets a Spotify Connect device (K59, K66), fed through a
 PipeWire pipe-tunnel FIFO into chorus's existing FIFO input, with metadata, control, alarms and
 take-the-room over each instance's loopback WebSocket. It costs one goal-17 build (as planned),
-about 16 LAN addresses, a homelab PR introducing macvlan (a deviation the owner approves), and an
+about 16 LAN addresses, a PR to the owner's homelab repo introducing macvlan (a deviation the owner approves), and an
 OPNsense rule after the cutover. The owner gives up the "no new deviation" simplicity of A, and
 takes a 90-day binary refresh as a standing chore. Three Soloist uses are shipped conservatively
 because of the Developer Policy (the Spotify alarm source off until the owner enables it,
@@ -322,7 +322,7 @@ Spotify reduces to "move this room to a group" in the chorus app).
 - **Volume gain stage** and **Soloist's output sample format** (32-bit float per LEADs): `ASSUMED`;
   measured in goal 17.
 - **LAN address range for the slots** and whether the switch or AP limits MACs per port: owner
-  input through the homelab PR.
+  input through the PR to the owner's homelab repo.
 - **Saved-group count** (sizes the pool): `ASSUMED` 2 to 4; the room-list Needs item (§5 item 5).
 - **Live-group grace period** (60 s) and **cache size** (256 MB): `ASSUMED` defaults.
 
@@ -346,7 +346,7 @@ Spotify reduces to "move this room to a group" in the chorus app).
 - spotify/soloist GitHub README and issues #1, #2, #4, #5, #6, #8, #12 (LEADs), https://github.com/spotify/soloist/issues, read 2026-09-30
 - Music Assistant, Spotify Connect plugin, https://www.music-assistant.io/plugins/spotify-connect/, read 2026-09-30
 - PipeWire 1.6.9 docs, Unix Pipe Tunnel, https://docs.pipewire.org/page_module_pipe_tunnel.html, read 2026-09-30
-- `NSchatz/homelab` at `d82e2ae`: `CLAUDE.md`, `docs/security.md`, `.github/workflows/ci.yml` (Compose security baseline step), `home-automation/mdns-reflector/docker-compose.yml`, `docs/network.md` (firewall policy, mDNS and SSDP), read 2026-09-30
+- The owner's homelab repo at `d82e2ae`: `CLAUDE.md`, `docs/security.md`, `.github/workflows/ci.yml` (Compose security baseline step), `home-automation/mdns-reflector/docker-compose.yml`, `docs/network.md` (firewall policy, mDNS and SSDP), read 2026-09-30
 
 ## What was read
 
@@ -358,7 +358,7 @@ Spotify reduces to "move this room to a group" in the chorus app).
 - Planning research: `research-casting-decoders.md`, `verify-ha-casting.md`, `review-homelab.md`.
 - `BRIEF.md` §2 and §3.1 (baseline worktree); chorus's own `crates/discovery/src/net.rs` (chorus's own
   code).
-- `NSchatz/homelab` (read-only clone at `d82e2ae`): the files listed in Sources.
+- The owner's homelab repo (read-only clone at `d82e2ae`): the files listed in Sources.
 - Every URL in Sources. Soloist is proprietary; no Soloist binary was downloaded or run.
 - Corrections pass (2026-09-30): the goal-1 verifier 2 report
   (`/cache/tmp/chorus-g1/verify/verify-2.md`); the Developer Policy and Developer Terms re-fetched
