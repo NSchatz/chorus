@@ -29,7 +29,7 @@
 #
 # uv is pinned in mise.toml. Where it is absent the step fails naming it, under CI as
 # anywhere else: a gate step that did not run is red, never a green SKIPPED
-# (docs/decisions/0000-the-home-assistant-gate-steps-run-or-fail.md). For the same reason
+# (docs/decisions/0142-the-home-assistant-gate-steps-run-or-fail.md). For the same reason
 # `--live` under CI (CI=true) fails when CHORUS_SERVER_BIN is unset.
 
 set -euo pipefail

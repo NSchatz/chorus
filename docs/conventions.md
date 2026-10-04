@@ -417,7 +417,7 @@ The virtual environment lives outside the repository (`UV_PROJECT_ENVIRONMENT`, 
 `/cache/venvs/chorus-ha`), and so does the core checkout (`CHORUS_HA_CORE`). Both steps fetch
 once and then run with no network. Where uv or the checkout cannot be had they fail naming it,
 under CI as anywhere else, and the gate holds `ha-test`, `ha-hassfest` and `ha-live` to their
-own `PASS` line: these steps are never `SKIPPED` (decision 0000). **Review-only (no check):** the test harness and its
+own `PASS` line: these steps are never `SKIPPED` (decision 0142). **Review-only (no check):** the test harness and its
 transitive packages are development tools, never shipped and never imported by the
 integration at run time, so the licence allowlist of rule 13 (what chorus builds and ships)
 does not range over them; the direct ones and their licences are in the ADR.

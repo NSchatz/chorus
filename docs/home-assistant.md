@@ -147,7 +147,7 @@ cloned, or (under `CI=true`) an unset `CHORUS_SERVER_BIN` for `make ha-live` fai
 naming what is missing; none of them prints a green `SKIPPED`. The gate also holds each of
 `ha-test`, `ha-hassfest` and `ha-live` to its own `<step>: PASS` line, so a step that exits 0
 without having run is red too
-([0000](decisions/0000-the-home-assistant-gate-steps-run-or-fail.md)). Outside the gate and
+([0142](decisions/0142-the-home-assistant-gate-steps-run-or-fail.md)). Outside the gate and
 CI, `make ha-live` without `CHORUS_SERVER_BIN` still skips the test by name and ends with
 `ha-live: SKIPPED`.
 

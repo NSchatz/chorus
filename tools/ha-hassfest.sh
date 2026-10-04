@@ -30,7 +30,7 @@
 # A gate step of the full tier (`ha-hassfest`), about a quarter of a minute warm. Where uv or
 # the checkout cannot be had it fails by name, under CI as anywhere else: a gate step that did
 # not run is red, never a green SKIPPED
-# (docs/decisions/0000-the-home-assistant-gate-steps-run-or-fail.md).
+# (docs/decisions/0142-the-home-assistant-gate-steps-run-or-fail.md).
 
 set -euo pipefail
 cd "$(dirname "$0")/.."

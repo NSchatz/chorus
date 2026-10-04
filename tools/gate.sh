@@ -247,7 +247,7 @@ profiles_all_built() {
 # A Home Assistant step (ha-test, ha-hassfest, ha-live) is green only when it ran: its make
 # target exits 0 AND its output carries the step's own `<name>: PASS` line and no SKIPPED
 # line. A run that skipped (no uv, no built server, a narrowed test run) is red
-# (docs/decisions/0000-the-home-assistant-gate-steps-run-or-fail.md). HA_TEST_ARGS is passed
+# (docs/decisions/0142-the-home-assistant-gate-steps-run-or-fail.md). HA_TEST_ARGS is passed
 # empty so a value in the environment cannot narrow the gate's run.
 ha_step() {
     local name="$1" out rc=0

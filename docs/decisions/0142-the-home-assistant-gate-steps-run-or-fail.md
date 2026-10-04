@@ -1,4 +1,4 @@
-# 0000: the Home Assistant gate steps run or fail, never a green SKIPPED under CI, and a narrowed `make ha-test` run is judged on the selected tests alone
+# 0142: the Home Assistant gate steps run or fail, never a green SKIPPED under CI, and a narrowed `make ha-test` run is judged on the selected tests alone
 
 - Status: accepted, 2026-10-04; changes the CI skip behaviour 0138 gave `tools/ha-test.sh` and
   `tools/ha-hassfest.sh`. How every other gate step treats a missing tool is unchanged.
