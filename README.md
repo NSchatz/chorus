@@ -181,14 +181,16 @@ make verify                # refusal paths, and that unrun checks are visibly un
 make firmware-check        # the ESP32-S3 endpoint, on a host, with no ESP-IDF
 ```
 
-`make gate` is the check every change passes before it merges: formatting,
+`make gate` is the gate, every check a change is held to: formatting,
 clippy with warnings denied, the build and every test, the control-plane
 determinism run, the endpoint's host checks, the refusal paths, the ESP32-S3
 image compile (ESP-IDF v6.1 through ccache) and the daemonless server image,
 each step timed. `make gate-fast` runs the docs checks alone. The toolchain is
-pinned in `rust-toolchain.toml`. CI (`.github/workflows/ci.yml`) calls
-`make gate`, but GitHub Actions does not run on this private repository, so the
-local run is the gate.
+pinned in `rust-toolchain.toml`. CI is the gate: `.github/workflows/ci.yml`
+runs `make gate` on every pull request, on every push to main and nightly. A
+pull request merges when an independent reviewer passes it, without waiting for
+CI, and a red main gets a fix-forward task; local runs are narrow tests only
+(`docs/decisions/0140-ci-is-the-gate.md`).
 
 The server and the Linux client speak protocol v2 on the audio connection:
 every session is encrypted, and each side keeps a long-term key. The server
