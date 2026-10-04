@@ -38,7 +38,9 @@ use std::time::Duration;
 use chorus_control::transport::Transport;
 use chorus_protocol::v2::adoption::{KeyChange, PinStore, Verdict};
 use chorus_protocol::v2::noise::{fingerprint, Keypair};
-use chorus_protocol::v2::session::{connect, Identity, SecureReader, SecureWriter, SessionError};
+use chorus_protocol::v2::session::{
+    connect, Established, Identity, SecureReader, SecureWriter, SessionError,
+};
 use chorus_protocol::v2::{
     features, roles, Capabilities, Codec, Hello, LowLatencyDirection, LowLatencyOffer, Message,
     RefusalReason, Sound, SourceControl, SourceOffer, StreamFormat, PROTOCOL_VERSION,
@@ -544,16 +546,41 @@ pub fn open(
             });
         }
     };
+    greet(stream, established, config, before)
+}
+
+/// The server's `session_refused` as [`SecureReader`] reports it (an
+/// `io::Error` of kind `ConnectionRefused`), by the reason's name.
+fn refused_by_server(e: &io::Error) -> SessionRefusal {
+    let text = e.to_string();
+    let reason = refusal_name(&text);
+    let prefix = format!("the peer refused the session ({}): ", reason);
+    let detail = text.strip_prefix(&prefix).unwrap_or(&text).to_string();
+    SessionRefusal::RefusedByServer { reason, detail }
+}
+
+/// What [`open`] does once the handshake is through: send `hello` and
+/// `capabilities` (and a line-in's first `source_offer`), then wait for the
+/// server's `hello` or its refusal. `before` is the read timeout to put back.
+fn greet(
+    stream: TcpStream,
+    established: Established,
+    config: &ClientConfig,
+    before: Option<Duration>,
+) -> Result<Session, SessionRefusal> {
+    let failed = |e: io::Error| SessionRefusal::Failed {
+        detail: e.to_string(),
+    };
     let writer_stream = stream.try_clone().map_err(failed)?;
     let writer_timeout_handle = stream.try_clone().map_err(failed)?;
     let mut writer = SecureWriter::new(writer_stream, established.sealer);
-    writer
+    let greeted = writer
         .send(&Message::Hello(hello(config)))
         .and_then(|_| writer.send(&Message::Capabilities(capabilities(config))))
-        .map_err(failed)?;
-    if let Some(offer) = first_source_offer(config) {
-        writer.send(&Message::SourceOffer(offer)).map_err(failed)?;
-    }
+        .and_then(|_| match first_source_offer(config) {
+            Some(offer) => writer.send(&Message::SourceOffer(offer)),
+            None => Ok(()),
+        });
 
     // The server's verdict on this endpoint's key comes after the handshake
     // (Noise XX authenticates the endpoint last), so the session is only open
@@ -572,6 +599,16 @@ pub fn open(
         ..Announced::default()
     }));
     let mut reader = SecureReader::new(stream, established.opener);
+    // A server that refuses has closed by the time it is written to, so the
+    // write of `hello` or `capabilities` can fail (a broken pipe, a reset)
+    // while the refusal it sent first waits to be read. The refusal is the
+    // answer then, by name; the write's error is, when there is none.
+    if let Err(sent) = greeted {
+        return Err(match reader.next_message() {
+            Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => refused_by_server(&e),
+            _ => failed(sent),
+        });
+    }
     loop {
         match reader.next_message() {
             Ok(m) => {
@@ -582,11 +619,7 @@ pub fn open(
                 }
             }
             Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => {
-                let text = e.to_string();
-                let reason = refusal_name(&text);
-                let prefix = format!("the peer refused the session ({}): ", reason);
-                let detail = text.strip_prefix(&prefix).unwrap_or(&text).to_string();
-                return Err(SessionRefusal::RefusedByServer { reason, detail });
+                return Err(refused_by_server(&e));
             }
             Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
                 return Err(SessionRefusal::Failed {
@@ -787,7 +820,71 @@ pub fn check_announcement(announced: &Announced, shape: &StreamShape) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chorus_protocol::v2::session::accept;
     use chorus_protocol::v2::ChannelPosition;
+    use std::net::TcpListener;
+    use std::thread;
+    use std::time::Instant;
+
+    /// The race CI's runner lost in `chorus-server::adoption` (main red at
+    /// 72d90ce): the server refuses a changed key after the handshake and
+    /// closes, and this endpoint's `hello` meets a broken pipe before it has
+    /// read the refusal. Here the pipe is broken before `greet` writes at all.
+    #[test]
+    fn a_refusal_that_waits_behind_a_broken_pipe_is_still_the_answer_by_name() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let me = Identity {
+                id: "srv".to_string(),
+                keypair: Keypair::from_secret([7u8; 32]),
+            };
+            let refused = accept(
+                &mut stream,
+                &me,
+                Keypair::from_secret([9u8; 32]),
+                |_, key| Verdict::KeyChanged {
+                    pinned: [1u8; 32],
+                    offered: *key,
+                },
+            );
+            assert!(matches!(refused, Err(SessionError::KeyChanged(_))));
+            // The refusal is sent; dropping the stream closes it.
+        });
+        let stream = TcpStream::connect(addr).unwrap();
+        stream.set_read_timeout(Some(HANDSHAKE_TIMEOUT)).unwrap();
+        let me = Identity {
+            id: "kitchen".to_string(),
+            keypair: Keypair::from_secret([3u8; 32]),
+        };
+        let mut handshake = &stream;
+        let established = connect(
+            &mut handshake,
+            &me,
+            Keypair::from_secret([5u8; 32]),
+            |_, _| Verdict::Adopted,
+        )
+        .expect("the endpoint's side of the handshake completes before the verdict");
+        server.join().unwrap();
+
+        // Write to the closed peer until the kernel says so: from here every
+        // write on this socket fails, as `hello` did on the runner.
+        let mut poke = &stream;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while poke.write(&[0]).is_ok() {
+            assert!(Instant::now() < deadline, "the pipe never broke");
+            thread::sleep(Duration::from_millis(1));
+        }
+
+        match greet(stream, established, &ClientConfig::default(), None) {
+            Err(SessionRefusal::RefusedByServer { reason, .. }) => {
+                assert_eq!(reason, "key_changed")
+            }
+            Err(other) => panic!("expected the key_changed refusal, got {:?}", other),
+            Ok(_) => panic!("a refused session opened"),
+        }
+    }
 
     #[test]
     fn the_capabilities_name_all_three_codecs_all_three_formats_and_rates_inside_the_band() {
