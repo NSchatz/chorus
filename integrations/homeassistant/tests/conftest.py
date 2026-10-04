@@ -8,6 +8,8 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.syrupy import HomeAssistantSnapshotExtension
+from syrupy.assertion import SnapshotAssertion
 
 from custom_components.chorus.const import DOMAIN
 
@@ -19,6 +21,18 @@ SERVER_ID = "chorus-server-0123456789abcdef"
 @pytest.fixture(autouse=True)
 def _enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Let Home Assistant load `custom_components/chorus`."""
+
+
+@pytest.fixture
+def snapshot(snapshot: SnapshotAssertion) -> SnapshotAssertion:
+    """Read snapshots the Home Assistant way, from `tests/snapshots`.
+
+    The harness and syrupy each register a `snapshot` fixture, and which one a
+    test gets depends on the order pytest loads the two plugins in, which is the
+    order the environment lists their metadata: not the same on every machine.
+    A fixture in conftest.py is preferred over both, on every machine.
+    """
+    return snapshot.use_extension(HomeAssistantSnapshotExtension)
 
 
 @pytest.fixture
