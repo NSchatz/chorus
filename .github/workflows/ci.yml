@@ -13,9 +13,18 @@ name: ci
 # minutes.
 #
 # A push to a pull request's branch starts only the `pull_request` run
-# (`push` is main only), and the concurrency group is the branch's name, so
-# a branch never runs twice at once; the nightly run has a group of its own,
-# so a merge to main never cancels it.
+# (`push` is main only), and a pull request's concurrency group is its
+# branch's name, so a branch never runs twice at once: a newer push cancels
+# the run in progress. The nightly run has a group of its own, so a merge to
+# main never cancels it.
+#
+# A push to main is never cancelled: its group is its own commit, and
+# `cancel-in-progress` is off for `push`. Pull requests merge without
+# waiting for this run, so main often moves while its run is in progress,
+# and every commit on main needs a finished result of its own. A shared
+# `main` group would not do even with `cancel-in-progress` off: a group
+# holds one pending run, so a third push would cancel the second's while it
+# waits.
 on:
   pull_request:
   push:
@@ -30,8 +39,9 @@ permissions:
 concurrency:
   group: >-
     ci-${{ github.event_name == 'schedule' && 'nightly'
+    || github.event_name == 'push' && github.sha
     || github.head_ref || github.ref_name }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   gate:
