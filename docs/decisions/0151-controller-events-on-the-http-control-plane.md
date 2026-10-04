@@ -1,4 +1,4 @@
-# 0000: a speaker's button press reaches HTTP subscribers as a `controller_event` on its own server-sent event route, fed by a second bounded fanout and held by the one event writer, with nothing replayed
+# 0151: a speaker's button press reaches HTTP subscribers as a `controller_event` on its own server-sent event route, fed by a second bounded fanout and held by the one event writer, with nothing replayed
 
 - Status: accepted, 2026-10-04. Extends 0026 (HTTP and server-sent events), 0017 (the control
   fanout's bound) and 0077 (the one event writer); 0116 (the MQTT publisher) is unchanged.

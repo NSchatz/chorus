@@ -1060,7 +1060,7 @@ subscriber protocol would not be checking the thing the browser uses.
 
 `GET /api/controller-events` is the same subscriber protocol with a different
 payload: what a speaker's button asked for, as an event
-(`docs/decisions/0000-controller-events-on-the-http-control-plane.md`). The
+(`docs/decisions/0151-controller-events-on-the-http-control-plane.md`). The
 response is `200`, `text/event-stream`, then one comment line
 (`: controller events`) and nothing else until a press. Every controller
 command the server accepts (`docs/protocol.md`, "controller command") is then
