@@ -13,8 +13,11 @@ what Home Assistant's entities then show, which is what the real server said.
 The announce part serves a generated WAV from a loopback port that stands in
 for Home Assistant's own address, starts the server with that port as its one
 `--announce-origin` (and `--players 1 --media-allow-loopback`, as
-`crates/server/tests/announce.rs` does), and watches the room's now-playing
-record say `Announcement` and then go. `CHORUS_LIVE_ANNOUNCE=0` leaves it out.
+`crates/server/tests/announce.rs` does). The server mixes the clip over what the
+room plays (ADR 0175), so the room's now-playing record does not change: the
+test watches the room take the announcement's volume and get its own back, and
+then reads the server's own state, which must say the announcement `finished`.
+`CHORUS_LIVE_ANNOUNCE=0` leaves it out.
 `CHORUS_SERVER_ARGS` appends arguments to the server's command line.
 """
 
@@ -32,7 +35,7 @@ import subprocess
 import time
 import wave
 
-from aiohttp import web
+from aiohttp import ClientSession, web
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
@@ -213,8 +216,10 @@ async def test_live_server(
 
         if LIVE_ANNOUNCE:
             # The clip is served from "Home Assistant's own address", which is
-            # the server's one announce origin: it plays, the room says so, and
-            # the room goes back to what it played.
+            # the server's one announce origin. It is mixed over what the room
+            # plays (ADR 0175): the room takes the announcement's volume while
+            # it plays and has its own back when it is over, and the server
+            # says the clip played to its end.
             await async_process_ha_core_config(hass, {"internal_url": clip_origin})
             await call(
                 "media_player", "play_media", kitchen,
@@ -224,17 +229,21 @@ async def test_live_server(
                 extra={"volume": 0.2},
             )  # fmt: skip
             await wait_for(
-                lambda: (
-                    hass.states.get(kitchen).attributes.get("media_title")
-                    == "Announcement"
-                ),
+                lambda: hass.states.get(kitchen).attributes["volume_level"] == 0.2,
                 timeout=20,
             )
             await wait_for(
-                lambda: hass.states.get(kitchen).attributes.get("media_title") is None,
+                lambda: hass.states.get(kitchen).attributes["volume_level"] == 0.4,
                 timeout=30,
             )
-            assert hass.states.get(kitchen).attributes["volume_level"] == 0.4
+            async with (
+                ClientSession() as session,
+                session.get(f"http://127.0.0.1:{live_server}/api/state") as response,
+            ):
+                announced = (await response.json(content_type=None))["announcements"]
+            assert [(a["rooms"], a["state"]) for a in announced] == [
+                (["kitchen"], "finished")
+            ], announced
 
             # An address that is Home Assistant's own but not on the server's
             # list passes the integration's check and is refused by the server.
