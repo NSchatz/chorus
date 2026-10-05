@@ -8,12 +8,17 @@ and above them every saved and live group, with a drag and a list to move a room
 and the server's group volume (`docs/decisions/0187-groups-in-the-app.md`). A room alone and
 every formed group also say what they play and what is playing (title, artist, album, artwork
 and whether it is playing, paused or buffering), with one button for each input the server
-offers (`docs/decisions/0189-inputs-and-now-playing-in-the-app.md`).
+offers (`docs/decisions/0189-inputs-and-now-playing-in-the-app.md`). It installs behind the
+household login: a manifest fetched with credentials, a hand-written service worker that
+never answers or keeps the API, and the words "Signed out" with a link to sign in when the
+login has lapsed (`docs/decisions/0190-the-app-installs-behind-the-login.md`).
 
 | Path | What |
 |---|---|
 | `src/` | `index.html`, `app.css` and `tokens.css` (the document and the tokens), `main.js` (the entry point), the elements and their pure logic |
 | `src/api.js`, `src/state.js` | the server as the app uses it (`api/state`, `api/events`, `POST api/command`) and the store that holds its last state message: the snapshot, then every event-stream update |
+| `src/manifest.webmanifest`, `src/icons/` | the web manifest (name, icons, `start_url` and `scope` of `/app/`, standalone) and its icons, copied to `dist/` as they are; `icons.mjs` draws the icons, by hand when the drawing changes |
+| `src/worker.js`, `src/sw.js`, `src/install.js` | the service worker: its rules as pure logic (what it answers, what it may keep), the worker that hands the browser's events to them (bundled to `dist/sw.js`), and its registration from the page |
 | `src/rooms.js`, `src/room-card.js` | the rooms screen and one room's card |
 | `src/groups.js`, `src/group-card.js` | the groups region (every saved group, then every live one) and one group's card, with the group volume |
 | `src/playing.js` | what a room alone or a group plays: the now-playing record with its artwork (an image on the server's own `api/artwork` route), the source in words, and the picker of the offered inputs |
@@ -55,7 +60,12 @@ needs, drives the screen's controls by their labels and compares with `/api/stat
 `make web-smoke` starts that server with two rooms, signs in through the fake login in front
 of it, loads `/app/` in Playwright's headless Chromium and asserts what the page rendered (a
 room's name as the server has it) and that the page reported no Content-Security-Policy
-violation. Without `CHORUS_SERVER_BIN` it ends `web-smoke: SKIPPED`; under `CI=true` and in
+violation. Its tail is the install: the manifest link has `crossorigin="use-credentials"` and
+the browser loads the manifest through the login; the service worker reaches the active state
+and controls the page; after the page has read the state, followed an event and sent a command
+through it, the caches hold the files of `dist/` and no entry under `/api/`; and with the fake
+login expired the page says "Signed out", its link leads to the login page, and no cache holds
+that page. Without `CHORUS_SERVER_BIN` it ends `web-smoke: SKIPPED`; under `CI=true` and in
 the gate that is a failure. It is the only test that starts a browser: a later change that
 needs one adds to `smoke/app.spec.js`.
 
@@ -81,6 +91,12 @@ Rules, each held by a check (`docs/conventions.md`, rules 13 and 14):
 - An element's styles name tokens of `tokens.css`, never a literal colour or length, and
   nothing is inline: the server's Content-Security-Policy allows neither inline script nor
   inline style.
+- The service worker never answers a request for the server's `/api/` and never writes one to
+  a cache; what it keeps is the app's own files, each a plain `200` of this origin
+  (`mayStore` in `src/worker.js`, the one place that decides). A new rule for the worker is a
+  function of `worker.js` with a unit test, not a line of `sw.js`.
+- Every request of `src/api.js` is made with `redirect: "manual"`: a redirect is the login's
+  answer, and the page says "Signed out" instead of reading a login page as the server's.
 - A test finds a control by its label (`getByLabel`), which also proves it has one.
 - The server owns the state. An element shows what the store's last state message says and
   keeps no value of its own; a command changes the page when the state that resulted comes

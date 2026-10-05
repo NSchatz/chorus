@@ -179,7 +179,9 @@ const isState = (message) => Boolean(message) && typeof message === "object" && 
 // The store over a client of api.js. `subscribe(listener)` calls the listener
 // now and at every change with { state, rooms, groups, inputs, status }; `status` is
 // "connecting" until the server has been heard from, "live" while the event
-// stream delivers, and "lost" otherwise, when what is shown is last known.
+// stream delivers, "signed-out" when the login in front of the server answered
+// in its place, and "lost" otherwise; in the last two what is shown is last
+// known.
 export function createStore(client) {
   const listeners = new Set();
   let state = null;
@@ -242,6 +244,12 @@ export function createStore(client) {
   // and is returned for the screen to show.
   async function command(body) {
     const result = await client.command(body);
+    // A command that met the login says so at once; the event stream, still
+    // open from before the login lapsed, may not have noticed yet.
+    if (result.signedOut && status !== "signed-out") {
+      status = "signed-out";
+      tell();
+    }
     if (result.ok && isState(result.state) && (!state || result.state.serial > state.serial)) {
       hold(result.state);
       tell();

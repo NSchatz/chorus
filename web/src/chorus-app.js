@@ -6,6 +6,11 @@
 // `chorus-command` event. A command the server refuses is shown, in the
 // server's words, on the room or the group it was for.
 //
+// When the login in front of the server has lapsed (the store's status is
+// "signed-out") it says so above everything else, with the way back in: a
+// link to the page's own address. Following it is a navigation, which the
+// login answers with its page and, signed in, sends back here.
+//
 // It also holds the one drag gesture (drag.js), because a room is dragged
 // from one screen's card onto another's: the rooms and the groups region are
 // both under it. A drop, the room's "Plays with" list and a group's "Remove"
@@ -67,6 +72,15 @@ export class ChorusApp extends LitElement {
       margin: var(--reset-margin);
       color: var(--muted);
       font-size: var(--meta-size);
+    }
+    [data-signed-out] {
+      padding: var(--surface-pad);
+      border-bottom: var(--stroke-1) solid var(--border);
+      color: var(--warn);
+      font-size: var(--body-size);
+    }
+    [data-signed-out] a {
+      color: var(--link);
     }
     /* A wall tablet shows the rooms and nothing of the app around them. */
     :host([mode="kiosk"]) header {
@@ -166,11 +180,23 @@ export class ChorusApp extends LitElement {
     this._drag.begin(event);
   }
 
+  // Signed out: the words and the way to sign in. The link is the page's own
+  // address, layout and all, so signing in comes back to the same screen.
+  _signedOut() {
+    if (this._view.status !== "signed-out") return nothing;
+    return html`
+      <p role="alert" data-signed-out>
+        Signed out. <a href=${globalThis.location?.href ?? "./"} aria-label="Sign in">Sign in</a> to go on.
+      </p>
+    `;
+  }
+
   render() {
     return html`
       <header>
         <h1>chorus</h1>
       </header>
+      ${this._signedOut()}
       <section
         aria-label="Groups"
         @chorus-command=${this._onCommand}

@@ -36,8 +36,8 @@ use chorus_server::mediaplayer::fetch_policy;
 /// second time on purpose: serving artwork must not have changed one byte of
 /// it, and a check that read the constant could not tell.
 const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; \
-     connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; \
-     frame-ancestors 'none'";
+     connect-src 'self'; img-src 'self' data:; manifest-src 'self'; base-uri 'none'; \
+     form-action 'none'; frame-ancestors 'none'";
 
 /// The eight bytes every PNG starts with, then bytes that tell two covers
 /// apart. The route judges what it was sent by its first bytes; it decodes

@@ -10,6 +10,13 @@
 //                          { status, body } with `body` a string
 //   server.commands        the bodies posted so far
 //   server.streams         how many event streams have been opened
+//   server.login           how the household login in front of the server
+//                          answers in the server's place: null (signed in:
+//                          the server answers), "redirect" (a redirect to the
+//                          login page, which a request made with
+//                          `redirect: "manual"` sees as an `opaqueredirect`)
+//                          or "refuse" (a 401)
+//   server.requests        every request so far: { route, redirect }
 //
 // The state messages are shaped like the catalog's v2 state
 // (docs/control-plane.md, "The state message"), with the members the app reads.
@@ -64,12 +71,24 @@ function answerOf(status, body) {
   };
 }
 
+// What a browser hands a page for a redirect it was told not to follow.
+const opaqueRedirect = () => ({
+  ok: false,
+  status: 0,
+  type: "opaqueredirect",
+  body: null,
+  text: async () => "",
+  json: async () => JSON.parse(""),
+});
+
 export function fakeServer(snapshot = null) {
   const open = new Set();
   const server = {
     snapshot,
     commands: [],
     streams: 0,
+    login: null,
+    requests: [],
     answer: () => ({ status: 200, body: JSON.stringify(server.snapshot) }),
     base: "http://chorus.test/",
 
@@ -85,6 +104,14 @@ export function fakeServer(snapshot = null) {
 
     async fetch(url, options = {}) {
       const route = String(url).slice(server.base.length);
+      server.requests.push({ route, redirect: options.redirect });
+      if (server.login === "redirect") {
+        // A browser follows the redirect unless told not to, and the page is
+        // then given the login page where it asked for the server.
+        if (options.redirect !== "manual") return { ...answerOf(200, "<!DOCTYPE html><title>Sign in</title>"), redirected: true };
+        return opaqueRedirect();
+      }
+      if (server.login === "refuse") return answerOf(401, "not signed in\n");
       if (route === "api/state") {
         if (server.snapshot === null) throw new TypeError("fetch failed");
         return answerOf(200, JSON.stringify(server.snapshot));

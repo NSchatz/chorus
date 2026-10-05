@@ -49,7 +49,8 @@ export class ChorusRooms extends LitElement {
       color: var(--muted);
       font-size: var(--meta-size);
     }
-    p[data-status="lost"] {
+    p[data-status="lost"],
+    p[data-status="signed-out"] {
       color: var(--warn);
     }
     li[data-moving] {
@@ -80,8 +81,11 @@ export class ChorusRooms extends LitElement {
   }
 
   // What the connection line says. Live says nothing: the rooms are the
-  // message. A dropped feed says that what is shown is last known.
+  // message. A dropped feed says that what is shown is last known. Signed
+  // out, the shell says so and how to sign in; this only adds that the rooms
+  // still on the page are the last known ones.
   _statusText() {
+    if (this.status === "signed-out") return this.rooms === null ? "" : "This is the last known state.";
     if (this.status === "lost") {
       return this.rooms === null
         ? "The server cannot be reached."
