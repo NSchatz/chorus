@@ -1284,6 +1284,7 @@ The catalog above is the contract. The transport is HTTP on the address
 |---|---|
 | `GET /` | the control page |
 | `GET /chorus.css`, `GET /chorus.js` | what the page loads |
+| `GET /app/`, `GET /app/<path>` | the app: its document and every file of its build output, compiled into the server ("The app under `/app/`" below) |
 | `GET /api/state` | the state message, once (v2; `?v=1` for the v1 shape) |
 | `GET /api/server` | (goal 18) who this server is, once: the `server` message below. Not a state: nothing changes it while the server runs and no state message carries it |
 | `GET /api/events` | a `text/event-stream`, one `data: <state message>` per change, starting with the state as it stands (v2; `?v=1` for the v1 shape, rendered from the state as it stands when each change reaches the stream) |
@@ -1391,6 +1392,37 @@ the bound rather than grown. A request line or header block past it is answered
 has 5 seconds from the moment a worker picks it up to arrive in full, measured
 on the monotonic clock; one still arriving then (a peer trickling a byte at a
 time) is answered `408` and the worker goes back to the pool.
+
+### The app under `/app/`
+
+The app (`web/`) is served from inside the server's own binary: `crates/server/build.rs`
+walks the committed build output `web/dist` and compiles every file in, with its media type
+and an entity tag made from its bytes, and `crates/server/src/app.rs` answers from that table.
+Nothing is read from disk at run time and there is no route per file: a file the app's build
+adds is served by the next build of the server. `/app/` is the app's permanent path
+(`docs/decisions/0182-the-app-is-served-under-app.md`); the control page stays at `/`.
+
+| request | answer |
+|---|---|
+| `GET /app/`, `GET /app/index.html` | `200`, the app's document |
+| `GET /app/<path>` naming a file of the output | `200`, that file, with its `Content-Type` and `X-Content-Type-Options: nosniff` |
+| the same, with an `If-None-Match` that names the file's `ETag` (`*`, or a list holding the tag, a `W/` prefix ignored) | `304`, no body |
+| `GET /app` | `308` to `/app/`: the document names its assets relative to the directory |
+| any other path under `/app/`, and any method but `GET` | `404`, as for any route the server does not have |
+
+Every one of the first four carries the control page's `Content-Security-Policy`, unchanged,
+and the `200` and `304` answers carry the file's `ETag` and one of two `Cache-Control` values:
+
+- `public, max-age=31536000, immutable` for a file named by the hash of its content,
+  `assets/<name>-<hash>.<ext>` with a hash of eight characters of `A-Z` and `0-9`: a change to
+  it is a new name, so a browser never asks again.
+- `no-cache` for everything else, the document and `sw.js` (the path reserved for the app's
+  service worker) by name: a browser may keep it and asks before every use, and is answered
+  `304` while it is unchanged. So a new build of the server is seen at the next load.
+
+`If-None-Match` is the only conditional header read, and it is read for these routes alone.
+No response is compressed. An app response is written by the control worker that read the
+request, under the same write timeout as any other.
 
 ### What a command must carry
 

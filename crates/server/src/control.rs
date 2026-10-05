@@ -2048,6 +2048,9 @@ struct Request {
     origin: Option<String>,
     /// The `Host` header, as sent, if there was one.
     host: Option<String>,
+    /// The `If-None-Match` header, as sent, if there was one: the validator a
+    /// browser holds for a file of the app (`crate::app`).
+    if_none_match: Option<String>,
     body: String,
 }
 
@@ -2151,6 +2154,7 @@ fn read_request<R: BufRead>(reader: &mut R) -> Result<Request, Unreadable> {
     let mut content_type = None;
     let mut origin = None;
     let mut host = None;
+    let mut if_none_match = None;
     loop {
         let header = next_line(&mut limited)?;
         let header = header.trim_end();
@@ -2168,6 +2172,8 @@ fn read_request<R: BufRead>(reader: &mut R) -> Result<Request, Unreadable> {
                 origin = Some(value);
             } else if name.eq_ignore_ascii_case("host") {
                 host = Some(value);
+            } else if name.eq_ignore_ascii_case("if-none-match") {
+                if_none_match = Some(value);
             }
         }
     }
@@ -2189,6 +2195,7 @@ fn read_request<R: BufRead>(reader: &mut R) -> Result<Request, Unreadable> {
         content_type,
         origin,
         host,
+        if_none_match,
         body: String::from_utf8_lossy(&body).to_string(),
     })
 }
@@ -2480,6 +2487,17 @@ fn serve_connection(connection: TcpStream, state: &Arc<ControlState>) {
             state.endpoint_left(&endpoint);
             respond(&mut connection, "200 OK", "application/json", "{}");
         }
+        // The app (`crate::app`): every file of its build output, from the
+        // table the build script writes, so there is no route per file here.
+        // A path under `/app/` that names none falls through to the 404 below.
+        ("GET", app_path)
+            if (app_path == "/app" || app_path.starts_with(crate::app::MOUNT))
+                && crate::app::respond(
+                    &mut connection,
+                    app_path,
+                    request.if_none_match.as_deref(),
+                    CONTENT_SECURITY_POLICY,
+                ) => {}
         _ => respond(
             &mut connection,
             "404 Not Found",
@@ -3091,6 +3109,7 @@ mod tests {
             content_type: content_type.map(str::to_string),
             origin: origin.map(str::to_string),
             host: Some("chorus.example:4011".to_string()),
+            if_none_match: None,
             body: String::new(),
         }
     }
