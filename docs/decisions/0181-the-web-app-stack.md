@@ -1,4 +1,4 @@
-# 0000: the app under web/ is Lit 3 bundled by esbuild, installed by pnpm with install scripts off and tested with node's own runner over happy-dom; its build output is committed and the gate rebuilds and compares it
+# 0181: the app under web/ is Lit 3 bundled by esbuild, installed by pnpm with install scripts off and tested with node's own runner over happy-dom; its build output is committed and the gate rebuilds and compares it
 
 - Status: accepted, 2026-10-05. Records the owner's approval of proposal P5, Option C, and
   fixes what the proposal left to the first change that builds it: the pinned versions, where

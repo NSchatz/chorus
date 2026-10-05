@@ -1,7 +1,7 @@
 # web
 
 The chorus app: Lit 3 elements bundled by esbuild (proposal P5, Option C; the decision record
-`docs/decisions/0000-the-web-app-stack.md` says what is pinned and why). Today it is the shell
+`docs/decisions/0181-the-web-app-stack.md` says what is pinned and why). Today it is the shell
 that later screens are added to: one element, `chorus-app`, with the design tokens.
 
 | Path | What |

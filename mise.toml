@@ -48,7 +48,7 @@
 #     2026-10-05); https://github.com/pnpm/pnpm/releases/tag/v12.8.1
 #   node runs the web app's build script and its unit tests (`node --test`), and pnpm installs
 #   its locked packages with install scripts off (web/; `make web-build`, `make web-test`, gate
-#   steps `web-test` and `web-build`; docs/decisions/0000-the-web-app-stack.md says why them).
+#   steps `web-test` and `web-build`; docs/decisions/0181-the-web-app-stack.md says why them).
 #   Neither is part of the Rust build: chorus-server embeds the committed output of web/dist.
 # The GPL-3.0 tools run as unmodified binaries; their source is never read (brief section 0.9).
 

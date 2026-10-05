@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rule "Dependencies and licences", the JavaScript of web/ (P5, docs/decisions/0000-the-web-app-stack.md):
+# Rule "Dependencies and licences", the JavaScript of web/ (P5, docs/decisions/0181-the-web-app-stack.md):
 # cheap, with no install and no node. What it holds, each a way the app's supply chain could
 # quietly widen:
 #   1. Install scripts are off where the pinned pnpm reads it: web/pnpm-workspace.yaml says

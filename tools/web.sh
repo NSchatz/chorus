@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # `make web-test` and `make web-build`: the app under web/ (Lit 3 elements bundled by esbuild;
-# docs/decisions/0000-the-web-app-stack.md).
+# docs/decisions/0181-the-web-app-stack.md).
 #
 #   tools/web.sh test    the unit tests: `node --test` with happy-dom as the DOM, so components
 #                        render and update in node. No browser is installed or started.

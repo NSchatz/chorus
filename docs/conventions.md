@@ -225,7 +225,7 @@ root, and `license.workspace = true` in every crate, which the workspace sets to
   party's product or character, such as `alexa`); it tests itself on damaged copies each run.
 - **Review-only (no check):** a new external crate comes with an ADR answering BRIEF §3.2's
   question (why not build it); cargo-deny checks its licence and source, not the ADR.
-- JavaScript (the app under `web/`, P5, ADR 0000): exact versions beside a committed lockfile
+- JavaScript (the app under `web/`, P5, ADR 0181): exact versions beside a committed lockfile
   (`check-pins.sh`), and `check-web.sh` holds the rest with no install and no node. Install
   scripts are off where the pinned pnpm reads it: `web/pnpm-workspace.yaml` says
   `ignoreScripts: true`, every `allowBuilds` entry there is `false`, and `web/package.json`
@@ -257,7 +257,7 @@ exists (brief section 0.9):
 | The emulator (goal 14) | `tools/qemu/pins.conf` (the QEMU release, micromamba), `tools/qemu/libs.explicit.txt` (its conda-forge libraries, each an exact build) | the release archive's, the program's and micromamba's sha256; a sha256 per library package |
 | The `chorus-soloist` image (goal 17) | `tools/soloist-image.sh` (the Debian base: a dated tag and its digest), `deploy/soloist/debian-packages.pins` (every Debian package: exact version, the snapshot.debian.org timestamp it is fetched at) | the base image digest; a sha256 and a size per package file |
 | The Home Assistant integration's Python, test harness and tools (goal 18) | `integrations/homeassistant/harness.pin` (the harness, the Home Assistant it requires, the core tag hassfest runs from, the Python), `integrations/homeassistant/pyproject.toml` (every development dependency `==x.y.z`), `mise.toml` (uv) | the harness wheel's sha256 and the core tag's commit in `harness.pin`; a sha256 per file of every locked package in `integrations/homeassistant/uv.lock`; uv's in `mise.lock` |
-| The web app (P5, ADR 0000) | `mise.toml` (node, pnpm), `web/package.json` (every dependency an exact `x.y.z`) | node's and pnpm's sha256 in `mise.lock`; an integrity digest per package in `web/pnpm-lock.yaml` (`check-web.sh`) |
+| The web app (P5, ADR 0181) | `mise.toml` (node, pnpm), `web/package.json` (every dependency an exact `x.y.z`) | node's and pnpm's sha256 in `mise.lock`; an integrity digest per package in `web/pnpm-lock.yaml` (`check-web.sh`) |
 
 `check-pins.sh` checks the table: exact versions, the digests, the three Rust toolchain names
 agreeing, the ESP-IDF tag and commit, each ESP-IDF component's exact version with its hash in
