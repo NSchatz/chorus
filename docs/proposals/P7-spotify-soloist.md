@@ -115,8 +115,8 @@ Not legal advice. "Inference" marks a reading, not a fact.
   group id, or the sorted member-room set of a live group), so a re-formed live group keeps its
   Connect identity ("Use the same data directory across restarts to keep the same device identity
   and stored Spotify Connect session", getting started). Default pool 16 slots (8 rooms, K75, plus
-  saved and live groups; `ASSUMED` counts), configurable; P11 in goal 17 measures and proposes the
-  limit (K76).
+  saved and live groups; `ASSUMED` counts), configurable; P11 in goal 17 measured the limit (K76) and
+  the owner accepted it, the pool of 16 included, on 2026-10-05.
 - **Why slots and not a container per target:** live groups come and go in seconds, and chorus
   has no Docker socket (and should not get one); a fixed pool avoids both.
 - **Audio sink.** Per slot, a PipeWire pipe-tunnel sink: `tunnel.mode = sink` ("Samples played on

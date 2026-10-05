@@ -1,9 +1,9 @@
 # P3: Speaker network placement
 
 - Decisions: K35
-- Status: PROPOSED (chorus goal 1, 2026-09-30); decided at Checkpoint K
-- If deferred: The PR to the owner's homelab repo is drafted on a branch and not opened; the line reads PROPOSED
-- Deferred at Checkpoint K (2026-09-30). Goal 7 drafted Option B' on the owner's homelab repo, branch `chorus-g7/speaker-network` (commit `0d03e7c`, no pull request); the body to open it with, including the owner action, is `docs/proposals/P3-speaker-network-homelab-pr.md`. Goal 7's house simulation compares the switched (B') and routed (B) paths (`docs/measurements/sim-house-8-rooms.md`, simulation, not timing evidence)
+- Status: ACCEPTED (2026-10-05, the owner): option B' (first put forward by chorus goal 1, 2026-09-30)
+- If deferred: The PR to the owner's homelab repo is drafted on a branch and not opened (moot since 2026-10-05)
+- History: deferred at Checkpoint K (2026-09-30), accepted as option B' on 2026-10-05. Goal 7 drafted Option B' on the owner's homelab repo, branch `chorus-g7/speaker-network` (commit `0d03e7c`, no pull request); the body to open it with, including the owner action, is `docs/proposals/P3-speaker-network-homelab-pr.md`. Goal 7's house simulation compares the switched (B') and routed (B) paths (`docs/measurements/sim-house-8-rooms.md`, simulation, not timing evidence)
 - Builds on: goal 7 (§11 item 6, "the PR to the owner's homelab repo per §0.1, or the drafted branch if P3 was deferred", done-when F; I9 places the speaker-network PR there); goal 14 (§18, adoption and Wi-Fi provisioning onto this network, K92); goal 24 (§28 item 2, the compact speaker's PoE class "against the switch's 250 W at 8 rooms"); the goal-4 deploy PR (§8, K34 host networking) is its prerequisite in the owner's homelab repo
 
 ## Question
@@ -127,7 +127,7 @@ firewall.
   UniFi limit of four per band while wireless meshing is on (`LEAD`, a Ubiquiti help-page snippet).
 - Fit: good on security (K92's boundary is exactly the speakers), uncertain on sync until measured.
 
-### Option B': a dedicated audio network with a server leg (recommended)
+### Option B': a dedicated audio network with a server leg (recommended; accepted 2026-10-05)
 
 - What: as B, plus one of the server's two unused 1 GbE ports cabled to a switch port untagged on
   the audio network, with a static address there and no gateway on it. Speakers and the server are
@@ -172,8 +172,9 @@ firewall.
 
 ### The fallback (the "If deferred" line)
 
-Goal 7 drafts the recommended PR on a pushed branch `chorus-g7/speaker-network` of the owner's homelab repo and does
-not open it; the goal-7 line reads PROPOSED. Until the owner applies a placement, speakers sit
+Moot as a fallback since the owner accepted option B' on 2026-10-05; what it left behind stands.
+Goal 7 drafted the recommended PR on a pushed branch `chorus-g7/speaker-network` of the owner's homelab repo and did
+not open it. Until the owner applies a placement, speakers sit
 wherever the house network puts them (today the flat LAN; after phase B, whatever port the owner
 patches), and the endpoint keeps its configured server address.
 
@@ -209,6 +210,8 @@ carrying the audio network are needed.
 ## Recommendation
 
 **Recommendation:** Option B', a dedicated audio network with the server on it through a spare port, because it makes the speaker network alone the K92 adoption boundary (as B does) while keeping the speaker protocol and time sync on one switched segment, off the firewall and off the server's only uplink.
+
+**Decision (2026-10-05, the owner):** option B', as recommended. Options A, B and C are not built.
 
 Why: A is ruled out by K92 (auto-adoption would trust the IoT network, or every speaker would need
 a PR), C by security (embedded, OTA-updated devices with the Servers network's reach beside an
@@ -264,18 +267,21 @@ cable and one host PR.
 
 ## If the owner defers
 
-Goal 7 drafts the PR above (option B') on the pushed branch `chorus-g7/speaker-network` and does
-not open it; its done-when F is met by the branch, the goal-7 ledger line reads PROPOSED, and the
-proposal is listed under "Proposals awaiting the owner" to the finale. Nothing else in chorus waits
-on it: endpoints keep a configured server address, adoption (goal 14) and the sync work run on the
-simulator and fixtures. The cost is that no placement is live when the owner's first speakers
-arrive, and K92's auto-adoption then trusts whatever network the owner patches them into.
+Moot since 2026-10-05, when the owner accepted option B'. What held from Checkpoint K
+(2026-09-30) until then: goal 7 drafted the PR above (option B') on the pushed branch
+`chorus-g7/speaker-network` and did not open it, and its done-when F was met by the branch.
+Nothing else in chorus waited on it: endpoints keep a configured server address, adoption
+(goal 14) and the sync work run on the simulator and fixtures. What still holds: no placement is
+live until the owner fills in the numbers below and applies the branch, and until then K92's
+auto-adoption trusts whatever network the owner patches the speakers into.
 
 ## Open inputs
 
-- The owner's choice among A, B, B', C (Checkpoint K).
-- The audio network's VLAN tag, subnet and the server's address on it: the owner's, in the owner
-  action (never written by chorus).
+- Closed: the owner's choice among A, B, B', C. It is B' (2026-10-05).
+- The one input the decision leaves open, and it is the owner's: the audio network's VLAN tag,
+  its subnet and the server's address on it, filled in on the homelab branch
+  `chorus-g7/speaker-network` (step 1 of the owner action in
+  `docs/proposals/P3-speaker-network-homelab-pr.md`; never written by chorus).
 - The room list with Cat6, PoE and speaker-wire runs (goal-1 Needs item): decides port count and
   whether per-room switches are needed.
 - Router-hop cost on the real firewall: **ASSUMED** tens of microseconds idle (planning research);
