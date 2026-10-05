@@ -1,4 +1,4 @@
-# 0000: the app is served under /app/ for good, compiled into chorus-server by a std-only build script; the document and the service worker are no-cache, a file named by its hash is immutable
+# 0182: the app is served under /app/ for good, compiled into chorus-server by a std-only build script; the document and the service worker are no-cache, a file named by its hash is immutable
 
 - Status: accepted, 2026-10-05. Fixes what proposal P5 and record 0181 left to the change
   that serves the app: its path, how its files reach the binary, and its validators and cache

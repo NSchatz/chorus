@@ -1400,7 +1400,7 @@ walks the committed build output `web/dist` and compiles every file in, with its
 and an entity tag made from its bytes, and `crates/server/src/app.rs` answers from that table.
 Nothing is read from disk at run time and there is no route per file: a file the app's build
 adds is served by the next build of the server. `/app/` is the app's permanent path
-(`docs/decisions/0000-the-app-is-served-under-app.md`); the control page stays at `/`.
+(`docs/decisions/0182-the-app-is-served-under-app.md`); the control page stays at `/`.
 
 | request | answer |
 |---|---|

@@ -6,7 +6,7 @@
 //! directory and writes `$OUT_DIR/app_files.rs`, one `AppFile` per file, which
 //! `src/app.rs` includes. A file added to `web/dist` is therefore served after
 //! the next build of this crate with no route written by hand
-//! (`docs/decisions/0000-the-app-is-served-under-app.md`).
+//! (`docs/decisions/0182-the-app-is-served-under-app.md`).
 //!
 //! What it decides per file, at build time so that a mistake stops the build
 //! and not a browser:

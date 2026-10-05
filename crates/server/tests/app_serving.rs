@@ -7,7 +7,7 @@
 //! adds is checked the day it is committed, and one the server did not pick up
 //! fails by name.
 //!
-//! What is asserted (`docs/decisions/0000-the-app-is-served-under-app.md`):
+//! What is asserted (`docs/decisions/0182-the-app-is-served-under-app.md`):
 //! the document at `/app/` under the control page's Content-Security-Policy,
 //! unchanged; every file with its bytes, its media type and an `ETag`; `304`
 //! for a matching `If-None-Match`; `no-cache` for the document and the service

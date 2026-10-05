@@ -8,7 +8,7 @@
 //! name a file outside it.
 //!
 //! `/app/` is the app's permanent path, and these are its rules
-//! (`docs/decisions/0000-the-app-is-served-under-app.md`):
+//! (`docs/decisions/0182-the-app-is-served-under-app.md`):
 //!
 //! - `GET /app/` and `GET /app/index.html` are the document; `GET /app/<path>`
 //!   is that file of the output; `GET /app` redirects to `/app/`, because the
