@@ -477,7 +477,7 @@ server's runtime does is "The schedule runtime" below.
 | `voice_stop` | `zone` | ends the room's voice run. A room with no run is not an error; the answer is the state as it stands |
 
 This is the server's half of a Home Assistant voice satellite (proposal P8,
-Option A; `docs/decisions/0000-the-voice-run-and-the-run-scoped-mic-route.md`).
+Option A; `docs/decisions/0172-the-voice-run-and-the-run-scoped-mic-route.md`).
 Three things happen, in this order, and each is separate from the next:
 
 **1. The wake word.** The server runs its wake-word models over what every
@@ -1723,7 +1723,7 @@ credential on the control channel. Anybody on the network can still send
 `voice_start` and `voice_stop`; what they cannot do is read the audio. A
 pairing secret pinned by the server is the stronger alternative and is the
 owner's open call
-(`docs/decisions/0000-the-voice-run-and-the-run-scoped-mic-route.md`).
+(`docs/decisions/0172-the-voice-run-and-the-run-scoped-mic-route.md`).
 
 An endpoint's telemetry is not in the catalog and not in the state message: it
 is served on `GET /metrics` (`docs/telemetry.md`), so a report a second per

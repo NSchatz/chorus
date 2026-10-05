@@ -1,4 +1,4 @@
-# 0000: chorus-server hears the wake word on the event writer's thread and publishes it as a `voice_wake` event with no audio and no run; a `voice_start` command opens a run and answers with its identifier, and the run's microphone audio is served on one route to that identifier, once, from the one address the server was started with, for at most the run's time limit; a pinned pairing secret is the stronger alternative and stays the owner's open call
+# 0172: chorus-server hears the wake word on the event writer's thread and publishes it as a `voice_wake` event with no audio and no run; a `voice_start` command opens a run and answers with its identifier, and the run's microphone audio is served on one route to that identifier, once, from the one address the server was started with, for at most the run's time limit; a pinned pairing secret is the stronger alternative and stays the owner's open call
 
 - Status: accepted, 2026-10-05
 - Decided by: the owner for the protection of the route (2026-10-04, on proposal P8's open

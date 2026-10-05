@@ -2509,7 +2509,7 @@ pub const VOICE_AUDIO_FORMAT: &str = "pcm_s16le; rate=16000; channels=1";
 
 /// (voice, P8) Serve one open voice run's audio to its one reader
 /// (`docs/control-plane.md`, "Voice: the wake word, the run and its audio";
-/// `docs/decisions/0000-*`).
+/// `docs/decisions/0172-*`).
 ///
 /// `GET /api/voice-audio?run=<id>`: the microphone audio of the room the run
 /// is in, raw 16 kHz mono 16-bit little-endian PCM, from the response's

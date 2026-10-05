@@ -1,6 +1,6 @@
 //! The voice path on the server: what it does with a speaker's microphone
 //! audio (proposal P8, Option A; K73, I4; `docs/decisions/0166-*` for the
-//! wire, `docs/decisions/0169-*` for the intake, `docs/decisions/0000-*` for
+//! wire, `docs/decisions/0169-*` for the intake, `docs/decisions/0172-*` for
 //! the wake word, the run and the route).
 //!
 //! # The rule
