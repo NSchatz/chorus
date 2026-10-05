@@ -18,6 +18,8 @@ from .coordinator import (
 )
 
 PLATFORMS: list[Platform] = [
+    Platform.ASSIST_SATELLITE,
+    Platform.BINARY_SENSOR,
     Platform.EVENT,
     Platform.MEDIA_PLAYER,
     Platform.NUMBER,
@@ -84,5 +86,5 @@ async def async_setup_entry(hass: HomeAssistant, entry: ChorusConfigEntry) -> bo
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ChorusConfigEntry) -> bool:
-    """Unload one chorus server; its two streams' tasks end with the entry."""
+    """Unload one chorus server; its streams' tasks end with the entry."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

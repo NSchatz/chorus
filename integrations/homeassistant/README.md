@@ -19,7 +19,10 @@ How it maps chorus to Home Assistant, the security rules and the test harness ar
   (chorus-server from goal 18 on). It appears as one service device. For announcements it
   needs `--players` (at least one) and `--announce-origin <this Home Assistant's URL>`.
 - Every **room** of that server: one device, named for the room, with the room's name
-  suggested as its area.
+  suggested as its area. A room that has a microphone (a speaker adopted into it declares
+  the voice role) is a **voice room**: its device also has an Assist satellite, a Voice
+  enabled switch and a Mic muted sensor. For those the server needs
+  `--voice-integration <this Home Assistant's IP address>`.
 - Every **saved group** of that server: one device under the server.
 
 - Every **adopted speaker** of that server: one device, named for the speaker, linked to its
@@ -49,6 +52,10 @@ at setup with a repair issue saying so.
   not play.
 - A lamp that follows the music: a room's Visualizer sensor carries the colour, the level
   and the beat of what the room plays, for an automation of yours to map to a light.
+- Talking to Assist in a room: say the wake word, ask, and hear the answer from the room's
+  own speakers over the music, which is turned down for it and comes back afterwards.
+- `assist_satellite.announce` in a voice room, from an automation that goes on only once the
+  announcement has been heard.
 - Switching a room's quiet hours off for a party, or its line-in autoplay off while a
   turntable is being set up.
 
@@ -284,6 +291,51 @@ recorder:
 The sensor only reports. The integration drives no light: the mapping is your automation
 ("Examples" has one). While its stream is not attached the sensor is **unavailable**.
 
+### Voice (`assist_satellite`, `switch` and `binary_sensor`, one of each per room that has a microphone)
+
+A room has a microphone when a speaker adopted into it declares the voice role (the compact
+speaker and the soundbar have one). Such a room gets three more entities on its device; a
+room without a microphone gets none of them, and a room that loses its last microphone
+loses them.
+
+| Entity | What it is |
+|---|---|
+| **Assist satellite** (`assist_satellite`) | The room as a Home Assistant voice satellite: `idle`, `listening`, `processing`, `responding`. It supports `assist_satellite.announce` |
+| **Voice enabled** (`switch`, configuration) | The room's voice path, on or off. **Off by default**, kept by the server. Off: the server takes no microphone audio from the room and hears no wake word there |
+| **Mic muted** (`binary_sensor`, diagnostic) | On while no microphone of the room is live: the speaker's mute switch is on, the speaker is away, or it has not reported yet. **Read-only**: the switch is on the speaker, it cuts the microphone in hardware, and nothing in Home Assistant or chorus can unmute it |
+
+**What happens when you say the wake word.** The wake word is heard by the chorus server,
+not by Home Assistant. The server tells the integration which room heard it and which phrase;
+the satellite then opens a voice run in that room, reads the room's microphone audio from the
+server for that run only, and hands it to your Assist pipeline, which starts at
+speech-to-text with the phrase it was woken by. The run is ended as soon as speech-to-text
+has what it needs, when the pipeline ends, and when it fails; the server ends it on its own
+after 30 seconds whatever happens. The reply is played in the room by the server's
+announcement mixer: the room's music goes down, the reply plays over it and the music comes
+back. The satellite shows `responding` until the server says the reply has finished.
+
+**While Voice enabled is off or Mic muted is on** a wake word starts nothing: no run, no
+pipeline, and no audio leaves the server. Announcements still play, since they use the
+speaker and not the microphone.
+
+**`assist_satellite.announce`** plays a message (spoken by your pipeline's text-to-speech) or
+a media id in the room, with Home Assistant's chime first unless `preannounce` is false. The
+action returns only after the server says the clip is over, so an automation's next step
+runs after the announcement has been heard. An announcement that the server could not fetch
+or decode is an error ("The chorus server could not play the announcement") carrying the
+server's reason. Everything "Room media player" says about `announce` holds here too: the
+clip must be one this Home Assistant serves, and the server must list this Home Assistant
+as an announce origin.
+
+**The microphone's audio.** The integration keeps none of it: each piece goes from the
+server's answer straight to the Assist pipeline. The server serves a run's audio to one
+reader, once, only for the run the satellite opened, and only to the address it was started
+with (`--voice-integration`). What your pipeline's speech-to-text does with it is that
+engine's business (a local engine keeps it in the house).
+
+The wake words are the server's: every model it runs is active in every voice room, and the
+satellite's configuration in Home Assistant lists them without offering a choice.
+
 ## Data updates
 
 Local push. The integration holds one event stream (`GET /api/events`) per server and the
@@ -297,6 +349,13 @@ Button presses arrive the same way on a second stream (`GET /api/controller-even
 carries one message per accepted press and never a past one. It reconnects by the same
 backoff and is checked for liveness the same way; while it is not attached the button
 entities are unavailable (one log line says so) and nothing else is affected.
+
+Wake words arrive on a stream of their own (`GET /api/voice-events`), opened only when the
+server has a voice room and held like the others. A wake word said while it is not attached
+is not acted on (one log line says the stream was lost, one that it is back); the satellites
+stay available, since an announcement needs no wake word. A run's microphone audio is one
+more connection for as long as the run lasts, and the end of an announcement is read from
+the pushed state, never polled for.
 
 An enabled Visualizer sensor holds one more stream of the same kind, its room's
 (`GET /api/visualizer?zone=<room>`), with the same backoff and liveness check. A disabled one
@@ -405,6 +464,11 @@ strong one).
 
 ## Known limitations
 
+- Voice: a satellite answers and announces, and that is all for now. It has no timers, does
+  not keep listening for a follow-up after a reply (continue conversation), and does not
+  support `assist_satellite.start_conversation` or `assist_satellite.ask_question`. The wake
+  word cannot be chosen per room. A wake word said while the room is still speaking a reply
+  is heard through the room's own sound; there is no echo cancellation yet.
 - A button press made while Home Assistant is not connected to the chorus server is lost:
   the server keeps none. Two-way speakers and subwoofers have no front buttons and no button
   entities; a pairing button and a microphone mute switch are local to the speaker and are
@@ -485,6 +549,12 @@ strong one).
 | "The chorus server refused the announcement's address" | The address is on the server's list but not of a shape it plays (the message carries the server's words) |
 | "The chorus server cannot do that right now" on an announcement | The server runs no player (`--players`), or every player is in use |
 | An announcement is accepted and nothing is heard | The server could not fetch or decode the clip; the reason is in the server's log |
+| A repair issue "The chorus server serves no voice run" | A wake word was heard, and the server was started without `--voice-integration`. Start it with `--voice-integration` and this Home Assistant's IP address |
+| A repair issue "The chorus server sends voice audio to another address" | The server's `--voice-integration` is not the address this Home Assistant reaches it from (a container's bridge address, another interface). The issue goes once a run's audio is read |
+| A room with a microphone has no Assist satellite | No speaker adopted into the room declares the voice role: the speaker is not adopted, is in another room, or its firmware has no microphone support |
+| Saying the wake word does nothing | Voice enabled is off for the room (it is off by default), Mic muted is on (the speaker's own switch), or the stream of wake words is not attached (the log says so) |
+| "The chorus server could not play the announcement" | The server could not fetch or decode the clip; the message carries its reason |
+| "The chorus server did not say the announcement was over" | The server did not report the announcement's end within eleven minutes (it cuts a clip at ten) |
 | After a server restart Home Assistant offers the server as a new device and the old entry cannot connect or reconfigure ("a different chorus server") | The server runs with `--ephemeral-identity`, which gives it a new id at every start. Run it with a kept identity (`--identity-dir`) |
 | "chorus announces only media that Home Assistant itself serves" | The media id resolved to an address that is not this Home Assistant's internal or external URL. Set the internal URL under Settings > System > Network |
 | The group volume number is unavailable | The room is playing alone |

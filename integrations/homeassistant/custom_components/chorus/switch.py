@@ -1,4 +1,4 @@
-"""A room's switches: loudness, night mode, speech enhancement, quiet hours, autoplay."""
+"""A room's switches: loudness, night mode, speech enhancement, quiet hours, autoplay, voice."""
 
 from __future__ import annotations
 
@@ -19,7 +19,9 @@ from .coordinator import ChorusConfigEntry, ChorusCoordinator, room_identifier
 from .entity import (
     ChorusEntity,
     ChorusRoomEntity,
+    async_setup_voice_room_entities,
     saved_group_device_info,
+    voice_room_unique_id,
 )
 
 # Commands go to the server one at a time per platform.
@@ -46,6 +48,10 @@ _SOUND_SWITCHES: dict[
         lambda zone, on: commands.sound(zone, speech=on),
     ),
 }
+
+
+# The key of a voice room's switch in its unique id.
+VOICE_ENABLED_KEY = "voice_enabled"
 
 
 def autoplay_unique_id(server_id: str, rule: AutoplayRule) -> str:
@@ -121,6 +127,14 @@ async def async_setup_entry(
 
     _sync()
     entry.async_on_unload(coordinator.async_add_listener(_sync))
+    # A room that has a microphone has a switch for its voice path as well.
+    async_setup_voice_room_entities(
+        entry,
+        async_add_entities,
+        domain="switch",
+        key=VOICE_ENABLED_KEY,
+        make=ChorusVoiceSwitch,
+    )
 
 
 class ChorusSoundSwitch(ChorusRoomEntity, SwitchEntity):
@@ -190,6 +204,44 @@ class ChorusQuietHoursSwitch(ChorusRoomEntity, SwitchEntity):
         """Switch the room's quiet hours off; its windows are kept."""
         await self.coordinator.async_command(
             commands.quiet_hours_enabled(self._zone_id, False)
+        )
+
+
+class ChorusVoiceSwitch(ChorusRoomEntity, SwitchEntity):
+    """Whether a room's voice path is on: the software half of the microphone gate.
+
+    Off by default, in every room, and kept by the server. On, the server asks
+    the room's speakers for their microphone audio; it never opens a muted
+    microphone, whose switch is the speaker's own (the `mic muted` sensor).
+    """
+
+    _attr_device_class = SwitchDeviceClass.SWITCH
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_translation_key = "voice_enabled"
+
+    def __init__(self, coordinator: ChorusCoordinator, zone: Zone) -> None:
+        """Name the entity for the room."""
+        super().__init__(coordinator, zone)
+        self._attr_unique_id = voice_room_unique_id(
+            coordinator.server.id, zone.id, VOICE_ENABLED_KEY
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return whether the room's voice path is switched on."""
+        zone = self.zone
+        return None if zone is None else zone.voice_enabled
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Switch the room's voice path on."""
+        await self.coordinator.async_command(
+            commands.voice_enabled(self._zone_id, True)
+        )
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Switch the room's voice path off; a run that is open ends."""
+        await self.coordinator.async_command(
+            commands.voice_enabled(self._zone_id, False)
         )
 
 

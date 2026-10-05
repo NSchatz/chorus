@@ -11,6 +11,18 @@ dev = [
     "pytest-homeassistant-custom-component==0.13.366",
     "mypy==2.3.1",
     "ruff==0.16.3",
+# What the `assist_satellite` platform's Home Assistant components import
+# (assist_satellite, assist_pipeline, conversation, tts, ffmpeg), at the
+# versions core 2026.9.3 pins in their manifests. Test-only: on a running
+# Home Assistant they are core's own requirements, so the integration's
+# manifest still lists none.
+    "hassil==3.12.1",
+    "home-assistant-intents==2026.8.28",
+    "gazetteer-matcher==1.1.0",
+    "pymicro-vad==1.0.1",
+    "pyspeex-noise==1.0.2",
+    "mutagen==1.48.1",
+    "ha-ffmpeg==3.2.2",
 ]
 # What Home Assistant's own hassfest imports beyond the harness, at the versions
 # core 2026.9.3 pins in requirements_all.txt (`make ha-hassfest`).

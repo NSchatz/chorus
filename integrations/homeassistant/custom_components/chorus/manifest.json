@@ -3,7 +3,7 @@
   "name": "chorus",
   "codeowners": ["@NSchatz"],
   "config_flow": true,
-  "dependencies": ["media_source"],
+  "dependencies": ["assist_pipeline", "assist_satellite", "media_source"],
   "documentation": "https://github.com/NSchatz/chorus/blob/main/integrations/homeassistant/README.md",
   "integration_type": "hub",
   "iot_class": "local_push",

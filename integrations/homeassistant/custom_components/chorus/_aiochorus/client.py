@@ -9,6 +9,12 @@ header. ``GET /api/controller-events`` is a second stream of the same kind, one
 at most ten a second, the latest only (``docs/visualizer.md``, "The HTTP
 stream"). Every response is ``Connection: close``. ``GET /metrics`` is the
 speakers' telemetry (``docs/telemetry.md``), read on request.
+
+Voice ("Voice: the wake word, the run and its audio"): ``GET
+/api/voice-events`` is a fourth stream, one ``voice_wake`` per wake word and
+nothing kept; ``voice_start`` is the one command answered with a ``voice_run``
+and not a state; ``GET /api/voice-audio?run=<identifier>`` is that run's
+microphone audio, raw PCM until the server closes the connection.
 """
 
 from __future__ import annotations
@@ -28,9 +34,18 @@ from .errors import (
     ChorusProtocolError,
     ChorusRefusedError,
     ChorusUnsupportedError,
+    ChorusVoiceRouteError,
 )
 from .metrics import Metrics
-from .models import ControllerEvent, ServerInfo, State, VisualizerFrame, loads
+from .models import (
+    ControllerEvent,
+    ServerInfo,
+    State,
+    VisualizerFrame,
+    VoiceRun,
+    VoiceWake,
+    loads,
+)
 from .sse import MAX_EVENT_BYTES, SSEParser
 
 REQUEST_TIMEOUT = 10.0
@@ -42,6 +57,20 @@ BACKOFF_FIRST = 1.0
 BACKOFF_FACTOR = 2.0
 BACKOFF_MAX = 60.0
 _CHUNK = 16 * 1024
+
+# What a voice run's audio is (docs/control-plane.md, "3. The audio"): the
+# value of the answer's ``X-Chorus-Audio-Format`` header, and the bytes of one
+# sample.
+VOICE_AUDIO_FORMAT = "pcm_s16le; rate=16000; channels=1"
+VOICE_SAMPLE_BYTES = 2
+# A live microphone sends without pause, so a run's audio that is silent on
+# the socket for this long is a connection that died. ASSUMED, not measured:
+# twice the 5 s after which the server itself drops a reader that takes nothing.
+VOICE_AUDIO_IDLE_SECONDS = 10.0
+# The server ends a run at its ``limit_ms`` and closes the connection. This
+# reader stops on its own this long after the limit, on a monotonic clock, so
+# a server that did not close cannot hold a run open. ASSUMED margin.
+VOICE_RUN_GRACE_SECONDS = 2.0
 
 _JSON = {"Content-Type": "application/json"}
 
@@ -101,8 +130,8 @@ class ChorusClient:
             raise ChorusProtocolError(f"GET /metrics answered {status}")
         return Metrics.parse(body)
 
-    async def command(self, message: bytes) -> State:
-        """Send one control message and return the state it resulted in."""
+    async def _post(self, message: bytes) -> bytes:
+        """Send one control message; return the body of a ``200`` answer."""
         try:
             async with self.session.post(
                 self.url("/api/command"),
@@ -117,7 +146,7 @@ class ChorusClient:
                 f"no answer from {self._base}: {err or type(err).__name__}"
             ) from err
         if status == 200:
-            return State.parse(body)
+            return body
         if status == 400:
             obj = loads(body, "the error message")
             field = obj.get("field")
@@ -138,6 +167,76 @@ class ChorusClient:
                 else (),
             )
         raise ChorusProtocolError(f"POST /api/command answered {status}")
+
+    async def command(self, message: bytes) -> State:
+        """Send one control message and return the state it resulted in."""
+        return State.parse(await self._post(message))
+
+    async def voice_start(self, zone: str) -> VoiceRun:
+        """Open a voice run in a room; return its identifier and its limit.
+
+        A refusal is a ``ChorusCommandError`` whose ``name`` is the reason:
+        ``voice-disabled``, ``mic-muted`` or ``no-voice-integration``.
+        """
+        return VoiceRun.parse(await self._post(commands.voice_start(zone)))
+
+    async def voice_stop(self, zone: str) -> State:
+        """End a room's voice run; a room with none is not an error."""
+        return await self.command(commands.voice_stop(zone))
+
+    async def set_voice_enabled(self, zone: str, enabled: bool) -> State:
+        """Switch a room's voice path on or off."""
+        return await self.command(commands.voice_enabled(zone, enabled))
+
+    async def voice_audio(self, run: VoiceRun) -> VoiceAudio:
+        """Open a voice run's audio (``GET /api/voice-audio?run=<identifier>``).
+
+        Returns once the server has answered ``200``: the reader is then the
+        run's one reader. A refusal is a ``ChorusVoiceRouteError`` naming the
+        reason. No message this raises carries the run's identifier.
+        """
+        try:
+            resp = await self.session.get(
+                self.url("/api/voice-audio").with_query(run=run.run),
+                timeout=aiohttp.ClientTimeout(
+                    total=None,
+                    sock_connect=REQUEST_TIMEOUT,
+                    sock_read=VOICE_AUDIO_IDLE_SECONDS,
+                ),
+            )
+        except (aiohttp.ClientError, TimeoutError, OSError) as err:
+            # The error's own text may quote the request's address, which
+            # holds the identifier: only its kind is passed on.
+            raise ChorusConnectionError(
+                f"no answer from {self._base} for the voice run's audio: "
+                f"{type(err).__name__}"
+            ) from None
+        if resp.status != 200:
+            try:
+                body = await _read_bounded(resp)
+            except aiohttp.ClientError, TimeoutError, OSError:
+                body = b""
+            finally:
+                resp.close()
+            detail = ""
+            try:
+                said = loads(body, "the refusal").get("detail")
+            except ChorusProtocolError:
+                said = None
+            if isinstance(said, str):
+                detail = said
+            reason, colon, _ = detail.partition(": ")
+            raise ChorusVoiceRouteError(resp.status, reason if colon else "", detail)
+        said_format = resp.headers.get("X-Chorus-Audio-Format")
+        if said_format != VOICE_AUDIO_FORMAT:
+            resp.close()
+            raise ChorusProtocolError(
+                f"the voice run's audio is '{said_format}', not '{VOICE_AUDIO_FORMAT}'"
+            )
+        loop = asyncio.get_running_loop()
+        return VoiceAudio(
+            resp, loop.time() + run.limit_ms / 1000 + VOICE_RUN_GRACE_SECONDS
+        )
 
     async def set_volume(self, zone: str, thousandths: int) -> State:
         """Set a room's volume."""
@@ -199,6 +298,16 @@ class ChorusClient:
             self, idle_probe=idle_probe, sleep=sleep, rand=rand
         )
 
+    def voice_events(
+        self,
+        *,
+        idle_probe: float = IDLE_PROBE_SECONDS,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        rand: Callable[[], float] = _random.random,
+    ) -> VoiceEventStream:
+        """Return a subscriber to this server's wake words."""
+        return VoiceEventStream(self, idle_probe=idle_probe, sleep=sleep, rand=rand)
+
     def visualizer(
         self,
         zone: str,
@@ -211,6 +320,60 @@ class ChorusClient:
         return VisualizerStream(
             self, zone, idle_probe=idle_probe, sleep=sleep, rand=rand
         )
+
+
+class VoiceAudio:
+    """One open voice run's audio: raw 16 kHz mono 16-bit PCM, as it arrives.
+
+    An async iterator of chunks, each a whole number of samples. It ends when
+    the server closes the connection (the run ended), when the connection is
+    lost or silent for too long (``error`` then says so), when the run's limit
+    has passed on this side's monotonic clock, or when it is closed. Nothing
+    is kept: a chunk handed on is gone from here.
+    """
+
+    def __init__(self, resp: aiohttp.ClientResponse, deadline: float) -> None:
+        """Take the open answer and the loop time past which nothing is read."""
+        self._resp = resp
+        self._deadline = deadline
+        self._carry = b""
+        self._closed = False
+        self.error: ChorusConnectionError | None = None
+
+    def __aiter__(self) -> VoiceAudio:
+        """Return the iterator: this object."""
+        return self
+
+    async def __anext__(self) -> bytes:
+        """Return the next whole samples; stop when the audio has ended."""
+        while not self._closed:
+            left = self._deadline - asyncio.get_running_loop().time()
+            if left <= 0:
+                break
+            try:
+                async with asyncio.timeout(left):
+                    chunk = await self._resp.content.readany()
+            except TimeoutError, aiohttp.ClientError, OSError:
+                if asyncio.get_running_loop().time() < self._deadline:
+                    self.error = ChorusConnectionError(
+                        "the voice run's audio was lost before the run ended"
+                    )
+                break
+            if not chunk:
+                break
+            data = self._carry + chunk
+            whole = len(data) - len(data) % VOICE_SAMPLE_BYTES
+            self._carry = data[whole:]
+            if whole:
+                return data[:whole]
+        self.close()
+        raise StopAsyncIteration
+
+    def close(self) -> None:
+        """Close the connection; the server then ends the run (``reader-gone``)."""
+        self._closed = True
+        self._carry = b""
+        self._resp.close()
 
 
 async def _read_bounded(resp: aiohttp.ClientResponse) -> bytes:
@@ -390,6 +553,45 @@ class ControllerEventStream(_Subscriber):
         await self._run(
             on_open,
             lambda event: on_event(ControllerEvent.parse(event)),
+            on_idle,
+            on_disconnect,
+        )
+
+
+class VoiceEventStream(_Subscriber):
+    """The subscriber to wake words: each one a voice room's microphone heard, once.
+
+    Like a press, a wake word is an event and not a state: the stream opens
+    with a comment line and no message, nothing is kept for a stream opened
+    later, and one heard while no stream is attached is never delivered.
+    """
+
+    _path = "/api/voice-events"
+    _what = "voice event stream"
+
+    async def run(
+        self,
+        on_wake: Callable[[VoiceWake], None],
+        on_disconnect: Callable[[ChorusError], None],
+        on_connect: Callable[[], None] = lambda: None,
+    ) -> None:
+        """Deliver every wake word, for ever; say when the stream is open and lost.
+
+        Returns only by cancellation.
+        """
+
+        def on_open() -> None:
+            self._backoff.reset()
+            on_connect()
+
+        async def on_idle() -> None:
+            # No wake word is no news; the state is asked for as a sign of
+            # life and its answer is not used.
+            await self._client.state()
+
+        await self._run(
+            on_open,
+            lambda event: on_wake(VoiceWake.parse(event)),
             on_idle,
             on_disconnect,
         )

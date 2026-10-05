@@ -40,3 +40,10 @@ VISUALIZER_MIN_WRITE_INTERVAL: Final = 0.2
 # to play, so no silent frame came to say so. ASSUMED: twenty frames missed at
 # the server's rate.
 VISUALIZER_IDLE_AFTER: Final = 2.0
+
+# Voice (docs/decisions/0176-the-home-assistant-voice-satellite.md).
+#
+# How long an announcement's end is waited for. The server cuts a clip at ten
+# minutes (docs/control-plane.md, the `announce` command), so one it has not
+# reported over a minute after that is not coming. ASSUMED margin.
+ANNOUNCEMENT_WAIT_SECONDS: Final = 660.0

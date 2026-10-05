@@ -13,9 +13,19 @@ what Home Assistant's entities then show, which is what the real server said.
 The announce part serves a generated WAV from a loopback port that stands in
 for Home Assistant's own address, starts the server with that port as its one
 `--announce-origin` (and `--players 1 --media-allow-loopback`, as
-`crates/server/tests/announce.rs` does), and watches the room's now-playing
-record say `Announcement` and then go. `CHORUS_LIVE_ANNOUNCE=0` leaves it out.
+`crates/server/tests/announce.rs` does), and watches the server list the
+announcement as playing in the room and then as finished. `CHORUS_LIVE_ANNOUNCE=0` leaves it out.
 `CHORUS_SERVER_ARGS` appends arguments to the server's command line.
+
+The voice part holds the integration's voice half to the real server: the room
+model's `voice_enabled` through the integration's own switch, each refusal of a
+run by its name, the run's audio route turned away, and the stream of wake
+words opened. No speaker with a microphone can be attached to the server from
+here (a speaker's session is the encrypted speaker protocol, which
+`crates/server/tests/voice_run.rs` scripts on the real binary), so no room of
+this server is a voice room: the part also holds that such a room gets no
+satellite, and what a run then does end to end is `tests/test_assist_satellite.py`
+against the fake.
 """
 
 from __future__ import annotations
@@ -42,7 +52,13 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 import pytest
 
+from custom_components.chorus._aiochorus import (
+    ChorusCommandError,
+    ChorusVoiceRouteError,
+    VoiceRun,
+)
 from custom_components.chorus.const import DOMAIN
+from custom_components.chorus.switch import ChorusVoiceSwitch
 
 from .conftest import wait_for
 
@@ -211,6 +227,65 @@ async def test_live_server(
         )
         assert hass.states.get(den).state == "on"
 
+        # Voice. The server was started with no speaker, so no room has a
+        # microphone: no satellite, no voice switch and no mic sensor.
+        coordinator = entry.runtime_data
+        client = coordinator.client
+        assert hass.states.async_entity_ids("assist_satellite") == []
+        assert hass.states.async_entity_ids("binary_sensor") == []
+        assert not any(
+            entity_id.endswith("_voice_enabled")
+            for entity_id in hass.states.async_entity_ids("switch")
+        )
+
+        def kitchen_zone():
+            return coordinator.data.zone("kitchen")
+
+        # Off by default, and a room with no microphone reads as muted.
+        assert (kitchen_zone().voice_enabled, kitchen_zone().mic_muted) == (False, True)
+        # A run in a room with voice switched off is refused by that name.
+        with pytest.raises(ChorusCommandError) as refused:
+            await client.voice_start("kitchen")
+        assert (refused.value.field, refused.value.name) == ("zone", "voice-disabled")
+
+        # The integration's voice switch, on the real server's room. It is the
+        # entity a voice room gets, driven here without the registry because
+        # this server has no voice room to give one to.
+        voice = ChorusVoiceSwitch(coordinator, kitchen_zone())
+        assert voice.is_on is False
+        await voice.async_turn_on()
+        await wait_for(lambda: kitchen_zone().voice_enabled)
+        assert voice.is_on is True
+        # Switching voice on opens no microphone, so a run is still refused,
+        # now for the microphone.
+        assert kitchen_zone().mic_muted is True
+        with pytest.raises(ChorusCommandError) as refused:
+            await client.voice_start("kitchen")
+        assert (refused.value.field, refused.value.name) == ("zone", "mic-muted")
+        # Ending a run in a room that has none is not an error.
+        assert (await client.voice_stop("kitchen")).zone("kitchen") is not None
+        # The audio route serves nobody: this server was started without
+        # `--voice-integration`, and says so before it looks at the run.
+        with pytest.raises(ChorusVoiceRouteError) as turned_away:
+            await client.voice_audio(VoiceRun("kitchen", "0" * 32, 30000))
+        assert turned_away.value.status == 403
+        assert turned_away.value.reason == "not-the-voice-integration"
+        # The stream of wake words opens, and with no microphone stays empty.
+        opened: list[bool] = []
+        stream = hass.async_create_background_task(
+            client.voice_events().run(
+                lambda wake: opened.append(False),
+                lambda err: None,
+                lambda: opened.append(True),
+            ),
+            "live voice events",
+        )
+        await wait_for(lambda: opened == [True])
+        stream.cancel()
+        await voice.async_turn_off()
+        await wait_for(lambda: not kitchen_zone().voice_enabled)
+        assert voice.is_on is False
+
         if LIVE_ANNOUNCE:
             # The clip is served from "Home Assistant's own address", which is
             # the server's one announce origin: it plays, the room says so, and
@@ -223,16 +298,26 @@ async def test_live_server(
                 announce=True,
                 extra={"volume": 0.2},
             )  # fmt: skip
-            await wait_for(
-                lambda: (
-                    hass.states.get(kitchen).attributes.get("media_title")
-                    == "Announcement"
-                ),
-                timeout=20,
+            # The server numbers the announcement and lists it: playing in
+            # the kitchen alone, then finished. No group's source and no
+            # now-playing record changes for it (the clip is mixed over the
+            # room's music), so the list is where its end is read.
+            await wait_for(lambda: len(coordinator.data.announcements) == 1, timeout=20)
+            (listed,) = coordinator.data.announcements
+            assert (listed.id, listed.target, listed.rooms) == (
+                1,
+                "kitchen",
+                ("kitchen",),
             )
             await wait_for(
-                lambda: hass.states.get(kitchen).attributes.get("media_title") is None,
+                lambda: coordinator.data.announcement_numbered(1).state == "finished",
                 timeout=30,
+            )
+            assert hass.states.get(kitchen).attributes.get("media_title") is None
+            # The room gets its own volume back once the music is restored.
+            await wait_for(
+                lambda: hass.states.get(kitchen).attributes["volume_level"] == 0.4,
+                timeout=10,
             )
             assert hass.states.get(kitchen).attributes["volume_level"] == 0.4
 
