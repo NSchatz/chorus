@@ -1434,6 +1434,12 @@ fn main() -> ExitCode {
              (tests and development only)",
         );
     }
+    // Now-playing artwork (`GET /api/artwork`, `chorus_server::artwork`) is
+    // fetched under the same policy, by a control worker: set before the
+    // workers are made, which is when its ceiling is taken from their number.
+    if let Some((_, state)) = &control {
+        state.artwork_through(chorus_server::artwork::Artwork::new(media_policy.clone()));
+    }
     let (players, player_drivers) =
         chorus_server::mediaplayer::Players::new(player_ports.len(), media_policy);
     let players = Arc::new(players);
