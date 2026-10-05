@@ -130,7 +130,7 @@ Two facts about the hosts bind how it runs:
 - `ASSUMED`, unchanged from record 0181: Safari adopts constructable stylesheets under the
   server's policy as Chromium does. This test runs Chromium alone.
 
-## Sources
+## What was read
 
 - npm registry JSON for `@playwright/test`, `playwright` and `playwright-core`
   (`https://registry.npmjs.org/<package>` for the latest version and its publication time,

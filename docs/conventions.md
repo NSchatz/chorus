@@ -242,7 +242,8 @@ root, and `license.workspace = true` in every crate, which the workspace sets to
   with the change). Exactly one test starts a browser: `web/smoke/app.spec.js`, gate step
   `web-smoke` (`make web-smoke`), whose Chromium build is the one the pinned
   `@playwright/test` names; `tools/web.sh` fails a run whose browser tests are in more than
-  one file.
+  one file. A screen proves itself against a real `chorus-server` without a browser, in
+  `web/live/` (`make web-live`, gate step `web-live`, after the build).
 
 ## 14. Pins
 
