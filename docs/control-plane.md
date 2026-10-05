@@ -150,7 +150,7 @@ stream, the default), `none`, `chime:<name>`, `line-in:<endpoint>/<input>` or
 The spelling is the catalog's; which chimes exist, which inputs are offered and
 which players the server runs is the server runtime's, and the state lists the
 offered inputs as `inputs`, each one's kind as `input_kinds` and the chimes as
-`chimes` (ADR 0000; "The state message", below).
+`chimes` (ADR 0194; "The state message", below).
 
 **A line-in plays in any number of groups** (goal 17). `take` with a
 `line-in:` source that another formed group already plays is not refused and
@@ -1189,7 +1189,7 @@ of each, `fixtures/control/v2/state-empty.json` the empty house):
 | `endpoints[]` | every endpoint any room has or that has reported a link, sorted: `id`, `link` |
 | `alarms[]` | sorted by id: `alarm_set`'s fields from `alarm` on, then `ringing` |
 | `sleep[]` | the sleep timers asked for, sorted by target: `target`, `minutes` (what was asked for; it does not count down) |
-| `sleep[].remaining_s` | (ADR 0000) **written only by a server whose schedule runtime counts the timers down** (`chorus-server` with a control channel always does), after `minutes`: the whole seconds left, rounded up, as the runtime last counted them, which is at least once a second. It is all of `minutes` in the state that answers the `sleep` command, goes down from there and never up, and the entry leaves the state when the timer ends or is cancelled. A state read at any instant (`GET /api/state`, a new subscription) says it to the second; a state is SENT for the countdown alone only when the whole minutes left (rounded up) change, so at most once a minute for each timer, and the serial moves with it. A screen that shows seconds counts down on its own between two states and takes every state's value as the truth |
+| `sleep[].remaining_s` | (ADR 0194) **written only by a server whose schedule runtime counts the timers down** (`chorus-server` with a control channel always does), after `minutes`: the whole seconds left, rounded up, as the runtime last counted them, which is at least once a second. It is all of `minutes` in the state that answers the `sleep` command, goes down from there and never up, and the entry leaves the state when the timer ends or is cancelled. A state read at any instant (`GET /api/state`, a new subscription) says it to the second; a state is SENT for the countdown alone only when the whole minutes left (rounded up) change, so at most once a minute for each timer, and the serial moves with it. A screen that shows seconds counts down on its own between two states and takes every state's value as the truth |
 | `autoplay[]` | sorted by input: `autoplay`'s fields |
 | `inputs[]` | the line-ins offered now, as `<endpoint>/<input>`, sorted |
 | `stored_sources[]` | (goal 17) **written only when there is at least one**, after `inputs`: every stored source, sorted by id: `id`, `kind`, `value`, `name` |
@@ -1199,8 +1199,8 @@ of each, `fixtures/control/v2/state-empty.json` the empty house):
 | `speakers[].firmware` | (goal 14) **written only once the speaker has reported** (its session declared `ota` and sent a `firmware_status`), after `roles`: `version`, `board`, `slot` (0, 1 or `null`) it runs, `state`, `reason` (`none` or the reason by name), `update_available` (a verified staged image for its board with another version; derived, never stored), and the install the state is about: `image` (the staged name, `null` when none or when this server did not start it), `image_version`, `received` and `size` (bytes; the progress). Never persisted |
 | `firmware` | (goal 14) **written only by a server with `--firmware-dir`**, last: `{"images":[...]}`, every staged image sorted by name: `name`, `version`, `board`, `size`, `sha256`, `verdict` (`verified` or `refused`), and `reason` for a refused one. Never persisted (the directory is) |
 | `wake_words` | (voice) **written only by a server that runs a wake-word model**, after everything else: `[{"id","phrase"}]`, every model in the order the build lists them: `id` (the model's name, lower-case letters, digits and underscores) and `phrase` (what it listens for, as a `voice_wake` names it). A fact about the build: it does not change while the server runs and is never persisted (`fixtures/control/v2/state-voice.json`). No run and no wake word is ever in a state |
-| `input_kinds[]` | (ADR 0000) **written only when the server said the kind of at least one offered input** (`chorus-server` says every one), after `soloist`, `wake_words` and `announcements`: one entry for each entry of `inputs`, in its order: `input` (`<endpoint>/<input>`), `kind` (`line_in`, `optical` or `hdmi_arc`: the sync protocol's kinds of source input, `docs/protocol.md`) and `tv` (`true` for a TV's input, which is `optical` and `hdmi_arc`, and `false` for a line-in: `docs/inputs.md`). An input that is withdrawn takes its entry with it. Never persisted |
-| `chimes[]` | (ADR 0000) **written only by a server that runs the schedule runtime**, last: the names of the built-in chimes, in the schedule library's order (`docs/chimes.md`), each one what an alarm's or a group's `chime:<name>` may name. A fact about the build, read from the library's own list: never persisted and never changed by a command |
+| `input_kinds[]` | (ADR 0194) **written only when the server said the kind of at least one offered input** (`chorus-server` says every one), after `soloist`, `wake_words` and `announcements`: one entry for each entry of `inputs`, in its order: `input` (`<endpoint>/<input>`), `kind` (`line_in`, `optical` or `hdmi_arc`: the sync protocol's kinds of source input, `docs/protocol.md`) and `tv` (`true` for a TV's input, which is `optical` and `hdmi_arc`, and `false` for a line-in: `docs/inputs.md`). An input that is withdrawn takes its entry with it. Never persisted |
+| `chimes[]` | (ADR 0194) **written only by a server that runs the schedule runtime**, last: the names of the built-in chimes, in the schedule library's order (`docs/chimes.md`), each one what an alarm's or a group's `chime:<name>` may name. A fact about the build, read from the library's own list: never persisted and never changed by a command |
 
 `speakers` and `key_changes` come after every member the v2 state already had
 and are absent, not empty, on a server that has adopted nothing, so
@@ -1215,7 +1215,7 @@ record, one plays a player nothing was said about, and one plays the stream.
 And for goal 17's two members, which come after `inputs` and before
 `speakers`: `fixtures/control/v2/state-inputs.json` pins a house with two
 stored sources, an alarm that plays one, and a labelled streamer two groups
-play at once, each showing its label. And for ADR 0000's three, which a model
+play at once, each showing its label. And for ADR 0194's three, which a model
 that is told none of them does not write:
 `fixtures/control/v2/state-facts.json` pins a server that rings three chimes,
 counts two sleep timers (one counted down, one still at all of it) and offers
@@ -1742,7 +1742,7 @@ rules the catalog configures (ADR 0079 wires it):
   source to `none` and put the volumes back, silently, for next time. A person
   turning a fading room's volume cancels the timer. Every tick writes what is
   left of each into the room model (`Zones::sleep_remaining`), which is the
-  state's `remaining_s` (ADR 0000): at `--schedule-time-scale n` it goes down
+  state's `remaining_s` (ADR 0194): at `--schedule-time-scale n` it goes down
   n times faster, as the timer itself does.
 - **Quiet hours** follow the civil clock: a window starting pulls a room's
   volume down to its cap (and holds an alarm's rise under it); a window ending

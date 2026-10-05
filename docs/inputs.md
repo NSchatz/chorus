@@ -137,7 +137,7 @@ An input is one of three kinds, the sync protocol's kinds of source input: `line
 `optical` (S/PDIF) and `hdmi_arc`. The last two are a TV's inputs: the TV going to standby is a
 signal of its own and a TV input takes the low-latency path where its rule asks for it
 (`docs/control-plane.md`). The state message says the kind of every offered input in
-`input_kinds` (`input`, `kind`, `tv`; ADR 0000), so a screen tells a TV input from a line-in
+`input_kinds` (`input`, `kind`, `tv`; ADR 0194), so a screen tells a TV input from a line-in
 without guessing from its name. A label's `role` is something else: what a person says is wired
 to the input, kept whether or not the input is offered.
 

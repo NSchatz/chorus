@@ -1,4 +1,4 @@
-//! ADR 0000's three facts in `GET /api/state` of the real binary: the chimes
+//! ADR 0194's three facts in `GET /api/state` of the real binary: the chimes
 //! an alarm may name (`chimes`), a sleep timer's time left (`remaining_s`)
 //! going down as the schedule runtime counts it and the entry leaving when it
 //! ends, and the kind of each offered input (`input_kinds`), with a TV's

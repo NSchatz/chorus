@@ -9,7 +9,7 @@ The rendered audio is chorus's own work under the repository's licence, **MIT OR
 A group plays one as the source `chime:<name>`. The decision record
 is `docs/decisions/0072-the-schedule-library.md`. The names have one home, `CHIMES` in that file:
 the server reads them there and lists them in the state message as `chimes`
-(`docs/control-plane.md`, "The state message"; ADR 0000), so a screen that offers an alarm's
+(`docs/control-plane.md`, "The state message"; ADR 0194), so a screen that offers an alarm's
 chime takes the list from the state and keeps none of its own.
 
 | Name | Length | What it is | Built from |

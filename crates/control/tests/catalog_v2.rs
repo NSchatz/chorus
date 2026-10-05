@@ -237,7 +237,7 @@ fn server_from(fields: &Fields) -> Zones {
                 .collect(),
         );
     }
-    // (ADR 0000) The built-in chimes the server can ring (`chimes =
+    // (ADR 0194) The built-in chimes the server can ring (`chimes =
     // <name>,<name>`), and whether a schedule runtime counts its sleep timers
     // down (`sleep_counted = 1`).
     if fields.has("chimes") {
@@ -394,7 +394,7 @@ fn encode_from(fields: &Fields) -> String {
             if fields.has("offer_input") {
                 zones.offer_input(InputId::parse(&fields.get("offer_input")).unwrap());
             }
-            // (ADR 0000) The inputs the server offered with their kinds
+            // (ADR 0194) The inputs the server offered with their kinds
             // (`input.N = <input> <kind>`), and what the runtime last counted
             // of each sleep timer (`sleep_remaining.N = <target> <seconds>`).
             let mut n = 0;

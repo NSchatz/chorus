@@ -345,14 +345,14 @@ pub struct Zones {
     /// and the last few that are over, each with its outcome, written into
     /// the state as `announcements` when there is any. Never persisted.
     announcements: Vec<Announcement>,
-    /// (ADR 0000) The built-in chimes the server can ring, written into the
+    /// (ADR 0194) The built-in chimes the server can ring, written into the
     /// state as `chimes` when it said any. Never persisted: a fact about the
     /// build.
     chimes: Vec<String>,
-    /// (ADR 0000) Whether a schedule runtime counts the sleep timers down
+    /// (ADR 0194) Whether a schedule runtime counts the sleep timers down
     /// here, which is what puts `remaining_s` on each. Never persisted.
     sleep_counted: bool,
-    /// (ADR 0000) The kind of each offered input whose kind the server
+    /// (ADR 0194) The kind of each offered input whose kind the server
     /// said, sorted by input. Never persisted.
     input_kinds: Vec<(InputId, InputKind)>,
 }
@@ -954,7 +954,7 @@ impl Zones {
                         SleepTimer {
                             target: target.clone(),
                             minutes: *minutes,
-                            // (ADR 0000) All of it is left at the instant
+                            // (ADR 0194) All of it is left at the instant
                             // it is asked for; the runtime counts from here.
                             remaining_s: self.sleep_counted.then_some(*minutes * 60),
                         },
@@ -2058,19 +2058,19 @@ impl Zones {
         changed
     }
 
-    /// (ADR 0000) The built-in chimes the server can ring, for the state's
+    /// (ADR 0194) The built-in chimes the server can ring, for the state's
     /// `chimes`: what an alarm's `chime:<name>` may name. Set once, at start,
     /// before any state is served, so the serial does not move.
     pub fn set_chimes(&mut self, chimes: Vec<String>) {
         self.chimes = chimes;
     }
 
-    /// (ADR 0000) The built-in chimes the server said it can ring.
+    /// (ADR 0194) The built-in chimes the server said it can ring.
     pub fn chimes(&self) -> &[String] {
         &self.chimes
     }
 
-    /// (ADR 0000) Say a schedule runtime counts the sleep timers down here:
+    /// (ADR 0194) Say a schedule runtime counts the sleep timers down here:
     /// each one then carries `remaining_s`, all of it at the instant it is
     /// asked for and the runtime's count after ([`Zones::sleep_remaining`]).
     /// Set once, at start, before any state is served, so the serial does
@@ -2079,7 +2079,7 @@ impl Zones {
         self.sleep_counted = counted;
     }
 
-    /// (ADR 0000) The runtime's count of a sleep timer: `seconds` whole
+    /// (ADR 0194) The runtime's count of a sleep timer: `seconds` whole
     /// seconds are left, rounded up. The count is kept every time, so a
     /// state read at any instant says it to the second; the serial moves,
     /// and so a state is sent, only when the whole minutes left (rounded up)
@@ -2102,7 +2102,7 @@ impl Zones {
         moved
     }
 
-    /// (ADR 0000) Say what kind an input is, for the state's `input_kinds`.
+    /// (ADR 0194) Say what kind an input is, for the state's `input_kinds`.
     /// The server says it before it offers the input. Returns whether the
     /// state changed: the kind is new or different and the input is offered
     /// now.
@@ -2120,7 +2120,7 @@ impl Zones {
         shown
     }
 
-    /// (ADR 0000) The kind the server said an input is.
+    /// (ADR 0194) The kind the server said an input is.
     pub fn input_kind(&self, input: &InputId) -> Option<InputKind> {
         self.input_kinds
             .iter()
@@ -2144,7 +2144,7 @@ impl Zones {
     pub fn withdraw_input(&mut self, input: &InputId) -> bool {
         let before = self.inputs.len();
         self.inputs.retain(|i| i != input);
-        // (ADR 0000) Its kind goes with it: the server says it again before
+        // (ADR 0194) Its kind goes with it: the server says it again before
         // the next offer.
         self.input_kinds.retain(|(i, _)| i != input);
         let changed = self.inputs.len() != before;
@@ -2830,7 +2830,7 @@ impl Zones {
                     ("target".to_string(), Value::text(&s.target)),
                     ("minutes".to_string(), Value::int(i64::from(s.minutes))),
                 ];
-                // (ADR 0000) Written only where a runtime counts the timer
+                // (ADR 0194) Written only where a runtime counts the timer
                 // down, so a model nothing counts says the bytes it said
                 // before and the committed state vectors did not move.
                 if let Some(remaining) = s.remaining_s {
@@ -2943,7 +2943,7 @@ impl Zones {
                 Value::Arr(self.announcements.iter().map(Announcement::value).collect()),
             ));
         }
-        // (ADR 0000) The kind of each offered input the server said the kind
+        // (ADR 0194) The kind of each offered input the server said the kind
         // of, in the order of `inputs`, and the built-in chimes: each written
         // only when there is something to say, after everything else for the
         // same reason.

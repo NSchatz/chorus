@@ -1,4 +1,4 @@
-//! ADR 0000's three facts in the state message, each for a screen that would
+//! ADR 0194's three facts in the state message, each for a screen that would
 //! otherwise hard-code or guess it: the built-in chimes an alarm may name
 //! (`chimes`), how long a sleep timer has left (`remaining_s`), and the kind
 //! of each offered input (`input_kinds`). Every one is written only when

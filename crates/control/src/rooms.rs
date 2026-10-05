@@ -910,12 +910,12 @@ pub struct SleepTimer {
     pub target: String,
     /// Minutes asked for.
     pub minutes: u32,
-    /// (ADR 0000) Whole seconds left, rounded up, as the server's schedule
+    /// (ADR 0194) Whole seconds left, rounded up, as the server's schedule
     /// runtime last counted them; `None` in a model nothing counts down.
     pub remaining_s: Option<u32>,
 }
 
-/// (ADR 0000) What kind of input an offered input is, in the sync protocol's
+/// (ADR 0194) What kind of input an offered input is, in the sync protocol's
 /// own words for a source endpoint's inputs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputKind {

@@ -1,6 +1,6 @@
 # Canonical input for the catalog v2 state-facts vector.
 #
-# (ADR 0000) What a server with a schedule runtime adds to the state for a
+# (ADR 0194) What a server with a schedule runtime adds to the state for a
 # screen that would otherwise guess: the built-in chimes an alarm may name
 # (`chimes`), how long a sleep timer has left (`remaining_s` on its entry),
 # and the kind of each offered input (`input_kinds`, a TV input marked `tv`).

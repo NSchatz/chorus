@@ -1,4 +1,4 @@
-# 0000: the state message lists the built-in chimes, says how long each sleep timer has left and says each offered input's kind, each written only by a server that knows it
+# 0194: the state message lists the built-in chimes, says how long each sleep timer has left and says each offered input's kind, each written only by a server that knows it
 
 - Status: accepted, 2026-10-05.
 - Decided by: the owner's agent harness, for the wire shape: three additive members, each

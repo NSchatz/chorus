@@ -916,7 +916,7 @@ impl Conductor {
                 let runtime = &mut schedule.runtime;
                 match event {
                     InputEvent::Signal(input, signal) => {
-                        // (ADR 0000) The input's kind, said before the
+                        // (ADR 0194) The input's kind, said before the
                         // runtime offers it: the state's `input_kinds`.
                         let kind = line_ins.kind_of(&input);
                         effects.extend(self.state.runtime(|zones| {

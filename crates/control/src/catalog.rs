@@ -1090,7 +1090,7 @@ pub fn input_label_value(l: &InputLabel) -> Value {
     ])
 }
 
-/// (ADR 0000) One offered input's kind, in the declared order, as the state
+/// (ADR 0194) One offered input's kind, in the declared order, as the state
 /// message carries it: `input`, `kind`, `tv`.
 pub fn input_kind_value(input: &InputId, kind: InputKind) -> Value {
     Value::Obj(vec![
