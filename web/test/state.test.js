@@ -12,6 +12,17 @@ import { fakeServer, fakeTimers, settle, stateOf, zone } from "./fake-server.js"
 
 // What a room's limits read as from a state that carries none of them.
 const NO_LIMITS = { limit: null, effectiveLimit: null, quietEnabled: null, windows: [] };
+// What a room's TV path and bass management read as from a state that carries
+// none of them: no theater section is offered, and nothing is made up.
+const NO_THEATER = {
+  offered: false,
+  avTrimMs: null,
+  tvUpmix: null,
+  tvInputs: [],
+  set: false,
+  surrounds: false,
+  bass: { crossoverHz: null, subLevel: null, subPolarity: null, active: false },
+};
 
 function storeOf(server, timers = fakeTimers()) {
   return createStore(createClient({ fetch: server.fetch, base: server.base, timers }));
@@ -44,6 +55,8 @@ test("a room is read as its name, volume in thousandths, mute and bonded set", (
       muted: true,
       sound: { bass: 3, treble: -2, loudness: true, night: false, speech: true },
       limits: NO_LIMITS,
+      // A pair is not a theater set; the upmix is the server's word.
+      theater: { ...NO_THEATER, tvUpmix: "ambient" },
       group: "living",
       bond: [
         { endpoint: "chorus-0123456789ab", name: "Left of the TV", role: "FL" },
@@ -60,6 +73,7 @@ test("a room is read as its name, volume in thousandths, mute and bonded set", (
       // A state that carries no sound for the room: nothing is made up.
       sound: { bass: null, treble: null, loudness: null, night: null, speech: null },
       limits: NO_LIMITS,
+      theater: NO_THEATER,
       group: "den",
       bond: [],
       source: null,
@@ -77,6 +91,7 @@ test("a member the app cannot read is null, not a made-up value", () => {
     muted: null,
     sound: { bass: null, treble: null, loudness: null, night: null, speech: null },
     limits: NO_LIMITS,
+    theater: NO_THEATER,
     group: "kitchen",
     bond: [],
     source: null,

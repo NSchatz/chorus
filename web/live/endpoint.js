@@ -54,7 +54,8 @@ const FIRMWARE_STATUS = 0x1a;
 
 const ROLE_PLAYER = 1 << 0;
 const ROLE_SOURCE = 1 << 4;
-const KIND_LINE_IN = 1;
+// The kinds of source input ("0x36 source offer"). The last two are a TV's.
+const KINDS = { line_in: 1, optical: 2, hdmi_arc: 3 };
 const TAG = 16;
 
 // The Noise protocol name is exactly 32 bytes, so it is the first hash as it
@@ -390,12 +391,15 @@ const stopOf = (socket) =>
 // Open a session as endpoint `endpoint` and offer one line-in with a signal
 // present. `name` is the offer's name: the server lists the input as
 // `<endpoint>/<name>` when the name is lower-case letters, digits and `-`,
-// else as `<endpoint>/line-1`, which is what the empty default gives.
+// else as `<endpoint>/line-1`, which is what the empty default gives. `kind`
+// is what the input is (`line_in`, or a TV's `optical` or `hdmi_arc`), which
+// the server's state says back as the input's kind.
 //
 // Resolves, once the offer has been sent, to { stop }. Until `stop()` the
 // session stays up and the input stays offered. `stop()` closes the socket
 // and resolves when it is closed, which is the input going.
-export async function offerLineIn({ host, port, endpoint, name = "" }) {
+export async function offerLineIn({ host, port, endpoint, name = "", kind = "line_in" }) {
+  if (!(kind in KINDS)) throw new Error(`"${kind}" is not a kind of source input`);
   // `hello` and `capabilities` first, in one record; the offer once the
   // server has said its own `hello`.
   const { socket, record, received } = await openSession({
@@ -405,7 +409,7 @@ export async function offerLineIn({ host, port, endpoint, name = "" }) {
     opening: [hello(ROLE_PLAYER | ROLE_SOURCE, "", "chorus-web-live-endpoint"), capabilities(CAN_PLAY)],
     what: "offer its line-in to",
   });
-  record(sourceOffer(1, KIND_LINE_IN, true, name));
+  record(sourceOffer(1, KINDS[kind], true, name));
 
   // The session, kept: every record is opened (the counter has to follow)
   // and dropped, a `source_control` among them. It ends with the socket.

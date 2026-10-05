@@ -47,7 +47,7 @@ further screen has an address of its own (below).
 | Region | What it shows | What it does |
 |---|---|---|
 | Groups | every saved group, then every live group, each with its rooms, what it plays and what is playing | group volume (the server scales every room and keeps their ratio, K77); "Remove" a room; "Group these rooms" for a saved group that is not formed; choose an input |
-| Rooms | every room with its bonded set, its volume and its mute; a room alone also says what it plays and what is playing | volume, mute; move the room by dragging its handle onto a room or a group, or with the "Plays with" list on its card; choose an input; open the room's sound screen ("Sound") and its limits screen ("Limits"). Under the rooms, "Autoplay" opens the house's autoplay rules and "Alarms" its alarms, stored sources and sleep timers |
+| Rooms | every room with its bonded set, its volume and its mute; a room alone also says what it plays and what is playing | volume, mute; move the room by dragging its handle onto a room or a group, or with the "Plays with" list on its card; choose an input; open the room's sound screen ("Sound"), its limits screen ("Limits") and, for a room with a TV input or a theater set, its theater screen ("Theater"). Under the rooms, "Autoplay" opens the house's autoplay rules and "Alarms" its alarms, stored sources and sleep timers |
 
 **Further screens and their addresses** (`docs/decisions/0197-further-screens-have-an-address-in-the-fragment.md`).
 A screen beyond the home has an address in the fragment, `#/` and a path, and is painted alone
@@ -58,6 +58,7 @@ in the main region, across both columns on a desktop, under a "Back" link:
 | `/app/` or `/app/#/` | the home: the groups and the rooms |
 | `/app/#/rooms/<room id>/sound` | the sound of that room |
 | `/app/#/rooms/<room id>/limits` | the volume limit and the quiet hours of that room |
+| `/app/#/rooms/<room id>/theater` | the theater settings of that room: A/V trim, TV autoplay, TV upmix, bass management |
 | `/app/#/autoplay` | the house's autoplay rules, one for each input |
 | `/app/#/alarms` | the house's alarms, its stored sources and its sleep timers |
 | `/app/#/speakers` | the adopted speakers: names, rooms, presence, and any refused changed key |
@@ -92,7 +93,8 @@ changed is never written back from a page that had not yet heard. Nothing change
 until the server's answer says so; a refused command is shown as "Refused (<field>): <the
 server's words>"; a setting the state does not carry is "Unavailable". A change made anywhere
 else appears on the screen with no reload, except under a slider a person has hold of. Bass
-management and the TV upmix are not on this screen; a room's limits have a screen of their own.
+management and the TV upmix are on the room's theater screen (below); a room's limits have a
+screen of their own.
 
 **A room's volume limit and quiet hours** (`web/src/limits.js`; the catalog's `limit`,
 `quiet_hours` and `quiet_hours_enabled`, `docs/control-plane.md`, "The commands catalog version
@@ -127,9 +129,45 @@ id under it.
 | Plays in | a list of the rooms and the saved groups, on the rule's target ("Nowhere yet" for an input with no rule; a target the server no longer has is still named) | `autoplay` for that input with the chosen target and `enabled` as the server holds it; for an input with no rule that makes the rule, switched off |
 
 Each change is one `autoplay` command for its input, and neither control changes what the other
-shows. A rule's TV options (`stop_on_standby`, `low_latency`) are not on this screen; a rule
-that has one switched off keeps it through a change made here. A refusal is shown on the input
+shows. A rule's TV options (`stop_on_standby`, `low_latency`) are not on this screen but on
+the theater screen of the TV input's room (below); a rule that has one switched off keeps it
+through a change made here. A refusal is shown on the input
 it was for.
+
+**A room's theater settings** (`web/src/theater.js`; the catalog's `av_trim`, `autoplay`,
+`sound` (`tv_upmix`) and `bass_management`, `docs/control-plane.md`, "The TV path" and "Per-room
+sound"). The screen is offered where it applies, as a "Theater" link on the room's card, and a
+room it does not apply to has no link:
+
+- a room with a **TV input**: an input the state says is a TV's (`input_kinds`, kind `optical`
+  or `hdmi_arc`) that an endpoint of the room offers, or that plays in the room by its autoplay
+  rule. Only an input offered now has a kind, so a room whose hub is not connected, and that has
+  no theater set, has no link until it is;
+- a room whose **bonded set is more than a pair**: it has a centre, a sub or surrounds.
+
+Opened by its address for any other room, it says the room has no TV input and no theater set,
+and has no control.
+
+| Part | Control | What it is | What it sends |
+|---|---|---|---|
+| A/V trim | A/V trim | a slider, whole milliseconds over the catalog's range, -100 to 200, with the value beside it ("+40 ms"). Later delays the room's TV sound, earlier brings it forward | `av_trim`, when the slider is let go |
+| | 1 ms earlier, 1 ms later | a button each, for the step a slider over three hundred values is too coarse for; disabled at the end of the range it would step past | `av_trim` with the server's value one lower or one higher |
+| TV autoplay | Autoplay, Plays in | the autoplay screen's own controls (above), for each TV input of the room and for no other input, with what the input is ("Optical", "HDMI ARC"). Here an input with no rule does not wait for a target: the switch makes the rule, playing in this room | `autoplay` for the TV input: its whole rule with the one change |
+| | Stop on standby, Low latency | a button each, pressed when on, with "On" or "Off" beside it. Both are on unless the rule says otherwise, as the catalog writes them. On an input with no rule, one of them makes the rule for this room, switched off | `autoplay` for the TV input: its target and its switch as the server holds them, and both options with the one changed (the catalog writes an option only when it is off) |
+| TV upmix | Off, Ambient | a button each, the server's one pressed: what the surround speakers of a theater set play from a TV in stereo. A set with no surround speakers is told so, and can still set it | `sound` with `tv_upmix` alone |
+| Bass management | Crossover | a slider, whole Hz from 40 to 200 ("80 Hz") | `bass_management` with `crossover_hz` alone |
+| | Sub level | a slider, -12 to 6 dB in half-dB steps, with the server's value beside it to two places ("-3.50 dB") | `bass_management` with `sub_level_db` alone, written with two places |
+| | Sub polarity | "Normal" and "Inverted", the server's one pressed | `bass_management` with `sub_polarity` alone |
+
+Bass management is the sub's. A room whose set has no sub (the server's own `active`, which is
+"the set has an `LFE` member") shows no control for it and says so: "This room's set has no sub".
+As on the sound screen, each control sends one command for its one change, nothing changes on
+the screen until the server's answer says so, a refused command is shown as "Refused (<field>):
+<the server's words>" (a refused `autoplay` on its input), a setting the state does not carry is
+"Unavailable", and a change made anywhere else appears with no reload, except under a slider a
+person has hold of. The screen shows the numbers a person sets and the server holds. It says
+nothing about how well picture and sound line up: that is set by eye and ear, and nothing here
+measures it.
 
 **Alarms, stored sources and sleep timers** (`web/src/alarms.js`; the catalog's `alarm_set`,
 `alarm_delete`, `alarm_stop`, `sleep`, `source_store` and `source_forget`,
@@ -444,7 +482,7 @@ all three in `make gate`; here each is a narrow run of its own.
 
 | Command | What it is | It ends with |
 |---|---|---|
-| `make web-test` | the unit tests: `node --test` over happy-dom, no browser, no server. The elements by their labels, the store, the worker's rules against a scripted network and cache, the signed-out state, the layouts and the kiosk's switch, the navigation over happy-dom's own address and history, and the sound, limits, autoplay and alarms screens over a scripted server | node's own summary, `fail 0` |
+| `make web-test` | the unit tests: `node --test` over happy-dom, no browser, no server. The elements by their labels, the store, the worker's rules against a scripted network and cache, the signed-out state, the layouts and the kiosk's switch, the navigation over happy-dom's own address and history, and the sound, limits, autoplay, alarms and theater screens over a scripted server | node's own summary, `fail 0` |
 | `CHORUS_SERVER_BIN=<a built chorus-server> make web-live` | the live tests (`web/live/*.live.js`): the same elements and store in node, no browser, against a real `chorus-server`. Each screen's controls are driven by their labels and what the page shows is compared with the server's `/api/state`, in both directions. `alarms.live.js` also needs the two test programs built beside the server (below) | `web-live: PASS` |
 | `CHORUS_SERVER_BIN=<a built chorus-server> make web-smoke` | the one browser test (`web/smoke/app.spec.js`, `docs/decisions/0183-the-one-browser-smoke-test.md`): Playwright's headless Chromium loads `/app/` from a real `chorus-server` through a fake login | `web-smoke: PASS` |
 
@@ -464,6 +502,13 @@ all three in `make gate`; here each is a narrow run of its own.
   for in `examples/` beside `CHORUS_SERVER_BIN`: `cargo build -p chorus-server --examples`
   builds them, and so does the gate's build of every target. No real Soloist, Spotify account
   or network is used.
+- `web/live/theater.live.js` has a scripted endpoint session offer an optical input (a TV's,
+  by the kind the real server then says) and puts that endpoint in a room. The "Theater" link
+  appears on that room's card and on no other; the A/V trim (both ends of its range), the TV
+  input's autoplay rule with both options off and on again, and the TV upmix are set through the
+  screen and read back equal from `/api/state`. The room has no sub, so the real server's
+  `active` is `false` and the screen has no bass management control; the bass controls' commands
+  are held by the unit test (`web/test/theater.test.js`).
 - `web/live/speakers.live.js` opens the speakers screen and, from it, the walk-through, then has
   a scripted endpoint session (`web/live/endpoint.js`) connect under an id the server has never
   seen. The open walk-through completes on that arrival; the speaker is then new on the speakers

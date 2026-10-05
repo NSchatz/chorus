@@ -98,6 +98,47 @@ export function soundCommand(zone, changes = {}) {
     if (changes[field] === undefined) continue;
     body += `,"${field}":${changes[field] ? "true" : "false"}`;
   }
+  // `tv_upmix` ("The TV path"): what a theater set's surround members play
+  // from a stream with no surround channel, one of TV_UPMIXES.
+  if (changes.tv_upmix !== undefined) body += `,"tv_upmix":${JSON.stringify(String(changes.tv_upmix))}`;
+  return `${body}}`;
+}
+
+/** The catalog's words for a room's TV upmix: silence, or the passive matrix surround. */
+export const TV_UPMIXES = Object.freeze(["off", "ambient"]);
+
+// `av_trim` (docs/control-plane.md, "The TV path"): a room's signed A/V trim,
+// a whole number of milliseconds inside the catalog's range. Positive delays
+// the room's TV audio; negative brings it earlier.
+export const AV_TRIM_MS = Object.freeze({ min: -100, max: 200 });
+
+const within = (value, { min, max }) => Math.min(max, Math.max(min, Math.round(Number(value) || 0)));
+
+export function avTrimCommand(zone, ms) {
+  return `{"v":2,"t":"av_trim","zone":${JSON.stringify(zone)},"av_trim_ms":${within(ms, AV_TRIM_MS)}}`;
+}
+
+// `bass_management` ("Per-room sound"): the crossover in Hz, the sub's level
+// and its polarity. A partial update like `sound`: only the members of
+// `changes` this names are written, in the catalog's order. The level is in
+// hundredths of a dB here and is written with exactly two places, as the
+// catalog wants it (JSON.stringify would write -3.5 for -3.50).
+export const CROSSOVER_HZ = Object.freeze({ min: 40, max: 200 });
+export const SUB_LEVEL = Object.freeze({ min: -1200, max: 600 });
+export const SUB_POLARITIES = Object.freeze(["normal", "inverted"]);
+
+/** Hundredths of a dB as the catalog writes them: "-3.50", "0.00", "6.00". */
+export function decibelLiteral(hundredths) {
+  const held = within(hundredths, SUB_LEVEL);
+  const size = Math.abs(held);
+  return `${held < 0 ? "-" : ""}${Math.floor(size / 100)}.${String(size % 100).padStart(2, "0")}`;
+}
+
+export function bassManagementCommand(zone, changes = {}) {
+  let body = `{"v":2,"t":"bass_management","zone":${JSON.stringify(zone)}`;
+  if (changes.crossover_hz !== undefined) body += `,"crossover_hz":${within(changes.crossover_hz, CROSSOVER_HZ)}`;
+  if (changes.sub_level_db !== undefined) body += `,"sub_level_db":${decibelLiteral(changes.sub_level_db)}`;
+  if (changes.sub_polarity !== undefined) body += `,"sub_polarity":${JSON.stringify(String(changes.sub_polarity))}`;
   return `${body}}`;
 }
 

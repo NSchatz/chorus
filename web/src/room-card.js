@@ -30,7 +30,9 @@
 // The "Sound" and "Limits" links open the room's sound screen (sound.js) and
 // its volume limit and quiet hours (limits.js): each a link to that screen's
 // address, which the shell opens as an entry of the browser's history
-// (routes.js).
+// (routes.js). A room with a TV input or a theater set has a "Theater" link
+// too, to its A/V trim, TV autoplay, TV upmix and bass management
+// (theater.js); a room with neither has none.
 
 import { LitElement, css, html, nothing } from "lit";
 
@@ -40,6 +42,7 @@ import "./playing.js";
 import { addressOf } from "./routes.js";
 import { LIMITS_SCREEN } from "./limits.js";
 import { SOUND_SCREEN } from "./sound.js";
+import { THEATER_SCREEN } from "./theater.js";
 
 // The channel roles of docs/protocol.md's channel map, as words.
 export const ROLE_NAMES = {
@@ -292,6 +295,9 @@ export class ChorusRoomCard extends LitElement {
         </button>
         <a href=${addressOf(SOUND_SCREEN, { room: room.id })} data-route aria-label="Sound for ${room.name}">Sound</a>
         <a href=${addressOf(LIMITS_SCREEN, { room: room.id })} data-route aria-label="Limits for ${room.name}">Limits</a>
+        ${room.theater?.offered
+          ? html`<a href=${addressOf(THEATER_SCREEN, { room: room.id })} data-route aria-label="Theater for ${room.name}">Theater</a>`
+          : nothing}
       </div>
       ${room.bond.length === 0
         ? nothing
