@@ -1,17 +1,22 @@
 # The app
 
 The chorus app is the installable web app a household uses on a phone, a desktop and a wall
-tablet: rooms, groups, volume, inputs and what is playing. This page says what was built and how
-to check it. Its source is `web/` (`web/README.md` is the map of the files and the rules a change
-there follows); the decisions behind it are records 0181 to 0191 in `docs/decisions/`, named
-where each applies below. The stack is the owner's choice of proposal P5, Option C
+tablet: rooms, groups, volume, inputs and what is playing (part 1), and each room's sound,
+limits, theater settings and room correction, the house's autoplay rules, its alarms, stored
+sources and sleep timers, and its speakers with their setup and their firmware (part 2, built
+2026-10-05). This page says what was built and how to check it. Its source is `web/`
+(`web/README.md` is the map of the files and the rules a change there follows); the decisions
+behind it are records 0181 to 0191, 0197 and 0207 in `docs/decisions/`, named where each applies
+below. The stack is the owner's choice of proposal P5, Option C
 (`docs/proposals/P5-app-stack.md`, K43): Lit 3 elements bundled by esbuild, tested with node's own
 runner over happy-dom, with one browser test.
 
 Nothing on this page is a measurement, and nothing here has been seen on a phone: what an agent
 can show is a headless Chromium on a development host. What only the owner's phones can show is
-the "Phone check" section at the end, which is the owner's (K4) and has an item in the owner's
-queue.
+the "Phone check" section at the end, and what only the owner's phones, a real speaker and the
+owner's bench can show of part 2 is "Phone check, part 2" after it. Both are the owner's (K4), and
+each has an item in the owner's queue. "Part 2 as built, and what was never run on real hardware"
+is the list of what stays unproven until then.
 
 ## Where it is served
 
@@ -444,7 +449,38 @@ follow-ups), so today the walk-through needs someone who can read that console.
   `img-src 'self'` stands. A record with no artwork, or one whose image does not load, shows a
   placeholder.
 
-Not built yet, and later tasks: bass management and the TV upmix; room correction with the phone's microphone.
+### Part 2 as built, and what was never run on real hardware
+
+Part 2 (built 2026-10-05) is every further screen in the table of addresses above: a room's
+sound, its volume limit and quiet hours, its theater settings (A/V trim, TV autoplay and its
+options, the TV upmix, bass management) and its correction with the microphone of the device it
+is open on; the house's autoplay rules; its alarms with all four K80 sources, its stored sources
+and its sleep timers; and its speakers (new, name, room, forget, a refused changed key), the
+firmware on each with "update available" and the explicit install, and the walk-through for a
+compact Wi-Fi speaker. No screen of part 2 is left to build. There is no snooze, no upload of a
+firmware image and no way to accept a changed key, because the catalog has no command for any of
+them.
+
+How each is held: by its unit test over a scripted server (`web/test/`), by its live test
+against a real `chorus-server` in node (`web/live/`), and, since a browser paints it nowhere
+else, by the second test of the one browser smoke test ("Running the tests", below).
+
+**What was never run on real hardware.** All of the above ran on a development host, against a
+server on loopback, with scripted sessions in the speakers' place. None of the following has
+happened, and each is a step of "Phone check, part 2":
+
+| Never run | What stood in for it | Where it is settled |
+|---|---|---|
+| Any part-2 screen on a phone, under a finger | happy-dom in node, and a headless Chromium at a phone's width for the home alone | part 2, step 1 |
+| A room measured with a real microphone in a real room | the fitter's synthetic recordings (`fixtures/roomfit/`) through the screen's capture seam, and in the browser Chromium's fake audio device, which is a beep and not a room | part 2, steps 2 to 4 |
+| What a phone's browser does with the three microphone constraints, and whether it keeps recording to the end of the sweep | `docs/room-correction.md`, "Per-phone limits", as read and not as seen | part 2, step 2 |
+| The correction heard: whether a room sounds better with it on | nothing: no test listens, and the fitter's "predicted after" is a prediction from one recording | part 2, step 4 |
+| The Wi-Fi walk-through against a real speaker: its access point, its join page, the phone leaving and rejoining the house's network | a scripted endpoint session adopted by a real server (`web/live/speakers.live.js`); the firmware's own binding has not run on hardware either (decision 0103) | part 2, step 5, with `docs/bench-packet.md` S9 |
+| An install pressed in the app that writes a real speaker's flash, its trial boot, its confirmation and a rollback | a scripted session on loopback that keeps the image in memory (`web/live/firmware.live.js`); the server refuses any other speaker as `owner-not-at-bench` | part 2, step 6, with `docs/bench-packet.md` S10 |
+| A changed key from a real speaker (a board reflashed with its key erased) | the scripted server of `web/test/speakers.test.js` | part 2, step 6, when a board's flash is erased at the bench |
+| An alarm ringing in a room at its hour from each of the four sources, and a sleep timer ending the music | a server whose schedule runs ten times faster, with a scripted line-in, a stream on loopback and a fake Spotify receiver (`web/live/alarms.live.js`) | part 2, step 7 |
+| The A/V trim against a real TV's picture, TV autoplay from a real optical or ARC input, the upmix on real surrounds, bass management on a real sub | a scripted endpoint offering an optical input; the room of the live test has no sub | part 2, step 8, with `docs/bench-packet.md` S8 |
+| A quiet-hours window taking effect at its hour on the household's server | a server whose civil clock is held (`web/live/limits.live.js`) | part 2, step 7 |
 
 ## Installing, and the service worker's cache rules
 
@@ -516,7 +552,7 @@ The one breakpoint is `DESKTOP_MIN_EM` in `web/src/layout.js` and is written now
 `chorus-app` reflects the layout as an attribute and the styles select on it, so no element holds
 a media query. A touch target is at least 44 by 44 CSS pixels outside the kiosk.
 
-A further screen (a room's sound, its limits, the autoplay rules, the alarms, the speakers and the walk-through) is the same in all three: one column as wide as the page, with
+A further screen (a room's sound, its limits, its theater settings, its correction, the autoplay rules, the alarms, the speakers and the walk-through) is the same in all three: one column as wide as the page, with
 its "Back" link inside the screen's own region, because a wide kiosk paints no header. On a
 phone the navigation bar stays at the bottom edge and leads back to the groups or the rooms.
 
@@ -540,9 +576,9 @@ all three in `make gate`; here each is a narrow run of its own.
 
 | Command | What it is | It ends with |
 |---|---|---|
-| `make web-test` | the unit tests: `node --test` over happy-dom, no browser, no server. The elements by their labels, the store, the worker's rules against a scripted network and cache, the signed-out state, the layouts and the kiosk's switch, the navigation over happy-dom's own address and history, and the sound, limits, autoplay, alarms and theater screens over a scripted server | node's own summary, `fail 0` |
+| `make web-test` | the unit tests: `node --test` over happy-dom, no browser, no server. The elements by their labels, the store, the worker's rules against a scripted network and cache, the signed-out state, the layouts and the kiosk's switch, the navigation over happy-dom's own address and history, and the sound, limits, autoplay, alarms, theater, room-correction, speakers, firmware and walk-through screens over a scripted server | node's own summary, `fail 0` |
 | `CHORUS_SERVER_BIN=<a built chorus-server> make web-live` | the live tests (`web/live/*.live.js`): the same elements and store in node, no browser, against a real `chorus-server`. Each screen's controls are driven by their labels and what the page shows is compared with the server's `/api/state`, in both directions. `alarms.live.js` also needs the two test programs built beside the server (below) | `web-live: PASS` |
-| `CHORUS_SERVER_BIN=<a built chorus-server> make web-smoke` | the one browser test (`web/smoke/app.spec.js`, `docs/decisions/0183-the-one-browser-smoke-test.md`): Playwright's headless Chromium loads `/app/` from a real `chorus-server` through a fake login | `web-smoke: PASS` |
+| `CHORUS_SERVER_BIN=<a built chorus-server> make web-smoke` | the one browser test (`web/smoke/app.spec.js`, `docs/decisions/0183-the-one-browser-smoke-test.md`): Playwright's headless Chromium loads `/app/` from a real `chorus-server` through a fake login, and walks the further screens | `web-smoke: PASS` |
 
 - `web-live` and `web-smoke` without `CHORUS_SERVER_BIN` end `web-live: SKIPPED` and
   `web-smoke: SKIPPED`; under `CI=true` and in the gate a skip is a failure.
@@ -598,6 +634,33 @@ hold the build's files and nothing under `/api/`; with the fake login expired th
 "Signed out", its link leads to the login page and no cache holds that page; the phone layout
 at 390 pixels, the desktop layout at 1280, the breakpoint (767 is one column, 768 is two) and
 kiosk mode. A later change that needs a browser adds to that one file.
+
+Its second test is part 2 in a browser, on a server with a scripted session
+(`web/live/endpoint.js`) that is a speaker of one room and offers a TV's optical input:
+
+- every further screen is opened by the app's own links (the room's card for its sound, limits,
+  theater and correction; "Autoplay", "Alarms" and "Speakers" under the rooms; the walk-through
+  from the speakers screen), has the address of the table above, and "Back" returns;
+- the "Theater" link is on that room's card only once the TV input is there, with no reload;
+- on the sound screen "Loudness" is pressed and "Bass" is set to +3 dB, and each is read back
+  from the server's own `/api/state` and from the screen;
+- on the correction screen "Use the microphone" asks the browser's real `getUserMedia` for one
+  channel with echo cancellation, noise suppression and automatic gain control off, and Chromium
+  (started with `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`) grants its
+  fake audio device: "What the browser granted" shows the three "off, as asked" and the track's
+  own channels and sample rate (on 2026-10-05 two channels at 44100 Hz, though one was asked
+  for), recorded at 48000 Hz. "Play the sweep and record" then has the real server play its
+  sweep to the scripted speaker while the fake device is recorded, and the recording is sent to
+  `POST /api/room-fit`. The fake device makes a beep at full scale, not a sweep in a room, so
+  the fitter's answer is whatever it makes of that (on 2026-10-05 the refusal `clipped`, a
+  `422`); the test holds that the answer is the server's, that nothing was applied and that the
+  microphone's track ended;
+- after all of it no answer to any request under `/api/` (the state, the events, the commands,
+  the upload) came from the service worker, and the caches hold the build's files and nothing
+  else.
+
+That test shows the screens open and work in one browser engine on a development host. It is
+not a phone, the fake device is not a microphone, and nothing in it is evidence about a room.
 
 What no test here holds is everything below.
 
@@ -682,11 +745,159 @@ owner's own words; that session records it and closes the item. What the answer 
   a certificate the phones trust (step 1).
 - A step that did not go as written becomes a task of its own, with the phone's line and the
   report as its evidence.
-- Not part of steps 1 to 8: the microphone. The room-correction screen exists now ("A room's
-  correction", above) and has never been in a hand. Its check is a step of its own for the
-  owner's queue, on each phone, in the browser and in the installed app: open a room's
-  "Correction", press "Use the microphone" and report the permission prompt and every line of
-  "What the browser granted"; press "Play the sweep and record" at the room's usual volume and
-  report what the screen then says (the proposed filters, or the refusal's name and its words),
-  and whether the phone kept recording to the end. What it settles is `docs/room-correction.md`,
-  "Per-phone limits".
+- Not part of steps 1 to 8: the microphone, and everything else of part 2. That is the check
+  below, with an item of its own in the owner's queue.
+
+## Phone check, part 2
+
+The owner's as well, and for the same reason: the screens of part 2 have never been in a hand,
+the correction screen has never heard a room, the walk-through has never met a speaker, and no
+install pressed in the app has written a board. Its item is in the owner's queue (an issue in
+the owner's agent harness; `goals needs add`, `/goals:needs`), and this section is what it
+carries. It can be done in three sittings, since they need different things: steps 1 to 4 and 7
+need the phones and a room that plays; step 5 needs a speaker built for Wi-Fi; step 6 needs the
+bench. A sitting that cannot happen yet (no Wi-Fi speaker is planned, 2026-10-04) is reported as
+"not run", which is an answer.
+
+**Before it starts.** The owner's own steps, none done by this repository:
+
+- "Phone check" above has been run, or is run first: part 2 assumes the app opens, installs and
+  stays signed in on each phone.
+- The deployed `chorus-server` is a build that has part 2: a room's card shows "Sound",
+  "Limits" and "Correction", and "Autoplay", "Alarms" and "Speakers" are under the rooms. A card
+  with none of them means the deployed image is older.
+- For steps 2 to 4, a room with a speaker that plays, at its usual volume, and a quiet house.
+- For step 5, a compact Wi-Fi speaker flashed and at its first boot, with its serial console
+  readable (`docs/bench-packet.md`, S9, through S9.1).
+- For step 6, the owner at the bench with a board that plays (`docs/bench-packet.md`, S10), a
+  newer image staged in the server's firmware directory (`docs/firmware-updates.md`, "Staging
+  an image"), and, only for the last part of the step, the server run with
+  `CHORUS_OWNER_AT_BENCH=1` in its environment for that session (`docs/firmware-updates.md`,
+  "The bench variable"). Setting it is the owner's act and nothing in this repository does it.
+
+**Which phones.** The phones of "Phone check", at least one iPhone in Safari and one Android
+phone in Chrome where the household has both, because `docs/room-correction.md`, "Per-phone
+limits", expects them to differ. Steps 2 to 4 are run on each phone, once in the browser and once
+in the installed app. Write down the model, OS and browser line as before.
+
+1. **Open every screen.** From a room's card open "Sound", "Limits" and "Correction" in turn;
+   from under the rooms open "Autoplay", "Alarms" and "Speakers". On the sound screen move
+   "Bass" and press "Loudness"; then use the phone's own back gesture.
+   Should show: each screen alone under a "Back" link, in one column as wide as the phone, the
+   bar with "Groups" and "Rooms" still at the bottom edge; the value beside "Bass" follows the
+   slider ("+3 dB") and "Loudness" says "On"; the same values on a second device with no reload;
+   the back gesture returns to the rooms.
+   Report: any screen that is bare text, scrolls sideways or has a control too small to hit;
+   whether the back gesture went to the rooms or left the app.
+2. **The microphone.** Open a room's "Correction" and read the five lines of guidance. Press
+   "Use the microphone".
+   Should show: the browser's own permission prompt, once; then "What the browser granted" with
+   six lines (echo cancellation, noise suppression, automatic gain control, channels, the
+   microphone's sample rate, recorded at) and "Play the sweep and record".
+   Report: the prompt's words and whether it came again on a later visit; every one of the six
+   lines exactly as shown ("off, as asked", "on ...: asked off, and the browser kept it on", or
+   "not reported by this browser"), and whether the flagged warning about a fit that may be
+   wrong appeared. In the installed app, whether the prompt appeared at all. If instead of the
+   prompt there is a sentence (no HTTPS, not allowed, no microphone, in use), which one.
+3. **The sweep.** Stand where the room is listened to, phone at ear height, microphone
+   uncovered. Press "Play the sweep and record" and hold still.
+   Should show: "The sweep is playing and the microphone is recording. Hold still." while one
+   rising tone of 5 seconds plays in that room only; then "The recording is with the server,
+   being fitted. The microphone is off."; then, within a few seconds, either "Proposed filters"
+   (lines such as "45 Hz, -9.32 dB, Q 6.409", the two figures, "Nothing has changed in the room
+   yet.", "Apply" and "Discard") or "The server refused the recording:" with a name
+   (`too_short`, `clipped`, `too_quiet`, `too_noisy`) and what to do about it.
+   Report: whether the tone played in that room and in no other; whether the phone's screen
+   stayed on and the recording ran to the end (a `too_short` refusal says it did not); the
+   proposed filters and both figures, or the refusal's name and its words; whether the phone's
+   own microphone indicator went off afterwards. Do it twice from the same place and report
+   both answers: two recordings of one seat that propose different filters is a finding.
+4. **Apply, listen, switch, undo.** Press "Apply". Play music the household knows in that room.
+   Press "Correction" to switch it off and on while it plays, then "Undo".
+   Should show: "Applied. Undo puts back what the room had."; the filters under "This room's
+   correction" with the switch "On"; the switch changing what is heard; after
+   "Undo", "Put back." and the room as it was, with "Nothing to undo".
+   Report: whether the room sounds better, worse or no different with the correction on, in the
+   owner's own words; whether switching it clicked, dropped out or changed the volume. This is
+   the only evidence there will be of whether the correction corrects: nothing here measures it.
+5. **The Wi-Fi walk-through, on a real speaker.** On the phone open "Speakers", then "Set up a
+   Wi-Fi speaker", and do what its four steps say with the speaker of S9.1: join
+   `chorus-setup-<6 characters>` with the setup secret from the console, open the address the
+   console printed, type the house network's name and passphrase into the speaker's page, come
+   back to the house's network. This is `docs/bench-packet.md` S9.2 done from the app's screen,
+   with a `chorus-server` running on the audio network so that the speaker is adopted.
+   Should show: while the phone is on the speaker's access point, the walk-through still on the
+   screen, saying the server cannot be reached and that this is expected; the speaker's own
+   page, "chorus speaker setup", with two fields; back on the house's network, with nothing
+   pressed, the walk-through completing by itself and naming the new speaker, with a link to
+   the speakers screen, where the speaker is marked "New".
+   Report: whether the phone's browser reached the page at the printed address; whether the
+   phone came back to the house's network by itself or had to be moved; whether the app's page
+   was still there or had been discarded and loaded again, and whether it completed either way;
+   how long from "Join" to the completion. The app never asks for the passphrase: report it if
+   anything of the app did. No network name, passphrase or setup secret belongs in the report.
+6. **Install from the app, at the bench.** With the board of S10 adopted and connected and a
+   newer image staged, open "Speakers" on the phone. First with the server run as usual (no
+   bench variable): press "Install" beside the image and "Yes, install it". Then, the owner at
+   the bench, with the server restarted with `CHORUS_OWNER_AT_BENCH=1` for this session: press
+   "Install" and "Yes, install it" again, and watch the board's console.
+   Should show: "Update available" on that speaker's row with the image's version and name, and
+   nothing installing while the screen is merely open; the question naming the image, its
+   version, the speaker and what it runs now; the first press refused on the row in the
+   server's words, "Refused: owner-not-at-bench: ...", and the board sent nothing; the second
+   moving through "Install requested", "Receiving ..." with its progress bar, "Written and
+   checked", "On trial" and "Installed: ... confirmed itself", the row then showing the new
+   version and no "Update available".
+   Report: each line the row showed, in order, against the console's; whether "Cancel install"
+   pressed during a second install stopped it and the board kept running what it ran; and, when
+   S10 installs its deliberately bad image, whether the row ends at "Rolled back" with the
+   version that runs again. If a board's flash is erased at the bench, its next session offers a new key
+   under the old id: report whether the speakers screen then shows "Refused: ... offered a
+   changed key" with both fingerprints and no button that accepts it. Afterwards the bench
+   variable is taken out of the server's environment again.
+7. **An alarm, a sleep timer and quiet hours.** On "Alarms" set an alarm a few minutes ahead in
+   one room with a chime; when it has rung and been stopped, one with each other source the
+   household uses (a line-in, a stored stream URL, a stored Spotify URI). Start a sleep timer
+   of one minute in a room that plays. On that room's "Limits" add a quiet-hours window that
+   covers the present time at 25%.
+   Should show: the alarm listed with its time, days and source; at its minute the room rising
+   to the alarm's volume, "Ringing now" and a "Stop" button, and silence after "Stop"; the
+   sleep timer counting down in seconds and the room going quiet when it ends, the entry then
+   gone; the window marked "Active now", "Limit in force now" at 25% and the room's volume held
+   under it.
+   Report: for each source whether it rang as itself or as the bell chime (a stream URL needs
+   a server started with `--players`, a Spotify URI needs `--soloist-receivers` and
+   `--soloist-alarms`, and the screen cannot warn of either); how many seconds late the alarm
+   was by the phone's clock; whether the quiet hours ended by themselves at the window's end.
+8. **Theater, where there is a TV.** Only for a room with a hub on a TV's optical or ARC output
+   or with a centre, a sub or surrounds (`docs/bench-packet.md`, S8): its card has a "Theater"
+   link. Open it, play the TV, move "A/V trim" while watching speech, and try each control that
+   is there.
+   Should show: the TV input by its kind ("Optical" or "HDMI ARC"); the trim's value following
+   the slider and the two 1 ms buttons; bass management controls only when the room's set has a
+   sub, and "This room's set has no sub" otherwise.
+   Report: the trim at which picture and speech line up by eye, and whether the range reached
+   it; whether TV autoplay started the TV's sound in the room when the TV was switched on and
+   stopped on standby; anything a control did that its words did not say.
+
+**What to report.** Per phone: the model, OS and browser line, then for each step run "as
+written" or what happened instead, in a sentence; for a step not run, "not run" and why.
+Console lines for steps 5 and 6 are the ones `docs/bench-packet.md` asks for and no others. No
+address, account, network name, passphrase or household name belongs in what is pasted back.
+
+**How it ends.** As "Phone check" ends: the owner tells any session of the owner's agent
+harness what happened, and that session records it and closes the item. What the answer
+changes:
+
+- `docs/room-correction.md`, "Per-phone limits": each **ASSUMED** and **not known** line about
+  the three constraints, the sample rate and the screen staying awake is replaced by what each
+  phone showed in steps 2 and 3, and "No real phone has been measured with this" by the phones
+  that were.
+- This page: "The correction screen has never measured a room", "The walk-through has never run
+  against a real speaker", "Nothing here ran on a board" and the table of what was never run
+  on real hardware each lose the lines the report settles, with the date.
+- `docs/bench-packet.md`: S9's and S10's own Needs items are answered by their sessions as that
+  packet says; steps 5 and 6 add only what the app's screen showed beside them.
+- A step that did not go as written becomes a task of its own, with the phone's line and the
+  report as its evidence. A correction that sounds worse is such a task and not a reason to
+  remove the switch: "Undo" and the switch are the owner's way back meanwhile.
