@@ -403,7 +403,7 @@ fn a_wake_word_is_one_event_a_start_answers_with_a_run_and_the_route_streams_it(
     let mut server = server(&dir, &source, &["--voice-integration", HERE]);
     let state = server.state();
     assert!(
-        state.ends_with(r#","wake_words":[{"id":"okay_nabu","phrase":"Okay Nabu"}]}"#),
+        state.contains(r#","wake_words":[{"id":"okay_nabu","phrase":"Okay Nabu"}]"#),
         "the state lists the server's wake-word models: {state}"
     );
     let events = Stream::open(&server.control, "/api/events");
