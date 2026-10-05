@@ -43,14 +43,25 @@ test("a room is read as its name, volume in thousandths, mute and bonded set", (
         { endpoint: "chorus-0123456789ab", name: "Left of the TV", role: "FL" },
         { endpoint: "endpoint-b", name: "endpoint-b", role: "FR" },
       ],
+      source: null,
+      nowPlaying: null,
     },
-    { id: "den", name: "den", volume: 500, muted: false, group: "den", bond: [] },
+    { id: "den", name: "den", volume: 500, muted: false, group: "den", bond: [], source: null, nowPlaying: null },
   ]);
 });
 
 test("a member the app cannot read is null, not a made-up value", () => {
   const [room] = roomsOf(stateOf(1, [{ id: "kitchen", volume: "loud" }]));
-  assert.deepEqual(room, { id: "kitchen", name: "kitchen", volume: null, muted: null, group: "kitchen", bond: [] });
+  assert.deepEqual(room, {
+    id: "kitchen",
+    name: "kitchen",
+    volume: null,
+    muted: null,
+    group: "kitchen",
+    bond: [],
+    source: null,
+    nowPlaying: null,
+  });
   assert.deepEqual(roomsOf(null), []);
   assert.deepEqual(roomsOf({ zones: "none" }), []);
 });
@@ -194,7 +205,8 @@ test("the groups are every saved group, then every live group, each with its roo
         { id: "living", name: "Living Room" },
         { id: "kitchen", name: "kitchen" },
       ],
-      volume: 600,
+      volume: 600,      source: "line-in:endpoint-c/line-1",
+      nowPlaying: null,
     },
     {
       id: "live-1",
@@ -206,7 +218,8 @@ test("the groups are every saved group, then every live group, each with its roo
         { id: "study", name: "study" },
         { id: "bedroom", name: "bedroom" },
       ],
-      volume: 600,
+      volume: 600,      source: "stream",
+      nowPlaying: null,
     },
   ]);
   assert.deepEqual(roomsOf(rich()).map((room) => room.group), ["downstairs", "downstairs", "live-1", "live-1"]);
@@ -231,7 +244,8 @@ test("a saved group no room is in is listed all the same, with no rooms playing 
         { id: "den", name: "den" },
       ],
       rooms: [],
-      volume: null,
+      volume: null,      source: null,
+      nowPlaying: null,
     },
   ]);
   // A room alone in the group named for it is a room, not a group.

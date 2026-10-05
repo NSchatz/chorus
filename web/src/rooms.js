@@ -20,6 +20,8 @@ export class ChorusRooms extends LitElement {
     rooms: { attribute: false },
     // "connecting", "live" or "lost" (state.js).
     status: { type: String },
+    // The inputs the server offers, as state.js reads them.
+    inputs: { attribute: false },
     // Refusal words by room id.
     refusals: { attribute: false },
     // The saved and live groups as state.js reads them.
@@ -69,6 +71,7 @@ export class ChorusRooms extends LitElement {
   constructor() {
     super();
     this.rooms = null;
+    this.inputs = [];
     this.status = "connecting";
     this.refusals = {};
     this.groups = [];
@@ -112,6 +115,7 @@ export class ChorusRooms extends LitElement {
             >
               <chorus-room-card
                 .room=${room}
+                .inputs=${this.inputs}
                 .refusal=${this.refusals[room.id] ?? ""}
                 .places=${placesFor(room, rooms, groups)}
                 .place=${placeOf(room, groups)}

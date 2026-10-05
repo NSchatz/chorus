@@ -15,6 +15,10 @@
 // at once when the server refuses a command.
 
 //
+// While the room is alone it also shows what it plays and what is playing,
+// and offers the server's inputs (playing.js); a room in a group is shown
+// that on the group's card, where a choice is the whole group's.
+//
 // Moving the room has two paths to the same commands (grouping.js). The
 // handle beside the name is what the drag gesture picks the room up by
 // (drag.js, Pointer Events: `touch-action: none` keeps a finger on it from
@@ -27,6 +31,7 @@ import { LitElement, css, html, nothing } from "lit";
 
 import { muteCommand, volumeCommand } from "./api.js";
 import { placeOfValue } from "./grouping.js";
+import "./playing.js";
 
 // The channel roles of docs/protocol.md's channel map, as words.
 export const ROLE_NAMES = {
@@ -44,8 +49,11 @@ const percent = (thousandths) => `${Math.round(thousandths / 10)}%`;
 
 export class ChorusRoomCard extends LitElement {
   static properties = {
-    // The room, as state.js reads it: { id, name, volume, muted, bond }.
+    // The room, as state.js reads it: { id, name, volume, muted, bond,
+    // source, nowPlaying }.
     room: { attribute: false },
+    // The inputs the server offers, as state.js reads them.
+    inputs: { attribute: false },
     // The server's words for the last command of this room it refused, or "".
     refusal: { type: String },
     // The places the room can play, [{ value, label }], and the one it is in
@@ -157,6 +165,7 @@ export class ChorusRoomCard extends LitElement {
   constructor() {
     super();
     this.room = null;
+    this.inputs = [];
     this.refusal = "";
     this.places = [];
     this.place = "alone";
@@ -266,6 +275,16 @@ export class ChorusRoomCard extends LitElement {
               )}
             </ul>
           `}
+      ${room.source
+        ? html`<chorus-playing
+            .target=${room.id}
+            .name=${room.name}
+            .source=${room.source}
+            .nowPlaying=${room.nowPlaying}
+            .inputs=${this.inputs}
+            pick
+          ></chorus-playing>`
+        : nothing}
       <div class="row">
         <label for="volume">Volume</label>
         ${room.volume === null

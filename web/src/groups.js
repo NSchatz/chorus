@@ -14,6 +14,8 @@ export class ChorusGroups extends LitElement {
   static properties = {
     // The groups as state.js reads them, or null before the first state.
     groups: { attribute: false },
+    // The inputs the server offers, as state.js reads them.
+    inputs: { attribute: false },
     // Refusal words by group id.
     refusals: { attribute: false },
     // The room being dragged, { id, name, grouped }, or null.
@@ -59,6 +61,7 @@ export class ChorusGroups extends LitElement {
   constructor() {
     super();
     this.groups = null;
+    this.inputs = [];
     this.refusals = {};
     this.moving = null;
     this.over = null;
@@ -82,7 +85,11 @@ export class ChorusGroups extends LitElement {
               data-drop-id=${group.id}
               ?data-over=${over?.kind === "group" && over.id === group.id}
             >
-              <chorus-group-card .group=${group} .refusal=${this.refusals[group.id] ?? ""}></chorus-group-card>
+              <chorus-group-card
+                .group=${group}
+                .inputs=${this.inputs}
+                .refusal=${this.refusals[group.id] ?? ""}
+              ></chorus-group-card>
             </li>`,
         )}
       </ul>

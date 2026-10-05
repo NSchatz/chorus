@@ -57,10 +57,31 @@ export function takeCommand(target) {
   return `{"v":2,"t":"take","target":${JSON.stringify(target)}}`;
 }
 
+// `take` with a source: the target's group then plays that (an offered input
+// is `line-in:<endpoint>/<input>`). The target here is always a group that is
+// formed, named by its own id, so no room moves.
+export function takeSourceCommand(target, source) {
+  return `{"v":2,"t":"take","target":${JSON.stringify(target)},"source":${JSON.stringify(source)}}`;
+}
+
 // `group_volume` (K77): the server scales every room of the group; this
 // names the group volume asked for and nothing else.
 export function groupVolumeCommand(group, thousandths) {
   return `{"v":2,"t":"group_volume","group":${JSON.stringify(group)},"volume":${volumeLiteral(thousandths)}}`;
+}
+
+// Where a group's now-playing artwork is, for an <img>: the server's own
+// route (docs/control-plane.md, "Now-playing artwork"), which names the group
+// and nothing else. The record's own artwork address is somebody else's, and
+// the page's Content-Security-Policy would not load it; it is never requested
+// from here. It only tells one cover from the next: the route's address is
+// the same for every track of a group, so a short tag of the record's
+// address rides in the fragment, which the server is never sent, and a new
+// track is a new address to the page.
+export function artworkUrl(base, group, art = "") {
+  let tag = 5381;
+  for (const unit of String(art)) tag = (Math.imul(tag, 33) ^ unit.codePointAt(0)) >>> 0;
+  return `${base}api/artwork?group=${encodeURIComponent(group)}${art ? `#${tag.toString(36)}` : ""}`;
 }
 
 // What a refused command says, for a person: the server's own `detail` where
@@ -203,5 +224,8 @@ export function createClient({ fetch = globalThis.fetch.bind(globalThis), base =
     };
   }
 
-  return { state, command, events };
+  // The address of a group's artwork as this page reaches the server.
+  const artwork = (group, art) => artworkUrl(base, group, art);
+
+  return { state, command, events, artwork };
 }

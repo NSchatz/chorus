@@ -27,7 +27,7 @@ export class ChorusApp extends LitElement {
     mode: { type: String, reflect: true },
     // The state layer's store (state.js), given by main.js.
     store: { attribute: false },
-    // What the store holds: { state, rooms, status }.
+    // What the store holds: { state, rooms, groups, inputs, status }.
     _view: { state: true },
     // The server's words for the last refused command, by room or group id.
     _refusals: { state: true },
@@ -78,7 +78,7 @@ export class ChorusApp extends LitElement {
     super();
     this.mode = "app";
     this.store = null;
-    this._view = { state: null, rooms: [], groups: [], status: "connecting" };
+    this._view = { state: null, rooms: [], groups: [], inputs: [], status: "connecting" };
     this._refusals = {};
     this._moving = null;
     this._over = null;
@@ -178,6 +178,7 @@ export class ChorusApp extends LitElement {
       >
         <chorus-groups
           .groups=${this._view.state === null ? null : this._groups}
+          .inputs=${this._view.inputs ?? []}
           .refusals=${this._refusals}
           .moving=${this._moving}
           .over=${this._over}
@@ -195,6 +196,7 @@ export class ChorusApp extends LitElement {
         <chorus-rooms
           .rooms=${this._view.state === null ? null : this._view.rooms}
           .status=${this._view.status}
+          .inputs=${this._view.inputs ?? []}
           .refusals=${this._refusals}
           .groups=${this._groups}
           .moving=${this._moving}
