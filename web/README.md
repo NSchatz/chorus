@@ -14,7 +14,10 @@ never answers or keeps the API, and the words "Signed out" with a link to sign i
 login has lapsed (`docs/decisions/0190-the-app-installs-behind-the-login.md`). It lays itself
 out for a phone, for a desktop and as a wall tablet's kiosk
 (`docs/decisions/0191-phone-and-desktop-layouts-and-the-kiosk.md`; "Layouts and the kiosk"
-below).
+below). Beyond the groups and the rooms it has further screens, each at an address of its own
+in the fragment, and the first is a room's sound: bass, treble, loudness, night mode and speech
+enhancement (`docs/decisions/0000-further-screens-have-an-address-in-the-fragment.md`; "Further
+screens" below).
 
 | Path | What |
 |---|---|
@@ -25,10 +28,12 @@ below).
 | `src/rooms.js`, `src/room-card.js` | the rooms screen and one room's card |
 | `src/groups.js`, `src/group-card.js` | the groups region (every saved group, then every live one) and one group's card, with the group volume |
 | `src/playing.js` | what a room alone or a group plays: the now-playing record with its artwork (an image on the server's own `api/artwork` route), the source in words, and the picker of the offered inputs |
+| `src/routes.js` | the further screens: the registry a screen adds itself to, its address in the fragment (`#/rooms/<room>/sound`), and the navigation over the browser's history |
+| `src/sound.js` | a room's sound screen, registered at `#/rooms/<room>/sound`: one control for each field of the `sound` command |
 | `src/layout.js`, `src/mode.js`, `src/wake-lock.js` | the two layouts and the one breakpoint between them; the kiosk's switch (`?kiosk`) and its memory; the screen wake lock a kiosk holds |
 | `src/grouping.js`, `src/drag.js` | a move (a room and a destination) as its one command, and the drag gesture on Pointer Events that makes one |
 | `test/` | the unit tests (`*.test.js`), `setup.js` (happy-dom's globals, loaded before Lit), `label-query.js` (find an element by its label, through shadow roots) and `fake-server.js` (a scripted server: the three routes, answered as the test says) |
-| `live/` | the live tests (`rooms.live.js`, `groups.live.js`, `playing.live.js`): the same elements and store, in node with no browser, against a real `chorus-server`; `house.js` starts that server and `setup.js` gives the tests happy-dom's document and node's own network. `endpoint.js` is a scripted endpoint session that offers a line-in, and `control-point.js` a UPnP control point with the media and the cover it plays: what `playing.live.js` gives the server from outside |
+| `live/` | the live tests (`rooms.live.js`, `groups.live.js`, `playing.live.js`, `sound.live.js`): the same elements and store, in node with no browser, against a real `chorus-server`; `house.js` starts that server and `setup.js` gives the tests happy-dom's document and node's own network. `endpoint.js` is a scripted endpoint session that offers a line-in, and `control-point.js` a UPnP control point with the media and the cover it plays: what `playing.live.js` gives the server from outside |
 | `smoke/` | the one browser test (`app.spec.js`) and the fake login it signs in through (`fake-login.js`); `playwright.config.js` configures it |
 | `build.mjs` | the build: `src/` into `dist/`, deterministic |
 | `dist/` | the build's output, committed: `chorus-server` embeds it and never runs node |
@@ -56,7 +61,10 @@ player and its renderers: an endpoint session offers a line-in and the picker li
 label a client then gives it; choosing it through the picker changes the group's `source` in
 `/api/state`; and a track a control point plays on a room's renderer shows its title and
 artist in that room's card, with an artwork image whose address the server answers `200` with
-the cover. It ends `web-live: PASS`; without `CHORUS_SERVER_BIN` it
+the cover. `sound.live.js` opens a room's sound screen from the room's card, changes every
+control through the screen and reads each back equal from `/api/state`, and a `sound` command
+a second client sends appears on the screen with no reload; a command the server refuses is
+shown with the field and the words of the server's own answer. It ends `web-live: PASS`; without `CHORUS_SERVER_BIN` it
 ends `web-live: SKIPPED`, which under `CI=true` and in the gate is a failure. **A later screen
 proves itself the same way**: a file `live/<screen>.live.js` that starts the server its screen
 needs, drives the screen's controls by their labels and compares with `/api/state`.
@@ -87,6 +95,37 @@ micromamba create -y -p /cache/opt/chromium-libs -c conda-forge nss nspr glib db
     at-spi2-atk at-spi2-core xorg-libxcomposite xorg-libxdamage xorg-libxrandr alsa-lib
 micromamba create -y -p /cache/opt/chromium-fonts -c conda-forge fontconfig fonts-conda-ecosystem
 ```
+
+## Further screens
+
+The groups and the rooms are the home, at `/app/` (or `/app/#/`). Every other screen has an
+address in the fragment and is painted alone in the main region under a "Back" link, in every
+layout and in the kiosk:
+
+| Address | Screen | Module |
+|---|---|---|
+| `#/rooms/<room>/sound` | a room's sound | `src/sound.js` |
+
+A later screen is one module and one link:
+
+```js
+import { registerScreen } from "./routes.js";
+
+registerScreen({
+  id: "alarms",
+  path: "alarms", // or "rooms/:room/limits": a segment that starts with ":" is a parameter
+  title: (params, view) => "Alarms", // the label of the screen's region
+  render: (params, { view, refusals, refusalFields }) => html`<chorus-alarms .state=${view.state}></chorus-alarms>`,
+});
+```
+
+and, wherever it is reached from, `<a href=${addressOf("alarms")} data-route>Alarms</a>`. The
+shell (`chorus-app`) imports the module, opens a `data-route` link as an entry of the browser's
+history (so the browser's back button returns from it) and passes the screen what the store
+holds. A screen sends a command as every card does, with a `chorus-command` event whose detail
+is `{ subject, body }`; the server's words for a refused one come back in `refusals[subject]`,
+and the field it named in `refusalFields[subject]`. It proves itself as the sound screen does:
+`test/<screen>.test.js` over the scripted server and `live/<screen>.live.js` over a real one.
 
 ## Layouts and the kiosk
 
@@ -131,6 +170,8 @@ Rules, each held by a check (`docs/conventions.md`, rules 13 and 14):
 - A layout is an attribute `chorus-app` reflects (`layout`, `mode`), never a media query in an
   element's styles: the breakpoint is a length, and it is written once, in `src/layout.js`.
   What a browser paints in a layout is asserted in `smoke/app.spec.js`.
+- A screen beyond the home has an address (`registerScreen` in `src/routes.js`) and is reached
+  by a link that holds it, never by a property of the shell a reload would lose.
 - A test finds a control by its label (`getByLabel`), which also proves it has one.
 - The server owns the state. An element shows what the store's last state message says and
   keeps no value of its own; a command changes the page when the state that resulted comes

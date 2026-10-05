@@ -40,13 +40,53 @@ nothing.
 
 ## The screens
 
-One document, one element (`chorus-app`), two regions. There are no addresses per screen: the
-navigation ("Groups", "Rooms") brings a region to the top and puts the focus on it.
+One document and one element (`chorus-app`). Its home is two regions, the groups and the rooms:
+the navigation ("Groups", "Rooms") brings a region to the top and puts the focus on it. Every
+further screen has an address of its own (below).
 
 | Region | What it shows | What it does |
 |---|---|---|
 | Groups | every saved group, then every live group, each with its rooms, what it plays and what is playing | group volume (the server scales every room and keeps their ratio, K77); "Remove" a room; "Group these rooms" for a saved group that is not formed; choose an input |
-| Rooms | every room with its bonded set, its volume and its mute; a room alone also says what it plays and what is playing | volume, mute; move the room by dragging its handle onto a room or a group, or with the "Plays with" list on its card; choose an input |
+| Rooms | every room with its bonded set, its volume and its mute; a room alone also says what it plays and what is playing | volume, mute; move the room by dragging its handle onto a room or a group, or with the "Plays with" list on its card; choose an input; open the room's sound screen ("Sound") |
+
+**Further screens and their addresses** (`docs/decisions/0000-further-screens-have-an-address-in-the-fragment.md`).
+A screen beyond the home has an address in the fragment, `#/` and a path, and is painted alone
+in the main region, across both columns on a desktop, under a "Back" link:
+
+| Address | Screen |
+|---|---|
+| `/app/` or `/app/#/` | the home: the groups and the rooms |
+| `/app/#/rooms/<room id>/sound` | the sound of that room |
+
+- Opening a screen from the app (the "Sound" link on a room's card) is a new entry of the
+  browser's history, so the browser's back button, a phone's back gesture and the forward
+  button work as on any site, and an address can be bookmarked, reloaded or sent to another
+  person of the household.
+- "Back" on the screen is that same one step back. Where the screen was the address the app was
+  opened at, there is nothing of the app to step back to, and "Back" puts the home in its place.
+- The navigation's "Groups" and "Rooms" leave a further screen for the region they name.
+- An address that names no screen is the home.
+- The fragment is never sent to the server, so the login, the service worker and the kiosk's
+  `?kiosk` switch are untouched by it: `/app/?kiosk#/rooms/living/sound` is a kiosk on that
+  screen.
+- A later screen registers itself with `registerScreen` in `web/src/routes.js` (an id, a path
+  such as `rooms/:room/limits` or `alarms`, a title and what it renders) and is linked with
+  `<a href=${addressOf(id, params)} data-route>`; nothing else of the shell changes.
+
+**A room's sound** (`web/src/sound.js`; the catalog's `sound` command, `docs/control-plane.md`,
+"Per-room sound"):
+
+| Control | What it is | What it sends |
+|---|---|---|
+| Bass, Treble | a slider each, whole dB from -10 to 10, with the value beside it ("+3 dB") | `sound` with `bass` or `treble` alone, when the slider is let go |
+| Loudness, Night mode, Speech enhancement | a button each, pressed when on, with "On" or "Off" beside it | `sound` with `loudness`, `night` or `speech` alone: the opposite of what the server holds |
+
+Each control sends one command that carries its one field, so a setting another client has just
+changed is never written back from a page that had not yet heard. Nothing changes on the screen
+until the server's answer says so; a refused command is shown as "Refused (<field>): <the
+server's words>"; a setting the state does not carry is "Unavailable". A change made anywhere
+else appears on the screen with no reload, except under a slider a person has hold of. Bass
+management, the TV upmix and a room's limits are not on this screen.
 
 - **The server owns the state** (`docs/decisions/0185-the-apps-state-layer-and-its-live-test.md`).
   The app reads `GET /api/state`, follows `GET /api/events` and sends `POST /api/command`. An
@@ -68,7 +108,8 @@ navigation ("Groups", "Rooms") brings a region to the top and puts the focus on 
   `img-src 'self'` stands. A record with no artwork, or one whose image does not load, shows a
   placeholder.
 
-Not built yet, and later tasks: tone, loudness, night mode and limits; alarms and sleep timers;
+Not built yet, and later tasks: limits, quiet hours and autoplay; bass management and the TV
+upmix; alarms and sleep timers;
 room correction with the phone's microphone; adoption, naming and firmware approval.
 
 ## Installing, and the service worker's cache rules
@@ -141,6 +182,10 @@ The one breakpoint is `DESKTOP_MIN_EM` in `web/src/layout.js` and is written now
 `chorus-app` reflects the layout as an attribute and the styles select on it, so no element holds
 a media query. A touch target is at least 44 by 44 CSS pixels outside the kiosk.
 
+A further screen (a room's sound) is the same in all three: one column as wide as the page, with
+its "Back" link inside the screen's own region, because a wide kiosk paints no header. On a
+phone the navigation bar stays at the bottom edge and leads back to the groups or the rooms.
+
 **Entering kiosk mode.** Kiosk mode is for a tablet on a wall, and its switch is the address:
 
 1. Open `/app/?kiosk` once in the tablet's browser. That browser is a kiosk from then on: the
@@ -161,7 +206,7 @@ all three in `make gate`; here each is a narrow run of its own.
 
 | Command | What it is | It ends with |
 |---|---|---|
-| `make web-test` | the unit tests: `node --test` over happy-dom, no browser, no server. The elements by their labels, the store, the worker's rules against a scripted network and cache, the signed-out state, the layouts and the kiosk's switch | node's own summary, `fail 0` |
+| `make web-test` | the unit tests: `node --test` over happy-dom, no browser, no server. The elements by their labels, the store, the worker's rules against a scripted network and cache, the signed-out state, the layouts and the kiosk's switch, the navigation over happy-dom's own address and history, and the sound screen over a scripted server | node's own summary, `fail 0` |
 | `CHORUS_SERVER_BIN=<a built chorus-server> make web-live` | the live tests (`web/live/*.live.js`): the same elements and store in node, no browser, against a real `chorus-server`. Each screen's controls are driven by their labels and what the page shows is compared with the server's `/api/state`, in both directions | `web-live: PASS` |
 | `CHORUS_SERVER_BIN=<a built chorus-server> make web-smoke` | the one browser test (`web/smoke/app.spec.js`, `docs/decisions/0183-the-one-browser-smoke-test.md`): Playwright's headless Chromium loads `/app/` from a real `chorus-server` through a fake login | `web-smoke: PASS` |
 

@@ -8,6 +8,8 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
+  TONE_DB,
+  soundCommand,
   RETRY_MS,
   SILENCE_MS,
   createClient,
@@ -47,6 +49,20 @@ test("the volume and mute commands are the catalog's own bytes", () => {
   assert.equal(muteCommand("den", false), '{"v":1,"t":"mute","zone":"den","muted":false}');
 });
 
+test("the sound command is the catalog's own bytes, and carries only the fields it is given", () => {
+  assert.equal(
+    soundCommand("living", { speech: true, night: true, loudness: false, treble: -2, bass: 3 }),
+    fixture("v2/sound.json"),
+  );
+  assert.equal(soundCommand("kitchen", { night: true }), fixture("v2/sound-partial.json"));
+  assert.equal(soundCommand("den", { bass: -10 }), '{"v":2,"t":"sound","zone":"den","bass":-10}');
+  assert.equal(soundCommand("den", { treble: 0 }), '{"v":2,"t":"sound","zone":"den","treble":0}');
+  assert.equal(soundCommand("den", { loudness: false }), '{"v":2,"t":"sound","zone":"den","loudness":false}');
+  // A tone is a whole dB inside the catalog's range: the slider gives nothing else.
+  assert.deepEqual(TONE_DB, { min: -10, max: 10 });
+  assert.equal(soundCommand("den", { bass: 14 }), '{"v":2,"t":"sound","zone":"den","bass":10}');
+});
+
 test("an accepted command resolves to the state that resulted", async () => {
   const server = fakeServer(stateOf(4, [zone("kitchen")]));
   const result = await clientOf(server).command(volumeCommand("kitchen", 250));
@@ -59,7 +75,7 @@ test("a refused command resolves to the server's refusal text", async () => {
   const server = fakeServer(stateOf(1, []));
   const detail = "there is no zone 'attic'; the zones configured on this server are kitchen";
   server.answer = () => ({ status: 400, body: JSON.stringify({ v: 1, t: "error", field: "zone", detail }) });
-  assert.deepEqual(await clientOf(server).command(muteCommand("attic", true)), { ok: false, refusal: detail });
+  assert.deepEqual(await clientOf(server).command(muteCommand("attic", true)), { ok: false, refusal: detail, field: "zone" });
 
   // A refusal that is not a catalog message says its own text, and one with
   // no text its status.
