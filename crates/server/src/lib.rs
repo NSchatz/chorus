@@ -68,6 +68,7 @@
 
 pub mod announce;
 pub mod app;
+pub mod artwork;
 pub mod clients;
 pub mod conductor;
 pub mod config;

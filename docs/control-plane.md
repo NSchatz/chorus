@@ -1292,6 +1292,7 @@ The catalog above is the contract. The transport is HTTP on the address
 | `GET /api/visualizer?zone=<room>` | a `text/event-stream`, one `data: <visualizer message>` per visualizer frame of that room (colour, level, beat), at most one every 100 ms, each the room's latest, from the moment the stream is opened. It starts with no message. Catalog version 2's message alone |
 | `GET /api/voice-events` | (voice) a `text/event-stream`, one `data: <voice_wake message>` per wake word a voice room's microphone hears, from the moment the stream is opened. It starts with one comment line (`: voice events`) and no message. Catalog version 2's message alone ("Voice: the wake word, the run and its audio") |
 | `GET /api/voice-audio?run=<identifier>` | (voice) the microphone audio of one open voice run, raw 16 kHz mono PCM, to its one reader at the address the server was started with (`--voice-integration`), until the run ends. Refused `403`, `400`, `404` or `409` otherwise (the same section) |
+| `GET /api/artwork?group=<id>` | the artwork of that group's now-playing record, as an image from this origin: fetched by the server from the record's artwork URL and from nowhere a request names ("Now-playing artwork" below) |
 | `GET /api/report` | one line of plain text: commands applied, commands refused, connections and streams turned away, the fanout's ceiling and drops, the event writer's streams, the controller-event subscribers and their drops, and the visualizer subscribers, the frames they were sent and the frames superseded |
 | `GET /metrics` | the Prometheus exporter (goal 15): per-speaker telemetry in text exposition format 0.0.4. Read-only, served by a control worker like any other request; `docs/telemetry.md` lists every series |
 | `POST /api/command` | the body is one control message, sent as `Content-Type: application/json`. `200` with the resulting state (v2, the bytes every subscriber is sent; a `voice_start` is answered with a `voice_run` message instead), `400` with an `error` (at the message's version), or `426` with a `refused`; `415` or `403` under the rules below |
@@ -1420,9 +1421,59 @@ and the `200` and `304` answers carry the file's `ETag` and one of two `Cache-Co
   service worker) by name: a browser may keep it and asks before every use, and is answered
   `304` while it is unchanged. So a new build of the server is seen at the next load.
 
-`If-None-Match` is the only conditional header read, and it is read for these routes alone.
+`If-None-Match` is the only conditional header read, and it is read for these routes and for
+`GET /api/artwork` alone.
 No response is compressed. An app response is written by the control worker that read the
 request, under the same write timeout as any other.
+
+### Now-playing artwork
+
+A now-playing record's artwork URL is somebody else's address, and every page this server
+hands a browser carries `img-src 'self' data:`, so a page cannot load it. The server fetches
+it instead and serves it from its own origin; the Content-Security-Policy is not widened
+(`docs/decisions/0184-artwork-is-proxied-not-the-policy-widened.md`,
+`crates/server/src/artwork.rs`).
+
+`GET /api/artwork?group=<id>` names a group and nothing else. The URL fetched is the one in
+that group's now-playing record at the moment of the request; no parameter, header or path of
+a request is ever fetched, so this is not a proxy anybody can point at an address.
+
+| request | answer |
+|---|---|
+| `GET /api/artwork?group=<id>`, the group's record has an artwork URL and it answers with an image | `200`, the image's bytes, `Content-Type` `image/jpeg`, `image/png`, `image/gif` or `image/webp` as its first bytes say, `X-Content-Type-Options: nosniff` |
+| the same, with an `If-None-Match` that names the answer's `ETag` | `304`, no body |
+| no `group` in the query | `400` |
+| the group has no now-playing record, the record has no artwork, or the server has no such group | `404`, in one wording |
+| the fetch failed, the fetch policy refused the URL, the answer is not one of the four kinds of image, or it is larger than 4 MiB | `502`, an `error` saying which |
+| as many artwork fetches as may run at once are running | `503`; ask again |
+| the fetch was not done within 8 seconds | `504` |
+
+The `200` and `304` answers carry the control page's `Content-Security-Policy`, unchanged, a
+strong `ETag` made from the image's bytes, and `Cache-Control: no-cache`: a browser keeps the
+image and asks before every use. A new track's artwork has other bytes and another tag, so it
+is never answered `304`; that holds for an origin that reuses one URL for every cover too,
+because the tag is made from the bytes and not from the URL.
+
+The rules of the fetch:
+
+- It is the media fetcher's, under the server's fetch policy (`docs/streams.md`): `http` and
+  `https` only, never this machine's loopback, never one of this server's own ports, at most
+  3 redirects, each resolved and checked like the first address.
+- At most 4 MiB is read. A declared length above that is refused before the body is read; a
+  body with no declared length is cut off at the first byte past the bound.
+- The whole fetch has 8 seconds on the monotonic clock, connects, redirects and body together.
+  A connect in progress cannot be left early, so a fetch can run up to 3 seconds past that;
+  name resolution has no bound of its own (`docs/decisions/0120-the-media-fetcher.md`).
+- What came back is judged by its first bytes, not by the `Content-Type` its origin sent, and
+  only a JPEG, a PNG, a GIF or a WebP is passed on. SVG is refused: it can carry script, and it
+  would be served from this origin. Nothing of a refused answer reaches the browser.
+- A control worker runs the fetch and holds its place in the pool until it ends, so at most
+  half of `--control-workers` (one at least) fetch artwork at once; commands and state always
+  have the rest. No thread is added and none of this is on the audio path.
+- Nothing is kept, in memory or on disk: every `200` and every `304` is a fetch.
+
+Like every route here it has no authentication: whoever can reach the control port can see
+the artwork of what a room is playing, as they can read its title in the state message.
 
 ### What a command must carry
 

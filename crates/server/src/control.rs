@@ -294,6 +294,10 @@ pub struct ControlState {
     /// ([`ControlState::announce_through`]); a state without one refuses
     /// the command by name.
     announcer: OnceLock<Arc<crate::announce::Announcer>>,
+    /// What fetches a group's now-playing artwork for `GET /api/artwork`
+    /// ([`ControlState::artwork_through`], `crate::artwork`); a state
+    /// without one answers that route `503`.
+    artwork: OnceLock<crate::artwork::Artwork>,
 }
 
 /// The files the browser is served: the page, what it loads, and the document
@@ -363,6 +367,7 @@ impl ControlState {
             soloist: OnceLock::new(),
             server: OnceLock::new(),
             announcer: OnceLock::new(),
+            artwork: OnceLock::new(),
         }
     }
 
@@ -595,6 +600,13 @@ impl ControlState {
     /// (goal 16) How many players this server runs.
     pub fn players(&self) -> usize {
         self.players.load(Ordering::SeqCst)
+    }
+
+    /// Fetch now-playing artwork through `artwork` (`crate::artwork`): the
+    /// server's fetch policy and the route's bounds. Called once, before any
+    /// request is served.
+    pub fn artwork_through(&self, artwork: crate::artwork::Artwork) {
+        let _ = self.artwork.set(artwork);
     }
 
     /// (goal 16) The formed group playing `player:<id>` now, if one is: where
@@ -1948,6 +1960,11 @@ impl ControlPlane {
         registry: Arc<ThreadRegistry>,
         ready: Sender<()>,
     ) {
+        // Artwork fetches hold a worker each, so they are held to half of
+        // this pool (`crate::artwork`).
+        if let Some(artwork) = self.state.artwork.get() {
+            artwork.serve_from_workers(workers);
+        }
         let (free_tx, free) = mpsc::channel::<usize>();
         for index in 0..workers {
             let (to_worker, jobs) = mpsc::sync_channel::<TcpStream>(1);
@@ -2461,6 +2478,7 @@ fn serve_connection(connection: TcpStream, state: &Arc<ControlState>) {
         }
         ("GET", "/api/voice-audio") => serve_voice_audio(connection, state, &request.path, peer),
         ("GET", "/api/visualizer") => serve_visualizer(connection, state, &request.path),
+        ("GET", "/api/artwork") => serve_artwork(&mut connection, state, &request),
         ("POST", "/api/command") => {
             match state.apply(request.body.trim()) {
                 Ok(applied) => respond(&mut connection, "200 OK", "application/json", &applied),
@@ -2811,6 +2829,77 @@ fn serve_visualizer(mut connection: TcpStream, state: &Arc<ControlState>, target
         return;
     }
     claim.hand_over_light(connection, subscription);
+}
+
+/// Serve the artwork of one group's now-playing record from this origin
+/// (`crate::artwork`, `docs/control-plane.md`, "Now-playing artwork";
+/// `docs/decisions/0184-*`).
+///
+/// `GET /api/artwork?group=<id>`: the image at the artwork URL of that
+/// group's now-playing record, fetched now by this worker, with its media
+/// type, an `ETag` of its bytes and the page's Content-Security-Policy. The
+/// request names a group and nothing it carries is ever fetched. `400` when
+/// no group is named; `404`, in one wording, when the group has no
+/// now-playing record, the record has no artwork or this server has no such
+/// group; `502` when the fetch failed, the fetch policy refused the URL, or
+/// what came back is not an image or is larger than the bound; `503` when as
+/// many fetches as may run at once are running; `504` at the deadline.
+fn serve_artwork(connection: &mut TcpStream, state: &Arc<ControlState>, request: &Request) {
+    let Some(group) = crate::artwork::group_of(&request.path) else {
+        respond(
+            connection,
+            "400 Bad Request",
+            "application/json",
+            &error_body("name the group: GET /api/artwork?group=<group id>"),
+        );
+        return;
+    };
+    let Some(url) = state.now_playing(group).and_then(|playing| playing.art_url) else {
+        respond(
+            connection,
+            "404 Not Found",
+            "application/json",
+            &error_body("no group of that id has now-playing artwork"),
+        );
+        return;
+    };
+    let Some(artwork) = state.artwork.get() else {
+        respond(
+            connection,
+            "503 Service Unavailable",
+            "application/json",
+            &error_body("this server fetches no artwork yet"),
+        );
+        return;
+    };
+    match artwork.fetch(&url) {
+        Ok(image) => image.respond(
+            connection,
+            request.if_none_match.as_deref(),
+            CONTENT_SECURITY_POLICY,
+        ),
+        Err(refused) => {
+            // The URL is not logged: it can carry its origin's token.
+            println!(
+                "chorus-server: artwork refused group={} reason={}",
+                group,
+                refused.reason()
+            );
+            // The fetcher's words can quote what an origin sent.
+            let detail: String = refused
+                .to_string()
+                .chars()
+                .map(|c| if c.is_control() { ' ' } else { c })
+                .take(300)
+                .collect();
+            respond(
+                connection,
+                refused.status(),
+                "application/json",
+                &error_body(&detail),
+            );
+        }
+    }
 }
 
 /// The catalog version a `GET` asks its state in: `?v=1` is the v1 shape, and
