@@ -289,6 +289,55 @@ export function firmwareRescanCommand() {
   return '{"v":2,"t":"firmware_rescan"}';
 }
 
+// Room correction (docs/control-plane.md, "Room correction: the
+// `measure_sweep` command" and "Room correction: a recording, its fit and the
+// undo"), in the same canonical encoding.
+//
+// A filter is { freq_hz, gain_db, q } as the server's fit spells it: whole
+// Hz, a gain with exactly two places and a Q with exactly three, which is how
+// the catalog writes them (JSON.stringify would write -12 for -12.00).
+export function filterLiteral(filter) {
+  const number = (value) => Number(value) || 0;
+  return `{"freq_hz":${Math.round(number(filter.freq_hz))},"gain_db":${number(filter.gain_db).toFixed(2)},"q":${number(
+    filter.q,
+  ).toFixed(3)}}`;
+}
+
+// `room_eq` with `filters`: the room's correction, replaced whole and
+// switched on. This is the apply: the server keeps what stood before it as
+// the room's one undo step.
+export function roomEqCommand(zone, filters) {
+  return `{"v":2,"t":"room_eq","zone":${JSON.stringify(zone)},"filters":[${filters.map(filterLiteral).join(",")}],"enabled":true}`;
+}
+
+// `room_eq` with `enabled` alone: the filters are kept and switched on or
+// off. It is not an apply, and leaves the undo step as it is.
+export function roomEqEnabledCommand(zone, enabled) {
+  return `{"v":2,"t":"room_eq","zone":${JSON.stringify(zone)},"enabled":${enabled ? "true" : "false"}}`;
+}
+
+// `room_eq_undo`: the room's correction as it was before the last apply.
+export function roomEqUndoCommand(zone) {
+  return `{"v":2,"t":"room_eq_undo","zone":${JSON.stringify(zone)}}`;
+}
+
+// `measure_sweep`: the server plays the measurement sweep in the room, once,
+// at the room's own volume.
+export function measureSweepCommand(zone) {
+  return `{"v":2,"t":"measure_sweep","zone":${JSON.stringify(zone)}}`;
+}
+
+// The most a recording may weigh, the route's own bound (2 MiB). The route
+// refuses a larger one from its head and closes the connection, which a page
+// may see as a failed request with no answer to read, so it is checked here.
+export const MAX_RECORDING_BYTES = 2_097_152;
+
+// The name a refusal starts with, where it has one: the catalog writes
+// `<name>: <words>` (`too_quiet: the recording's peak is ...`).
+export function refusalName(detail) {
+  return /^([a-z][a-z_-]*): /.exec(String(detail ?? ""))?.[1] ?? "";
+}
+
 // Where a group's now-playing artwork is, for an <img>: the server's own
 // route (docs/control-plane.md, "Now-playing artwork"), which names the group
 // and nothing else. The record's own artwork address is somebody else's, and
@@ -473,8 +522,62 @@ export function createClient({ fetch = globalThis.fetch.bind(globalThis), base =
     };
   }
 
+  // POST api/room-fit: one recording of the measurement sweep, a 16-bit mono
+  // WAV at 48 kHz (`wav`, a Uint8Array), for the server to fit. This is the
+  // one request that carries a recording, and it goes to this server and
+  // nowhere else. `sweep` names the sweep that was recorded where it is not
+  // the one `measure_sweep` plays: { sweepMs, fadeInMs }, each optional.
+  // Resolves, never rejects: { ok: true, fit } with the proposed filters and
+  // the fitter's two figures, { filters, rmsBeforeDb, rmsAfterDb }; or
+  // { ok: false, refusal } with the server's words, `field` where it named
+  // one and `name` where the words start with one (`too_quiet`). Nothing is
+  // applied by it.
+  async function roomFit(zone, wav, sweep = {}) {
+    if (wav.byteLength > MAX_RECORDING_BYTES) {
+      return { ok: false, refusal: `the recording is ${wav.byteLength} bytes, over the ${MAX_RECORDING_BYTES} the server takes` };
+    }
+    let query = `zone=${encodeURIComponent(zone)}`;
+    if (Number.isFinite(sweep.sweepMs)) query += `&sweep_ms=${Math.round(sweep.sweepMs)}`;
+    if (Number.isFinite(sweep.fadeInMs)) query += `&fade_in_ms=${Math.round(sweep.fadeInMs)}`;
+    let response;
+    try {
+      response = await fetch(`${base}api/room-fit?${query}`, {
+        method: "POST",
+        headers: { "Content-Type": "audio/wav" },
+        body: wav,
+        cache: "no-store",
+        redirect: "manual",
+      });
+    } catch {
+      return { ok: false, refusal: "the server could not be reached" };
+    }
+    if (signedOut(response)) return { ok: false, refusal: SIGNED_OUT, signedOut: true };
+    if (!response.ok) {
+      const refused = await refusalOf(response);
+      const name = refusalName(refused.refusal);
+      return { ok: false, ...refused, ...(name ? { name } : {}) };
+    }
+    try {
+      const answer = await response.json();
+      if (!answer || answer.t !== "room_fit" || !Array.isArray(answer.filters)) throw new Error("not a fit");
+      const figure = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
+      return {
+        ok: true,
+        fit: {
+          filters: answer.filters
+            .filter((filter) => filter && typeof filter === "object")
+            .map(({ freq_hz, gain_db, q }) => ({ freq_hz, gain_db, q })),
+          rmsBeforeDb: figure(answer.rms_before_db),
+          rmsAfterDb: figure(answer.rms_after_db),
+        },
+      };
+    } catch {
+      return { ok: false, refusal: "the server's answer was not a fit this page can read" };
+    }
+  }
+
   // The address of a group's artwork as this page reaches the server.
   const artwork = (group, art) => artworkUrl(base, group, art);
 
-  return { state, command, events, artwork };
+  return { state, command, events, artwork, roomFit };
 }

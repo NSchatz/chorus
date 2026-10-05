@@ -14,6 +14,8 @@ import { fakeServer, fakeTimers, settle, stateOf, zone } from "./fake-server.js"
 const NO_LIMITS = { limit: null, effectiveLimit: null, quietEnabled: null, windows: [] };
 // What a room's TV path and bass management read as from a state that carries
 // none of them: no theater section is offered, and nothing is made up.
+// What a room's correction reads as from a state that carries none.
+const NO_CORRECTION = { enabled: null, filters: [], undo: false };
 const NO_THEATER = {
   offered: false,
   avTrimMs: null,
@@ -57,6 +59,7 @@ test("a room is read as its name, volume in thousandths, mute and bonded set", (
       limits: NO_LIMITS,
       // A pair is not a theater set; the upmix is the server's word.
       theater: { ...NO_THEATER, tvUpmix: "ambient" },
+      correction: NO_CORRECTION,
       group: "living",
       bond: [
         { endpoint: "chorus-0123456789ab", name: "Left of the TV", role: "FL" },
@@ -74,6 +77,8 @@ test("a room is read as its name, volume in thousandths, mute and bonded set", (
       sound: { bass: null, treble: null, loudness: null, night: null, speech: null },
       limits: NO_LIMITS,
       theater: NO_THEATER,
+    correction: NO_CORRECTION,
+      correction: NO_CORRECTION,
       group: "den",
       bond: [],
       source: null,
@@ -92,6 +97,7 @@ test("a member the app cannot read is null, not a made-up value", () => {
     sound: { bass: null, treble: null, loudness: null, night: null, speech: null },
     limits: NO_LIMITS,
     theater: NO_THEATER,
+    correction: NO_CORRECTION,
     group: "kitchen",
     bond: [],
     source: null,

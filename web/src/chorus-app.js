@@ -52,6 +52,7 @@ import "./groups.js";
 import { LAYOUTS, watchLayout } from "./layout.js";
 import "./limits.js";
 import { MODES } from "./mode.js";
+import "./room-correction.js";
 import "./rooms.js";
 import { HOME, HOME_ADDRESS, addressOf, createNavigation, screenOf } from "./routes.js";
 import "./sound.js";
@@ -419,7 +420,7 @@ export class ChorusApp extends LitElement {
   // always one to paint.
   _screen(route) {
     const screen = screenOf(route.screen);
-    const context = { view: this._view, refusals: this._refusals, refusalFields: this._refusalFields };
+    const context = { view: this._view, refusals: this._refusals, refusalFields: this._refusalFields, store: this.store };
     return html`
       <main
         aria-label=${screen.title(route.params, this._view)}
