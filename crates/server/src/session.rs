@@ -533,12 +533,15 @@ impl SessionContext {
     pub fn session_down(&self, endpoint_id: &str, session: u64) {
         // Its microphone buffer is wiped with it, and its gate is no longer
         // the room's word unless another session of the endpoint is live.
+        // The room model is told before the line is said, as for a gate.
         let (still_live, line) = self.voice.session_down(session);
+        if let Some(control) = &self.control {
+            control.speaker_mic_gate(endpoint_id, still_live);
+        }
         if let Some(line) = line {
             self.say(&line);
         }
         if let Some(control) = &self.control {
-            control.speaker_mic_gate(endpoint_id, still_live);
             if let Some(speaker) = self.firmware.as_ref().and_then(|f| f.session_down(session)) {
                 control.firmware_interrupted(&speaker);
             }
@@ -847,11 +850,14 @@ pub fn route_controller(
                 let live = state.gate == MicGate::Live;
                 match ctx.voice.gate(session, live) {
                     Some((changed, line)) => {
-                        if let Some(line) = line {
-                            ctx.say(&line);
-                        }
+                        // The room model first, the line second: whoever
+                        // reads the line finds the room's `mic_muted`
+                        // already following the gate it names.
                         if let (true, Some(control)) = (changed, ctx.control.as_ref()) {
                             control.speaker_mic_gate(&endpoint, live);
+                        }
+                        if let Some(line) = line {
+                            ctx.say(&line);
                         }
                     }
                     None => ctx.say(&format!(

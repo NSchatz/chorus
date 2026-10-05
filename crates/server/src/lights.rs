@@ -70,10 +70,10 @@ pub struct LightFrame {
     /// timeline: the frame's own instant, or the onset's when it carries a
     /// beat, plus the room's heard latency.
     pub timestamp_ns: u64,
-    /// `timestamp_ns` minus the server timeline's now when the frame was
-    /// rendered for writing, ms, rounded down: how long after the server
-    /// wrote the frame the room hears it. Negative when the room already
-    /// has.
+    /// `timestamp_ns` minus the server timeline at the instant the event
+    /// writer took the frame for writing (the instant the rate cap is
+    /// measured from), ms, rounded down: how long after the server wrote the
+    /// frame the room hears it. Negative when the room already has.
     pub lead_ms: i64,
     /// The held sample peak, 0 to 255 (the wire's `peak`).
     pub peak: u8,
@@ -317,11 +317,21 @@ impl LightSubscription {
     /// this subscriber has not been sent a frame made at or after it (a beat
     /// in a superseded frame is carried, stamped at its onset), and 0
     /// otherwise.
+    ///
+    /// `now` is both the instant the cap is measured from and the instant
+    /// the frame's `lead_ms` is reckoned at: the caller reads the clock just
+    /// before this call.
     pub fn next(&mut self, now: Instant) -> Option<String> {
         if self.wait(now).is_some() {
             return None;
         }
-        let now_ns = self.tap.timeline.get()?.now_ns();
+        // The timeline's reading at `now`, not a second look at the clock:
+        // the cap is measured from `now`, so the moment a frame says it was
+        // written (its stamp less its lead) is the moment the cap counts
+        // from, and two frames' own accounts are never closer than the cap
+        // however long the writer took between its clock and this line.
+        let since_epoch = now.saturating_duration_since(self.tap.timeline.get()?.epoch());
+        let now_ns = u64::try_from(since_epoch.as_nanos()).unwrap_or(u64::MAX);
         let frame = {
             let rooms = lock(&self.tap.rooms);
             let room = rooms.iter().find(|r| r.zone == self.zone)?;
@@ -538,5 +548,49 @@ mod tests {
         assert_eq!((tap.sent(), tap.superseded()), (2, 3));
         // The room on no slot was sent nothing.
         assert_eq!(study.next(start + Duration::from_secs(5)), None);
+    }
+
+    /// The cap and the lead are one clock reading. Two frames taken exactly
+    /// the cap apart are, by the frames' own account (the stamp less the
+    /// lead, as `tests/visualizer_stream.rs` reckons it), written the cap
+    /// apart, however long the writer took between reading its clock and
+    /// rendering each frame.
+    #[test]
+    fn the_lead_is_reckoned_at_the_instant_the_cap_is_measured_from() {
+        let (tap, _woken) = tap();
+        let mut den = tap.subscribe("den");
+        tap.place(|_| (Some(0), 180_000_000));
+        let wrote_ms = |event: &str| -> i128 {
+            let message = event
+                .strip_prefix("data: ")
+                .and_then(|m| m.strip_suffix("\n\n"))
+                .unwrap();
+            let parsed = json::parse(message).unwrap();
+            let int = |key: &str| -> i128 {
+                parsed
+                    .get(key)
+                    .and_then(Value::as_num)
+                    .unwrap()
+                    .parse()
+                    .unwrap()
+            };
+            int("timestamp_ns") / 1_000_000 - int("lead_ms")
+        };
+        let cap_ms = MIN_FRAME_INTERVAL.as_millis() as i128;
+        let start = Instant::now();
+        // The writer read its clock, then was held up before it rendered the
+        // first frame, and was not held up before the second.
+        tap.push(0, 1_000_000_000, &analysed(40, 0, None));
+        std::thread::sleep(Duration::from_millis(30));
+        let first = wrote_ms(&den.next(start).expect("a frame"));
+        tap.push(0, 1_040_000_000, &analysed(50, 0, None));
+        let second = wrote_ms(&den.next(start + MIN_FRAME_INTERVAL).expect("the next"));
+        // Each side is a whole millisecond rounded down, so the two may
+        // differ from the cap by one.
+        assert!(
+            (cap_ms - 1..=cap_ms + 1).contains(&(second - first)),
+            "written {} ms apart by their own account",
+            second - first
+        );
     }
 }

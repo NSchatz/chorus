@@ -416,7 +416,10 @@ fn serve(peer: &mut Peer, state: &ControlState, now: Instant) -> Served {
             },
             // The room's latest frame, when the cap allows one and there is
             // one newer than the last this subscriber was sent.
-            Feed::Light(subscription) => subscription.next(now),
+            // The clock is read here, not taken from the pass: the frame's
+            // lead and its cap are both reckoned at this instant, and a pass
+            // that served other peers first does not overstate the lead.
+            Feed::Light(subscription) => subscription.next(Instant::now()),
             // Handled above.
             Feed::Mic { .. } => None,
         };
