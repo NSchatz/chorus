@@ -101,6 +101,52 @@ export function soundCommand(zone, changes = {}) {
   return `${body}}`;
 }
 
+// The volume limits and quiet hours of a room (docs/control-plane.md, "The
+// commands catalog version 2 adds"), in the same canonical encoding;
+// fixtures/control/v2 has the vector of each.
+//
+// `limit`: the room's maximum volume, in thousandths. The server pulls the
+// room's volume down to it.
+export function limitCommand(zone, thousandths) {
+  return `{"v":2,"t":"limit","zone":${JSON.stringify(zone)},"limit":${volumeLiteral(thousandths)}}`;
+}
+
+// The days of a week as the catalog names them, in the order it wants them.
+export const WEEK = Object.freeze(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]);
+// Most quiet-hours windows one room may have (the catalog's bound).
+export const MAX_QUIET_WINDOWS = 8;
+
+// `quiet_hours`: the room's windows, every one of them, replacing what it
+// had; `[]` removes them. A window is { days, start, end, limit }: the days
+// it starts on, "HH:MM" twice, and its cap in thousandths. The days are
+// written once each and in week order, whatever order they were given in.
+export function quietHoursCommand(zone, windows = []) {
+  const written = windows.map((window) => {
+    const days = WEEK.filter((day) => (window.days ?? []).includes(day));
+    return `{"days":${JSON.stringify(days)},"start":${JSON.stringify(String(window.start))},"end":${JSON.stringify(
+      String(window.end),
+    )},"limit":${volumeLiteral(window.limit)}}`;
+  });
+  return `{"v":2,"t":"quiet_hours","zone":${JSON.stringify(zone)},"windows":[${written.join(",")}]}`;
+}
+
+// `quiet_hours_enabled`: whether the room's windows cap it. Its windows stay.
+export function quietHoursEnabledCommand(zone, enabled) {
+  return `{"v":2,"t":"quiet_hours_enabled","zone":${JSON.stringify(zone)},"enabled":${enabled ? "true" : "false"}}`;
+}
+
+// `autoplay`: the rule of one input (`<endpoint>/<input>`), created or
+// replaced whole: where it plays (a room or a saved group) and whether it is
+// in force. A rule's two TV fields are the catalog's to default: each is
+// written only when `false`, so a rule that has one switched off keeps it
+// through a change of its target or its switch, and a rule that has neither
+// has the bytes of fixtures/control/v2/autoplay.json.
+export function autoplayCommand(input, target, enabled, { stopOnStandby = true, lowLatency = true } = {}) {
+  return `{"v":2,"t":"autoplay","input":${JSON.stringify(input)},"target":${JSON.stringify(target)},"enabled":${
+    enabled ? "true" : "false"
+  }${stopOnStandby === false ? ',"stop_on_standby":false' : ""}${lowLatency === false ? ',"low_latency":false' : ""}}`;
+}
+
 // Where a group's now-playing artwork is, for an <img>: the server's own
 // route (docs/control-plane.md, "Now-playing artwork"), which names the group
 // and nothing else. The record's own artwork address is somebody else's, and

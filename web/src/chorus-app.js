@@ -25,7 +25,9 @@
 // entry of the browser's history, so the browser's back button returns; the
 // link is in the screen's region and not the header, which a wide kiosk does
 // not show. The navigation's two buttons leave a further screen for the
-// region they name.
+// region they name. A room's screens are linked from the room's card; a
+// screen of the whole house (autoplay.js) is linked from the home, under the
+// rooms.
 //
 // It lays itself out twice over (the ADR of the layouts and the kiosk):
 //   layout   "phone" or "desktop", from the viewport's width (layout.js). A
@@ -44,11 +46,13 @@ import { LitElement, css, html, nothing } from "lit";
 
 import { createDrag } from "./drag.js";
 import { groupOfRoom, moveCommand } from "./grouping.js";
+import { AUTOPLAY_SCREEN } from "./autoplay.js";
 import "./groups.js";
 import { LAYOUTS, watchLayout } from "./layout.js";
+import "./limits.js";
 import { MODES } from "./mode.js";
 import "./rooms.js";
-import { HOME, HOME_ADDRESS, createNavigation, screenOf } from "./routes.js";
+import { HOME, HOME_ADDRESS, addressOf, createNavigation, screenOf } from "./routes.js";
 import "./sound.js";
 
 export class ChorusApp extends LitElement {
@@ -195,6 +199,10 @@ export class ChorusApp extends LitElement {
     }
     section {
       padding-bottom: var(--reset-margin);
+    }
+    /* The home's links to the house-wide screens, under the rooms. */
+    a.more {
+      margin-top: var(--surface-gap);
     }
     p {
       margin: var(--reset-margin);
@@ -346,9 +354,12 @@ export class ChorusApp extends LitElement {
     this._refusalFields = { ...this._refusalFields, [subject]: result.field ?? "" };
   }
 
+  // A screen that has to know when its command was answered (limits.js) says
+  // so with a `done` in the event's detail: it is called once the server has
+  // answered, accepted or refused, and what it answered is held.
   _onCommand(event) {
-    const { subject, room, body } = event.detail;
-    this._send(subject ?? room, body);
+    const { subject, room, body, done } = event.detail;
+    this._send(subject ?? room, body).then(() => done?.());
   }
 
   // A move: the room goes to the destination, if that is somewhere else.
@@ -476,6 +487,7 @@ export class ChorusApp extends LitElement {
           .moving=${this._moving}
           .over=${this._over}
         ></chorus-rooms>
+        <a class="more" href=${addressOf(AUTOPLAY_SCREEN)} data-route aria-label="Autoplay rules">Autoplay</a>
         <slot></slot>
       </main>
     `;
