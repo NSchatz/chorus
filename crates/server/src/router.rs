@@ -27,7 +27,11 @@
 //! - **Slots** (`--slots S`): S fanouts, one per stream slot, and one more that
 //!   plays silence to a session whose endpoint is in no room, or whose room's
 //!   group has no slot (its source is `none`). The extra one is not counted in
-//!   S: it is where nobody is listening to anything.
+//!   S: it is where nobody is listening to anything. After it come the
+//!   announcement mixes (ADR 0174, `crate::mixer`), as many as the server
+//!   was built with: fanout `S + 1 + m` is mix `m`, the stream the player
+//!   sessions of the rooms an announcement is playing in hear while it
+//!   lasts.
 //!
 //! # What it holds per session, and why
 //!
@@ -154,6 +158,7 @@ pub struct SessionStart {
 pub struct Router {
     fanouts: Vec<Arc<Fanout>>,
     slots: usize,
+    mixes: usize,
     sessions: Mutex<Vec<Entry>>,
     /// Visualizer sessions on each fanout.
     watchers: Vec<AtomicUsize>,
@@ -174,17 +179,26 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 impl Router {
     /// The one-stream shape: one fanout, every session on it.
     pub fn single(fanout: Arc<Fanout>) -> Router {
-        Router::with(vec![fanout], 0)
+        Router::with(vec![fanout], 0, 0)
     }
 
     /// The slot shape: `slots` fanouts, then the silent one.
     pub fn slotted(slots: usize) -> Router {
-        let fanouts = (0..=slots).map(|_| Arc::new(Fanout::new())).collect();
-        Router::with(fanouts, slots)
+        Router::slotted_with_mixes(slots, 0)
     }
 
-    fn with(fanouts: Vec<Arc<Fanout>>, slots: usize) -> Router {
+    /// The slot shape with `mixes` announcement mixes after the silent
+    /// fanout (ADR 0174).
+    pub fn slotted_with_mixes(slots: usize, mixes: usize) -> Router {
+        let fanouts = (0..=slots + mixes)
+            .map(|_| Arc::new(Fanout::new()))
+            .collect();
+        Router::with(fanouts, slots, mixes)
+    }
+
+    fn with(fanouts: Vec<Arc<Fanout>>, slots: usize, mixes: usize) -> Router {
         Router {
+            mixes,
             watchers: fanouts.iter().map(|_| AtomicUsize::new(0)).collect(),
             // Over the stream slots alone: the silent fanout and the
             // one-stream shape's only fanout are never analysed.
@@ -212,6 +226,16 @@ impl Router {
     /// slot shape, the only one otherwise.
     pub fn idle(&self) -> usize {
         self.slots
+    }
+
+    /// How many announcement mixes this router carries.
+    pub fn mixes(&self) -> usize {
+        self.mixes
+    }
+
+    /// The fanout of announcement mix `mix`, when there is one.
+    pub fn mix_route(&self, mix: usize) -> Option<usize> {
+        (mix < self.mixes).then_some(self.slots + 1 + mix)
     }
 
     /// Held by the audio thread while it broadcasts one tick to every fanout,

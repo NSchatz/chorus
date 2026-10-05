@@ -80,6 +80,7 @@ pub mod lights;
 pub mod linein;
 pub mod mediaplayer;
 pub mod metrics;
+pub mod mixer;
 pub mod mqtt;
 pub mod player;
 pub mod playerport;

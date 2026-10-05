@@ -947,7 +947,10 @@ fn main() -> ExitCode {
     // One stream and its one fanout, or `--slots S` of them and the silent
     // one; either way the router is what attaches each session to one.
     let router = Arc::new(if config.slots > 0 {
-        Router::slotted(config.slots)
+        // (ADR 0174) Two announcement mixes a player: one for the clip a
+        // player plays and one for the mix whose music is still coming back
+        // when that player's next clip starts.
+        Router::slotted_with_mixes(config.slots, 2 * config.players)
     } else {
         Router::single(Arc::new(chorus_server::stream::Fanout::new()))
     });
@@ -994,6 +997,12 @@ fn main() -> ExitCode {
         media.players = (0..config.players)
             .map(|_| Arc::new(PlayerPort::for_format(&format)))
             .collect();
+        // (ADR 0174) What the audio thread says about each announcement
+        // mix; the mixers themselves are allocated by the audio thread
+        // before its first tick.
+        media.mixes = (0..router.mixes())
+            .map(|_| Arc::new(chorus_server::mixer::MixPort::new()))
+            .collect();
         // (goal 17) The Soloist receivers' ports, `--soloist-receivers` of
         // them, allocated here like the player ports. None without the
         // flag.
@@ -1019,6 +1028,7 @@ fn main() -> ExitCode {
     // The audio thread takes the media; the player threads, created below
     // with the rest, each take the producer's side of one port.
     let player_ports = media.players.clone();
+    let mix_ports = media.mixes.clone();
     if let Some((_, state)) = &control {
         state.set_players(player_ports.len());
     }
@@ -1074,7 +1084,8 @@ fn main() -> ExitCode {
     // The slot shape's two channels: what each slot plays, from the
     // conductor (bounded, drained at every chunk boundary), and what the
     // audio thread says about the configured stream, to this thread.
-    let (slot_commands, slot_inbox) = mpsc::sync_channel::<SlotCommand>(4 * config.slots.max(1));
+    let (slot_commands, slot_inbox) =
+        mpsc::sync_channel::<SlotCommand>(4 * config.slots.max(1) + 4 * router.mixes());
     let (slot_events, slot_outcomes) = mpsc::channel::<SlotEvent>();
     let (slots_failed, slots_stopped) = mpsc::channel::<ServeError>();
     {
@@ -1457,11 +1468,20 @@ fn main() -> ExitCode {
     // the command is refused by name (`no-players`) after the same checks.
     let announcer = control.as_ref().map(|(_, state)| {
         let status = status.clone();
-        let announcer = Arc::new(chorus_server::announce::Announcer::new(
+        let mut announcer = chorus_server::announce::Announcer::new(
             player_sessions.clone(),
             &config.announce_origins,
             Box::new(move |line: &str| status.say(line)),
-        ));
+        );
+        // (ADR 0174) With stream slots and players a clip is mixed over
+        // what its rooms play; without, it interrupts (ADR 0136).
+        if !mix_ports.is_empty() {
+            announcer = announcer.with_mixes(chorus_server::announce::Mixes::new(
+                slot_commands.clone(),
+                mix_ports.clone(),
+            ));
+        }
+        let announcer = Arc::new(announcer);
         state.announce_through(Arc::clone(&announcer));
         announcer
     });

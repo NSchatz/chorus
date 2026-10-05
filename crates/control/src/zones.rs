@@ -334,6 +334,79 @@ pub struct Zones {
     /// (v2, voice) The wake-word models the server runs, listed in the
     /// state as `wake_words` when there is any. Never persisted.
     wake_words: Vec<WakeWord>,
+    /// (announcements, ADR 0174) The announcements the server is playing
+    /// and the last few that are over, each with its outcome, written into
+    /// the state as `announcements` when there is any. Never persisted.
+    announcements: Vec<Announcement>,
+}
+
+/// (ADR 0174) Where an announcement is: what a caller of `announce` waits
+/// on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnnouncementState {
+    /// Its rooms are ducked for it, or its clip is playing.
+    Playing,
+    /// Its clip played to its end.
+    Finished,
+    /// Its clip could not be fetched or decoded, or was cut at the bound.
+    Failed,
+    /// Something else took its rooms: an alarm, an announcement that
+    /// replaced it, a person who regrouped them.
+    Displaced,
+}
+
+impl AnnouncementState {
+    /// The word the state message carries.
+    pub fn name(self) -> &'static str {
+        match self {
+            AnnouncementState::Playing => "playing",
+            AnnouncementState::Finished => "finished",
+            AnnouncementState::Failed => "failed",
+            AnnouncementState::Displaced => "displaced",
+        }
+    }
+}
+
+/// (ADR 0174) One announcement as the state message carries it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Announcement {
+    /// Its number: the `announcement` member of its command's answer.
+    pub id: u64,
+    /// The command's target.
+    pub target: String,
+    /// The rooms that hear it.
+    pub rooms: Vec<String>,
+    /// Where it is.
+    pub state: AnnouncementState,
+    /// Why it failed or what displaced it, in the server's words.
+    pub reason: Option<String>,
+}
+
+impl Announcement {
+    fn value(&self) -> Value {
+        let mut members = vec![
+            ("id".to_string(), Value::int(self.id as i64)),
+            ("target".to_string(), Value::text(&self.target)),
+            ("rooms".to_string(), texts(&self.rooms)),
+            ("state".to_string(), Value::text(self.state.name())),
+        ];
+        if let Some(reason) = &self.reason {
+            members.push(("reason".to_string(), Value::text(reason)));
+        }
+        Value::Obj(members)
+    }
+}
+
+/// (ADR 0174) What the server looks at to decide whether an announcement
+/// mixed over its rooms still has them ([`Zones::announce_watch`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnnounceWatch {
+    /// Those of its rooms that are still in the group it started in.
+    pub here: Vec<String>,
+    /// The alarm ringing in one of its rooms, if any.
+    pub ringing: Option<String>,
+    /// What that group plays now.
+    pub source: Source,
 }
 
 /// (goal 18) What [`Zones::announce_begin`] changed, which is what the end of
@@ -344,6 +417,10 @@ pub struct Announced {
     pub group: String,
     /// What the group played before.
     pub previous: Source,
+    /// The rooms that hear the clip: the whole group for
+    /// [`Zones::announce_begin`], the target's own rooms for
+    /// [`Zones::announce_over_begin`].
+    pub rooms: Vec<String>,
     /// Every room of the group whose volume the announcement set: the room,
     /// the volume it had, and the volume it was given (clamped).
     pub volumes: Vec<(String, Volume, Volume)>,
@@ -2289,6 +2366,10 @@ impl Zones {
         Zones::group_source(&player)?;
         next.player_is_free(&group, &player)?;
         next.set_source(&group, player);
+        let rooms = members
+            .iter()
+            .map(|at| next.zones[*at].id.clone())
+            .collect();
         let mut volumes = Vec::new();
         if let Some(volume) = volume {
             for at in members {
@@ -2303,8 +2384,138 @@ impl Zones {
         Ok(Announced {
             group,
             previous,
+            rooms,
             volumes,
         })
+    }
+
+    /// (ADR 0174) The rooms an announcement to `target` is mixed over: a
+    /// room alone, whatever group it is in; every room of a formed group;
+    /// a saved group's rooms (the ones in it now when it is active, the
+    /// ones it lists when it has yet to be taken). Empty for an unknown
+    /// target.
+    pub fn announce_over_rooms(&self, target: &str) -> Vec<String> {
+        let ids = |members: Vec<usize>| -> Vec<String> {
+            members
+                .iter()
+                .map(|at| self.zones[*at].id.clone())
+                .collect()
+        };
+        match self.resolve(target) {
+            None => Vec::new(),
+            Some(Target::Room(i)) => vec![self.zones[i].id.clone()],
+            Some(Target::Formed(id)) => ids(self.members(&id)),
+            Some(Target::Saved(id)) => match self.saved.iter().find(|g| g.id == id) {
+                Some(saved) if !self.is_active(saved) => saved.zones.clone(),
+                _ => ids(self.members(&id)),
+            },
+        }
+    }
+
+    /// (ADR 0174) What the group an announcement to `target` would play in
+    /// plays now, or `None` when there is no such group yet.
+    pub fn announce_source(&self, target: &str) -> Option<Source> {
+        self.announce_group(target).map(|group| self.source(&group))
+    }
+
+    /// (ADR 0174) Start an announcement that is mixed over what its rooms
+    /// play: no group's source changes. A saved group that is not active is
+    /// taken first (K78), as any play on a saved group does, and with
+    /// `volume` every room that hears the clip
+    /// ([`Zones::announce_over_rooms`]) is set to it, clamped to the room's
+    /// effective limit like every volume path. Returns the group the rooms
+    /// are in, what it plays, the rooms and the volumes changed, for the
+    /// end to put back. Refused by name, with nothing changed, for an
+    /// unknown target.
+    pub fn announce_over_begin(
+        &mut self,
+        target: &str,
+        volume: Option<Volume>,
+    ) -> Result<Announced, Refusal> {
+        let mut next = self.clone();
+        let (group, only) = match next.resolve(target) {
+            None => return Err(self.no_target(target, "a room, a saved group or a formed group")),
+            Some(Target::Room(i)) => (next.zones[i].group.clone(), Some(i)),
+            Some(Target::Formed(id)) => (id, None),
+            Some(Target::Saved(id)) => {
+                let active = next
+                    .saved
+                    .iter()
+                    .find(|g| g.id == id)
+                    .is_some_and(|g| next.is_active(g));
+                if !active {
+                    next.take(target, None)?;
+                }
+                (id, None)
+            }
+        };
+        let members = match only {
+            Some(i) => vec![i],
+            None => next.formed_members(&group)?,
+        };
+        let previous = next.source(&group);
+        let rooms = members
+            .iter()
+            .map(|at| next.zones[*at].id.clone())
+            .collect();
+        let mut volumes = Vec::new();
+        if let Some(volume) = volume {
+            for at in members {
+                let before = next.zones[at].volume;
+                next.set_volume(at, volume);
+                volumes.push((next.zones[at].id.clone(), before, next.zones[at].volume));
+            }
+        }
+        next.prune();
+        next.serial += 1;
+        *self = next;
+        Ok(Announced {
+            group,
+            previous,
+            rooms,
+            volumes,
+        })
+    }
+
+    /// (ADR 0174) Whether an announcement mixed over `rooms`, started in
+    /// `group`, still has them: which of them are still in that group,
+    /// whether an alarm rings in any of them, and what the group plays.
+    pub fn announce_watch(&self, rooms: &[String], group: &str) -> AnnounceWatch {
+        let here: Vec<String> = rooms
+            .iter()
+            .filter(|room| self.zone(room).is_some_and(|z| z.group == group))
+            .cloned()
+            .collect();
+        let ringing = self
+            .alarms
+            .iter()
+            .filter(|alarm| self.ringing.contains(&alarm.id))
+            .find(|alarm| {
+                let rings_in = self.announce_rooms(&alarm.target);
+                rooms.iter().any(|room| rings_in.contains(room))
+            })
+            .map(|alarm| alarm.id.clone());
+        AnnounceWatch {
+            here,
+            ringing,
+            source: self.source(group),
+        }
+    }
+
+    /// (ADR 0174) The announcements the state lists. Whether anything
+    /// changed; the serial moves only when it did.
+    pub fn set_announcements(&mut self, announcements: Vec<Announcement>) -> bool {
+        if self.announcements == announcements {
+            return false;
+        }
+        self.announcements = announcements;
+        self.serial += 1;
+        true
+    }
+
+    /// (ADR 0174) The announcements the state lists.
+    pub fn announcements(&self) -> &[Announcement] {
+        &self.announcements
     }
 
     /// (goal 17) What the receiver manager last said, if this server runs
@@ -2578,6 +2789,14 @@ impl Zones {
             state.push((
                 "wake_words".to_string(),
                 Value::Arr(self.wake_words.iter().map(WakeWord::value).collect()),
+            ));
+        }
+        // (ADR 0174) The announcements, written only while there is one to
+        // name, after everything else for the same reason.
+        if !self.announcements.is_empty() {
+            state.push((
+                "announcements".to_string(),
+                Value::Arr(self.announcements.iter().map(Announcement::value).collect()),
             ));
         }
         Value::Obj(state)

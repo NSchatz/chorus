@@ -65,6 +65,15 @@
 //! subscriber of the HTTP control plane watches (`crate::lights`), and such
 //! a room makes its slot a watched one.
 //!
+//! # The announcement mixes
+//!
+//! After the slots' inputs are settled, and under the same grid guard, each
+//! announcement mix (`crate::mixer`, ADR 0174) is cut from its base slot's
+//! chunk of this tick: the same frame when its duck is idle, and otherwise
+//! that chunk ducked with the clip's frames mixed over it, under the same
+//! sequence and timestamp. So a room on a mix and a room on the mix's base
+//! slot play one timeline.
+//!
 //! No clock but the monotonic timeline is read here, and nothing here waits
 //! on anything but the pace of the grid.
 
@@ -83,6 +92,7 @@ use chorus_sync::latency_grow::{
 };
 
 use crate::linein::{decode_sample, encode_sample, Port};
+use crate::mixer::{Mix, MixCommand, MixPort};
 use crate::playerport::PlayerPort;
 use crate::router::Router;
 use crate::serve::{ServeError, ServeParams};
@@ -156,6 +166,9 @@ pub enum SlotCommand {
         /// The latency, ns.
         latency_ns: i64,
     },
+    /// (announcements, ADR 0174) A change to one announcement mix
+    /// (`crate::mixer`).
+    Mix(MixCommand),
 }
 
 /// The gap between two plays of a chime while it is a slot's input, ms.
@@ -198,6 +211,10 @@ pub struct SlotMedia {
     /// (goal 17) The Soloist receivers' ports (`crate::soloistport`),
     /// `--soloist-receivers` of them: receiver `r<i>` is `soloists[i]`.
     pub soloists: Vec<Arc<SoloistPort>>,
+    /// (announcements, ADR 0174) What the audio thread says about each
+    /// announcement mix (`crate::mixer`): mix `m` is `mixes[m]`, and it is
+    /// cut only when the router carries a fanout for it.
+    pub mixes: Vec<Arc<MixPort>>,
 }
 
 /// What a slot's line-in is doing, on the audio thread. One per slot,
@@ -343,6 +360,23 @@ pub fn serve_slots(
     let soloist_ports = media.soloists.len();
     let mut soloist_pcm = vec![vec![0u8; bytes_per_chunk]; soloist_ports];
     let mut soloist_played = vec![false; soloist_ports];
+    // (announcements, ADR 0174) One mixer per mix fanout, with its buffers,
+    // and this tick's frame of every slot for a mix that only passes it on.
+    let mut mixes: Vec<Mix> = media
+        .mixes
+        .iter()
+        .take(router.mixes())
+        .map(|port| {
+            Mix::new(
+                Arc::clone(port),
+                params.format.sample_rate_hz,
+                channels,
+                frames,
+                params.format.sample_format.bytes_per_sample(),
+            )
+        })
+        .collect();
+    let mut slot_frames: Vec<Outbound> = Vec::with_capacity(slots);
     let chunk_ns = params.chunk_us * 1_000;
     let interval_ns = params.emit_interval_ns();
     let origin_ns = timeline.now_ns();
@@ -357,7 +391,13 @@ pub fn serve_slots(
     while keep.load(Ordering::SeqCst) {
         // What each slot plays, as far as is known before the stream is read
         // (the guard below takes any command sent since).
-        apply_commands(commands, &mut inputs, &mut chime_at, &mut players);
+        apply_commands(
+            commands,
+            &mut inputs,
+            &mut chime_at,
+            &mut players,
+            &mut mixes,
+        );
         if stream.is_none() {
             if let Ok(next) = streams.try_recv() {
                 stream = Some(next);
@@ -426,7 +466,13 @@ pub fn serve_slots(
             let _one_tick = router.grid();
             // At the chunk boundary: what each slot plays from this tick on,
             // including any command that arrived while the stream was read.
-            apply_commands(commands, &mut inputs, &mut chime_at, &mut players);
+            apply_commands(
+                commands,
+                &mut inputs,
+                &mut chime_at,
+                &mut players,
+                &mut mixes,
+            );
             // The inputs that carry their own audio, with no allocation but
             // the chunk's own: a chime into its slot's buffer, a line-in once
             // per port however many slots play it.
@@ -501,8 +547,47 @@ pub fn serve_slots(
                     }
                     _ => quiet.clone(),
                 };
+                slot_frames.push(frame.clone());
                 router.fanouts()[slot].broadcast(frame);
             }
+            // The announcement mixes: the base slot's own frame while the
+            // duck is idle, and that slot's audio ducked under the clip
+            // otherwise, on this tick's sequence and timestamp.
+            for (m, mix) in mixes.iter_mut().enumerate() {
+                let Some(route) = router.mix_route(m) else {
+                    continue;
+                };
+                let base = mix.base().filter(|slot| *slot < slots);
+                let frame = if mix.active() {
+                    let music: &[u8] = match base.map(|slot| (slot, inputs[slot])) {
+                        Some((_, SlotInput::Stream)) if have_stream => &pcm,
+                        Some((slot, SlotInput::Chime(_))) => &slot_pcm[slot],
+                        Some((_, SlotInput::LineIn(p)))
+                            if port_played.get(usize::from(p)) == Some(&true) =>
+                        {
+                            &port_pcm[usize::from(p)]
+                        }
+                        Some((_, SlotInput::Player(p)))
+                            if player_played.get(usize::from(p)) == Some(&true) =>
+                        {
+                            &player_pcm[usize::from(p)]
+                        }
+                        // A Soloist receiver's audio is never mixed with a
+                        // clip (P7): its rooms are paused for an
+                        // announcement, and a mix over one plays the clip
+                        // over silence.
+                        _ => &silence,
+                    };
+                    cut(mix.mix(music, &media.players, params.format.sample_format))?
+                } else {
+                    match base {
+                        Some(slot) => slot_frames[slot].clone(),
+                        None => quiet.clone(),
+                    }
+                };
+                router.fanouts()[route].broadcast(frame);
+            }
+            slot_frames.clear();
             router.fanouts()[router.idle()].broadcast(quiet);
         }
         // The visualizer, outside the grid guard: what each watched slot
@@ -577,6 +662,7 @@ fn apply_commands(
     inputs: &mut [SlotInput],
     chime_at: &mut [usize],
     players: &mut [LineInPlayer],
+    mixes: &mut [Mix],
 ) {
     while let Ok(command) = commands.try_recv() {
         match command {
@@ -594,6 +680,11 @@ fn apply_commands(
                     if let Some(plan) = p.plan.as_mut() {
                         let _ = plan.set_target(latency_ns);
                     }
+                }
+            }
+            SlotCommand::Mix(command) => {
+                if let Some(mix) = mixes.get_mut(command.mix()) {
+                    mix.apply(command);
                 }
             }
         }
