@@ -24,6 +24,37 @@ export function stateOf(serial, zones, more = {}) {
   return { v: 2, t: "state", serial, zones, groups: [], ...more };
 }
 
+// The server's group volume rule, as docs/control-plane.md documents it
+// ("Group volume (K77, Sonos-style)"), for the scripted server to answer a
+// `group_volume` with. It is the test's model of the SERVER and is nowhere in
+// the app: the group volume G is the average of the rooms' volumes in
+// thousandths, rounded half up; setting G' scales every room by G'/G (rounded
+// half up) and clamps each to its own effective limit, with no shortfall
+// redistributed; from G = 0 every room is set to G'.
+const halfUp = (value) => Math.floor(value + 0.5);
+const inThousandths = (volume) => Math.round(volume * 1000);
+
+export function groupVolumeOf(state, groupId) {
+  const rooms = state.zones.filter((room) => room.group === groupId);
+  return halfUp(rooms.reduce((sum, room) => sum + inThousandths(room.volume), 0) / rooms.length);
+}
+
+/** The state after `group_volume` on `groupId` asking for `wanted` thousandths. */
+export function afterGroupVolume(state, groupId, wanted) {
+  const before = groupVolumeOf(state, groupId);
+  const zones = state.zones.map((room) => {
+    if (room.group !== groupId) return room;
+    const scaled = before === 0 ? wanted : halfUp((inThousandths(room.volume) * wanted) / before);
+    const limit = inThousandths(room.effective_limit ?? 1);
+    return { ...room, volume: Math.min(scaled, limit) / 1000 };
+  });
+  const next = { ...state, serial: state.serial + 1, zones };
+  next.groups = state.groups.map((group) =>
+    group.id === groupId ? { ...group, volume: groupVolumeOf(next, groupId) / 1000 } : group,
+  );
+  return next;
+}
+
 function answerOf(status, body) {
   return {
     ok: status >= 200 && status < 300,

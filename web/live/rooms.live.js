@@ -12,13 +12,13 @@
 // run this file without it.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { after, before, test } from "node:test";
 
 import { createClient } from "../src/api.js";
 import "../src/chorus-app.js";
 import { createStore } from "../src/state.js";
 import { getByLabel, queryAllByLabel } from "../test/label-query.js";
+import { startHouse, until } from "./house.js";
 
 // The house: two rooms, one of them with a stereo pair bonded and a name its
 // id does not hold, so the text asserted below can only be the server's.
@@ -29,95 +29,13 @@ const PAIR = [
   { endpoint: "endpoint-b", role: "FR" },
 ];
 
-const LISTENING = /control listening on=\S*?:(\d+)/;
-
-let server;
-let serverLog = "";
+let house;
 let origin;
 let store;
 let app;
 
-// Start chorus-server with no audio device on loopback ports of its own
-// choosing, and resolve to its control port.
-function startServer() {
-  const args = [
-    "--listen", "127.0.0.1:0",
-    "--control-listen", "127.0.0.1:0",
-    "--ephemeral-identity",
-    "--allow-non-realtime",
-    "--allow-unlocked-memory",
-    "--source", "tone",
-    "--serve-forever",
-    "--zone", LIVING.id,
-    "--zone", DEN.id,
-  ]; // prettier-ignore
-  server = spawn(process.env.CHORUS_SERVER_BIN, args, { stdio: ["ignore", "pipe", "pipe"] });
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`chorus-server did not say where it listens within 30 s:\n${serverLog}`)),
-      30_000,
-    );
-    const read = (chunk) => {
-      serverLog += chunk;
-      const found = LISTENING.exec(serverLog);
-      if (found) {
-        clearTimeout(timer);
-        resolve(Number(found[1]));
-      }
-    };
-    server.stdout.setEncoding("utf8").on("data", read);
-    server.stderr.setEncoding("utf8").on("data", read);
-    server.once("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    server.once("exit", (code, signal) => {
-      clearTimeout(timer);
-      reject(new Error(`chorus-server exited (${code ?? signal}) before it listened:\n${serverLog}`));
-    });
-  });
-}
-
-// Another client of the same server: a command sent straight to it, the way
-// a script, the control page or a second phone would.
-async function otherClient(message) {
-  const response = await fetch(`${origin}/api/command`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: message,
-  });
-  const text = await response.text();
-  assert.equal(response.status, 200, `the server took ${message}: ${text}`);
-}
-
-// The room as the server's own GET /api/state has it now.
-async function serverRoom(id) {
-  const response = await fetch(`${origin}/api/state`);
-  assert.equal(response.status, 200);
-  const state = await response.json();
-  return state.zones.find((zone) => zone.id === id);
-}
-
-// Wait until `read()` gives what `wanted` describes, and fail saying what it
-// gave instead. Nothing here sleeps for a fixed time.
-async function until(what, read, wanted) {
-  const deadline = Date.now() + 10_000;
-  let got;
-  for (;;) {
-    got = await read();
-    try {
-      assert.deepEqual(got, wanted);
-      return;
-    } catch (error) {
-      if (Date.now() > deadline) {
-        throw new Error(`${what}: after 10 s it is ${JSON.stringify(got)}, expected ${JSON.stringify(wanted)}`, {
-          cause: error,
-        });
-      }
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-}
+const otherClient = (message) => house.command(message);
+const serverRoom = async (id) => (await house.state()).zones.find((zone) => zone.id === id);
 
 // What the page shows, read off the rendered elements.
 const cards = () => [
@@ -134,14 +52,15 @@ const shown = (id) => {
     bond: [...root.querySelectorAll("li")].map(text),
     volume: root.querySelector("input[type=range]").value,
     figure: text(root.querySelector("[data-volume]")),
-    muted: root.querySelector("button").getAttribute("aria-pressed"),
+    muted: root.querySelector("button[aria-pressed]").getAttribute("aria-pressed"),
     refusal: text(root.querySelector("[role=alert]")),
   };
 };
 
 before(async () => {
   assert.ok(process.env.CHORUS_SERVER_BIN, "CHORUS_SERVER_BIN names a built chorus-server");
-  origin = `http://127.0.0.1:${await startServer()}`;
+  house = await startHouse([LIVING.id, DEN.id]);
+  origin = house.origin;
   // The house, set up the way any client sets it: the living room's name, its
   // two wired endpoints, and the pair bonded.
   await otherClient(JSON.stringify({ v: 1, t: "name", zone: LIVING.id, name: LIVING.name }));
@@ -163,11 +82,7 @@ before(async () => {
 after(async () => {
   store?.stop();
   app?.remove();
-  if (server && server.exitCode === null) {
-    const gone = new Promise((resolve) => server.once("exit", resolve));
-    server.kill("SIGTERM");
-    await gone;
-  }
+  await house?.stop();
 });
 
 test("the app renders both rooms of a real server, and the bonded set with its channel roles", async () => {

@@ -7,7 +7,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { RETRY_MS, SILENCE_MS, createClient, muteCommand, volumeCommand, volumeLiteral } from "../src/api.js";
+import {
+  RETRY_MS,
+  SILENCE_MS,
+  createClient,
+  groupVolumeCommand,
+  joinCommand,
+  muteCommand,
+  takeCommand,
+  volumeCommand,
+  volumeLiteral,
+} from "../src/api.js";
 import { fakeServer, fakeTimers, settle, stateOf, zone } from "./fake-server.js";
 
 const fixture = (name) => readFileSync(new URL(`../../fixtures/control/${name}`, import.meta.url), "utf8").trim();
@@ -23,6 +33,12 @@ test("a volume is written with exactly three fractional digits", () => {
   assert.equal(volumeLiteral(7), "0.007");
   assert.equal(volumeLiteral(1200), "1.000");
   assert.equal(volumeLiteral(-3), "0.000");
+});
+
+test("the join, take and group volume commands are the catalog's own bytes", () => {
+  assert.equal(joinCommand("kitchen", "study"), fixture("v2/join.json"));
+  assert.equal(takeCommand("kitchen"), fixture("v2/take.json"));
+  assert.equal(groupVolumeCommand("downstairs", 400), fixture("v2/group_volume.json"));
 });
 
 test("the volume and mute commands are the catalog's own bytes", () => {

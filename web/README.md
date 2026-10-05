@@ -3,15 +3,19 @@
 The chorus app: Lit 3 elements bundled by esbuild (proposal P5, Option C; the decision record
 `docs/decisions/0181-the-web-app-stack.md` says what is pinned and why). Today it is the shell
 and the rooms screen: `chorus-app` holds the server's state, live, and shows every room with
-its bonded set, its volume and its mute (`docs/decisions/0185-the-apps-state-layer-and-its-live-test.md`).
+its bonded set, its volume and its mute (`docs/decisions/0185-the-apps-state-layer-and-its-live-test.md`),
+and above them every saved and live group, with a drag and a list to move a room between them
+and the server's group volume (`docs/decisions/0187-groups-in-the-app.md`).
 
 | Path | What |
 |---|---|
 | `src/` | `index.html`, `app.css` and `tokens.css` (the document and the tokens), `main.js` (the entry point), the elements and their pure logic |
 | `src/api.js`, `src/state.js` | the server as the app uses it (`api/state`, `api/events`, `POST api/command`) and the store that holds its last state message: the snapshot, then every event-stream update |
 | `src/rooms.js`, `src/room-card.js` | the rooms screen and one room's card |
+| `src/groups.js`, `src/group-card.js` | the groups region (every saved group, then every live one) and one group's card, with the group volume |
+| `src/grouping.js`, `src/drag.js` | a move (a room and a destination) as its one command, and the drag gesture on Pointer Events that makes one |
 | `test/` | the unit tests (`*.test.js`), `setup.js` (happy-dom's globals, loaded before Lit), `label-query.js` (find an element by its label, through shadow roots) and `fake-server.js` (a scripted server: the three routes, answered as the test says) |
-| `live/` | the live test (`rooms.live.js`): the same elements and store, in node with no browser, against a real `chorus-server`; `setup.js` gives it happy-dom's document and node's own network |
+| `live/` | the live tests (`rooms.live.js`, `groups.live.js`): the same elements and store, in node with no browser, against a real `chorus-server`; `house.js` starts that server and `setup.js` gives the tests happy-dom's document and node's own network |
 | `smoke/` | the one browser test (`app.spec.js`) and the fake login it signs in through (`fake-login.js`); `playwright.config.js` configures it |
 | `build.mjs` | the build: `src/` into `dist/`, deterministic |
 | `dist/` | the build's output, committed: `chorus-server` embeds it and never runs node |
@@ -30,7 +34,11 @@ CHORUS_SERVER_BIN=<a built chorus-server> make web-smoke   # the one browser tes
 `chorus-app` over a store that reads it and holds the page to the server in both directions:
 both rooms and the bond are rendered, a volume change and a mute made through the card's
 controls are read back from the server's `/api/state`, and a change another client makes
-appears in the card with no reload. It ends `web-live: PASS`; without `CHORUS_SERVER_BIN` it
+appears in the card with no reload. `groups.live.js` does the same for grouping, with three
+rooms and a saved group: a room dragged onto another forms a live group, the group slider
+moves every room and keeps their ratio, a room taken out dissolves the group and forming the
+saved group fills it, each read back from `/api/state` and compared with the levels the page
+shows. It ends `web-live: PASS`; without `CHORUS_SERVER_BIN` it
 ends `web-live: SKIPPED`, which under `CI=true` and in the gate is a failure. **A later screen
 proves itself the same way**: a file `live/<screen>.live.js` that starts the server its screen
 needs, drives the screen's controls by their labels and compares with `/api/state`.
@@ -68,4 +76,5 @@ Rules, each held by a check (`docs/conventions.md`, rules 13 and 14):
 - The server owns the state. An element shows what the store's last state message says and
   keeps no value of its own; a command changes the page when the state that resulted comes
   back, never before (no optimistic value), and a refused one shows the server's words. The
-  one thing an update does not touch is a control a person has hold of.
+  one thing an update does not touch is a control a person has hold of. A group's volume is
+  the figure the server gives for the group: the app averages and scales nothing.

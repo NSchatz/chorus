@@ -40,6 +40,29 @@ export function muteCommand(zone, muted) {
   return `{"v":1,"t":"mute","zone":${JSON.stringify(zone)},"muted":${muted ? "true" : "false"}}`;
 }
 
+// The grouping commands of catalog version 2 (docs/control-plane.md, "The
+// commands catalog version 2 adds"), in the same canonical encoding;
+// fixtures/control/v2 has the vector of each.
+//
+// `join`: the room plays in the target's group; the target is a room, or a
+// formed or saved group.
+export function joinCommand(zone, target) {
+  return `{"v":2,"t":"join","zone":${JSON.stringify(zone)},"target":${JSON.stringify(target)}}`;
+}
+
+// `take` (K78): every room of the target plays in the target's group. On a
+// saved group that makes it active; on a room it is how the room leaves the
+// group it is in, to play alone in the group named for it.
+export function takeCommand(target) {
+  return `{"v":2,"t":"take","target":${JSON.stringify(target)}}`;
+}
+
+// `group_volume` (K77): the server scales every room of the group; this
+// names the group volume asked for and nothing else.
+export function groupVolumeCommand(group, thousandths) {
+  return `{"v":2,"t":"group_volume","group":${JSON.stringify(group)},"volume":${volumeLiteral(thousandths)}}`;
+}
+
 // What a refused command says, for a person: the server's own `detail` where
 // the answer is one of the catalog's refusals, else the answer's text, else
 // the status alone.

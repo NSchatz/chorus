@@ -1,5 +1,5 @@
 // One room: its name, its bonded set with each member's channel role, its
-// volume and its mute.
+// volume and its mute, and where it plays: alone, or in a group.
 //
 // Everything it shows is the room as the server last said it (state.js); the
 // card keeps no value of its own. A volume or mute change is asked for with a
@@ -14,9 +14,19 @@
 // silence; the slider takes the server's value again when it loses focus, and
 // at once when the server refuses a command.
 
+//
+// Moving the room has two paths to the same commands (grouping.js). The
+// handle beside the name is what the drag gesture picks the room up by
+// (drag.js, Pointer Events: `touch-action: none` keeps a finger on it from
+// scrolling the page instead). The "Plays with" list is the path with no
+// drag, for a keyboard, a switch or a screen reader: it says where the room
+// is as the server has it, and choosing another place asks for the move.
+// Pressing the handle without dragging it goes to that list.
+
 import { LitElement, css, html, nothing } from "lit";
 
 import { muteCommand, volumeCommand } from "./api.js";
+import { placeOfValue } from "./grouping.js";
 
 // The channel roles of docs/protocol.md's channel map, as words.
 export const ROLE_NAMES = {
@@ -38,6 +48,10 @@ export class ChorusRoomCard extends LitElement {
     room: { attribute: false },
     // The server's words for the last command of this room it refused, or "".
     refusal: { type: String },
+    // The places the room can play, [{ value, label }], and the one it is in
+    // now (grouping.js: placesFor, placeOf).
+    places: { attribute: false },
+    place: { type: String },
     // The slider's position during a drag, in thousandths; null otherwise.
     _dragged: { state: true },
   };
@@ -53,6 +67,30 @@ export class ChorusRoomCard extends LitElement {
     h2 {
       margin: var(--reset-margin);
       font-size: var(--heading-size);
+    }
+    .head {
+      display: flex;
+      align-items: center;
+      gap: var(--surface-gap);
+    }
+    .head h2 {
+      flex: 1;
+    }
+    .handle {
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+    }
+    select {
+      flex: 1;
+      min-width: var(--shrink-min);
+      height: var(--control-size);
+      padding: var(--control-pad-y) var(--control-pad-x);
+      border: var(--stroke-1) solid var(--control-edge);
+      border-radius: var(--control-radius);
+      background: var(--control-surface);
+      color: var(--control-ink);
+      font: inherit;
     }
     h3 {
       margin: var(--reset-margin);
@@ -105,6 +143,7 @@ export class ChorusRoomCard extends LitElement {
       color: var(--control-disabled-ink);
     }
     input:focus-visible,
+    select:focus-visible,
     button:focus-visible {
       outline: var(--focus-ring-width) solid var(--focus);
       outline-offset: var(--focus-ring-offset);
@@ -119,6 +158,8 @@ export class ChorusRoomCard extends LitElement {
     super();
     this.room = null;
     this.refusal = "";
+    this.places = [];
+    this.place = "alone";
     this._dragged = null;
     this._sliderHeld = false;
   }
@@ -131,6 +172,9 @@ export class ChorusRoomCard extends LitElement {
   // refusal overrides that: the command did not happen, and the control goes
   // back to what the server still holds.
   updated(changed) {
+    // The list says where the server has the room, after every update.
+    const list = this._list;
+    if (list) list.value = this.place;
     const slider = this._slider;
     if (!slider || this.room.volume === null) return;
     const refused = changed.has("refusal") && Boolean(this.refusal);
@@ -164,6 +208,29 @@ export class ChorusRoomCard extends LitElement {
     this._ask(volumeCommand(this.room.id, Number(event.target.value)));
   }
 
+  get _list() {
+    return this.renderRoot.querySelector("select");
+  }
+
+  // Ask for the move, and put the list back on where the room is: it follows
+  // when the state that resulted comes back, and stays if the server refuses.
+  _onPlace(event) {
+    const value = event.target.value;
+    event.target.value = this.place;
+    if (value === this.place) return;
+    const destination = placeOfValue(value);
+    if (!destination) return;
+    this.dispatchEvent(
+      new CustomEvent("chorus-move", { detail: { room: this.room.id, destination }, bubbles: true, composed: true }),
+    );
+  }
+
+  // The handle pressed and not dragged (a click, Enter or Space): the path
+  // with no drag is the list.
+  _onHandle() {
+    this._list?.focus();
+  }
+
   _onMute() {
     this._ask(muteCommand(this.room.id, !this.room.muted));
   }
@@ -173,7 +240,19 @@ export class ChorusRoomCard extends LitElement {
     if (!room) return nothing;
     const figure = room.volume === null ? "Unavailable" : percent(this._dragged ?? room.volume);
     return html`
-      <h2>${room.name}</h2>
+      <div class="head">
+        <h2>${room.name}</h2>
+        <button
+          type="button"
+          class="handle"
+          data-drag-room=${room.id}
+          aria-label="Move ${room.name}"
+          title="Drag onto a room or a group, or press to choose from the list"
+          @click=${this._onHandle}
+        >
+          Move
+        </button>
+      </div>
       ${room.bond.length === 0
         ? nothing
         : html`
@@ -217,6 +296,14 @@ export class ChorusRoomCard extends LitElement {
           Mute
         </button>
         <span data-mute>${room.muted === null ? "Unavailable" : room.muted ? "Muted" : "Not muted"}</span>
+      </div>
+      <div class="row">
+        <label for="place">Plays with</label>
+        <select id="place" aria-label="Group for ${room.name}" @change=${this._onPlace}>
+          ${this.places.map(
+            (place) => html`<option value=${place.value} ?selected=${place.value === this.place}>${place.label}</option>`,
+          )}
+        </select>
       </div>
       <p role="alert">${this.refusal ? `Refused: ${this.refusal}` : nothing}</p>
     `;
