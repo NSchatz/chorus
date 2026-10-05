@@ -47,7 +47,7 @@ further screen has an address of its own (below).
 | Region | What it shows | What it does |
 |---|---|---|
 | Groups | every saved group, then every live group, each with its rooms, what it plays and what is playing | group volume (the server scales every room and keeps their ratio, K77); "Remove" a room; "Group these rooms" for a saved group that is not formed; choose an input |
-| Rooms | every room with its bonded set, its volume and its mute; a room alone also says what it plays and what is playing | volume, mute; move the room by dragging its handle onto a room or a group, or with the "Plays with" list on its card; choose an input; open the room's sound screen ("Sound") |
+| Rooms | every room with its bonded set, its volume and its mute; a room alone also says what it plays and what is playing | volume, mute; move the room by dragging its handle onto a room or a group, or with the "Plays with" list on its card; choose an input; open the room's sound screen ("Sound") and its limits screen ("Limits"). Under the rooms, "Autoplay" opens the house's autoplay rules |
 
 **Further screens and their addresses** (`docs/decisions/0197-further-screens-have-an-address-in-the-fragment.md`).
 A screen beyond the home has an address in the fragment, `#/` and a path, and is painted alone
@@ -57,8 +57,11 @@ in the main region, across both columns on a desktop, under a "Back" link:
 |---|---|
 | `/app/` or `/app/#/` | the home: the groups and the rooms |
 | `/app/#/rooms/<room id>/sound` | the sound of that room |
+| `/app/#/rooms/<room id>/limits` | the volume limit and the quiet hours of that room |
+| `/app/#/autoplay` | the house's autoplay rules, one for each input |
 
-- Opening a screen from the app (the "Sound" link on a room's card) is a new entry of the
+- Opening a screen from the app (the "Sound" or "Limits" link on a room's card, "Autoplay"
+  under the rooms) is a new entry of the
   browser's history, so the browser's back button, a phone's back gesture and the forward
   button work as on any site, and an address can be bookmarked, reloaded or sent to another
   person of the household.
@@ -86,7 +89,44 @@ changed is never written back from a page that had not yet heard. Nothing change
 until the server's answer says so; a refused command is shown as "Refused (<field>): <the
 server's words>"; a setting the state does not carry is "Unavailable". A change made anywhere
 else appears on the screen with no reload, except under a slider a person has hold of. Bass
-management, the TV upmix and a room's limits are not on this screen.
+management and the TV upmix are not on this screen; a room's limits have a screen of their own.
+
+**A room's volume limit and quiet hours** (`web/src/limits.js`; the catalog's `limit`,
+`quiet_hours` and `quiet_hours_enabled`, `docs/control-plane.md`, "The commands catalog version
+2 adds", and `docs/decisions/0150-quiet-hours-switched-off-and-on-per-room.md`):
+
+| Control | What it is | What it sends |
+|---|---|---|
+| Volume limit | a slider, 0 to 100%, with the value beside it | `limit`, when the slider is let go |
+| Limit in force now, Volume now | two figures, the server's `effective_limit` and the room's volume as the server holds it under that limit | nothing: the app never works a limit out |
+| Quiet hours | a button, pressed when on, with "On" or "Off" beside it | `quiet_hours_enabled`: the opposite of what the server holds. Off, the windows are kept and cap nothing |
+| Window 1 to 8 | each window's seven days (a button a day, pressed on the days it starts on), "From" and "Until" (a time each), its limit (a slider) and "Remove"; beside its number, "Active now", "Not active now" or, when quiet hours are off, "Inside it now, and quiet hours are off", from the state's `active` | `quiet_hours` with every window of the room and that one change made, since the command replaces the whole list |
+| Add a window | a draft: its days, "From", "Until", its limit and "Add window". It starts as every day, 22:00 to 07:00, at 25% | nothing until "Add window", which sends `quiet_hours` with the room's windows and the draft after them. At 8 windows (the catalog's most) the draft gives way to the words that say so |
+
+A window whose end is not after its start runs past midnight and belongs to the days it starts
+on, as the catalog says. Which window is active is the server's answer on its own civil clock,
+never the phone's. A change made to a window before the server has answered the last one (three
+days tapped one after another) is made to the list the last one asked for, so it does not undo
+it; nothing of that is shown before the server says it. What the server refuses (a window that
+starts and ends at the same minute, a window with no day) is shown as "Refused (windows): <the
+server's words>", and the control goes back to the server's value. A volume asked for above the
+limit in force is clamped by the server, and the room's card and this screen show the clamp.
+
+**Autoplay** (`web/src/autoplay.js`; the catalog's `autoplay` command and the state's
+`autoplay`, `docs/control-plane.md`): one entry for each input the state names, the ones
+offered now in the server's order, then any that has a rule and is not offered now (its speaker
+is not connected; "Not offered now"). An input is called by the name a person gave it, with its
+id under it.
+
+| Control | What it is | What it sends |
+|---|---|---|
+| Autoplay | a button, pressed when the rule is on, with "On" or "Off" beside it. An input with no rule has no target to play in, so the button waits: "Choose where it plays, then switch it on" | `autoplay` for that input with its target as the server holds it and `enabled` the opposite |
+| Plays in | a list of the rooms and the saved groups, on the rule's target ("Nowhere yet" for an input with no rule; a target the server no longer has is still named) | `autoplay` for that input with the chosen target and `enabled` as the server holds it; for an input with no rule that makes the rule, switched off |
+
+Each change is one `autoplay` command for its input, and neither control changes what the other
+shows. A rule's TV options (`stop_on_standby`, `low_latency`) are not on this screen; a rule
+that has one switched off keeps it through a change made here. A refusal is shown on the input
+it was for.
 
 - **The server owns the state** (`docs/decisions/0185-the-apps-state-layer-and-its-live-test.md`).
   The app reads `GET /api/state`, follows `GET /api/events` and sends `POST /api/command`. An
@@ -182,7 +222,7 @@ The one breakpoint is `DESKTOP_MIN_EM` in `web/src/layout.js` and is written now
 `chorus-app` reflects the layout as an attribute and the styles select on it, so no element holds
 a media query. A touch target is at least 44 by 44 CSS pixels outside the kiosk.
 
-A further screen (a room's sound) is the same in all three: one column as wide as the page, with
+A further screen (a room's sound, its limits, the autoplay rules) is the same in all three: one column as wide as the page, with
 its "Back" link inside the screen's own region, because a wide kiosk paints no header. On a
 phone the navigation bar stays at the bottom edge and leads back to the groups or the rooms.
 
@@ -206,7 +246,7 @@ all three in `make gate`; here each is a narrow run of its own.
 
 | Command | What it is | It ends with |
 |---|---|---|
-| `make web-test` | the unit tests: `node --test` over happy-dom, no browser, no server. The elements by their labels, the store, the worker's rules against a scripted network and cache, the signed-out state, the layouts and the kiosk's switch, the navigation over happy-dom's own address and history, and the sound screen over a scripted server | node's own summary, `fail 0` |
+| `make web-test` | the unit tests: `node --test` over happy-dom, no browser, no server. The elements by their labels, the store, the worker's rules against a scripted network and cache, the signed-out state, the layouts and the kiosk's switch, the navigation over happy-dom's own address and history, and the sound, limits and autoplay screens over a scripted server | node's own summary, `fail 0` |
 | `CHORUS_SERVER_BIN=<a built chorus-server> make web-live` | the live tests (`web/live/*.live.js`): the same elements and store in node, no browser, against a real `chorus-server`. Each screen's controls are driven by their labels and what the page shows is compared with the server's `/api/state`, in both directions | `web-live: PASS` |
 | `CHORUS_SERVER_BIN=<a built chorus-server> make web-smoke` | the one browser test (`web/smoke/app.spec.js`, `docs/decisions/0183-the-one-browser-smoke-test.md`): Playwright's headless Chromium loads `/app/` from a real `chorus-server` through a fake login | `web-smoke: PASS` |
 

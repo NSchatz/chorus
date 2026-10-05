@@ -27,9 +27,10 @@
 // is as the server has it, and choosing another place asks for the move.
 // Pressing the handle without dragging it goes to that list.
 //
-// The "Sound" link opens the room's sound screen (sound.js): a link to that
-// screen's address, which the shell opens as an entry of the browser's
-// history (routes.js).
+// The "Sound" and "Limits" links open the room's sound screen (sound.js) and
+// its volume limit and quiet hours (limits.js): each a link to that screen's
+// address, which the shell opens as an entry of the browser's history
+// (routes.js).
 
 import { LitElement, css, html, nothing } from "lit";
 
@@ -37,6 +38,7 @@ import { muteCommand, volumeCommand } from "./api.js";
 import { placeOfValue } from "./grouping.js";
 import "./playing.js";
 import { addressOf } from "./routes.js";
+import { LIMITS_SCREEN } from "./limits.js";
 import { SOUND_SCREEN } from "./sound.js";
 
 // The channel roles of docs/protocol.md's channel map, as words.
@@ -289,6 +291,7 @@ export class ChorusRoomCard extends LitElement {
           Move
         </button>
         <a href=${addressOf(SOUND_SCREEN, { room: room.id })} data-route aria-label="Sound for ${room.name}">Sound</a>
+        <a href=${addressOf(LIMITS_SCREEN, { room: room.id })} data-route aria-label="Limits for ${room.name}">Limits</a>
       </div>
       ${room.bond.length === 0
         ? nothing

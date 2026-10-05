@@ -10,6 +10,9 @@ import { RETRY_MS, createClient, volumeCommand } from "../src/api.js";
 import { createStore, groupsOf, roomOf, roomsOf } from "../src/state.js";
 import { fakeServer, fakeTimers, settle, stateOf, zone } from "./fake-server.js";
 
+// What a room's limits read as from a state that carries none of them.
+const NO_LIMITS = { limit: null, effectiveLimit: null, quietEnabled: null, windows: [] };
+
 function storeOf(server, timers = fakeTimers()) {
   return createStore(createClient({ fetch: server.fetch, base: server.base, timers }));
 }
@@ -40,6 +43,7 @@ test("a room is read as its name, volume in thousandths, mute and bonded set", (
       volume: 375,
       muted: true,
       sound: { bass: 3, treble: -2, loudness: true, night: false, speech: true },
+      limits: NO_LIMITS,
       group: "living",
       bond: [
         { endpoint: "chorus-0123456789ab", name: "Left of the TV", role: "FL" },
@@ -55,6 +59,7 @@ test("a room is read as its name, volume in thousandths, mute and bonded set", (
       muted: false,
       // A state that carries no sound for the room: nothing is made up.
       sound: { bass: null, treble: null, loudness: null, night: null, speech: null },
+      limits: NO_LIMITS,
       group: "den",
       bond: [],
       source: null,
@@ -71,6 +76,7 @@ test("a member the app cannot read is null, not a made-up value", () => {
     volume: null,
     muted: null,
     sound: { bass: null, treble: null, loudness: null, night: null, speech: null },
+    limits: NO_LIMITS,
     group: "kitchen",
     bond: [],
     source: null,
