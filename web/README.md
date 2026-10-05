@@ -8,7 +8,7 @@ and above them every saved and live group, with a drag and a list to move a room
 and the server's group volume (`docs/decisions/0187-groups-in-the-app.md`). A room alone and
 every formed group also say what they play and what is playing (title, artist, album, artwork
 and whether it is playing, paused or buffering), with one button for each input the server
-offers (`docs/decisions/0000-inputs-and-now-playing-in-the-app.md`).
+offers (`docs/decisions/0189-inputs-and-now-playing-in-the-app.md`).
 
 | Path | What |
 |---|---|

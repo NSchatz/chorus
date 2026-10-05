@@ -1,4 +1,4 @@
-# 0000: the app shows what a room alone or a formed group plays and what is playing, loads artwork from the server's own route only, and offers exactly the inputs the server offers
+# 0189: the app shows what a room alone or a formed group plays and what is playing, loads artwork from the server's own route only, and offers exactly the inputs the server offers
 
 - Status: accepted, 2026-10-05.
 - Decided by: the owner for what is asked (K64: the app controls rooms, groups, inputs and
