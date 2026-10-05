@@ -97,7 +97,12 @@ through it, the caches hold the files of `dist/` and no entry under `/api/`; and
 login expired the page says "Signed out", its link leads to the login page, and no cache holds
 that page. Without `CHORUS_SERVER_BIN` it ends `web-smoke: SKIPPED`; under `CI=true` and in
 the gate that is a failure. It is the only test that starts a browser: a later change that
-needs one adds to `smoke/app.spec.js`. The tests after the first in that file are the layouts
+needs one adds to `smoke/app.spec.js`. Its second test is the further screens: each opened by
+the app's own links on a server with a scripted speaker session (`live/endpoint.js`) that offers
+a TV's optical input, a sound setting read back from `/api/state`, and the correction screen
+given Chromium's fake audio device for a microphone, recording while the server plays its sweep
+and uploading to `POST /api/room-fit`; afterwards the worker has answered nothing under `/api/`
+and no cache holds any of it (`docs/app.md`, "Running the tests"). The tests after the first in that file are the layouts
 and the kiosk, each named for what it holds: the phone layout at 390 pixels, the desktop
 layout at 1280, the breakpoint (767 pixels is one column, 768 is two, followed as the window
 is resized) and kiosk mode.

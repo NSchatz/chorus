@@ -7,11 +7,21 @@
 // login expired the page says "Signed out" and the login page is in no cache
 // (docs/decisions/0190-the-app-installs-behind-the-login.md).
 //
+// The second test is the screens beyond the home (a room's sound, limits,
+// theater and correction, the autoplay rules, the alarms, the speakers and
+// the Wi-Fi walk-through): each is opened by the app's own links, one sound
+// setting is changed and read back from the server's /api/state, and the
+// correction screen asks for the microphone and is given Chromium's fake
+// audio device, records while the server plays its sweep and uploads the
+// recording. After all of it the worker has answered no request under /api/,
+// the upload included, and no cache holds one. Its speaker is a scripted
+// session (../live/endpoint.js): no device, no microphone and no room.
+//
 // The tests after it are the layouts, which only a browser can lay out
 // (docs/decisions/0191-phone-and-desktop-layouts-and-the-kiosk.md): the phone
 // layout at a phone's width, the desktop layout at a desktop's, the breakpoint
 // between them, and the kiosk of a wall tablet (its switch, its wake lock, its
-// touch targets and its memory). They run after the first test, in this file's
+// touch targets and its memory). They run after the first two, in this file's
 // order, against the same server, each in a browser context of its own.
 //
 // It is the only place a browser runs. A later change that needs a browser
@@ -28,8 +38,16 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test } from "@playwright/test";
 
+import { offerLineIn } from "../live/endpoint.js";
+import { WANTED } from "../src/capture.js";
 import { DESKTOP_MIN_EM } from "../src/layout.js";
 import { LOGIN_PATH, startFakeLogin } from "./fake-login.js";
+
+// Chromium's fake audio device in the microphone's place, and its permission
+// prompt answered "allow" (the correction screen, in the second test). They
+// are the browser's own switches for a test: `getUserMedia` is the real one,
+// and what it gives is a track of a device named "Fake ...".
+test.use({ launchOptions: { args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] } });
 
 // The test server's configuration: two rooms, one of them given a name its id
 // does not hold, so the text asserted below can only be the server's.
@@ -37,6 +55,11 @@ const ROOMS = ["kitchen", "den"];
 const NAMED = { id: "kitchen", name: "Smoke Test Kitchen" };
 
 const LISTENING = /control listening on=\S*?:(\d+)/;
+// Where the server takes its speakers' sessions.
+const AUDIO_LISTENING = /chorus-server: listening on=\S*?:(\d+)/;
+// The hub of the second test: a scripted session that is a speaker of the
+// kitchen and offers a TV's optical input.
+const HUB = "smoke-test-hub";
 
 // The files of the app's committed output, as paths under /app/: what the
 // server embeds, and so what the service worker is given to keep.
@@ -73,6 +96,20 @@ let server;
 let serverLog = "";
 let serverOrigin;
 let login;
+let hub;
+
+// The files of the app as the page asks for them, sw.js aside: what the
+// worker's one cache holds, and all it holds.
+const appUrl = (file) => `${login.origin}/app/${file === "index.html" ? "" : file}`;
+const shellOf = () => OUTPUT.filter((file) => file !== "sw.js").map(appUrl).sort();
+
+// The server's own state, read the way any other client reads it.
+async function serverState() {
+  const answer = await fetch(`${serverOrigin}/api/state`);
+  expect(answer.status).toBe(200);
+  return answer.json();
+}
+const zoneOf = async (id) => (await serverState()).zones.find((zone) => zone.id === id);
 
 // One command to the server itself, the way any other client sends it: not
 // through the login.
@@ -96,6 +133,9 @@ function startServer() {
     "--allow-unlocked-memory",
     "--source", "tone",
     "--serve-forever",
+    // A server lists an endpoint's input, and plays the measurement sweep
+    // beside its slots, only when it has slots (as ../live starts it).
+    "--slots", "4",
     ...ROOMS.flatMap((room) => ["--zone", room]),
   ]; // prettier-ignore
   server = spawn(process.env.CHORUS_SERVER_BIN, args, { stdio: ["ignore", "pipe", "pipe"] });
@@ -135,6 +175,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
+  if (hub) await hub.stop();
   if (login) await login.close();
   if (server && server.exitCode === null) {
     const gone = new Promise((resolve) => server.once("exit", resolve));
@@ -243,8 +284,7 @@ test("signed in through the fake login, the app shows the server's rooms with no
 
   // What the caches hold after that: the files of the app's output and
   // nothing else. No entry of any cache is under /api/.
-  const appUrl = (file) => `${login.origin}/app/${file === "index.html" ? "" : file}`;
-  const shell = OUTPUT.filter((file) => file !== "sw.js").map(appUrl).sort();
+  const shell = shellOf();
   expect(shell.length).toBeGreaterThan(3);
   const cached = await readCaches(page);
   expect(cached.filter((entry) => new URL(entry.url).pathname.startsWith("/api/"))).toEqual([]);
@@ -303,6 +343,230 @@ test("signed in through the fake login, the app shows the server's rooms with no
     document.head.append(style);
   });
   await expect.poll(() => violations).toEqual(["style-src-elem blocked inline"]);
+});
+
+// The screens beyond the home
+// (docs/decisions/0197-further-screens-have-an-address-in-the-fragment.md).
+
+test("the further screens open by the app's own links, a sound setting set on one is the server's, the correction screen records the sweep with the browser's fake microphone, and the worker answers nothing of the API, the upload included", async ({ page }) => {
+  // The sweep alone is 6.5 s, and the recording goes on a second past it.
+  test.setTimeout(120_000);
+  const reported = await watch(page);
+  // Every answer to a request under /api/ the page gets from here on: what
+  // was asked, and whether a service worker's fetch handler gave the answer.
+  const api = [];
+  // The same for the app's own files, which the worker does answer: the
+  // count that shows the browser's flag is one that is ever set.
+  let appFromWorker = 0;
+  page.on("response", (response) => {
+    const { pathname } = new URL(response.url());
+    if (pathname.startsWith("/app/") && response.fromServiceWorker()) appFromWorker += 1;
+    if (!pathname.startsWith("/api/")) return;
+    api.push({ asked: `${response.request().method()} ${pathname}`, status: response.status(), worker: response.fromServiceWorker() });
+  });
+  // What the page asks `getUserMedia` for and the tracks it is given, noted
+  // on the way through: the call and its answer are the browser's own.
+  await page.addInitScript(() => {
+    window.chorusSmokeMicrophone = [];
+    window.chorusSmokeTracks = [];
+    const devices = navigator.mediaDevices;
+    const ask = devices.getUserMedia.bind(devices);
+    devices.getUserMedia = async (constraints) => {
+      const stream = await ask(constraints);
+      window.chorusSmokeTracks.push(...stream.getTracks());
+      window.chorusSmokeMicrophone.push({
+        constraints,
+        tracks: stream.getTracks().map((track) => ({ kind: track.kind, label: track.label })),
+      });
+      return stream;
+    };
+  });
+
+  // Signed in, with the worker in control: every request from here on passes
+  // its fetch handler, as in the first test.
+  await open(page);
+  await page.evaluate(async () => {
+    const worker = (await navigator.serviceWorker.ready).active;
+    while (worker.state !== "activated") {
+      await new Promise((resolve) => worker.addEventListener("statechange", resolve, { once: true }));
+    }
+  });
+  await page.reload();
+  expect(await page.evaluate(() => navigator.serviceWorker.controller?.scriptURL)).toBe(`${login.origin}/app/sw.js`);
+  const rooms = page.getByRole("main", { name: "Rooms" });
+  await expect(rooms.getByRole("heading", { level: 2 })).toHaveCount(ROOMS.length);
+  const kitchen = (await zoneOf(NAMED.id)).name;
+  expect(kitchen).toBe(NAMED.name);
+
+  // A link on a card or under the rooms opens its screen: the address is the
+  // screen's own, and the main region is the screen, by its title.
+  const openScreen = async (link, address, title) => {
+    await expect(link).toHaveAttribute("href", address);
+    await link.click();
+    await expect(page).toHaveURL(`${login.origin}/app/${address}`);
+    const screen = page.getByRole("main", { name: title, exact: true });
+    await expect(screen).toBeVisible();
+    await expect(rooms).toHaveCount(0);
+    return screen;
+  };
+  // "Back" on a screen opened from the home is the home again.
+  const back = async () => {
+    await page.getByRole("link", { name: "Back to rooms", exact: true }).click();
+    await expect(rooms.getByRole("heading", { level: 2 })).toHaveCount(ROOMS.length);
+  };
+  const onCard = (name) => rooms.getByRole("link", { name: `${name} for ${kitchen}`, exact: true });
+
+  // The theater screen is offered where there is a TV input: none yet.
+  await expect(onCard("Sound")).toBeVisible();
+  await expect(onCard("Theater")).toHaveCount(0);
+  // The hub: a speaker's session that offers a TV's optical input, put in the
+  // kitchen the way a speaker is. Its card then has the link, with no reload.
+  const [, audioPort] = AUDIO_LISTENING.exec(serverLog);
+  hub = await offerLineIn({ host: "127.0.0.1", port: Number(audioPort), endpoint: HUB, name: "tv", kind: "optical" });
+  await expect.poll(async () => (await serverState()).input_kinds).toEqual([{ input: `${HUB}/tv`, kind: "optical", tv: true }]);
+  await command({ v: 2, t: "speaker_room", speaker: HUB, room: NAMED.id });
+  await expect(onCard("Theater")).toBeVisible();
+  await expect(rooms.getByRole("link", { name: /^Theater for / })).toHaveCount(1);
+
+  // A room's sound: one switch and one slider, each read back from the
+  // server's own state, and from the screen.
+  const sound = await openScreen(onCard("Sound"), "#/rooms/kitchen/sound", `Sound of ${kitchen}`);
+  await expect(sound.getByRole("heading", { level: 2 })).toHaveText(`Sound of ${kitchen}`);
+  // The switch is pressed to the opposite of what the server holds.
+  const before = (await zoneOf(NAMED.id)).sound;
+  expect(before.bass).toBe(0);
+  const loudness = sound.getByRole("button", { name: `Loudness for ${kitchen}`, exact: true });
+  await expect(loudness).toHaveAttribute("aria-pressed", String(before.loudness));
+  await expect(sound.locator('[data-value="loudness"]')).toHaveText(before.loudness ? "On" : "Off");
+  await loudness.click();
+  await expect(loudness).toHaveAttribute("aria-pressed", String(!before.loudness));
+  await expect(sound.locator('[data-value="loudness"]')).toHaveText(before.loudness ? "Off" : "On");
+  expect((await zoneOf(NAMED.id)).sound).toEqual({ ...before, loudness: !before.loudness });
+  await sound.getByRole("slider", { name: `Bass for ${kitchen}`, exact: true }).fill("3");
+  await expect.poll(async () => (await zoneOf(NAMED.id)).sound.bass).toBe(3);
+  await expect(sound.locator('[data-value="bass"]')).toHaveText("+3 dB");
+  expect((await zoneOf(NAMED.id)).sound).toEqual({ ...before, loudness: !before.loudness, bass: 3 });
+  expect((await zoneOf("den")).sound).toEqual(before);
+  await expect(sound.getByRole("alert")).toHaveText("");
+  await back();
+
+  // Its limits.
+  const limits = await openScreen(onCard("Limits"), "#/rooms/kitchen/limits", `Volume limits of ${kitchen}`);
+  await expect(limits.getByRole("slider", { name: `Volume limit for ${kitchen}`, exact: true })).toBeVisible();
+  await expect(limits.getByRole("button", { name: `Quiet hours for ${kitchen}`, exact: true })).toBeVisible();
+  await back();
+
+  // Its theater settings, with the hub's input as the TV's.
+  const theater = await openScreen(onCard("Theater"), "#/rooms/kitchen/theater", `Theater of ${kitchen}`);
+  await expect(theater.getByRole("slider", { name: `A/V trim for ${kitchen}`, exact: true })).toBeVisible();
+  await expect(theater.getByRole("list", { name: "TV inputs" })).toContainText("Optical");
+  await back();
+
+  // The house's screens, under the rooms: autoplay, alarms, speakers.
+  const autoplay = await openScreen(page.getByRole("link", { name: "Autoplay rules", exact: true }), "#/autoplay", "Autoplay");
+  await expect(autoplay.getByRole("list", { name: "Inputs" })).toContainText(`${HUB}/tv`);
+  await back();
+  const alarms = await openScreen(page.getByRole("link", { name: "Alarms and sleep timers", exact: true }), "#/alarms", "Alarms and sleep timers");
+  await expect(alarms.getByRole("heading", { level: 2 })).toHaveText(["Alarms", "Stored sources", "Sleep timers"]);
+  await expect(alarms.getByRole("button", { name: "Save alarm", exact: true })).toBeVisible();
+  await back();
+  const speakers = await openScreen(page.getByRole("link", { name: "Speakers and their setup", exact: true }), "#/speakers", "Speakers");
+  await expect(speakers.getByRole("list", { name: "Adopted speakers" })).toContainText(HUB);
+  await expect(speakers.getByRole("list", { name: "Adopted speakers" })).toContainText("Connected");
+  // And from the speakers, the walk-through for a Wi-Fi speaker.
+  const setup = await openScreen(
+    speakers.getByRole("link", { name: "Set up a Wi-Fi speaker", exact: true }),
+    "#/speakers/setup",
+    "Set up a Wi-Fi speaker",
+  );
+  await expect(setup.getByRole("list", { name: "Steps" }).getByRole("listitem")).toHaveCount(4);
+  await page.goBack();
+  await expect(speakers).toBeVisible();
+  await back();
+
+  // The room's correction. Nothing is asked of the browser by opening it.
+  const correction = await openScreen(onCard("Correction"), "#/rooms/kitchen/correction", `Correction of ${kitchen}`);
+  await expect(correction.locator("[data-guide]").getByRole("listitem")).toHaveCount(5);
+  await expect(correction.locator("[data-held]")).toHaveText("This room has no correction.");
+  expect(await page.evaluate(() => window.chorusSmokeMicrophone)).toEqual([]);
+  // "Use the microphone": the page asks for it with the three kinds of
+  // processing off and one channel, and the browser gives its fake device.
+  await correction.getByRole("button", { name: `Use the microphone to measure ${kitchen}`, exact: true }).click();
+  await expect(correction.getByRole("heading", { name: "What the browser granted" })).toBeVisible();
+  expect(await page.evaluate(() => window.chorusSmokeMicrophone)).toEqual([
+    { constraints: { audio: { ...WANTED }, video: false }, tracks: [{ kind: "audio", label: expect.stringMatching(/^Fake /) }] },
+  ]);
+  // "What the browser granted" is the track's own settings, line for line:
+  // the processing off as asked, and the fake device's channels and rate.
+  const settings = await page.evaluate(() => window.chorusSmokeTracks[0].getSettings());
+  expect(settings).toMatchObject({ echoCancellation: false, noiseSuppression: false, autoGainControl: false });
+  const granted = correction.locator("[data-granted]");
+  for (const processing of ["echoCancellation", "noiseSuppression", "autoGainControl"]) {
+    await expect(granted.locator(`[data-setting="${processing}"]`)).toHaveText("off, as asked");
+  }
+  await expect(granted.locator('[data-setting="channelCount"]')).toHaveText(String(settings.channelCount));
+  await expect(granted.locator('[data-setting="sampleRate"]')).toHaveText(`${settings.sampleRate} Hz`);
+  await expect(granted.locator('[data-setting="recordedAt"]')).toHaveText("48000 Hz");
+  await expect(correction.locator("[data-flag]")).toHaveCount(0);
+  console.log(`web-smoke: the fake microphone's settings: ${JSON.stringify(settings)}`);
+  expect(await page.evaluate(() => window.chorusSmokeTracks.map((track) => track.readyState))).toEqual(["live"]);
+
+  // "Play the sweep and record": the server plays its sweep to the hub, the
+  // fake device is recorded, and the recording is uploaded and answered. What
+  // the fake device makes is a beep and not the sweep, so the answer is the
+  // fitter's own (a refusal by its name, or a fit of what it heard): either
+  // way it is the server's, through the upload route, and nothing is applied.
+  await correction.getByRole("button", { name: `Play the sweep in ${kitchen} and record`, exact: true }).click();
+  await expect(correction.locator('[data-phase="recording"]')).toBeVisible();
+  const outcome = correction.locator('[data-phase="proposed"], [data-phase="refused"], [data-phase="failed"]');
+  await expect(outcome).toBeVisible({ timeout: 30_000 });
+  const phase = await outcome.getAttribute("data-phase");
+  console.log(`web-smoke: the measurement with the fake microphone ended "${phase}": ${(await outcome.textContent()).replace(/\s+/g, " ").trim()}`);
+  expect(["proposed", "refused"], `the measurement ended "${phase}": ${await outcome.textContent()}`).toContain(phase);
+  const state = await serverState();
+  expect(state.measurement).toMatchObject({ zone: NAMED.id, state: "finished", sweep_ms: 5000 });
+  expect(state.zones.find((zone) => zone.id === NAMED.id).room_eq).toEqual({ enabled: true, filters: [] });
+  await expect(correction.locator("[data-held]")).toHaveText("This room has no correction.");
+  const upload = api.filter((answer) => answer.asked === "POST /api/room-fit");
+  expect(upload).toHaveLength(1);
+  if (phase === "refused") {
+    await expect(outcome).toHaveText(/^\s*The server refused the recording: \S/);
+    await expect(correction.getByRole("button", { name: `Apply the proposed correction to ${kitchen}`, exact: true })).toHaveCount(0);
+    expect(upload[0].status).toBe(422);
+  } else {
+    expect(upload[0].status).toBe(200);
+  }
+  // The microphone was let go.
+  expect(await page.evaluate(() => window.chorusSmokeTracks.map((track) => track.readyState))).toEqual(["ended"]);
+  await back();
+
+  // The worker answered none of it: every answer under /api/ since the page
+  // loaded was the network's, the state, the events, the commands and the
+  // upload among them.
+  expect(api.filter((answer) => answer.worker)).toEqual([]);
+  expect(appFromWorker, "answers the worker gave for the app's own files").toBeGreaterThan(0);
+  expect([...new Set(api.map((answer) => answer.asked))]).toEqual(
+    expect.arrayContaining(["GET /api/state", "GET /api/events", "POST /api/command", "POST /api/room-fit"]),
+  );
+  // And it kept none of it: the caches hold the files of the app's output
+  // and nothing else, with no entry under /api/.
+  const cached = await readCaches(page);
+  expect(cached.filter((entry) => entry.url.includes("/api/"))).toEqual([]);
+  expect(cached.map((entry) => entry.url).sort()).toEqual(shellOf());
+  expect(cached.filter((entry) => entry.status !== 200 || entry.type !== "basic" || entry.redirected)).toEqual([]);
+
+  // The hub goes, and its input and the card's theater link with it: the
+  // tests after this one have the rooms as they were.
+  await hub.stop();
+  hub = null;
+  await expect(onCard("Theater")).toHaveCount(0);
+
+  expect(reported.violations, "Content-Security-Policy violations the page reported").toEqual([]);
+  // The one error the browser may log is its own line for the refused
+  // upload, which the server answers 422; the page threw nothing.
+  expect(reported.errors, "errors the page logged or threw").toEqual(
+    phase === "refused" ? ["Failed to load resource: the server responded with a status of 422 (Unprocessable Entity)"] : [],
+  );
 });
 
 // The layouts and the kiosk
