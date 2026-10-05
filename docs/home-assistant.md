@@ -256,7 +256,7 @@ is subscribed and never kept.
 ## Voice rooms: an Assist satellite per room that has a microphone
 
 The model is `docs/decisions/0176-the-home-assistant-voice-satellite.md` and, for what goes
-beyond the basic run, `docs/decisions/0178-a-rooms-choice-of-wake-words.md`; the path is proposal
+beyond the basic run, `docs/decisions/0179-a-rooms-choice-of-wake-words.md`; the path is proposal
 P8, Option A, and the server's half is `docs/control-plane.md`, "Voice: `voice_enabled` and
 `mic_muted`" and "Voice: the wake word, the run and its audio".
 
@@ -326,7 +326,7 @@ P8, Option A, and the server's half is `docs/control-plane.md`, "Voice: `voice_e
   available and, as active, the room's own `wake_words` (every one for a room that never
   chose); `async_set_configuration` sends `voice_wake_words` with the chosen ids, and an id
   the server does not run is the translated `unknown_wake_word`
-  (`docs/decisions/0178-a-rooms-choice-of-wake-words.md`).
+  (`docs/decisions/0179-a-rooms-choice-of-wake-words.md`).
 
 Privacy (I4): the integration holds no microphone audio beyond the chunk in flight, writes
 none to a log or a file, and never logs the run's identifier (`VoiceRun` keeps it out of its

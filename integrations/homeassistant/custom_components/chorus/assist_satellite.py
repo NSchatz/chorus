@@ -18,7 +18,7 @@ answer to the pipeline and is gone. While the room's voice is switched off or
 its microphone is muted nothing is asked for and no pipeline starts; an
 announcement still plays, since it uses the speaker and not the microphone.
 
-Beyond that run (`docs/decisions/0178-a-rooms-choice-of-wake-words.md`):
+Beyond that run (`docs/decisions/0179-a-rooms-choice-of-wake-words.md`):
 
 - a reply that asks for more (the pipeline's `continue_conversation`) is
   followed, once it has been played, by a second run with no wake word;

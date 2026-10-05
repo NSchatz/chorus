@@ -1,4 +1,4 @@
-# 0178: a room chooses which of the server's wake words it listens for with one catalog command, kept per room and persisted; the Home Assistant satellite sends that choice, continues a conversation with a second run and no wake word, plays a prompt and then opens a run for start conversation and ask question, and plays Home Assistant's chime three times when a timer finishes
+# 0179: a room chooses which of the server's wake words it listens for with one catalog command, kept per room and persisted; the Home Assistant satellite sends that choice, continues a conversation with a second run and no wake word, plays a prompt and then opens a run for start conversation and ask question, and plays Home Assistant's chime three times when a timer finishes
 
 - Status: accepted, 2026-10-05. Extends 0176 (the Home Assistant voice satellite), whose
   item 12 ("wake-word choice is not offered") and "Not chosen" entry for start conversation,

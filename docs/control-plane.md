@@ -517,7 +517,7 @@ Which models a build carries, and under which licences, is
 **A room's choice of wake words.** Every model runs on every voice room's
 audio, and a room listens for every one of them until it is told otherwise
 (`fixtures/control/v2/voice_wake_words.json`,
-`docs/decisions/0178-a-rooms-choice-of-wake-words.md`):
+`docs/decisions/0179-a-rooms-choice-of-wake-words.md`):
 
 ```json
 {"v":2,"t":"voice_wake_words","zone":"kitchen","wake_words":["okay_nabu"]}
