@@ -417,7 +417,9 @@ fn the_service_workers_reserved_path_is_never_immutable() {
         // The policy lets the page load its manifest and its worker:
         // `manifest-src` for the one, `script-src` (which `worker-src` falls
         // back to) for the other.
-        let policy = response.header("Content-Security-Policy").expect("a policy");
+        let policy = response
+            .header("Content-Security-Policy")
+            .expect("a policy");
         assert!(policy.contains("manifest-src 'self'"), "{url}: {policy}");
         assert!(policy.contains("script-src 'self'"), "{url}: {policy}");
     }
