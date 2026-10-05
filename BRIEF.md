@@ -308,6 +308,8 @@ The /goal program in [`.claude/goals/2026-09-chorus.md`](https://github.com/NSch
 | The speaker designs | 24, 25, 26 | hardware | design packages for the compact speaker, the two-way, the subwoofer, the rack amp and the theater front |
 | Finale | 27 | all | a tagged release with every chosen parity feature built and tested on fakes and the simulator, the docs, the program report |
 
+Voice path status (written 2026-10-05; K71, K73, P8 Option A): the voice path is proposal P8's Option A, approved by the owner under K71: each room with a microphone is an `assist_satellite` entity of chorus's own Home Assistant integration, and microphone audio goes speaker to chorus-server to Home Assistant's Assist pipeline. The wake word runs on the server (K73): speakers stream microphone audio only while the hardware mute is off and voice is enabled for the room, and the server runs permissively licensed wake-word models only (`docs/decisions/0166-*`, `0167-*`, `0169-*`, `0172-*`). Decided 2026-10-04 by the owner on P8's open inputs: the microphone route is run-scoped (audio only for an active run, to a per-run identifier, from the integration's registered address, with a hard time limit); chorus defines no voice intent that targets a Soloist source, and the Spotify policy reading is decided before voice rooms go live; the microphone purchase is deferred until the buy list `docs/hardware/voice-mic.md` exists, then one microphone for bench use. Nothing is ordered; the purchase is the owner's.
+
 ---
 
 ## 9. Risks and honest failure modes
