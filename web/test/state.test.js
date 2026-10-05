@@ -232,6 +232,31 @@ test("a command changes the store only through what the server answers", async (
   store.stop();
 });
 
+test("commands leave one at a time, in the order they were asked for", async () => {
+  // A client whose answers the test gives: what has been sent, and each one's answer.
+  const sent = [];
+  const answers = [];
+  const store = createStore({
+    command: (body) => {
+      sent.push(body);
+      return new Promise((resolve) => answers.push(resolve));
+    },
+  });
+
+  const first = store.command(volumeCommand("kitchen", 100));
+  const second = store.command(volumeCommand("kitchen", 200));
+  await settle();
+  assert.deepEqual(sent, [volumeCommand("kitchen", 100)], "the second waits for the first's answer");
+
+  // A refusal holds nothing up: the next one leaves, and each caller gets its own answer.
+  answers[0]({ ok: false, refusal: "no" });
+  assert.deepEqual(await first, { ok: false, refusal: "no" });
+  await settle();
+  assert.deepEqual(sent, [volumeCommand("kitchen", 100), volumeCommand("kitchen", 200)]);
+  answers[1]({ ok: true, state: null });
+  assert.deepEqual(await second, { ok: true, state: null });
+});
+
 // The catalog's own state vector: a saved group that is active and a live one.
 const rich = () =>
   JSON.parse(readFileSync(new URL("../../fixtures/control/v2/state-rich.json", import.meta.url), "utf8"));

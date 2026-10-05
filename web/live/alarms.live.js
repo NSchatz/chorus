@@ -269,7 +269,9 @@ test("the screen's stop ends each ringing alarm", async () => {
   // Deleted through the screen, an alarm leaves the state and the screen.
   getByLabel(app, "Delete alarm live-chime").click();
   await until("the server's alarms", async () => (await house.state()).alarms.map((alarm) => alarm.alarm).includes("live-chime"), false);
-  await until("the screen", () => row("live-chime"), null);
+  // A count, not the row: a wait that compares an element has assert describe
+  // the whole document on every poll that finds it.
+  await until("the screen", () => (row("live-chime") ? 1 : 0), 0);
 });
 
 test("a sleep timer set through the screen ends on the scaled clock: it leaves the state and the screen", async () => {
