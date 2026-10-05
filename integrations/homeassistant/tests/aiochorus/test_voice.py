@@ -70,6 +70,13 @@ def test_the_voice_commands_bytes_equal_the_shared_vectors() -> None:
     assert commands.voice_enabled("kitchen", True) == shared("voice_enabled.json")
     assert commands.voice_start("kitchen") == shared("voice_start.json")
     assert commands.voice_stop("kitchen") == shared("voice_stop.json")
+    assert commands.voice_wake_words("kitchen", ["okay_nabu"]) == shared(
+        "voice_wake_words.json"
+    )
+    assert commands.voice_wake_words("kitchen", []).endswith(b'"wake_words":[]}')
+    assert commands.voice_wake_words("kitchen", ("a", "b")).endswith(
+        b'"wake_words":["a","b"]}'
+    )
     assert commands.voice_enabled("kitchen", False).endswith(b'"enabled":false}')
 
 
@@ -423,3 +430,40 @@ async def test_the_wake_stream_delivers_each_wake_word_and_keeps_none(
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
+
+
+# --- a room's choice of wake words ------------------------------------------------
+
+
+def test_a_room_carries_its_choice_of_wake_words_only_once_it_chose() -> None:
+    state = State.parse(shared("state-wake-words.json"))
+    kitchen, bedroom = state.zone("kitchen"), state.zone("bedroom")
+    assert kitchen is not None
+    assert bedroom is not None
+    assert kitchen.wake_words == ("okay_nabu",)
+    # A room that never chose listens for every one the server runs.
+    assert bedroom.wake_words is None
+    # A choice of none is a choice.
+    raw = json.loads(shared("state-wake-words.json"))
+    raw["zones"][0]["wake_words"] = []
+    assert State.parse(json.dumps(raw)).zones[0].wake_words == ()
+
+
+async def test_a_rooms_wake_words_are_set_and_an_unknown_one_is_refused_by_name(
+    client: ChorusClient, server: FakeChorusServer
+) -> None:
+    state = await client.set_voice_wake_words("kitchen", ["okay_nabu"])
+    assert server.bodies == [shared("voice_wake_words.json")]
+    kitchen = state.zone("kitchen")
+    assert kitchen is not None
+    assert kitchen.wake_words == ("okay_nabu",)
+    with pytest.raises(ChorusCommandError) as caught:
+        await client.set_voice_wake_words("kitchen", ["hey_jarvis"])
+    assert (caught.value.field, caught.value.name) == (
+        "wake_words",
+        "unknown-wake-word",
+    )
+    assert (
+        caught.value.detail
+        == json.loads(shared("error-voice-wake-words-unknown.json"))["detail"]
+    )

@@ -300,7 +300,7 @@ loses them.
 
 | Entity | What it is |
 |---|---|
-| **Assist satellite** (`assist_satellite`) | The room as a Home Assistant voice satellite: `idle`, `listening`, `processing`, `responding`. It supports `assist_satellite.announce` |
+| **Assist satellite** (`assist_satellite`) | The room as a Home Assistant voice satellite: `idle`, `listening`, `processing`, `responding`. It supports `assist_satellite.announce`, `assist_satellite.start_conversation` and `assist_satellite.ask_question`, timers, follow-up questions and a choice of wake word ("What the satellite supports", below) |
 | **Voice enabled** (`switch`, configuration) | The room's voice path, on or off. **Off by default**, kept by the server. Off: the server takes no microphone audio from the room and hears no wake word there |
 | **Mic muted** (`binary_sensor`, diagnostic) | On while no microphone of the room is live: the speaker's mute switch is on, the speaker is away, or it has not reported yet. **Read-only**: the switch is on the speaker, it cuts the microphone in hardware, and nothing in Home Assistant or chorus can unmute it |
 
@@ -333,8 +333,39 @@ reader, once, only for the run the satellite opened, and only to the address it 
 with (`--voice-integration`). What your pipeline's speech-to-text does with it is that
 engine's business (a local engine keeps it in the house).
 
-The wake words are the server's: every model it runs is active in every voice room, and the
-satellite's configuration in Home Assistant lists them without offering a choice.
+#### What the satellite supports
+
+| Feature | What it does here |
+|---|---|
+| **A voice command after the wake word** | As above: the server hears the wake word, the pipeline starts at speech-to-text, the reply is played in the room |
+| **Announce** (`assist_satellite.announce`) | As above: the chime, then the clip, through the room's announcement mixer; the action returns when the clip is over |
+| **Follow-up questions** (continue conversation) | When your conversation agent's reply asks for more ("Which light?"), the room listens again as soon as the reply has been played, with no wake word, and what you say continues the same conversation. It does not listen again when the reply could not be played, when the room stopped listening meanwhile (voice switched off, microphone muted), or when a wake word or a prompt started a run of its own first |
+| **Start conversation** (`assist_satellite.start_conversation`) | Plays the chime and your prompt (a message spoken by your pipeline's text-to-speech, or a media id), and when the prompt is over opens a run in the room: what is said next goes to your pipeline as after a wake word. The action returns once the prompt has been played and the room listens. Home Assistant itself refuses this action for a pipeline whose conversation agent is its built-in one |
+| **Ask question** (`assist_satellite.ask_question`) | Plays the chime and your question the same way, listens for one answer and returns it to the automation (matched against your `answers` when you give any). Nothing is said back |
+| **Timers** | "Set a timer for five minutes" works in a voice room: the timer is Home Assistant's, kept on the room's device. When it finishes the room plays Home Assistant's chime three times through the announcement mixer, over whatever is playing, also while the microphone is muted |
+| **Wake word choice** | The satellite's configuration lists the wake words the server runs, and the ones you pick in Home Assistant's voice settings for the satellite are sent to the server, which keeps the choice per room (also across a restart). A room that never chose listens for all of them. Choosing none leaves a room that answers to no wake word and can still be asked something with the two actions above |
+
+**While Voice enabled is off or Mic muted is on**, `start_conversation` and `ask_question`
+still play their prompt (it uses the speaker) and then end without listening, with an error
+that says why: "The prompt was played in kitchen and nothing listened for an answer: the
+room's voice is switched off" (or "the room's microphone is muted at the speaker"). The
+automation that called the action sees the error; no run is opened and no pipeline starts.
+The same error, with the server's reason, ends the action when the server opens no run for
+another reason (see "Troubleshooting" for the two repair issues). A timer still sounds, and a
+finished timer never opens the microphone.
+
+#### What the satellite does not support, and why
+
+| Not supported | Why |
+|---|---|
+| Showing a timer that is running, paused or cancelled (a light or a display on the speaker) | The server has no command that lights a speaker for a voice event, and a room has no display. A timer is heard when it finishes and at no other time; ask "how long is left on my timer" to hear it |
+| A timer sound of chorus's own, or one that rings until you stop it | The server plays only clips that Home Assistant itself serves, and the chime is the one sound every Home Assistant serves at an address that asks for no credentials. The integration adds no such address of its own. It is played three times and then stops; "stop" is not needed and is not listened for |
+| Stopping a reply, an announcement or the timer sound by saying the wake word over it | The speakers have no echo cancellation yet (the microphone hardware is not chosen), so a wake word said while the room itself is speaking is heard through the room's own sound, unreliably. While a prompt of `start_conversation` or `ask_question` is playing, a wake word is ignored on purpose |
+| A wake word of your own, or one the server does not run | The models are part of the server's build, each with its licence checked; the satellite lists what the server runs and adds none. Today that is one model, "Okay Nabu" |
+| Wake word detection in Home Assistant (a pipeline that starts at its wake word stage) | The wake word is heard on the chorus server, so that microphone audio leaves the server only for a run someone asked for. Every pipeline here starts at speech-to-text |
+| A different Assist pipeline or a finish-speaking sensitivity per satellite (the select entities other satellites have) | Not built: every satellite uses your preferred pipeline and Home Assistant's default sensitivity |
+| A voice command that targets a Spotify (Soloist) source by name | chorus defines no voice intent of its own, so none targets a Soloist source; what your Assist can do to the room's media player it can do by voice. An announcement or a reply pauses a Soloist source instead of playing over it |
+| The wake word interception test in Home Assistant's voice settings while Voice enabled is off or Mic muted is on | Nothing listens then, so there is no wake word to report |
 
 ## Data updates
 
@@ -464,11 +495,11 @@ strong one).
 
 ## Known limitations
 
-- Voice: a satellite answers and announces, and that is all for now. It has no timers, does
-  not keep listening for a follow-up after a reply (continue conversation), and does not
-  support `assist_satellite.start_conversation` or `assist_satellite.ask_question`. The wake
-  word cannot be chosen per room. A wake word said while the room is still speaking a reply
-  is heard through the room's own sound; there is no echo cancellation yet.
+- Voice: what the satellite does not do is listed with its reasons under "What the
+  satellite does not support, and why". In short: a timer is heard when it finishes and is
+  shown nowhere; the timer sound is Home Assistant's chime, three times; the server runs one
+  wake word model today; and a wake word said while the room is still speaking is heard
+  through the room's own sound, since there is no echo cancellation yet.
 - A button press made while Home Assistant is not connected to the chorus server is lost:
   the server keeps none. Two-way speakers and subwoofers have no front buttons and no button
   entities; a pairing button and a microphone mute switch are local to the speaker and are

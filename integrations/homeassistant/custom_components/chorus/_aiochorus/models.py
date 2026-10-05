@@ -221,6 +221,10 @@ class Zone:
     # speaker present in the room said its gate is live, so a server that says
     # nothing reads as muted.
     mic_muted: bool = True
+    # The ids of the wake words the room listens for, once it chose them
+    # (possibly none); None for a room that never chose, which listens for
+    # every one the server runs.
+    wake_words: tuple[str, ...] | None = None
 
     @classmethod
     def from_obj(cls, obj: dict[str, Any]) -> Zone:
@@ -247,6 +251,11 @@ class Zone:
             quiet_enabled=_flag(obj, "quiet_enabled", True),
             voice_enabled=_flag(obj, "voice_enabled", False),
             mic_muted=_flag(obj, "mic_muted", True),
+            wake_words=(
+                tuple(word for word in chosen if isinstance(word, str))
+                if isinstance(chosen := obj.get("wake_words"), list)
+                else None
+            ),
         )
 
 
@@ -464,7 +473,7 @@ class FirmwareImage:
 
 @dataclass(frozen=True, slots=True)
 class WakeWord:
-    """A wake-word model the server runs, in every voice room."""
+    """A wake-word model the server runs, on every voice room's audio."""
 
     id: str
     phrase: str

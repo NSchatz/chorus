@@ -299,6 +299,15 @@
     "metrics_unavailable": {
       "message": "The chorus server's speaker diagnostics could not be read: {error}"
     },
+    "not_listening": {
+      "message": "The prompt was played in {room} and nothing listened for an answer: the chorus server opened no voice run there ({reason})."
+    },
+    "not_listening_mic_muted": {
+      "message": "The prompt was played in {room} and nothing listened for an answer: the room's microphone is muted at the speaker, and only its switch unmutes it."
+    },
+    "not_listening_voice_disabled": {
+      "message": "The prompt was played in {room} and nothing listened for an answer: the room's voice is switched off. Its Voice enabled switch turns it on."
+    },
     "refused_command": {
       "message": "The chorus server refused the command ({field}): {detail}"
     },
@@ -344,14 +353,14 @@
     "unknown_source": {
       "message": "{source} is not a source this chorus server offers right now."
     },
+    "unknown_wake_word": {
+      "message": "The chorus server refused the choice of wake words: {detail}"
+    },
     "unsupported_catalog": {
       "message": "The chorus server does not offer control catalog version 2. Update the server."
     },
     "unsupported_media": {
       "message": "chorus plays its inputs (chorus://input/...) and announcements; it cannot play {media_id}."
-    },
-    "wake_words_fixed": {
-      "message": "The chorus server runs every wake word it has in every voice room; there is no choice to set."
     }
   },
   "issues": {

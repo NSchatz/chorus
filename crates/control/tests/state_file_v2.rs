@@ -224,8 +224,8 @@ fn quiet_hours_switched_off_and_their_windows_survive_a_restart() {
     );
     write_file(&path, &zones).expect("it writes");
     let saved = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(STATE_FORMAT, 8);
-    assert!(saved.contains("format = 8\n"), "{}", saved);
+    assert_eq!(STATE_FORMAT, 9);
+    assert!(saved.contains("format = 9\n"), "{}", saved);
     assert!(saved.contains(BEDROOM_WINDOWS), "{}", saved);
     assert!(saved.contains("quiet_enabled = 0\n"), "{}", saved);
 
@@ -257,7 +257,7 @@ fn a_format_6_file_loads_with_quiet_hours_enabled_and_is_written_back_as_format_
     // What the build before this one wrote: format 6, no `quiet_enabled`.
     let seven = render(&configured());
     let six = seven
-        .replace("format = 8\n", "format = 6\n")
+        .replace("format = 9\n", "format = 6\n")
         .replace("quiet_enabled = 1\n", "");
     assert!(six.contains("format = 6\n") && !six.contains("quiet_enabled ="));
     let mut back = load(&six, "127.0.0.1:4010").expect("format 6 still loads");
@@ -272,7 +272,7 @@ fn a_format_6_file_loads_with_quiet_hours_enabled_and_is_written_back_as_format_
     assert_eq!(
         render(&load(&six, "x").unwrap()),
         seven,
-        "the next write is format 8"
+        "the next write is the current format"
     );
     // A format 7 file says it for every room: a missing field is refused,
     // not defaulted.

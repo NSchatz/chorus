@@ -1,0 +1,14 @@
+# Canonical input for the catalog v2 state-wake-words vector.
+#
+# A server that runs one wake-word model, after the kitchen chose its wake
+# words: the room carries its own wake_words, after mic_muted. A room that
+# never chose (the bedroom) has no such member and listens for every one.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = state
+default_audio = 127.0.0.1:4010
+zones = kitchen,bedroom
+wake_words = okay_nabu:Okay Nabu
+command.0 = {"v":2,"t":"voice_wake_words","zone":"kitchen","wake_words":["okay_nabu"]}

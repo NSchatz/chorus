@@ -9,6 +9,7 @@ the lowest catalog version that declares it, so ``volume`` and ``mute`` are
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 import json
 import math
 
@@ -161,6 +162,15 @@ def voice_enabled(zone: str, enabled: bool) -> bytes:
     return (
         f'{{"v":2,"t":"voice_enabled","zone":{_string(zone)},'
         f'"enabled":{_bool(enabled)}}}'
+    ).encode()
+
+
+def voice_wake_words(zone: str, wake_words: Iterable[str]) -> bytes:
+    """Choose the wake words a room listens for, by the ids the state lists."""
+    chosen = ",".join(_string(word) for word in wake_words)
+    return (
+        f'{{"v":2,"t":"voice_wake_words","zone":{_string(zone)},'
+        f'"wake_words":[{chosen}]}}'
     ).encode()
 
 

@@ -299,6 +299,18 @@ pub enum Command {
         /// Whether the room's microphones may send audio to the voice path.
         enabled: bool,
     },
+    /// (v2) Choose which of the server's wake words a room listens for, by
+    /// the models' ids as the state's `wake_words` lists them. A room that
+    /// was never sent this listens for every one the server runs; an empty
+    /// list means the room answers to no wake word (a run can still be
+    /// opened there by a command).
+    VoiceWakeWords {
+        /// The room.
+        zone: String,
+        /// The ids of the wake words the room listens for, at most
+        /// [`MAX_WAKE_WORDS`], none twice.
+        wake_words: Vec<String>,
+    },
     /// (v2) Open a voice run in a room: for the run's length the room's
     /// microphone audio is served on the run-scoped route, to the holder of
     /// the identifier the server answers with (a `voice_run` message, never
@@ -491,6 +503,7 @@ impl Command {
             Command::QuietHours { .. } => "quiet_hours",
             Command::QuietHoursEnabled { .. } => "quiet_hours_enabled",
             Command::VoiceEnabled { .. } => "voice_enabled",
+            Command::VoiceWakeWords { .. } => "voice_wake_words",
             Command::VoiceStart { .. } => "voice_start",
             Command::VoiceStop { .. } => "voice_stop",
             Command::AlarmSet(_) => "alarm_set",
@@ -553,6 +566,7 @@ impl Command {
             | Command::QuietHours { zone, .. }
             | Command::QuietHoursEnabled { zone, .. }
             | Command::VoiceEnabled { zone, .. }
+            | Command::VoiceWakeWords { zone, .. }
             | Command::VoiceStart { zone }
             | Command::VoiceStop { zone }
             | Command::Sound { zone, .. }
@@ -648,6 +662,13 @@ impl Command {
             | Command::VoiceEnabled { zone, enabled } => {
                 text("zone", zone);
                 m.push(("enabled".to_string(), Value::Bool(*enabled)));
+            }
+            Command::VoiceWakeWords { zone, wake_words } => {
+                text("zone", zone);
+                m.push((
+                    "wake_words".to_string(),
+                    Value::Arr(wake_words.iter().map(|w| Value::text(w)).collect()),
+                ));
             }
             Command::VoiceStart { zone } | Command::VoiceStop { zone } => text("zone", zone),
             Command::AlarmSet(alarm) => {
@@ -890,6 +911,20 @@ impl ControllerEvent {
     pub fn encode(&self) -> String {
         json::write(&self.value())
     }
+}
+
+/// (voice) The most wake words one `voice_wake_words` names.
+pub const MAX_WAKE_WORDS: usize = 16;
+
+/// (voice) Whether `text` has the shape of a wake-word model's id: lower-case
+/// ASCII letters, digits and underscores, one to [`MAX_IDENTIFIER_LEN`] of
+/// them (`okay_nabu`). The shape a state file and a command both hold it to.
+pub fn is_wake_word_id(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= MAX_IDENTIFIER_LEN
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
 }
 
 /// (voice, P8) One wake-word model a server runs, as the state lists it
@@ -1576,6 +1611,13 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
                 enabled: boolean(value, "enabled").map_err(at)?,
             }
         }
+        "voice_wake_words" => {
+            fields(&["v", "t", "zone", "wake_words"], &[])?;
+            Command::VoiceWakeWords {
+                zone: id("zone")?,
+                wake_words: wake_words_field(value, "wake_words").map_err(at)?,
+            }
+        }
         "voice_start" => {
             fields(&["v", "t", "zone"], &[])?;
             Command::VoiceStart { zone: id("zone")? }
@@ -2192,6 +2234,56 @@ fn clock_field(value: &Value, field: &str) -> Result<ClockTime, Refusal> {
             ),
         )
     })
+}
+
+/// (voice) The ids a `voice_wake_words` names: an array of at most
+/// [`MAX_WAKE_WORDS`] wake-word ids, none twice. Whether the server runs each
+/// one is the room model's to say.
+fn wake_words_field(value: &Value, field: &str) -> Result<Vec<String>, Refusal> {
+    let items = match value.get(field) {
+        Some(Value::Arr(items)) => items,
+        _ => {
+            return Err(Refusal::rejected(
+                field,
+                format!("the field '{}' is not an array of wake-word ids", field),
+            ))
+        }
+    };
+    if items.len() > MAX_WAKE_WORDS {
+        return Err(Refusal::rejected(
+            field,
+            format!(
+                "the field '{}' names {} wake words and a room takes at most {}",
+                field,
+                items.len(),
+                MAX_WAKE_WORDS
+            ),
+        ));
+    }
+    let mut ids: Vec<String> = Vec::new();
+    for item in items {
+        let id = match item.as_str() {
+            Some(id) if is_wake_word_id(id) => id,
+            _ => {
+                return Err(Refusal::rejected(
+                    field,
+                    format!(
+                        "the field '{}' holds something that is not a wake-word id (lower-case \
+                         ASCII letters, digits and underscores, 1 to {} of them)",
+                        field, MAX_IDENTIFIER_LEN
+                    ),
+                ))
+            }
+        };
+        if ids.iter().any(|seen| seen == id) {
+            return Err(Refusal::rejected(
+                field,
+                format!("the field '{}' names '{}' twice", field, id),
+            ));
+        }
+        ids.push(id.to_string());
+    }
+    Ok(ids)
 }
 
 fn days_field(value: &Value, field: &str) -> Result<Days, Refusal> {

@@ -1,0 +1,15 @@
+# Canonical input for the catalog v2 voice_wake_words vector.
+#
+# Encoding these field values must produce exactly voice_wake_words.json,
+# and decoding voice_wake_words.json must recover exactly these field values.
+#
+# Chooses which of the server's wake words a room listens for, by the ids the
+# state's wake_words lists (comma-separated here). A room never sent this
+# listens for every one; an empty list means it answers to no wake word.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = voice_wake_words
+zone = kitchen
+wake_words = okay_nabu

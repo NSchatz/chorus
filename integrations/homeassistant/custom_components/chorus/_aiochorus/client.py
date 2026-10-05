@@ -20,7 +20,7 @@ microphone audio, raw PCM until the server closes the connection.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 import random as _random
 
 import aiohttp
@@ -187,6 +187,10 @@ class ChorusClient:
     async def set_voice_enabled(self, zone: str, enabled: bool) -> State:
         """Switch a room's voice path on or off."""
         return await self.command(commands.voice_enabled(zone, enabled))
+
+    async def set_voice_wake_words(self, zone: str, wake_words: Iterable[str]) -> State:
+        """Choose the wake words a room listens for, by the ids the state lists."""
+        return await self.command(commands.voice_wake_words(zone, wake_words))
 
     async def voice_audio(self, run: VoiceRun) -> VoiceAudio:
         """Open a voice run's audio (``GET /api/voice-audio?run=<identifier>``).

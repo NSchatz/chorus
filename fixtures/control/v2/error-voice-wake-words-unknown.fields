@@ -1,0 +1,14 @@
+# Canonical input for the catalog v2 error-voice-wake-words-unknown vector.
+#
+# A voice_wake_words that names a wake word the server runs no model for is
+# refused by name (unknown-wake-word) and changes nothing.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+zones = kitchen
+wake_words = okay_nabu:Okay Nabu
+input = {"v":2,"t":"voice_wake_words","zone":"kitchen","wake_words":["hey_jarvis"]}
+field = wake_words
+ends_the_session = 0

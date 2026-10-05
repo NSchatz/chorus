@@ -730,6 +730,16 @@ impl Voice {
     /// only to copy the unheard samples out and to record what was found;
     /// the models run with it released.
     pub fn pass(&self, now: Instant) -> Pass {
+        self.pass_where(now, |_, _| true)
+    }
+
+    /// [`Voice::pass`], for rooms that chose their wake words: a detection
+    /// is a wake word only where `listens(room, phrase)` says the room
+    /// listens for that phrase (the catalog's `voice_wake_words`). One the
+    /// room does not listen for is dropped as if it had not been said: no
+    /// event, no hold-off, and a run opened afterwards starts at its command.
+    /// `listens` is called with the sessions' lock held and must take none.
+    pub fn pass_where(&self, now: Instant, listens: impl Fn(&str, &str) -> bool) -> Pass {
         // 1. Runs past their limit, and the samples nobody has heard.
         let mut unheard: Vec<(u64, u64, Vec<u8>)> = Vec::new();
         let ended = {
@@ -840,6 +850,9 @@ impl Voice {
                 continue;
             };
             if inner.runs.iter().any(|r| r.room == room) {
+                continue;
+            }
+            if !listens(&room, &phrase) {
                 continue;
             }
             if inner
@@ -1422,6 +1435,35 @@ mod tests {
         voice.session_down(1);
         assert_eq!(reason(&voice, now), "session-ended");
         assert!(!voice.listening("kitchen"));
+    }
+
+    #[test]
+    fn a_wake_word_a_room_does_not_listen_for_is_no_wake_and_leaves_no_trace() {
+        let voice = Voice::new();
+        voice.session_up(1, "mic", true);
+        voice.gate(1, true);
+        let now = Instant::now();
+        feed(&voice, 1, &wake_fixture());
+        // The kitchen chose its wake words and "Okay Nabu" is not one.
+        let pass = voice.pass_where(now, |room, phrase| {
+            assert_eq!((room, phrase), ("kitchen", "Okay Nabu"));
+            false
+        });
+        assert!(pass.wakes.is_empty());
+        assert_eq!(voice.wakes(), 0);
+        assert!(!pass.lines.iter().any(|l| l.starts_with("voice wake room=")));
+        // Nothing was held off: once the room listens for the phrase, the
+        // next time it is said there, well inside the hold-off, is a wake.
+        feed(&voice, 1, &wake_fixture());
+        let again = voice.pass_where(now + Duration::from_millis(100), |_, _| true);
+        assert_eq!(
+            again.wakes,
+            vec![Wake {
+                room: "kitchen".to_string(),
+                phrase: "Okay Nabu".to_string(),
+            }]
+        );
+        assert_eq!(voice.wakes(), 1);
     }
 
     #[test]

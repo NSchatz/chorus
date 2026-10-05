@@ -15,9 +15,10 @@ microphone.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterator
 import json
 import logging
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
@@ -33,6 +34,8 @@ from homeassistant.components.assist_satellite import (
     AssistSatelliteEntityFeature,
 )
 from homeassistant.components.assist_satellite.const import DATA_COMPONENT
+from homeassistant.components.intent import async_device_supports_timers
+from homeassistant.components.intent.timers import TIMER_DATA, TimerManager
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.core_config import async_process_ha_core_config
@@ -45,7 +48,10 @@ from homeassistant.helpers import (
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.chorus.assist_satellite import voice_issue_id
+from custom_components.chorus.assist_satellite import (
+    TIMER_SOUND_TIMES,
+    voice_issue_id,
+)
 from custom_components.chorus.const import DOMAIN
 
 from .conftest import SERVER_ID, room, wait_for
@@ -53,6 +59,8 @@ from .fake_server import FakeChorusServer, shared
 
 HA_URL = "http://ha.example:8123"
 REPLY = "/api/tts_proxy/reply.mp3"
+PROMPT = "/api/tts_proxy/prompt.mp3"
+CHIME = "/api/assist_satellite/static/preannounce.mp3"
 SPEAKER = "chorus-0123456789ab"
 WAKE = shared("voice_wake.json")
 # Two stretches of "microphone audio": what the speaker sent between the wake
@@ -102,7 +110,9 @@ class FakePipeline:
     It takes the audio the satellite hands it until it has `want` bytes, as
     speech-to-text would until the speaker stops talking, and then sends the
     events a pipeline sends: the transcript, the intent and, with `reply`, a
-    spoken answer as a media URL of Home Assistant.
+    spoken answer as a media URL of Home Assistant. `continues` says, run by
+    run, whether the answer asks for more (`continue_conversation`); a run
+    that is asked to end at speech-to-text ends there, as a question's does.
     """
 
     def __init__(
@@ -117,15 +127,18 @@ class FakePipeline:
         self.calls: list[dict[str, Any]] = []
         self.audio = b""
         self.hold: asyncio.Event | None = None
+        self.continues: list[bool] = []
 
     async def __call__(self, hass: HomeAssistant, **kwargs: Any) -> None:
         self.calls.append(kwargs)
         emit: Callable[[PipelineEvent], None] = kwargs["event_callback"]
         emit(PipelineEvent(PipelineEventType.RUN_START))
         emit(PipelineEvent(PipelineEventType.STT_START))
+        got = 0
         async for chunk in kwargs["stt_stream"]:
             self.audio += chunk
-            if len(self.audio) >= self.want:
+            got += len(chunk)
+            if got >= self.want:
                 break
         if self.hold is not None:
             await self.hold.wait()
@@ -145,8 +158,22 @@ class FakePipeline:
                 PipelineEventType.STT_END, {"stt_output": {"text": "turn on the light"}}
             )
         )
+        if kwargs["end_stage"] is PipelineStage.STT:
+            emit(PipelineEvent(PipelineEventType.RUN_END))
+            return
+        more = self.continues.pop(0) if self.continues else False
         emit(PipelineEvent(PipelineEventType.INTENT_START))
-        emit(PipelineEvent(PipelineEventType.INTENT_END))
+        emit(
+            PipelineEvent(
+                PipelineEventType.INTENT_END,
+                {
+                    "intent_output": {
+                        "conversation_id": kwargs["conversation_id"],
+                        "continue_conversation": more,
+                    }
+                },
+            )
+        )
         if self.mode == "silent-reply":
             # It said it would speak and gave nothing to play.
             emit(PipelineEvent(PipelineEventType.TTS_START))
@@ -599,6 +626,7 @@ async def test_the_satellite_and_its_two_entities(
     state = hass.states.get(satellite(hass))
     assert state.attributes["supported_features"] == (
         AssistSatelliteEntityFeature.ANNOUNCE
+        | AssistSatelliteEntityFeature.START_CONVERSATION
     )
     assert state.attributes["friendly_name"] == "kitchen Assist satellite"
     assert hass.states.get(switch(hass)).attributes["friendly_name"] == (
@@ -933,21 +961,518 @@ async def test_the_entities_are_unavailable_while_the_server_is(
 # --- the configuration Home Assistant asks a satellite for ---------------------
 
 
-async def test_the_configuration_lists_the_servers_wake_words_and_is_fixed(
+def the_entity(hass: HomeAssistant) -> AssistSatelliteEntity:
+    found = hass.data[DATA_COMPONENT].get_entity(satellite(hass))
+    assert found is not None
+    return found
+
+
+def choice(*ids: str) -> AssistSatelliteConfiguration:
+    """What Home Assistant hands a satellite when a person chose wake words."""
+    return AssistSatelliteConfiguration(
+        available_wake_words=[], active_wake_words=list(ids), max_active_wake_words=1
+    )
+
+
+async def test_the_configuration_lists_the_servers_wake_words_and_sends_the_choice(
     hass: HomeAssistant, server: FakeChorusServer, setup: MockConfigEntry
 ) -> None:
-    entity: AssistSatelliteEntity = hass.data[DATA_COMPONENT].get_entity(
-        satellite(hass)
-    )
+    entity = the_entity(hass)
     config = entity.async_get_configuration()
     assert [(w.id, w.wake_word) for w in config.available_wake_words] == [
         ("okay_nabu", "Okay Nabu")
     ]
+    # A room that never chose listens for every one the server runs.
     assert config.active_wake_words == ["okay_nabu"]
+    assert config.max_active_wake_words == 1
+
+    # The choice goes to the server, as the catalog spells it.
+    await entity.async_set_configuration(choice("okay_nabu"))
+    assert server.bodies == [shared("voice_wake_words.json")]
+    assert entity.async_get_configuration().active_wake_words == ["okay_nabu"]
+
+    # A choice of none is a choice: the room then answers to no wake word.
+    await entity.async_set_configuration(choice())
+    assert sent(server, "voice_wake_words")[1] == {
+        "v": 2,
+        "t": "voice_wake_words",
+        "zone": "kitchen",
+        "wake_words": [],
+    }
+    config = entity.async_get_configuration()
+    assert config.active_wake_words == []
+    assert [w.id for w in config.available_wake_words] == ["okay_nabu"]
+
+    # A wake word the server does not run is refused, in words.
     with pytest.raises(HomeAssistantError) as caught:
-        await entity.async_set_configuration(
-            AssistSatelliteConfiguration(
-                available_wake_words=[], active_wake_words=[], max_active_wake_words=0
-            )
+        await entity.async_set_configuration(choice("hey_jarvis"))
+    assert caught.value.translation_key == "unknown_wake_word"
+    assert "hey_jarvis" in caught.value.translation_placeholders["detail"]
+    assert entity.async_get_configuration().active_wake_words == []
+
+
+async def test_the_wake_words_are_chosen_through_home_assistants_own_command(
+    hass: HomeAssistant,
+    server: FakeChorusServer,
+    setup: MockConfigEntry,
+    hass_ws_client: Any,
+) -> None:
+    """The websocket command the voice settings of Home Assistant use."""
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {"type": "assist_satellite/get_configuration", "entity_id": satellite(hass)}
+    )
+    answer = await client.receive_json()
+    assert answer["success"]
+    assert answer["result"]["active_wake_words"] == ["okay_nabu"]
+    await client.send_json_auto_id(
+        {
+            "type": "assist_satellite/set_wake_words",
+            "entity_id": satellite(hass),
+            "wake_word_ids": ["okay_nabu"],
+        }
+    )
+    assert (await client.receive_json())["success"]
+    assert server.bodies == [shared("voice_wake_words.json")]
+
+
+# --- continue conversation -------------------------------------------------------
+
+
+async def test_a_reply_that_asks_for_more_starts_a_second_run_without_a_wake_word(
+    hass: HomeAssistant,
+    server: FakeChorusServer,
+    setup: MockConfigEntry,
+    pipeline: FakePipeline,
+) -> None:
+    pipeline.continues = [True, False]
+    await listening(server)
+    server.wake(WAKE, audio=HEARD + SPOKEN)
+    await wait_for(lambda: len(sent(server, "announce")) == 1)
+    # The room listens again only once the question has been heard.
+    await settled(hass)
+    assert len(sent(server, "voice_start")) == 1
+    assert len(pipeline.calls) == 1
+    server.end_announcement(1)
+
+    # A second run, opened by the satellite: the server sent no wake word.
+    await wait_for(lambda: len(sent(server, "voice_start")) == 2)
+    await wait_for(lambda: server.open_run("kitchen").claimed)
+    server.mic("kitchen", HEARD + SPOKEN)
+    await wait_for(lambda: len(pipeline.calls) == 2)
+    first, second = pipeline.calls
+    assert first["wake_word_phrase"] == "Okay Nabu"
+    assert second["wake_word_phrase"] is None
+    assert second["start_stage"] is PipelineStage.STT
+    # It is the same conversation.
+    assert second["conversation_id"] == first["conversation_id"]
+
+    # Its answer asks for nothing more: the room is idle after it.
+    await wait_for(lambda: len(sent(server, "announce")) == 2)
+    server.end_announcement(2)
+    await wait_for(lambda: hass.states.get(satellite(hass)).state == "idle")
+    await settled(hass)
+    assert len(sent(server, "voice_start")) == 2
+    assert len(sent(server, "voice_stop")) == 2
+    assert len(set(server.run_ids)) == 2
+
+
+@pytest.mark.parametrize("why", ["muted", "not played", "no reply"])
+async def test_a_conversation_is_not_continued_where_nobody_was_asked_or_listens(
+    hass: HomeAssistant,
+    server: FakeChorusServer,
+    setup: MockConfigEntry,
+    pipeline: FakePipeline,
+    why: str,
+) -> None:
+    pipeline.continues = [True]
+    if why == "no reply":
+        pipeline.reply = None
+    await listening(server)
+    server.wake(WAKE, audio=HEARD + SPOKEN)
+    if why == "no reply":
+        await wait_for(lambda: len(sent(server, "voice_stop")) == 1)
+    else:
+        await wait_for(lambda: len(sent(server, "announce")) == 1)
+        if why == "muted":
+            server.set_mic_muted("kitchen", True)
+            await wait_for(lambda: hass.states.get(sensor(hass)).state == "on")
+            server.end_announcement(1)
+        else:
+            server.end_announcement(1, "failed", "http status 404")
+    await wait_for(lambda: hass.states.get(satellite(hass)).state == "idle")
+    await settled(hass)
+    assert len(sent(server, "voice_start")) == 1
+    assert len(pipeline.calls) == 1
+
+
+# --- start conversation and ask question ---------------------------------------------
+
+
+@pytest.fixture
+def an_agent_that_converses() -> Iterator[None]:
+    """A pipeline whose conversation agent is not Home Assistant's built-in one.
+
+    Home Assistant refuses `start_conversation` for the built-in agent, which
+    cannot hold a conversation, before it calls the satellite at all.
+    """
+    with patch(
+        "homeassistant.components.assist_satellite.entity.async_get_pipeline",
+        return_value=SimpleNamespace(conversation_engine="conversation.an_agent"),
+    ):
+        yield
+
+
+async def call(hass: HomeAssistant, action: str, **data: Any) -> Any:
+    return await hass.services.async_call(
+        "assist_satellite",
+        action,
+        {"entity_id": satellite(hass), **data},
+        blocking=True,
+        return_response=action == "ask_question",
+    )
+
+
+def start_conversation(hass: HomeAssistant, **data: Any) -> asyncio.Task[Any]:
+    return hass.async_create_task(
+        call(hass, "start_conversation", start_media_id=HA_URL + PROMPT, **data)
+    )
+
+
+def ask_question(hass: HomeAssistant, **data: Any) -> asyncio.Task[Any]:
+    return hass.async_create_task(
+        call(hass, "ask_question", question_media_id=HA_URL + PROMPT, **data)
+    )
+
+
+async def test_start_conversation_plays_its_prompt_then_opens_a_run(
+    hass: HomeAssistant,
+    server: FakeChorusServer,
+    setup: MockConfigEntry,
+    pipeline: FakePipeline,
+    an_agent_that_converses: None,
+) -> None:
+    await listening(server)
+    task = start_conversation(hass)
+    # The chime, then the prompt, each waited for; nothing listens meanwhile.
+    await wait_for(lambda: len(sent(server, "announce")) == 1)
+    assert sent(server, "announce")[0]["url"] == HA_URL + CHIME
+    server.end_announcement(1)
+    await wait_for(lambda: len(sent(server, "announce")) == 2)
+    assert sent(server, "announce")[1] == {
+        "v": 2,
+        "t": "announce",
+        "target": "kitchen",
+        "url": HA_URL + PROMPT,
+    }
+    await settled(hass)
+    assert sent(server, "voice_start") == []
+    assert not task.done()
+    assert hass.states.get(satellite(hass)).state == "responding"
+    # A wake word said over the prompt starts no run of its own.
+    server.wake(WAKE)
+    await settled(hass)
+    assert sent(server, "voice_start") == []
+
+    # The prompt is over: the run opens and the action returns.
+    server.end_announcement(2)
+    await task
+    assert sent(server, "voice_start") == [json.loads(shared("voice_start.json"))]
+    await wait_for(lambda: server.open_run("kitchen").claimed)
+    server.mic("kitchen", HEARD + SPOKEN)
+    await wait_for(lambda: len(pipeline.calls) == 1)
+    (heard,) = pipeline.calls
+    assert heard["wake_word_phrase"] is None
+    assert heard["start_stage"] is PipelineStage.STT
+    assert heard["end_stage"] is PipelineStage.TTS
+    await wait_for(lambda: pipeline.audio == HEARD + SPOKEN)
+
+    # What is answered is played like any reply, and the run was stopped.
+    await wait_for(lambda: len(sent(server, "announce")) == 3)
+    assert sent(server, "announce")[2]["url"] == HA_URL + REPLY
+    server.end_announcement(3)
+    await wait_for(lambda: hass.states.get(satellite(hass)).state == "idle")
+    assert len(sent(server, "voice_stop")) == 1
+    assert server.open_run("kitchen") is None
+
+
+async def test_ask_question_plays_its_prompt_then_opens_a_run_and_returns_the_answer(
+    hass: HomeAssistant,
+    server: FakeChorusServer,
+    setup: MockConfigEntry,
+    pipeline: FakePipeline,
+) -> None:
+    await listening(server)
+    task = ask_question(hass, preannounce=False)
+    await wait_for(lambda: len(sent(server, "announce")) == 1)
+    assert sent(server, "announce")[0]["url"] == HA_URL + PROMPT
+    await settled(hass)
+    assert sent(server, "voice_start") == []
+    server.end_announcement(1)
+
+    await wait_for(lambda: len(sent(server, "voice_start")) == 1)
+    await wait_for(lambda: server.open_run("kitchen").claimed)
+    server.mic("kitchen", HEARD + SPOKEN)
+    assert await task == {"id": None, "sentence": "turn on the light", "slots": {}}
+    # The pipeline was asked for the words alone: nothing is said back.
+    (heard,) = pipeline.calls
+    assert heard["wake_word_phrase"] is None
+    assert heard["start_stage"] is PipelineStage.STT
+    assert heard["end_stage"] is PipelineStage.STT
+    await wait_for(lambda: len(sent(server, "voice_stop")) == 1)
+    await wait_for(lambda: hass.states.get(satellite(hass)).state == "idle")
+    assert len(sent(server, "announce")) == 1
+
+
+@pytest.mark.parametrize("action", ["start_conversation", "ask_question"])
+@pytest.mark.parametrize("gate", ["voice-disabled", "mic-muted"])
+async def test_while_muted_or_voice_disabled_a_prompt_plays_and_nothing_listens(
+    hass: HomeAssistant,
+    server: FakeChorusServer,
+    setup: MockConfigEntry,
+    pipeline: FakePipeline,
+    an_agent_that_converses: None,
+    action: str,
+    gate: str,
+) -> None:
+    await listening(server)
+    if gate == "voice-disabled":
+        await hass.services.async_call(
+            "switch", "turn_off", {"entity_id": switch(hass)}, blocking=True
         )
-    assert caught.value.translation_key == "wake_words_fixed"
+        await wait_for(lambda: hass.states.get(switch(hass)).state == "off")
+    else:
+        server.set_mic_muted("kitchen", True)
+        await wait_for(lambda: hass.states.get(sensor(hass)).state == "on")
+    server.commands.clear()
+
+    start = start_conversation if action == "start_conversation" else ask_question
+    task = start(hass, preannounce=False)
+    # The prompt plays: it uses the speaker, not the microphone.
+    await wait_for(lambda: len(sent(server, "announce")) == 1)
+    assert sent(server, "announce")[0]["url"] == HA_URL + PROMPT
+    await settled(hass)
+    assert not task.done()
+    server.end_announcement(1)
+
+    # Then it ends without listening, and the caller is told why.
+    with pytest.raises(HomeAssistantError) as caught:
+        await task
+    assert caught.value.translation_domain == DOMAIN
+    assert caught.value.translation_key == (
+        "not_listening_voice_disabled"
+        if gate == "voice-disabled"
+        else "not_listening_mic_muted"
+    )
+    assert caught.value.translation_placeholders["room"] == "kitchen"
+    await settled(hass)
+    assert [c["t"] for c in map(json.loads, server.bodies)] == ["announce"]
+    assert pipeline.calls == []
+    assert server.requests.count("GET /api/voice-audio") == 0
+    assert hass.states.get(satellite(hass)).state == "idle"
+
+
+@pytest.mark.parametrize(
+    ("refusal", "key"),
+    [
+        ("error-voice-start-disabled.json", "not_listening_voice_disabled"),
+        ("error-voice-start-muted.json", "not_listening_mic_muted"),
+        ("error-unknown-zone.json", "not_listening"),
+    ],
+)
+async def test_a_prompt_whose_run_the_server_refuses_ends_in_the_same_error(
+    hass: HomeAssistant,
+    server: FakeChorusServer,
+    setup: MockConfigEntry,
+    pipeline: FakePipeline,
+    refusal: str,
+    key: str,
+) -> None:
+    """The gate closed after the last state: the server's refusal says so."""
+    await listening(server)
+    task = ask_question(hass, preannounce=False)
+    await wait_for(lambda: len(sent(server, "announce")) == 1)
+    server.script(400, shared(refusal))
+    server.end_announcement(1)
+    with pytest.raises(HomeAssistantError) as caught:
+        await task
+    assert caught.value.translation_key == key
+    assert pipeline.calls == []
+
+
+async def test_a_prompt_whose_run_has_no_audio_ends_in_an_error_and_stops_the_run(
+    hass: HomeAssistant,
+    server: FakeChorusServer,
+    setup: MockConfigEntry,
+    pipeline: FakePipeline,
+) -> None:
+    server.voice_integration = "192.0.2.10"
+    await listening(server)
+    task = ask_question(hass, preannounce=False)
+    await wait_for(lambda: len(sent(server, "announce")) == 1)
+    server.end_announcement(1)
+    with pytest.raises(HomeAssistantError) as caught:
+        await task
+    assert caught.value.translation_key == "not_listening"
+    assert (
+        "not-the-voice-integration" in caught.value.translation_placeholders["reason"]
+    )
+    assert pipeline.calls == []
+    assert len(sent(server, "voice_stop")) == 1
+    assert server.open_run("kitchen") is None
+
+
+async def test_a_prompt_that_cannot_be_played_opens_no_run(
+    hass: HomeAssistant,
+    server: FakeChorusServer,
+    setup: MockConfigEntry,
+    pipeline: FakePipeline,
+) -> None:
+    await listening(server)
+    task = ask_question(hass, preannounce=False)
+    await wait_for(lambda: len(sent(server, "announce")) == 1)
+    server.end_announcement(1, "failed", "http status 404")
+    with pytest.raises(HomeAssistantError) as caught:
+        await task
+    assert caught.value.translation_key == "announcement_failed"
+    await settled(hass)
+    assert sent(server, "voice_start") == []
+    # The next wake word is the room's again.
+    server.wake(WAKE, audio=HEARD + SPOKEN)
+    await wait_for(lambda: len(pipeline.calls) == 1)
+
+
+async def test_a_question_whose_pipeline_breaks_has_no_answer_and_does_not_hang(
+    hass: HomeAssistant,
+    server: FakeChorusServer,
+    setup: MockConfigEntry,
+    pipeline: FakePipeline,
+) -> None:
+    await listening(server)
+    task = ask_question(hass, preannounce=False)
+    await wait_for(lambda: len(sent(server, "announce")) == 1)
+    with patch.object(
+        the_entity(hass),
+        "async_accept_pipeline_from_satellite",
+        side_effect=RuntimeError("Pipeline entity not found"),
+    ):
+        server.end_announcement(1)
+        with pytest.raises(HomeAssistantError, match="No answer"):
+            await task
+    await wait_for(lambda: len(sent(server, "voice_stop")) == 1)
+    assert hass.states.get(satellite(hass)).state == "idle"
+
+
+async def test_a_prompt_ends_the_run_in_progress_and_then_opens_its_own(
+    hass: HomeAssistant,
+    server: FakeChorusServer,
+    setup: MockConfigEntry,
+    pipeline: FakePipeline,
+) -> None:
+    pipeline.want = 10**9
+    await listening(server)
+    server.wake(WAKE, audio=HEARD)
+    await wait_for(lambda: bool(pipeline.audio))
+    task = ask_question(hass, preannounce=False)
+    await wait_for(lambda: len(sent(server, "announce")) == 1)
+    await wait_for(lambda: server.open_run("kitchen") is None)
+    pipeline.want = len(SPOKEN)
+    server.end_announcement(1)
+    await wait_for(lambda: len(sent(server, "voice_start")) == 2)
+    await wait_for(lambda: server.open_run("kitchen").claimed)
+    server.mic("kitchen", SPOKEN)
+    assert (await task)["sentence"] == "turn on the light"
+    assert len(pipeline.calls) == 2
+
+
+# --- timers --------------------------------------------------------------------------
+
+
+def device_id(hass: HomeAssistant) -> str:
+    found = er.async_get(hass).async_get(satellite(hass)).device_id
+    assert found is not None
+    return found
+
+
+def timers(hass: HomeAssistant) -> TimerManager:
+    return hass.data[TIMER_DATA]
+
+
+async def test_a_timer_that_finishes_plays_a_sound_in_the_room(
+    hass: HomeAssistant, server: FakeChorusServer, setup: MockConfigEntry
+) -> None:
+    # The room's device takes timers: Home Assistant's own handler has it.
+    assert async_device_supports_timers(hass, device_id(hass))
+    # The living room has no satellite and takes none.
+    living = er.async_get(hass).async_get(room(hass, "living")).device_id
+    assert not async_device_supports_timers(hass, living)
+
+    timers(hass).start_timer(device_id(hass), None, None, 1, "en")
+    # Started, and running: nothing sounds.
+    await settled(hass)
+    assert server.bodies == []
+
+    # It finishes: the sound is played in the room, through `announce`, each
+    # time once the one before is over.
+    await wait_for(lambda: len(sent(server, "announce")) == 1)
+    assert sent(server, "announce") == [
+        {"v": 2, "t": "announce", "target": "kitchen", "url": HA_URL + CHIME}
+    ]
+    for number in range(1, TIMER_SOUND_TIMES):
+        await settled(hass)
+        assert len(sent(server, "announce")) == number
+        server.end_announcement(number)
+        await wait_for(lambda n=number: len(sent(server, "announce")) == n + 1)
+    server.end_announcement(TIMER_SOUND_TIMES)
+    await settled(hass)
+    assert [c["url"] for c in sent(server, "announce")] == [
+        HA_URL + CHIME
+    ] * TIMER_SOUND_TIMES
+    # A timer listens to nobody: no run was opened.
+    assert sent(server, "voice_start") == []
+
+
+async def test_a_timer_sounds_while_the_microphone_is_muted_and_two_ring_once(
+    hass: HomeAssistant, server: FakeChorusServer, setup: MockConfigEntry
+) -> None:
+    server.set_mic_muted("kitchen", True)
+    await wait_for(lambda: hass.states.get(sensor(hass)).state == "on")
+    timers(hass).start_timer(device_id(hass), None, None, 1, "en", name="tea")
+    timers(hass).start_timer(device_id(hass), None, None, 1, "en", name="eggs")
+    await wait_for(lambda: len(sent(server, "announce")) == 1)
+    await settled(hass, turns=60)
+    assert len(sent(server, "announce")) == 1
+    for number in range(1, TIMER_SOUND_TIMES + 1):
+        await wait_for(lambda n=number: len(sent(server, "announce")) == n)
+        server.end_announcement(number)
+    await settled(hass)
+    assert len(sent(server, "announce")) == TIMER_SOUND_TIMES
+
+
+async def test_a_cancelled_timer_makes_no_sound_and_a_sound_that_fails_is_logged(
+    hass: HomeAssistant,
+    server: FakeChorusServer,
+    setup: MockConfigEntry,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    timer = timers(hass).start_timer(device_id(hass), None, None, 30, "en")
+    timers(hass).cancel_timer(timer)
+    await settled(hass)
+    assert server.bodies == []
+    assert "Timer" in caplog.text
+
+    timers(hass).start_timer(device_id(hass), None, None, 1, "en")
+    await wait_for(lambda: len(sent(server, "announce")) == 1)
+    server.end_announcement(1, "failed", "http status 404")
+    await wait_for(lambda: "The timer sound was not played in kitchen" in caplog.text)
+    await settled(hass)
+    assert len(sent(server, "announce")) == 1
+
+
+async def test_unloading_takes_the_timer_handler_with_it(
+    hass: HomeAssistant, server: FakeChorusServer, setup: MockConfigEntry
+) -> None:
+    device = device_id(hass)
+    assert await hass.config_entries.async_unload(setup.entry_id)
+    await hass.async_block_till_done()
+    assert not async_device_supports_timers(hass, device)
