@@ -1,0 +1,18 @@
+/* The document around the app element. Not one colour and not one length is
+ * written here or in an element's styles: every value is a token of
+ * tokens.css. This file and tokens.css are bundled into one stylesheet that
+ * index.html links, because chorus-server's Content-Security-Policy allows no
+ * inline style (style-src 'self').
+ */
+@import "./tokens.css";
+
+* { box-sizing: border-box; }
+
+body {
+  margin: var(--reset-margin);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--face-prose);
+  font-size: var(--body-size);
+  line-height: var(--body-leading);
+}

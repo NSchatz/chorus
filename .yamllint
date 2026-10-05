@@ -2,8 +2,9 @@
 # yamllint 1.38.0, run strict over the repository: yamllint -s .
 extends: default
 
-# Build outputs (CMake's configure logs under firmware/build) are not ours.
-ignore-from-file: .gitignore
+# Build outputs (CMake's configure logs under firmware/build) are not ours,
+# and neither is a file a tool writes whole (.yamllintignore names them).
+ignore-from-file: [.gitignore, .yamllintignore]
 
 rules:
   # GitHub Actions spells the trigger key `on:`, which YAML 1.1 reads as a

@@ -76,6 +76,22 @@ ha-live: tools-executable
 
 .PHONY: ha-test ha-hassfest ha-live
 
+# The app under web/ (Lit 3 elements bundled by esbuild; the ADR of the web app stack), with the
+# pinned node and pnpm of mise.toml. Both targets first install the locked packages with
+# install scripts off (tools/web.sh).
+# web-test: the unit tests under `node --test` with happy-dom as the DOM: no browser. Gate step
+# `web-test`.
+# web-build: web/src into web/dist, the committed output chorus-server embeds. Deterministic:
+# run it after changing web/src and commit web/dist with the change. Gate step `web-build`
+# rebuilds and fails when web/dist differs from what is committed.
+web-test: tools-executable
+	bash tools/web.sh test
+
+web-build: tools-executable
+	bash tools/web.sh build
+
+.PHONY: web-test web-build
+
 # Regenerate fixtures/decode (goal 16): one short file per settled input format with what a
 # reference decoder made of it. Never run by the gate. REFDEC is a conda-forge prefix holding
 # the pinned reference programs (ffmpeg, lame, mpg123, flac, opusdec, sndfile-convert);

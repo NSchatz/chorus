@@ -1,0 +1,12 @@
+---
+# No install script runs (docs/conventions.md rule 13;
+# tools/conventions/check-web.sh holds both settings). pnpm 12 reads its
+# settings here, not from an .npmrc: `ignoreScripts` switches every lifecycle
+# script off, the project's own included.
+ignoreScripts: true
+# esbuild declares a postinstall that only verifies its platform binary; the
+# binary is the optional package @esbuild/<platform> and runs without it.
+# pnpm stops an install on a build script that is neither allowed nor denied,
+# so the denial is written down. Every entry here is `false`.
+allowBuilds:
+  esbuild: false

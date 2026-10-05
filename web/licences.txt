@@ -1,0 +1,49 @@
+# The licence of every package in pnpm-lock.yaml: name, version, licence (the registry's
+# `license` field for that version). Read 2026-10-05 from https://registry.npmjs.org/<name>/<version>.
+# tools/conventions/check-web.sh holds this list to the lockfile (every locked package has a line,
+# no line is left over) and every licence to the allowlist of docs/conventions.md rule 13;
+# tools/web.sh holds it to the `license` field of every package an install puts in node_modules.
+# A new or upgraded package gets its line in the commit that changes the lockfile.
+@esbuild/aix-ppc64 0.28.2 MIT
+@esbuild/android-arm64 0.28.2 MIT
+@esbuild/android-arm 0.28.2 MIT
+@esbuild/android-x64 0.28.2 MIT
+@esbuild/darwin-arm64 0.28.2 MIT
+@esbuild/darwin-x64 0.28.2 MIT
+@esbuild/freebsd-arm64 0.28.2 MIT
+@esbuild/freebsd-x64 0.28.2 MIT
+@esbuild/linux-arm64 0.28.2 MIT
+@esbuild/linux-arm 0.28.2 MIT
+@esbuild/linux-ia32 0.28.2 MIT
+@esbuild/linux-loong64 0.28.2 MIT
+@esbuild/linux-mips64el 0.28.2 MIT
+@esbuild/linux-ppc64 0.28.2 MIT
+@esbuild/linux-riscv64 0.28.2 MIT
+@esbuild/linux-s390x 0.28.2 MIT
+@esbuild/linux-x64 0.28.2 MIT
+@esbuild/netbsd-arm64 0.28.2 MIT
+@esbuild/netbsd-x64 0.28.2 MIT
+@esbuild/openbsd-arm64 0.28.2 MIT
+@esbuild/openbsd-x64 0.28.2 MIT
+@esbuild/openharmony-arm64 0.28.2 MIT
+@esbuild/sunos-x64 0.28.2 MIT
+@esbuild/win32-arm64 0.28.2 MIT
+@esbuild/win32-ia32 0.28.2 MIT
+@esbuild/win32-x64 0.28.2 MIT
+@happy-dom/global-registrator 20.14.5 MIT
+@lit-labs/ssr-dom-shim 1.6.0 BSD-3-Clause
+@lit/reactive-element 2.1.2 BSD-3-Clause
+@types/node 26.6.4 MIT
+@types/trusted-types 2.0.7 MIT
+@types/whatwg-mimetype 3.0.2 MIT
+@types/ws 8.18.2 MIT
+buffer-image-size 0.6.4 MIT
+entities 7.0.1 BSD-2-Clause
+esbuild 0.28.2 MIT
+happy-dom 20.14.5 MIT
+lit-element 4.2.2 BSD-3-Clause
+lit-html 3.3.3 BSD-3-Clause
+lit 3.3.3 BSD-3-Clause
+undici-types 8.9.0 MIT
+whatwg-mimetype 3.0.0 MIT
+ws 8.22.0 MIT

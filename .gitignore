@@ -29,3 +29,7 @@ core.[0-9]*
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+
+# The web app's installed packages (tools/web.sh installs the locked ones); web/dist, the build
+# output, is committed on purpose.
+/web/node_modules

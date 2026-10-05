@@ -1,0 +1,3 @@
+# YAML that a tool writes whole and nobody edits; yamllint -s skips these (.yamllint).
+# pnpm's lockfile of the web app: tools/conventions/check-web.sh holds its content.
+/web/pnpm-lock.yaml
