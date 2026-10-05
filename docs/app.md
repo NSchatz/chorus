@@ -148,8 +148,7 @@ it was for.
   `img-src 'self'` stands. A record with no artwork, or one whose image does not load, shows a
   placeholder.
 
-Not built yet, and later tasks: limits, quiet hours and autoplay; bass management and the TV
-upmix; alarms and sleep timers;
+Not built yet, and later tasks: bass management and the TV upmix; alarms and sleep timers;
 room correction with the phone's microphone; adoption, naming and firmware approval.
 
 ## Installing, and the service worker's cache rules
