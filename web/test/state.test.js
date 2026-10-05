@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { RETRY_MS, createClient, volumeCommand } from "../src/api.js";
-import { createStore, groupsOf, roomsOf } from "../src/state.js";
+import { createStore, groupsOf, roomOf, roomsOf } from "../src/state.js";
 import { fakeServer, fakeTimers, settle, stateOf, zone } from "./fake-server.js";
 
 function storeOf(server, timers = fakeTimers()) {
@@ -22,6 +22,7 @@ test("a room is read as its name, volume in thousandths, mute and bonded set", (
         name: "Living Room",
         volume: 0.375,
         muted: true,
+        sound: { bass: 3, treble: -2, loudness: true, night: false, speech: true, tv_upmix: "ambient" },
         bond: [
           { endpoint: "chorus-0123456789ab", role: "FL" },
           { endpoint: "endpoint-b", role: "FR" },
@@ -38,6 +39,7 @@ test("a room is read as its name, volume in thousandths, mute and bonded set", (
       name: "Living Room",
       volume: 375,
       muted: true,
+      sound: { bass: 3, treble: -2, loudness: true, night: false, speech: true },
       group: "living",
       bond: [
         { endpoint: "chorus-0123456789ab", name: "Left of the TV", role: "FL" },
@@ -46,7 +48,18 @@ test("a room is read as its name, volume in thousandths, mute and bonded set", (
       source: null,
       nowPlaying: null,
     },
-    { id: "den", name: "den", volume: 500, muted: false, group: "den", bond: [], source: null, nowPlaying: null },
+    {
+      id: "den",
+      name: "den",
+      volume: 500,
+      muted: false,
+      // A state that carries no sound for the room: nothing is made up.
+      sound: { bass: null, treble: null, loudness: null, night: null, speech: null },
+      group: "den",
+      bond: [],
+      source: null,
+      nowPlaying: null,
+    },
   ]);
 });
 
@@ -57,11 +70,17 @@ test("a member the app cannot read is null, not a made-up value", () => {
     name: "kitchen",
     volume: null,
     muted: null,
+    sound: { bass: null, treble: null, loudness: null, night: null, speech: null },
     group: "kitchen",
     bond: [],
     source: null,
     nowPlaying: null,
   });
+  // A sound whose members are not what the catalog says is read the same way.
+  const [odd] = roomsOf(stateOf(1, [zone("den", { sound: { bass: 2.5, treble: "3", loudness: 1, night: true } })]));
+  assert.deepEqual(odd.sound, { bass: null, treble: null, loudness: null, night: true, speech: null });
+  assert.deepEqual(roomOf(roomsOf(stateOf(1, [zone("den")])), "den").id, "den");
+  assert.equal(roomOf(roomsOf(stateOf(1, [zone("den")])), "attic"), null);
   assert.deepEqual(roomsOf(null), []);
   assert.deepEqual(roomsOf({ zones: "none" }), []);
 });
@@ -167,7 +186,7 @@ test("a command changes the store only through what the server answers", async (
     status: 400,
     body: '{"v":1,"t":"error","field":"zone","detail":"there is no zone \'attic\'"}',
   });
-  assert.deepEqual(await store.command(volumeCommand("attic", 100)), { ok: false, refusal: "there is no zone 'attic'" });
+  assert.deepEqual(await store.command(volumeCommand("attic", 100)), { ok: false, refusal: "there is no zone 'attic'", field: "zone" });
   assert.equal(store.view().state.serial, 1);
 
   // Accepted, and clamped by the server: the store holds the server's volume,

@@ -79,6 +79,28 @@ export function groupVolumeCommand(group, thousandths) {
   return `{"v":2,"t":"group_volume","group":${JSON.stringify(group)},"volume":${volumeLiteral(thousandths)}}`;
 }
 
+// `sound` (docs/control-plane.md, "Per-room sound"): a room's tone (`bass`
+// and `treble`, whole dB), loudness, night mode and speech enhancement. It is
+// a partial update, and only the members of `changes` this names are written,
+// in the catalog's order: a field that is absent keeps what the room had.
+export const TONE_DB = Object.freeze({ min: -10, max: 10 });
+const SOUND_TONES = ["bass", "treble"];
+const SOUND_SWITCHES = ["loudness", "night", "speech"];
+
+export function soundCommand(zone, changes = {}) {
+  let body = `{"v":2,"t":"sound","zone":${JSON.stringify(zone)}`;
+  for (const field of SOUND_TONES) {
+    if (changes[field] === undefined) continue;
+    const held = Math.min(TONE_DB.max, Math.max(TONE_DB.min, Math.round(Number(changes[field]) || 0)));
+    body += `,"${field}":${held}`;
+  }
+  for (const field of SOUND_SWITCHES) {
+    if (changes[field] === undefined) continue;
+    body += `,"${field}":${changes[field] ? "true" : "false"}`;
+  }
+  return `${body}}`;
+}
+
 // Where a group's now-playing artwork is, for an <img>: the server's own
 // route (docs/control-plane.md, "Now-playing artwork"), which names the group
 // and nothing else. The record's own artwork address is somebody else's, and
@@ -106,8 +128,9 @@ export const SIGNED_OUT = "Signed out";
 
 // What a refused command says, for a person: the server's own `detail` where
 // the answer is one of the catalog's refusals, else the answer's text, else
-// the status alone.
-async function refusalText(response) {
+// the status alone. A catalog refusal also names the `field` it refused,
+// which comes back beside the words: { refusal, field } or { refusal }.
+async function refusalOf(response) {
   let text = "";
   try {
     text = (await response.text()).trim();
@@ -116,11 +139,14 @@ async function refusalText(response) {
   }
   try {
     const answer = JSON.parse(text);
-    if (answer && typeof answer.detail === "string" && answer.detail) return answer.detail;
+    if (answer && typeof answer.detail === "string" && answer.detail) {
+      const field = typeof answer.field === "string" && answer.field ? { field: answer.field } : {};
+      return { refusal: answer.detail, ...field };
+    }
   } catch {
     // Not a catalog message (a 403, 415 or 503 says its reason in plain text).
   }
-  return text || `the server answered ${response.status}`;
+  return { refusal: text || `the server answered ${response.status}` };
 }
 
 const timersOfTheHost = {
@@ -143,8 +169,9 @@ export function createClient({ fetch = globalThis.fetch.bind(globalThis), base =
 
   // POST api/command with one control message. Resolves, never rejects:
   // { ok: true, state } with the resulting state message, or
-  // { ok: false, refusal } with the words to show; a command that met the
-  // login is { ok: false, refusal, signedOut: true }.
+  // { ok: false, refusal } with the words to show, and `field` where the
+  // server named the field it refused; a command that met the login is
+  // { ok: false, refusal, signedOut: true }.
   async function command(body) {
     let response;
     try {
@@ -158,7 +185,7 @@ export function createClient({ fetch = globalThis.fetch.bind(globalThis), base =
       return { ok: false, refusal: "the server could not be reached" };
     }
     if (signedOut(response)) return { ok: false, refusal: SIGNED_OUT, signedOut: true };
-    if (!response.ok) return { ok: false, refusal: await refusalText(response) };
+    if (!response.ok) return { ok: false, ...(await refusalOf(response)) };
     try {
       return { ok: true, state: await response.json() };
     } catch {

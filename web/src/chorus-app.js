@@ -17,6 +17,16 @@
 // button all arrive here as a move (a room and a destination), and
 // grouping.js turns a move into its one command.
 //
+// Beyond the groups and the rooms there are further screens (routes.js), each
+// with an address of its own in the fragment. The shell follows the address:
+// at the home it paints the two regions, and at a screen's address it paints
+// that screen alone in the main region, across both columns, under a "Back"
+// link. A link with `data-route` anywhere under it opens its address as an
+// entry of the browser's history, so the browser's back button returns; the
+// link is in the screen's region and not the header, which a wide kiosk does
+// not show. The navigation's two buttons leave a further screen for the
+// region they name.
+//
 // It lays itself out twice over (the ADR of the layouts and the kiosk):
 //   layout   "phone" or "desktop", from the viewport's width (layout.js). A
 //            phone is one column, the groups and then the rooms, with the
@@ -38,6 +48,8 @@ import "./groups.js";
 import { LAYOUTS, watchLayout } from "./layout.js";
 import { MODES } from "./mode.js";
 import "./rooms.js";
+import { HOME, HOME_ADDRESS, createNavigation, screenOf } from "./routes.js";
+import "./sound.js";
 
 export class ChorusApp extends LitElement {
   static properties = {
@@ -53,6 +65,10 @@ export class ChorusApp extends LitElement {
     _view: { state: true },
     // The server's words for the last refused command, by room or group id.
     _refusals: { state: true },
+    // The field the server named in that refusal, by the same ids.
+    _refusalFields: { state: true },
+    // The route the address names (routes.js): { screen, params, address }.
+    _route: { state: true },
     // The room being dragged, { id, name, grouped }, and the destination
     // under the pointer; null when no drag is on.
     _moving: { state: true },
@@ -151,6 +167,32 @@ export class ChorusApp extends LitElement {
     main {
       padding: var(--surface-pad);
     }
+    /* A further screen: alone on the page, across both columns, under the
+     * way back. The link is a control like the navigation's buttons. */
+    :host([layout="desktop"]) main[data-screen] {
+      grid-column: 1 / -1;
+    }
+    main[data-screen] {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--surface-gap);
+    }
+    a[data-route] {
+      display: inline-flex;
+      box-sizing: border-box;
+      align-items: center;
+      justify-content: center;
+      align-self: start;
+      min-width: var(--control-basis);
+      min-height: var(--control-size);
+      padding: var(--control-pad-y) var(--control-pad-x);
+      border: var(--stroke-1) solid var(--control-edge);
+      border-radius: var(--control-radius);
+      background: var(--control-surface);
+      color: var(--control-ink);
+      text-decoration: none;
+    }
     section {
       padding-bottom: var(--reset-margin);
     }
@@ -201,6 +243,14 @@ export class ChorusApp extends LitElement {
     this.store = null;
     this._view = { state: null, rooms: [], groups: [], inputs: [], status: "connecting" };
     this._refusals = {};
+    this._refusalFields = {};
+    this._navigation = createNavigation();
+    this._route = this._navigation.route();
+    this._unroute = null;
+    // The region a navigation button asked for while a further screen was
+    // open: it takes the focus once the home is painted again.
+    this._goingTo = null;
+    this.addEventListener("click", (event) => this._onLink(event));
     this._moving = null;
     this._over = null;
     this._unsubscribe = null;
@@ -245,6 +295,22 @@ export class ChorusApp extends LitElement {
     this._unwatch = watchLayout((layout) => {
       this.layout = layout;
     });
+    this._unroute?.();
+    this._unroute = this._navigation.watch((route) => {
+      if (route.address !== this._route.address) this._route = route;
+    });
+  }
+
+  // A new screen is where the keyboard and a screen reader go on from: its
+  // region takes the focus, as a page's start does after a navigation.
+  updated(changed) {
+    if (!changed.has("_route") || changed.get("_route") === undefined) return;
+    const going = this._goingTo;
+    this._goingTo = null;
+    const region = this.renderRoot.querySelector(going === "groups" ? "section" : "main");
+    if (!region) return;
+    if (going) region.scrollIntoView?.({ block: "start" });
+    region.focus?.({ preventScroll: !going });
   }
 
   disconnectedCallback() {
@@ -253,6 +319,8 @@ export class ChorusApp extends LitElement {
     this._unsubscribe = null;
     this._unwatch?.();
     this._unwatch = null;
+    this._unroute?.();
+    this._unroute = null;
     this._drag.cancel();
   }
 
@@ -271,8 +339,11 @@ export class ChorusApp extends LitElement {
   async _send(subject, body) {
     if (!this.store) return;
     this._refusals = { ...this._refusals, [subject]: "" };
+    this._refusalFields = { ...this._refusalFields, [subject]: "" };
     const result = await this.store.command(body);
-    if (!result.ok) this._refusals = { ...this._refusals, [subject]: result.refusal };
+    if (result.ok) return;
+    this._refusals = { ...this._refusals, [subject]: result.refusal };
+    this._refusalFields = { ...this._refusalFields, [subject]: result.field ?? "" };
   }
 
   _onCommand(event) {
@@ -299,10 +370,50 @@ export class ChorusApp extends LitElement {
   // and put the focus on it, so the keyboard and a screen reader go on from
   // there.
   _onGo(event) {
-    const region = this.renderRoot.querySelector(event.currentTarget.dataset.go === "rooms" ? "main" : "section");
+    const go = event.currentTarget.dataset.go;
+    if (this._route.screen !== "home") {
+      // A further screen is open: leave it, and go on when the home is back.
+      this._goingTo = go;
+      this._navigation.back();
+      return;
+    }
+    const region = this.renderRoot.querySelector(go === "rooms" ? "main" : "section");
     if (!region) return;
     region.scrollIntoView?.({ block: "start" });
     region.focus?.({ preventScroll: true });
+  }
+
+  // A click on a link to a screen (`data-route`), anywhere under the shell:
+  // the app opens the address itself, as an entry of the history it marks
+  // (routes.js), and `data-route="back"` leaves the screen. A click with a
+  // modifier or another button is the browser's (a new tab, a new window).
+  _onLink(event) {
+    if (event.defaultPrevented || event.button > 0) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const link = event.composedPath().find((node) => node?.localName === "a" && node.hasAttribute("data-route"));
+    if (!link) return;
+    event.preventDefault();
+    if (link.dataset.route === "back") this._navigation.back();
+    else this._navigation.open(link.getAttribute("href"));
+  }
+
+  // A further screen, alone in the main region. An address that names a
+  // screen this build does not have is the home (routes.js), so there is
+  // always one to paint.
+  _screen(route) {
+    const screen = screenOf(route.screen);
+    const context = { view: this._view, refusals: this._refusals, refusalFields: this._refusalFields };
+    return html`
+      <main
+        aria-label=${screen.title(route.params, this._view)}
+        data-screen=${screen.id}
+        tabindex="-1"
+        @chorus-command=${this._onCommand}
+      >
+        <a href=${HOME_ADDRESS} data-route="back" aria-label="Back to rooms">Back</a>
+        ${screen.render(route.params, context)}
+      </main>
+    `;
   }
 
   // Signed out: the words and the way to sign in. The link is the page's own
@@ -325,7 +436,13 @@ export class ChorusApp extends LitElement {
           <button type="button" data-go="rooms" aria-label="Go to rooms" @click=${this._onGo}>Rooms</button>
         </nav>
       </header>
-      ${this._signedOut()}
+      ${this._signedOut()} ${this._route.screen === HOME.screen ? this._home() : this._screen(this._route)}
+    `;
+  }
+
+  // The home: the groups, then the rooms.
+  _home() {
+    return html`
       <section
         aria-label="Groups"
         tabindex="-1"

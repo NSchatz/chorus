@@ -68,6 +68,28 @@ export function inputsOf(state) {
     .map((id) => ({ id, source: `line-in:${id}`, label: labels.get(id) ?? id }));
 }
 
+// A room's sound as the screens read it: { bass, treble, loudness, night,
+// speech }. `bass` and `treble` are whole dB and the other three booleans, as
+// the server holds them; a member the state does not carry, or carries as
+// something else, is null, and a screen says so rather than show a default.
+export function soundOf(zone) {
+  const sound = zone && zone.sound && typeof zone.sound === "object" ? zone.sound : {};
+  const tone = (value) => (Number.isInteger(value) ? value : null);
+  const flag = (value) => (typeof value === "boolean" ? value : null);
+  return {
+    bass: tone(sound.bass),
+    treble: tone(sound.treble),
+    loudness: flag(sound.loudness),
+    night: flag(sound.night),
+    speech: flag(sound.speech),
+  };
+}
+
+// The room with this id among the rooms the store holds, or null.
+export function roomOf(rooms, id) {
+  return (Array.isArray(rooms) ? rooms : []).find((room) => room.id === id) ?? null;
+}
+
 // What the screens read of one room. A member this cannot read is null, and
 // a screen says so in words rather than showing a made-up value.
 function readRoom(zone, speakerNames, playing) {
@@ -80,6 +102,8 @@ function readRoom(zone, speakerNames, playing) {
     // Thousandths of full scale, 0 to 1000: the catalog's own step.
     volume: thousandths(zone.volume),
     muted: typeof zone.muted === "boolean" ? zone.muted : null,
+    // Tone, loudness, night mode and speech enhancement (soundOf).
+    sound: soundOf(zone),
     // The id of the group the room plays in: its own id when it is alone.
     group,
     // What the room plays while it is alone in the group named for it (a
