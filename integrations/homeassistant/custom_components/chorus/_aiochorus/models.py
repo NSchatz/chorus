@@ -23,6 +23,15 @@ SOLOIST_PREFIX = "soloist:"
 
 # The role a speaker with buttons declares (docs/protocol.md, "Roles").
 ROLE_CONTROLLER = "controller"
+# The role a speaker with a microphone declares (docs/control-plane.md,
+# "Voice: `voice_enabled` and `mic_muted`").
+ROLE_VOICE = "voice"
+
+# How an announcement stands (docs/control-plane.md, "How it ended").
+ANNOUNCEMENT_PLAYING = "playing"
+ANNOUNCEMENT_FINISHED = "finished"
+ANNOUNCEMENT_FAILED = "failed"
+ANNOUNCEMENT_DISPLACED = "displaced"
 
 # A speaker's buttons (firmware/include/chorus/controls.h: the compact speaker
 # and the streaming amp have these five; the other classes have none).
@@ -206,6 +215,12 @@ class Zone:
     sound: Sound | None = None
     # Whether an active quiet-hours window caps the room; on unless switched off.
     quiet_enabled: bool = True
+    # The software half of the microphone gate: off until a person switches it on.
+    voice_enabled: bool = False
+    # The hardware half, as the room's speakers report it. True unless a
+    # speaker present in the room said its gate is live, so a server that says
+    # nothing reads as muted.
+    mic_muted: bool = True
 
     @classmethod
     def from_obj(cls, obj: dict[str, Any]) -> Zone:
@@ -230,6 +245,8 @@ class Zone:
             transport=_opt_str(obj, "transport"),
             sound=Sound.from_obj(sound) if isinstance(sound, dict) else None,
             quiet_enabled=_flag(obj, "quiet_enabled", True),
+            voice_enabled=_flag(obj, "voice_enabled", False),
+            mic_muted=_flag(obj, "mic_muted", True),
         )
 
 
@@ -391,6 +408,11 @@ class Speaker:
         """Whether the speaker declared the controller role: it has buttons."""
         return ROLE_CONTROLLER in self.roles
 
+    @property
+    def voice(self) -> bool:
+        """Whether the speaker declared the voice role: it has a microphone."""
+        return ROLE_VOICE in self.roles
+
     @classmethod
     def from_obj(cls, obj: dict[str, Any]) -> Speaker:
         """Read one element of ``speakers``."""
@@ -440,6 +462,52 @@ class FirmwareImage:
         return self.verdict == IMAGE_VERIFIED
 
 
+@dataclass(frozen=True, slots=True)
+class WakeWord:
+    """A wake-word model the server runs, in every voice room."""
+
+    id: str
+    phrase: str
+
+    @classmethod
+    def from_obj(cls, obj: dict[str, Any]) -> WakeWord:
+        """Read one element of ``wake_words``."""
+        what = "a wake word"
+        return cls(id=_str(obj, "id", what), phrase=_str(obj, "phrase", what))
+
+
+@dataclass(frozen=True, slots=True)
+class Announcement:
+    """One announcement that is playing, or one of the last eight that are over."""
+
+    id: int
+    target: str
+    rooms: tuple[str, ...]
+    state: str
+    # The server's words for why it failed or what displaced it.
+    reason: str | None = None
+
+    @classmethod
+    def from_obj(cls, obj: dict[str, Any]) -> Announcement:
+        """Read one element of ``announcements``."""
+        what = "an announcement"
+        number = obj.get("id")
+        if isinstance(number, bool) or not isinstance(number, int):
+            raise ChorusProtocolError(f"{what} has no whole 'id'")
+        return cls(
+            id=number,
+            target=_str(obj, "target", what),
+            rooms=_str_tuple(obj, "rooms"),
+            state=_str(obj, "state", what),
+            reason=_opt_str(obj, "reason"),
+        )
+
+    @property
+    def playing(self) -> bool:
+        """Whether its rooms are still ducked for it or its clip is playing."""
+        return self.state == ANNOUNCEMENT_PLAYING
+
+
 def _version_key(version: str) -> tuple[tuple[int, int | str], ...]:
     # Runs of digits compare as numbers, everything else as text: 2.10.0 is
     # above 2.9.0. It decides which staged image is above the running version.
@@ -464,6 +532,15 @@ class State:
     speakers: tuple[Speaker, ...] = field(default=())
     # Empty on a server without a firmware directory.
     firmware_images: tuple[FirmwareImage, ...] = field(default=())
+    # Written only by a server that runs a wake-word model.
+    wake_words: tuple[WakeWord, ...] = field(default=())
+    # The announcements playing and the last eight that are over; written only
+    # while there is one to name.
+    announcements: tuple[Announcement, ...] = field(default=())
+    # Only in the answer to an ``announce`` command: the number of the
+    # announcement it started. It is no part of the house's state, so two
+    # states that differ in it alone are the same state.
+    announcement: int | None = field(default=None, compare=False)
 
     @classmethod
     def parse(cls, text: str | bytes) -> State:
@@ -477,6 +554,7 @@ class State:
         if isinstance(serial, bool) or not isinstance(serial, int):
             raise ChorusProtocolError("the state message has no whole 'serial'")
         firmware = obj.get("firmware")
+        number = obj.get("announcement")
         return cls(
             serial=serial,
             zones=tuple(Zone.from_obj(z) for z in _objects(obj, "zones")),
@@ -503,6 +581,17 @@ class State:
                     firmware if isinstance(firmware, dict) else {}, "images"
                 )
             ),
+            wake_words=tuple(
+                WakeWord.from_obj(word) for word in _objects(obj, "wake_words")
+            ),
+            announcements=tuple(
+                Announcement.from_obj(item) for item in _objects(obj, "announcements")
+            ),
+            announcement=(
+                number
+                if isinstance(number, int) and not isinstance(number, bool)
+                else None
+            ),
         )
 
     def zone(self, zone_id: str) -> Zone | None:
@@ -525,6 +614,23 @@ class State:
     def speaker(self, speaker_id: str) -> Speaker | None:
         """Return the adopted speaker with this id."""
         return next((s for s in self.speakers if s.id == speaker_id), None)
+
+    def voice_rooms(self) -> frozenset[str]:
+        """Return the rooms that have a microphone.
+
+        A room has one when a speaker adopted into it declared the voice role
+        (``speakers[].roles``), present right now or not.
+        """
+        rooms = {zone.id for zone in self.zones}
+        return frozenset(
+            speaker.room
+            for speaker in self.speakers
+            if speaker.voice and speaker.room is not None and speaker.room in rooms
+        )
+
+    def announcement_numbered(self, number: int) -> Announcement | None:
+        """Return the announcement with this number, while the state lists it."""
+        return next((a for a in self.announcements if a.id == number), None)
 
     def firmware_offer(self, speaker_id: str) -> FirmwareImage | None:
         """Return the staged image a speaker could be asked to install.
@@ -636,6 +742,63 @@ class ControllerEvent:
         if self.command == "previous":
             return BUTTON_PREVIOUS, PRESS
         return None
+
+
+_RUN_ID = re.compile(r"^[0-9a-f]{32}$")
+
+
+@dataclass(frozen=True, slots=True)
+class VoiceWake:
+    """A wake word a room's microphone heard (``GET /api/voice-events``).
+
+    It carries the room and the phrase and nothing else: no audio and no run.
+    The server keeps none and sends each once.
+    """
+
+    zone: str
+    phrase: str
+
+    @classmethod
+    def parse(cls, text: str | bytes) -> VoiceWake:
+        """Read a ``voice_wake`` message."""
+        what = "the voice wake event"
+        obj = loads(text, what)
+        if obj.get("t") != "voice_wake":
+            raise ChorusProtocolError("the message is not a voice wake event")
+        if obj.get("v") != 2:
+            raise ChorusProtocolError(f"{what} is not catalog version 2")
+        return cls(zone=_str(obj, "zone", what), phrase=_str(obj, "phrase", what))
+
+
+@dataclass(frozen=True, slots=True)
+class VoiceRun:
+    """The answer to ``voice_start``: an open run, its identifier and its limit.
+
+    The identifier is written nowhere but in this answer, so only the peer
+    that asked holds it. It is kept out of ``repr`` so that it reaches no log
+    line by accident.
+    """
+
+    zone: str
+    run: str = field(repr=False)
+    limit_ms: int
+
+    @classmethod
+    def parse(cls, text: str | bytes) -> VoiceRun:
+        """Read a ``voice_run`` message."""
+        what = "the voice run message"
+        obj = loads(text, what)
+        if obj.get("t") != "voice_run":
+            raise ChorusProtocolError("the answer is not a voice run message")
+        if obj.get("v") != 2:
+            raise ChorusProtocolError(f"{what} is not catalog version 2")
+        run = _str(obj, "run", what)
+        if not _RUN_ID.fullmatch(run):
+            raise ChorusProtocolError(f"{what} has no 32-digit hexadecimal 'run'")
+        limit = obj.get("limit_ms")
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            raise ChorusProtocolError(f"{what} has no whole 'limit_ms' above zero")
+        return cls(zone=_str(obj, "zone", what), run=run, limit_ms=limit)
 
 
 def _byte(obj: dict[str, Any], key: str, what: str) -> int:

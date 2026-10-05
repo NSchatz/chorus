@@ -43,6 +43,16 @@
     }
   },
   "entity": {
+    "assist_satellite": {
+      "assist_satellite": {
+        "name": "Assist satellite"
+      }
+    },
+    "binary_sensor": {
+      "mic_muted": {
+        "name": "Mic muted"
+      }
+    },
     "event": {
       "next": {
         "name": "Next button",
@@ -201,6 +211,9 @@
       },
       "speech_enhancement": {
         "name": "Speech enhancement"
+      },
+      "voice_enabled": {
+        "name": "Voice enabled"
       }
     },
     "update": {
@@ -246,6 +259,12 @@
     },
     "announce_volume": {
       "message": "The announcement volume is a number from 0 to 1."
+    },
+    "announcement_failed": {
+      "message": "The chorus server could not play the announcement: {reason}"
+    },
+    "announcement_timeout": {
+      "message": "The chorus server did not say the announcement was over."
     },
     "autoplay_gone": {
       "message": "The chorus server no longer has an autoplay rule for the input {input}."
@@ -330,9 +349,20 @@
     },
     "unsupported_media": {
       "message": "chorus plays its inputs (chorus://input/...) and announcements; it cannot play {media_id}."
+    },
+    "wake_words_fixed": {
+      "message": "The chorus server runs every wake word it has in every voice room; there is no choice to set."
     }
   },
   "issues": {
+    "no_voice_integration": {
+      "title": "The chorus server serves no voice run",
+      "description": "A wake word was heard, but the chorus server of the entry {title} was started without the address it may send a room's microphone audio to, so it opens no voice run. Start chorus-server with --voice-integration followed by the IP address of this Home Assistant."
+    },
+    "not_the_voice_integration": {
+      "title": "The chorus server sends voice audio to another address",
+      "description": "A wake word was heard, but the chorus server of the entry {title} serves a voice run's microphone audio to one address only, and it is not the one this Home Assistant reaches it from. Start chorus-server with --voice-integration followed by the IP address of this Home Assistant."
+    },
     "unsupported_catalog": {
       "description": "The chorus server of the entry {title} does not offer control catalog version 2, which this integration needs, or is too old to say who it is. Update chorus-server, or install the integration version that matches it, then reload the entry.",
       "title": "The chorus server speaks an unsupported control catalog"

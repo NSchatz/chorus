@@ -44,6 +44,7 @@ Home Assistant each time.
 |---|---|
 | The server | One device (a service), the hub of the entry |
 | A room (zone) | One device named for the room, `suggested_area` its name, with a `media_player`, a group-volume `number`, a visualizer `sensor` (disabled by default), and its sound controls: bass and treble (`number`), loudness, night mode and speech enhancement (`switch`), an input `select`, a quiet-hours `switch`, and an autoplay `switch` for each autoplay rule that targets it |
+| A room that has a microphone | On the room's device as well: an `assist_satellite`, a Voice enabled `switch` and a Mic muted `binary_sensor` ("Voice rooms" below) |
 | A saved group | One device under the server with a `media_player`, always present, and an autoplay `switch` for each autoplay rule that targets it |
 | A live group | No entity: the `group_members` of its rooms' players, leader first |
 | An adopted speaker | One device named for the speaker, `via` its room's device while it has a room and the server otherwise, a firmware `update` entity once it has reported what it runs, eight diagnostic `sensor`s, and five button `event` entities once it has declared the controller role |
@@ -79,6 +80,9 @@ device, unassigned under the server.
 | the room's Input `select` | `{"v":2,"t":"take","target":Z,"source":S}`, as `select_source` |
 | the room's Quiet hours `switch` | `{"v":2,"t":"quiet_hours_enabled","zone":Z,"enabled":false}` |
 | an Autoplay `switch` | `{"v":2,"t":"autoplay","input":I,"target":T,"enabled":false}`, with the rule's `stop_on_standby` and `low_latency` written again when they are `false`: the command replaces the rule |
+| the room's Voice enabled `switch` | `{"v":2,"t":"voice_enabled","zone":Z,"enabled":true}` |
+| a wake word heard in the room (no action of Home Assistant's) | `{"v":2,"t":"voice_start","zone":Z}`, then `GET /api/voice-audio?run=<the answer's identifier>`, then `{"v":2,"t":"voice_stop","zone":Z}` |
+| the room's satellite, `assist_satellite.announce`, and a pipeline's reply | `{"v":2,"t":"announce","target":Z,"url":U}`, once for the chime and once for the clip, each waited for |
 | a speaker's Firmware `update`, `update.install` | `{"v":2,"t":"firmware_install","speaker":S,"image":I}`: that speaker, the verified staged image, never `all`, never `force` |
 
 The sound controls' bytes are in `tests/test_sound_controls.py`, each held to the vector in
@@ -245,6 +249,64 @@ is subscribed and never kept.
 - **Nothing is sent.** The platform sends no command; what a button does in chorus is the
   server's. Device triggers are not provided: an automation triggers on the entity's state
   (the README has one).
+
+## Voice rooms: an Assist satellite per room that has a microphone
+
+The model is `docs/decisions/0000-the-home-assistant-voice-satellite.md`; the path is proposal
+P8, Option A, and the server's half is `docs/control-plane.md`, "Voice: `voice_enabled` and
+`mic_muted`" and "Voice: the wake word, the run and its audio".
+
+- **Which rooms.** A room has a microphone while a speaker adopted into it lists `voice`
+  among its `roles` (`State.voice_rooms`), present or not. Such a room gets three entities on
+  its own device, and a room without one gets none: the satellite
+  (`<server>:room:<room>:assist_satellite`), the Voice enabled `switch`
+  (`...:voice_enabled`, configuration) and the Mic muted `binary_sensor` (`...:mic_muted`,
+  diagnostic). They are added when a room gains a microphone and removed, from the registry
+  too, when it loses its last one (`entity.py`, `async_setup_voice_room_entities`).
+- **The two halves of the gate.** Voice enabled is the room's `voice_enabled`, off by
+  default and kept by the server; the switch sends `voice_enabled` and shows what the state
+  says. Mic muted is the room's `mic_muted`, which is the speaker's hardware switch as the
+  speaker reports it: read-only, with no action, because no command opens a microphone.
+- **Wake to stream to reply.** The first satellite opens the entry's stream of wake words
+  (`GET /api/voice-events`); a server with no voice room is never asked for it. On a
+  `voice_wake` for its room the satellite checks the room's gate as the last state said it,
+  sends `voice_start`, and is answered with a `voice_run`: the run's identifier and its
+  limit. It opens `GET /api/voice-audio?run=<identifier>`, checks the answer's
+  `X-Chorus-Audio-Format`, and calls `async_accept_pipeline_from_satellite` with that
+  stream, `start_stage` speech-to-text and the wake word's phrase, which is the path Home
+  Assistant has for a wake word detected before the pipeline. The stream hands on whole
+  16-bit samples as they arrive and ends when the server closes it; it also stops on its
+  own two seconds past the run's limit, on a monotonic clock, and after ten seconds of
+  silence on the socket.
+- **Ending the run.** `voice_stop` is sent once per run: at the pipeline's `stt-end`, at its
+  `error`, at its `run-end`, when the pipeline raises, when an announcement cancels it and
+  when the entity is removed, whichever comes first. The microphone is therefore closed
+  while Home Assistant thinks and speaks, not at the run's limit.
+- **The reply and announcements.** The pipeline's `tts-end` carries a media URL of Home
+  Assistant's; it and `assist_satellite.announce` go through the same code as the media
+  player's announce (`announce.py`: resolved inside Home Assistant, refused unless it is
+  Home Assistant's own origin, sent as `announce` for the room). The server's answer carries
+  the announcement's number, and the entity waits until the pushed state lists that number
+  as no longer `playing` ("How it ended"), for at most eleven minutes. `async_announce`
+  returns then, and a reply calls `tts_response_finished` then. `failed` is a translated
+  error; `displaced` (an alarm, a later announcement) is an end like any other.
+- **While the gate is closed** no `voice_start` is sent and no pipeline starts; the server
+  would refuse one by name (`voice-disabled`, `mic-muted`) and that refusal starts nothing
+  either. Announcements are not gated: they use the speaker.
+- **A server that serves no run here.** `voice_start` refused with `no-voice-integration`,
+  or the audio route refused with `not-the-voice-integration`, is a repair issue naming the
+  flag (`--voice-integration`); it is removed when a run's audio is next read.
+- **What is not built yet** (the next voice task): timers, continue conversation, start
+  conversation, ask question, and a choice of wake word. The satellite's configuration
+  lists the server's models, all active, and refuses a change.
+
+Privacy (I4): the integration holds no microphone audio beyond the chunk in flight, writes
+none to a log or a file, and never logs the run's identifier (`VoiceRun` keeps it out of its
+`repr`, and the client's errors for the route never quote the request).
+`tests/test_assist_satellite.py` holds all of the above against the fake server and a faked
+pipeline, and `tests/aiochorus/test_voice.py` holds the client to the shared vectors
+(`voice_enabled.json`, `voice_start.json`, `voice_stop.json`, `voice_wake.json`,
+`voice_run.json`, `state-voice.json`, `error-voice-start-*.json`).
 
 ## The room visualizer: one sensor per room, disabled by default, five states a second at most
 
@@ -540,7 +602,11 @@ operate every entity. The control plane has no authentication. So:
    holds it three ways: at run time (the aiohttp router and the webhook registry compared
    before and after the integration and all its platforms are set up), statically (`ast` over
    every file), and against itself (a bad view, a bad webhook and a static path must each be
-   named). `tools/conventions/check-ha-integration.sh` is the grep-level backstop.
+   named). `tools/conventions/check-ha-integration.sh` is the grep-level backstop. The
+   voice satellite adds none: it depends on Home Assistant's `assist_satellite` and
+   `assist_pipeline`, whose own views are Home Assistant's and are set up before the test
+   takes its first snapshot, and the microphone audio is pulled from the chorus server, never
+   posted to Home Assistant.
 2. **No arbitrary fetch.** An announcement's URL is resolved inside Home Assistant and must
    have the origin of Home Assistant's own internal or external URL, or the integration
    refuses before any request is sent. The server holds its own list (`--announce-origin`)
@@ -558,7 +624,9 @@ operate every entity. The control plane has no authentication. So:
 6. **Diagnostics are an allowlist**: named fields of the state, never the state itself. No
    host, URL, key fingerprint, speaker or endpoint id, stored source value or track title.
 7. **Bounded use of Home Assistant.** One subscriber per entry (and one per enabled
-   visualizer sensor, whose state writes are capped at five a second), reconnect with backoff
+   visualizer sensor, whose state writes are capped at five a second; one more for wake
+   words once a room has a microphone; one connection per open voice run, bounded by the
+   run's limit), reconnect with backoff
    and jitter, one event bounded at 8 MiB, commands one at a time per platform.
 
 ## The test harness and its pin
@@ -576,9 +644,21 @@ command vectors (the server's identity, `announce` and its refusals among them),
 Python client and the Rust server cannot drift apart. The integration's tests keep no copy of
 any message.
 
+The voice satellite's platform loads Home Assistant's Assist components, which import
+packages the harness does not bring (`hassil`, `home-assistant-intents`,
+`gazetteer-matcher`, `pymicro-vad`, `pyspeex-noise`, `mutagen`, `ha-ffmpeg`). They are in the
+`dev` group at the versions core 2026.9.3's own manifests pin and locked by hash like the
+rest, and they move with the pin. They are test-only: on a running Home Assistant they are
+core's requirements, and the integration's manifest still lists none. `tests/conftest.py`
+sets up Home Assistant's own `homeassistant` integration (which `conversation` reads) and
+keeps `tts` and `ffmpeg` from touching the host at setup.
+
 `tests/test_live_server.py` drives the real `chorus-server` on loopback when
 `CHORUS_SERVER_BIN` names one (`CHORUS_SERVER_BIN=<path> make ha-live`, or `make ha-test`),
-and is skipped by name otherwise.
+and is skipped by name otherwise. Its voice part switches the real server's `voice_enabled`
+through the integration's switch and holds each refusal of a run and of the audio route by
+its name; no speaker with a microphone can be attached to the server from Python, so a whole
+run is `tests/test_assist_satellite.py`'s, against the fake.
 
 ```sh
 make ha-test        # uv sync --locked, ruff, mypy --strict, pytest with coverage
@@ -617,7 +697,9 @@ no network.
    `harness-wheel-sha256`, `core-tag`, `core-commit` from `git ls-remote`, and `python` if the
    new core needs a newer one) and the same versions in `pyproject.toml`. Take `mypy` and
    `ruff` from the new tag's `requirements_test.txt` and `requirements_test_pre_commit.txt`,
-   and the `hassfest` group from its `requirements_all.txt`.
+   and the `hassfest` group from its `requirements_all.txt`. Take the Assist packages of the
+   `dev` group from the `requirements` of the new tag's `assist_satellite`, `assist_pipeline`,
+   `conversation`, `tts` and `ffmpeg` manifests.
 3. `uv lock` in `integrations/homeassistant`, then regenerate `quality-scale-rules.txt` from
    the new tag's `script/hassfest/quality_scale.py` and reconcile `quality_scale.yaml`.
 4. `make ha-test`, `make ha-hassfest`, `make gate-fast`. One commit, saying why.

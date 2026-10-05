@@ -46,6 +46,25 @@ class ChorusCommandError(ChorusError):
         return None
 
 
+class ChorusVoiceRouteError(ChorusError):
+    """The server refused a voice run's audio (``GET /api/voice-audio``).
+
+    ``reason`` is the name the refusal's detail starts with
+    (``not-the-voice-integration``, ``no-run-named``, ``no-voice-run``,
+    ``voice-run-taken``), or empty when the answer named none. The run's
+    identifier is never part of the message.
+    """
+
+    def __init__(self, status: int, reason: str, detail: str) -> None:
+        """Keep the status, the refusal's name and the server's wording."""
+        super().__init__(
+            f"the server refused the voice run's audio ({status}): {detail or reason}"
+        )
+        self.status = status
+        self.reason = reason
+        self.detail = detail
+
+
 class ChorusRefusedError(ChorusUnsupportedError):
     """The server answered ``refused`` (HTTP 426): the catalog version is not one it has."""
 

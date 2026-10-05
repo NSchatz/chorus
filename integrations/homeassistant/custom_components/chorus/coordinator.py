@@ -3,12 +3,17 @@
 Beside it, the button presses the server accepted, pushed over a second stream
 and handed to the event entity of the speaker and button each came from.
 
+Beside it, the wake words the server's models heard, pushed over a third stream
+that is opened only once a room has a voice satellite, and handed to the
+satellite of the room each was heard in.
+
 Beside it, the speakers' telemetry, read from `GET /metrics` at a bounded rate
 and only while a diagnostic sensor is enabled (`ChorusMetricsCoordinator`).
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Mapping
 import logging
 import time
@@ -21,6 +26,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from ._aiochorus import (
+    Announcement,
     ChorusClient,
     ChorusCommandError,
     ChorusError,
@@ -30,9 +36,15 @@ from ._aiochorus import (
     ServerInfo,
     Speaker,
     State,
+    VoiceWake,
     Zone,
 )
-from .const import DOMAIN, METRICS_MIN_GAP_SECONDS, METRICS_SCAN_INTERVAL
+from .const import (
+    ANNOUNCEMENT_WAIT_SECONDS,
+    DOMAIN,
+    METRICS_MIN_GAP_SECONDS,
+    METRICS_SCAN_INTERVAL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -108,6 +120,11 @@ class ChorusCoordinator(DataUpdateCoordinator[State]):
         self._press_listeners: dict[
             tuple[str, str], Callable[[str, ControllerEvent], None]
         ] = {}
+        # The stream of wake words: opened by the first voice satellite.
+        self._wakes_started = False
+        self._wakes_lost_logged = False
+        # Room id to the satellite that takes its wake words.
+        self._wake_listeners: dict[str, Callable[[VoiceWake], None]] = {}
 
     async def _async_update_data(self) -> State:
         try:
@@ -248,6 +265,73 @@ class ChorusCoordinator(DataUpdateCoordinator[State]):
         self.presses_connected = False
         self.async_update_listeners()
 
+    @callback
+    def async_add_wake_listener(
+        self, zone_id: str, listener: Callable[[VoiceWake], None]
+    ) -> Callable[[], None]:
+        """Send the wake words heard in one room to `listener`.
+
+        The first listener opens the stream of wake words, which then runs
+        until the entry is unloaded: a server with no voice room is never
+        asked for it. Returns the function that stops the listener.
+        """
+        self._wake_listeners[zone_id] = listener
+        if not self._wakes_started:
+            self._wakes_started = True
+            self.config_entry.async_create_background_task(
+                self.hass,
+                self.client.voice_events().run(
+                    self.handle_voice_wake,
+                    self.handle_wakes_disconnect,
+                    self.handle_wakes_connect,
+                ),
+                f"{DOMAIN} wake words {self.config_entry.entry_id}",
+            )
+
+        @callback
+        def remove() -> None:
+            if self._wake_listeners.get(zone_id) is listener:
+                del self._wake_listeners[zone_id]
+
+        return remove
+
+    @callback
+    def handle_voice_wake(self, wake: VoiceWake) -> None:
+        """Hand one wake word to the satellite of the room it was heard in."""
+        listener = self._wake_listeners.get(wake.zone)
+        if listener is None:
+            _LOGGER.debug(
+                "Ignored a wake word heard in %s: the room has no enabled "
+                "voice satellite entity",
+                wake.zone,
+            )
+            return
+        listener(wake)
+
+    @callback
+    def handle_wakes_connect(self) -> None:
+        """Take note that the stream of wake words is attached."""
+        if self._wakes_lost_logged:
+            _LOGGER.info(
+                "The wake words of the chorus server at %s:%s are back",
+                self.client.host,
+                self.client.port,
+            )
+            self._wakes_lost_logged = False
+
+    @callback
+    def handle_wakes_disconnect(self, err: ChorusError) -> None:
+        """Say once that wake words would be missed until the stream is back."""
+        if self._wakes_lost_logged:
+            return
+        _LOGGER.info(
+            "The wake words of the chorus server at %s:%s are unavailable: %s",
+            self.client.host,
+            self.client.port,
+            err,
+        )
+        self._wakes_lost_logged = True
+
     def room_device_info(self, zone: Zone) -> DeviceInfo:
         """Return the device of a room."""
         return DeviceInfo(
@@ -371,6 +455,51 @@ class ChorusCoordinator(DataUpdateCoordinator[State]):
             self.handle_state(state)
         return state
 
+    async def async_wait_for_announcement(self, answer: State) -> Announcement | None:
+        """Wait until the announcement an `announce` answer started is over.
+
+        The server numbers each announcement in its command's answer and lists
+        it in the state as `playing` until its clip has ended, failed or been
+        displaced (`docs/control-plane.md`, "How it ended"). Returns how it
+        ended; None when the server gave it no number (nothing to wait on) or
+        no longer lists it (it ended more than eight announcements ago, or the
+        server restarted). Raises a translated error when the server has not
+        said it is over within the bound.
+        """
+        number = answer.announcement
+        if number is None:
+            return None
+        if (ended := _ended(answer, number)) is not None:
+            return ended
+
+        over: asyncio.Future[Announcement | None] = self.hass.loop.create_future()
+
+        @callback
+        def check() -> None:
+            if over.done() or not self.last_update_success:
+                # While the server is away nothing is known; its next state says.
+                return
+            state = self.data
+            listed = state.announcement_numbered(number)
+            if listed is None:
+                # A state from before the answer does not list it yet.
+                if state.serial >= answer.serial:
+                    over.set_result(None)
+            elif not listed.playing:
+                over.set_result(listed)
+
+        remove = self.async_add_listener(check)
+        try:
+            check()
+            async with asyncio.timeout(ANNOUNCEMENT_WAIT_SECONDS):
+                return await over
+        except TimeoutError as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="announcement_timeout"
+            ) from err
+        finally:
+            remove()
+
     async def async_refresh_server(self) -> None:
         """Ask the server again who it is; keep what is known if it cannot say."""
         try:
@@ -382,6 +511,12 @@ class ChorusCoordinator(DataUpdateCoordinator[State]):
     def async_create_unsupported_issue(self) -> None:
         """Tell the owner the server does not speak the catalog this needs."""
         async_create_unsupported_issue(self.hass, self.config_entry)
+
+
+def _ended(state: State, number: int) -> Announcement | None:
+    """Return an announcement the state already lists as over."""
+    listed = state.announcement_numbered(number)
+    return None if listed is None or listed.playing else listed
 
 
 class ChorusMetricsCoordinator(DataUpdateCoordinator[Metrics | None]):

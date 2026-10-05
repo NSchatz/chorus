@@ -156,6 +156,24 @@ def quiet_hours_enabled(zone: str, enabled: bool) -> bytes:
     ).encode()
 
 
+def voice_enabled(zone: str, enabled: bool) -> bytes:
+    """Switch a room's voice path on or off (the software half of the gate)."""
+    return (
+        f'{{"v":2,"t":"voice_enabled","zone":{_string(zone)},'
+        f'"enabled":{_bool(enabled)}}}'
+    ).encode()
+
+
+def voice_start(zone: str) -> bytes:
+    """Open a voice run in a room; the answer is a ``voice_run``, not a state."""
+    return f'{{"v":2,"t":"voice_start","zone":{_string(zone)}}}'.encode()
+
+
+def voice_stop(zone: str) -> bytes:
+    """End a room's voice run; a room with none is not an error."""
+    return f'{{"v":2,"t":"voice_stop","zone":{_string(zone)}}}'.encode()
+
+
 def autoplay(
     input_id: str,
     target: str,

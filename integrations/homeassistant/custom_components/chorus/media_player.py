@@ -14,14 +14,11 @@ from homeassistant.components.media_player import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
     MediaType,
-    async_process_play_media_url,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.network import NoURLAvailableError, get_url
-from yarl import URL
 
 from ._aiochorus import Group, NowPlaying, SavedGroup, State, Zone, commands
 from ._aiochorus.models import (
@@ -30,6 +27,7 @@ from ._aiochorus.models import (
     SOURCE_NONE,
     SOURCE_STREAM,
 )
+from .announce import async_announce
 from .const import (
     DOMAIN,
     MEDIA_ID_PREFIX,
@@ -144,42 +142,6 @@ def source_from_media_id(state: State, media_id: str) -> str:
         translation_key="unsupported_media",
         translation_placeholders={"media_id": media_id},
     )
-
-
-def origin_of(url: str) -> tuple[str, str | None, int | None] | None:
-    """Return the scheme, host and port of an http(s) URL, or None."""
-    try:
-        parsed = URL(url)
-    except ValueError:
-        return None
-    if parsed.scheme not in ("http", "https") or not parsed.host:
-        return None
-    return (parsed.scheme, parsed.host, parsed.port)
-
-
-def own_origins(hass: HomeAssistant) -> set[tuple[str, str | None, int | None]]:
-    """Return Home Assistant's own internal and external origins."""
-    origins = set()
-    for internal in (True, False):
-        try:
-            url = get_url(
-                hass,
-                allow_internal=internal,
-                allow_external=not internal,
-                allow_cloud=False,
-            )
-        except NoURLAvailableError:
-            continue
-        if (origin := origin_of(url)) is not None:
-            origins.add(origin)
-    return origins
-
-
-def server_origins(
-    coordinator: ChorusCoordinator,
-) -> set[tuple[str, str | None, int | None] | None]:
-    """Return the origins the server said it announces from."""
-    return {origin_of(listed) for listed in coordinator.server.announce_origins}
 
 
 class ChorusMediaPlayer(ChorusEntity, MediaPlayerEntity):
@@ -333,17 +295,6 @@ class ChorusMediaPlayer(ChorusEntity, MediaPlayerEntity):
                 self.hass, media_id, self.entity_id
             )
             media_id = item.url
-        # Refused here, before any request leaves: the server fetches only from
-        # Home Assistant itself (and holds its own list as well).
-        try:
-            url = async_process_play_media_url(self.hass, media_id)
-        except ValueError:
-            url = ""
-        origin = origin_of(url)
-        if origin is None or origin not in own_origins(self.hass):
-            raise ServiceValidationError(
-                translation_domain=DOMAIN, translation_key="announce_origin"
-            )
         extra = kwargs.get("extra") or {}
         thousandths: int | None = None
         if (level := extra.get("volume")) is not None:
@@ -356,26 +307,9 @@ class ChorusMediaPlayer(ChorusEntity, MediaPlayerEntity):
                     translation_domain=DOMAIN, translation_key="announce_volume"
                 )
             thousandths = commands.volume_from_level(level)
-        try:
-            await self.coordinator.async_command(
-                commands.announce(self._target, url, thousandths)
-            )
-        except HomeAssistantError as err:
-            if err.translation_key != "refused_url":
-                raise
-            # The server refused the address. If its own list of announce
-            # origins does not hold this Home Assistant, say that: it is a
-            # server setting (--announce-origin), not something about the clip.
-            await self.coordinator.async_refresh_server()
-            if origin in server_origins(self.coordinator):
-                raise
-            raise HomeAssistantError(
-                translation_domain=DOMAIN,
-                translation_key="announce_origin_not_on_server",
-                translation_placeholders={
-                    "origin": f"{origin[0]}://{origin[1]}:{origin[2]}"
-                },
-            ) from err
+        await async_announce(
+            self.hass, self.coordinator, self._target, media_id, thousandths
+        )
 
     async def async_browse_media(
         self,

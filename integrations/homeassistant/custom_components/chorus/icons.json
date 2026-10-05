@@ -1,5 +1,18 @@
 {
   "entity": {
+    "assist_satellite": {
+      "assist_satellite": {
+        "default": "mdi:account-voice"
+      }
+    },
+    "binary_sensor": {
+      "mic_muted": {
+        "default": "mdi:microphone",
+        "state": {
+          "on": "mdi:microphone-off"
+        }
+      }
+    },
     "event": {
       "next": {
         "default": "mdi:skip-next"
@@ -97,6 +110,12 @@
       },
       "speech_enhancement": {
         "default": "mdi:account-voice"
+      },
+      "voice_enabled": {
+        "default": "mdi:account-voice",
+        "state": {
+          "off": "mdi:account-voice-off"
+        }
       }
     },
     "update": {
