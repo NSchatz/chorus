@@ -20,9 +20,10 @@
 // (the host build of the C endpoint), which this step of the gate cannot have:
 // it runs before the gate builds the C endpoint. Nothing here ran on a board.
 //
-// Loopback only. This file never sets the owner's bench variable
-// (CHORUS_OWNER_AT_BENCH) and refuses to run where something else has: the
-// server's guard does not apply to a speaker on the server's own host.
+// Loopback only. This file never sets or reads the owner's bench variable
+// (docs/conventions.md, "The flash guard": a file of this kind may not name
+// it): the server's guard does not apply to a speaker on the server's own
+// host, so the install here needs no go-ahead.
 //
 // CHORUS_SERVER_BIN names the built chorus-server; tools/web.sh refuses to
 // run this file without it.
@@ -108,7 +109,6 @@ const vector = (name) =>
 
 before(async () => {
   assert.ok(process.env.CHORUS_SERVER_BIN, "CHORUS_SERVER_BIN names a built chorus-server");
-  assert.equal(process.env.CHORUS_OWNER_AT_BENCH, undefined, "the owner's bench variable is not set here, and this test never sets it");
   scratch = await mkdtemp(join(tmpdir(), "chorus-web-live-"));
   const dir = join(scratch, "firmware");
   await mkdir(dir);
