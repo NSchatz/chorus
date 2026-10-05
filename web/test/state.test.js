@@ -3,10 +3,11 @@
 // nothing the app did is held until the server says it.
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { RETRY_MS, createClient, volumeCommand } from "../src/api.js";
-import { createStore, roomsOf } from "../src/state.js";
+import { createStore, groupsOf, roomsOf } from "../src/state.js";
 import { fakeServer, fakeTimers, settle, stateOf, zone } from "./fake-server.js";
 
 function storeOf(server, timers = fakeTimers()) {
@@ -37,18 +38,19 @@ test("a room is read as its name, volume in thousandths, mute and bonded set", (
       name: "Living Room",
       volume: 375,
       muted: true,
+      group: "living",
       bond: [
         { endpoint: "chorus-0123456789ab", name: "Left of the TV", role: "FL" },
         { endpoint: "endpoint-b", name: "endpoint-b", role: "FR" },
       ],
     },
-    { id: "den", name: "den", volume: 500, muted: false, bond: [] },
+    { id: "den", name: "den", volume: 500, muted: false, group: "den", bond: [] },
   ]);
 });
 
 test("a member the app cannot read is null, not a made-up value", () => {
   const [room] = roomsOf(stateOf(1, [{ id: "kitchen", volume: "loud" }]));
-  assert.deepEqual(room, { id: "kitchen", name: "kitchen", volume: null, muted: null, bond: [] });
+  assert.deepEqual(room, { id: "kitchen", name: "kitchen", volume: null, muted: null, group: "kitchen", bond: [] });
   assert.deepEqual(roomsOf(null), []);
   assert.deepEqual(roomsOf({ zones: "none" }), []);
 });
@@ -170,5 +172,78 @@ test("a command changes the store only through what the server answers", async (
   server.answer = () => ({ status: 200, body: JSON.stringify(stateOf(7, [zone("kitchen", { volume: 0.9 })])) });
   await store.command(volumeCommand("kitchen", 900));
   assert.equal(store.view().rooms[0].volume, 100);
+  store.stop();
+});
+
+// The catalog's own state vector: a saved group that is active and a live one.
+const rich = () =>
+  JSON.parse(readFileSync(new URL("../../fixtures/control/v2/state-rich.json", import.meta.url), "utf8"));
+
+test("the groups are every saved group, then every live group, each with its rooms and the server's group volume", () => {
+  assert.deepEqual(groupsOf(rich()), [
+    {
+      id: "downstairs",
+      name: "Downstairs",
+      kind: "saved",
+      active: true,
+      defined: [
+        { id: "living", name: "Living Room" },
+        { id: "kitchen", name: "kitchen" },
+      ],
+      rooms: [
+        { id: "living", name: "Living Room" },
+        { id: "kitchen", name: "kitchen" },
+      ],
+      volume: 600,
+    },
+    {
+      id: "live-1",
+      name: "study + bedroom",
+      kind: "live",
+      active: null,
+      defined: null,
+      rooms: [
+        { id: "study", name: "study" },
+        { id: "bedroom", name: "bedroom" },
+      ],
+      volume: 600,
+    },
+  ]);
+  assert.deepEqual(roomsOf(rich()).map((room) => room.group), ["downstairs", "downstairs", "live-1", "live-1"]);
+});
+
+test("a saved group no room is in is listed all the same, with no rooms playing and no volume (K59)", () => {
+  const state = stateOf(1, [zone("kitchen"), zone("den")], {
+    groups: [
+      { id: "kitchen", kind: "room", zones: ["kitchen"], volume: 0.5, source: "stream" },
+      { id: "den", kind: "room", zones: ["den"], volume: 0.5, source: "stream" },
+    ],
+    saved_groups: [{ id: "downstairs", name: "Downstairs", zones: ["kitchen", "den"], active: false }],
+  });
+  assert.deepEqual(groupsOf(state), [
+    {
+      id: "downstairs",
+      name: "Downstairs",
+      kind: "saved",
+      active: false,
+      defined: [
+        { id: "kitchen", name: "kitchen" },
+        { id: "den", name: "den" },
+      ],
+      rooms: [],
+      volume: null,
+    },
+  ]);
+  // A room alone in the group named for it is a room, not a group.
+  assert.deepEqual(groupsOf(stateOf(1, [zone("kitchen")], { groups: state.groups })), []);
+  assert.deepEqual(groupsOf(null), []);
+});
+
+test("the store's view carries the groups of the state it holds", async () => {
+  const server = fakeServer(rich());
+  const store = storeOf(server);
+  store.start();
+  await settle();
+  assert.deepEqual(store.view().groups.map((group) => group.id), ["downstairs", "live-1"]);
   store.stop();
 });
