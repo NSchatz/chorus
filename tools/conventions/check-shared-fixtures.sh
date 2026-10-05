@@ -25,7 +25,10 @@
 # through the C endpoint's volume path, so both endpoint kinds are held to one sequence.
 # fixtures/dsp (goal 12) is the DSP library's contract: crates/dsp/tests/shared_fixtures.rs and
 # firmware/tests/test_dsp.c both walk it and fail on a kind they do not know, so every file name
-# is read (`*`). fixtures/protocol/lowlat (goal 13) is the low-latency datagram layer's: sealed
+# is read (`*`). fixtures/dsp/duck is Rust-only by declaration: the announcement mixer runs in
+# chorus-server alone (crates/dsp/src/duck.rs, read by crates/dsp/tests/duck_fixtures.rs, which
+# fails on a file it does not read); both walks of fixtures/dsp pass a subdirectory by, and no
+# endpoint mixes. fixtures/protocol/lowlat (goal 13) is the low-latency datagram layer's: sealed
 # streams and loss, replay and tamper cases that crates/protocol/tests/lowlat.rs and
 # firmware/tests/test_lowlat.c both walk, so the Rust and C datagrams are the same bytes.
 # fixtures/discovery (shared since goal 14, when the endpoint got its own DNS-SD browse) is the

@@ -40,6 +40,9 @@
 //! And another the server runs: [`visualizer`], the levels, bands, beat and
 //! colour of the visualizer stream (`docs/visualizer.md`).
 //!
+//! And one mixer the server runs before a room's stream is encoded: [`duck`], the
+//! announcement's duck, mix and restore (`docs/dsp.md`, "The announcement mixer").
+//!
 //! What each block does, every citation and every ASSUMED default:
 //! `docs/dsp.md`. The decisions: `docs/decisions/` ("the DSP library").
 
@@ -50,6 +53,7 @@ pub mod chain;
 pub mod compressor;
 pub mod crossover;
 pub mod delay;
+pub mod duck;
 pub mod fixture;
 pub mod limiter;
 pub mod loudness;

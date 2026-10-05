@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "chorus/dsp.h"
 #include "chorus/protocol_v2.h"
@@ -801,6 +802,12 @@ static void run_fixtures(void)
         memcpy(path, dir_path, dl);
         path[dl] = '/';
         memcpy(path + dl + 1, names[i], nl + 1);
+        /* A subdirectory is not this walk's: fixtures/dsp/duck is the server's announcement
+         * mixer, Rust-only by declaration (fixtures/README.md, "dsp/duck/"). */
+        struct stat st;
+        if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
+            continue;
+        }
         fixture_name = names[i];
         if (fixture_read(path, text, sizeof(text)) < 0) {
             chorus_check(0, "%s reads", names[i]);
