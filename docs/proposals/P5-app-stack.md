@@ -1,7 +1,7 @@
 # P5: The app stack for the chorus PWA
 
 - Decisions: K43
-- Status: PROPOSED (chorus goal 1, 2026-09-30); decided at Checkpoint K
+- Status: ACCEPTED (the owner, at Checkpoint K): Option C, Lit 3 and esbuild; built 2026-10-05 (`docs/decisions/0181-the-web-app-stack.md`, `docs/app.md`); first put forward by chorus goal 1, 2026-09-30. The open inputs below carry what the build settled and what the owner's phone check settles
 - If deferred: The recommendation
 - Builds on: goal 21 (the app, part 1: stack, core screens, install, kiosk), goal 22 (the app, part 2: sound, alarms, room correction, fleet screens); §4.2's "exactly one browser smoke test" in `make gate`
 
@@ -272,16 +272,37 @@ read as Svelte.
 
 ## Open inputs
 
-- `ASSUMED`: Safari and iOS behaviour for constructable stylesheets under the CSP, HTML drag and
-  drop on touch, `getUserMedia` inside an installed standalone PWA, and whether the login redirect
-  completes in iOS standalone mode. Checked by goal 21's Needs item "a phone check that install and
-  login work on the owner's phones" (brief §25 item 5); the mic path by goal 22.
+Status of each, 2026-10-05, after the build (`docs/app.md`). "The phone check" is the owner's item
+written out in `docs/app.md`, "Phone check".
+
+- Safari and iOS behaviour, four inputs that were `ASSUMED`:
+  - Constructable stylesheets under the CSP. Still `ASSUMED` for Safari (Chromium is held by the
+    smoke test, which fails on any policy violation). Settled by the phone check, step 1.
+  - HTML drag and drop on touch. SETTLED by the build: the app does not use it. The drag is
+    written on Pointer Events (`docs/decisions/0187-groups-in-the-app.md`), with a list on each
+    room's card as the path with no drag. That the gesture works under a finger on a real phone
+    is the phone check, step 7.
+  - Whether the login redirect completes in iOS standalone mode. Still `ASSUMED`. The build
+    settled the app's side (a redirect is never followed or cached, the page says "Signed out"
+    with a link that navigates, `docs/decisions/0190-the-app-installs-behind-the-login.md`); the
+    phone's side is the phone check, steps 3 and 5.
+  - `getUserMedia` inside an installed standalone PWA. Still `ASSUMED`, and not the phone
+    check's: the mic path belongs to the room-correction screen (goal 22) and is checked on a
+    phone when that screen exists.
 - `ASSUMED`: that Traefik serves the app over HTTPS with a certificate the phones trust (secure
-  context is required for the service worker, the mic and Wake Lock). The deploy PR (goal 4) should
-  confirm it.
-- `ASSUMED`: AudioWorklet module loading under `script-src 'self'` (goal 22 test).
-- `ASSUMED`: agent familiarity with Svelte 5 runes versus Svelte 4 syntax (affects B only).
-- Owner input: whether authoring speed (B) outweighs supply chain and churn (C); nothing else.
+  context is required for the service worker, the mic and Wake Lock). Not settled by the build,
+  which deploys nothing. Settled by the phone check, step 1 (and its precondition that the app is
+  deployed behind the login).
+- `ASSUMED`: AudioWorklet module loading under `script-src 'self'`. Still open: a goal 22 test,
+  with the room-correction screen.
+- Agent familiarity with Svelte 5 runes versus Svelte 4 syntax (affects B only). SETTLED, moot:
+  Option B was not chosen.
+- Owner input: whether authoring speed (B) outweighs supply chain and churn (C). SETTLED: the
+  owner approved Option C at Checkpoint K (`docs/decisions/0181-the-web-app-stack.md`).
+- The one browser smoke test and the embedding ("Common to every option"). SETTLED by the build
+  as proposed: `docs/decisions/0183-the-one-browser-smoke-test.md` (Playwright 1.63.0, a fake
+  login, rendered text asserted) and `docs/decisions/0182-the-app-is-served-under-app.md` (a
+  std-only `build.rs`, `/app/`).
 
 ## Sources
 

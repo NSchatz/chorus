@@ -10,6 +10,9 @@ served beside it at `GET /docs/control-page.md`, so a link from a region resolve
 in a browser rather than pointing at a file the browser cannot reach.
 `docs/control-plane.md` is the contract for the messages underneath all of it.
 
+The installable app (rooms, groups, inputs, what is playing) is a separate thing, served by
+the same listener under `/app/` beside this page; `docs/app.md` is its document.
+
 ## What the page is
 
 One view: the zones this server was configured with, one card each. The page
