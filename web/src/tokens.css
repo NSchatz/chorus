@@ -269,6 +269,10 @@
   --figure-min-width: var(--space-56);
   --label-min-width: var(--space-64);
 
+  /* The square a now-playing record's artwork, or its placeholder, takes. */
+  --artwork-size: var(--space-64);
+  --artwork-radius: var(--radius-8);
+
   --code-pad-y: var(--space-8);
   --code-pad-x: var(--space-12);
 

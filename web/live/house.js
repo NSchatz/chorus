@@ -11,16 +11,22 @@ import { spawn } from "node:child_process";
 const LISTENING = /control listening on=\S*?:(\d+)/;
 
 // Start chorus-server with one room per id, no audio device, on loopback
-// ports of its own choosing. Resolves to { origin, command, state, stop }.
-export async function startHouse(roomIds) {
+// ports of its own choosing. Resolves to { origin, command, state, said, stop }.
+//
+// `extra` is more of the server's own arguments, for a house that needs more
+// than rooms (players, renderers). `identityDir` names a directory for the
+// server's key where the house needs one that is kept (the renderers refuse
+// an ephemeral identity); without it the identity is ephemeral.
+export async function startHouse(roomIds, { extra = [], identityDir = null } = {}) {
   const args = [
     "--listen", "127.0.0.1:0",
     "--control-listen", "127.0.0.1:0",
-    "--ephemeral-identity",
+    ...(identityDir ? ["--identity-dir", identityDir] : ["--ephemeral-identity"]),
     "--allow-non-realtime",
     "--allow-unlocked-memory",
     "--source", "tone",
     "--serve-forever",
+    ...extra,
     ...roomIds.flatMap((id) => ["--zone", id]),
   ]; // prettier-ignore
   let log = "";
@@ -69,6 +75,20 @@ export async function startHouse(roomIds) {
       const response = await fetch(`${origin}/api/state`);
       assert.equal(response.status, 200);
       return response.json();
+    },
+    // What the server has printed that matches `pattern` (a line that says
+    // where something else of it listens): waits for it, and resolves to the
+    // match.
+    async said(pattern) {
+      const deadline = Date.now() + 30_000;
+      for (;;) {
+        const found = pattern.exec(log);
+        if (found) return found;
+        if (Date.now() > deadline || server.exitCode !== null) {
+          throw new Error(`chorus-server did not print ${pattern} within 30 s:\n${log}`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
     },
     async stop() {
       if (server.exitCode !== null) return;

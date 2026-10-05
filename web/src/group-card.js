@@ -10,6 +10,12 @@
 // app scales no room and averages nothing, so it has no figure that could
 // disagree with the server's.
 //
+// A group that is formed also shows what it plays and what is playing
+// (playing.js). The inputs can be chosen for a live group and for a saved
+// group that is active: a `take` naming a saved group that is only partly
+// formed would also pull the rest of its rooms in, which is "Group these
+// rooms", not a choice of input.
+//
 // The command is sent when the slider is let go, not while it moves: the
 // server scales from the rooms' volumes as they stand, so a run of commands
 // during one gesture would round the balance away step by step, and passing
@@ -20,13 +26,17 @@
 import { LitElement, css, html, nothing } from "lit";
 
 import { groupVolumeCommand, takeCommand } from "./api.js";
+import "./playing.js";
 
 const percent = (thousandths) => `${Math.round(thousandths / 10)}%`;
 
 export class ChorusGroupCard extends LitElement {
   static properties = {
-    // The group, as state.js reads it: { id, name, kind, active, defined, rooms, volume }.
+    // The group, as state.js reads it: { id, name, kind, active, defined,
+    // rooms, volume, source, nowPlaying }.
     group: { attribute: false },
+    // The inputs the server offers, as state.js reads them.
+    inputs: { attribute: false },
     // The server's words for the last command of this group it refused, or "".
     refusal: { type: String },
     // The slider's position during a drag, in thousandths; null otherwise.
@@ -102,6 +112,7 @@ export class ChorusGroupCard extends LitElement {
   constructor() {
     super();
     this.group = null;
+    this.inputs = [];
     this.refusal = "";
     this._dragged = null;
     this._sliderHeld = false;
@@ -209,6 +220,16 @@ export class ChorusGroupCard extends LitElement {
             </li>`,
         )}
       </ul>
+      ${group.source
+        ? html`<chorus-playing
+            .target=${group.id}
+            .name=${group.name}
+            .source=${group.source}
+            .nowPlaying=${group.nowPlaying}
+            .inputs=${this.inputs}
+            ?pick=${group.kind === "live" || group.active === true}
+          ></chorus-playing>`
+        : nothing}
       ${group.kind === "saved" && !group.active
         ? html`<div class="row">
             <button type="button" aria-label="Group the rooms of ${group.name}" @click=${this._onActivate}>
