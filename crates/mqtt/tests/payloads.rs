@@ -85,7 +85,7 @@ fn the_rich_vector_gives_the_rooms_and_saved_groups_it_holds() {
         r#"{"id":"living","name":"Living Room","group":"downstairs","volume":0.857,"#
     ));
     assert!(cut.rooms[0].1.ends_with(concat!(
-        r#""room_eq":{"enabled":true,"filters":[{"freq_hz":42,"gain_db":-6.00,"q":4.500}]},"#,
+        r#""room_eq":{"enabled":true,"filters":[{"freq_hz":42,"gain_db":-6.00,"q":4.500}],"undo":true},"#,
         r#""voice_enabled":false,"mic_muted":true}"#
     )));
     assert!(!cut.groups.is_empty());

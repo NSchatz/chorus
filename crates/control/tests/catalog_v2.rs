@@ -64,6 +64,7 @@ const EVERY_V2_MESSAGE_TYPE: &[&str] = &[
     "sound",
     "bass_management",
     "room_eq",
+    "room_eq_undo",
     "av_trim",
     "speaker_name",
     "speaker_room",
@@ -753,6 +754,7 @@ fn command_from(fields: &Fields) -> Command {
             }),
             enabled: fields.has("enabled").then(|| flag("enabled")),
         },
+        "room_eq_undo" => Command::RoomEqUndo { zone: get("zone") },
         other => panic!("{} is not a v2 command", other),
     }
 }

@@ -122,6 +122,17 @@
 //! file loads unchanged with `*` in every room; the next write is format 9.
 //! Which models a build runs is a fact about the build and stays out, so an
 //! id is held to its shape only.
+//!
+//! # Format 10 (the correction a room can go back to)
+//!
+//! Format 10 adds two fields to `[zone]`, each required: `room_eq_undo`
+//! (`none`, or 0 or 1: whether the correction `room_eq_undo` puts back was
+//! applied) and `room_eq_undo_filters` (its filters, written as
+//! `room_eq_filters` is; empty when `room_eq_undo` is `none`). A format 1 to
+//! 9 file loads unchanged with nothing to undo in any room; the next write is
+//! format 10. A recording a correction was fitted from is never in this file
+//! or any other: the server does not keep one
+//! (`docs/decisions/0000-a-recording-is-fitted-and-not-kept.md`).
 
 use std::fmt;
 use std::io::{self, Write};
@@ -136,17 +147,18 @@ use crate::rooms::{
     MAX_QUIET_WINDOWS, MAX_RAMP_S,
 };
 use crate::sound::{
-    EqFilter, FixedPoint, Polarity, CROSSOVER_HZ, ROOM_EQ_MAX_FILTERS, SUB_LEVEL_CDB, TONE_DB,
+    EqFilter, FixedPoint, Polarity, RoomEq, CROSSOVER_HZ, ROOM_EQ_MAX_FILTERS, SUB_LEVEL_CDB,
+    TONE_DB,
 };
 use crate::speakers::Speaker;
 use crate::theater::{TvUpmix, AV_TRIM_MS};
 use crate::zones::{Zone, Zones};
 
 /// The version of this file format, which is what every write produces.
-pub const STATE_FORMAT: u32 = 9;
+pub const STATE_FORMAT: u32 = 10;
 
 /// Every format this build reads.
-pub const READ_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9];
+pub const READ_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 /// Why persisted state could not be read.
 #[derive(Debug)]
@@ -269,7 +281,10 @@ pub fn render(zones: &Zones) -> String {
     out.push_str("# format 6 stored sources ([stored-source]) and input labels ([input-label]);\n");
     out.push_str("# format 7 whether a room's quiet hours are switched on (quiet_enabled);\n");
     out.push_str("# format 8 whether a room's voice path is switched on (voice_enabled);\n");
-    out.push_str("# format 9 which wake words a room listens for (wake_words, * for every one).\n");
+    out.push_str("# format 9 which wake words a room listens for (wake_words, * for every one);\n");
+    out.push_str(
+        "# format 10 the correction a room's undo puts back (room_eq_undo, none or 0 or 1).\n",
+    );
     out.push('\n');
     out.push_str(&format!("format = {}\n", STATE_FORMAT));
     out.push_str(&format!("serial = {}\n", zones.serial()));
@@ -322,6 +337,22 @@ pub fn render(zones: &Zones) -> String {
             zone.room_eq
                 .filters
                 .iter()
+                .map(|f| f.persisted())
+                .collect::<Vec<_>>()
+                .join("; ")
+        ));
+        out.push_str(&format!(
+            "room_eq_undo = {}\n",
+            match &zone.room_eq_undo {
+                None => "none".to_string(),
+                Some(before) => u8::from(before.enabled).to_string(),
+            }
+        ));
+        out.push_str(&format!(
+            "room_eq_undo_filters = {}\n",
+            zone.room_eq_undo
+                .iter()
+                .flat_map(|before| &before.filters)
                 .map(|f| f.persisted())
                 .collect::<Vec<_>>()
                 .join("; ")
@@ -958,6 +989,9 @@ fn load_zone(
             zone.wake_words = Some(chosen);
         }
     }
+    if format >= 10 {
+        load_room_eq_undo(section, &mut zone)?;
+    }
     Ok(zone)
 }
 
@@ -1008,6 +1042,48 @@ fn load_sound(section: &Section, zone: &mut Zone) -> Result<(), StateError> {
             ROOM_EQ_MAX_FILTERS
         )));
     }
+    Ok(())
+}
+
+/// Format 10's undo fields, each required: the correction `room_eq_undo`
+/// puts back, held to what a `room_eq` is held to.
+fn load_room_eq_undo(section: &Section, zone: &mut Zone) -> Result<(), StateError> {
+    let kept = section.get("room_eq_undo")?;
+    let filters = section.get("room_eq_undo_filters")?;
+    let enabled = match kept.as_str() {
+        "none" => {
+            if !filters.trim().is_empty() {
+                return Err(section.fail(
+                    "room_eq_undo = none, and room_eq_undo_filters is not empty".to_string(),
+                ));
+            }
+            return Ok(());
+        }
+        "0" => false,
+        "1" => true,
+        other => {
+            return Err(section.fail(format!(
+                "room_eq_undo = '{}', which is not none, 0 or 1",
+                other
+            )))
+        }
+    };
+    let mut before = RoomEq {
+        enabled,
+        filters: Vec::new(),
+    };
+    for filter in filters.split(';').map(str::trim).filter(|f| !f.is_empty()) {
+        before
+            .filters
+            .push(EqFilter::from_persisted(filter).map_err(|e| section.fail(e))?);
+    }
+    if before.filters.len() > ROOM_EQ_MAX_FILTERS {
+        return Err(section.fail(format!(
+            "has more than {} correction filters to go back to",
+            ROOM_EQ_MAX_FILTERS
+        )));
+    }
+    zone.room_eq_undo = Some(before);
     Ok(())
 }
 
@@ -1167,9 +1243,9 @@ mod tests {
 
     #[test]
     fn a_state_file_this_build_does_not_understand_is_refused_rather_than_guessed() {
-        // Format 9 is this build's own; the next one is not.
-        let err = load("format = 10\nserial = 1\n", "x").unwrap_err();
-        assert!(err.to_string().contains("declares format 10"), "{}", err);
+        // Format 10 is this build's own; the next one is not.
+        let err = load("format = 11\nserial = 1\n", "x").unwrap_err();
+        assert!(err.to_string().contains("declares format 11"), "{}", err);
         let err = load("serial = 1\n", "x").unwrap_err();
         assert!(err.to_string().contains("no format version"), "{}", err);
     }

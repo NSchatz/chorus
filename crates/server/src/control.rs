@@ -242,6 +242,10 @@ pub struct ControlState {
     applied: AtomicU64,
     /// Commands refused since the process started.
     refused: AtomicU64,
+    /// (ADR 0000) Whether a recording is being fitted now. The fit is the
+    /// one piece of work on this listener that takes a core for a while, so
+    /// one runs at a time and a second upload is refused `busy` by name.
+    fitting: AtomicBool,
     /// Connections turned away because every worker was busy, and event
     /// streams turned away because every one the event writer may hold was
     /// held.
@@ -356,6 +360,7 @@ impl ControlState {
             state_file,
             applied: AtomicU64::new(0),
             refused: AtomicU64::new(0),
+            fitting: AtomicBool::new(false),
             turned_away: AtomicU64::new(0),
             events: EventStreams::new(crate::events::DEFAULT_EVENT_STREAMS),
             conductor_wake,
@@ -565,6 +570,46 @@ impl ControlState {
     /// in room `zone` (`Zones::measure_check`).
     pub fn measure_check(&self, zone: &str) -> Result<(), Refusal> {
         self.locked().zones.measure_check(zone)
+    }
+
+    /// (ADR 0000) Whether a recording made in room `zone` can be fitted
+    /// now: the room exists, and its correction is not switched on with
+    /// filters to apply, which would make the recording one of the corrected
+    /// room. Nothing is changed.
+    pub fn room_fit_check(&self, zone: &str) -> Result<(), crate::roomfit::Refused> {
+        let held = self.locked();
+        let Some(room) = held.zones.zone(zone) else {
+            return Err(crate::roomfit::Refused::unknown_room(
+                zone,
+                &held.zones.zone_list(),
+            ));
+        };
+        if room.room_eq.enabled && !room.room_eq.filters.is_empty() {
+            return Err(crate::roomfit::Refused::correction_on(zone));
+        }
+        Ok(())
+    }
+
+    /// (ADR 0000) Fit one recording, one at a time: `None` when another is
+    /// being fitted. The recording is `body`, borrowed for the fit and
+    /// neither kept nor written anywhere.
+    fn room_fit(
+        &self,
+        query: &crate::roomfit::Query,
+        body: &[u8],
+    ) -> Option<crate::roomfit::Outcome> {
+        if self.fitting.swap(true, Ordering::AcqRel) {
+            return None;
+        }
+        // The flag comes back however the fit ends, a panic included.
+        struct Fitting<'a>(&'a AtomicBool);
+        impl Drop for Fitting<'_> {
+            fn drop(&mut self) {
+                self.0.store(false, Ordering::Release);
+            }
+        }
+        let _fitting = Fitting(&self.fitting);
+        Some(crate::roomfit::fit(query, body))
     }
 
     /// (ADR 0195) The room model's half of starting a measurement sweep
@@ -2165,6 +2210,19 @@ struct Request {
     /// browser holds for a file of the app (`crate::app`).
     if_none_match: Option<String>,
     body: String,
+    /// (ADR 0000) For the one route whose body has a bound of its own
+    /// (`POST /api/room-fit`): the length the request declared, or `None`
+    /// where it declared none. The body is then NOT read by
+    /// [`read_request`] and `body` is empty: the route reads it itself, after
+    /// its rules and its bound have been checked against the head alone.
+    upload: Option<Option<usize>>,
+}
+
+/// Whether this request line is the recording upload's, whose body is held
+/// to [`crate::roomfit::MAX_RECORDING_BYTES`] and not to
+/// [`MAX_REQUEST_BYTES`]. Every other route keeps the one bound.
+fn is_upload(method: &str, target: &str) -> bool {
+    method == "POST" && target.split('?').next() == Some(crate::roomfit::ROUTE)
 }
 
 /// Why a request could not be read, each with the answer it gets.
@@ -2264,6 +2322,7 @@ fn read_request<R: BufRead>(reader: &mut R) -> Result<Request, Unreadable> {
     let method = parts.next().ok_or(Unreadable::Malformed)?.to_string();
     let path = parts.next().ok_or(Unreadable::Malformed)?.to_string();
     let mut length = 0usize;
+    let mut declared = false;
     let mut content_type = None;
     let mut origin = None;
     let mut host = None;
@@ -2279,6 +2338,7 @@ fn read_request<R: BufRead>(reader: &mut R) -> Result<Request, Unreadable> {
             let value = value.trim().to_string();
             if name.eq_ignore_ascii_case("content-length") {
                 length = value.parse().map_err(|_| Unreadable::Malformed)?;
+                declared = true;
             } else if name.eq_ignore_ascii_case("content-type") {
                 content_type = Some(value);
             } else if name.eq_ignore_ascii_case("origin") {
@@ -2289,6 +2349,22 @@ fn read_request<R: BufRead>(reader: &mut R) -> Result<Request, Unreadable> {
                 if_none_match = Some(value);
             }
         }
+    }
+    // (ADR 0000) The recording upload's body is not read here at all: its
+    // head came through the one bound like every request's, and its body
+    // has a bound of its own, checked by the route before a byte of it is
+    // read.
+    if is_upload(&method, &path) {
+        return Ok(Request {
+            method,
+            path,
+            content_type,
+            origin,
+            host,
+            if_none_match,
+            body: String::new(),
+            upload: Some(declared.then_some(length)),
+        });
     }
     // What is left of the bound, less the one byte that only ever detects an
     // overflow. A body that does not fit is refused unread.
@@ -2310,6 +2386,7 @@ fn read_request<R: BufRead>(reader: &mut R) -> Result<Request, Unreadable> {
         host,
         if_none_match,
         body: String::from_utf8_lossy(&body).to_string(),
+        upload: None,
     })
 }
 
@@ -2329,20 +2406,36 @@ fn read_request<R: BufRead>(reader: &mut R) -> Result<Request, Unreadable> {
 ///   posts from this server's own origin, which is the scheme and the `Host`
 ///   the request was sent to. A client that is not a browser sends none, and
 ///   is not refused for that.
+///
+/// (ADR 0000) The recording upload is held to the same two rules with its own
+/// content type, `audio/wav`, which a cross-site page cannot send without a
+/// preflight either.
 fn post_refusal(request: &Request) -> Option<(&'static str, String)> {
-    let declared_json = request.content_type.as_deref().is_some_and(|value| {
+    let wanted = if request.upload.is_some() {
+        crate::roomfit::CONTENT_TYPE
+    } else {
+        "application/json"
+    };
+    let declared = request.content_type.as_deref().is_some_and(|value| {
         value
             .split(';')
             .next()
             .unwrap_or("")
             .trim()
-            .eq_ignore_ascii_case("application/json")
+            .eq_ignore_ascii_case(wanted)
     });
-    if !declared_json {
+    if !declared {
         return Some((
             "415 Unsupported Media Type",
-            "a command is sent with Content-Type: application/json, and this one was not"
-                .to_string(),
+            if request.upload.is_some() {
+                format!(
+                    "a recording is sent with Content-Type: {}, and this one was not",
+                    wanted
+                )
+            } else {
+                "a command is sent with Content-Type: application/json, and this one was not"
+                    .to_string()
+            },
         ));
     }
     if let Some(origin) = &request.origin {
@@ -2383,7 +2476,12 @@ fn same_origin(origin: &str, host: Option<&str>) -> bool {
 /// Refuse a request, then drain what the peer is still sending for a short,
 /// bounded time so the refusal is not lost to a reset. See [`LINGER`].
 fn refuse_unread(connection: &mut TcpStream, status: &str, detail: &str) {
-    respond(connection, status, "application/json", &error_body(detail));
+    refuse_unread_with(connection, status, &error_body(detail));
+}
+
+/// [`refuse_unread`] with the body already written.
+fn refuse_unread_with(connection: &mut TcpStream, status: &str, body: &str) {
+    respond(connection, status, "application/json", body);
     let _ = connection.shutdown(std::net::Shutdown::Write);
     let until = Instant::now() + LINGER;
     let mut scratch = [0u8; 4_096];
@@ -2478,6 +2576,12 @@ fn serve_connection(connection: TcpStream, state: &Arc<ControlState>) {
     let version = requested_version(&request.path);
     // Who is asking, for the one route that is served to one address.
     let peer = connection.peer_addr().ok().map(|a| a.ip().to_canonical());
+    // (ADR 0000) The recording upload: its rules and its bound are checked
+    // against the head, and only then is its body read.
+    if let Some(declared) = request.upload {
+        serve_room_fit(&mut reader, &mut connection, state, &request, declared);
+        return;
+    }
     // The two routes that change anything are held to the rules a browser
     // needs to keep a page elsewhere from using them. See post_refusal.
     if request.method == "POST" && (path == "/api/command" || path == "/api/leaving") {
@@ -2619,6 +2723,101 @@ fn serve_connection(connection: TcpStream, state: &Arc<ControlState>) {
             "{\"v\":1,\"t\":\"error\",\"field\":\"\",\"detail\":\"no such route\"}",
         ),
     }
+}
+
+/// (ADR 0000) `POST /api/room-fit?zone=<room>`: one recording of the
+/// measurement sweep, fitted (`crate::roomfit`).
+///
+/// In this order, and everything before the body is read is decided from the
+/// head alone: the POST rules the command route has (`415`, `403`), then a
+/// length that was declared (`411`) and is within
+/// [`crate::roomfit::MAX_RECORDING_BYTES`] (`413`). Then the body is read,
+/// under the request's one deadline, into memory; then the query is read and
+/// the room looked at (`400`, `409`), so those answers reach a peer that has
+/// finished sending; then the recording is fitted and dropped. It is never
+/// written to a file and never printed; the one line said about it is
+/// [`crate::roomfit::Outcome::line`].
+fn serve_room_fit<R: Read>(
+    reader: &mut R,
+    connection: &mut TcpStream,
+    state: &Arc<ControlState>,
+    request: &Request,
+    declared: Option<usize>,
+) {
+    use crate::roomfit::{self, Refused};
+    let refuse = |connection: &mut TcpStream, status: &str, body: &str| {
+        state.refused.fetch_add(1, Ordering::Relaxed);
+        // The peer may still be sending its recording: see refuse_unread.
+        refuse_unread_with(connection, status, body);
+    };
+    if let Some((status, detail)) = post_refusal(request) {
+        return refuse(connection, status, &error_body(&detail));
+    }
+    let length = match declared {
+        None => {
+            return refuse(
+                connection,
+                "411 Length Required",
+                &error_body("a recording is sent with a Content-Length, and this one had none"),
+            )
+        }
+        Some(length) if length > roomfit::MAX_RECORDING_BYTES => {
+            return refuse(
+                connection,
+                "413 Content Too Large",
+                &error_body(&format!(
+                    "a recording is at most {} bytes, and this one says it is {}",
+                    roomfit::MAX_RECORDING_BYTES,
+                    length
+                )),
+            )
+        }
+        Some(length) => length,
+    };
+    let mut body = vec![0u8; length];
+    if let Err(e) = reader.read_exact(&mut body) {
+        let unreadable = match e.kind() {
+            io::ErrorKind::UnexpectedEof => Unreadable::Malformed,
+            _ => Unreadable::from_io(&e),
+        };
+        return refuse(
+            connection,
+            unreadable.status(),
+            &error_body(&unreadable.detail()),
+        );
+    }
+    // From here the request has been read whole, so an answer is not lost
+    // to a peer that is still sending.
+    let answer = |connection: &mut TcpStream, refused: &Refused| {
+        state.refused.fetch_add(1, Ordering::Relaxed);
+        respond(
+            connection,
+            refused.status,
+            "application/json",
+            &refused.encode(),
+        );
+    };
+    let query = match roomfit::parse_query(&request.path) {
+        Ok(query) => query,
+        Err(refused) => return answer(connection, &refused),
+    };
+    if let Err(refused) = state.room_fit_check(&query.zone) {
+        return answer(connection, &refused);
+    }
+    let Some(outcome) = state.room_fit(&query, &body) else {
+        return answer(connection, &Refused::busy());
+    };
+    drop(body);
+    println!("chorus-server: {}", outcome.line);
+    if outcome.status != "200 OK" {
+        state.refused.fetch_add(1, Ordering::Relaxed);
+    }
+    respond(
+        connection,
+        outcome.status,
+        "application/json",
+        &outcome.body,
+    );
 }
 
 /// Open one server-sent event stream and hand it to the event writer.
@@ -3292,6 +3491,7 @@ mod tests {
             method: "POST".to_string(),
             path: "/api/command".to_string(),
             content_type: content_type.map(str::to_string),
+            upload: None,
             origin: origin.map(str::to_string),
             host: Some("chorus.example:4011".to_string()),
             if_none_match: None,
