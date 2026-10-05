@@ -441,7 +441,7 @@ impl ControlState {
             .ok_or_else(|| Refusal::rejected("t", "the announcement did not start".to_string()))
     }
 
-    /// (ADR 0174) The rooms an announcement to `target` would be mixed over
+    /// (ADR 0175) The rooms an announcement to `target` would be mixed over
     /// (`Zones::announce_over_rooms`), and what the group it would play in
     /// plays now (`Zones::announce_source`), read together.
     pub fn announce_over_plan(&self, target: &str) -> (Vec<String>, Option<Source>) {
@@ -452,7 +452,7 @@ impl ControlState {
         )
     }
 
-    /// (ADR 0174) The room model's half of starting an announcement that is
+    /// (ADR 0175) The room model's half of starting an announcement that is
     /// mixed over what its rooms play (`Zones::announce_over_begin`),
     /// committed as [`ControlState::announce_begin`] is.
     pub fn announce_over_begin(
@@ -476,7 +476,7 @@ impl ControlState {
             .ok_or_else(|| Refusal::rejected("t", "the announcement did not start".to_string()))
     }
 
-    /// (ADR 0174) Whether an announcement mixed over `rooms`, started in
+    /// (ADR 0175) Whether an announcement mixed over `rooms`, started in
     /// `group`, still has them (`Zones::announce_watch`).
     pub fn announce_watch(
         &self,
@@ -486,7 +486,7 @@ impl ControlState {
         self.locked().zones.announce_watch(rooms, group)
     }
 
-    /// (ADR 0174) Say which announcements are playing and how the last few
+    /// (ADR 0175) Say which announcements are playing and how the last few
     /// ended (`Zones::set_announcements`): the announcer's hook. Fanned out
     /// only when something changed; nothing is persisted.
     pub fn set_announcements(

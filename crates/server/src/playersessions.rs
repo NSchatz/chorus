@@ -107,7 +107,7 @@ struct Session {
     state: PlayState,
     /// (goal 17) A held session: what its group plays is its caller's.
     held: bool,
-    /// (announcements, ADR 0174) A held session no group plays: its audio
+    /// (announcements, ADR 0175) A held session no group plays: its audio
     /// is mixed over what its caller's rooms play, so it has no group to
     /// show a record in and none whose source could give it away.
     over: bool,
@@ -259,7 +259,7 @@ impl PlayerSessions {
         self.begin(request, true, Some(take), false)
     }
 
-    /// (announcements, ADR 0174) [`PlayerSessions::play_held`] for a clip
+    /// (announcements, ADR 0175) [`PlayerSessions::play_held`] for a clip
     /// that is mixed OVER what its caller's rooms play (`crate::mixer`): the
     /// same, except that no group is made to play the player. `take` is the
     /// caller's own half of the start (it may still refuse), the session

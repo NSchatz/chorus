@@ -334,13 +334,13 @@ pub struct Zones {
     /// (v2, voice) The wake-word models the server runs, listed in the
     /// state as `wake_words` when there is any. Never persisted.
     wake_words: Vec<WakeWord>,
-    /// (announcements, ADR 0174) The announcements the server is playing
+    /// (announcements, ADR 0175) The announcements the server is playing
     /// and the last few that are over, each with its outcome, written into
     /// the state as `announcements` when there is any. Never persisted.
     announcements: Vec<Announcement>,
 }
 
-/// (ADR 0174) Where an announcement is: what a caller of `announce` waits
+/// (ADR 0175) Where an announcement is: what a caller of `announce` waits
 /// on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnnouncementState {
@@ -367,7 +367,7 @@ impl AnnouncementState {
     }
 }
 
-/// (ADR 0174) One announcement as the state message carries it.
+/// (ADR 0175) One announcement as the state message carries it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Announcement {
     /// Its number: the `announcement` member of its command's answer.
@@ -397,7 +397,7 @@ impl Announcement {
     }
 }
 
-/// (ADR 0174) What the server looks at to decide whether an announcement
+/// (ADR 0175) What the server looks at to decide whether an announcement
 /// mixed over its rooms still has them ([`Zones::announce_watch`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnnounceWatch {
@@ -2389,7 +2389,7 @@ impl Zones {
         })
     }
 
-    /// (ADR 0174) The rooms an announcement to `target` is mixed over: a
+    /// (ADR 0175) The rooms an announcement to `target` is mixed over: a
     /// room alone, whatever group it is in; every room of a formed group;
     /// a saved group's rooms (the ones in it now when it is active, the
     /// ones it lists when it has yet to be taken). Empty for an unknown
@@ -2412,13 +2412,13 @@ impl Zones {
         }
     }
 
-    /// (ADR 0174) What the group an announcement to `target` would play in
+    /// (ADR 0175) What the group an announcement to `target` would play in
     /// plays now, or `None` when there is no such group yet.
     pub fn announce_source(&self, target: &str) -> Option<Source> {
         self.announce_group(target).map(|group| self.source(&group))
     }
 
-    /// (ADR 0174) Start an announcement that is mixed over what its rooms
+    /// (ADR 0175) Start an announcement that is mixed over what its rooms
     /// play: no group's source changes. A saved group that is not active is
     /// taken first (K78), as any play on a saved group does, and with
     /// `volume` every room that hears the clip
@@ -2477,7 +2477,7 @@ impl Zones {
         })
     }
 
-    /// (ADR 0174) Whether an announcement mixed over `rooms`, started in
+    /// (ADR 0175) Whether an announcement mixed over `rooms`, started in
     /// `group`, still has them: which of them are still in that group,
     /// whether an alarm rings in any of them, and what the group plays.
     pub fn announce_watch(&self, rooms: &[String], group: &str) -> AnnounceWatch {
@@ -2502,7 +2502,7 @@ impl Zones {
         }
     }
 
-    /// (ADR 0174) The announcements the state lists. Whether anything
+    /// (ADR 0175) The announcements the state lists. Whether anything
     /// changed; the serial moves only when it did.
     pub fn set_announcements(&mut self, announcements: Vec<Announcement>) -> bool {
         if self.announcements == announcements {
@@ -2513,7 +2513,7 @@ impl Zones {
         true
     }
 
-    /// (ADR 0174) The announcements the state lists.
+    /// (ADR 0175) The announcements the state lists.
     pub fn announcements(&self) -> &[Announcement] {
         &self.announcements
     }
@@ -2791,7 +2791,7 @@ impl Zones {
                 Value::Arr(self.wake_words.iter().map(WakeWord::value).collect()),
             ));
         }
-        // (ADR 0174) The announcements, written only while there is one to
+        // (ADR 0175) The announcements, written only while there is one to
         // name, after everything else for the same reason.
         if !self.announcements.is_empty() {
             state.push((

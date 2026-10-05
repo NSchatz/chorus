@@ -971,7 +971,7 @@ connecting to where it points.
 `docs/dsp.md`, "The announcement mixer", and
 `docs/decisions/0173-the-announcement-mixer.md`; where it runs and how long
 it takes is
-`docs/decisions/0174-announcements-are-mixed-per-room-on-the-slots-grid.md`):
+`docs/decisions/0175-announcements-are-mixed-per-room-on-the-slots-grid.md`):
 
 1. The clip plays through a held player session that **no group plays**: the
    server takes a free player, and no group's source and no now-playing
@@ -997,7 +997,7 @@ it takes is
    (`announce owner=announce:<n> id=<id> ended group=<g> restored=<source>
    outcome=failed failure="<words>"`).
 
-The timing, in frames of the stream (ADR 0174, measured in
+The timing, in frames of the stream (ADR 0175, measured in
 `docs/measurements/2026-10-05-announcement-duck-timing.md`): the music is
 fully ducked before the clip's first frame, always; and it is fully back
 within the restore ramp and one chunk of the clip's last frame (24 960

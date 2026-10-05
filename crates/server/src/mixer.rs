@@ -1,5 +1,5 @@
 //! The announcement mixes: a room's stream with a clip mixed over it, cut on
-//! the audio thread beside the slots (ADR 0174; the arithmetic is
+//! the audio thread beside the slots (ADR 0175; the arithmetic is
 //! `chorus_dsp::duck`, ADR 0173).
 //!
 //! # What a mix is

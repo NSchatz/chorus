@@ -397,7 +397,7 @@ impl Conductor {
         {
             timeout = RETRY;
         }
-        // (ADR 0174) While an announcement is playing or its music is
+        // (ADR 0175) While an announcement is playing or its music is
         // coming back: the end of a restore wakes nobody.
         if self.announcer.as_ref().is_some_and(|a| a.any_live()) {
             timeout = RETRY;
@@ -449,7 +449,7 @@ impl Conductor {
         // one slot or the other at every tick, never on a slot not yet
         // playing it.
         self.route_inputs(&snapshot, &mut report, true);
-        // (ADR 0174) The rooms an announcement is mixed over: their player
+        // (ADR 0175) The rooms an announcement is mixed over: their player
         // sessions hear its mix, from the command to the end of the
         // restore. Everything else about them is their room's as before.
         let mixed = self
@@ -487,7 +487,7 @@ impl Conductor {
                 }
             }
         }
-        // (ADR 0174) Only now, with the sessions on their mixes, is the
+        // (ADR 0175) Only now, with the sessions on their mixes, is the
         // audio thread told to start a clip's duck.
         if let Some(announcer) = &self.announcer {
             report.owed += announcer.direct(&snapshot);

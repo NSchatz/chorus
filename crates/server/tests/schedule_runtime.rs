@@ -348,7 +348,7 @@ fn an_alarm_that_displaced_an_announcement_puts_back_what_played_before_it() {
     assert_eq!(h.volume("kitchen"), 500);
 }
 
-/// (ADR 0174) The same for an announcement that is mixed over its room: it
+/// (ADR 0175) The same for an announcement that is mixed over its room: it
 /// gave no group its player, so the alarm's snapshot holds the music the
 /// room played but the ANNOUNCEMENT's volume. Told that the announcement is
 /// over, the runtime puts the room back at the volume it had before it.

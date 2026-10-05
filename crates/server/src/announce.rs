@@ -1,6 +1,6 @@
 //! Announcements: a clip from the home automation's own address, mixed over
 //! what a room or a group plays and then gone (goal 18, ADR 0136; the mix:
-//! ADR 0173 for the arithmetic, ADR 0174 for where it runs and how long it
+//! ADR 0173 for the arithmetic, ADR 0175 for where it runs and how long it
 //! takes).
 //!
 //! The `announce` command names a target, a URL and, optionally, a volume.
@@ -334,7 +334,7 @@ impl Announcer {
     }
 
     /// Mix announcements over what their rooms play, through `mixes`
-    /// (ADR 0174). Without it every announcement interrupts its group.
+    /// (ADR 0175). Without it every announcement interrupts its group.
     pub fn with_mixes(mut self, mixes: Mixes) -> Announcer {
         lock(&self.table).sent = vec![0; mixes.ports.len()];
         self.mixes = Some(mixes);
@@ -438,7 +438,7 @@ impl Announcer {
         }
     }
 
-    /// An announcement mixed over what its rooms play (ADR 0174).
+    /// An announcement mixed over what its rooms play (ADR 0175).
     #[allow(clippy::too_many_arguments)]
     fn announce_over(
         &self,

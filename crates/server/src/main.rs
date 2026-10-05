@@ -947,7 +947,7 @@ fn main() -> ExitCode {
     // One stream and its one fanout, or `--slots S` of them and the silent
     // one; either way the router is what attaches each session to one.
     let router = Arc::new(if config.slots > 0 {
-        // (ADR 0174) Two announcement mixes a player: one for the clip a
+        // (ADR 0175) Two announcement mixes a player: one for the clip a
         // player plays and one for the mix whose music is still coming back
         // when that player's next clip starts.
         Router::slotted_with_mixes(config.slots, 2 * config.players)
@@ -997,7 +997,7 @@ fn main() -> ExitCode {
         media.players = (0..config.players)
             .map(|_| Arc::new(PlayerPort::for_format(&format)))
             .collect();
-        // (ADR 0174) What the audio thread says about each announcement
+        // (ADR 0175) What the audio thread says about each announcement
         // mix; the mixers themselves are allocated by the audio thread
         // before its first tick.
         media.mixes = (0..router.mixes())
@@ -1473,7 +1473,7 @@ fn main() -> ExitCode {
             &config.announce_origins,
             Box::new(move |line: &str| status.say(line)),
         );
-        // (ADR 0174) With stream slots and players a clip is mixed over
+        // (ADR 0175) With stream slots and players a clip is mixed over
         // what its rooms play; without, it interrupts (ADR 0136).
         if !mix_ports.is_empty() {
             announcer = announcer.with_mixes(chorus_server::announce::Mixes::new(

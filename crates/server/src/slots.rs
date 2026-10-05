@@ -68,7 +68,7 @@
 //! # The announcement mixes
 //!
 //! After the slots' inputs are settled, and under the same grid guard, each
-//! announcement mix (`crate::mixer`, ADR 0174) is cut from its base slot's
+//! announcement mix (`crate::mixer`, ADR 0175) is cut from its base slot's
 //! chunk of this tick: the same frame when its duck is idle, and otherwise
 //! that chunk ducked with the clip's frames mixed over it, under the same
 //! sequence and timestamp. So a room on a mix and a room on the mix's base
@@ -166,7 +166,7 @@ pub enum SlotCommand {
         /// The latency, ns.
         latency_ns: i64,
     },
-    /// (announcements, ADR 0174) A change to one announcement mix
+    /// (announcements, ADR 0175) A change to one announcement mix
     /// (`crate::mixer`).
     Mix(MixCommand),
 }
@@ -211,7 +211,7 @@ pub struct SlotMedia {
     /// (goal 17) The Soloist receivers' ports (`crate::soloistport`),
     /// `--soloist-receivers` of them: receiver `r<i>` is `soloists[i]`.
     pub soloists: Vec<Arc<SoloistPort>>,
-    /// (announcements, ADR 0174) What the audio thread says about each
+    /// (announcements, ADR 0175) What the audio thread says about each
     /// announcement mix (`crate::mixer`): mix `m` is `mixes[m]`, and it is
     /// cut only when the router carries a fanout for it.
     pub mixes: Vec<Arc<MixPort>>,
@@ -360,7 +360,7 @@ pub fn serve_slots(
     let soloist_ports = media.soloists.len();
     let mut soloist_pcm = vec![vec![0u8; bytes_per_chunk]; soloist_ports];
     let mut soloist_played = vec![false; soloist_ports];
-    // (announcements, ADR 0174) One mixer per mix fanout, with its buffers,
+    // (announcements, ADR 0175) One mixer per mix fanout, with its buffers,
     // and this tick's frame of every slot for a mix that only passes it on.
     let mut mixes: Vec<Mix> = media
         .mixes

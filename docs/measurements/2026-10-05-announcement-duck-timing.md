@@ -5,13 +5,13 @@ Source: host
 Build measured: `0b32c33fa3a942705b49777b2f5fae90ce7d0feb`
 Build note: the commit above is the commit of `main` this report's pull request is made on. What
 ran is that commit with the pull request's change to `crates/server` and `crates/control` on
-top (the announcement mixes, ADR 0174); nothing else differs from it.
+top (the announcement mixes, ADR 0175); nothing else differs from it.
 Timing evidence: none about speakers. This is a software measurement on the development host:
 what a real protocol v2 player session received from the real `chorus-server` binary, counted in
 frames of the stream. No wall clock is read to make any figure here, and nothing says when a
 room hears a frame (that is the stream's playout latency, which this change does not touch).
 
-What is measured: the two bounds of ADR 0174 decision 11, for an announcement mixed over a room
+What is measured: the two bounds of ADR 0175 decision 11, for an announcement mixed over a room
 that plays the configured stream.
 
 1. From the clip's first frame to the full duck: zero frames (the music is fully ducked no later
@@ -69,7 +69,7 @@ The same in all three runs, for every clip:
 
 Against the bounds:
 
-| bound (ADR 0174, decision 11) | bound, frames | measured, frames | at 48 kHz |
+| bound (ADR 0175, decision 11) | bound, frames | measured, frames | at 48 kHz |
 |---|---:|---:|---:|
 | the clip's first frame to the full duck | 0 (never after) | -2 (the full duck is 2 frames BEFORE) | -0.04 ms |
 | the clip's last frame to the full restore | 24 960 | 23 998 | 499.96 ms |
@@ -95,7 +95,7 @@ none used the chunk the bound allows for a producer that says it finished late.
 
 - Nothing about a speaker: no endpoint played these frames, and no clock was compared.
 - How long after the `announce` command the duck begins (one conductor pass) or how long a clip
-  takes to arrive (its fetch): neither is a frame count, and neither is bounded by ADR 0174. In
+  takes to arrive (its fetch): neither is a frame count, and neither is bounded by ADR 0175. In
   these runs the clip was in its port before the duck was full, every time (a loopback fetch).
 - A clip that arrives AFTER the duck is full: the music is then held down until it does. The
   unit test `a_held_port_and_a_late_clip_hold_the_duck_and_lose_no_frame` in

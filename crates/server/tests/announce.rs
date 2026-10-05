@@ -1,6 +1,6 @@
 //! The `announce` command and the server's identity route, on the real
 //! binary (goal 18, ADR 0136; the duck, mix and restore: ADR 0173 and
-//! ADR 0174; brief section 4.8's "HA's media and TTS URLs from HA's own
+//! ADR 0175; brief section 4.8's "HA's media and TTS URLs from HA's own
 //! address").
 //!
 //! Every test runs the real `chorus-server` with stream slots and a control
@@ -34,7 +34,7 @@
 //! - the timing, measured on the stream's own timeline in frames (a chunk's
 //!   sequence times its frames, plus the frame's place in it): from the
 //!   clip's first frame to the full duck and from its last to the full
-//!   restore, each within ADR 0174's bound, printed as `measured:` lines
+//!   restore, each within ADR 0175's bound, printed as `measured:` lines
 //!   (`docs/measurements/2026-10-05-announcement-duck-timing.md`);
 //! - a clip that answers 404, and one whose URL redirects out of the
 //!   origin, bring the music back at once and say `failed`;
@@ -980,7 +980,7 @@ fn the_duck_is_full_before_the_clip_and_the_music_is_back_within_the_bound_in_fr
             "the duck ramp is {} frames",
             ramp
         );
-        // ADR 0174, bound 1: the music is fully ducked no later than the
+        // ADR 0175, bound 1: the music is fully ducked no later than the
         // clip's first frame, so from that frame to the full duck is no
         // frames at all.
         assert!(
@@ -989,7 +989,7 @@ fn the_duck_is_full_before_the_clip_and_the_music_is_back_within_the_bound_in_fr
             h.duck_full,
             h.clip_first
         );
-        // ADR 0174, bound 2: from the clip's last frame, the music is its
+        // ADR 0175, bound 2: from the clip's last frame, the music is its
         // own samples again within the restore ramp and one chunk.
         let back = h.restored - h.clip_last;
         assert!(

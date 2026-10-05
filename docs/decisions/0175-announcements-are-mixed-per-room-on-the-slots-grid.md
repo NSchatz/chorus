@@ -1,4 +1,4 @@
-# 0000: an announcement is mixed over its rooms in a stream of its own on the slots' grid, so one room of a group ducks alone; the music is fully ducked before the clip's first frame and back within the restore ramp and one chunk of its last, and the state says how each announcement ended
+# 0175: an announcement is mixed over its rooms in a stream of its own on the slots' grid, so one room of a group ducks alone; the music is fully ducked before the clip's first frame and back within the restore ramp and one chunk of its last, and the state says how each announcement ended
 
 - Status: accepted, 2026-10-05
 - Decided by: the task for the scope ("the `announce` command keeps its shape and its origin

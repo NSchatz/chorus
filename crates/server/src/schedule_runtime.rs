@@ -565,7 +565,7 @@ impl Runtime {
                 snap.source = previous.clone();
                 moved = true;
             }
-            // (ADR 0174) An announcement mixed over its rooms gave no group
+            // (ADR 0175) An announcement mixed over its rooms gave no group
             // its player, so only the volume it set can be in a snapshot.
             if let Some((_, before, set)) = volumes.iter().find(|(r, _, _)| r == room) {
                 if snap.volume == *set && set != before {

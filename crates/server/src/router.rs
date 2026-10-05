@@ -28,7 +28,7 @@
 //!   plays silence to a session whose endpoint is in no room, or whose room's
 //!   group has no slot (its source is `none`). The extra one is not counted in
 //!   S: it is where nobody is listening to anything. After it come the
-//!   announcement mixes (ADR 0174, `crate::mixer`), as many as the server
+//!   announcement mixes (ADR 0175, `crate::mixer`), as many as the server
 //!   was built with: fanout `S + 1 + m` is mix `m`, the stream the player
 //!   sessions of the rooms an announcement is playing in hear while it
 //!   lasts.
@@ -188,7 +188,7 @@ impl Router {
     }
 
     /// The slot shape with `mixes` announcement mixes after the silent
-    /// fanout (ADR 0174).
+    /// fanout (ADR 0175).
     pub fn slotted_with_mixes(slots: usize, mixes: usize) -> Router {
         let fanouts = (0..=slots + mixes)
             .map(|_| Arc::new(Fanout::new()))
