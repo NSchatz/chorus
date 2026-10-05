@@ -53,7 +53,7 @@ automated read could see (a login redirect or a blank page), read by the owner i
 | F1 | Raspberry Pi 5 4GB | CanaKit, US `ASSUMED` | 1 | $110.00 | $110.00 | read | endpoint A: the bench server, the builds (`tools/lib.sh` compiles the workspace with all targets) and the interface's host; then the living-room TV hub |
 | F2 | Raspberry Pi 5 2GB | CanaKit | 1 | $77.50 | $77.50 | read | endpoint B; then the master-bedroom TV hub |
 | F3 | Raspberry Pi 27 W USB-C supply | CanaKit | 2 | $12.95 | $25.90 | read | the Pis (endpoint A powers the interface over USB); then the hubs |
-| F4 | Behringer UMC202HD | Amazon US | 1 | $59.00 | $59.00 | snippet; sold-by to check | the rig's capture; then the measurement interface (the mic's phantom power, REW's loopback, the impedance jig) |
+| F4 | Behringer UMC202HD | a US music store (Sweetwater, Guitar Center, Musician's Friend, Adorama); Amazon shows "No featured offers available" and only resellers (AVLGEAR US$96.90 + US$13.95 shipping) | 1 | $86.90 | $86.90 | snippet (the stores); Amazon read in the browser | the rig's capture; then the measurement interface (the mic's phantom power, REW's loopback, the impedance jig) |
 | F5 | AITRIP ESP32-S3 DevKitC N16R8, 3-pack | Amazon US (ships from Amazon) | 1 | $18.99 | $18.99 | read | the two module prototypes and a spare; N16R8 is the module the owner's board would carry (LCSC stocks it; not the N8R8) |
 | F6 | Adafruit PCM5102 I2S DAC (6250) | Adafruit, US | 2 | $4.95 | $9.90 | read | each Pi's line output into the rig; no job after the bench |
 | F7 | Adafruit ICS-43434 I2S microphone (6049) | Adafruit, US | 1 | $8.95 | $8.95 | read | the prototype's microphone and the firmware's mic gate |
@@ -64,30 +64,48 @@ automated read could see (a login redirect or a blank page), read by the owner i
 | F12 | Alligator-clip test leads, 10 | Parts Express | 1 | $2.12 | $2.12 | read | the impedance jig |
 | F13 | 10 uF 100 V non-polarized capacitor | Parts Express | 4 | $1.09 | $4.36 | read | two load-and-divider sets (DC blocking, bench packet S7.4) |
 | F14 | Rean NYS228 1/4" TRS plug | Parts Express | 2 | $2.09 | $4.18 | read | the two divider sets into the interface |
-| F15 | Caddock MP915-100-1% (100 ohm, non-inductive, 1.25 W) | DigiKey | 1 | $4.45 | $4.45 | snippet | the impedance jig's sense resistor |
+| F15 | Caddock MP915-100-1% (100 ohm, non-inductive, 1.25 W) | DigiKey, "In-Stock: 3,021" | 1 | $5.00 | $5.00 | read | the impedance jig's sense resistor |
 | F16 | 1 kohm and 9.1 kohm 1/4 W 1% metal film, 5-packs | Amplified Parts | 1 each | $0.50 | $1.00 | read | the divider sets |
 | F17 | 100 ohm 1/4 W 1% metal film, 5-pack | Amplified Parts | 1 | $0.50 | $0.50 | read; the value list to check | the impedance jig's calibration reference |
-| F18 | Louder Raspberry Hat Plus 1X (TAS5825M, 7-26 V, no MCU) | Elecrow, sold by Sonocotta; ship-from not stated; **NON-US EXCEPTION** | 2 | $25.00 | $50.00 | read | the prototypes' amplifiers (the owner's board's amplifier chip); then the known-good amplifier the first PCBs are compared against |
-| F19 | Korad KA3005D (30 V 5 A, linear), set to 110 V | AliExpress; **NON-US EXCEPTION** | 1 | $53.85 to $88.71 | same | search page (lowest variant) | 24 V for the Hat Plus amplifiers; then every board's first current-limited power-up |
-| F20 | W5500 SPI Ethernet module, INT and RST broken out | AliExpress | 3 | $3.99 | $11.97 | search page | the two prototypes and a spare |
-| F21 | 24 MHz 8-channel FX2 logic analyzer (sigrok fx2lafw) | AliExpress | 2 | $5.83 | $11.66 | search page | the GPIO marker cross-check (S7.5), I2C and I2S debugging, and a spare; then PCB bring-up |
+| F18 | Louder Raspberry Hat Plus 1X (TAS5825M, 7-26 V, no MCU) | Elecrow, sold by Sonocotta; ship-from not stated; **NON-US EXCEPTION**; "IN STOCK", "Buy 2 for $24.00 each" | 2 | $24.00 | $48.00 | read | the prototypes' amplifiers (the owner's board's amplifier chip); then the known-good amplifier the first PCBs are compared against |
+| F19 | Korad KA3005D (30 V 5 A, linear), set to 110 V | AliExpress listing 2255799940658848; **NON-US EXCEPTION**; **shipping US$91.28** on the US-plug variant | 1 | $55.67 to $88.71 | same | read (the US-plug KA3005D variant; the top of the range is another listing, search page) | 24 V for the Hat Plus amplifiers; then every board's first current-limited power-up |
+| F20 | W5500 SPI Ethernet module, INT and RST broken out | AliExpress listing 3256806809087310, HZWDONE Store, "Version 1", free shipping | 3 | $3.99 | $11.97 | read (sale price, list US$8.49; the INT and RST silkscreen not legible in the photos) | the two prototypes and a spare |
+| F21 | 24 MHz 8-channel FX2 logic analyzer (sigrok fx2lafw) | AliExpress listing 3256805202626131 | 2 | $5.83 | $11.66 | read (a buyer review reports it working in PulseView on Linux) | the GPIO marker cross-check (S7.5), I2C and I2S debugging, and a spare; then PCB bring-up |
 | F22 | TPA3116 class-D amplifier board with a 3.5 mm input | AliExpress | 2 | at cart | at cart | not read | the measurement amplifier (interface to a driver under test, powered by F19) and a spare |
-| F23 | RX24 8 ohm 50 W aluminium-housed resistor | AliExpress | 4 | from $0.75 | from $3.00 | search page (lowest option) | the dummy loads of the two divider sets |
+| F23 | RX24 8 ohm 50 W aluminium-housed resistor | AliExpress listing 3256805230664798, option "8R" | 4 | $0.75 | $3.00 | read | the dummy loads of the two divider sets |
 | F24 | Dupont jumper set (M-M, M-F, F-F) | AliExpress | 1 | at cart | at cart | not read | the module wiring and the analyzer |
 | F25 | Full-size solderless breadboard | AliExpress | 1 | at cart | at cart | not read | the prototype's controls |
-| F26 | 6 x 6 mm tactile buttons, 50 | AliExpress | 1 | $0.33 | $0.33 | search page (sale price) | the firmware's buttons on the prototype |
+| F26 | 6 x 6 mm tactile buttons, 50 | AliExpress listing 3256808746038111, free shipping | 1 | $1.09 | $1.09 | read | the firmware's buttons on the prototype |
 | F27 | WS2812B RGB LED module | AliExpress | 1 | at cart | at cart | not read | the status LED on the prototype |
 | F28 | DPDT slide switch | AliExpress | 1 | at cart | at cart | not read | the mic mute switch's hardware rule (`docs/hardware/controls.md`) on the prototype |
 | F29 | USB-A to USB-C data cable | AliExpress | 2 | at cart | at cart | not read | flashing and the serial console of the prototypes |
 | F30 | 63/37 rosin-core solder wire, 0.5 to 0.8 mm | AliExpress | 1 | at cart | at cart | not read | the module wiring and the divider sets |
 | F31 | Microphone boom stand | AliExpress | 1 | at cart | at cart | not read | the EMM-6 |
 | F32 | XLR cable, about 5 m | AliExpress | 1 | at cart | at cart | not read | the EMM-6 into the UMC202HD |
-| | **Total of the priced lines** | | | | **$548.46 to $583.32** | | plus the at-cart lines, shipping and tax |
+| | **Total of the priced lines** | | | | **$577.49 to $610.53** | | plus the at-cart lines, shipping (F19's alone is US$91.28) and tax |
 
 Also: 99% isopropyl alcohol from a local store (flux cleanup; not priced). On arrival: a USB-A to
 USB-B cable only if the UMC202HD comes without one; the Hat Plus power lead once its connector is
 seen (no page read documents it: "7..26V from external source", Sonocotta's README); four
 Ethernet patch cables, crimped by the owner from the cable pull's Cat6.
+
+Browser check of 2026-10-04: every line above was opened in the owner's browser, which reads
+the Amazon and AliExpress item pages the automated reads could not. F1 to F3, F5 to F14, F16
+and F17 matched their listed prices and were in stock; F4, F15, F18, F19, F20, F21, F23 and F26
+were corrected in the table. For the at-cart lines, candidate listings (AliExpress item IDs;
+prices at cart):
+
+| # | Candidate |
+|---|---|
+| F24 | 3256806568245944 (10, 20 or 30 cm, M-M, M-F and F-F) |
+| F25 | 3256807647202264 (MB-102, 830 point; over 2,000 sold) |
+| F27 | 2251832791920567 (WS2812B 5050, the 1-LED option; over 3,000 sold) |
+| F28 | 3256803473876198 (SS22F32, 6-pin through-hole DPDT, 10 pieces, US$0.52) |
+| F29 | 3256805726413922 (Baseus USB-A to USB-C; over 50,000 sold) |
+| F30 | 3256812477955326 (63/37, 0.8 mm rosin core, 100 g, US$13.77) |
+| F31 | 3256812016767224 (floor tripod with boom arm, US$13.04) |
+| F32 | 3256811847642738 (XLR male to female, 5 m option) |
+| F22 | none chosen: no plain stereo TPA3116D2 board with a 3.5 mm jack confirmed yet |
 
 ### With the first PCB order
 
@@ -141,11 +159,16 @@ Total $132.28 plus shipping. The TV bench session (bench packet S8) waits for th
 
 ### Checks at checkout
 
-- F19: the variant is the KA3005D or KA3005P, set to 110 V.
-- F20: the listing's photo shows the INT and RST pins.
-- F22: the board has a 3.5 mm input jack.
-- F4: sold by Amazon, not a reseller. F18: Elecrow's shipping cost and ship-from.
-- F17: 100 ohm is in Amplified Parts' value list.
+- F19: the variant is the KA3005D or KA3005P, set to 110 V; and a listing whose US shipping is
+  not the US$91.28 of listing 2255799940658848, or a US seller if none is.
+- F20: the listing's photo shows the INT and RST pins (not legible in the 2026-10-04 browser read).
+- F22: the board has a 3.5 mm input jack and no Bluetooth module; most "TPA3116 3.5mm" results
+  are Bluetooth boards.
+- F4: no longer sold by Amazon (2026-10-04); bought from a US music store. F18: Elecrow's
+  shipping cost and ship-from.
+- F17: 100 ohm is in Amplified Parts' value list (confirmed 2026-10-04, with 1 kohm and 9.1 kohm).
+- AliExpress US$1.09 prices on search pages are a once-per-new-shopper "Welcome deal"; the
+  struck-through price is the one to plan on.
 - The AliExpress sale seen on 2026-10-04 ends 2026-10-08 03:59 UTC.
 
 ## Question
