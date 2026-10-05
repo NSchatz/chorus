@@ -1,0 +1,27 @@
+# Canonical input for the catalog v2 state-facts vector.
+#
+# (ADR 0194) What a server with a schedule runtime adds to the state for a
+# screen that would otherwise guess: the built-in chimes an alarm may name
+# (`chimes`), how long a sleep timer has left (`remaining_s` on its entry),
+# and the kind of each offered input (`input_kinds`, a TV input marked `tv`).
+#
+# The server can ring the three chimes and counts its sleep timers down. Two
+# timers are asked for; the runtime has since counted the bedroom's down to
+# 1042 s and has not yet passed over the kitchen's, which still says all of
+# it. Three inputs are offered: a TV on optical, a TV on HDMI ARC and a
+# turntable on a line-in.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = state
+default_audio = 127.0.0.1:4010
+zones = kitchen,bedroom
+chimes = bell,ding-dong,triad
+sleep_counted = 1
+command.0 = {"v":2,"t":"sleep","target":"bedroom","minutes":30}
+command.1 = {"v":2,"t":"sleep","target":"kitchen","minutes":45}
+input.0 = hub/tv optical
+input.1 = bar/arc hdmi_arc
+input.2 = deck/line-1 line_in
+sleep_remaining.0 = bedroom 1042

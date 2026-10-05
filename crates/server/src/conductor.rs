@@ -915,10 +915,20 @@ impl Conductor {
             for event in line_ins.take_events() {
                 let runtime = &mut schedule.runtime;
                 match event {
-                    InputEvent::Signal(input, signal) => effects.extend(
-                        self.state
-                            .runtime(|zones| runtime.on_input_signal(&input, signal, mono, zones)),
-                    ),
+                    InputEvent::Signal(input, signal) => {
+                        // (ADR 0194) The input's kind, said before the
+                        // runtime offers it: the state's `input_kinds`.
+                        let kind = line_ins.kind_of(&input);
+                        effects.extend(self.state.runtime(|zones| {
+                            if let (true, Some(kind)) = (signal, kind) {
+                                zones.set_input_kind(
+                                    &input,
+                                    crate::schedule_runtime::input_kind(kind),
+                                );
+                            }
+                            runtime.on_input_signal(&input, signal, mono, zones)
+                        }))
+                    }
                     InputEvent::Standby(input) => effects.extend(
                         self.state
                             .runtime(|zones| runtime.on_input_standby(&input, mono, zones)),

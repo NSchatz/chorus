@@ -41,10 +41,10 @@ use std::fmt;
 
 use crate::json::{self, Value};
 use crate::rooms::{
-    validate_layout, Alarm, Autoplay, BondMember, ClockTime, Days, InputId, InputLabel, InputRole,
-    Link, PlaybackAction, QuietWindow, Role, SoloistState, Source, StoredKind, StoredSource,
-    ALARM_SOURCE_SPELLINGS, MAX_DEFINITIONS, MAX_DURATION_MIN, MAX_QUIET_WINDOWS, MAX_RAMP_S,
-    MAX_SLEEP_MIN, SOURCE_SPELLINGS,
+    validate_layout, Alarm, Autoplay, BondMember, ClockTime, Days, InputId, InputKind, InputLabel,
+    InputRole, Link, PlaybackAction, QuietWindow, Role, SoloistState, Source, StoredKind,
+    StoredSource, ALARM_SOURCE_SPELLINGS, MAX_DEFINITIONS, MAX_DURATION_MIN, MAX_QUIET_WINDOWS,
+    MAX_RAMP_S, MAX_SLEEP_MIN, SOURCE_SPELLINGS,
 };
 use crate::sound::{
     EqFilter, FixedPoint, Polarity, CROSSOVER_HZ, ROOM_EQ_MAX_FILTERS, SUB_LEVEL_CDB, TONE_DB,
@@ -1087,6 +1087,16 @@ pub fn input_label_value(l: &InputLabel) -> Value {
         ("input".to_string(), Value::text(&l.input.literal())),
         ("name".to_string(), Value::text(&l.name)),
         ("role".to_string(), Value::text(l.role.name())),
+    ])
+}
+
+/// (ADR 0194) One offered input's kind, in the declared order, as the state
+/// message carries it: `input`, `kind`, `tv`.
+pub fn input_kind_value(input: &InputId, kind: InputKind) -> Value {
+    Value::Obj(vec![
+        ("input".to_string(), Value::text(&input.literal())),
+        ("kind".to_string(), Value::text(kind.name())),
+        ("tv".to_string(), Value::Bool(kind.is_tv())),
     ])
 }
 

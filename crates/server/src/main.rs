@@ -732,6 +732,10 @@ fn main() -> ExitCode {
         // (voice, P8) The wake-word models this build carries, listed in the
         // state for the home automation's configuration.
         zones.set_wake_words(wake_words());
+        // (ADR 0194) A schedule runtime runs over this model (the conductor
+        // is given one whenever there is a control channel): the state lists
+        // the chimes an alarm may name and counts each sleep timer down.
+        chorus_server::schedule_runtime::describe_in(&mut zones);
         let zone_count = zones.zones().len();
         let mut state = ControlState::new(zones, config.state_file.as_ref().map(|_| state_path));
         state.set_event_streams(config.event_streams);

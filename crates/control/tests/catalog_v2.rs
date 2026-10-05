@@ -22,9 +22,9 @@ use chorus_control::catalog::{
 use chorus_control::firmware::{Image, Report, SpeakerFirmware};
 use chorus_control::json;
 use chorus_control::rooms::{
-    Alarm, Autoplay, BondMember, CivilTime, ClockTime, Days, InputId, InputLabel, InputRole, Link,
-    NowPlaying, Origin, PlayState, PlaybackAction, QuietWindow, Role, SoloistBuild,
-    SoloistReceiver, SoloistState, Source, StoredKind, StoredSource,
+    Alarm, Autoplay, BondMember, CivilTime, ClockTime, Days, InputId, InputKind, InputLabel,
+    InputRole, Link, NowPlaying, Origin, PlayState, PlaybackAction, QuietWindow, Role,
+    SoloistBuild, SoloistReceiver, SoloistState, Source, StoredKind, StoredSource,
 };
 use chorus_control::sound::{EqFilter, FixedPoint, Polarity};
 use chorus_control::speakers::KeyChange;
@@ -237,6 +237,15 @@ fn server_from(fields: &Fields) -> Zones {
                 .collect(),
         );
     }
+    // (ADR 0194) The built-in chimes the server can ring (`chimes =
+    // <name>,<name>`), and whether a schedule runtime counts its sleep timers
+    // down (`sleep_counted = 1`).
+    if fields.has("chimes") {
+        zones.set_chimes(list(&fields.get("chimes")));
+    }
+    if fields.has("sleep_counted") {
+        zones.set_sleep_counted(true);
+    }
     // (goal 14) What the session layer said before the commands: the ids it
     // adopted, each with its key's fingerprint (`adopted.N = <id> <key>`).
     let mut n = 0;
@@ -384,6 +393,25 @@ fn encode_from(fields: &Fields) -> String {
             }
             if fields.has("offer_input") {
                 zones.offer_input(InputId::parse(&fields.get("offer_input")).unwrap());
+            }
+            // (ADR 0194) The inputs the server offered with their kinds
+            // (`input.N = <input> <kind>`), and what the runtime last counted
+            // of each sleep timer (`sleep_remaining.N = <target> <seconds>`).
+            let mut n = 0;
+            while fields.has(&format!("input.{}", n)) {
+                let line = fields.get(&format!("input.{}", n));
+                let (input, kind) = line.split_once(' ').unwrap();
+                let input = InputId::parse(input).unwrap();
+                zones.set_input_kind(&input, InputKind::from_name(kind).unwrap());
+                zones.offer_input(input);
+                n += 1;
+            }
+            let mut n = 0;
+            while fields.has(&format!("sleep_remaining.{}", n)) {
+                let line = fields.get(&format!("sleep_remaining.{}", n));
+                let (target, seconds) = line.split_once(' ').unwrap();
+                zones.sleep_remaining(target, seconds.parse().unwrap());
+                n += 1;
             }
             if fields.has("ringing") {
                 zones

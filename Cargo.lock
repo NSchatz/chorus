@@ -121,6 +121,7 @@ name = "chorus-control"
 version = "0.1.0"
 dependencies = [
  "chorus-protocol",
+ "chorus-schedule",
  "chorus-server",
 ]
 

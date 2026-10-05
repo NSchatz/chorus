@@ -910,6 +910,46 @@ pub struct SleepTimer {
     pub target: String,
     /// Minutes asked for.
     pub minutes: u32,
+    /// (ADR 0194) Whole seconds left, rounded up, as the server's schedule
+    /// runtime last counted them; `None` in a model nothing counts down.
+    pub remaining_s: Option<u32>,
+}
+
+/// (ADR 0194) What kind of input an offered input is, in the sync protocol's
+/// own words for a source endpoint's inputs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputKind {
+    /// An analogue line input.
+    LineIn,
+    /// An optical (TOSLINK) S/PDIF input.
+    Optical,
+    /// HDMI ARC or eARC from a TV.
+    HdmiArc,
+}
+
+impl InputKind {
+    /// Every kind, in the protocol's order.
+    pub const ALL: [InputKind; 3] = [InputKind::LineIn, InputKind::Optical, InputKind::HdmiArc];
+
+    /// The catalog's name for it, which is the protocol's.
+    pub fn name(self) -> &'static str {
+        match self {
+            InputKind::LineIn => "line_in",
+            InputKind::Optical => "optical",
+            InputKind::HdmiArc => "hdmi_arc",
+        }
+    }
+
+    /// Read the name back.
+    pub fn from_name(name: &str) -> Option<InputKind> {
+        InputKind::ALL.into_iter().find(|k| k.name() == name)
+    }
+
+    /// Whether it is a TV's input (`docs/inputs.md`): its audio is the
+    /// picture's, and the TV going to standby stops what plays it.
+    pub fn is_tv(self) -> bool {
+        matches!(self, InputKind::Optical | InputKind::HdmiArc)
+    }
 }
 
 #[cfg(test)]

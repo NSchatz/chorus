@@ -311,6 +311,12 @@ pub struct LineIn {
 
 impl LineIn {
     pub fn start(audio: &str, endpoint: &str, signal: bool) -> LineIn {
+        LineIn::start_as(audio, endpoint, signal, SourceKind::LineIn)
+    }
+
+    /// [`LineIn::start`] with the input offered as `kind` (a TV's optical or
+    /// HDMI ARC input is a line-in of another kind to everything here).
+    pub fn start_as(audio: &str, endpoint: &str, signal: bool, kind: SourceKind) -> LineIn {
         let player = Player::connect(audio, endpoint, roles::SOURCE);
         let (session, messages) = player.split();
         let mut writer = session.writer;
@@ -333,7 +339,7 @@ impl LineIn {
                 let offer = |s: bool| {
                     V2Message::SourceOffer(SourceOffer {
                         source_id: 1,
-                        kind: SourceKind::LineIn,
+                        kind,
                         signal: s,
                         name: "line-1".to_string(),
                         reason: 0,
