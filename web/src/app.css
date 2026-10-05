@@ -16,3 +16,23 @@ body {
   font-size: var(--body-size);
   line-height: var(--body-leading);
 }
+
+/* The least width of a slider, in every mode: two controls wide. Narrower
+ * than this a row wraps and the slider takes a line of its own. */
+:root {
+  --slider-min-width: calc(var(--control-basis) + var(--control-basis));
+}
+
+/* The kiosk's sizes (a wall tablet, read and touched at arm's length; K86:
+ * big touch targets). Tokens of the component tier like the ones of
+ * tokens.css, kept here because tokens.css is the control page's file carried
+ * over whole. chorus-app sets the ordinary tokens to these under
+ * mode="kiosk": every control is then painted at a border box of at least 64
+ * by 64 CSS pixels, against the 44 by 44 of the ordinary app.
+ */
+:root {
+  --kiosk-control-size: var(--space-64);
+  --kiosk-body-size: var(--text-20);
+  --kiosk-meta-size: var(--text-17);
+  --kiosk-heading-size: var(--text-20);
+}

@@ -121,9 +121,14 @@ export class ChorusRoomCard extends LitElement {
     label {
       min-width: var(--label-min-width);
     }
+    /* The slider keeps a width a finger can travel: in a narrow card, or at
+     * the kiosk's sizes, the row wraps and the slider takes a line. */
+    .row {
+      flex-wrap: wrap;
+    }
     input[type="range"] {
-      flex: 1;
-      min-width: var(--shrink-min);
+      flex: 1 1 var(--slider-min-width);
+      min-width: var(--slider-min-width);
       height: var(--control-size);
       margin: var(--reset-margin);
       accent-color: var(--accent);
