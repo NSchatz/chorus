@@ -92,3 +92,24 @@ are the bytes they were (`docs/control-plane.md`, "The state message").
 - With several sleep timers running, subscribers get up to one more state a minute for each.
 - Not done here: sound range bounds in the state (the catalog's documented bounds serve),
   snooze, and any new command.
+
+## What was read
+
+Added 2026-10-05, after the record merged without this section; the sources are the ones the
+record's own text names, all as they stood on 2026-10-05.
+
+- `docs/control-plane.md` ("The state message": a reader takes the members it knows by name,
+  and a member is written only when there is something to say).
+- `crates/schedule/src/chime.rs` (`CHIMES`, the list of built-in chimes).
+- `crates/control/src/zones.rs`, `crates/control/src/rooms.rs` and
+  `crates/control/src/catalog.rs` (the room model and the state builder: what `sleep[]`,
+  `inputs[]` and `input_labels[]` carried, and that the catalog checks only the spelling of
+  `chime:<name>`).
+- `crates/server/src/schedule_runtime.rs` (the sleep countdown on the monotonic clock),
+  `crates/server/src/linein.rs` and `crates/server/src/upnp.rs` (the line-in registry and the
+  kind already read from it for the OpenHome source list), `crates/server/src/conductor.rs`
+  (where an input is offered and withdrawn).
+- `crates/protocol` (`SourceKind`: `line_in`, `optical`, `hdmi_arc`).
+- `fixtures/control/v2/` (`state-rich.json` and the other committed state vectors, which did
+  not move).
+- The record names no source outside this repository.
