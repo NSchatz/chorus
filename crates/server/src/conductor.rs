@@ -279,7 +279,7 @@ pub struct Conductor {
     announcer: Option<Arc<crate::announce::Announcer>>,
     /// (voice, P8) What each voice session was last told, and its buffer.
     voice: Option<Arc<crate::voice::Voice>>,
-    /// (room correction, ADR 0000) The measurement sweeps, which this
+    /// (room correction, ADR 0195) The measurement sweeps, which this
     /// thread routes, starts and ends.
     measurer: Option<Arc<crate::measure::Measurer>>,
 }
@@ -336,7 +336,7 @@ impl Conductor {
         self
     }
 
-    /// (ADR 0000) Route, start and end the measurement sweeps of `measurer`
+    /// (ADR 0195) Route, start and end the measurement sweeps of `measurer`
     /// as part of every pass (`crate::measure`).
     pub fn with_measurer(mut self, measurer: Arc<crate::measure::Measurer>) -> Conductor {
         self.measurer = Some(measurer);
@@ -413,7 +413,7 @@ impl Conductor {
         if self.announcer.as_ref().is_some_and(|a| a.any_live()) {
             timeout = RETRY;
         }
-        // (ADR 0000) While a measurement sweep plays: its end wakes nobody.
+        // (ADR 0195) While a measurement sweep plays: its end wakes nobody.
         if self.measurer.as_ref().is_some_and(|m| m.any_live()) {
             timeout = RETRY;
         }
@@ -476,7 +476,7 @@ impl Conductor {
             .as_ref()
             .map(|a| a.routes())
             .unwrap_or_default();
-        // (ADR 0000) The one room a measurement sweep plays in: its player
+        // (ADR 0195) The one room a measurement sweep plays in: its player
         // sessions hear the sweep's stream, from the command to the end of
         // the program, whatever else their room would hear (an announcement
         // mixed over that room meanwhile is not heard there).
@@ -522,7 +522,7 @@ impl Conductor {
         if let Some(announcer) = &self.announcer {
             report.owed += announcer.direct(&snapshot);
         }
-        // (ADR 0000) And only now, with the room's sessions on the sweep's
+        // (ADR 0195) And only now, with the room's sessions on the sweep's
         // stream, is the audio thread told to start the sweep.
         if let Some(measurer) = &self.measurer {
             report.owed += measurer.direct();
@@ -656,7 +656,7 @@ impl Conductor {
             let why = if !group.low_latency {
                 Some("rule")
             } else if measured.as_deref() == Some(room.as_str()) {
-                // (ADR 0000) A room a measurement sweep plays in hears the
+                // (ADR 0195) A room a measurement sweep plays in hears the
                 // sweep's stream, which is a slot-path stream.
                 Some("measuring")
             } else if listeners > 1 {
@@ -789,7 +789,7 @@ impl Conductor {
         }
     }
 
-    /// (ADR 0000) End the measurement sweep when it is over, after the
+    /// (ADR 0195) End the measurement sweep when it is over, after the
     /// schedule ran (so an alarm that fired in this pass calls it off), and
     /// tell the runtime: a room it holds must not be put back at the
     /// sweep's volume. Returns how many commands the audio thread is owed.

@@ -1,4 +1,4 @@
-# 0000: the room-correction sweep plays in one room on a stream of its own beside the stream slots, so no source changes and the room's group keeps playing; its level is the room's volume, clamped to the effective limit, and the state says while it plays and how it ended
+# 0195: the room-correction sweep plays in one room on a stream of its own beside the stream slots, so no source changes and the room's group keeps playing; its level is the room's volume, clamped to the effective limit, and the state says while it plays and how it ended
 
 - Status: accepted, 2026-10-05
 - Decided by: the task for the scope ("let a controller ask the server to play the measurement

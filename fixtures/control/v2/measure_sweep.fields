@@ -3,7 +3,7 @@
 # Encoding these field values must produce exactly measure_sweep.json, and decoding
 # measure_sweep.json must recover exactly these field values.
 #
-# (room correction, ADR 0000) Play the measurement sweep in one room, once, at the room's own volume.
+# (room correction, ADR 0195) Play the measurement sweep in one room, once, at the room's own volume.
 #
 # Format: one "key = value" per line. A line whose first non-space character is
 # '#' is a comment; a '#' anywhere else is an ordinary character.

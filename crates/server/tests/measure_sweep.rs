@@ -1,4 +1,4 @@
-//! The measurement sweep on the real binary (ADR 0000; the playback half of
+//! The measurement sweep on the real binary (ADR 0195; the playback half of
 //! the phone-microphone measurement, `docs/room-correction.md`).
 //!
 //! Every test runs the real `chorus-server` with a control plane and sends

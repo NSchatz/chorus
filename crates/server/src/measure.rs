@@ -1,5 +1,5 @@
 //! The measurement sweep: the room-correction sweep played in one room,
-//! once, and the room given back to what its group plays (ADR 0000; the
+//! once, and the room given back to what its group plays (ADR 0195; the
 //! playback half of the phone-microphone measurement,
 //! `docs/room-correction.md`).
 //!

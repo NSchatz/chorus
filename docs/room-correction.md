@@ -164,7 +164,7 @@ one sweep length late, peaking at the band's share of the spectrum ((f2 - f1) / 
 
 The playback half of the measurement is built: the control catalog's `measure_sweep` command
 (`docs/control-plane.md`, "Room correction: the `measure_sweep` command";
-`docs/decisions/0000-the-measurement-sweep-plays-on-a-stream-of-its-own.md`).
+`docs/decisions/0195-the-measurement-sweep-plays-on-a-stream-of-its-own.md`).
 
 - **What is played** is `Sweep::recommended` at the stream's own rate, the samples
   `Sweep::signal` returns, written at the stream's sample format (16-bit: `round(x * 32768)`)

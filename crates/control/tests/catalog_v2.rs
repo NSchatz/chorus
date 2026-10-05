@@ -317,7 +317,7 @@ fn server_from(fields: &Fields) -> Zones {
             .unwrap_or_else(|e| panic!("{}: {}", text, e));
         n += 1;
     }
-    // (ADR 0000) The measurement sweep the server started after the
+    // (ADR 0195) The measurement sweep the server started after the
     // commands: `measuring = <zone>` (at the room's own volume) or
     // `measuring = <zone> <volume>`, with the lengths the server plays
     // (500 ms of silence, the 5 s sweep, 1 s of silence), and

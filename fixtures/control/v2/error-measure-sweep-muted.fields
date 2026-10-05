@@ -4,7 +4,7 @@
 # built on a server configured with these zones, and encoding the refusal must
 # produce exactly error-measure-sweep-muted.json. Nothing of it is applied.
 #
-# (room correction, ADR 0000) A sweep for a muted room, where it would be silence.
+# (room correction, ADR 0195) A sweep for a muted room, where it would be silence.
 #
 # Format: one "key = value" per line. A line whose first non-space character is
 # '#' is a comment; a '#' anywhere else is an ordinary character.

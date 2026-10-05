@@ -31,7 +31,7 @@
 //!   announcement mixes (ADR 0175, `crate::mixer`), as many as the server
 //!   was built with: fanout `S + 1 + m` is mix `m`, the stream the player
 //!   sessions of the rooms an announcement is playing in hear while it
-//!   lasts. Last comes the measurement sweep's stream (ADR 0000,
+//!   lasts. Last comes the measurement sweep's stream (ADR 0195,
 //!   `crate::sweep`), when the server was built with one: the stream the
 //!   player sessions of the one room being measured hear while its sweep
 //!   lasts.
@@ -202,7 +202,7 @@ impl Router {
     }
 
     /// The slot shape with `mixes` announcement mixes and, after them, the
-    /// measurement sweep's stream (ADR 0000).
+    /// measurement sweep's stream (ADR 0195).
     pub fn slotted_with_mixes_and_sweep(slots: usize, mixes: usize) -> Router {
         let fanouts = (0..=slots + mixes + 1)
             .map(|_| Arc::new(Fanout::new()))

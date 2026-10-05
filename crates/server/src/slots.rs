@@ -77,7 +77,7 @@
 //! # The measurement sweep
 //!
 //! Last, under the same grid guard, the measurement sweep's stream
-//! (`crate::sweep`, ADR 0000), when the router carries one: silence, and
+//! (`crate::sweep`, ADR 0195), when the router carries one: silence, and
 //! from a [`SlotCommand::Sweep`] start to the program's end the
 //! room-correction sweep with the silence around it, on this tick's
 //! sequence and timestamp. Only the measured room's player sessions are on
@@ -179,7 +179,7 @@ pub enum SlotCommand {
     /// (announcements, ADR 0175) A change to one announcement mix
     /// (`crate::mixer`).
     Mix(MixCommand),
-    /// (room correction, ADR 0000) A change to the measurement sweep's
+    /// (room correction, ADR 0195) A change to the measurement sweep's
     /// stream (`crate::sweep`).
     Sweep(SweepCommand),
 }
@@ -228,7 +228,7 @@ pub struct SlotMedia {
     /// announcement mix (`crate::mixer`): mix `m` is `mixes[m]`, and it is
     /// cut only when the router carries a fanout for it.
     pub mixes: Vec<Arc<MixPort>>,
-    /// (room correction, ADR 0000) The measurement sweep's program,
+    /// (room correction, ADR 0195) The measurement sweep's program,
     /// rendered at the server's format, and what the audio thread says
     /// about its stream (`crate::sweep`). It is cut only when the router
     /// carries a fanout for it.
@@ -394,7 +394,7 @@ pub fn serve_slots(
             )
         })
         .collect();
-    // (ADR 0000) The measurement sweep's player, when the router carries
+    // (ADR 0195) The measurement sweep's player, when the router carries
     // its fanout: the program is rendered already, and its one chunk
     // buffer is allocated here.
     let mut sweep: Option<(usize, SweepPlayer)> = match (router.sweep_route(), &media.sweep) {

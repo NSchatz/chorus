@@ -3,7 +3,7 @@
 # A server configured with these zones, after the commands below in order,
 # sends exactly state-measuring.json as its state.
 #
-# (room correction, ADR 0000) The state while a measurement sweep plays in the kitchen at 0.300 (`measuring = <zone> <volume>`): the room's volume is the sweep's and `measurement` names it.
+# (room correction, ADR 0195) The state while a measurement sweep plays in the kitchen at 0.300 (`measuring = <zone> <volume>`): the room's volume is the sweep's and `measurement` names it.
 #
 # Format: one "key = value" per line. A line whose first non-space character is
 # '#' is a comment; a '#' anywhere else is an ordinary character.

@@ -4,7 +4,7 @@
 # built on a server configured with these zones, and encoding the refusal must
 # produce exactly error-measure-sweep-no-speaker.json. Nothing of it is applied.
 #
-# (room correction, ADR 0000) A sweep for a room no speaker is attached to: the server cannot play there.
+# (room correction, ADR 0195) A sweep for a room no speaker is attached to: the server cannot play there.
 #
 # Format: one "key = value" per line. A line whose first non-space character is
 # '#' is a comment; a '#' anywhere else is an ordinary character.

@@ -1,4 +1,4 @@
-//! The `measure_sweep` command in the catalog and the room model (ADR 0000):
+//! The `measure_sweep` command in the catalog and the room model (ADR 0195):
 //! which messages decode, what the model refuses by name (an unknown room, a
 //! room measuring, a room no speaker is attached to, a muted room, a room an
 //! alarm rings in), what starting a sweep changes and what its end puts

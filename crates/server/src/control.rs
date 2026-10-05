@@ -294,7 +294,7 @@ pub struct ControlState {
     /// ([`ControlState::announce_through`]); a state without one refuses
     /// the command by name.
     announcer: OnceLock<Arc<crate::announce::Announcer>>,
-    /// (room correction, ADR 0000) What carries out a `measure_sweep`
+    /// (room correction, ADR 0195) What carries out a `measure_sweep`
     /// ([`ControlState::measure_through`]); a state without one refuses the
     /// command by name.
     measurer: OnceLock<Arc<crate::measure::Measurer>>,
@@ -555,19 +555,19 @@ impl ControlState {
         restored
     }
 
-    /// (ADR 0000) Carry out `measure_sweep` commands through `measurer`.
+    /// (ADR 0195) Carry out `measure_sweep` commands through `measurer`.
     /// Called once, at start, before any command is served.
     pub fn measure_through(&self, measurer: Arc<crate::measure::Measurer>) {
         let _ = self.measurer.set(measurer);
     }
 
-    /// (ADR 0000) Whether the room model would let a measurement sweep play
+    /// (ADR 0195) Whether the room model would let a measurement sweep play
     /// in room `zone` (`Zones::measure_check`).
     pub fn measure_check(&self, zone: &str) -> Result<(), Refusal> {
         self.locked().zones.measure_check(zone)
     }
 
-    /// (ADR 0000) The room model's half of starting a measurement sweep
+    /// (ADR 0195) The room model's half of starting a measurement sweep
     /// (`Zones::measure_begin`), committed like a command: persisted (the
     /// room's volume may have moved), fanned out and counted as applied.
     /// The schedule runtime is NOT told, as it is of a person's command: a
@@ -597,7 +597,7 @@ impl ControlState {
             .ok_or_else(|| Refusal::rejected("t", "the sweep did not start".to_string()))
     }
 
-    /// (ADR 0000) The end of measurement sweep `id` (`Zones::measure_end`):
+    /// (ADR 0195) The end of measurement sweep `id` (`Zones::measure_end`):
     /// the state says how it ended and the room's volume goes back to
     /// `before` when it is still `set`. Never refused for want of a slot
     /// ([`ControlState::runtime`]). Whether anything changed.
@@ -617,7 +617,7 @@ impl ControlState {
         changed
     }
 
-    /// (ADR 0000) The alarm ringing in room `zone`, if any
+    /// (ADR 0195) The alarm ringing in room `zone`, if any
     /// (`Zones::measure_watch`).
     pub fn measure_watch(&self, zone: &str) -> Option<String> {
         self.locked().zones.measure_watch(zone)
@@ -1093,7 +1093,7 @@ impl ControlState {
                 .announce(self, target, url, *volume)
                 .map_err(|r| r.at(version));
         }
-        // (ADR 0000) A measurement sweep is carried out by the measurer,
+        // (ADR 0195) A measurement sweep is carried out by the measurer,
         // which checks that somebody can play it before the room model
         // changes: it commits through `measure_begin`.
         if let Command::MeasureSweep { zone, volume } = &command {

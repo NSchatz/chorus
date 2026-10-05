@@ -1,5 +1,5 @@
 //! The measurement sweep's stream: the room-correction sweep, cut on the
-//! audio thread beside the slots (ADR 0000).
+//! audio thread beside the slots (ADR 0195).
 //!
 //! # What it is
 //!

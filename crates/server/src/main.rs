@@ -954,7 +954,7 @@ fn main() -> ExitCode {
         // (ADR 0175) Two announcement mixes a player: one for the clip a
         // player plays and one for the mix whose music is still coming back
         // when that player's next clip starts.
-        // (ADR 0000) And, last, the measurement sweep's stream.
+        // (ADR 0195) And, last, the measurement sweep's stream.
         Router::slotted_with_mixes_and_sweep(config.slots, 2 * config.players)
     } else {
         Router::single(Arc::new(chorus_server::stream::Fanout::new()))
@@ -1008,7 +1008,7 @@ fn main() -> ExitCode {
         media.mixes = (0..router.mixes())
             .map(|_| Arc::new(chorus_server::mixer::MixPort::new()))
             .collect();
-        // (ADR 0000) The measurement sweep's program (the silence before
+        // (ADR 0195) The measurement sweep's program (the silence before
         // it, `Sweep::recommended` at this server's rate on every channel,
         // the silence after it), rendered here so the audio thread
         // allocates nothing for it, and what that thread says about it.
@@ -1510,7 +1510,7 @@ fn main() -> ExitCode {
         announcer
     });
 
-    // (ADR 0000) The measurer: what carries out the `measure_sweep`
+    // (ADR 0195) The measurer: what carries out the `measure_sweep`
     // command, on the worker that takes the command (the start) and on the
     // conductor (the routing and the end). No thread. Only a server with
     // stream slots has the sweep's stream; without, the command is refused

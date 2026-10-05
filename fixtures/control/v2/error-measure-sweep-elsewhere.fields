@@ -4,7 +4,7 @@
 # built on a server configured with these zones, and encoding the refusal must
 # produce exactly error-measure-sweep-elsewhere.json. Nothing of it is applied.
 #
-# (room correction, ADR 0000) A sweep while another room plays one: a server plays one sweep at a time.
+# (room correction, ADR 0195) A sweep while another room plays one: a server plays one sweep at a time.
 #
 # Format: one "key = value" per line. A line whose first non-space character is
 # '#' is a comment; a '#' anywhere else is an ordinary character.

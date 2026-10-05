@@ -3,7 +3,7 @@
 # A server configured with these zones, after the commands below in order,
 # sends exactly state-measured.json as its state.
 #
-# (room correction, ADR 0000) The state after that sweep played to its end (`measurement_ended = finished`): the room has its own volume back and `measurement` says how the sweep ended.
+# (room correction, ADR 0195) The state after that sweep played to its end (`measurement_ended = finished`): the room has its own volume back and `measurement` says how the sweep ended.
 #
 # Format: one "key = value" per line. A line whose first non-space character is
 # '#' is a comment; a '#' anywhere else is an ordinary character.

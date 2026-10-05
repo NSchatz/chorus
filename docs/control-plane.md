@@ -1123,7 +1123,7 @@ again. Accepting the recording and fitting it are not in this catalog yet.
 | `volume` | optional; the volume the room plays the sweep at, **clamped to the room's effective limit** like every volume path. Absent, the room plays it at its own volume, which is at or below that limit already |
 
 **How the sweep reaches the room**
-(`docs/decisions/0000-the-measurement-sweep-plays-on-a-stream-of-its-own.md`).
+(`docs/decisions/0195-the-measurement-sweep-plays-on-a-stream-of-its-own.md`).
 A server with stream slots (`--slots`) carries one more stream on the slots'
 grid, the sweep's. From the command to the end of the sweep's program the
 player sessions of the room are routed to that stream instead of their
@@ -1301,7 +1301,7 @@ of each, `fixtures/control/v2/state-empty.json` the empty house):
 | `wake_words` | (voice) **written only by a server that runs a wake-word model**, after everything else: `[{"id","phrase"}]`, every model in the order the build lists them: `id` (the model's name, lower-case letters, digits and underscores) and `phrase` (what it listens for, as a `voice_wake` names it). A fact about the build: it does not change while the server runs and is never persisted (`fixtures/control/v2/state-voice.json`). No run and no wake word is ever in a state |
 | `input_kinds[]` | (ADR 0194) **written only when the server said the kind of at least one offered input** (`chorus-server` says every one), after `soloist`, `wake_words` and `announcements`: one entry for each entry of `inputs`, in its order: `input` (`<endpoint>/<input>`), `kind` (`line_in`, `optical` or `hdmi_arc`: the sync protocol's kinds of source input, `docs/protocol.md`) and `tv` (`true` for a TV's input, which is `optical` and `hdmi_arc`, and `false` for a line-in: `docs/inputs.md`). An input that is withdrawn takes its entry with it. Never persisted |
 | `chimes[]` | (ADR 0194) **written only by a server that runs the schedule runtime**, after `input_kinds`: the names of the built-in chimes, in the schedule library's order (`docs/chimes.md`), each one what an alarm's or a group's `chime:<name>` may name. A fact about the build, read from the library's own list: never persisted and never changed by a command |
-| `measurement` | (room correction, ADR 0000) **written only once the server has played a measurement sweep**, last: the sweep that is playing, or the last one that played: `id` (counted from 1 since the server started), `zone`, `state` (`playing`, `finished` or `cancelled`), `volume` (what the room plays it at), `lead_ms`, `sweep_ms`, `tail_ms` (the silence before the sweep, the sweep and the silence after it), and `reason` on a cancelled one. Never persisted and never in the v1 shape (`fixtures/control/v2/state-measuring.json`, `state-measured.json`) |
+| `measurement` | (room correction, ADR 0195) **written only once the server has played a measurement sweep**, last: the sweep that is playing, or the last one that played: `id` (counted from 1 since the server started), `zone`, `state` (`playing`, `finished` or `cancelled`), `volume` (what the room plays it at), `lead_ms`, `sweep_ms`, `tail_ms` (the silence before the sweep, the sweep and the silence after it), and `reason` on a cancelled one. Never persisted and never in the v1 shape (`fixtures/control/v2/state-measuring.json`, `state-measured.json`) |
 
 `speakers` and `key_changes` come after every member the v2 state already had
 and are absent, not empty, on a server that has adopted nothing, so

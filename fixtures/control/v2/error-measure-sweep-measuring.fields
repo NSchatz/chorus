@@ -4,7 +4,7 @@
 # built on a server configured with these zones, and encoding the refusal must
 # produce exactly error-measure-sweep-measuring.json. Nothing of it is applied.
 #
-# (room correction, ADR 0000) A sweep for a room that is playing one already (`measuring = <zone>`: the sweep the server started before the input).
+# (room correction, ADR 0195) A sweep for a room that is playing one already (`measuring = <zone>`: the sweep the server started before the input).
 #
 # Format: one "key = value" per line. A line whose first non-space character is
 # '#' is a comment; a '#' anywhere else is an ordinary character.

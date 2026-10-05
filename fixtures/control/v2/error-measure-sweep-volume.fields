@@ -4,7 +4,7 @@
 # built on a server configured with these zones, and encoding the refusal must
 # produce exactly error-measure-sweep-volume.json. Nothing of it is applied.
 #
-# (room correction, ADR 0000) A sweep at a volume outside 0.000 to 1.000.
+# (room correction, ADR 0195) A sweep at a volume outside 0.000 to 1.000.
 #
 # Format: one "key = value" per line. A line whose first non-space character is
 # '#' is a comment; a '#' anywhere else is an ordinary character.

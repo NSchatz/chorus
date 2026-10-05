@@ -355,13 +355,13 @@ pub struct Zones {
     /// (ADR 0194) The kind of each offered input whose kind the server
     /// said, sorted by input. Never persisted.
     input_kinds: Vec<(InputId, InputKind)>,
-    /// (room correction, ADR 0000) The measurement sweep the server is
+    /// (room correction, ADR 0195) The measurement sweep the server is
     /// playing, or the last one it played, with its outcome, written into
     /// the state as `measurement` once there has been one. Never persisted.
     measurement: Option<Measurement>,
 }
 
-/// (ADR 0000) Where a measurement sweep is: what a caller of `measure_sweep`
+/// (ADR 0195) Where a measurement sweep is: what a caller of `measure_sweep`
 /// waits on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MeasurementState {
@@ -385,7 +385,7 @@ impl MeasurementState {
     }
 }
 
-/// (ADR 0000) One measurement sweep as the state message carries it.
+/// (ADR 0195) One measurement sweep as the state message carries it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Measurement {
     /// Its number, counted from 1 over the server's run.
@@ -425,7 +425,7 @@ impl Measurement {
     }
 }
 
-/// (ADR 0000) What [`Zones::measure_begin`] changed, which is what the end
+/// (ADR 0195) What [`Zones::measure_begin`] changed, which is what the end
 /// of the sweep puts back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Measured {
@@ -2742,7 +2742,7 @@ impl Zones {
         &self.announcements
     }
 
-    /// (ADR 0000) Whether a measurement sweep may play in room `zone` now,
+    /// (ADR 0195) Whether a measurement sweep may play in room `zone` now,
     /// or the refusal that says why not, by name: an unknown room (`zone`),
     /// `measuring` for a room that is playing a sweep already and for any
     /// room while another plays one (a server plays one sweep at a time),
@@ -2814,7 +2814,7 @@ impl Zones {
         Ok(())
     }
 
-    /// (ADR 0000) Start a measurement sweep in room `zone`: with `volume`
+    /// (ADR 0195) Start a measurement sweep in room `zone`: with `volume`
     /// the room is set to it, clamped to the room's effective limit like
     /// every volume path, and the state names the sweep as `playing`, at the
     /// volume the room has now and with the lengths the server gave
@@ -2850,7 +2850,7 @@ impl Zones {
         Ok(Measured { id, before, set })
     }
 
-    /// (ADR 0000) The end of measurement sweep `id`: the state says how it
+    /// (ADR 0195) The end of measurement sweep `id`: the state says how it
     /// ended (`finished`, or `cancelled` with `reason`), and the room's
     /// volume goes back to `before` when it is still the one the sweep set
     /// (`set`), clamped like every volume; a volume somebody changed
@@ -2883,7 +2883,7 @@ impl Zones {
         true
     }
 
-    /// (ADR 0000) The alarm ringing in room `zone`, if any: what calls a
+    /// (ADR 0195) The alarm ringing in room `zone`, if any: what calls a
     /// sweep off.
     pub fn measure_watch(&self, zone: &str) -> Option<String> {
         self.alarms
@@ -2893,7 +2893,7 @@ impl Zones {
             .map(|alarm| alarm.id.clone())
     }
 
-    /// (ADR 0000) The measurement sweep the state names.
+    /// (ADR 0195) The measurement sweep the state names.
     pub fn measurement(&self) -> Option<&Measurement> {
         self.measurement.as_ref()
     }
@@ -3201,7 +3201,7 @@ impl Zones {
         if !self.chimes.is_empty() {
             state.push(("chimes".to_string(), texts(&self.chimes)));
         }
-        // (ADR 0000) The measurement sweep, written once there has been
+        // (ADR 0195) The measurement sweep, written once there has been
         // one, after everything else for the same reason.
         if let Some(measurement) = &self.measurement {
             state.push(("measurement".to_string(), measurement.value()));
