@@ -219,6 +219,8 @@ export function receiversOf(state) {
 //   link      what it reported its link as ("wired", "wireless", "unknown")
 //   key       the fingerprint of the key it is pinned to, or null
 //   roles     its latest `hello`'s roles, by name
+//   firmware  what it runs and what it is doing about an update
+//             (firmwareOf), or null for a speaker that reported none
 // `isNew` is a speaker nobody has dealt with yet: adopted, not named and in
 // no room.
 export function speakersOf(state) {
@@ -239,8 +241,76 @@ export function speakersOf(state) {
         link: textOrNull(speaker.link) ?? "unknown",
         key: textOrNull(speaker.key),
         roles: (Array.isArray(speaker.roles) ? speaker.roles : []).filter((role) => typeof role === "string" && role),
+        firmware: firmwareOf(speaker.firmware),
       };
     });
+}
+
+const countOrZero = (value) => (Number.isSafeInteger(value) && value > 0 ? value : 0);
+
+// A speaker's `firmware` (docs/control-plane.md, "Firmware: staged images and
+// explicit installs"), written for a speaker that takes updates and has said
+// what it runs: { version, board, slot, state, reason, updateAvailable,
+// image, imageVersion, received, size }, or null where there is none.
+//   version, board, slot  what it runs, as it reported them (slot null when
+//                         it did not say)
+//   state           what it is doing (`idle`, `requested`, `receiving`,
+//                   `verified`, `pending_verify`) or how the last install
+//                   this server process saw ended (`confirmed`,
+//                   `rolled_back`, `refused`, `interrupted`, `cancelled`),
+//                   in the server's own word
+//   reason          the server's word for why, or null for `none`
+//   updateAvailable the server's own `update_available`, true only when the
+//                   server said true: the app never works it out
+//   image, imageVersion, received, size  the install the state speaks of
+function firmwareOf(firmware) {
+  if (!firmware || typeof firmware !== "object") return null;
+  const reason = textOrNull(firmware.reason);
+  return {
+    version: textOrNull(firmware.version),
+    board: textOrNull(firmware.board),
+    slot: Number.isSafeInteger(firmware.slot) ? firmware.slot : null,
+    state: textOrNull(firmware.state) ?? "idle",
+    reason: reason === "none" ? null : reason,
+    updateAvailable: firmware.update_available === true,
+    image: textOrNull(firmware.image),
+    imageVersion: textOrNull(firmware.image_version),
+    received: countOrZero(firmware.received),
+    size: countOrZero(firmware.size),
+  };
+}
+
+// The staged firmware images (the state's `firmware.images`, written only by
+// a server started with a firmware directory), in the server's order:
+// { name, version, board, size, verified, reason }, or null on a server whose
+// state has no `firmware`: such a server installs nothing, and the app shows
+// no update control for it.
+//   verified  the server's verdict is `verified`: only such an image is ever
+//             offered to a speaker
+//   reason    why a refused one was refused, in the server's word
+export function firmwareImagesOf(state) {
+  const firmware = state && state.firmware && typeof state.firmware === "object" ? state.firmware : null;
+  if (!firmware) return null;
+  return (Array.isArray(firmware.images) ? firmware.images : [])
+    .filter((image) => image && typeof image === "object" && typeof image.name === "string" && image.name)
+    .map((image) => ({
+      name: image.name,
+      version: textOrNull(image.version),
+      board: textOrNull(image.board),
+      size: countOrZero(image.size),
+      verified: image.verdict === "verified",
+      reason: textOrNull(image.reason),
+    }));
+}
+
+// The staged images the server's `update_available` speaks of for a speaker:
+// the verified ones built for its board that carry another version than it
+// runs (docs/firmware-updates.md, "What update available means"). Empty for a
+// speaker the server did not say `update_available` of: the flag is the
+// server's, and this only finds the images it is about.
+export function updatesFor(firmware, images) {
+  if (!firmware || !firmware.updateAvailable || !Array.isArray(images)) return [];
+  return images.filter((image) => image.verified && image.board === firmware.board && image.version !== firmware.version);
 }
 
 // The handshakes refused for a changed key (the state's `key_changes`, the

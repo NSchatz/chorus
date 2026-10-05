@@ -16,6 +16,15 @@
 // cannot honour ... the input stays offered"): the group that took the input
 // hears silence and the input stays offered. Nothing in the protocol asks a
 // session for a keepalive, and the server asks no `time_sync` of it.
+//
+// `updatableSpeaker` is the same session for a speaker that takes firmware
+// updates ("Firmware update": the `ota` feature, `firmware_offer`,
+// `firmware_chunk`, `firmware_status`). It is a script, not a board and not
+// the C endpoint: it keeps the image it is sent in memory, checks its
+// SHA-256 and says `verified`, and has no flash, no slots and no bootloader.
+// A "restart" is its socket closing, and the next boot is a new session under
+// the same key that says what the test tells it to. The real update unit
+// against the real server is crates/server/tests/firmware_install.rs.
 
 import {
   createCipheriv,
@@ -39,6 +48,9 @@ const HANDSHAKE_FINISH = 0x22;
 const SESSION_REFUSED = 0x23;
 const SECURE_RECORD = 0x24;
 const SOURCE_OFFER = 0x36;
+const FIRMWARE_OFFER = 0x18;
+const FIRMWARE_CHUNK = 0x19;
+const FIRMWARE_STATUS = 0x1a;
 
 const ROLE_PLAYER = 1 << 0;
 const ROLE_SOURCE = 1 << 4;
@@ -179,8 +191,10 @@ function hello(roles, name, software) {
   return frame(HELLO, Buffer.concat([head, shortText(name), shortText(software)]));
 }
 
-function capabilities({ codecs, sampleFormats, maxChannels, ratesHz, bufferMs, latencyNs, leds, bands }) {
-  const payload = Buffer.alloc(4 + 4 * ratesHz.length + 9);
+// `features` is the trailing byte, written only when a bit is set (bit 1 is
+// `ota`): without it the payload is what it was before the field existed.
+export function capabilities({ codecs, sampleFormats, maxChannels, ratesHz, bufferMs, latencyNs, leds, bands, features = 0 }) {
+  const payload = Buffer.alloc(4 + 4 * ratesHz.length + 9 + (features ? 1 : 0));
   payload.set([codecs, sampleFormats, maxChannels, ratesHz.length]);
   let at = 4;
   for (const rate of ratesHz) at = payload.writeUInt32BE(rate, at);
@@ -188,7 +202,39 @@ function capabilities({ codecs, sampleFormats, maxChannels, ratesHz, bufferMs, l
   at = payload.writeUInt32BE(latencyNs, at);
   at = payload.writeUInt16BE(leds, at);
   payload[at] = bands;
+  if (features) payload[at + 1] = features;
   return frame(CAPABILITIES, payload);
+}
+
+const FEATURE_OTA = 1 << 1;
+const FIRMWARE_STATES = ["idle", "receiving", "verified", "pending_verify", "confirmed", "rolled_back", "refused"];
+const FIRMWARE_REASONS = ["none", "too_large", "bad_digest", "write_failed", "busy", "wrong_board", "not_confirmed", "bad_offset", "medium_refused"]; // prettier-ignore
+
+// "0x1A firmware status": what runs (`version`, `board`, `slot`) and how the
+// transfer it names stands.
+export function firmwareStatus({ transfer = 0, state = "idle", reason = "none", received = 0, version, board, slot = 0, imageVersion = "" }) {
+  const head = Buffer.alloc(10);
+  head.writeUInt32BE(transfer, 0);
+  head[4] = FIRMWARE_STATES.indexOf(state);
+  head[5] = FIRMWARE_REASONS.indexOf(reason);
+  head.writeUInt32BE(received, 6);
+  return frame(
+    FIRMWARE_STATUS,
+    Buffer.concat([head, shortText(version), shortText(board), Buffer.from([slot]), shortText(imageVersion)]),
+  );
+} // prettier-ignore
+
+// "0x18 firmware offer", read: transfer 0 is the cancel.
+function readOffer(payload) {
+  const versionEnd = 43 + payload[42];
+  return {
+    transfer: payload.readUInt32BE(0),
+    size: payload.readUInt32BE(4),
+    sha256: Buffer.from(payload.subarray(8, 40)),
+    chunkBytes: payload.readUInt16BE(40),
+    version: payload.subarray(43, versionEnd).toString("utf8"),
+    board: payload.subarray(versionEnd + 1, versionEnd + 1 + payload[versionEnd]).toString("utf8"),
+  };
 }
 
 function sourceOffer(sourceId, kind, signal, name) {
@@ -265,17 +311,20 @@ function frameReader(socket) {
   };
 }
 
-// Connect to the server's audio port as endpoint `endpoint` (a fresh key
-// every time, so give each server an id once: a second session under the same
-// id is a changed key, refused), open the session, and offer one line-in with
-// a signal present. `name` is the offer's name: the server lists the input as
-// `<endpoint>/<name>` when the name is lower-case letters, digits and `-`,
-// else as `<endpoint>/line-1`, which is what the empty default gives.
+// Connect to the server's audio port as endpoint `endpoint` and open the
+// session: the handshake, then `opening` (the frames of the first record:
+// `hello` and `capabilities`), then `after` (a record of its own for what
+// the session says right after them, if anything), then wait for the
+// server's own `hello`, which is the session being up. `secret` is the
+// endpoint's static key (32 bytes); without one the key is fresh, so give
+// each server an id once: a second session under the same id with another
+// key is a changed key, refused.
 //
-// Resolves, once the offer has been sent, to { stop }. Until `stop()` the
-// session stays up and the input stays offered. `stop()` closes the socket
-// and resolves when it is closed, which is the input going.
-export async function offerLineIn({ host, port, endpoint, name = "" }) {
+// Resolves to { socket, record, received }: `record(...frames)` seals whole
+// frames into one record, and `received()` resolves to the frames of the next
+// record the server sent (every record has to be opened: the counter
+// follows).
+async function openSession({ host, port, endpoint, secret, opening, after = [], what }) {
   const socket = connect({ host, port });
   socket.setNoDelay(true);
   const next = frameReader(socket);
@@ -301,9 +350,11 @@ export async function offerLineIn({ host, port, endpoint, name = "" }) {
     return frames;
   };
 
+  // Frames the server sent in the record that carried its `hello`, or before.
+  const early = [];
   try {
     await once(socket, "connect");
-    const handshake = initiator(keypair(), keypair());
+    const handshake = initiator(keypair(secret), keypair());
     socket.write(frame(HANDSHAKE_INIT, Buffer.concat([PROLOGUE, handshake.first()])));
     const answer = await next();
     if (answer.type === SESSION_REFUSED) throw refusal(answer.payload);
@@ -312,19 +363,49 @@ export async function offerLineIn({ host, port, endpoint, name = "" }) {
     ({ send, receive } = finished);
     socket.write(frame(HANDSHAKE_FINISH, finished.message3));
 
-    // `hello` and `capabilities` first, in one record; the offer once the
-    // server has said its own `hello`, which is the session being up.
-    record(hello(ROLE_PLAYER | ROLE_SOURCE, "", "chorus-web-live-endpoint"), capabilities(CAN_PLAY));
-    while (!(await received()).some((f) => f.type === HELLO));
-    record(sourceOffer(1, KIND_LINE_IN, true, name));
+    record(...opening);
+    if (after.length > 0) record(...after);
+    for (;;) {
+      const frames = await received();
+      early.push(...frames);
+      if (frames.some((f) => f.type === HELLO)) break;
+    }
   } catch (error) {
     socket.destroy();
-    throw new Error(`endpoint ${endpoint} could not offer its line-in to ${host}:${port}: ${error.message}`, {
-      cause: error,
-    });
+    throw new Error(`endpoint ${endpoint} could not ${what} ${host}:${port}: ${error.message}`, { cause: error });
   } finally {
     clearTimeout(limit);
   }
+  return { socket, record, received, early };
+}
+
+const stopOf = (socket) =>
+  async function stop() {
+    if (socket.closed) return;
+    const closed = once(socket, "close");
+    socket.destroy();
+    await closed;
+  };
+
+// Open a session as endpoint `endpoint` and offer one line-in with a signal
+// present. `name` is the offer's name: the server lists the input as
+// `<endpoint>/<name>` when the name is lower-case letters, digits and `-`,
+// else as `<endpoint>/line-1`, which is what the empty default gives.
+//
+// Resolves, once the offer has been sent, to { stop }. Until `stop()` the
+// session stays up and the input stays offered. `stop()` closes the socket
+// and resolves when it is closed, which is the input going.
+export async function offerLineIn({ host, port, endpoint, name = "" }) {
+  // `hello` and `capabilities` first, in one record; the offer once the
+  // server has said its own `hello`.
+  const { socket, record, received } = await openSession({
+    host,
+    port,
+    endpoint,
+    opening: [hello(ROLE_PLAYER | ROLE_SOURCE, "", "chorus-web-live-endpoint"), capabilities(CAN_PLAY)],
+    what: "offer its line-in to",
+  });
+  record(sourceOffer(1, KIND_LINE_IN, true, name));
 
   // The session, kept: every record is opened (the counter has to follow)
   // and dropped, a `source_control` among them. It ends with the socket.
@@ -332,12 +413,141 @@ export async function offerLineIn({ host, port, endpoint, name = "" }) {
     for (;;) await received();
   })().catch(() => socket.destroy());
 
+  return { stop: stopOf(socket) };
+}
+
+// Open a session as a speaker that takes firmware updates: `capabilities`
+// with the `ota` feature, then one `firmware_status` saying what it runs
+// (`version`, `board`, `slot`), as every such session opens. `secret` is its
+// static key: the same one on its next boot, or the server refuses it for a
+// changed key.
+//
+// What it does with an offer is "0x18 firmware offer" and "0x19 firmware
+// chunk" as far as a script with no flash can: it answers `receiving`, takes
+// the chunks in order, acknowledges every 16, and when the whole image is
+// there says `verified` if its SHA-256 is the offer's (`refused`,
+// `bad_digest` if not) and then "restarts", which here is the socket closing.
+// The cancel is answered `idle` and what it held is dropped.
+//
+// `holdAt` is a number of bytes at which it stops taking chunks (they wait,
+// unread by the script, as on a speaker that is slow to write), so a test can
+// look at a transfer that is under way; `release()` lets it go on.
+//
+// `trial` is the boot AFTER an install: the transfer id the image arrived
+// under. The session then opens `pending_verify` and, once the server's
+// `hello` has been read (the session reached its server, which is when an
+// image confirms itself), says `confirmed`.
+//
+// Resolves to { stop, release, statuses, restarted }: `statuses()` is the
+// states it has reported, in order, and `restarted` resolves, when a verified
+// image made it restart, to { transfer, version, image } (the bytes it was
+// sent).
+export async function updatableSpeaker({ host, port, endpoint, secret, version, board, slot = 0, holdAt = null, trial = null }) {
+  const runs = { version, board, slot };
+  const statuses = [];
+  const status = (fields) => {
+    statuses.push(fields.state ?? "idle");
+    return firmwareStatus({ ...runs, ...fields });
+  };
+  const { socket, record, received, early } = await openSession({
+    host,
+    port,
+    endpoint,
+    secret,
+    opening: [
+      hello(ROLE_PLAYER, "", "chorus-web-live-endpoint"),
+      capabilities({ ...CAN_PLAY, features: FEATURE_OTA }),
+    ],
+    // The server reads `hello` and `capabilities` as the session's opening
+    // and everything else after it, so the status is a record of its own.
+    after: [status(trial === null ? {} : { transfer: trial, state: "pending_verify" })],
+    what: "open an updatable speaker's session with",
+  });
+  if (trial !== null) record(status({ transfer: trial, state: "confirmed" }));
+
+  // The transfer being received: the offer, the bytes so far, and the chunks
+  // that wait while it is held.
+  let transfer = null;
+  let held = holdAt;
+  const waiting = [];
+  let restart;
+  const restarted = new Promise((resolve) => {
+    restart = resolve;
+  });
+  const about = () => ({ transfer: transfer.offer.transfer, imageVersion: transfer.offer.version, received: transfer.bytes });
+
+  const takeChunk = (payload) => {
+    if (!transfer || payload.readUInt32BE(0) !== transfer.offer.transfer) return;
+    const offset = payload.readUInt32BE(4);
+    const data = payload.subarray(8);
+    // A duplicate is ignored; a chunk past a gap is answered with where to resume.
+    if (offset < transfer.bytes) return;
+    if (offset > transfer.bytes) {
+      if (!transfer.gap) record(status({ ...about(), state: "receiving", reason: "bad_offset" }));
+      transfer.gap = true;
+      return;
+    }
+    transfer.gap = false;
+    transfer.parts.push(Buffer.from(data));
+    transfer.bytes += data.length;
+    transfer.chunks += 1;
+    if (transfer.bytes < transfer.offer.size) {
+      if (transfer.chunks % 16 === 0) record(status({ ...about(), state: "receiving" }));
+      return;
+    }
+    const image = Buffer.concat(transfer.parts);
+    const good = image.length === transfer.offer.size && sha256(image).equals(transfer.offer.sha256);
+    record(status({ ...about(), state: good ? "verified" : "refused", reason: good ? "none" : "bad_digest" }));
+    const done = { transfer: transfer.offer.transfer, version: transfer.offer.version, image };
+    transfer = null;
+    if (!good) return;
+    // Verified: it restarts into the image. Here that is the session ending,
+    // once the status has left.
+    socket.end(() => restart(done));
+  };
+
+  const take = (f) => {
+    if (f.type === FIRMWARE_OFFER) {
+      const offer = readOffer(f.payload);
+      if (offer.transfer === 0) {
+        // The cancel: give up what is held and say so.
+        transfer = null;
+        waiting.length = 0;
+        record(status({}));
+        return;
+      }
+      if (offer.board !== board) {
+        record(status({ transfer: offer.transfer, state: "refused", reason: "wrong_board", imageVersion: offer.version }));
+        return;
+      }
+      if (transfer && transfer.offer.transfer !== offer.transfer) {
+        record(status({ transfer: offer.transfer, state: "refused", reason: "busy", imageVersion: offer.version }));
+        return;
+      }
+      // A new transfer, or the same offer again (the resume point).
+      transfer ??= { offer, parts: [], bytes: 0, chunks: 0, gap: false };
+      record(status({ ...about(), state: "receiving" }));
+      return;
+    }
+    if (f.type !== FIRMWARE_CHUNK) return;
+    if (held !== null && transfer && transfer.bytes >= held) waiting.push(f.payload);
+    else takeChunk(f.payload);
+  };
+
+  // The session, kept: every record is opened and everything but the
+  // firmware messages dropped. It ends with the socket.
+  (async () => {
+    for (const f of early) take(f);
+    for (;;) for (const f of await received()) take(f);
+  })().catch(() => socket.destroy());
+
   return {
-    async stop() {
-      if (socket.closed) return;
-      const closed = once(socket, "close");
-      socket.destroy();
-      await closed;
+    stop: stopOf(socket),
+    release() {
+      held = null;
+      for (const payload of waiting.splice(0)) takeChunk(payload);
     },
+    statuses: () => [...statuses],
+    restarted,
   };
 }
