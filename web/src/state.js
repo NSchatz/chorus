@@ -68,6 +68,79 @@ export function inputsOf(state) {
     .map((id) => ({ id, source: `line-in:${id}`, label: labels.get(id) ?? id }));
 }
 
+// A room's sound as the screens read it: { bass, treble, loudness, night,
+// speech }. `bass` and `treble` are whole dB and the other three booleans, as
+// the server holds them; a member the state does not carry, or carries as
+// something else, is null, and a screen says so rather than show a default.
+export function soundOf(zone) {
+  const sound = zone && zone.sound && typeof zone.sound === "object" ? zone.sound : {};
+  const tone = (value) => (Number.isInteger(value) ? value : null);
+  const flag = (value) => (typeof value === "boolean" ? value : null);
+  return {
+    bass: tone(sound.bass),
+    treble: tone(sound.treble),
+    loudness: flag(sound.loudness),
+    night: flag(sound.night),
+    speech: flag(sound.speech),
+  };
+}
+
+// A room's volume limits and quiet hours as the screens read them:
+// { limit, effectiveLimit, quietEnabled, windows }.
+//   limit           the room's own maximum, in thousandths
+//   effectiveLimit  the maximum in force now, as the server computed it (the
+//                   lower of `limit` and the cap of a window that is active
+//                   while quiet hours are switched on). The app never works
+//                   one out.
+//   quietEnabled    whether an active window caps the room
+//   windows         the room's quiet-hours windows, in the server's order:
+//                   { days, start, end, limit, active }, the days it starts
+//                   on, "HH:MM" twice, its cap in thousandths, and whether
+//                   the server's clock is inside it now (which it says
+//                   whether or not quiet hours are switched on)
+// A member the state does not carry, or carries as something else, is null
+// (`windows` is then empty), and a screen says so rather than show a default.
+export function limitsOf(zone) {
+  const held = zone && typeof zone === "object" ? zone : {};
+  const time = (value) => (typeof value === "string" && /^\d\d:\d\d$/.test(value) ? value : null);
+  return {
+    limit: thousandths(held.limit),
+    effectiveLimit: thousandths(held.effective_limit),
+    quietEnabled: typeof held.quiet_enabled === "boolean" ? held.quiet_enabled : null,
+    windows: (Array.isArray(held.quiet) ? held.quiet : [])
+      .filter((window) => window && typeof window === "object")
+      .map((window) => ({
+        days: (Array.isArray(window.days) ? window.days : []).filter((day) => typeof day === "string"),
+        start: time(window.start),
+        end: time(window.end),
+        limit: thousandths(window.limit),
+        active: window.active === true,
+      })),
+  };
+}
+
+// The house's autoplay rules (the state's `autoplay`), by input, in the
+// server's order: { input, target, enabled, stopOnStandby, lowLatency }. The
+// two TV fields are `true` unless the rule says `false`, which is how the
+// catalog writes them.
+export function autoplayOf(state) {
+  const rules = state && Array.isArray(state.autoplay) ? state.autoplay : [];
+  return rules
+    .filter((rule) => rule && typeof rule.input === "string" && rule.input && typeof rule.target === "string")
+    .map((rule) => ({
+      input: rule.input,
+      target: rule.target,
+      enabled: rule.enabled === true,
+      stopOnStandby: rule.stop_on_standby !== false,
+      lowLatency: rule.low_latency !== false,
+    }));
+}
+
+// The room with this id among the rooms the store holds, or null.
+export function roomOf(rooms, id) {
+  return (Array.isArray(rooms) ? rooms : []).find((room) => room.id === id) ?? null;
+}
+
 // What the screens read of one room. A member this cannot read is null, and
 // a screen says so in words rather than showing a made-up value.
 function readRoom(zone, speakerNames, playing) {
@@ -80,6 +153,10 @@ function readRoom(zone, speakerNames, playing) {
     // Thousandths of full scale, 0 to 1000: the catalog's own step.
     volume: thousandths(zone.volume),
     muted: typeof zone.muted === "boolean" ? zone.muted : null,
+    // Tone, loudness, night mode and speech enhancement (soundOf).
+    sound: soundOf(zone),
+    // Its volume limit and its quiet hours (limitsOf).
+    limits: limitsOf(zone),
     // The id of the group the room plays in: its own id when it is alone.
     group,
     // What the room plays while it is alone in the group named for it (a
@@ -112,8 +189,9 @@ export function roomsOf(state, artwork) {
 }
 
 // A volume of the state message in thousandths, or null where it is not one.
-const thousandths = (volume) =>
-  typeof volume === "number" && volume >= 0 && volume <= 1 ? Math.round(volume * 1000) : null;
+function thousandths(volume) {
+  return typeof volume === "number" && volume >= 0 && volume <= 1 ? Math.round(volume * 1000) : null;
+}
 
 // The groups a person sees (docs/control-plane.md, "The state a server
 // holds"): every saved group, active or not (K59), in the server's order,

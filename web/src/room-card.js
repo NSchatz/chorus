@@ -26,12 +26,20 @@
 // drag, for a keyboard, a switch or a screen reader: it says where the room
 // is as the server has it, and choosing another place asks for the move.
 // Pressing the handle without dragging it goes to that list.
+//
+// The "Sound" and "Limits" links open the room's sound screen (sound.js) and
+// its volume limit and quiet hours (limits.js): each a link to that screen's
+// address, which the shell opens as an entry of the browser's history
+// (routes.js).
 
 import { LitElement, css, html, nothing } from "lit";
 
 import { muteCommand, volumeCommand } from "./api.js";
 import { placeOfValue } from "./grouping.js";
 import "./playing.js";
+import { addressOf } from "./routes.js";
+import { LIMITS_SCREEN } from "./limits.js";
+import { SOUND_SCREEN } from "./sound.js";
 
 // The channel roles of docs/protocol.md's channel map, as words.
 export const ROLE_NAMES = {
@@ -155,6 +163,22 @@ export class ChorusRoomCard extends LitElement {
     button:disabled {
       color: var(--control-disabled-ink);
     }
+    /* A link to a further screen is a control like the buttons beside it. */
+    a {
+      display: inline-flex;
+      box-sizing: border-box;
+      align-items: center;
+      justify-content: center;
+      min-width: var(--control-basis);
+      min-height: var(--control-size);
+      padding: var(--control-pad-y) var(--control-pad-x);
+      border: var(--stroke-1) solid var(--control-edge);
+      border-radius: var(--control-radius);
+      background: var(--control-surface);
+      color: var(--control-ink);
+      text-decoration: none;
+    }
+    a:focus-visible,
     input:focus-visible,
     select:focus-visible,
     button:focus-visible {
@@ -266,6 +290,8 @@ export class ChorusRoomCard extends LitElement {
         >
           Move
         </button>
+        <a href=${addressOf(SOUND_SCREEN, { room: room.id })} data-route aria-label="Sound for ${room.name}">Sound</a>
+        <a href=${addressOf(LIMITS_SCREEN, { room: room.id })} data-route aria-label="Limits for ${room.name}">Limits</a>
       </div>
       ${room.bond.length === 0
         ? nothing
