@@ -155,6 +155,14 @@ names a sweep that is playing, and the same house once it finished; a
 `error-measure-sweep-elsewhere` (another room does), `error-measure-sweep-no-speaker`,
 `error-measure-sweep-muted` and `error-measure-sweep-volume`.
 
+The correction's undo has three vectors under `control/v2/`: `room_eq_undo`
+(the command), `state-room-eq-undo` (a room whose correction was replaced
+carries `"undo":true` in its `room_eq`, and the room beside it carries no such
+member) and `error-room-eq-undo-nothing` (a second undo, when the one step is
+spent). `state-rich` carries the member too, its living room having had
+filters applied. The recordings the upload route is tested with are
+`roomfit/`'s, sent as they are.
+
 `control/v2/controller_event` and `controller_event-transport` are what a
 `GET /api/controller-events` subscriber is sent for one accepted controller
 command: a press that changed a room (`outcome` `applied`) and a transport

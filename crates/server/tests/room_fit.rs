@@ -255,6 +255,15 @@ fn the_route_has_to_be_told_which_sweep_was_played() {
         fitted(&server, "living", "01-two-modes-one-null.wav"),
         FIT_01
     );
+    // The whole answer, as docs/control-plane.md shows it.
+    let (_, answer) = upload(&server, "zone=living&sweep_ms=1000", &recording);
+    assert_eq!(
+        answer,
+        format!(
+            r#"{{"v":2,"t":"room_fit","zone":"living","sweep_ms":1000,"filters":{},"rms_before_db":3.21,"rms_after_db":0.37}}"#,
+            FIT_01
+        )
+    );
     // And what it is told is held to its bounds and its shape.
     for query in [
         "",
