@@ -31,11 +31,13 @@ const EPHEMERAL: &str = "127.0.0.1:0";
 const PATIENCE: Duration = Duration::from_secs(30);
 
 /// `crates/server/src/control.rs::CONTENT_SECURITY_POLICY`, written out a
-/// second time on purpose: serving the app must not have changed one byte of
-/// it, and a check that read the constant could not tell.
+/// second time on purpose: serving the app must not change one byte of it
+/// unnoticed, and a check that read the constant could not tell. Its
+/// `manifest-src 'self'` is the one directive the app added, for its web
+/// manifest (`docs/decisions/0190-the-app-installs-behind-the-login.md`).
 const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; \
-     connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; \
-     frame-ancestors 'none'";
+     connect-src 'self'; img-src 'self' data:; manifest-src 'self'; base-uri 'none'; \
+     form-action 'none'; frame-ancestors 'none'";
 
 struct Server {
     child: Child,
@@ -391,10 +393,34 @@ fn every_file_of_the_output_is_served_with_its_type_its_tag_and_its_cache_rule()
 
 #[test]
 fn the_service_workers_reserved_path_is_never_immutable() {
-    // The service worker is a later change; its path and its rule are fixed
-    // now, so that the build that adds it cannot ship it immutable. When the
-    // file exists, the check above also holds the served header to this.
+    // The path and its rule were fixed before the worker existed, so that the
+    // build that added it could not ship it immutable.
     assert_eq!(app::SERVICE_WORKER_PATH, "sw.js");
+    // The worker exists now (`web/src/sw.js`, built to `web/dist/sw.js`), and
+    // the server answers for it as a script that is revalidated before every
+    // use: a browser must always be able to fetch a new one. The same holds
+    // for the manifest an installed app is read from, which no hash names.
+    let server = start();
+    for (path, media_type) in [
+        ("sw.js", "text/javascript; charset=utf-8"),
+        ("manifest.webmanifest", "application/manifest+json"),
+    ] {
+        assert!(
+            app::files().iter().any(|file| file.path == path),
+            "web/dist has {path}"
+        );
+        let url = format!("/app/{path}");
+        let response = get(&server.control, &url, "");
+        assert_eq!(response.status, "HTTP/1.1 200 OK", "{url}");
+        assert_eq!(response.header("Cache-Control"), Some("no-cache"), "{url}");
+        assert_eq!(response.header("Content-Type"), Some(media_type), "{url}");
+        // The policy lets the page load its manifest and its worker:
+        // `manifest-src` for the one, `script-src` (which `worker-src` falls
+        // back to) for the other.
+        let policy = response.header("Content-Security-Policy").expect("a policy");
+        assert!(policy.contains("manifest-src 'self'"), "{url}: {policy}");
+        assert!(policy.contains("script-src 'self'"), "{url}: {policy}");
+    }
     assert_eq!(app::cache_control(app::SERVICE_WORKER_PATH), "no-cache");
     assert_eq!(app::cache_control(app::DOCUMENT_PATH), "no-cache");
     assert_eq!(

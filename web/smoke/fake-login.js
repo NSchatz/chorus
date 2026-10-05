@@ -12,6 +12,14 @@
 //                behind a real proxy: the server compares a command's Origin
 //                with it.
 //
+//   expired      `expire()` ends every session, as a login's lifetime does, and
+//                ends the responses still open (an event stream outlives its
+//                session only until it next reconnects). From then on a
+//                request with no session is redirected to /fake-login whatever
+//                it asks for, the way a forward-auth that does not look at
+//                the Accept header answers: so the test sees both answers a
+//                login gives a page's API call, the 401 and the redirect.
+//
 // It checks no password and keeps its sessions in memory: it is a test helper
 // and is never served by chorus-server or shipped.
 
@@ -67,9 +75,15 @@ function readBody(request, limit = 4096) {
 
 // Start the fake login on a loopback port of its own choosing, in front of the
 // chorus-server control listener at 127.0.0.1:<upstreamPort>. Resolves to
-// { origin, users(), close() }: users() is the names that signed in.
+// { origin, users(), refused(), expire(), close() }: users() is the names
+// signed in now, refused() the path of every request that came with no
+// session (and so never reached the server).
 export async function startFakeLogin(upstreamPort) {
   const sessions = new Map();
+  const refused = [];
+  // The responses being passed from the server, to end when the login expires.
+  const open = new Set();
+  let expired = false;
 
   const server = http.createServer(async (request, response) => {
     const url = new URL(request.url, "http://fake-login.invalid");
@@ -101,8 +115,9 @@ export async function startFakeLogin(upstreamPort) {
 
       const user = sessions.get(sessionOf(request));
       if (user === undefined) {
+        refused.push(url.pathname);
         const wantsPage = request.method === "GET" && (request.headers.accept ?? "").includes("text/html");
-        if (wantsPage) {
+        if (wantsPage || expired) {
           response.writeHead(302, { Location: `${LOGIN_PATH}?rd=${encodeURIComponent(request.url)}`, "Cache-Control": "no-store" });
           response.end();
         } else {
@@ -127,6 +142,9 @@ export async function startFakeLogin(upstreamPort) {
           answer.pipe(response);
         },
       );
+      const passing = { response, upstream };
+      open.add(passing);
+      response.once("close", () => open.delete(passing));
       upstream.on("error", (error) => {
         if (!response.headersSent) response.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" });
         response.end(`chorus-server did not answer: ${error.message}\n`);
@@ -145,6 +163,16 @@ export async function startFakeLogin(upstreamPort) {
   return {
     origin: `http://127.0.0.1:${server.address().port}`,
     users: () => [...sessions.values()],
+    refused: () => [...refused],
+    expire() {
+      sessions.clear();
+      expired = true;
+      for (const { response, upstream } of [...open]) {
+        // The response ends as a whole one; the server's side is dropped.
+        response.end();
+        upstream.destroy();
+      }
+    },
     close: () =>
       new Promise((resolve) => {
         server.closeAllConnections();

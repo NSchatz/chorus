@@ -10,6 +10,15 @@
 // drop looks like and when to open the stream again are decided here, in one
 // place, and are testable with a scripted stream.
 //
+// The app sits behind a household login (a reverse proxy with forward
+// authentication), and a login lapses. The proxy then answers a request with
+// a redirect to its login page, or refuses it with 401. Every request here is
+// made with `redirect: "manual"`, so the redirect is not followed: the page
+// would be given the login page's HTML where it asked for JSON, and could not
+// tell that from a broken server. What comes back instead is an
+// `opaqueredirect`, which `signedOut` reads, and the app says "Signed out"
+// (docs/decisions/0190-the-app-installs-behind-the-login.md).
+//
 // `fetch` and `base` are given by the caller. `base` is the server's root as
 // the page sees it: the app is served under /app/, so from the page that is
 // "../"; the live test gives the server's own address.
@@ -84,6 +93,17 @@ export function artworkUrl(base, group, art = "") {
   return `${base}api/artwork?group=${encodeURIComponent(group)}${art ? `#${tag.toString(36)}` : ""}`;
 }
 
+// Whether a response is the login's and not the server's: a redirect the
+// browser was told not to follow (to the login page), or a 401. chorus-server
+// has no authentication and answers neither on any route, so both can only
+// come from the login in front of it.
+export function signedOut(response) {
+  return Boolean(response) && (response.type === "opaqueredirect" || response.status === 401);
+}
+
+// What a command that met the login says.
+export const SIGNED_OUT = "Signed out";
+
 // What a refused command says, for a person: the server's own `detail` where
 // the answer is one of the catalog's refusals, else the answer's text, else
 // the status alone.
@@ -111,14 +131,20 @@ const timersOfTheHost = {
 export function createClient({ fetch = globalThis.fetch.bind(globalThis), base = "../", timers = timersOfTheHost } = {}) {
   // GET api/state: the state message, or a thrown error naming why not.
   async function state() {
-    const response = await fetch(`${base}api/state`, { headers: { Accept: "application/json" }, cache: "no-store" });
+    const response = await fetch(`${base}api/state`, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+      redirect: "manual",
+    });
+    if (signedOut(response)) throw Object.assign(new Error(SIGNED_OUT), { signedOut: true });
     if (!response.ok) throw new Error(`the server answered ${response.status}`);
     return response.json();
   }
 
   // POST api/command with one control message. Resolves, never rejects:
   // { ok: true, state } with the resulting state message, or
-  // { ok: false, refusal } with the words to show.
+  // { ok: false, refusal } with the words to show; a command that met the
+  // login is { ok: false, refusal, signedOut: true }.
   async function command(body) {
     let response;
     try {
@@ -126,10 +152,12 @@ export function createClient({ fetch = globalThis.fetch.bind(globalThis), base =
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,
+        redirect: "manual",
       });
     } catch {
       return { ok: false, refusal: "the server could not be reached" };
     }
+    if (signedOut(response)) return { ok: false, refusal: SIGNED_OUT, signedOut: true };
     if (!response.ok) return { ok: false, refusal: await refusalText(response) };
     try {
       return { ok: true, state: await response.json() };
@@ -142,8 +170,11 @@ export function createClient({ fetch = globalThis.fetch.bind(globalThis), base =
 
   // GET api/events, held open and opened again whenever it ends. `onState`
   // is called with each state message as it arrives; `onStatus` with "live"
-  // when a stream delivers its first message and "lost" when a stream ends,
-  // fails or goes silent. Returns the function that closes it for good.
+  // when a stream delivers its first message, "lost" when a stream ends,
+  // fails or goes silent, and "signed-out" when the login answered where the
+  // stream should have opened. It is opened again after either, so a person
+  // who signs in elsewhere (another tab) is live again with no reload.
+  // Returns the function that closes it for good.
   function events({ onState, onStatus = () => {} }) {
     let closed = false;
     let abort = null;
@@ -181,12 +212,15 @@ export function createClient({ fetch = globalThis.fetch.bind(globalThis), base =
     async function run() {
       abort = new AbortController();
       heard();
+      let login = false;
       try {
         const response = await fetch(`${base}api/events`, {
           headers: { Accept: "text/event-stream" },
           cache: "no-store",
+          redirect: "manual",
           signal: abort.signal,
         });
+        login = signedOut(response);
         if (!response.ok || !response.body) throw new Error(`the server answered ${response.status}`);
         const reader = response.body.getReader();
         abort.signal.addEventListener("abort", () => reader.cancel().catch(() => {}));
@@ -208,7 +242,7 @@ export function createClient({ fetch = globalThis.fetch.bind(globalThis), base =
       }
       quiet();
       if (closed) return;
-      onStatus("lost");
+      onStatus(login ? "signed-out" : "lost");
       retry = timers.set(() => {
         retry = null;
         run();

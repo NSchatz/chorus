@@ -319,7 +319,12 @@ struct Ui {
 /// there is no inline script or inline style for anything to be smuggled into,
 /// and the page cannot be framed. Wide enough that the page still works: the
 /// stylesheet and the script are served from here, and `connect-src` is what the
-/// state request and the event stream travel on. A policy that silenced the page
+/// state request and the event stream travel on, and `manifest-src` is the
+/// app's web manifest (`web/src/manifest.webmanifest`, served under `/app/`),
+/// which `default-src 'none'` would otherwise refuse and with it the install
+/// (`docs/decisions/0190-the-app-installs-behind-the-login.md`). The app's
+/// service worker needs no directive of its own: `worker-src` falls back to
+/// `script-src`. A policy that silenced the page
 /// would be a failure and not a pass, which is why the check that grades this
 /// asserts the page still renders its zones and still updates under it.
 ///
@@ -329,8 +334,8 @@ struct Ui {
 /// has no authentication either before or after this header, which is a fact
 /// about the deployment and not something a response header can change.
 const CONTENT_SECURITY_POLICY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; \
-     connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; \
-     frame-ancestors 'none'";
+     connect-src 'self'; img-src 'self' data:; manifest-src 'self'; base-uri 'none'; \
+     form-action 'none'; frame-ancestors 'none'";
 
 impl ControlState {
     /// Build the shared state.
