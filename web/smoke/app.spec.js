@@ -128,7 +128,9 @@ test("signed in through the fake login, the app shows the server's rooms with no
   const rooms = page.getByRole("main", { name: "Rooms" });
   const named = rooms.getByText(NAMED.name, { exact: true });
   await expect(named).toBeVisible();
-  await expect(rooms.getByRole("listitem")).toHaveText([NAMED.name, "den"]);
+  await expect(rooms.getByRole("heading", { level: 2 })).toHaveText([NAMED.name, "den"]);
+  // Each room's card drew its controls: the volume slider, labelled for its room.
+  await expect(rooms.getByLabel(`Volume for ${NAMED.name}`)).toBeVisible();
   // Drawn, not only present: the text takes up room on the page.
   const box = await named.boundingBox();
   expect(box.width).toBeGreaterThan(0);

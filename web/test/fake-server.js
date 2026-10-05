@@ -1,0 +1,132 @@
+// A scripted chorus-server for the unit tests: a `fetch` that answers the
+// three routes the app uses, with the test deciding what each says and when.
+//
+//   server.snapshot        what GET api/state answers (a state message), or
+//                          null for a server that cannot be reached
+//   server.send(state)     one `data:` event on every open event stream
+//   server.write(text)     raw bytes on every open event stream
+//   server.drop()          the server closes every open event stream
+//   server.answer          what POST api/command answers: (body) =>
+//                          { status, body } with `body` a string
+//   server.commands        the bodies posted so far
+//   server.streams         how many event streams have been opened
+//
+// The state messages are shaped like the catalog's v2 state
+// (docs/control-plane.md, "The state message"), with the members the app reads.
+
+const encoder = new TextEncoder();
+
+export function zone(id, more = {}) {
+  return { id, name: id, group: id, volume: 0.5, muted: false, endpoints: [], present: [], bond: [], ...more };
+}
+
+export function stateOf(serial, zones, more = {}) {
+  return { v: 2, t: "state", serial, zones, groups: [], ...more };
+}
+
+function answerOf(status, body) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => body,
+    json: async () => JSON.parse(body),
+  };
+}
+
+export function fakeServer(snapshot = null) {
+  const open = new Set();
+  const server = {
+    snapshot,
+    commands: [],
+    streams: 0,
+    answer: () => ({ status: 200, body: JSON.stringify(server.snapshot) }),
+    base: "http://chorus.test/",
+
+    write(text) {
+      for (const stream of open) stream.push({ done: false, value: encoder.encode(text) });
+    },
+    send(state) {
+      server.write(`data: ${JSON.stringify(state)}\n\n`);
+    },
+    drop() {
+      for (const stream of [...open]) stream.push({ done: true, value: undefined });
+    },
+
+    async fetch(url, options = {}) {
+      const route = String(url).slice(server.base.length);
+      if (route === "api/state") {
+        if (server.snapshot === null) throw new TypeError("fetch failed");
+        return answerOf(200, JSON.stringify(server.snapshot));
+      }
+      if (route === "api/command") {
+        server.commands.push(options.body);
+        const { status, body } = server.answer(options.body);
+        return answerOf(status, body);
+      }
+      if (route === "api/events") {
+        server.streams += 1;
+        // One stream: chunks queue until read, and a read waits for a chunk.
+        const queued = [];
+        const waiting = [];
+        const stream = {
+          push(chunk) {
+            if (chunk.done) open.delete(stream);
+            const reader = waiting.shift();
+            if (reader) reader.resolve(chunk);
+            else queued.push(chunk);
+          },
+        };
+        open.add(stream);
+        options.signal?.addEventListener("abort", () => {
+          open.delete(stream);
+          for (const reader of waiting.splice(0)) reader.reject(new Error("aborted"));
+        });
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => ({
+              read: () =>
+                queued.length > 0
+                  ? Promise.resolve(queued.shift())
+                  : new Promise((resolve, reject) => waiting.push({ resolve, reject })),
+              cancel: async () => {},
+            }),
+          },
+        };
+      }
+      return answerOf(404, "no such route");
+    },
+  };
+  return server;
+}
+
+// Timers a test fires by hand: `timers.fire(ms)` runs every callback set
+// for exactly that delay and not yet cleared.
+export function fakeTimers() {
+  let next = 1;
+  const set = new Map();
+  return {
+    set(callback, ms) {
+      set.set(next, { callback, ms });
+      return next++;
+    },
+    clear(handle) {
+      set.delete(handle);
+    },
+    pending: (ms) => [...set.values()].filter((timer) => timer.ms === ms).length,
+    fire(ms) {
+      for (const [handle, timer] of [...set]) {
+        if (timer.ms !== ms) continue;
+        set.delete(handle);
+        timer.callback();
+      }
+    },
+  };
+}
+
+// Let everything already queued (promise reactions, stream reads) run.
+export async function settle() {
+  for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}

@@ -90,6 +90,13 @@ ha-live: tools-executable
 # `CHORUS_SERVER_BIN=<a built chorus-server> make web-smoke`, ending with `web-smoke: PASS`.
 # Without CHORUS_SERVER_BIN it is skipped by name (the run ends with `web-smoke: SKIPPED`);
 # under CI (CI=true) and in the gate that is a failure. Gate step `web-smoke`, after the build.
+# web-live: the live test (web/live/rooms.live.js): the app's elements and state layer, in node
+# under happy-dom with no browser, against a real chorus-server with two rooms, one of them with
+# a bonded set: they render both rooms and the bond, a volume change and a mute made through
+# them appear in the server's /api/state, and another client's change appears in them.
+# `CHORUS_SERVER_BIN=<a built chorus-server> make web-live`, ending with `web-live: PASS`.
+# Without CHORUS_SERVER_BIN it is skipped by name (the run ends with `web-live: SKIPPED`);
+# under CI (CI=true) and in the gate that is a failure. Gate step `web-live`, after the build.
 # web-smoke-install: download the Chromium build the pinned @playwright/test names, once
 # (`bash tools/web.sh smoke-install --with-deps` adds its system libraries where there is root).
 web-test: tools-executable
@@ -98,13 +105,16 @@ web-test: tools-executable
 web-build: tools-executable
 	bash tools/web.sh build
 
+web-live: tools-executable
+	bash tools/web.sh live
+
 web-smoke: tools-executable
 	bash tools/web.sh smoke
 
 web-smoke-install: tools-executable
 	bash tools/web.sh smoke-install
 
-.PHONY: web-test web-build web-smoke web-smoke-install
+.PHONY: web-test web-build web-live web-smoke web-smoke-install
 
 # Regenerate fixtures/decode (goal 16): one short file per settled input format with what a
 # reference decoder made of it. Never run by the gate. REFDEC is a conda-forge prefix holding

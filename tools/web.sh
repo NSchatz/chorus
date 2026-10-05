@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
-# `make web-test`, `make web-build` and `make web-smoke`: the app under web/ (Lit 3 elements
-# bundled by esbuild; docs/decisions/0181-the-web-app-stack.md).
+# `make web-test`, `make web-build`, `make web-live` and `make web-smoke`: the app under web/
+# (Lit 3 elements bundled by esbuild; docs/decisions/0181-the-web-app-stack.md).
 #
 #   tools/web.sh test    the unit tests: `node --test` with happy-dom as the DOM, so components
 #                        render and update in node. No browser is installed or started.
 #   tools/web.sh build   web/src into web/dist, the committed output chorus-server embeds. The
 #                        build is deterministic; the gate step `web-build` runs it and fails when
 #                        web/dist then differs from what is committed.
+#   tools/web.sh live    the live test (web/live/; docs/decisions/0000-the-apps-state-layer-and-its-live-test.md):
+#                        the app's elements and state layer, in node under happy-dom with no
+#                        browser, against the chorus-server CHORUS_SERVER_BIN names: they
+#                        render its rooms, change it and follow another client's changes.
+#                        Without CHORUS_SERVER_BIN it ends `web-live: SKIPPED` and exits 0;
+#                        under CI=true that is a failure, and the gate refuses the line.
 #   tools/web.sh smoke   the one browser test (web/smoke/; docs/decisions/0183-the-one-browser-smoke-test.md):
 #                        Playwright's headless Chromium loads the app from the chorus-server
 #                        CHORUS_SERVER_BIN names, through a fake login, and asserts rendered
@@ -16,7 +22,7 @@
 #                        download the Chromium build the pinned @playwright/test names, once.
 #                        --with-deps also installs its system libraries and fonts with the
 #                        system's package manager (root; CI's runner). Never run by the other
-#                        three: a run downloads no browser.
+#                        four: a run downloads no browser.
 #
 # The browser's environment (smoke and smoke-install):
 #   PLAYWRIGHT_BROWSERS_PATH  where the Chromium build is kept. Default: /cache/chorus-playwright
@@ -44,8 +50,8 @@
 # node and pnpm are pinned in mise.toml and this script runs no other version: where the pinned
 # one is absent it fails naming it, under CI as anywhere else. A step that did not run is red,
 # never a green SKIPPED (docs/decisions/0142-the-home-assistant-gate-steps-run-or-fail.md), and
-# the gate holds each step to its own `web-test: PASS`, `web-build: PASS` or `web-smoke: PASS`
-# line.
+# the gate holds each step to its own `web-test: PASS`, `web-build: PASS`, `web-live: PASS` or
+# `web-smoke: PASS` line.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -56,7 +62,7 @@ wall() { awk -v a="$T0" -v b="$(date +%s.%N)" 'BEGIN{printf "%.1fs", b-a}'; }
 what="${1:-}"
 with_deps=
 case "$what" in
-    test | build | smoke) ;;
+    test | build | live | smoke) ;;
     smoke-install)
         case "${2:-}" in
             "") ;;
@@ -68,11 +74,11 @@ case "$what" in
         esac
         ;;
     *)
-        echo "usage: tools/web.sh test|build|smoke|smoke-install [--with-deps]"
+        echo "usage: tools/web.sh test|build|live|smoke|smoke-install [--with-deps]"
         exit 2
         ;;
 esac
-# The step's name in its lines: web-test, web-build, web-smoke.
+# The step's name in its lines: web-test, web-build, web-live, web-smoke.
 name="web-${what%-install}"
 
 pin() { sed -n "s|^\"$1\" = \"\(.*\)\"\$|\1|p" mise.toml; }
@@ -91,15 +97,21 @@ if ! have; then
     exit 1
 fi
 
-# The smoke test runs only against a built chorus-server, so the step says which of the two
-# happened: PASS (it ran) or SKIPPED (it did not). Under CI not running is a failure.
-if [ "$what" = smoke ]; then
+# The live test and the smoke test run only against a built chorus-server, so the step says
+# which of the two happened: PASS (it ran) or SKIPPED (it did not). Under CI not running is a
+# failure.
+if [ "$what" = live ] || [ "$what" = smoke ]; then
+    if [ "$what" = live ]; then
+        which="live test (web/live/rooms.live.js)"
+    else
+        which="browser smoke test (web/smoke/app.spec.js)"
+    fi
     if [ -z "${CHORUS_SERVER_BIN:-}" ]; then
         if [ "${CI:-}" = true ]; then
-            echo "FAIL: CHORUS_SERVER_BIN is not set; under CI the browser smoke test runs against a built chorus-server or the step is red"
+            echo "FAIL: CHORUS_SERVER_BIN is not set; under CI the $which runs against a built chorus-server or the step is red"
             exit 1
         fi
-        echo "web-smoke: SKIPPED: CHORUS_SERVER_BIN is not set, so the browser smoke test (web/smoke/app.spec.js) did not run; build one with \`cargo build -p chorus-server\`"
+        echo "$name: SKIPPED: CHORUS_SERVER_BIN is not set, so the $which did not run; build one with \`cargo build -p chorus-server\`"
         exit 0
     fi
     if [ ! -x "$CHORUS_SERVER_BIN" ] || [ -d "$CHORUS_SERVER_BIN" ]; then
@@ -188,20 +200,26 @@ if [ "$what" = build ]; then
 fi
 
 # The tests. happy-dom is registered by a preload so it is there before Lit is imported. The
-# run is the whole of test/: a summary that counts no test, or a skipped one, is not a pass.
-out="$(mktemp "${TMPDIR:-/tmp}/chorus-web-test.XXXXXX")"
+# run is the whole of test/ (the unit tests) or of live/ (the live test, against the server
+# CHORUS_SERVER_BIN names): a summary that counts no test, or a skipped one, is not a pass.
+if [ "$what" = live ]; then
+    tests_dir=live tests_glob='live/*.live.js' kind="live test"
+else
+    tests_dir=test tests_glob='test/*.test.js' kind="web unit tests"
+fi
+out="$(mktemp "${TMPDIR:-/tmp}/chorus-$name.XXXXXX")"
 trap 'rm -f "$out"' EXIT
 rc=0
-node --import ./test/setup.js --test --test-reporter=spec 'test/*.test.js' > "$out" 2>&1 || rc=$?
+node --import "./$tests_dir/setup.js" --test --test-reporter=spec "$tests_glob" > "$out" 2>&1 || rc=$?
 cat "$out"
 count() { sed -n "s/^ℹ $1 \([0-9][0-9]*\)$/\1/p" "$out" | tail -n 1; }
 tests="$(count tests)"
 if [ "$rc" -ne 0 ]; then
-    echo "FAIL: the web unit tests failed ($(count fail) of ${tests:-0})"
+    echo "FAIL: the $kind failed ($(count fail) of ${tests:-0})"
     exit 1
 fi
 if [ "${tests:-0}" -eq 0 ] || [ "$(count pass)" != "$tests" ]; then
-    echo "FAIL: the run passed $(count pass) of ${tests:-0} tests ($(count skipped) skipped, $(count todo) todo); every test of web/test runs and passes"
+    echo "FAIL: the run passed $(count pass) of ${tests:-0} tests ($(count skipped) skipped, $(count todo) todo); every test of web/$tests_dir runs and passes"
     exit 1
 fi
-echo "web-test: PASS, $tests tests, wall-clock $(wall)"
+echo "$name: PASS, $tests tests, wall-clock $(wall)"
