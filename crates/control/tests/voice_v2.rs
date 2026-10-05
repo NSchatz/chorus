@@ -189,8 +189,8 @@ fn voice_enabled_survives_a_restart_and_the_gate_does_not() {
     );
     write_file(&path, &zones).expect("it writes");
     let saved = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(STATE_FORMAT, 9);
-    assert!(saved.contains("format = 9\n"), "{}", saved);
+    assert_eq!(STATE_FORMAT, 10);
+    assert!(saved.contains("format = 10\n"), "{}", saved);
     assert_eq!(saved.matches("voice_enabled = 1\n").count(), 1, "{}", saved);
     assert_eq!(saved.matches("voice_enabled = 0\n").count(), 1, "{}", saved);
     assert!(
@@ -219,7 +219,7 @@ fn a_format_7_file_loads_with_voice_off_everywhere_and_is_written_back_as_the_cu
     let eight = render(&house());
     // What the build before this one wrote: format 7, no `voice_enabled`.
     let seven = eight
-        .replace("format = 9\n", "format = 7\n")
+        .replace("format = 10\n", "format = 7\n")
         .replace("voice_enabled = 0\n", "");
     assert!(seven.contains("format = 7\n") && !seven.contains("voice_enabled ="));
     let back = load(&seven, "127.0.0.1:4010").expect("format 7 still loads");
@@ -426,7 +426,7 @@ fn a_rooms_choice_of_wake_words_survives_a_restart() {
 
     // What the build before this one wrote: format 8, no `wake_words`.
     let eight = render(&house())
-        .replace("format = 9\n", "format = 8\n")
+        .replace("format = 10\n", "format = 8\n")
         .replace("wake_words = *\n", "");
     assert!(!eight.contains("wake_words ="));
     let back = load(&eight, "x").expect("format 8 still loads");
@@ -434,7 +434,7 @@ fn a_rooms_choice_of_wake_words_survives_a_restart() {
     assert_eq!(
         render(&back),
         render(&house()),
-        "the next write is format 9"
+        "the next write is format 10"
     );
     // A format 9 file says it for every room, and only in the shape it has.
     let missing = saved.replacen("wake_words = *\n", "", 1);

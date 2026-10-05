@@ -81,7 +81,7 @@ A **zone** is a room (catalog v2's documents say "room"; the wire keeps the key
 | `wake_words` (v2) | only in a room that chose them (`voice_wake_words`): the ids of the wake words the room listens for, possibly none. A room without it listens for every one the server runs |
 | `sound` (v2, goal 12) | tone, loudness, night mode and speech enhancement |
 | `bass_management` (v2, goal 12) | crossover, sub level and sub polarity, in force when the set has an `LFE` member |
-| `room_eq` (v2, goal 12) | up to 8 room-correction filters and whether they are applied |
+| `room_eq` (v2, goal 12) | up to 8 room-correction filters and whether they are applied; and, held beside them and persisted, the correction as it was before the last `room_eq` that carried `filters`, which `room_eq_undo` puts back (the state says `undo` true while there is one) |
 
 **The clamp rule (v2).** A room's **effective limit** is
 `min(limit, the cap of every quiet-hours window active now)`, and `limit` alone
@@ -382,6 +382,7 @@ give them.
 | `sound` | `zone`, optional `bass`, `treble` (whole dB, -10 to 10), `loudness`, `night`, `speech` (booleans) | changes the fields it carries; an absent one keeps what the room had |
 | `bass_management` | `zone`, optional `crossover_hz` (40 to 200), `sub_level_db` (-12.00 to 6.00, two places), `sub_polarity` (`"normal"` or `"inverted"`) | the same, partial |
 | `room_eq` | `zone`, optional `filters`: `[{"freq_hz","gain_db","q"}]` at most 8, optional `enabled` | `filters` replaces the room's (`[]` clears them); `enabled` turns them on or off and keeps them |
+| `room_eq_undo` | `zone` | (room correction) puts the room's correction back as it was before the last `room_eq` that carried `filters`: those filters and that `enabled`. One step; refused `nothing-to-undo` when there is none; "Room correction: a recording, its fit and the undo" below |
 | `source_store` | `id`, `kind` (`"url"` or `"spotify"`), `value`, `name` | (goal 17) stores or replaces a stored source, which an alarm names as `stored:<id>`; below |
 | `source_forget` | `id` | (goal 17) forgets a stored source; refused while an alarm plays it |
 | `input_label` | `input` (`<endpoint>/<input>`), `name`, `role` (`"line-in"` or `"streamer"`) | (goal 17) names an input and says what is wired to it; an empty `name` with `role` `line-in` removes the label; below |
@@ -534,7 +535,7 @@ The room then carries its choice in the state as its own `wake_words`, after
 member never chose and listens for every one. A phrase said in a room that
 does not listen for it is no wake word there: no `voice_wake`, no hold-off,
 and a run opened afterwards starts at its command. The choice is persisted
-(state-file format 9). There is no command that returns a room to "every
+(state-file format 9 on). There is no command that returns a room to "every
 one"; naming every id the state lists says the same until the build gains a
 model. An id is refused when the server runs no such model:
 
@@ -1189,8 +1190,9 @@ What it does not do, on purpose or yet:
   must wake, calls the sweep off instead.
 - **The room's sound settings stay as they are.** The sweep plays through
   the room's tone controls and through any `room_eq` already set, so a
-  measurement taken with filters enabled measures the corrected room. What
-  to do about that belongs with accepting the recording.
+  measurement taken with filters enabled measures the corrected room. The
+  recording's route refuses a room whose correction is switched on
+  (`correction_on`, below): switch it off, measure, apply.
 - A TV input that plays in the room in low-latency mode goes back to its
   slot for the sweep (`tv-path mode=slot ... reason=measuring`): the sweep's
   stream is a slot-path stream.
@@ -1200,6 +1202,125 @@ What it does not do, on purpose or yet:
 
 `crates/server/tests/measure_sweep.rs` runs it on the real binary;
 `crates/control/tests/measure_v2.rs` holds the room model's half.
+
+### Room correction: a recording, its fit and the undo
+
+The recording half of the measurement
+(`docs/decisions/0200-a-recording-is-fitted-and-not-kept.md`,
+`docs/room-correction.md`). A controller records the sweep `measure_sweep`
+plays, sends the recording to one route, gets filters back, applies them with
+`room_eq` and can take them back with `room_eq_undo`.
+
+**`POST /api/room-fit?zone=<room>`** takes one recording as its body and
+answers with the fit. It is the one route that is not a catalog message in a
+JSON body, because its body is audio. It changes no room and stores nothing.
+
+| part | what it is |
+|---|---|
+| query `zone` | required: the room the recording was made in |
+| query `sweep_ms` | which sweep was played: its length, 1000 to 10000. Absent, the recording is of the sweep `measure_sweep` plays (5000, the state's `measurement.sweep_ms`) |
+| query `fade_in_ms` | the sweep's fade-in, 0 to 1000 and shorter than the sweep. Absent, 100 when `sweep_ms` is absent too (the sweep `measure_sweep` plays) and 0 otherwise |
+| `Content-Type` | `audio/wav` (parameters allowed) |
+| `Content-Length` | required, at most 2097152 (2 MiB) |
+| body | a RIFF WAVE file: integer PCM, one channel, 16 bits, 48000 Hz. Chunks other than `fmt ` and `data` are stepped over |
+
+The sweep's frequencies and level are not in the query: they are the ones
+`measure_sweep` plays (10 Hz to 20 kHz at half full scale). A member the query
+does not have, one given twice, or a number outside its bounds is refused, so
+a recording is never fitted against a sweep nobody named.
+
+The answer to a recording that fits is `200` and
+
+```json
+{"v":2,"t":"room_fit","zone":"living","sweep_ms":1000,"filters":[{"freq_hz":45,"gain_db":-9.32,"q":6.409},{"freq_hz":119,"gain_db":-6.53,"q":5.135}],"rms_before_db":3.21,"rms_after_db":0.37}
+```
+
+`filters` is spelled exactly as `room_eq` spells it and is inside the
+room-correction bounds, so `{"v":2,"t":"room_eq","zone":<zone>,"filters":<filters>,"enabled":true}`
+applies it (the example is the answer to `fixtures/roomfit/01-two-modes-one-null.wav`
+sent with `sweep_ms=1000`). A room with nothing to correct answers with `"filters":[]`. The
+two `rms` members are the response's RMS deviation from the target in the fit
+band, outside the points the fit leaves alone, before and after the filters
+(the fitter's own figures, `docs/room-correction.md`).
+
+**Its bounds.** The request line and headers come through the 16 KiB bound
+every request has ("What a request may be"). The body has a bound of its own,
+2 MiB (21.8 s of 48 kHz 16-bit mono, three times what `measure_sweep` plays),
+and it is checked against the declared `Content-Length` before a byte of the
+body is read. The whole request has the same 5 seconds to arrive. Every other
+route keeps the one 16 KiB bound, this route's own path under another method
+included. One recording is fitted at a time.
+
+**The rules a `POST` is held to** ("What a command must carry") hold here with
+`audio/wav` in the place of `application/json`: `audio/wav` is not one of the
+three types a page elsewhere can send without a preflight either. Both are
+decided from the head, before the body is read.
+
+**Its refusals.** Every refusal's body is the catalog's `error` message at
+version 2; where the refusal has a name, `detail` starts with it and a colon.
+
+| status | `field` | `detail` starts | when |
+|---|---|---|---|
+| `415` | | | the body is not declared `audio/wav`; unread |
+| `403` | | | an `Origin` that is not this server's own; unread |
+| `411` | | | no `Content-Length`; unread |
+| `413` | | | a `Content-Length` over 2097152; unread |
+| `408`, `400` | | | the body did not arrive in full by the deadline, or the peer went |
+| `400` | `zone`, `sweep_ms`, `fade_in_ms` or empty | `bad_query: ` | the query is not one this route reads |
+| `400` | `zone` | `there is no zone` | a room this server does not have, in the words a command's refusal uses |
+| `409` | `zone` | `correction_on: ` | the room's correction is switched on with filters to apply, so the sweep it played was the corrected room. Switch it off (`room_eq` with `enabled` false), measure, and apply the new filters |
+| `400` | `recording` | `not_wav: ` | the body is not a WAVE file of the shape above |
+| `400` | `recording` | `unsupported_rate: ` | a WAVE file at another rate than 48000 Hz |
+| `422` | `recording` | `too_short: `, `clipped: `, `too_quiet: ` or `too_noisy: ` | the fitter refuses the recording, under the fitter's own name and in its words, which carry the numbers (the peak, the run of clipped samples, the margin over the noise) |
+| `400` | `sweep_ms` | `bad_config: ` | the fitter cannot use the sweep the query describes |
+| `503` | | `busy: ` | another recording is being fitted now; send this one again |
+
+A refusal decided from the head closes the connection without reading the
+body, as every early refusal here does, so a peer still sending may see the
+connection close before it reads the answer: an app checks the size and the
+type of what it sends itself. Every refusal below `408` in the table is
+answered after the body has been read. None changes any state, and each counts
+as refused in `GET /api/report`.
+
+**The recording is never stored.** It is read into memory, fitted and dropped
+when the answer is written. The server writes no file for it, the state file
+included, and says one line about each upload on its output: the room, the
+sweep's length, how many samples at what rate, and how it ended
+(`room fit: room 'living', a 5000 ms sweep, 312000 samples at 48000 Hz,
+fitted 2 filters`). No sample is in it.
+
+**`room_eq_undo`** puts a room's correction back as it was.
+
+```json
+{"v":2,"t":"room_eq_undo","zone":"living"}
+```
+
+- **What an apply is**: a `room_eq` that carries `filters`. What stood before
+  it, the filters and `enabled` both, is kept as the room's one undo step,
+  replacing any step kept before. A `room_eq` that carries only `enabled` is
+  not an apply and leaves the step alone, so switching a new fit off and on to
+  compare keeps the undo.
+- **What an undo does**: the room's `room_eq` is exactly what it was before
+  the last apply, and the step is spent. After an apply over an earlier
+  correction that is the earlier filters and the earlier `enabled`; after a
+  first apply it is no filters, enabled, which is a room that was never
+  corrected. There is no redo and no second step.
+- **The state says whether there is one**: a room's `room_eq` carries
+  `"undo":true` while a step is kept, and no `undo` member otherwise
+  (`fixtures/control/v2/state-room-eq-undo.json`).
+- **It is refused** with `field` `zone` and a detail starting
+  `nothing-to-undo: ` when the room keeps no step
+  (`fixtures/control/v2/error-room-eq-undo-nothing.json`), and as any command
+  is for a room this server does not have.
+- **It survives a restart**: the step is persisted beside the correction
+  (state-file format 10, below).
+- An app that switched the correction off to measure and then applies the new
+  filters keeps "off" as the earlier flag. To have an undo return to the
+  earlier correction switched on, switch it back on before applying.
+
+`crates/server/tests/room_fit.rs` runs the route and the undo on the real
+binary with the fitter's fixtures; `crates/control/tests/room_eq_undo_v2.rs`
+holds the room model's and the state file's half.
 
 ### Take the room (K78)
 
@@ -1281,7 +1402,7 @@ of each, `fixtures/control/v2/state-empty.json` the empty house):
 
 | field | notes |
 |---|---|
-| `zones[]` | v1's fields, then `transport` (`wired` or `wireless`, as declared), `limit`, `effective_limit`, `quiet` (`[{"days","start","end","limit","active"}]`; `active` says the clock is inside the window, whether or not the room's quiet hours are switched on), `quiet_enabled` (`true` or `false`: whether an active window caps the room; `true` unless `quiet_hours_enabled` switched it off), `bond` (`[{"endpoint","role"}]`, `[]` for none), `ramp` (a running ramp's target, or `null`), and (goal 12) `sound` (`{"bass","treble","loudness","night","speech"}`), `bass_management` (`{"crossover_hz","sub_level_db","sub_polarity","active"}`) and `room_eq` (`{"enabled","filters"}`), then `voice_enabled` and `mic_muted` (`true` or `false` each), then, only in a room that chose its wake words, `wake_words` (the ids it listens for, possibly none; "Voice: the wake word, the run and its audio"); all before `source` and `now_playing` where a room has those |
+| `zones[]` | v1's fields, then `transport` (`wired` or `wireless`, as declared), `limit`, `effective_limit`, `quiet` (`[{"days","start","end","limit","active"}]`; `active` says the clock is inside the window, whether or not the room's quiet hours are switched on), `quiet_enabled` (`true` or `false`: whether an active window caps the room; `true` unless `quiet_hours_enabled` switched it off), `bond` (`[{"endpoint","role"}]`, `[]` for none), `ramp` (a running ramp's target, or `null`), and (goal 12) `sound` (`{"bass","treble","loudness","night","speech"}`), `bass_management` (`{"crossover_hz","sub_level_db","sub_polarity","active"}`) and `room_eq` (`{"enabled","filters"}`, and `"undo":true` only while `room_eq_undo` has a correction to put back), then `voice_enabled` and `mic_muted` (`true` or `false` each), then, only in a room that chose its wake words, `wake_words` (the ids it listens for, possibly none; "Voice: the wake word, the run and its audio"); all before `source` and `now_playing` where a room has those |
 | `zones[].source`, `zones[].now_playing` | (goal 16) **written only while the room's group has a now-playing record**, last in the room's object, in that order: the group's `source` (a `player:<id>`) and the record, below |
 | `groups[]` | every formed group, in the order its first room was configured: `id`, `kind`, `zones`, `volume` (the group volume), `source`, `audio` |
 | `groups[].now_playing` | (goal 16) **written only while the group has a now-playing record**, after `audio`: `title`, `artist`, `album`, `art_url` (each a string, or `null` where not known), `duration_ms` (a whole number, or `null` for a live stream or an unknown length), `state` (`playing`, `paused` or `buffering`), `via` (an identifier: `upnp` for a UPnP AV control point). Never persisted |
@@ -1398,6 +1519,7 @@ The catalog above is the contract. The transport is HTTP on the address
 | `GET /chorus.css`, `GET /chorus.js` | what the page loads |
 | `GET /app/`, `GET /app/<path>` | the app: its document and every file of its build output, compiled into the server ("The app under `/app/`" below) |
 | `GET /api/state` | the state message, once (v2; `?v=1` for the v1 shape) |
+| `POST /api/room-fit?zone=<room>` | (room correction) one recording of the measurement sweep as `audio/wav`; answers with the fitted filters or a refusal by name, changes nothing and stores nothing ("Room correction: a recording, its fit and the undo") |
 | `GET /api/server` | (goal 18) who this server is, once: the `server` message below. Not a state: nothing changes it while the server runs and no state message carries it |
 | `GET /api/events` | a `text/event-stream`, one `data: <state message>` per change, starting with the state as it stands (v2; `?v=1` for the v1 shape, rendered from the state as it stands when each change reaches the stream) |
 | `GET /api/controller-events` | a `text/event-stream`, one `data: <controller_event message>` per controller command the server accepts (a button press on a speaker), from the moment the stream is opened. It starts with no message: a press is not a state, and one made before the stream was opened is never sent to it. Catalog version 2's message alone; `?v=1` changes nothing |
@@ -1506,6 +1628,12 @@ has 5 seconds from the moment a worker picks it up to arrive in full, measured
 on the monotonic clock; one still arriving then (a peer trickling a byte at a
 time) is answered `408` and the worker goes back to the pool.
 
+One route's body has a bound of its own: `POST /api/room-fit`, a recording, at
+most 2 MiB, checked against its declared length before the body is read
+("Room correction: a recording, its fit and the undo"). Its request line and
+headers are held to the 16 KiB like any request's, the deadline is the same,
+and no other route, method or path reads a body past 16 KiB.
+
 ### The app under `/app/`
 
 The app (`web/`) is served from inside the server's own binary: `crates/server/build.rs`
@@ -1607,6 +1735,9 @@ apply:
 
 Neither refusal changes any state, and both count as refused in
 `GET /api/report`.
+
+`POST /api/room-fit` is held to the same two rules with `audio/wav` as its
+type, which a page elsewhere cannot send without a preflight either.
 
 ### Event streams and the event writer
 
@@ -2020,7 +2151,7 @@ No firmware image travels over this channel (goal 14): a request is at most
 16 KiB and an image is megabytes. Images are staged as files in
 `--firmware-dir`, and the bytes go to a speaker inside its own audio session.
 
-## What survives a restart (state-file format 9)
+## What survives a restart (state-file format 10)
 
 The server persists, in `--state-file`, everything a person configured: each
 room's name, group, volume, mute, endpoints, `limit`, quiet-hours windows,
@@ -2037,11 +2168,16 @@ file); and (format 8) whether each room's voice path is switched on
 (`voice_enabled`, 0 or 1, in its `[zone]` section, required in a format 8
 file); and (format 9) which wake words each room listens for (`wake_words`
 in its `[zone]` section, `*` for every one the server runs or the ids it
-chose, comma-separated, required in a format 9 file). It does
+chose, comma-separated, required in a format 9 file); and (format 10) the
+correction each room's `room_eq_undo` puts back (`room_eq_undo`: `none`, or 0
+or 1 for whether it was applied; `room_eq_undo_filters`: its filters, written
+as `room_eq_filters` is; both in its `[zone]` section and required in a
+format 10 file). It does
 not persist what is a fact about now: which endpoints are present, which quiet
 window is active, which alarm is ringing, a running ramp, what a group is
 playing (its source and, goal 16, its now-playing record), a sleep timer,
-which inputs are offered, a microphone's gate (`mic_muted`), or a speaker's presence,
+which inputs are offered, a recording a correction was fitted from (the
+server never keeps one), a microphone's gate (`mic_muted`), or a speaker's presence,
 software, roles, key fingerprint and refused key changes (the pins themselves
 are the server's `adopted-endpoints`, beside its key), or anything about
 firmware: the staged images (the directory is read again at start) and a
@@ -2057,6 +2193,7 @@ builds) with no stored source and no input label, and a format 6 file (goal
 hours enabled, which is what its windows meant then, and a format 7 file
 (before `voice_enabled`) with every room's voice path off, the default, and a
 format 8 file (before `voice_wake_words`) with every room listening for every
-wake word; the next write is format 9. A write goes to a temporary that is `fsync`ed, renamed over the file, and the
+wake word, and a format 9 file (before `room_eq_undo`) with nothing to undo in
+any room; the next write is format 10. A write goes to a temporary that is `fsync`ed, renamed over the file, and the
 directory is `fsync`ed, and a render that would not read back as the same state
 is never installed (`crates/control/src/persist.rs`).

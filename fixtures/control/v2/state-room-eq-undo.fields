@@ -1,0 +1,16 @@
+# Canonical input for the catalog v2 state-room-eq-undo vector.
+#
+# A server configured with these zones, after the commands below in order,
+# sends exactly state-room-eq-undo.json as its state.
+#
+# (room correction, ADR 0200) A room whose correction was replaced says so: its room_eq carries `undo` true, and the room beside it, never corrected, carries no such member. Switching the correction off afterwards keeps the undo.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = state
+default_audio = 127.0.0.1:4010
+zones = living,kitchen
+command.0 = {"v":2,"t":"room_eq","zone":"living","filters":[{"freq_hz":42,"gain_db":-6.00,"q":4.500}],"enabled":true}
+command.1 = {"v":2,"t":"room_eq","zone":"living","filters":[{"freq_hz":45,"gain_db":-9.32,"q":6.409},{"freq_hz":119,"gain_db":-6.53,"q":5.135}]}
+command.2 = {"v":2,"t":"room_eq","zone":"living","enabled":false}

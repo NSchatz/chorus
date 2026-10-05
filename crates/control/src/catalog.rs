@@ -390,6 +390,13 @@ pub enum Command {
         /// Whether they are applied.
         enabled: Option<bool>,
     },
+    /// (v2, room correction, ADR 0200) Put a room's correction back as it
+    /// was before the last `room_eq` that carried `filters`: those filters
+    /// and that `enabled`. One step, and then there is nothing to undo.
+    RoomEqUndo {
+        /// The room.
+        zone: String,
+    },
     /// (v2, goal 13) Set a room's A/V trim: how much later (positive) or
     /// earlier its TV audio plays, ms, [`AV_TRIM_MS`].
     AvTrim {
@@ -524,6 +531,7 @@ impl Command {
             Command::Sound { .. } => "sound",
             Command::BassManagement { .. } => "bass_management",
             Command::RoomEq { .. } => "room_eq",
+            Command::RoomEqUndo { .. } => "room_eq_undo",
             Command::AvTrim { .. } => "av_trim",
             Command::SpeakerName { .. } => "speaker_name",
             Command::SpeakerRoom { .. } => "speaker_room",
@@ -583,6 +591,7 @@ impl Command {
             | Command::Sound { zone, .. }
             | Command::BassManagement { zone, .. }
             | Command::RoomEq { zone, .. }
+            | Command::RoomEqUndo { zone }
             | Command::AvTrim { zone, .. }
             | Command::MeasureSweep { zone, .. } => Some(zone),
             _ => None,
@@ -753,6 +762,7 @@ impl Command {
                     m.push(("enabled".to_string(), Value::Bool(*enabled)));
                 }
             }
+            Command::RoomEqUndo { zone } => text("zone", zone),
             Command::AvTrim { zone, av_trim_ms } => {
                 text("zone", zone);
                 m.push(("av_trim_ms".to_string(), Value::int(i64::from(*av_trim_ms))));
@@ -2083,6 +2093,10 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
                 filters,
                 enabled,
             }
+        }
+        "room_eq_undo" => {
+            fields(&["v", "t", "zone"], &[])?;
+            Command::RoomEqUndo { zone: id("zone")? }
         }
         other => {
             return Err(at(Refusal::rejected(

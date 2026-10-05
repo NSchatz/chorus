@@ -170,6 +170,11 @@ pub struct Zone {
     pub bass: BassManagement,
     /// (v2, goal 12) The room-correction EQ.
     pub room_eq: RoomEq,
+    /// (v2, ADR 0200) The correction as it was before the last `room_eq`
+    /// that carried `filters`, which is what `room_eq_undo` puts back; `None`
+    /// where there is nothing to undo. One step deep, and persisted beside
+    /// the correction it belongs to.
+    pub room_eq_undo: Option<RoomEq>,
     /// (v2, goal 13) The A/V trim, ms: positive plays the room's TV audio
     /// later ([`crate::theater`]).
     pub av_trim_ms: i16,
@@ -199,6 +204,7 @@ impl Zone {
             sound: SoundSettings::default(),
             bass: BassManagement::default(),
             room_eq: RoomEq::default(),
+            room_eq_undo: None,
             av_trim_ms: 0,
         }
     }
@@ -1133,11 +1139,31 @@ impl Zones {
             Command::RoomEq {
                 filters, enabled, ..
             } => {
-                let eq = &mut self.zones[room()].room_eq;
+                let zone = &mut self.zones[room()];
                 if let Some(filters) = filters {
-                    eq.filters = filters.clone();
+                    // (ADR 0200) A command that carries filters is an
+                    // apply: what stood before it, filters and flag, is what
+                    // one `room_eq_undo` puts back. A command that only
+                    // switches the correction on or off is not one, so
+                    // comparing with and without a fit keeps the undo.
+                    zone.room_eq_undo = Some(zone.room_eq.clone());
+                    zone.room_eq.filters = filters.clone();
                 }
-                eq.enabled = enabled.unwrap_or(eq.enabled);
+                zone.room_eq.enabled = enabled.unwrap_or(zone.room_eq.enabled);
+            }
+            Command::RoomEqUndo { zone: id } => {
+                let zone = &mut self.zones[room()];
+                let Some(before) = zone.room_eq_undo.take() else {
+                    return Err(Refusal::rejected(
+                        "zone",
+                        format!(
+                            "nothing-to-undo: room '{}' has no correction to go back to; an undo \
+                             is one step, kept from the last room_eq that carried filters",
+                            id
+                        ),
+                    ));
+                };
+                zone.room_eq = before;
             }
             Command::SpeakerName { speaker, name } => {
                 self.speaker_exists(speaker)?;
@@ -2976,7 +3002,9 @@ impl Zones {
         changed
     }
 
-    fn zone_list(&self) -> String {
+    /// The configured zones' identifiers, as a refusal that names an
+    /// unknown zone lists them.
+    pub fn zone_list(&self) -> String {
         if self.zones.is_empty() {
             return "none: this server has no zone configured".to_string();
         }
@@ -3282,13 +3310,18 @@ impl Zones {
                     ("active".to_string(), Value::Bool(z.has_sub())),
                 ]),
             ),
-            (
-                "room_eq".to_string(),
-                Value::Obj(vec![
+            ("room_eq".to_string(), {
+                let mut eq = vec![
                     ("enabled".to_string(), Value::Bool(z.room_eq.enabled)),
                     ("filters".to_string(), filters_value(&z.room_eq.filters)),
-                ]),
-            ),
+                ];
+                // (ADR 0200) Only while there is one: a room whose
+                // correction was never replaced says what it always said.
+                if z.room_eq_undo.is_some() {
+                    eq.push(("undo".to_string(), Value::Bool(true)));
+                }
+                Value::Obj(eq)
+            }),
             ("voice_enabled".to_string(), Value::Bool(z.voice_enabled)),
             ("mic_muted".to_string(), Value::Bool(self.mic_muted(z))),
         ]);

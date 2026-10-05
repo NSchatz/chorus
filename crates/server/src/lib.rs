@@ -89,6 +89,7 @@ pub mod player;
 pub mod playerport;
 pub mod playersessions;
 pub mod probe_media;
+pub mod roomfit;
 pub mod router;
 pub mod schedule_runtime;
 pub mod serve;

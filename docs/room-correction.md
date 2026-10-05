@@ -191,11 +191,50 @@ The playback half of the measurement is built: the control catalog's `measure_sw
   the slots' grid like any stream's and play after the room's tier latency, and the fitter
   searches the recording for the response's peak rather than assuming where it is. No number
   for the sweep's alignment exists, and none is stated, until one is measured.
-- **Open for the recording's task**: the sweep plays through the room's tone controls and any
-  `room_eq` already set, so a room measured with filters enabled is the corrected room. Either
-  the fit is applied on top of what is set, or the filters are switched off for the
-  measurement (`room_eq` with `enabled` false); that choice belongs with accepting the
-  recording.
+- **The room is measured with its correction off**: the sweep plays through the room's tone
+  controls and any `room_eq` already set, so a room measured with filters enabled is the
+  corrected room. The recording's route refuses such a room by name (`correction_on`, below);
+  the tone controls are the person's and stay as they are.
+
+## The recording: uploaded, fitted, applied, undone
+
+The recording half is built too: `POST /api/room-fit` and the catalog's `room_eq_undo`
+(`docs/control-plane.md`, "Room correction: a recording, its fit and the undo";
+`docs/decisions/0200-a-recording-is-fitted-and-not-kept.md`).
+
+- **What is sent**: one mono recording, a 16-bit PCM WAV at 48 kHz, as the body of
+  `POST /api/room-fit?zone=<room>` with `Content-Type: audio/wav`, at most 2 MiB. A recorder at
+  another rate resamples first: 48 kHz is the rate every fixture above was made at, and a rate
+  no test holds is refused (`unsupported_rate`) rather than fitted.
+- **How the route is told which sweep was played**: in its query. `sweep_ms` is the sweep's
+  length and `fade_in_ms` its fade-in; the frequencies and the level are always
+  `Sweep::recommended`'s (10 Hz to 20 kHz, half full scale), which is what `measure_sweep`
+  plays. With neither member the recording is of the sweep `measure_sweep` plays, 5 s with a
+  0.1 s fade-in, so an app that used `measure_sweep` says nothing, or passes the
+  `sweep_ms` the state's `measurement` gave it. With `sweep_ms` and no `fade_in_ms` there is no
+  fade-in: that is the fixtures' sweep, `sweep_ms=1000`. The route builds the `Sweep` the
+  fitter deconvolves with from those two numbers at the recording's rate, and nothing is
+  guessed from the recording: fixture 01 sent without `sweep_ms=1000` is refused `too_short`,
+  because it is shorter than a 5 s sweep and its response.
+- **What comes back**: the fit's filters, spelled as `room_eq` spells them
+  (`filter_json`), with the RMS deviation before and after; or the fitter's refusal under its
+  own name (`too_short`, `clipped`, `too_quiet`, `too_noisy`) and in its own words, which carry
+  the numbers. The fit is `fit_recording` with `Target::flat()` and `FitConfig::default()`,
+  exactly what the table above was made with: the route adds no step of its own between the
+  samples and the fitter.
+- **Nothing is applied by the upload.** The person sees the filters and applies them with
+  `room_eq`; that apply keeps what stood before it, and `room_eq_undo` puts it back (one step).
+- **The room's correction must be off for the measurement.** A room whose `room_eq` is enabled
+  with filters is refused `correction_on`: its sweep was the corrected room, and a fit of that
+  recording would replace the correction with one for what is left of the room's response. The
+  order is: `room_eq` with `enabled` false, `measure_sweep`, record, upload, `room_eq` with the
+  new filters. Fitting on top of what is set (composing two filter sets inside 8 filters) is
+  not built.
+- **The recording is never stored**: it is held in memory for the fit and dropped. No file is
+  written and the server's output gets one line of counts per upload.
+- **What is not claimed**: that a phone's recording fits as these synthetic ones do. The
+  fixtures are the only recordings the route has been given; the first real one is the next
+  measurement to report.
 
 ## For goal 22 (the measurement)
 
@@ -204,8 +243,9 @@ The playback half of the measurement is built: the control catalog's `measure_sw
   Streams, https://www.w3.org/TR/mediacapture-streams/; on WebKit, `echoCancellation: false` is
   the switch that turns the processing off, WebKit bug 179411).
 - Play `Sweep::recommended(48_000)` (`measure_sweep`, above: one sweep per command), record at
-  least the sweep plus a second, and repeat it two or three times; averaging the deconvolved
-  responses aligned on their peaks is a follow-up.
+  least the sweep plus a second at 48 kHz, send it to `POST /api/room-fit` (above), and repeat
+  it two or three times; averaging the deconvolved responses aligned on their peaks is a
+  follow-up.
 - An uncalibrated phone's low end is the largest unknown: a microphone roll-off is smooth and
   cannot make a narrow mode, but a mode riding on it reads lower than it is. Detrending
   against a heavily (1 octave) smoothed copy before fitting, and per-model calibration (Sonos's

@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"zone","detail":"nothing-to-undo: room 'living' has no correction to go back to; an undo is one step, kept from the last room_eq that carried filters"}

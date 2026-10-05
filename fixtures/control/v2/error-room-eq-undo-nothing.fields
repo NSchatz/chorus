@@ -1,0 +1,18 @@
+# Canonical input for the catalog v2 error-room-eq-undo-nothing vector.
+#
+# `input` is refused, by the decoder or by the room state the lines below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-room-eq-undo-nothing.json. Nothing of it is applied.
+#
+# (room correction, ADR 0200) An undo in a room whose one step was taken already: the first undo put the earlier correction back, and there is no second.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+zones = living,kitchen
+command.0 = {"v":2,"t":"room_eq","zone":"living","filters":[{"freq_hz":42,"gain_db":-6.00,"q":4.500}]}
+command.1 = {"v":2,"t":"room_eq_undo","zone":"living"}
+input = {"v":2,"t":"room_eq_undo","zone":"living"}
+field = zone
+ends_the_session = 0
