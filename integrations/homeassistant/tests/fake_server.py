@@ -5,7 +5,10 @@ the server's identity, read from the repository and never copied), records
 every command it is sent byte for byte (with its headers), sends a button press
 to the subscribers of `GET /api/controller-events` when a test makes one, sends
 a visualizer frame to the subscribers of a room's `GET /api/visualizer` when a
-test makes one, and applies the
+test makes one, sends a wake word to the subscribers of `GET /api/voice-events`
+when a test makes one, opens and ends voice runs and serves a run's microphone
+audio on `GET /api/voice-audio` under the route's four rules, numbers every
+announcement and lists it until a test says how it ended, and applies the
 commands the integration sends to an in-memory model of the house so a test
 can see Home Assistant's entities follow. The model is a test double written
 from `docs/control-plane.md`, not the server: what the real server does is
@@ -19,6 +22,7 @@ from dataclasses import dataclass, field
 import json
 from pathlib import Path
 import re
+import secrets
 from typing import Any
 
 from aiohttp import web
@@ -83,6 +87,20 @@ class Received:
     headers: dict[str, str]
 
 
+# What a voice run's audio is, as the server's answer says it.
+VOICE_AUDIO_FORMAT = "pcm_s16le; rate=16000; channels=1"
+
+
+@dataclass
+class VoiceRun:
+    """One open voice run: its room, its identifier and what its reader is owed."""
+
+    zone: str
+    id: str
+    queue: asyncio.Queue[bytes | None] = field(default_factory=asyncio.Queue)
+    claimed: bool = False
+
+
 @dataclass
 class FakeChorusServer:
     """The fake: routes, a recorded command list and a small house model."""
@@ -105,6 +123,20 @@ class FakeChorusServer:
     # exporter has for a speaker that sent no telemetry (docs/telemetry.md).
     metrics_bytes: bytes | None = None
     metrics_status: int = 200
+    voice_events_status: int = 200
+    # `--voice-integration`: the one address a run's audio is served to. None:
+    # the server was started without it, and opens no run.
+    voice_integration: str | None = "127.0.0.1"
+    # `--voice-run-limit-ms`.
+    voice_run_limit_ms: int = 30000
+    # Every run that ended, as (room, the reason the server's log would name).
+    runs_ended: list[tuple[str, str]] = field(default_factory=list)
+    # Every refusal of `GET /api/voice-audio`, by its reason.
+    voice_refusals: list[str] = field(default_factory=list)
+    # Every identifier a `voice_start` was answered with, in order.
+    run_ids: list[str] = field(default_factory=list)
+    # With this set an announcement is over as soon as it starts.
+    announcements_end_at_once: str | None = None
     port: int = 0
     _streams: list[asyncio.Queue[bytes | None]] = field(default_factory=list)
     _press_streams: list[asyncio.Queue[bytes | None]] = field(default_factory=list)
@@ -112,6 +144,12 @@ class FakeChorusServer:
     _light_streams: list[tuple[str, asyncio.Queue[bytes | None]]] = field(
         default_factory=list
     )
+    _wake_streams: list[asyncio.Queue[bytes | None]] = field(default_factory=list)
+    # Room id to its open run.
+    _runs: dict[str, VoiceRun] = field(default_factory=dict)
+    # Room id to what its speaker has sent since the wake word it heard.
+    _heard: dict[str, bytes] = field(default_factory=dict)
+    _announcements: int = 0
     _runner: web.AppRunner | None = None
     _model: dict[str, Any] | None = None
 
@@ -124,6 +162,8 @@ class FakeChorusServer:
         app.router.add_get("/api/events", self._events)
         app.router.add_get("/api/controller-events", self._controller_events)
         app.router.add_get("/api/visualizer", self._visualizer)
+        app.router.add_get("/api/voice-events", self._voice_events)
+        app.router.add_get("/api/voice-audio", self._voice_audio)
         app.router.add_post("/api/command", self._command)
         app.router.add_get("/metrics", self._metrics)
         # No access log: nobody reads it, and it cannot format a frozen clock.
@@ -164,6 +204,9 @@ class FakeChorusServer:
             queue.put_nowait(None)
         self.drop_press_streams()
         self.drop_visualizer_streams()
+        self.drop_wake_streams()
+        for zone in list(self._runs):
+            self._end_run(zone, "session-ended")
 
     @property
     def press_subscribers(self) -> int:
@@ -206,6 +249,66 @@ class FakeChorusServer:
         """Close every visualizer stream and leave the others alone."""
         for _, queue in self._light_streams:
             queue.put_nowait(None)
+
+    @property
+    def wake_subscribers(self) -> int:
+        return len(self._wake_streams)
+
+    def wake(self, event: bytes, audio: bytes = b"") -> None:
+        """Send one `voice_wake` to every subscriber attached right now.
+
+        As the server does, nothing is kept for a stream opened later. `audio`
+        is what the room's speaker has sent since the detection: a run opened
+        in the room afterwards starts with it. Unlike the server this fake
+        does not look at the room's gate first: it sends every wake word a
+        test makes, which is what the entity's own gate is tested against.
+        """
+        self._heard[json.loads(event)["zone"]] = audio
+        for queue in self._wake_streams:
+            queue.put_nowait(event)
+
+    def drop_wake_streams(self) -> None:
+        """Close every stream of wake words and leave the others alone."""
+        for queue in self._wake_streams:
+            queue.put_nowait(None)
+
+    def open_run(self, zone: str) -> VoiceRun | None:
+        """The room's open run, if it has one."""
+        return self._runs.get(zone)
+
+    def mic(self, zone: str, pcm: bytes) -> None:
+        """Microphone audio arriving in a room: it goes to the room's open run."""
+        self._runs[zone].queue.put_nowait(pcm)
+
+    def end_run(self, zone: str, reason: str = "limit") -> None:
+        """End a room's run as the server does on its own (its limit, say)."""
+        self._end_run(zone, reason)
+
+    def set_mic_muted(self, zone: str, muted: bool) -> None:
+        """A speaker's hardware switch: the room's gate closes or goes live."""
+        self._zone(zone)["mic_muted"] = muted
+        if muted:
+            self._end_run(zone, "muted")
+        self.model["serial"] += 1
+        self.set_model_state(self._encode())
+
+    def end_announcement(
+        self, number: int, state: str = "finished", reason: str | None = None
+    ) -> None:
+        """Say how an announcement ended; the state lists it as over."""
+        listed = self.model.get("announcements", [])
+        entry = next(a for a in listed if a["id"] == number)
+        assert entry["state"] == "playing", entry
+        entry["state"] = state
+        if reason is not None:
+            entry["reason"] = reason
+        # The ones that are over are listed in the order they ended, after
+        # the ones still playing; the last eight are kept.
+        playing = [a for a in listed if a["state"] == "playing"]
+        over = [a for a in listed if a["state"] != "playing" and a is not entry]
+        self.model["announcements"] = [*playing, *[*over, entry][-8:]]
+        self.model["serial"] += 1
+        self.set_model_state(self._encode())
 
     def script(self, status: int, body: bytes) -> None:
         """Answer the next command with this instead of applying it."""
@@ -370,6 +473,144 @@ class FakeChorusServer:
             self._light_streams.remove(stream)
         return response
 
+    async def _voice_events(self, request: web.Request) -> web.StreamResponse:
+        self.requests.append("GET /api/voice-events")
+        self._gone()
+        if self.voice_events_status != 200:
+            return web.Response(status=self.voice_events_status, text="no")
+        response = web.StreamResponse(
+            headers={"Content-Type": "text/event-stream", "Connection": "close"}
+        )
+        await response.prepare(request)
+        queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+        self._wake_streams.append(queue)
+        try:
+            # One comment line and no message: a wake word is not a state.
+            await response.write(b": voice events\n\n")
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), 0.02)
+                except TimeoutError:
+                    if request.transport is None or request.transport.is_closing():
+                        break
+                    continue
+                if item is None:
+                    break
+                await response.write(b"data: " + item + b"\n\n")
+        finally:
+            self._wake_streams.remove(queue)
+        return response
+
+    def _refuse_voice(self, status: int, reason: str, detail: str) -> web.Response:
+        self.voice_refusals.append(reason)
+        return web.Response(
+            status=status,
+            body=json.dumps(
+                {"v": 1, "t": "error", "field": "", "detail": f"{reason}: {detail}"},
+                separators=(",", ":"),
+            ).encode(),
+            content_type="application/json",
+        )
+
+    async def _voice_audio(self, request: web.Request) -> web.StreamResponse:
+        """One run's audio, under the route's four rules, in the server's order."""
+        self.requests.append("GET /api/voice-audio")
+        self._gone()
+        if self.voice_integration is None or request.remote != self.voice_integration:
+            return self._refuse_voice(
+                403,
+                "not-the-voice-integration",
+                "a voice run's audio is served to the address this server was "
+                "started with (--voice-integration) and to no other",
+            )
+        named = request.query.get("run", "")
+        if not named:
+            return self._refuse_voice(400, "no-run-named", "name the run")
+        run = next((r for r in self._runs.values() if r.id == named), None)
+        if run is None:
+            return self._refuse_voice(
+                404, "no-voice-run", "no voice run with that identifier is open"
+            )
+        if run.claimed:
+            return self._refuse_voice(
+                409, "voice-run-taken", "this voice run has its reader already"
+            )
+        run.claimed = True
+        response = web.StreamResponse(
+            headers={
+                "Content-Type": "application/octet-stream",
+                "X-Chorus-Audio-Format": VOICE_AUDIO_FORMAT,
+                "Cache-Control": "no-store",
+                "Connection": "close",
+            }
+        )
+        await response.prepare(request)
+        try:
+            while True:
+                try:
+                    item = await asyncio.wait_for(run.queue.get(), 0.02)
+                except TimeoutError:
+                    if request.transport is None or request.transport.is_closing():
+                        self._end_run(run.zone, "reader-gone", run)
+                        break
+                    continue
+                if item is None:
+                    break
+                await response.write(item)
+        except ConnectionError:
+            self._end_run(run.zone, "reader-gone", run)
+        return response
+
+    def _end_run(self, zone: str, reason: str, only: VoiceRun | None = None) -> None:
+        """End a room's run, if it has one (and it is `only`, when given)."""
+        run = self._runs.get(zone)
+        if run is None or (only is not None and run is not only):
+            return
+        del self._runs[zone]
+        self.runs_ended.append((zone, reason))
+        run.queue.put_nowait(None)
+
+    def _voice_start(self, command: dict[str, Any]) -> bytes:
+        """`voice_start`: a run, or one of the refusals by name."""
+        name = command["zone"]
+        zone = self._zone(name)
+        if not zone.get("voice_enabled", False):
+            raise Refusal(
+                "zone",
+                f"voice-disabled: room '{name}' has voice switched off, so nothing "
+                "listens there; voice_enabled switches it on",
+            )
+        if zone.get("mic_muted", True):
+            raise Refusal(
+                "zone",
+                f"mic-muted: no microphone in room '{name}' reports its gate live "
+                "(the mute switch is the speaker's own, and no command opens it)",
+            )
+        if self.voice_integration is None:
+            raise Refusal(
+                "t",
+                "no-voice-integration: this server was started without "
+                "--voice-integration, so no address may read a voice run's audio "
+                "and none is opened",
+            )
+        self._end_run(name, "superseded")
+        run = VoiceRun(name, secrets.token_hex(16))
+        # What the speaker has sent since the wake word, when one was heard.
+        if heard := self._heard.pop(name, b""):
+            run.queue.put_nowait(heard)
+        self._runs[name] = run
+        self.run_ids.append(run.id)
+        return json.dumps(
+            {
+                "v": 2,
+                "t": "voice_run",
+                "zone": name,
+                "run": run.id,
+                "limit_ms": self.voice_run_limit_ms,
+            },
+            separators=(",", ":"),
+        ).encode()
+
     async def _command(self, request: web.Request) -> web.Response:
         body = await request.read()
         self.requests.append("POST /api/command")
@@ -384,8 +625,14 @@ class FakeChorusServer:
             return web.Response(
                 status=status, body=answer, content_type="application/json"
             )
+        command = json.loads(body)
+        answer: bytes | None = None
         try:
-            self._apply(json.loads(body))
+            if command["t"] == "voice_start":
+                # Answered with a `voice_run` message, not a state.
+                answer = self._voice_start(command)
+            else:
+                number = self._apply(command)
         except Refusal as refusal:
             return web.Response(
                 status=400,
@@ -400,8 +647,13 @@ class FakeChorusServer:
                 ).encode(),
                 content_type="application/json",
             )
+        if answer is not None:
+            return web.Response(body=answer, content_type="application/json")
         state = self._encode()
         self.set_model_state(state)
+        if number is not None:
+            # An `announce` is answered with the state and one more member.
+            state = state[:-1] + b',"announcement":%d}' % number
         return web.Response(body=state, content_type="application/json")
 
     def set_model_state(self, state: bytes) -> None:
@@ -577,11 +829,45 @@ class FakeChorusServer:
         }
         self.model["serial"] += 1
 
-    def _apply(self, command: dict[str, Any]) -> None:
+    def _announce(self, command: dict[str, Any]) -> int:
+        """`announce`: number it and list it as playing in the rooms that hear it."""
+        target = command["target"]
+        zones = self.model["zones"]
+        saved = self._saved(target)
+        if saved is not None:
+            rooms = list(saved["zones"])
+        elif any(z["id"] == target for z in zones):
+            rooms = [target]
+        else:
+            rooms = [z["id"] for z in zones if z["group"] == target]
+            if not rooms:
+                raise Refusal(
+                    "target",
+                    f"'{target}' is not a room, a saved group or a formed group",
+                )
+        self._announcements += 1
+        number = self._announcements
+        self.model.setdefault("announcements", []).insert(
+            0, {"id": number, "target": target, "rooms": rooms, "state": "playing"}
+        )
+        if self.announcements_end_at_once is not None:
+            entry = self.model["announcements"].pop(0)
+            entry["state"] = self.announcements_end_at_once
+            self.model["announcements"] = [*self.model["announcements"], entry][-8:]
+        return number
+
+    def _apply(self, command: dict[str, Any]) -> int | None:
+        """Apply a command; return the number of the announcement it started."""
         kind = command["t"]
+        number: int | None = None
         if kind == "firmware_install":
             self._firmware_install(command)
-            return
+            return None
+        if kind == "voice_stop":
+            # A room with no run is not an error; the state is as it stands.
+            self._zone(command["zone"])
+            self._end_run(command["zone"], "stopped")
+            return None
         sources = self._sources()
         if kind == "volume":
             self._set_volume(
@@ -660,6 +946,12 @@ class FakeChorusServer:
             allowed = json.loads(self.server_bytes)["announce_origins"]
             if not any(command["url"].startswith(origin + "/") for origin in allowed):
                 raise Refusal("url", "the origin is not one of the announce origins")
+            number = self._announce(command)
+        elif kind == "voice_enabled":
+            zone = self._zone(command["zone"])
+            zone["voice_enabled"] = command["enabled"]
+            if not command["enabled"]:
+                self._end_run(command["zone"], "voice-disabled")
         elif kind == "sound":
             sound = self._zone(command["zone"])["sound"]
             for key in ("bass", "treble"):
@@ -700,6 +992,7 @@ class FakeChorusServer:
         else:
             raise Refusal("t", f"'{kind}' is not a command of this fake")
         self._regroup(sources)
+        return number
 
 
 class Refusal(Exception):

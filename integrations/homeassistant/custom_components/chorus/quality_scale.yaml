@@ -11,8 +11,8 @@ rules:
     status: exempt
     comment: >-
       The integration registers no action of its own; it implements the
-      media_player, number, select, switch and update platforms' entity
-      actions.
+      assist_satellite, media_player, number, select, switch and update
+      platforms' entity actions.
   appropriate-polling:
     status: done
     comment: >-
@@ -20,7 +20,9 @@ rules:
       polled; a stream silent for 45 s is probed once for liveness. Button
       presses are pushed too, on a second stream held the same way, and so
       are a room's visualizer frames, on a stream held only while that
-      room's visualizer sensor is enabled. The
+      room's visualizer sensor is enabled, and the wake words, on a stream
+      opened only once a room has a voice satellite. An announcement's end
+      is read from the pushed state, never polled for. The
       speakers' diagnostic sensors are the one thing polled: one GET
       /metrics every 60 s for the whole server, only while at least one
       diagnostic sensor is enabled, and never two less than 55 s apart.

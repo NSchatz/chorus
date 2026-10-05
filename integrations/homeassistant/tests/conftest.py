@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
+from homeassistant.setup import async_setup_component
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.syrupy import HomeAssistantSnapshotExtension
@@ -21,6 +24,43 @@ SERVER_ID = "chorus-server-0123456789abcdef"
 @pytest.fixture(autouse=True)
 def _enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Let Home Assistant load `custom_components/chorus`."""
+
+
+@pytest.fixture
+async def hass(hass: HomeAssistant) -> HomeAssistant:
+    """Home Assistant with its own `homeassistant` integration set up.
+
+    A running Home Assistant always has it. The integration's voice satellite
+    depends on Assist (`assist_satellite`, `assist_pipeline`, `conversation`),
+    and `conversation` reads what the `homeassistant` integration keeps, so
+    without it the entry would not set up under the harness.
+    """
+    assert await async_setup_component(hass, "homeassistant", {})
+    return hass
+
+
+@pytest.fixture(autouse=True)
+def _assist_writes_nothing_outside(tmp_path: Path) -> Iterator[None]:
+    """Keep what Assist's own dependencies do at setup inside the test.
+
+    `tts` makes a cache directory under the configuration directory, which
+    under the harness is inside the installed harness package, and `ffmpeg`
+    starts the host's `ffmpeg` to ask its version. Neither is the
+    integration's, and a test run writes nothing outside its own directory
+    and depends on no program of the host.
+    """
+    with (
+        patch(
+            "homeassistant.components.tts._init_tts_cache_dir",
+            return_value=str(tmp_path),
+        ),
+        patch("homeassistant.components.tts._get_cache_files", return_value={}),
+        patch(
+            "homeassistant.components.ffmpeg.FFmpegManager.async_get_version",
+            AsyncMock(return_value=("6.0", 6)),
+        ),
+    ):
+        yield
 
 
 @pytest.fixture

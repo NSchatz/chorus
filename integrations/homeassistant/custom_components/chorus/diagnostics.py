@@ -14,8 +14,8 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 
+from .announce import own_origins, server_origins
 from .coordinator import ChorusConfigEntry
-from .media_player import own_origins, server_origins
 
 TO_REDACT = {CONF_HOST, "unique_id", "title"}
 
