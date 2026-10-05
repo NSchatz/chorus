@@ -252,7 +252,7 @@ is subscribed and never kept.
 
 ## Voice rooms: an Assist satellite per room that has a microphone
 
-The model is `docs/decisions/0000-the-home-assistant-voice-satellite.md`; the path is proposal
+The model is `docs/decisions/0176-the-home-assistant-voice-satellite.md`; the path is proposal
 P8, Option A, and the server's half is `docs/control-plane.md`, "Voice: `voice_enabled` and
 `mic_muted`" and "Voice: the wake word, the run and its audio".
 

@@ -1,4 +1,4 @@
-# 0000: a room that has a microphone is one Home Assistant Assist satellite on the room's device, beside a `voice enabled` switch and a read-only `mic muted` sensor; a wake word the server heard opens a run whose audio is pulled into the pipeline at speech-to-text, the run is stopped as soon as speech-to-text is done, and a reply or an announcement goes through the server's `announce` and is over when the pushed state says its number is no longer playing
+# 0176: a room that has a microphone is one Home Assistant Assist satellite on the room's device, beside a `voice enabled` switch and a read-only `mic muted` sensor; a wake word the server heard opens a run whose audio is pulled into the pipeline at speech-to-text, the run is stopped as soon as speech-to-text is done, and a reply or an announcement goes through the server's `announce` and is over when the pushed state says its number is no longer playing
 
 - Status: accepted, 2026-10-05. Extends 0138 (the Home Assistant integration); uses 0169 (the
   microphone intake), 0172 (the voice run and the run-scoped route) and 0175 (announcements

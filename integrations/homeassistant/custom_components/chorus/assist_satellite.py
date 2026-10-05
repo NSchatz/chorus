@@ -1,6 +1,6 @@
 """A room that has a microphone, as a Home Assistant Assist satellite.
 
-`docs/decisions/0000-the-home-assistant-voice-satellite.md`; proposal P8,
+`docs/decisions/0176-the-home-assistant-voice-satellite.md`; proposal P8,
 Option A. The wake word is heard on the chorus server, so a run here starts at
 speech-to-text with the phrase the server's model heard:
 

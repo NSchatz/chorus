@@ -41,7 +41,7 @@ VISUALIZER_MIN_WRITE_INTERVAL: Final = 0.2
 # the server's rate.
 VISUALIZER_IDLE_AFTER: Final = 2.0
 
-# Voice (docs/decisions/0000-the-home-assistant-voice-satellite.md).
+# Voice (docs/decisions/0176-the-home-assistant-voice-satellite.md).
 #
 # How long an announcement's end is waited for. The server cuts a clip at ten
 # minutes (docs/control-plane.md, the `announce` command), so one it has not
