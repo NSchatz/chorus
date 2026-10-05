@@ -119,6 +119,70 @@ export function limitsOf(zone) {
   };
 }
 
+// The offered inputs that are a TV's (the state's `input_kinds`, ADR 0194),
+// in the server's order: { input, kind }, `kind` "optical" or "hdmi_arc". The
+// server says which are a TV's (`tv`); a server that says an input's kind and
+// not that is read by the kind.
+const TV_KINDS = ["optical", "hdmi_arc"];
+
+export function tvInputsOf(state) {
+  const kinds = state && Array.isArray(state.input_kinds) ? state.input_kinds : [];
+  return kinds
+    .filter((entry) => entry && typeof entry.input === "string" && entry.input && typeof entry.kind === "string")
+    .filter((entry) => (typeof entry.tv === "boolean" ? entry.tv : TV_KINDS.includes(entry.kind)))
+    .map((entry) => ({ input: entry.input, kind: entry.kind }));
+}
+
+// The roles of a bonded set that only a theater has: a centre, a sub and the
+// surrounds (docs/control-plane.md, "A bonded set"). A pair, `FL FR`, is not one.
+const SURROUNDS = ["SL", "SR", "BL", "BR"];
+const THEATER_ROLES = ["FC", "LFE", ...SURROUNDS];
+
+// What a room has of the TV path and of bass management, as the theater
+// screen reads it (docs/control-plane.md, "The TV path" and "Per-room
+// sound"): { offered, avTrimMs, tvUpmix, tvInputs, set, surrounds, bass }.
+//   offered    whether the room has a theater section at all: it has a TV
+//              input, or its bonded set is more than a pair
+//   avTrimMs   the room's A/V trim, whole milliseconds
+//   tvUpmix    "off" or "ambient", in the server's word
+//   tvInputs   the TV inputs that are the room's, [{ input, kind }]: the ones
+//              an endpoint of the room offers, and the ones whose autoplay
+//              rule plays in the room
+//   set        whether its bonded set is more than a pair
+//   surrounds  whether that set has surround members, which are what a TV
+//              upmix plays from
+//   bass       { crossoverHz, subLevel, subPolarity, active }: `subLevel` in
+//              hundredths of a dB (the catalog writes two places), and
+//              `active` the server's own word for "the set has a sub"
+// A member the state does not carry, or carries as something else, is null,
+// and a screen says so rather than show a default.
+export function theaterOf(zone, tvInputs = [], rules = []) {
+  const held = zone && typeof zone === "object" ? zone : {};
+  const whole = (value) => (Number.isInteger(value) ? value : null);
+  const word = (value) => (typeof value === "string" && value ? value : null);
+  const roles = (Array.isArray(held.bond) ? held.bond : []).map((member) => member?.role);
+  const endpoints = (Array.isArray(held.endpoints) ? held.endpoints : []).filter((id) => typeof id === "string" && id);
+  const offeredHere = (input) => endpoints.some((endpoint) => input.startsWith(`${endpoint}/`));
+  const playsHere = (input) => rules.some((rule) => rule.input === input && rule.target === held.id);
+  const mine = tvInputs.filter(({ input }) => offeredHere(input) || playsHere(input));
+  const bass = held.bass_management && typeof held.bass_management === "object" ? held.bass_management : {};
+  const set = roles.some((role) => THEATER_ROLES.includes(role));
+  return {
+    offered: mine.length > 0 || set,
+    avTrimMs: whole(held.av_trim_ms),
+    tvUpmix: word(held.sound && typeof held.sound === "object" ? held.sound.tv_upmix : null),
+    tvInputs: mine,
+    set,
+    surrounds: roles.some((role) => SURROUNDS.includes(role)),
+    bass: {
+      crossoverHz: whole(bass.crossover_hz),
+      subLevel: typeof bass.sub_level_db === "number" && Number.isFinite(bass.sub_level_db) ? Math.round(bass.sub_level_db * 100) : null,
+      subPolarity: word(bass.sub_polarity),
+      active: bass.active === true,
+    },
+  };
+}
+
 // The house's autoplay rules (the state's `autoplay`), by input, in the
 // server's order: { input, target, enabled, stopOnStandby, lowLatency }. The
 // two TV fields are `true` unless the rule says `false`, which is how the
@@ -331,7 +395,7 @@ export function roomOf(rooms, id) {
 
 // What the screens read of one room. A member this cannot read is null, and
 // a screen says so in words rather than showing a made-up value.
-function readRoom(zone, speakerNames, playing) {
+function readRoom(zone, speakerNames, playing, tvInputs, rules) {
   if (!zone || typeof zone !== "object" || typeof zone.id !== "string" || !zone.id) return null;
   const bond = Array.isArray(zone.bond) ? zone.bond : [];
   const group = typeof zone.group === "string" && zone.group ? zone.group : zone.id;
@@ -345,6 +409,8 @@ function readRoom(zone, speakerNames, playing) {
     sound: soundOf(zone),
     // Its volume limit and its quiet hours (limitsOf).
     limits: limitsOf(zone),
+    // Its TV path and its bass management (theaterOf).
+    theater: theaterOf(zone, tvInputs, rules),
     // The id of the group the room plays in: its own id when it is alone.
     group,
     // What the room plays while it is alone in the group named for it (a
@@ -373,7 +439,9 @@ export function roomsOf(state, artwork) {
       .map((speaker) => [speaker.id, speaker.name]),
   );
   const playing = playingOf(state, artwork);
-  return zones.map((zone) => readRoom(zone, speakerNames, playing)).filter(Boolean);
+  const tvInputs = tvInputsOf(state);
+  const rules = autoplayOf(state);
+  return zones.map((zone) => readRoom(zone, speakerNames, playing, tvInputs, rules)).filter(Boolean);
 }
 
 // A volume of the state message in thousandths, or null where it is not one.

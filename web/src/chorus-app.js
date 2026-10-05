@@ -56,6 +56,7 @@ import "./rooms.js";
 import { HOME, HOME_ADDRESS, addressOf, createNavigation, screenOf } from "./routes.js";
 import "./sound.js";
 import { SPEAKERS_SCREEN } from "./speakers.js";
+import "./theater.js";
 
 export class ChorusApp extends LitElement {
   static properties = {
