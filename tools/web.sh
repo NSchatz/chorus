@@ -7,7 +7,7 @@
 #   tools/web.sh build   web/src into web/dist, the committed output chorus-server embeds. The
 #                        build is deterministic; the gate step `web-build` runs it and fails when
 #                        web/dist then differs from what is committed.
-#   tools/web.sh smoke   the one browser test (web/smoke/, the ADR of the browser smoke test):
+#   tools/web.sh smoke   the one browser test (web/smoke/; docs/decisions/0183-the-one-browser-smoke-test.md):
 #                        Playwright's headless Chromium loads the app from the chorus-server
 #                        CHORUS_SERVER_BIN names, through a fake login, and asserts rendered
 #                        text. Without CHORUS_SERVER_BIN it ends `web-smoke: SKIPPED` and exits

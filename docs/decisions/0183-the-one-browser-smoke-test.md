@@ -1,4 +1,4 @@
-# 0000: the gate has one browser test: Playwright's headless Chromium loads the app from a real chorus-server through a fake login and asserts rendered text and no policy violation; a host with no root gives Chromium its libraries and fonts from two prefixes
+# 0183: the gate has one browser test: Playwright's headless Chromium loads the app from a real chorus-server through a fake login and asserts rendered text and no policy violation; a host with no root gives Chromium its libraries and fonts from two prefixes
 
 - Status: accepted, 2026-10-05. Builds the "one browser smoke test" that proposal P5 and
   record 0181 left to a later change.
