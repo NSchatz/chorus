@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 
 use chorus_control::catalog::{
     decode_command, decode_message, is_server_id, Command, ControllerEvent, Refusal, ServerInfo,
-    Volume,
+    VoiceRun, VoiceWake, Volume, WakeWord,
 };
 use chorus_control::firmware::{Image, Report, SpeakerFirmware};
 use chorus_control::json;
@@ -36,7 +36,7 @@ use chorus_server::controller::{translate, ControllerAction};
 
 use vectors::{read_fields_in, read_json_in, v2_dir, vector_names_in, Fields};
 
-/// Every message type catalog version 2 adds or changes, plus the three the
+/// Every message type catalog version 2 adds or changes, plus the ones the
 /// server sends. Listed, not derived, so a new type has to be added here.
 const EVERY_V2_MESSAGE_TYPE: &[&str] = &[
     "attach",
@@ -53,6 +53,8 @@ const EVERY_V2_MESSAGE_TYPE: &[&str] = &[
     "quiet_hours",
     "quiet_hours_enabled",
     "voice_enabled",
+    "voice_start",
+    "voice_stop",
     "alarm_set",
     "alarm_delete",
     "alarm_stop",
@@ -76,6 +78,8 @@ const EVERY_V2_MESSAGE_TYPE: &[&str] = &[
     "announce",
     "server",
     "controller_event",
+    "voice_wake",
+    "voice_run",
     "state",
     "error",
     "refused",
@@ -143,7 +147,13 @@ fn decoding_every_v2_command_vector_recovers_its_committed_fields() {
         let fields = read_fields_in(&v2_dir(), &name);
         if matches!(
             fields.get("message_type").as_str(),
-            "state" | "error" | "refused" | "server" | "controller_event"
+            "state"
+                | "error"
+                | "refused"
+                | "server"
+                | "controller_event"
+                | "voice_wake"
+                | "voice_run"
         ) {
             continue;
         }
@@ -207,6 +217,22 @@ fn server_from(fields: &Fields) -> Zones {
             list(&fields.get("announce_origins"))
                 .iter()
                 .map(|o| Origin::parse(o).unwrap())
+                .collect(),
+        );
+    }
+    // (voice, P8) The wake-word models the server runs:
+    // `wake_words = <id>:<phrase>,<id>:<phrase>`.
+    if fields.has("wake_words") {
+        zones.set_wake_words(
+            list(&fields.get("wake_words"))
+                .iter()
+                .map(|w| {
+                    let (id, phrase) = w.split_once(':').unwrap();
+                    WakeWord {
+                        id: id.to_string(),
+                        phrase: phrase.to_string(),
+                    }
+                })
                 .collect(),
         );
     }
@@ -421,6 +447,19 @@ fn encode_from(fields: &Fields) -> String {
             outcome: fields.get("outcome"),
         }
         .encode(),
+        // (voice, P8) What `GET /api/voice-events` sends when a room's
+        // microphone heard a wake word, and what a `voice_start` is answered.
+        "voice_wake" => VoiceWake {
+            zone: fields.get("zone"),
+            phrase: fields.get("phrase"),
+        }
+        .encode(),
+        "voice_run" => VoiceRun {
+            zone: fields.get("zone"),
+            run: fields.get("run"),
+            limit_ms: fields.get("limit_ms").parse().unwrap(),
+        }
+        .encode(),
         "error" | "refused" => {
             let mut zones = server_from(fields);
             soloist_from(fields, &mut zones);
@@ -532,6 +571,8 @@ fn command_from(fields: &Fields) -> Command {
             zone: get("zone"),
             enabled: get("enabled") == "1",
         },
+        "voice_start" => Command::VoiceStart { zone: get("zone") },
+        "voice_stop" => Command::VoiceStop { zone: get("zone") },
         "alarm_set" => Command::AlarmSet(Alarm {
             id: get("alarm"),
             target: get("target"),

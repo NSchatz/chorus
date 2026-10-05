@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"zone","detail":"mic-muted: no microphone in room 'kitchen' reports its gate live (the mute switch is the speaker's own, and no command opens it)"}

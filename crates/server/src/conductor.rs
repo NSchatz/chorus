@@ -494,8 +494,9 @@ impl Conductor {
     /// `voice_enabled` is not what it was last told: `uplink` on while the
     /// room has voice switched on, off the moment it has not (or the
     /// endpoint is in no room). A session starts off, so one in a room with
-    /// voice off is sent nothing. `listening` stays false: no run exists yet
-    /// (the wake word and the run are later tasks). This never opens a
+    /// voice off is sent nothing. `listening` is on while the room has a run
+    /// open (`crate::voice`; a run opening or ending wakes this pass). This
+    /// never opens a
     /// microphone: the gate is the endpoint's own, and the intake reads the
     /// room model for every frame whatever the endpoint was told.
     fn voice_controls(&mut self, snapshot: &Snapshot, report: &mut PassReport) {
@@ -506,11 +507,14 @@ impl Conductor {
             if session.roles & roles::VOICE == 0 {
                 continue;
             }
+            let room = snapshot
+                .room_of(&session.endpoint)
+                .filter(|room| room.voice_enabled);
             let wanted = VoiceControl {
-                uplink: snapshot
-                    .room_of(&session.endpoint)
-                    .is_some_and(|room| room.voice_enabled),
-                listening: false,
+                uplink: room.is_some(),
+                // A run is open in the room (`crate::voice`): its endpoints
+                // show that it is being listened to.
+                listening: room.is_some_and(|room| voice.listening(&room.id)),
             };
             match voice.told(session.id) {
                 Some(told) if told == wanted => {}

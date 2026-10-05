@@ -1,0 +1,14 @@
+# Canonical input for the catalog v2 voice_run vector.
+#
+# Encoding these field values must produce exactly voice_run.json: what a
+# server answers a voice_start with. It is not a state and nothing decodes it.
+# `run` is 32 hexadecimal digits made new for every run (a made-up one here),
+# and this answer is the only place it is ever written.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = voice_run
+zone = kitchen
+run = 0123456789abcdef0123456789abcdef
+limit_ms = 30000

@@ -321,6 +321,11 @@ control plane:
                                 scheme://host[:port] (the home automation's own address);
                                 repeatable; with none every announce is refused (needs
                                 --control-listen, and --players to play one)
+  --voice-integration <ip>      the one address a voice run's microphone audio is served
+                                to (the home automation's own); with none no voice run
+                                opens (needs --control-listen)
+  --voice-run-limit-ms <n>      the longest a voice run lasts (default 30000, at most
+                                120000)
   --advertise --instance <label>  advertise by multicast DNS
 
 soloist (goal 17; docs/soloist.md; off unless --soloist-receivers is above 0: Spotify Connect
@@ -442,6 +447,22 @@ fn fixed_civil_instant(zone: &chorus_schedule::Zone, at: chorus_control::rooms::
         monday + i64::from(at.weekday),
         i64::from(at.time.minutes()) * 60,
     )
+}
+
+/// (voice, P8) The wake-word models this build carries, as the state lists
+/// them: each vendored model's name and the phrase its manifest declares. A
+/// model whose manifest does not read is not listed (and is never run).
+fn wake_words() -> Vec<chorus_control::catalog::WakeWord> {
+    chorus_wakeword::builtin()
+        .iter()
+        .filter_map(|builtin| {
+            let manifest = chorus_wakeword::Manifest::from_json(builtin.manifest).ok()?;
+            Some(chorus_control::catalog::WakeWord {
+                id: builtin.name.to_string(),
+                phrase: manifest.phrase,
+            })
+        })
+        .collect()
 }
 
 fn main() -> ExitCode {
@@ -708,6 +729,9 @@ fn main() -> ExitCode {
                     .join(",")
             );
         }
+        // (voice, P8) The wake-word models this build carries, listed in the
+        // state for the home automation's configuration.
+        zones.set_wake_words(wake_words());
         let zone_count = zones.zones().len();
         let mut state = ControlState::new(zones, config.state_file.as_ref().map(|_| state_path));
         state.set_event_streams(config.event_streams);
@@ -1287,9 +1311,23 @@ fn main() -> ExitCode {
         }
         None => None,
     };
-    // (voice, P8) The microphone intake: shared by every session's reader
-    // and the conductor, and by nothing that plays, writes or serves audio.
-    let voice = Arc::new(chorus_server::voice::Voice::new());
+    // (voice, P8) The voice path: shared by every session's reader, the
+    // conductor and the event writer, and by nothing that plays or stores
+    // audio. Its one way out is the reader of an open run.
+    let voice = Arc::new(chorus_server::voice::Voice::with_run_limit(
+        std::time::Duration::from_millis(config.voice_run_limit_ms),
+    ));
+    if let Some((_, state)) = control.as_ref() {
+        // The wake word is heard and a run's audio is served by the event
+        // writer, to the one address named here; with none no run opens.
+        state.voice_through(Arc::clone(&voice), config.voice_integration);
+        if let Some(address) = config.voice_integration {
+            println!(
+                "chorus-server: voice integration address={} run_limit_ms={}",
+                address, config.voice_run_limit_ms
+            );
+        }
+    }
     let session = Arc::new(SessionContext {
         identity,
         adoptions,

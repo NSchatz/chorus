@@ -32,6 +32,9 @@ COPY audio-path.conf ./
 # 0122-the-server-decoders.md). This is a glibc build: the base image's own C
 # compiler builds it, and nothing here targets musl.
 COPY third_party/opus ./third_party/opus
+# The server hears the wake word with the vendored microWakeWord model, which
+# crates/wakeword compiles into itself (docs/decisions/0167-the-wake-word-runtime.md).
+COPY third_party/wakeword ./third_party/wakeword
 # The server compiles the control page's documentation into itself
 # (crates/server/src/control.rs includes docs/control-page.md), so the build
 # context carries that one document (B-14).
@@ -58,6 +61,10 @@ COPY config/verification.conf /etc/chorus/verification.conf
 # The notices the binary's third-party code asks for: libopus's licence text
 # (BSD-3-Clause) and where Symphonia's MPL-2.0 source is.
 COPY third_party/opus/COPYING /usr/share/doc/chorus/libopus-COPYING
+# The wake-word model's licence (Apache-2.0) and its NOTICE, which a
+# distribution carries with it.
+COPY third_party/wakeword/LICENSE /usr/share/doc/chorus/wakeword-LICENSE
+COPY third_party/wakeword/NOTICE /usr/share/doc/chorus/wakeword-NOTICE
 COPY deploy/THIRD-PARTY-NOTICES.md /usr/share/doc/chorus/THIRD-PARTY-NOTICES.md
 
 RUN mkdir -p /var/lib/chorus && chown chorus /var/lib/chorus

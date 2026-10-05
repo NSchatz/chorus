@@ -441,7 +441,8 @@ intake=dropping reason=<no-voice-role|no-room|voice-disabled|gate-muted>
 buffered_frames=<n> dropped_frames=<n>`). A kept frame goes into a buffer in
 memory, at most three seconds per session, wiped when the room is switched
 off, when the gate closes and when the session ends. That buffer is the only
-place the audio is. It is not an input and not a source: the state's `inputs`
+place the audio is, until a voice run is opened for the room ("Voice: the wake
+word, the run and its audio", below). It is not an input and not a source: the state's `inputs`
 and every `source` never name it, no `take`, `autoplay` or `input_label`
 spelling selects it, and it reaches no audio stream, no visualizer stream, no
 event stream, no log line and no file
@@ -462,6 +463,137 @@ and starting a line-in are the server runtime's, which tells the room model
 what it did through the model's hooks (`crates/control/src/zones.rs`, "What the
 runtime drives"), and every volume it sets is clamped like any other. What the
 server's runtime does is "The schedule runtime" below.
+
+### Voice: the wake word, the run and its audio
+
+```json
+{"v":2,"t":"voice_start","zone":"kitchen"}
+{"v":2,"t":"voice_stop","zone":"kitchen"}
+```
+
+| type | fields | effect |
+|---|---|---|
+| `voice_start` | `zone` | opens a voice run in the room, ending the room's open run if it has one. Answered with a `voice_run` message (below), not a state |
+| `voice_stop` | `zone` | ends the room's voice run. A room with no run is not an error; the answer is the state as it stands |
+
+This is the server's half of a Home Assistant voice satellite (proposal P8,
+Option A; `docs/decisions/0172-the-voice-run-and-the-run-scoped-mic-route.md`).
+Three things happen, in this order, and each is separate from the next:
+
+**1. The wake word.** The server runs its wake-word models over what every
+voice room's microphones send (the kept frames of the section above; so only
+with `voice_enabled` on and a live gate). When one hears its phrase, every
+`GET /api/voice-events` stream is sent one message
+(`fixtures/control/v2/voice_wake.json`):
+
+```json
+{"v":2,"t":"voice_wake","zone":"kitchen","phrase":"Okay Nabu"}
+```
+
+| field | notes |
+|---|---|
+| `zone` | the room whose microphone heard it |
+| `phrase` | the phrase, as the model's manifest spells it: one of the state's `wake_words[].phrase` |
+
+It carries the room and the phrase and nothing else: no audio, and no run. A
+wake word opens no run and serves no audio; it is a fact the home automation
+may act on. Two microphones of one room hearing one utterance are one event (a
+second detection in a room within 2 s of the first is not reported; ASSUMED,
+not measured), and a room with a run open reports none. Like
+`controller_event`, it is a message the server sends and never one it accepts,
+it rides in no state message, and nothing is kept for a stream opened later.
+
+The models the server runs are listed in the state, for the integration's
+configuration (`fixtures/control/v2/state-voice.json`):
+
+```json
+"wake_words":[{"id":"okay_nabu","phrase":"Okay Nabu"}]
+```
+
+Every model runs in every voice room; there is no per-room choice yet. Which
+models a build carries, and under which licences, is
+`third_party/wakeword/LICENCES.md` (`docs/decisions/0167-the-wake-word-runtime.md`).
+
+**2. The run.** `voice_start` opens a run in a room: after a `voice_wake`, or
+without one (Home Assistant's start conversation and ask question). The answer
+is `200` with one message (`fixtures/control/v2/voice_run.json`):
+
+```json
+{"v":2,"t":"voice_run","zone":"kitchen","run":"0123456789abcdef0123456789abcdef","limit_ms":30000}
+```
+
+| field | notes |
+|---|---|
+| `zone` | the room the run is in |
+| `run` | the run's identifier: 32 hexadecimal digits from the system's random source, new for every run |
+| `limit_ms` | the longest the run lasts, whatever else happens |
+
+**This answer is the only place the identifier is ever written.** It is in no
+state message, no event on any stream, no report, no metric and no log line,
+so only the peer that asked holds it. A run is refused, `400` with an `error`
+naming the field and starting with the reason, when:
+
+| field | detail starts | when |
+|---|---|---|
+| `zone` | (the unknown zone refusal) | the server has no such room |
+| `zone` | `voice-disabled: ` | the room has voice switched off |
+| `zone` | `mic-muted: ` | no microphone of the room reports its gate live: muted, absent, or the room has none |
+| `t` | `no-voice-integration: ` | the server was started without `--voice-integration`, so nothing could read the run |
+
+`fixtures/control/v2/error-voice-start-disabled.json` and
+`error-voice-start-muted.json` pin the two the room model decides. While a run
+is open the room's voice speakers are told so (`voice_control`, `listening`
+on: `docs/protocol.md`), which is what their status light shows.
+
+A run takes its audio from one speaker of the room: the one that heard the
+room's wake word, when the run is opened within 5 s of it (ASSUMED), else the
+first with a live gate. A run opened after a wake word starts with what that
+speaker has sent since the detection, so the first word of a command said
+before the home automation answered is not lost; a run opened without one
+starts at the command and carries nothing from before it.
+
+A run ends, and nothing brings it back, when:
+
+| reason (in the log) | when |
+|---|---|
+| `stopped` | a `voice_stop` named its room |
+| `limit` | it has lasted `limit_ms`, on the server's monotonic clock: 30 s unless `--voice-run-limit-ms` says otherwise (1 to 120000; the default is ASSUMED, not measured) |
+| `muted` | its speaker's gate closed |
+| `voice-disabled` | its room's voice was switched off |
+| `session-ended` | its speaker's session ended |
+| `reader-gone`, `reader-stalled` | its reader closed the connection, or took none of what it was sent for 5 s |
+| `superseded` | another `voice_start` named its room |
+
+**3. The audio.** `GET /api/voice-audio?run=<identifier>` is the run's audio:
+`200`, `Content-Type: application/octet-stream`, `X-Chorus-Audio-Format:
+pcm_s16le; rate=16000; channels=1`, and then the room's microphone audio as it
+arrives, raw signed 16-bit little-endian samples at 16 kHz, one channel, with
+no header and no framing, until the run ends, when the server closes the
+connection. It is the only route that carries microphone audio. The control
+plane has no authentication ("What is NOT in this catalog"), so the route is
+held to four rules, checked in this order, each refusal an `error` whose
+detail starts with the reason:
+
+| answer | reason | when |
+|---|---|---|
+| `403` | `not-the-voice-integration` | the caller's address is not the one the server was started with (`--voice-integration <ip address>`, the home automation's own), or the server was started with none. Checked first, so a caller from elsewhere learns nothing about runs |
+| `400` | `no-run-named` | the request names no run |
+| `404` | `no-voice-run` | no open run has that identifier. One answer for "no run is open" and "not this one" |
+| `409` | `voice-run-taken` | the run has its reader already. A run has one reader, once |
+
+A refusal is logged with its reason and the caller's address, never with the
+identifier (`voice route refused reason=<reason> peer=<address>`), and counts
+as refused in `GET /api/report`. The reader is one of the event writer's
+streams ("Event streams and the event writer"), so a run holds no control
+worker. If the reader falls more than three seconds behind the microphone, the
+oldest audio is dropped and counted (`lost_bytes` in the run's last log line).
+
+The microphone's audio is still in memory only, never written to a file and
+never a source (I4): during a run it is in the speaker's buffer, in the run's
+queue of at most three seconds, which is overwritten when the run ends, and on
+the one connection of its one reader. `crates/server/tests/voice_run.rs` runs
+all of this on the real binary, with a scripted speaker sending the wake
+recording of `fixtures/wakeword/`.
 
 ### Per-room sound (goal 12)
 
@@ -987,6 +1119,7 @@ of each, `fixtures/control/v2/state-empty.json` the empty house):
 | `key_changes[]` | (goal 14) **written only when there is at least one**: every handshake refused for a changed key since the server started, the latest per id, sorted by id: `id`, `pinned`, `offered` (fingerprints) |
 | `speakers[].firmware` | (goal 14) **written only once the speaker has reported** (its session declared `ota` and sent a `firmware_status`), after `roles`: `version`, `board`, `slot` (0, 1 or `null`) it runs, `state`, `reason` (`none` or the reason by name), `update_available` (a verified staged image for its board with another version; derived, never stored), and the install the state is about: `image` (the staged name, `null` when none or when this server did not start it), `image_version`, `received` and `size` (bytes; the progress). Never persisted |
 | `firmware` | (goal 14) **written only by a server with `--firmware-dir`**, last: `{"images":[...]}`, every staged image sorted by name: `name`, `version`, `board`, `size`, `sha256`, `verdict` (`verified` or `refused`), and `reason` for a refused one. Never persisted (the directory is) |
+| `wake_words` | (voice) **written only by a server that runs a wake-word model**, after everything else: `[{"id","phrase"}]`, every model in the order the build lists them: `id` (the model's name, lower-case letters, digits and underscores) and `phrase` (what it listens for, as a `voice_wake` names it). A fact about the build: it does not change while the server runs and is never persisted (`fixtures/control/v2/state-voice.json`). No run and no wake word is ever in a state |
 
 `speakers` and `key_changes` come after every member the v2 state already had
 and are absent, not empty, on a server that has adopted nothing, so
@@ -1079,9 +1212,11 @@ The catalog above is the contract. The transport is HTTP on the address
 | `GET /api/events` | a `text/event-stream`, one `data: <state message>` per change, starting with the state as it stands (v2; `?v=1` for the v1 shape, rendered from the state as it stands when each change reaches the stream) |
 | `GET /api/controller-events` | a `text/event-stream`, one `data: <controller_event message>` per controller command the server accepts (a button press on a speaker), from the moment the stream is opened. It starts with no message: a press is not a state, and one made before the stream was opened is never sent to it. Catalog version 2's message alone; `?v=1` changes nothing |
 | `GET /api/visualizer?zone=<room>` | a `text/event-stream`, one `data: <visualizer message>` per visualizer frame of that room (colour, level, beat), at most one every 100 ms, each the room's latest, from the moment the stream is opened. It starts with no message. Catalog version 2's message alone |
+| `GET /api/voice-events` | (voice) a `text/event-stream`, one `data: <voice_wake message>` per wake word a voice room's microphone hears, from the moment the stream is opened. It starts with one comment line (`: voice events`) and no message. Catalog version 2's message alone ("Voice: the wake word, the run and its audio") |
+| `GET /api/voice-audio?run=<identifier>` | (voice) the microphone audio of one open voice run, raw 16 kHz mono PCM, to its one reader at the address the server was started with (`--voice-integration`), until the run ends. Refused `403`, `400`, `404` or `409` otherwise (the same section) |
 | `GET /api/report` | one line of plain text: commands applied, commands refused, connections and streams turned away, the fanout's ceiling and drops, the event writer's streams, the controller-event subscribers and their drops, and the visualizer subscribers, the frames they were sent and the frames superseded |
 | `GET /metrics` | the Prometheus exporter (goal 15): per-speaker telemetry in text exposition format 0.0.4. Read-only, served by a control worker like any other request; `docs/telemetry.md` lists every series |
-| `POST /api/command` | the body is one control message, sent as `Content-Type: application/json`. `200` with the resulting state (v2, the bytes every subscriber is sent), `400` with an `error` (at the message's version), or `426` with a `refused`; `415` or `403` under the rules below |
+| `POST /api/command` | the body is one control message, sent as `Content-Type: application/json`. `200` with the resulting state (v2, the bytes every subscriber is sent; a `voice_start` is answered with a `voice_run` message instead), `400` with an `error` (at the message's version), or `426` with a `refused`; `415` or `403` under the rules below |
 | `POST /api/leaving` | the body is an endpoint identifier, which stops being `present`. The same two rules as a command |
 
 `GET /api/server` answers `200`, `application/json`, with one message in the
@@ -1238,6 +1373,16 @@ the writer when a room has a new frame, with one non-blocking `try_send`; the wr
 itself when a held-back subscriber's 100 ms run out
 (`crates/server/tests/visualizer_stream.rs`).
 
+A `GET /api/voice-events` stream is held by the same writer under the rules of a
+controller-event stream, fed by a third fanout that carries `voice_wake` messages. The reader
+of a voice run (`GET /api/voice-audio`) is held by it too, under the same ceiling and the same
+5 s stall bound, and is the one stream that is not an event stream: raw bytes, no `data:`
+lines and no keepalive comment, closed by the server when its run ends; a reader that closes
+or stalls ends its run. The writer is also where the wake word is heard: on each pass it runs
+the models over what the voice rooms' microphones sent since its last, so an inference is
+never on a speaker's session and costs no thread
+(`crates/server/tests/voice_run.rs`).
+
 ## The bound on a subscriber
 
 There is no back pressure: one subscriber that has stopped reading must not
@@ -1285,8 +1430,8 @@ nothing.
 With `--control-listen`, the server runs one control acceptor, one worker per
 `--control-workers` slot, the event writer (above) and the **conductor**
 (below), all created before the scheduling report is taken and none created
-afterwards however many subscribers (of states, of controller events or of a room's
-visualizer stream), sessions or groups come and go. The whole
+afterwards however many subscribers (of states, of controller events, of wake words or of a
+room's visualizer stream), voice runs, sessions or groups come and go. The whole
 process is `6 + 2N + M` threads, plus one for `--advertise`, and it does not
 depend on `--slots`: every stream slot is cut by the one audio thread. Nor
 on `--firmware-dir` (goal 14): an image travels in the speaker's own session,
@@ -1570,6 +1715,15 @@ Authentication, authorisation, TLS, and anything that makes the control channel
 reachable from outside a local network. The channel binds a configured address
 and nothing in this phase changes that. The catalog has no message that grants
 or checks a permission, and a version that adds one will be a new version.
+
+The voice run's route is not authentication either: `GET /api/voice-audio` is
+served to one address, for one open run, to whoever holds that run's
+identifier, and that is a narrowing of who can read one stream, not a
+credential on the control channel. Anybody on the network can still send
+`voice_start` and `voice_stop`; what they cannot do is read the audio. A
+pairing secret pinned by the server is the stronger alternative and is the
+owner's open call
+(`docs/decisions/0172-the-voice-run-and-the-run-scoped-mic-route.md`).
 
 An endpoint's telemetry is not in the catalog and not in the state message: it
 is served on `GET /metrics` (`docs/telemetry.md`), so a report a second per

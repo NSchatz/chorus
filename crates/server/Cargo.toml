@@ -54,6 +54,10 @@ chorus-upnp = { path = "../upnp" }
 # thread; src/soloist.rs is the manager thread and src/soloistreader.rs the FIFO readers. Soloist
 # itself is never linked, shipped or run by this crate.
 chorus-soloist = { path = "../soloist" }
+# The wake-word detector (proposal P8, docs/decisions/0167-the-wake-word-runtime.md): run over
+# every voice room's kept microphone audio by src/voice.rs, on the event writer's thread. A pure
+# library with no dependency of its own; the models it carries are in third_party/wakeword.
+chorus-wakeword = { path = "../wakeword" }
 
 [dev-dependencies]
 # The end-to-end tests decode what the server put on a real socket with the
