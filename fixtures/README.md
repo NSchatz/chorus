@@ -145,6 +145,16 @@ the server's `announce_origins` list), `error-announce-no-origin`,
 `discovery/advertisement-control` is the control service's advertisement with
 `id=` in its TXT record.
 
+The measurement sweep's vectors are under `control/v2/` too: `measure_sweep`
+and `measure_sweep-volume` (the command, without and with its optional
+`volume`), `state-measuring` and `state-measured` (a state whose `measurement`
+names a sweep that is playing, and the same house once it finished; a
+`measuring = <zone> [<volume>]` line starts the sweep after the commands and
+`measurement_ended` ends it), and six refusals: `error-measure-sweep-unknown-zone`,
+`error-measure-sweep-measuring` (the room plays one already),
+`error-measure-sweep-elsewhere` (another room does), `error-measure-sweep-no-speaker`,
+`error-measure-sweep-muted` and `error-measure-sweep-volume`.
+
 `control/v2/controller_event` and `controller_event-transport` are what a
 `GET /api/controller-events` subscriber is sent for one accepted controller
 command: a press that changed a room (`outcome` `applied`) and a transport

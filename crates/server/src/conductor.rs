@@ -279,6 +279,9 @@ pub struct Conductor {
     announcer: Option<Arc<crate::announce::Announcer>>,
     /// (voice, P8) What each voice session was last told, and its buffer.
     voice: Option<Arc<crate::voice::Voice>>,
+    /// (room correction, ADR 0000) The measurement sweeps, which this
+    /// thread routes, starts and ends.
+    measurer: Option<Arc<crate::measure::Measurer>>,
 }
 
 /// When an endpoint of a room on `transport` plays audio stamped `t` on the
@@ -321,6 +324,7 @@ impl Conductor {
             soloist: None,
             announcer: None,
             voice: None,
+            measurer: None,
         }
     }
 
@@ -329,6 +333,13 @@ impl Conductor {
     /// it was told in `voice` (`crate::voice`).
     pub fn with_voice(mut self, voice: Arc<crate::voice::Voice>) -> Conductor {
         self.voice = Some(voice);
+        self
+    }
+
+    /// (ADR 0000) Route, start and end the measurement sweeps of `measurer`
+    /// as part of every pass (`crate::measure`).
+    pub fn with_measurer(mut self, measurer: Arc<crate::measure::Measurer>) -> Conductor {
+        self.measurer = Some(measurer);
         self
     }
 
@@ -402,6 +413,10 @@ impl Conductor {
         if self.announcer.as_ref().is_some_and(|a| a.any_live()) {
             timeout = RETRY;
         }
+        // (ADR 0000) While a measurement sweep plays: its end wakes nobody.
+        if self.measurer.as_ref().is_some_and(|m| m.any_live()) {
+            timeout = RETRY;
+        }
         if let Some(s) = &self.schedule {
             timeout = timeout.min(s.clocks.until(s.next_tick_ns));
         }
@@ -420,8 +435,12 @@ impl Conductor {
         let answers = self.stored_requests(&effects);
         effects.extend(answers);
         self.settle_announcements();
+        let sweep_owed = self.settle_measurement();
         let snapshot = self.state.snapshot();
-        let mut report = PassReport::default();
+        let mut report = PassReport {
+            owed: sweep_owed,
+            ..PassReport::default()
+        };
         self.apply_effects(&effects, &snapshot, &mut report);
         for session in self.router.sessions() {
             let room = snapshot.room_of(&session.endpoint);
@@ -457,13 +476,24 @@ impl Conductor {
             .as_ref()
             .map(|a| a.routes())
             .unwrap_or_default();
+        // (ADR 0000) The one room a measurement sweep plays in: its player
+        // sessions hear the sweep's stream, from the command to the end of
+        // the program, whatever else their room would hear (an announcement
+        // mixed over that room meanwhile is not heard there).
+        let measured = self.measurer.as_ref().and_then(|m| m.route());
         for session in self.router.sessions() {
             let room = snapshot.room_of(&session.endpoint);
+            let sweep = room
+                .filter(|r| {
+                    session.roles & roles::PLAYER != 0 && measured.as_deref() == Some(r.id.as_str())
+                })
+                .and_then(|_| self.router.sweep_route());
             let mix = room
                 .filter(|_| session.roles & roles::PLAYER != 0)
                 .and_then(|r| mixed.iter().find(|(id, _)| *id == r.id))
                 .and_then(|(_, mix)| self.router.mix_route(*mix));
-            let route = mix
+            let route = sweep
+                .or(mix)
                 .or_else(|| room.and_then(|r| r.route))
                 .unwrap_or_else(|| self.router.idle());
             if self.router.slots() > 0 && self.router.move_to(session.id, route) {
@@ -491,6 +521,11 @@ impl Conductor {
         // audio thread told to start a clip's duck.
         if let Some(announcer) = &self.announcer {
             report.owed += announcer.direct(&snapshot);
+        }
+        // (ADR 0000) And only now, with the room's sessions on the sweep's
+        // stream, is the audio thread told to start the sweep.
+        if let Some(measurer) = &self.measurer {
+            report.owed += measurer.direct();
         }
         self.voice_controls(&snapshot, &mut report);
         // The rooms an HTTP subscriber watches the visualizer of
@@ -573,6 +608,7 @@ impl Conductor {
         let Some(line_ins) = self.schedule.as_ref().and_then(|s| s.line_ins.clone()) else {
             return;
         };
+        let measured = self.measurer.as_ref().and_then(|m| m.route());
         let sessions = self.router.sessions();
         let capable = |id: u64| {
             sessions
@@ -619,6 +655,10 @@ impl Conductor {
                 .map_or(0, |r| r.av_trim_ms);
             let why = if !group.low_latency {
                 Some("rule")
+            } else if measured.as_deref() == Some(room.as_str()) {
+                // (ADR 0000) A room a measurement sweep plays in hears the
+                // sweep's stream, which is a slot-path stream.
+                Some("measuring")
             } else if listeners > 1 {
                 Some("shared")
             } else if group.rooms.len() != 1 {
@@ -747,6 +787,35 @@ impl Conductor {
                 }
             }
         }
+    }
+
+    /// (ADR 0000) End the measurement sweep when it is over, after the
+    /// schedule ran (so an alarm that fired in this pass calls it off), and
+    /// tell the runtime: a room it holds must not be put back at the
+    /// sweep's volume. Returns how many commands the audio thread is owed.
+    fn settle_measurement(&mut self) -> usize {
+        let Some(measurer) = &self.measurer else {
+            return 0;
+        };
+        let (ended, owed) = measurer.settle(&self.state);
+        if let (Some(ended), Some(schedule)) = (ended, self.schedule.as_mut()) {
+            // The runtime's one hook for a volume that was only lent: no
+            // source was changed, so the two sources say nothing.
+            let rooms = schedule.runtime.announcement_over(
+                &Source::Stored(String::new()),
+                &Source::Stored(String::new()),
+                &[(ended.zone.clone(), ended.before, ended.set)],
+            );
+            if rooms > 0 {
+                println!(
+                    "chorus-server: schedule measurement over zone={} rooms={} volume-back-to={}",
+                    ended.zone,
+                    rooms,
+                    ended.before.literal()
+                );
+            }
+        }
+        owed
     }
 
     /// (goal 17) The receiver manager's answers to the alarms' Spotify

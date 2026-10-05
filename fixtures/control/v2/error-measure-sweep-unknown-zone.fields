@@ -1,0 +1,16 @@
+# Canonical input for the catalog v2 error-measure-sweep-unknown-zone vector.
+#
+# `input` is refused, by the decoder or by the room state the lines below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-measure-sweep-unknown-zone.json. Nothing of it is applied.
+#
+# (room correction, ADR 0000) A sweep for a room the server does not have.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+zones = kitchen
+input = {"v":2,"t":"measure_sweep","zone":"garage"}
+field = zone
+ends_the_session = 0

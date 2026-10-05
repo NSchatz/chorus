@@ -355,6 +355,86 @@ pub struct Zones {
     /// (ADR 0194) The kind of each offered input whose kind the server
     /// said, sorted by input. Never persisted.
     input_kinds: Vec<(InputId, InputKind)>,
+    /// (room correction, ADR 0000) The measurement sweep the server is
+    /// playing, or the last one it played, with its outcome, written into
+    /// the state as `measurement` once there has been one. Never persisted.
+    measurement: Option<Measurement>,
+}
+
+/// (ADR 0000) Where a measurement sweep is: what a caller of `measure_sweep`
+/// waits on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MeasurementState {
+    /// Its room hears the sweep's stream: the silence before it, the sweep
+    /// or the silence after it.
+    Playing,
+    /// The sweep and the silence after it played to their end.
+    Finished,
+    /// It was called off before its end.
+    Cancelled,
+}
+
+impl MeasurementState {
+    /// The word the state message carries.
+    pub fn name(self) -> &'static str {
+        match self {
+            MeasurementState::Playing => "playing",
+            MeasurementState::Finished => "finished",
+            MeasurementState::Cancelled => "cancelled",
+        }
+    }
+}
+
+/// (ADR 0000) One measurement sweep as the state message carries it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Measurement {
+    /// Its number, counted from 1 over the server's run.
+    pub id: u64,
+    /// The room that hears it.
+    pub zone: String,
+    /// Where it is.
+    pub state: MeasurementState,
+    /// The volume the room plays it at: the command's, clamped to the
+    /// room's effective limit, or the room's own.
+    pub volume: Volume,
+    /// The silence before the sweep, ms.
+    pub lead_ms: u64,
+    /// The sweep itself, ms.
+    pub sweep_ms: u64,
+    /// The silence after the sweep, ms.
+    pub tail_ms: u64,
+    /// Why it was cancelled, in the server's words.
+    pub reason: Option<String>,
+}
+
+impl Measurement {
+    fn value(&self) -> Value {
+        let mut members = vec![
+            ("id".to_string(), Value::int(self.id as i64)),
+            ("zone".to_string(), Value::text(&self.zone)),
+            ("state".to_string(), Value::text(self.state.name())),
+            ("volume".to_string(), Value::Num(self.volume.literal())),
+            ("lead_ms".to_string(), Value::int(self.lead_ms as i64)),
+            ("sweep_ms".to_string(), Value::int(self.sweep_ms as i64)),
+            ("tail_ms".to_string(), Value::int(self.tail_ms as i64)),
+        ];
+        if let Some(reason) = &self.reason {
+            members.push(("reason".to_string(), Value::text(reason)));
+        }
+        Value::Obj(members)
+    }
+}
+
+/// (ADR 0000) What [`Zones::measure_begin`] changed, which is what the end
+/// of the sweep puts back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Measured {
+    /// The sweep's number.
+    pub id: u64,
+    /// The volume the room had.
+    pub before: Volume,
+    /// The volume the room plays the sweep at.
+    pub set: Volume,
 }
 
 /// (ADR 0175) Where an announcement is: what a caller of `announce` waits
@@ -1170,6 +1250,13 @@ impl Zones {
                 // server that changes what the group plays, when it has a
                 // player for it.
                 self.announce_check(target, url)?;
+            }
+            Command::MeasureSweep { zone, .. } => {
+                // The room model agrees or refuses; the sweep is the
+                // server's to play (crates/server/src/measure.rs), which
+                // sets the room's volume when it starts
+                // ([`Zones::measure_begin`]).
+                self.measure_check(zone)?;
             }
             Command::FirmwareRescan => {
                 if self.firmware_images.is_none() {
@@ -2655,6 +2742,162 @@ impl Zones {
         &self.announcements
     }
 
+    /// (ADR 0000) Whether a measurement sweep may play in room `zone` now,
+    /// or the refusal that says why not, by name: an unknown room (`zone`),
+    /// `measuring` for a room that is playing a sweep already and for any
+    /// room while another plays one (a server plays one sweep at a time),
+    /// `no-speaker` for a room no endpoint is attached to, `muted` for a
+    /// muted room, and `alarm-ringing` for a room an alarm rings in.
+    pub fn measure_check(&self, zone: &str) -> Result<(), Refusal> {
+        let room = &self.zones[self.index(zone)?];
+        if let Some(playing) = self
+            .measurement
+            .as_ref()
+            .filter(|m| m.state == MeasurementState::Playing)
+        {
+            return Err(Refusal::rejected(
+                "zone",
+                if playing.zone == zone {
+                    format!(
+                        "measuring: room '{}' is playing measurement sweep {} already; it lasts \
+                         {} ms and ends by itself",
+                        zone,
+                        playing.id,
+                        playing.lead_ms + playing.sweep_ms + playing.tail_ms
+                    )
+                } else {
+                    format!(
+                        "measuring: room '{}' is playing measurement sweep {} and a server \
+                         plays one sweep at a time; it lasts {} ms and ends by itself",
+                        playing.zone,
+                        playing.id,
+                        playing.lead_ms + playing.sweep_ms + playing.tail_ms
+                    )
+                },
+            ));
+        }
+        if room.present.is_empty() {
+            return Err(Refusal::rejected(
+                "zone",
+                format!(
+                    "no-speaker: no speaker is attached to room '{}', so the server cannot play \
+                     a sweep there",
+                    zone
+                ),
+            ));
+        }
+        if room.muted {
+            return Err(Refusal::rejected(
+                "zone",
+                format!(
+                    "muted: room '{}' is muted, so a sweep there would be silence; unmute it \
+                     first",
+                    zone
+                ),
+            ));
+        }
+        for alarm in &self.alarms {
+            if self.ringing.contains(&alarm.id)
+                && self.announce_rooms(&alarm.target).iter().any(|r| r == zone)
+            {
+                return Err(Refusal::rejected(
+                    "zone",
+                    format!(
+                        "alarm-ringing: alarm '{}' is ringing in room '{}'; a sweep does not \
+                         interrupt a ringing alarm (stop it with alarm_stop, or measure when it \
+                         has ended)",
+                        alarm.id, zone
+                    ),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// (ADR 0000) Start a measurement sweep in room `zone`: with `volume`
+    /// the room is set to it, clamped to the room's effective limit like
+    /// every volume path, and the state names the sweep as `playing`, at the
+    /// volume the room has now and with the lengths the server gave
+    /// (`lead_ms`, `sweep_ms`, `tail_ms`). No source and no group changes.
+    /// Returns the sweep's number and the volumes, for the end to put back.
+    /// Refused by name, with nothing changed, as [`Zones::measure_check`]
+    /// refuses.
+    pub fn measure_begin(
+        &mut self,
+        zone: &str,
+        volume: Option<Volume>,
+        lengths_ms: (u64, u64, u64),
+    ) -> Result<Measured, Refusal> {
+        self.measure_check(zone)?;
+        let at = self.index(zone)?;
+        let before = self.zones[at].volume;
+        if let Some(volume) = volume {
+            self.set_volume(at, volume);
+        }
+        let set = self.zones[at].volume;
+        let id = self.measurement.as_ref().map_or(0, |m| m.id) + 1;
+        self.measurement = Some(Measurement {
+            id,
+            zone: zone.to_string(),
+            state: MeasurementState::Playing,
+            volume: set,
+            lead_ms: lengths_ms.0,
+            sweep_ms: lengths_ms.1,
+            tail_ms: lengths_ms.2,
+            reason: None,
+        });
+        self.serial += 1;
+        Ok(Measured { id, before, set })
+    }
+
+    /// (ADR 0000) The end of measurement sweep `id`: the state says how it
+    /// ended (`finished`, or `cancelled` with `reason`), and the room's
+    /// volume goes back to `before` when it is still the one the sweep set
+    /// (`set`), clamped like every volume; a volume somebody changed
+    /// meanwhile is left alone. Whether anything changed; nothing does for
+    /// a sweep that is not the one playing.
+    pub fn measure_end(
+        &mut self,
+        id: u64,
+        state: MeasurementState,
+        reason: Option<String>,
+        before: Volume,
+        set: Volume,
+    ) -> bool {
+        let Some(playing) = self
+            .measurement
+            .as_mut()
+            .filter(|m| m.id == id && m.state == MeasurementState::Playing)
+        else {
+            return false;
+        };
+        playing.state = state;
+        playing.reason = reason;
+        let zone = playing.zone.clone();
+        if let Ok(at) = self.index(&zone) {
+            if self.zones[at].volume == set {
+                self.set_volume(at, before);
+            }
+        }
+        self.serial += 1;
+        true
+    }
+
+    /// (ADR 0000) The alarm ringing in room `zone`, if any: what calls a
+    /// sweep off.
+    pub fn measure_watch(&self, zone: &str) -> Option<String> {
+        self.alarms
+            .iter()
+            .filter(|alarm| self.ringing.contains(&alarm.id))
+            .find(|alarm| self.announce_rooms(&alarm.target).iter().any(|r| r == zone))
+            .map(|alarm| alarm.id.clone())
+    }
+
+    /// (ADR 0000) The measurement sweep the state names.
+    pub fn measurement(&self) -> Option<&Measurement> {
+        self.measurement.as_ref()
+    }
+
     /// (goal 17) What the receiver manager last said, if this server runs
     /// receivers.
     pub fn soloist(&self) -> Option<&SoloistState> {
@@ -2957,6 +3200,11 @@ impl Zones {
         }
         if !self.chimes.is_empty() {
             state.push(("chimes".to_string(), texts(&self.chimes)));
+        }
+        // (ADR 0000) The measurement sweep, written once there has been
+        // one, after everything else for the same reason.
+        if let Some(measurement) = &self.measurement {
+            state.push(("measurement".to_string(), measurement.value()));
         }
         Value::Obj(state)
     }

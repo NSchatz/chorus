@@ -388,6 +388,7 @@ give them.
 | `soloist_restart` | none | (goal 17) every Spotify Soloist receiver's supervisor reads its binary again and starts again; refused (`no-receivers`) on a server started without `--soloist-receivers`; below |
 | `playback` | `target` (a room, a saved group or a formed group), `action` (`"pause"`, `"resume"`, `"next"` or `"previous"`) | (goal 17) forwarded to the Spotify receiver the target's group is playing; refused for a group that plays anything else; below |
 | `announce` | `target` (a room, a saved group or a formed group), `url`, optional `volume` | (goal 18) plays a clip from a configured origin over what the target's rooms play (the music ducks, the clip is mixed over it, the music comes back), and says in the state how it ended; refused for a URL from any other origin; below |
+| `measure_sweep` | `zone`, optional `volume` | (room correction) plays the measurement sweep in one room, once, at a level bounded by the room's effective limit, and gives the room back to what its group plays; the state names it under `measurement`; below |
 
 ```json
 {"v":2,"t":"bond","zone":"living","members":[{"endpoint":"endpoint-a","role":"FL"},{"endpoint":"endpoint-b","role":"FR"}]}
@@ -724,7 +725,8 @@ conductor's pass, all of these hold, and otherwise leaves it on its stream slot
 
 A change of mode is one line: `tv-path mode=low-latency input=<id> room=<id>`,
 or `tv-path mode=slot input=<id> group=<id> reason=<why>`, `<why>` one of
-`rule`, `grouped`, `wireless`, `chunk-does-not-fit`, `no-player`,
+`rule`, `measuring` (a measurement sweep plays in the room, below),
+`grouped`, `wireless`, `chunk-does-not-fit`, `no-player`,
 `player-not-capable`, `hub-not-capable`, `refused`. The relay offers the
 players first and the hub only when every player accepted, so the hub never
 switches to datagrams with nobody listening; a refusal or an offer unanswered
@@ -1101,6 +1103,104 @@ The limits, plainly:
 `docs/decisions/0136-a-server-identity-and-an-announce-command.md` records
 the decision.
 
+### Room correction: the `measure_sweep` command
+
+```json
+{"v":2,"t":"measure_sweep","zone":"kitchen"}
+{"v":2,"t":"measure_sweep","zone":"kitchen","volume":0.300}
+```
+
+The playback half of the phone-microphone measurement
+(`docs/room-correction.md`): the server plays the sweep its fitter
+deconvolves with (`Sweep::recommended` at the stream's rate: 10 Hz to 20 kHz
+over 5 s at half full scale, the same samples on every channel of the
+stream) in ONE room, once, and then the room hears what its group plays
+again. Accepting the recording and fitting it are not in this catalog yet.
+
+| field | notes |
+|---|---|
+| `zone` | the room |
+| `volume` | optional; the volume the room plays the sweep at, **clamped to the room's effective limit** like every volume path. Absent, the room plays it at its own volume, which is at or below that limit already |
+
+**How the sweep reaches the room**
+(`docs/decisions/0000-the-measurement-sweep-plays-on-a-stream-of-its-own.md`).
+A server with stream slots (`--slots`) carries one more stream on the slots'
+grid, the sweep's. From the command to the end of the sweep's program the
+player sessions of the room are routed to that stream instead of their
+group's slot, and afterwards back. So **no group's source changes and nobody
+is regrouped**: a room that shares a group with others is measured alone
+while the others keep playing, and the state shows the group playing what it
+played throughout. The program is 500 ms of silence (what the room was
+playing rings out, and the volume is in force), the sweep, and 1000 ms of
+silence (the room's response to the sweep's end, which the fitter's window
+needs); the lengths are the state's `lead_ms`, `sweep_ms` and `tail_ms`, so a
+recorder knows how long to record. The two silences are ASSUMED values.
+Nothing is said here about WHEN the room hears the sweep relative to the
+command or to any other room: the fitter searches the recording for the
+response and assumes no latency, and no timing claim is made without a
+measurement.
+
+**The level.** The sweep's samples are fixed; how loud the room plays them
+is the room's volume, sent to its players as `room_volume` like any volume.
+With `volume` the room is set to `min(volume, effective_limit)` when the
+sweep starts, and when it ends the room goes back to the volume it had,
+unless somebody changed it meanwhile (then theirs stands). A limit or a
+quiet-hours window that lowers the room's effective limit while the sweep
+plays is in force at once, as for everything the room plays: a sweep is
+never louder than the room is allowed to be.
+
+**The answer and the state.** The command answers with the state, whose
+`measurement` names the sweep:
+
+```json
+"measurement":{"id":1,"zone":"kitchen","state":"playing","volume":0.300,"lead_ms":500,"sweep_ms":5000,"tail_ms":1000}
+"measurement":{"id":1,"zone":"kitchen","state":"cancelled","volume":0.300,"lead_ms":500,"sweep_ms":5000,"tail_ms":1000,"reason":"alarm 'wake' rings in the room"}
+```
+
+| `state` | meaning |
+|---|---|
+| `playing` | the room's players are on the sweep's stream: the silence before it, the sweep, or the silence after it |
+| `finished` | the program played to its last frame; the room hears its group again at the volume it had |
+| `cancelled` | it was called off; `reason` says why: an alarm rings in the room (an alarm must still wake), the room's last player session went away, or the audio thread did not report the end |
+
+The last sweep stays in the state until the next one starts (it is never
+persisted), so a caller that watches the event stream sees its own end.
+
+**The refusals**, each an `error` with nothing changed:
+
+| `field` | when |
+|---|---|
+| `zone` | no room has that id (`error-measure-sweep-unknown-zone.json`) |
+| `zone` | `measuring: ...`: the room is playing a sweep already (`error-measure-sweep-measuring.json`), or another room is: a server has one sweep stream and plays one sweep at a time (`error-measure-sweep-elsewhere.json`) |
+| `zone` | `no-speaker: ...`: the server cannot play in the room: no speaker is attached to it (`error-measure-sweep-no-speaker.json`), or none of its speakers has a player session up |
+| `zone` | `muted: ...`: the room is muted, so the sweep would be silence (`error-measure-sweep-muted.json`) |
+| `zone` | `alarm-ringing: ...`: an alarm is ringing in the room |
+| `volume` | not a number from 0.000 to 1.000 (`error-measure-sweep-volume.json`) |
+| `t` | `no-sweep-stream: ...`: the server was started without `--slots`, so it serves one stream to every room and cannot play in one room alone; the room is still looked at first. And, as for every v2 command, `measure_sweep` at `"v":1` |
+
+What it does not do, on purpose or yet:
+
+- **One sweep, one room, one at a time.** Repeats and averaging are the
+  caller's to ask for, sweep by sweep; a second room waits for the first.
+- **Nothing stops a sweep but its end** and the three reasons above. It
+  lasts 6.5 s; the room's `volume` and `mute` commands work throughout.
+- **An announcement to the room while it is measured is not heard there**:
+  the room is on the sweep's stream until the program ends. An alarm, which
+  must wake, calls the sweep off instead.
+- **The room's sound settings stay as they are.** The sweep plays through
+  the room's tone controls and through any `room_eq` already set, so a
+  measurement taken with filters enabled measures the corrected room. What
+  to do about that belongs with accepting the recording.
+- A TV input that plays in the room in low-latency mode goes back to its
+  slot for the sweep (`tv-path mode=slot ... reason=measuring`): the sweep's
+  stream is a slot-path stream.
+- The schedule runtime is not told of a `measure_sweep` as it is of a
+  person's command, so a sweep ends no autoplay and detaches no room; a
+  volume the sweep lent is never what a sleep timer or an alarm restores.
+
+`crates/server/tests/measure_sweep.rs` runs it on the real binary;
+`crates/control/tests/measure_v2.rs` holds the room model's half.
+
 ### Take the room (K78)
 
 `take` moves every room of the target out of whatever group it is in and into
@@ -1200,7 +1300,8 @@ of each, `fixtures/control/v2/state-empty.json` the empty house):
 | `firmware` | (goal 14) **written only by a server with `--firmware-dir`**, last: `{"images":[...]}`, every staged image sorted by name: `name`, `version`, `board`, `size`, `sha256`, `verdict` (`verified` or `refused`), and `reason` for a refused one. Never persisted (the directory is) |
 | `wake_words` | (voice) **written only by a server that runs a wake-word model**, after everything else: `[{"id","phrase"}]`, every model in the order the build lists them: `id` (the model's name, lower-case letters, digits and underscores) and `phrase` (what it listens for, as a `voice_wake` names it). A fact about the build: it does not change while the server runs and is never persisted (`fixtures/control/v2/state-voice.json`). No run and no wake word is ever in a state |
 | `input_kinds[]` | (ADR 0194) **written only when the server said the kind of at least one offered input** (`chorus-server` says every one), after `soloist`, `wake_words` and `announcements`: one entry for each entry of `inputs`, in its order: `input` (`<endpoint>/<input>`), `kind` (`line_in`, `optical` or `hdmi_arc`: the sync protocol's kinds of source input, `docs/protocol.md`) and `tv` (`true` for a TV's input, which is `optical` and `hdmi_arc`, and `false` for a line-in: `docs/inputs.md`). An input that is withdrawn takes its entry with it. Never persisted |
-| `chimes[]` | (ADR 0194) **written only by a server that runs the schedule runtime**, last: the names of the built-in chimes, in the schedule library's order (`docs/chimes.md`), each one what an alarm's or a group's `chime:<name>` may name. A fact about the build, read from the library's own list: never persisted and never changed by a command |
+| `chimes[]` | (ADR 0194) **written only by a server that runs the schedule runtime**, after `input_kinds`: the names of the built-in chimes, in the schedule library's order (`docs/chimes.md`), each one what an alarm's or a group's `chime:<name>` may name. A fact about the build, read from the library's own list: never persisted and never changed by a command |
+| `measurement` | (room correction, ADR 0000) **written only once the server has played a measurement sweep**, last: the sweep that is playing, or the last one that played: `id` (counted from 1 since the server started), `zone`, `state` (`playing`, `finished` or `cancelled`), `volume` (what the room plays it at), `lead_ms`, `sweep_ms`, `tail_ms` (the silence before the sweep, the sweep and the silence after it), and `reason` on a cancelled one. Never persisted and never in the v1 shape (`fixtures/control/v2/state-measuring.json`, `state-measured.json`) |
 
 `speakers` and `key_changes` come after every member the v2 state already had
 and are absent, not empty, on a server that has adopted nothing, so
@@ -1219,7 +1320,10 @@ play at once, each showing its label. And for ADR 0194's three, which a model
 that is told none of them does not write:
 `fixtures/control/v2/state-facts.json` pins a server that rings three chimes,
 counts two sleep timers (one counted down, one still at all of it) and offers
-a TV on optical, a TV on HDMI ARC and a line-in.
+a TV on optical, a TV on HDMI ARC and a line-in. And for `measurement`,
+which a server that has played no sweep does not write:
+`fixtures/control/v2/state-measuring.json` pins a room playing one at 0.300
+and `state-measured.json` the same house once it finished.
 
 **The now-playing record's bounds.** The server holds what it is told to
 these, and the state never carries more: a title, artist or album has every

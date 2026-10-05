@@ -1,0 +1,17 @@
+# Canonical input for the catalog v2 state-measured vector.
+#
+# A server configured with these zones, after the commands below in order,
+# sends exactly state-measured.json as its state.
+#
+# (room correction, ADR 0000) The state after that sweep played to its end (`measurement_ended = finished`): the room has its own volume back and `measurement` says how the sweep ended.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = state
+default_audio = 127.0.0.1:4010
+zones = kitchen,study
+command.0 = {"v":1,"t":"attach","zone":"kitchen","endpoint":"endpoint-a"}
+command.1 = {"v":1,"t":"volume","zone":"kitchen","volume":0.450}
+measuring = kitchen 0.300
+measurement_ended = finished

@@ -74,6 +74,15 @@
 //! sequence and timestamp. So a room on a mix and a room on the mix's base
 //! slot play one timeline.
 //!
+//! # The measurement sweep
+//!
+//! Last, under the same grid guard, the measurement sweep's stream
+//! (`crate::sweep`, ADR 0000), when the router carries one: silence, and
+//! from a [`SlotCommand::Sweep`] start to the program's end the
+//! room-correction sweep with the silence around it, on this tick's
+//! sequence and timestamp. Only the measured room's player sessions are on
+//! that fanout.
+//!
 //! No clock but the monotonic timeline is read here, and nothing here waits
 //! on anything but the pace of the grid.
 
@@ -99,6 +108,7 @@ use crate::serve::{ServeError, ServeParams};
 use crate::soloistport::SoloistPort;
 use crate::source::PcmSource;
 use crate::stream::Outbound;
+use crate::sweep::{SweepCommand, SweepPlayer, SweepPort, SweepProgram};
 
 /// What a slot plays.
 ///
@@ -169,6 +179,9 @@ pub enum SlotCommand {
     /// (announcements, ADR 0175) A change to one announcement mix
     /// (`crate::mixer`).
     Mix(MixCommand),
+    /// (room correction, ADR 0000) A change to the measurement sweep's
+    /// stream (`crate::sweep`).
+    Sweep(SweepCommand),
 }
 
 /// The gap between two plays of a chime while it is a slot's input, ms.
@@ -215,6 +228,11 @@ pub struct SlotMedia {
     /// announcement mix (`crate::mixer`): mix `m` is `mixes[m]`, and it is
     /// cut only when the router carries a fanout for it.
     pub mixes: Vec<Arc<MixPort>>,
+    /// (room correction, ADR 0000) The measurement sweep's program,
+    /// rendered at the server's format, and what the audio thread says
+    /// about its stream (`crate::sweep`). It is cut only when the router
+    /// carries a fanout for it.
+    pub sweep: Option<(SweepProgram, Arc<SweepPort>)>,
 }
 
 /// What a slot's line-in is doing, on the audio thread. One per slot,
@@ -376,6 +394,16 @@ pub fn serve_slots(
             )
         })
         .collect();
+    // (ADR 0000) The measurement sweep's player, when the router carries
+    // its fanout: the program is rendered already, and its one chunk
+    // buffer is allocated here.
+    let mut sweep: Option<(usize, SweepPlayer)> = match (router.sweep_route(), &media.sweep) {
+        (Some(route), Some((program, port))) => Some((
+            route,
+            SweepPlayer::new(program.clone(), Arc::clone(port), bytes_per_chunk),
+        )),
+        _ => None,
+    };
     let mut slot_frames: Vec<Outbound> = Vec::with_capacity(slots);
     let chunk_ns = params.chunk_us * 1_000;
     let interval_ns = params.emit_interval_ns();
@@ -397,6 +425,7 @@ pub fn serve_slots(
             &mut chime_at,
             &mut players,
             &mut mixes,
+            &mut sweep,
         );
         if stream.is_none() {
             if let Ok(next) = streams.try_recv() {
@@ -472,6 +501,7 @@ pub fn serve_slots(
                 &mut chime_at,
                 &mut players,
                 &mut mixes,
+                &mut sweep,
             );
             // The inputs that carry their own audio, with no allocation but
             // the chunk's own: a chime into its slot's buffer, a line-in once
@@ -588,6 +618,16 @@ pub fn serve_slots(
                 router.fanouts()[route].broadcast(frame);
             }
             slot_frames.clear();
+            // The measurement sweep's stream: the program while a play
+            // runs, silence otherwise.
+            if let Some((route, player)) = sweep.as_mut() {
+                let frame = if player.active() {
+                    cut(player.play())?
+                } else {
+                    quiet.clone()
+                };
+                router.fanouts()[*route].broadcast(frame);
+            }
             router.fanouts()[router.idle()].broadcast(quiet);
         }
         // The visualizer, outside the grid guard: what each watched slot
@@ -663,6 +703,7 @@ fn apply_commands(
     chime_at: &mut [usize],
     players: &mut [LineInPlayer],
     mixes: &mut [Mix],
+    sweep: &mut Option<(usize, SweepPlayer)>,
 ) {
     while let Ok(command) = commands.try_recv() {
         match command {
@@ -685,6 +726,11 @@ fn apply_commands(
             SlotCommand::Mix(command) => {
                 if let Some(mix) = mixes.get_mut(command.mix()) {
                     mix.apply(command);
+                }
+            }
+            SlotCommand::Sweep(command) => {
+                if let Some((_, player)) = sweep.as_mut() {
+                    player.apply(command);
                 }
             }
         }

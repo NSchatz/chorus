@@ -294,6 +294,10 @@ pub struct ControlState {
     /// ([`ControlState::announce_through`]); a state without one refuses
     /// the command by name.
     announcer: OnceLock<Arc<crate::announce::Announcer>>,
+    /// (room correction, ADR 0000) What carries out a `measure_sweep`
+    /// ([`ControlState::measure_through`]); a state without one refuses the
+    /// command by name.
+    measurer: OnceLock<Arc<crate::measure::Measurer>>,
     /// What fetches a group's now-playing artwork for `GET /api/artwork`
     /// ([`ControlState::artwork_through`], `crate::artwork`); a state
     /// without one answers that route `503`.
@@ -372,6 +376,7 @@ impl ControlState {
             soloist: OnceLock::new(),
             server: OnceLock::new(),
             announcer: OnceLock::new(),
+            measurer: OnceLock::new(),
             artwork: OnceLock::new(),
         }
     }
@@ -548,6 +553,74 @@ impl ControlState {
             vec![Effect::Persist]
         });
         restored
+    }
+
+    /// (ADR 0000) Carry out `measure_sweep` commands through `measurer`.
+    /// Called once, at start, before any command is served.
+    pub fn measure_through(&self, measurer: Arc<crate::measure::Measurer>) {
+        let _ = self.measurer.set(measurer);
+    }
+
+    /// (ADR 0000) Whether the room model would let a measurement sweep play
+    /// in room `zone` (`Zones::measure_check`).
+    pub fn measure_check(&self, zone: &str) -> Result<(), Refusal> {
+        self.locked().zones.measure_check(zone)
+    }
+
+    /// (ADR 0000) The room model's half of starting a measurement sweep
+    /// (`Zones::measure_begin`), committed like a command: persisted (the
+    /// room's volume may have moved), fanned out and counted as applied.
+    /// The schedule runtime is NOT told, as it is of a person's command: a
+    /// sweep is temporary and puts back what it changed. Returns what the
+    /// end puts back and the state, read under the same lock, which is the
+    /// command's answer.
+    pub fn measure_begin(
+        &self,
+        zone: &str,
+        volume: Option<chorus_control::Volume>,
+        lengths_ms: (u64, u64, u64),
+    ) -> Result<(chorus_control::zones::Measured, String), Refusal> {
+        let (measured, state) = {
+            let mut held = self.locked();
+            let mut measured = None;
+            Self::commit(&mut held, |zones| {
+                measured = Some(zones.measure_begin(zone, volume, lengths_ms)?);
+                Ok(())
+            })?;
+            self.persist(&held.zones);
+            (measured, held.zones.encode_state())
+        };
+        self.applied.fetch_add(1, Ordering::Relaxed);
+        self.publish(state.clone());
+        measured
+            .map(|measured| (measured, state))
+            .ok_or_else(|| Refusal::rejected("t", "the sweep did not start".to_string()))
+    }
+
+    /// (ADR 0000) The end of measurement sweep `id` (`Zones::measure_end`):
+    /// the state says how it ended and the room's volume goes back to
+    /// `before` when it is still `set`. Never refused for want of a slot
+    /// ([`ControlState::runtime`]). Whether anything changed.
+    pub fn measure_end(
+        &self,
+        id: u64,
+        how: chorus_control::zones::MeasurementState,
+        reason: Option<String>,
+        before: chorus_control::Volume,
+        set: chorus_control::Volume,
+    ) -> bool {
+        let mut changed = false;
+        self.runtime(|zones| {
+            changed = zones.measure_end(id, how, reason, before, set);
+            vec![Effect::Persist]
+        });
+        changed
+    }
+
+    /// (ADR 0000) The alarm ringing in room `zone`, if any
+    /// (`Zones::measure_watch`).
+    pub fn measure_watch(&self, zone: &str) -> Option<String> {
+        self.locked().zones.measure_watch(zone)
     }
 
     /// (goal 17) This server runs Soloist receivers, reached through `link`:
@@ -1018,6 +1091,24 @@ impl ControlState {
             };
             return announcer
                 .announce(self, target, url, *volume)
+                .map_err(|r| r.at(version));
+        }
+        // (ADR 0000) A measurement sweep is carried out by the measurer,
+        // which checks that somebody can play it before the room model
+        // changes: it commits through `measure_begin`.
+        if let Command::MeasureSweep { zone, volume } = &command {
+            let Some(measurer) = self.measurer.get() else {
+                self.measure_check(zone).map_err(|r| r.at(version))?;
+                return Err(Refusal::rejected(
+                    "t",
+                    "no-sweep-stream: this server was started without --slots, so it serves \
+                     one stream to every room and cannot play a sweep in one room alone"
+                        .to_string(),
+                )
+                .at(version));
+            };
+            return measurer
+                .measure(self, zone, *volume)
                 .map_err(|r| r.at(version));
         }
         // (voice, P8) A run is the voice path's, not the room model's: the

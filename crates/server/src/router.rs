@@ -31,6 +31,9 @@
 //!   announcement mixes (ADR 0175, `crate::mixer`), as many as the server
 //!   was built with: fanout `S + 1 + m` is mix `m`, the stream the player
 //!   sessions of the rooms an announcement is playing in hear while it
+//!   lasts. Last comes the measurement sweep's stream (ADR 0000,
+//!   `crate::sweep`), when the server was built with one: the stream the
+//!   player sessions of the one room being measured hear while its sweep
 //!   lasts.
 //!
 //! # What it holds per session, and why
@@ -159,6 +162,8 @@ pub struct Router {
     fanouts: Vec<Arc<Fanout>>,
     slots: usize,
     mixes: usize,
+    /// Whether the last fanout is the measurement sweep's stream.
+    sweep: bool,
     sessions: Mutex<Vec<Entry>>,
     /// Visualizer sessions on each fanout.
     watchers: Vec<AtomicUsize>,
@@ -179,7 +184,7 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 impl Router {
     /// The one-stream shape: one fanout, every session on it.
     pub fn single(fanout: Arc<Fanout>) -> Router {
-        Router::with(vec![fanout], 0, 0)
+        Router::with(vec![fanout], 0, 0, false)
     }
 
     /// The slot shape: `slots` fanouts, then the silent one.
@@ -193,12 +198,22 @@ impl Router {
         let fanouts = (0..=slots + mixes)
             .map(|_| Arc::new(Fanout::new()))
             .collect();
-        Router::with(fanouts, slots, mixes)
+        Router::with(fanouts, slots, mixes, false)
     }
 
-    fn with(fanouts: Vec<Arc<Fanout>>, slots: usize, mixes: usize) -> Router {
+    /// The slot shape with `mixes` announcement mixes and, after them, the
+    /// measurement sweep's stream (ADR 0000).
+    pub fn slotted_with_mixes_and_sweep(slots: usize, mixes: usize) -> Router {
+        let fanouts = (0..=slots + mixes + 1)
+            .map(|_| Arc::new(Fanout::new()))
+            .collect();
+        Router::with(fanouts, slots, mixes, true)
+    }
+
+    fn with(fanouts: Vec<Arc<Fanout>>, slots: usize, mixes: usize, sweep: bool) -> Router {
         Router {
             mixes,
+            sweep,
             watchers: fanouts.iter().map(|_| AtomicUsize::new(0)).collect(),
             // Over the stream slots alone: the silent fanout and the
             // one-stream shape's only fanout are never analysed.
@@ -236,6 +251,11 @@ impl Router {
     /// The fanout of announcement mix `mix`, when there is one.
     pub fn mix_route(&self, mix: usize) -> Option<usize> {
         (mix < self.mixes).then_some(self.slots + 1 + mix)
+    }
+
+    /// The fanout of the measurement sweep's stream, when there is one.
+    pub fn sweep_route(&self) -> Option<usize> {
+        self.sweep.then_some(self.slots + 1 + self.mixes)
     }
 
     /// Held by the audio thread while it broadcasts one tick to every fanout,
