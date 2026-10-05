@@ -90,6 +90,34 @@ An install is tied to the server process that started it: if the server stops in
 the next one does not resume it, tells the speaker to drop what it holds, and shows
 `interrupted`. Send the install command again.
 
+## From the app
+
+The app's speakers screen (`#/speakers`; `docs/app.md`, "Firmware: update available and the
+explicit install") shows the same state and sends the same three commands. Each speaker that
+reported what it runs shows its version, board and slot and its `firmware.state` in words, with
+the `reason`; "Update available" appears for a speaker whose `update_available` is true, with
+the version and the name of each staged image that is an update for it; the staged images are
+listed below with their verdicts, beside a "Rescan" button (`firmware_rescan`).
+
+"Install" is a button beside one image on one speaker. Pressing it asks, naming the image and
+the speaker; "Yes, install it" sends `firmware_install` with that speaker and that image, and
+nothing else in the app sends one: not opening the screen, not a new state, not a rescan. The
+app sends neither `"all": true` nor `"force": true`, installs nothing by itself, and uploads no
+image (staging is the files above). "Cancel install" is there while the state is `requested`
+or `receiving` and sends `firmware_cancel`.
+
+The app is one more client of the command, so the bench variable below applies to it exactly as
+it does to `curl`: the server, not the app, decides whether a transfer may start. Pressing
+"Install" for a speaker on the network, on a server whose environment does not hold
+`CHORUS_OWNER_AT_BENCH=1`, is refused `owner-not-at-bench`, the speaker is sent nothing, and
+the speaker's row shows the refusal in the server's words. The app cannot set the variable and
+has no way round it. With the variable set by the owner's deploy, the install still starts only
+when somebody presses "Install" and confirms.
+
+The app's tests ran no install on a board: its unit test is over a scripted server, and its
+live test (`web/live/firmware.live.js`) is a real server with a staged image and a scripted
+speaker session on loopback that keeps the bytes in memory. Neither sets the bench variable.
+
 ## Rollback
 
 A new image runs on trial. It confirms itself only after it has rejoined the server; an image

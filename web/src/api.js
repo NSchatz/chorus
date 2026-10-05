@@ -228,6 +228,26 @@ export function speakerForgetCommand(speaker) {
   return `{"v":2,"t":"speaker_forget","speaker":${JSON.stringify(speaker)}}`;
 }
 
+// Firmware (docs/control-plane.md, "Firmware: staged images and explicit
+// installs"), in the same canonical encoding; fixtures/control/v2 has the
+// vector of each. Nothing installs without `firmware_install` (K93).
+//
+// `firmware_install`: one staged image onto one speaker, both named. The app
+// never sends the catalog's `"all": true` nor its `"force": true`.
+export function firmwareInstallCommand(speaker, image) {
+  return `{"v":2,"t":"firmware_install","speaker":${JSON.stringify(speaker)},"image":${JSON.stringify(image)}}`;
+}
+
+// `firmware_cancel`: abandon a speaker's install that is not verified yet.
+export function firmwareCancelCommand(speaker) {
+  return `{"v":2,"t":"firmware_cancel","speaker":${JSON.stringify(speaker)}}`;
+}
+
+// `firmware_rescan`: the server reads its firmware directory again.
+export function firmwareRescanCommand() {
+  return '{"v":2,"t":"firmware_rescan"}';
+}
+
 // Where a group's now-playing artwork is, for an <img>: the server's own
 // route (docs/control-plane.md, "Now-playing artwork"), which names the group
 // and nothing else. The record's own artwork address is somebody else's, and

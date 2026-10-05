@@ -214,7 +214,76 @@ offered key, and the catalog has no command that would. What it says instead is 
 way past, which is the server's: forgetting the speaker (the "Forget" button on its own row,
 which asks first), after which the next session under that id is adopted as a new speaker. An
 entry for an id that is not among the listed speakers says that nothing on the screen can forget
-it. A speaker's firmware (the state's `firmware`) is not on this screen.
+it.
+
+**Firmware: "update available" and the explicit install** (`web/src/speakers.js`; the catalog's
+`firmware_install`, `firmware_cancel` and `firmware_rescan` and the state's `firmware`,
+`docs/control-plane.md`, "Firmware: staged images and explicit installs";
+`docs/firmware-updates.md`; `docs/decisions/0110-explicit-firmware-installs.md`). A speaker that
+reported what it runs has a "Firmware" part on its row: the version, the board profile and the
+slot, and one line for its `firmware.state`, in words, with the server's `reason` after it
+("Reason: not_confirmed.") whenever it is not `none`:
+
+| `firmware.state` | What the row says |
+|---|---|
+| `idle` | "No install is in progress." |
+| `requested` | "Install requested: the server is offering image <name> (version <v>) to the speaker." |
+| `receiving` | "Receiving image <name> (version <v>): <received> of <size> bytes.", with a progress bar |
+| `verified` | "Written and checked: image <name> (version <v>). The speaker restarts into it." |
+| `pending_verify` | "On trial: the speaker runs version <v> and has not confirmed it yet." |
+| `confirmed` | "Installed: image <name> (version <v>) confirmed itself, and the speaker runs version <v>." |
+| `rolled_back` | "Rolled back: version <tried> did not confirm, and the speaker runs version <v> again. Nothing retries it." |
+| `refused` | "Refused by the speaker: image <name> (version <v>) was not installed." (the reason is the speaker's: `too_large`, `wrong_board`, `bad_digest`, ...) |
+| `interrupted` | "Interrupted: the install of image <name> (version <v>) did not finish and is not resumed. Install again to start over." (`session_ended`, `not_resumed`) |
+| `cancelled` | "Cancelled: the install of image <name> (version <v>) was abandoned." |
+
+A state a later server adds is said in the server's own word. A speaker with no `firmware` (it
+takes no updates) has no such part.
+
+"Update available" is the server's `update_available` and nothing the app works out: it is
+shown for a speaker whose flag is true and for no other, with one line for each staged image
+the flag is about (verified, of the speaker's board, of another version than it runs), saying
+that image's `version` and `name` from `firmware.images`. Below the speakers, "Firmware images"
+lists every staged image with its version, its board and the server's verdict ("Verified", or
+"Refused: <reason>. It is never offered to a speaker.").
+
+| Control | What it is | What it sends |
+|---|---|---|
+| Install | a button beside one image on one speaker's row. It asks first, naming the image, its version, the speaker and its id, and saying what the speaker runs now ("Yes, install it", "Not now"). Disabled while the speaker is not connected; absent while an install is in progress | `firmware_install` with that `speaker` and that `image`, on "Yes, install it" only |
+| Cancel install | a button on the row while the state is `requested` or `receiving` | `firmware_cancel` with the speaker |
+| Rescan | a button under the staged images | `firmware_rescan` |
+
+**Nothing installs without that explicit action (K93, R11).** Opening the screen, a new state,
+an update appearing, a rescan, a reload and the question itself send no `firmware_install`; the
+unit test holds the scripted server's command log empty until "Install" has been pressed and
+confirmed, and then to exactly one command. The app never sends the catalog's `"all": true` or
+`"force": true`, has no automatic install of any kind, and does not upload an image: images are
+staged as files in the server's firmware directory (`docs/firmware-updates.md`). A question
+about an update that has meanwhile gone from the state is withdrawn.
+
+**The app's install and the owner's bench variable.** The app sends the same command a `curl`
+would, and the server decides. An install to a speaker that is not on the server's own host
+writes to a real device, which is the owner's action: unless the server's environment holds
+`CHORUS_OWNER_AT_BENCH` set to `1`, the server refuses it as `owner-not-at-bench` and sends the
+speaker nothing. The app has no way to set, read or get round that variable, and does not hide
+"Install" for it either (the state does not say whether it is set): the press is refused and
+the row says so in the server's words, "Refused: owner-not-at-bench: ...". Every other refusal
+is shown the same way, by the name the server's detail starts with (`unknown-image`,
+`image-not-verified`, `speaker-absent`, `not-updatable`, `busy`, `wrong-board`,
+`already-running`; `nothing-to-cancel` for a cancel; `no-firmware-dir` for a rescan). With the
+variable set, pressing and confirming is still what starts an install: the variable allows one,
+it never starts one.
+
+A server started without `--firmware-dir` writes no `firmware` in its state. The screen then
+shows what each speaker runs and no update control at all: no "Update available", no "Install",
+no "Cancel install", no list of images and no "Rescan".
+
+**Nothing here ran on a board.** `web/test/firmware.test.js` is the screen over a scripted
+server. `web/live/firmware.live.js` is the screen against a real `chorus-server` with a staged
+image, and its speaker is a scripted session on loopback (`web/live/endpoint.js`) that keeps
+the image in memory and checks its digest: no flash, no bootloader, no radio and no device. A
+real install and a real rollback on hardware are the owner's bench session
+(`docs/firmware-updates.md`).
 
 **The walk-through for a compact Wi-Fi speaker** (`web/src/speaker-setup.js`;
 `docs/decisions/0103-wifi-provisioning-over-softap.md`, decisions 2 to 4, which names this
@@ -279,7 +348,7 @@ follow-ups), so today the walk-through needs someone who can read that console.
   `img-src 'self'` stands. A record with no artwork, or one whose image does not load, shows a
   placeholder.
 
-Not built yet, and later tasks: bass management and the TV upmix; room correction with the phone's microphone; firmware state and approval.
+Not built yet, and later tasks: bass management and the TV upmix; room correction with the phone's microphone.
 
 ## Installing, and the service worker's cache rules
 
@@ -401,6 +470,17 @@ all three in `make gate`; here each is a narrow run of its own.
   screen, is named, put in a room, taken out and forgotten through the screen, and each step is
   read back from `/api/state`. The server is started with an identity directory, where its pins
   are kept. No speaker, access point or join page is part of it.
+- `web/live/firmware.live.js` stages an image with `chorus-server stage-firmware`, starts the
+  server with `--firmware-dir` and has a scripted endpoint session that takes updates report an
+  older version on loopback. The screen shows the update; across repeated reads of
+  `/api/state`, a rescan from the screen and a declined question the state stays `idle`, the
+  server logs no offer and the endpoint is sent none; "Install", confirmed, makes the state
+  leave `idle`. The install is then cancelled from the screen (`cancelled`), started again,
+  received whole by the endpoint (`verified`, byte for byte the staged file) and confirmed by
+  its next session. The endpoint is a script with no flash: the real update unit against the
+  real server is `crates/server/tests/firmware_install.rs`, whose C endpoint the gate builds
+  after this step. Loopback only; it refuses to run with `CHORUS_OWNER_AT_BENCH` set and never
+  sets it.
 - `make web-smoke-install` downloads, once, the Chromium build the pinned `@playwright/test`
   names; a run never downloads it. On a host with no root Chromium's libraries and fonts come
   from two prefixes, as `web/README.md` writes out.
