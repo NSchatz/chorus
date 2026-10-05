@@ -1206,7 +1206,7 @@ What it does not do, on purpose or yet:
 ### Room correction: a recording, its fit and the undo
 
 The recording half of the measurement
-(`docs/decisions/0000-a-recording-is-fitted-and-not-kept.md`,
+(`docs/decisions/0200-a-recording-is-fitted-and-not-kept.md`,
 `docs/room-correction.md`). A controller records the sweep `measure_sweep`
 plays, sends the recording to one route, gets filters back, applies them with
 `room_eq` and can take them back with `room_eq_undo`.

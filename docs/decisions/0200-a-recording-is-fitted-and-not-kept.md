@@ -1,4 +1,4 @@
-# 0000: a recording of the measurement sweep is uploaded as a 48 kHz mono 16-bit WAV to a route with a 2 MiB body bound of its own, fitted in memory and never kept; the route is told which sweep was played in its query; and a room's correction has one undo step, kept and persisted beside it
+# 0200: a recording of the measurement sweep is uploaded as a 48 kHz mono 16-bit WAV to a route with a 2 MiB body bound of its own, fitted in memory and never kept; the route is told which sweep was played in its query; and a room's correction has one undo step, kept and persisted beside it
 
 - Status: accepted, 2026-10-05
 - Decided by: the task for the scope ("a route that takes one mono recording of the sweep for a

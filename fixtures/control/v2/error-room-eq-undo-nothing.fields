@@ -4,7 +4,7 @@
 # built on a server configured with these zones, and encoding the refusal must
 # produce exactly error-room-eq-undo-nothing.json. Nothing of it is applied.
 #
-# (room correction, ADR 0000) An undo in a room whose one step was taken already: the first undo put the earlier correction back, and there is no second.
+# (room correction, ADR 0200) An undo in a room whose one step was taken already: the first undo put the earlier correction back, and there is no second.
 #
 # Format: one "key = value" per line. A line whose first non-space character is
 # '#' is a comment; a '#' anywhere else is an ordinary character.

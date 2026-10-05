@@ -1,6 +1,6 @@
 //! A recording of the measurement sweep, fitted (the recording half of the
 //! phone-microphone measurement, `docs/room-correction.md`,
-//! `docs/decisions/0000-a-recording-is-fitted-and-not-kept.md`).
+//! `docs/decisions/0200-a-recording-is-fitted-and-not-kept.md`).
 //!
 //! `POST /api/room-fit?zone=<room>` takes one mono recording of the sweep a
 //! room played (`measure_sweep`), runs the fitter's own check and fit on it

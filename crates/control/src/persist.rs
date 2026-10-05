@@ -132,7 +132,7 @@
 //! 9 file loads unchanged with nothing to undo in any room; the next write is
 //! format 10. A recording a correction was fitted from is never in this file
 //! or any other: the server does not keep one
-//! (`docs/decisions/0000-a-recording-is-fitted-and-not-kept.md`).
+//! (`docs/decisions/0200-a-recording-is-fitted-and-not-kept.md`).
 
 use std::fmt;
 use std::io::{self, Write};

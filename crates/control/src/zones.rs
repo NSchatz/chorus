@@ -170,7 +170,7 @@ pub struct Zone {
     pub bass: BassManagement,
     /// (v2, goal 12) The room-correction EQ.
     pub room_eq: RoomEq,
-    /// (v2, ADR 0000) The correction as it was before the last `room_eq`
+    /// (v2, ADR 0200) The correction as it was before the last `room_eq`
     /// that carried `filters`, which is what `room_eq_undo` puts back; `None`
     /// where there is nothing to undo. One step deep, and persisted beside
     /// the correction it belongs to.
@@ -1141,7 +1141,7 @@ impl Zones {
             } => {
                 let zone = &mut self.zones[room()];
                 if let Some(filters) = filters {
-                    // (ADR 0000) A command that carries filters is an
+                    // (ADR 0200) A command that carries filters is an
                     // apply: what stood before it, filters and flag, is what
                     // one `room_eq_undo` puts back. A command that only
                     // switches the correction on or off is not one, so
@@ -3315,7 +3315,7 @@ impl Zones {
                     ("enabled".to_string(), Value::Bool(z.room_eq.enabled)),
                     ("filters".to_string(), filters_value(&z.room_eq.filters)),
                 ];
-                // (ADR 0000) Only while there is one: a room whose
+                // (ADR 0200) Only while there is one: a room whose
                 // correction was never replaced says what it always said.
                 if z.room_eq_undo.is_some() {
                     eq.push(("undo".to_string(), Value::Bool(true)));

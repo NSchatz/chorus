@@ -1,6 +1,6 @@
 //! A recording is uploaded, fitted and applied to a room, and the correction
 //! can be undone: `POST /api/room-fit` and `room_eq_undo` on the real binary
-//! (`docs/decisions/0000-a-recording-is-fitted-and-not-kept.md`,
+//! (`docs/decisions/0200-a-recording-is-fitted-and-not-kept.md`,
 //! `docs/room-correction.md`, `docs/control-plane.md`).
 //!
 //! Every test runs the real `chorus-server` with a control plane and speaks

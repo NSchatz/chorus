@@ -1,5 +1,5 @@
 //! A room's correction can be put back (catalog v2 `room_eq_undo`,
-//! `docs/decisions/0000-a-recording-is-fitted-and-not-kept.md`).
+//! `docs/decisions/0200-a-recording-is-fitted-and-not-kept.md`).
 //!
 //! The rule under test is one step deep: a `room_eq` that carries `filters`
 //! is an apply and keeps what stood before it, filters and flag; one

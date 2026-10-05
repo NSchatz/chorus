@@ -200,7 +200,7 @@ The playback half of the measurement is built: the control catalog's `measure_sw
 
 The recording half is built too: `POST /api/room-fit` and the catalog's `room_eq_undo`
 (`docs/control-plane.md`, "Room correction: a recording, its fit and the undo";
-`docs/decisions/0000-a-recording-is-fitted-and-not-kept.md`).
+`docs/decisions/0200-a-recording-is-fitted-and-not-kept.md`).
 
 - **What is sent**: one mono recording, a 16-bit PCM WAV at 48 kHz, as the body of
   `POST /api/room-fit?zone=<room>` with `Content-Type: audio/wav`, at most 2 MiB. A recorder at

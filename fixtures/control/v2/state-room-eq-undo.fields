@@ -3,7 +3,7 @@
 # A server configured with these zones, after the commands below in order,
 # sends exactly state-room-eq-undo.json as its state.
 #
-# (room correction, ADR 0000) A room whose correction was replaced says so: its room_eq carries `undo` true, and the room beside it, never corrected, carries no such member. Switching the correction off afterwards keeps the undo.
+# (room correction, ADR 0200) A room whose correction was replaced says so: its room_eq carries `undo` true, and the room beside it, never corrected, carries no such member. Switching the correction off afterwards keeps the undo.
 #
 # Format: one "key = value" per line. A line whose first non-space character is
 # '#' is a comment; a '#' anywhere else is an ordinary character.

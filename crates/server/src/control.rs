@@ -242,7 +242,7 @@ pub struct ControlState {
     applied: AtomicU64,
     /// Commands refused since the process started.
     refused: AtomicU64,
-    /// (ADR 0000) Whether a recording is being fitted now. The fit is the
+    /// (ADR 0200) Whether a recording is being fitted now. The fit is the
     /// one piece of work on this listener that takes a core for a while, so
     /// one runs at a time and a second upload is refused `busy` by name.
     fitting: AtomicBool,
@@ -572,7 +572,7 @@ impl ControlState {
         self.locked().zones.measure_check(zone)
     }
 
-    /// (ADR 0000) Whether a recording made in room `zone` can be fitted
+    /// (ADR 0200) Whether a recording made in room `zone` can be fitted
     /// now: the room exists, and its correction is not switched on with
     /// filters to apply, which would make the recording one of the corrected
     /// room. Nothing is changed.
@@ -590,7 +590,7 @@ impl ControlState {
         Ok(())
     }
 
-    /// (ADR 0000) Fit one recording, one at a time: `None` when another is
+    /// (ADR 0200) Fit one recording, one at a time: `None` when another is
     /// being fitted. The recording is `body`, borrowed for the fit and
     /// neither kept nor written anywhere.
     fn room_fit(
@@ -2210,7 +2210,7 @@ struct Request {
     /// browser holds for a file of the app (`crate::app`).
     if_none_match: Option<String>,
     body: String,
-    /// (ADR 0000) For the one route whose body has a bound of its own
+    /// (ADR 0200) For the one route whose body has a bound of its own
     /// (`POST /api/room-fit`): the length the request declared, or `None`
     /// where it declared none. The body is then NOT read by
     /// [`read_request`] and `body` is empty: the route reads it itself, after
@@ -2350,7 +2350,7 @@ fn read_request<R: BufRead>(reader: &mut R) -> Result<Request, Unreadable> {
             }
         }
     }
-    // (ADR 0000) The recording upload's body is not read here at all: its
+    // (ADR 0200) The recording upload's body is not read here at all: its
     // head came through the one bound like every request's, and its body
     // has a bound of its own, checked by the route before a byte of it is
     // read.
@@ -2407,7 +2407,7 @@ fn read_request<R: BufRead>(reader: &mut R) -> Result<Request, Unreadable> {
 ///   the request was sent to. A client that is not a browser sends none, and
 ///   is not refused for that.
 ///
-/// (ADR 0000) The recording upload is held to the same two rules with its own
+/// (ADR 0200) The recording upload is held to the same two rules with its own
 /// content type, `audio/wav`, which a cross-site page cannot send without a
 /// preflight either.
 fn post_refusal(request: &Request) -> Option<(&'static str, String)> {
@@ -2576,7 +2576,7 @@ fn serve_connection(connection: TcpStream, state: &Arc<ControlState>) {
     let version = requested_version(&request.path);
     // Who is asking, for the one route that is served to one address.
     let peer = connection.peer_addr().ok().map(|a| a.ip().to_canonical());
-    // (ADR 0000) The recording upload: its rules and its bound are checked
+    // (ADR 0200) The recording upload: its rules and its bound are checked
     // against the head, and only then is its body read.
     if let Some(declared) = request.upload {
         serve_room_fit(&mut reader, &mut connection, state, &request, declared);
@@ -2725,7 +2725,7 @@ fn serve_connection(connection: TcpStream, state: &Arc<ControlState>) {
     }
 }
 
-/// (ADR 0000) `POST /api/room-fit?zone=<room>`: one recording of the
+/// (ADR 0200) `POST /api/room-fit?zone=<room>`: one recording of the
 /// measurement sweep, fitted (`crate::roomfit`).
 ///
 /// In this order, and everything before the body is read is decided from the

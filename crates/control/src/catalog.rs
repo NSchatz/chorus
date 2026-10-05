@@ -390,7 +390,7 @@ pub enum Command {
         /// Whether they are applied.
         enabled: Option<bool>,
     },
-    /// (v2, room correction, ADR 0000) Put a room's correction back as it
+    /// (v2, room correction, ADR 0200) Put a room's correction back as it
     /// was before the last `room_eq` that carried `filters`: those filters
     /// and that `enabled`. One step, and then there is nothing to undo.
     RoomEqUndo {
