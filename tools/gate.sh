@@ -54,6 +54,11 @@
 #   (the web-test and web-build steps install web/'s locked packages into web/node_modules
 #   with the pinned node and pnpm of mise.toml; the first run fetches them once, into pnpm's
 #   store; a missing tool fails the step, under CI too)
+#   PLAYWRIGHT_BROWSERS_PATH, CHORUS_CHROMIUM_LIBS, CHORUS_CHROMIUM_FONTS
+#                             where the web-smoke step finds the pinned Chromium build and,
+#                             on a host with no root, its libraries and fonts (tools/web.sh
+#                             says each default; `bash tools/web.sh smoke-install` downloads
+#                             the build once, and a missing one fails the step)
 #   NEXTEST_TEST_THREADS     how many tests run at once (default: .config/nextest.toml)
 #   CHORUS_FIRMWARE_JOBS      make's job count for the firmware host build (default 8)
 
@@ -280,19 +285,29 @@ ha_summary() {
     sed -n -e "s/^$1: \\(PASS.*\\)/gate: $1 \\1/p" -e "s/^\\(FAIL: .*\\)/gate: $1 \\1/p" "$LOG/$1.log" | tee -a "$LOG/summary.txt"
 }
 
-# A web step (web-test, web-build) is green only when it ran, like a Home Assistant step: its
-# make target exits 0 and prints its own `<name>: PASS` line (tools/web.sh).
+# A web step (web-test, web-build, web-smoke) is green only when it ran, like a Home Assistant
+# step: its make target exits 0 and prints its own `<name>: PASS` line and no SKIPPED line
+# (tools/web.sh).
 web_step() {
     local name="$1" out rc=0
     out="$(mktemp "${TMPDIR:-/tmp}/chorus-gate-$name.XXXXXX")"
     make --no-print-directory "$name" > "$out" 2>&1 || rc=$?
     cat "$out"
-    if [ "$rc" -eq 0 ] && ! grep -q "^$name: PASS" "$out"; then
-        echo "FAIL: the $name step exited 0 without its '$name: PASS' line; it did not run whole"
-        rc=1
+    if [ "$rc" -eq 0 ]; then
+        if grep -q "^$name: SKIPPED" "$out"; then
+            echo "FAIL: the $name step printed SKIPPED; in the gate it runs or it is red"
+            rc=1
+        elif ! grep -q "^$name: PASS" "$out"; then
+            echo "FAIL: the $name step exited 0 without its '$name: PASS' line; it did not run whole"
+            rc=1
+        fi
     fi
     rm -f "$out"
     return "$rc"
+}
+# The one browser test, against the chorus-server the build step made.
+web_smoke() {
+    CHORUS_SERVER_BIN="${CARGO_TARGET_DIR:-$ROOT/target}/debug/chorus-server" web_step web-smoke
 }
 # The app's output is committed (chorus-server embeds web/dist with no node in the Rust build),
 # so it must be what web/src builds: rebuild it, then fail on any difference from the index, a
@@ -336,7 +351,7 @@ fi
 if [ "$MODE" = full ]; then
     step fmt              cargo fmt --all --check
     step clippy           cargo clippy --workspace --all-targets --locked -- -D warnings
-    stop_if_cheap_steps_failed ha-test ha-hassfest web-test web-build build ha-live test determinism firmware-check verify alsa-null \
+    stop_if_cheap_steps_failed ha-test ha-hassfest web-test web-build build ha-live web-smoke test determinism firmware-check verify alsa-null \
         firmware-esp32s3-wired firmware-esp32s3-wifi firmware-esp32s3-qemu firmware-profiles \
         qemu-boot ota-qemu image soloist-image soloist-lists endpoint-packages
     # The Home Assistant integration (goal 18): its lint, types and tests under the pinned
@@ -356,6 +371,10 @@ if [ "$MODE" = full ]; then
     # service calls (goal 18; tests/test_live_server.py).
     step ha-live          ha_live
     ha_summary ha-live
+    # The one browser test (web/smoke/): headless Chromium loads the app from the server
+    # just built, through a fake login. About 5 s.
+    step web-smoke        web_smoke
+    ha_summary web-smoke
     step test             workspace_tests
     step determinism      make --no-print-directory verify-control-determinism
     step firmware-check   env CHORUS_OUTAGE_SECONDS="${CHORUS_GATE_OUTAGE_SECONDS:-30}" \

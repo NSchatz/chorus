@@ -33,6 +33,7 @@
 @happy-dom/global-registrator 20.14.5 MIT
 @lit-labs/ssr-dom-shim 1.6.0 BSD-3-Clause
 @lit/reactive-element 2.1.2 BSD-3-Clause
+@playwright/test 1.63.0 Apache-2.0
 @types/node 26.6.4 MIT
 @types/trusted-types 2.0.7 MIT
 @types/whatwg-mimetype 3.0.2 MIT
@@ -44,6 +45,8 @@ happy-dom 20.14.5 MIT
 lit-element 4.2.2 BSD-3-Clause
 lit-html 3.3.3 BSD-3-Clause
 lit 3.3.3 BSD-3-Clause
+playwright-core 1.63.0 Apache-2.0
+playwright 1.63.0 Apache-2.0
 undici-types 8.9.0 MIT
 whatwg-mimetype 3.0.0 MIT
 ws 8.22.0 MIT

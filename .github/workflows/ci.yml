@@ -82,6 +82,16 @@ jobs:
           test "$(node --version)" = "v$(pin core:node)"
           test "$(pnpm --version)" = "$(pin aqua:pnpm/pnpm)"
 
+      # The gate's one browser test (step web-smoke) runs the Chromium build
+      # that the pinned @playwright/test names: web/package.json fixes the
+      # version, web/pnpm-lock.yaml its digest, and that version's own list
+      # fixes the build. tools/web.sh installs the locked packages and then
+      # downloads that build alone (the headless shell); --with-deps has
+      # Playwright install the shared libraries and fonts it needs with apt.
+      # The gate step downloads nothing and fails when the build is absent.
+      - name: Chromium for the browser smoke test
+        run: bash tools/web.sh smoke-install --with-deps
+
       # rust-toolchain.toml names the exact toolchain; rustup installs it on
       # first use.
       - name: Toolchain
