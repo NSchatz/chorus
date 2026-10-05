@@ -291,7 +291,14 @@ ha_summary() {
 web_step() {
     local name="$1" out rc=0
     out="$(mktemp "${TMPDIR:-/tmp}/chorus-gate-$name.XXXXXX")"
-    make --no-print-directory "$name" > "$out" 2>&1 || rc=$?
+    if [ -n "${WEB_STEP_SESSION:-}" ]; then
+        # --wait: setsid forks when its caller leads a process group, and the step's exit
+        # status is the make's either way. A make ended by a signal has none: setsid says so
+        # and exits non-zero.
+        setsid --wait make --no-print-directory "$name" > "$out" 2>&1 || rc=$?
+    else
+        make --no-print-directory "$name" > "$out" 2>&1 || rc=$?
+    fi
     cat "$out"
     if [ "$rc" -eq 0 ]; then
         if grep -q "^$name: SKIPPED" "$out"; then
@@ -305,9 +312,14 @@ web_step() {
     rm -f "$out"
     return "$rc"
 }
-# The app's live test, against the chorus-server the build step made.
+# The app's live test, against the chorus-server the build step made. It runs in a session
+# (and so a process group) of its own, WEB_STEP_SESSION: three CI runs (one of them main at
+# 4449bf7) ended inside this step with SIGTERM delivered to every process of the job at once,
+# make and the runner's worker included, so the job stopped with exit 143, no failed step and
+# no logs. A signal sent to the step's process group now ends the step alone: it is red with
+# what it had printed, the gate goes on and the logs are kept.
 web_live() {
-    CHORUS_SERVER_BIN="${CARGO_TARGET_DIR:-$ROOT/target}/debug/chorus-server" web_step web-live
+    WEB_STEP_SESSION=1 CHORUS_SERVER_BIN="${CARGO_TARGET_DIR:-$ROOT/target}/debug/chorus-server" web_step web-live
 }
 # The one browser test, against the chorus-server the build step made.
 web_smoke() {

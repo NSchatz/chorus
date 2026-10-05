@@ -210,8 +210,9 @@ fi
 out="$(mktemp "${TMPDIR:-/tmp}/chorus-$name.XXXXXX")"
 trap 'rm -f "$out"' EXIT
 rc=0
-node --import "./$tests_dir/setup.js" --test --test-reporter=spec "$tests_glob" > "$out" 2>&1 || rc=$?
-cat "$out"
+# Printed as it runs, not once it has ended: a run that is ended from outside (a signal to its
+# process group) has then said which tests it finished.
+node --import "./$tests_dir/setup.js" --test --test-reporter=spec "$tests_glob" 2>&1 | tee "$out" || rc=$?
 count() { sed -n "s/^ℹ $1 \([0-9][0-9]*\)$/\1/p" "$out" | tail -n 1; }
 tests="$(count tests)"
 if [ "$rc" -ne 0 ]; then
