@@ -1,8 +1,8 @@
 # P11: Concurrent streams
 
 - Decisions: K76
-- Status: PROPOSED (chorus goal 17, 2026-10-03)
-- If deferred: -
+- Status: ACCEPTED (2026-10-05, the owner): as written, every number unchanged (first put forward by chorus goal 17, 2026-10-03)
+- If deferred: - (moot since 2026-10-05)
 - Builds on: goal 16 (§20, the players' pool and the UPnP renderers this measures), goal 17 (§21 item 4, "measure CPU and memory per receiver and decoder stream, and propose the limit"; item 1, the Soloist receivers of P7; item 5, the homelab receivers PR that carries the limits), P7 (the pool of 16 receivers and its `ASSUMED` per-receiver cost), P9 (the settled decoders)
 
 ## Question
@@ -165,7 +165,7 @@ moving by the minute.
 
 **Recommendation:** Option A, one independent stream per room: 8 players for 8 rooms (`--players 8`), because every figure is linear, eight rooms cannot hear a ninth stream, and the worst case measured (every room its own resampled Vorbis stream, 20 speakers) is about six tenths of one core, the receivers' idle threads included, as an upper bound on a loaded host.
 
-In numbers, all PROPOSED:
+In numbers, all ACCEPTED by the owner on 2026-10-05 as they stand:
 
 - **Independent streams: 8** (the number of rooms, K75), as the deployment's `--players`, with
   `--slots` covering the players, the line-ins and the receivers. The code's ceiling
@@ -175,20 +175,21 @@ In numbers, all PROPOSED:
 - **Soloist receivers: a pool of 16** (`--soloist-receivers 16`, P7's count: targets, K59),
   of which at most 8 are heard at once. An idle receiver costs chorus-server about 0.4 % of one
   core and a thread; a playing one is one of the 8 streams.
-- **chorus-server's container** (the homelab receivers PR carries these, PROPOSED):
+- **chorus-server's container** (the homelab receivers PR carries these):
   `cpus: 2.0`, `mem_limit: 512m`, `ulimits.memlock` 384 MiB (402653184), `pids_limit: 192`.
   - CPU: the worst case measured is about 59 % of one core (8 resampled Vorbis
     streams, 20 speakers, 16 receivers, renderers), an upper bound on a loaded host. That is
     1.7 times inside `cpus: 1.0` and 3.4 times inside `cpus: 2.0`; chorus
-    proposes 2.0 because the bound is of a host that was not quiet and a throttled audio
+    chose 2.0 because the bound is of a host that was not quiet and a throttled audio
     thread is an audible fault, not a slow page.
   - Locked memory: PR #237 grants 64 MiB and the server locks everything it maps. The
     mappings with access are 151 MB with no players or renderers, 210 MB with them, and about
     257 MB with the receivers' 17 threads: every one of them above 64 MiB.
     384 MiB is that figure with a margin of about a half; `mem_limit: 512m` sits above it so
     the lock limit, which the server reports by name, is met before the kernel's. Both are
-    read from `/proc/<pid>/maps` on an unlocked process, so both are PROPOSED pending the
-    locked measurement under Open inputs. Unlocked, the resident set never passed 58 MB.
+    read from `/proc/<pid>/maps` on an unlocked process: they are accepted as sized from the
+    mappings, and the locked measurement under Open inputs is what checks them. Unlocked, the
+    resident set never passed 58 MB.
   - `pids_limit`: 88 threads; 192 leaves room for a `--max-clients` above 20.
 - **Each receiver container** (P7's `ASSUMED` limits, kept): `mem_limit: 192m`, `cpus: 0.25`,
   `pids_limit: 64`. Measured of it: PipeWire and WirePlumber, 19 MB resident and 0.25 % of
@@ -214,11 +215,13 @@ quieter or busier than this one by a factor of two.
 
 ## If the owner defers
 
-The brief gives P11 no deferral cell (§5's table: `-`). Until the owner decides, chorus ships
-what goal 16 built: the players and renderers are off unless their flags are given, `--players`
-is whatever the deployment's command line says up to 16, and the homelab receivers PR of this
-goal states its numbers as PROPOSED with this document as their source. Nothing is capped
-below the code's ceilings and nothing is promised about them.
+Moot: the owner accepted P11 as written on 2026-10-05, so the limits in "The limits, in one
+sentence" above are the decision. The brief gave it no deferral cell (§5's table: `-`). From
+2026-10-03 until that decision chorus shipped what goal 16 built: the players and renderers off
+unless their flags are given, `--players` whatever the deployment's command line says up to 16,
+and the homelab receivers PR of this goal naming this document as the source of its numbers.
+The code's ceilings are unchanged by the decision: the limits are the deployment's flags and
+the two compose files' numbers.
 
 ## Open inputs
 

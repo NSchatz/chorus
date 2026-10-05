@@ -385,7 +385,7 @@ chorus-server ... --control-listen ADDR --slots S --soloist-dir DIR --soloist-re
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--soloist-receivers N` | 0 | how many receivers, `r0` to `r<N-1>`, at most 32 (`ASSUMED`: twice P7's default pool of 16; proposal P11 measures what a host carries). 0, or the flag absent: no Soloist code runs and no thread of it exists |
+| `--soloist-receivers N` | 0 | how many receivers, `r0` to `r<N-1>`, at most 32 (`ASSUMED`: twice P7's default pool of 16; P11, accepted by the owner on 2026-10-05, measured what a host carries and keeps the pool at 16). 0, or the flag absent: no Soloist code runs and no thread of it exists |
 | `--soloist-dir DIR` | required with N above 0 | the receiver directory, the same one the receiver containers are given |
 | `--soloist-grace SECONDS` | 60 (`ASSUMED`, P7) | how long a dissolved, idle live group keeps its receiver |
 | `--soloist-volume chorus\|receiver` | `chorus` | which gain stage a Spotify volume drives; "Volume" below |
