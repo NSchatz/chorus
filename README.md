@@ -7,6 +7,7 @@ The target is sub-millisecond inter-device error on wired endpoints, measured ra
 - `BRIEF.md` - the guiding document: requirements, measured targets, hard guardrails, design areas with recommendations, the phased roadmap (section 8), and the decisions still open.
 - `CLAUDE.md` - the working agreement; work arrives as tasks from the owner's agent harness.
 - `docs/decisions/` - one file per significant decision. `docs/measurements/` - harness reports; a timing claim without one is not evidence.
+- `docs/app.md` - the installable app as built: where it is served (`/app/`), its screens, the service worker's cache rules, the layouts and kiosk mode, how to run its tests, and the phone check that is the owner's. `docs/control-page.md` - the older control page at `/`.
 - `docs/protocol.md` - the audio wire format, which is what a second implementation is held to. `docs/control-plane.md` - the control catalog, which is a separate contract on a separate connection and held the same way. `docs/mqtt.md` - the opt-in, read-only MQTT publisher (off by default): its topics, what it does not publish, and the broker notes for the owner. `docs/inputs.md` - the four alarm sources, line-in sharing to any group and a streamer on a line-in, with the rule about URLs. `docs/upnp.md` - the opt-in UPnP AV media renderers (off by default): a renderer per room, saved group and live group, its flags and port, what is refused, and what was and was not tested.
 
 ## Where each phase stands
