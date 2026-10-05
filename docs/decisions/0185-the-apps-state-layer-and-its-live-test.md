@@ -1,4 +1,4 @@
-# 0000: the app holds the server's state message and nothing of its own, reads the event stream with fetch so the page and the tests are one subscriber, never moves a slider a person holds, and proves each screen in node against a real chorus-server (`make web-live`)
+# 0185: the app holds the server's state message and nothing of its own, reads the event stream with fetch so the page and the tests are one subscriber, never moves a slider a person holds, and proves each screen in node against a real chorus-server (`make web-live`)
 
 - Status: accepted, 2026-10-05.
 - Decided by: the owner for the model (proposal P5, `docs/proposals/P5-app-stack.md`, Option

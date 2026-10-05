@@ -3,7 +3,7 @@
 The chorus app: Lit 3 elements bundled by esbuild (proposal P5, Option C; the decision record
 `docs/decisions/0181-the-web-app-stack.md` says what is pinned and why). Today it is the shell
 and the rooms screen: `chorus-app` holds the server's state, live, and shows every room with
-its bonded set, its volume and its mute (`docs/decisions/0000-the-apps-state-layer-and-its-live-test.md`).
+its bonded set, its volume and its mute (`docs/decisions/0185-the-apps-state-layer-and-its-live-test.md`).
 
 | Path | What |
 |---|---|

@@ -7,7 +7,7 @@
 #   tools/web.sh build   web/src into web/dist, the committed output chorus-server embeds. The
 #                        build is deterministic; the gate step `web-build` runs it and fails when
 #                        web/dist then differs from what is committed.
-#   tools/web.sh live    the live test (web/live/; docs/decisions/0000-the-apps-state-layer-and-its-live-test.md):
+#   tools/web.sh live    the live test (web/live/; docs/decisions/0185-the-apps-state-layer-and-its-live-test.md):
 #                        the app's elements and state layer, in node under happy-dom with no
 #                        browser, against the chorus-server CHORUS_SERVER_BIN names: they
 #                        render its rooms, change it and follow another client's changes.
