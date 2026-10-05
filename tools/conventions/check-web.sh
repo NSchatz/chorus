@@ -7,8 +7,9 @@
 #      there allows a build, and package.json declares no scripts of its own. There is no
 #      web/.npmrc: pnpm 12 takes no such setting from one, so a line there would switch
 #      nothing off and read as if it did.
-#   2. The direct dependencies are exactly the settled stack: lit, esbuild, happy-dom and
-#      @happy-dom/global-registrator. Another package comes with an ADR and a change here.
+#   2. The direct dependencies are exactly the settled stack: lit, esbuild, happy-dom,
+#      @happy-dom/global-registrator and @playwright/test (the one browser smoke test).
+#      Another package comes with an ADR and a change here.
 #   3. Every package of pnpm-lock.yaml comes from the registry with an integrity digest, and
 #      the lockfile is the project's alone (no package manager locked beside it).
 #   4. Every locked package has a line in web/licences.txt at its version, no line is left
@@ -22,7 +23,7 @@
 . "$(dirname "$0")/lib.sh"
 dir=web
 allowed=" MIT Apache-2.0 BSD-2-Clause BSD-3-Clause 0BSD ISC Zlib Unlicense CC0-1.0 "
-stack="@happy-dom/global-registrator esbuild happy-dom lit"
+stack="@happy-dom/global-registrator @playwright/test esbuild happy-dom lit"
 files="package.json pnpm-lock.yaml pnpm-workspace.yaml licences.txt"
 
 # The name@version keys of the lockfile's `packages:` section, one per line.

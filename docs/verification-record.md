@@ -418,8 +418,13 @@ CHORUS_CAPTURE_DEVICE=hw:1,0 CHORUS_CLIENT_DEVICE=hw:0,0 \
 
 AC-5, AC-6 and AC-10 were graded by `make verify-ui` (`tools/ui-render-run.sh` and
 the driver under `tools/ui`), which was retired on 2026-09-30 with the other
-umbrella-derived gates (K18, R13). Their rows above record its last run; nothing
-re-runs them until the app's own browser smoke test (P5) lands.
+umbrella-derived gates (K18, R13). Their rows above record its last run, and
+nothing re-runs them as they were written. What a browser is held to since
+2026-10-05 is the app's own smoke test, `web/smoke/app.spec.js` (`make web-smoke`,
+gate step `web-smoke`): headless Chromium loads the app under `/app/` from a real
+`chorus-server` through a fake login and asserts rendered text and zero
+Content-Security-Policy violations. It is one test of the app, not a re-run of
+those three criteria against the control page at `/`.
 
 ## EMBEDDED-5: the ESP32-S3 endpoint
 

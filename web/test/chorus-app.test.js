@@ -26,6 +26,19 @@ test("the shell renders its wordmark and a labelled main region", async () => {
   assert.ok(main.querySelector("slot"), "screens are slotted into the main region");
 });
 
+test("the shell lists the server's rooms by name, in the server's order", async () => {
+  const app = await mount();
+  assert.equal(getByLabel(app, "Rooms").querySelectorAll("li").length, 0);
+  app.rooms = [
+    { id: "kitchen", name: "The Kitchen" },
+    { id: "den", name: "den" },
+  ];
+  await app.updateComplete;
+  const items = [...getByLabel(app, "Rooms").querySelectorAll("li")];
+  assert.deepEqual(items.map((item) => item.textContent.trim()), ["The Kitchen", "den"]);
+  assert.deepEqual(items.map((item) => item.dataset.room), ["kitchen", "den"]);
+});
+
 test("the layout is a reflected property, ordinary by default", async () => {
   const app = await mount();
   assert.equal(app.getAttribute("mode"), "app");
