@@ -87,3 +87,18 @@ tested against a server rather than against the author's idea of one.
   where the state lists one for that endpoint, else the endpoint's id. It reads no other
   member of the state yet: groups, inputs and what is playing are later changes.
 - The app has no dependency it did not have: the stack of record 0181 is unchanged.
+
+## What was read
+
+This section was added after the record, by the change that made the provenance check green
+again; it lists only the sources the record itself names above.
+
+- `docs/proposals/P5-app-stack.md` (Option C and its measurements) and the records it builds
+  on: `docs/decisions/0181-the-web-app-stack.md`,
+  `docs/decisions/0183-the-one-browser-smoke-test.md` and decision 0142's rule on a skipped
+  step.
+- `docs/control-page.md` and `docs/control-plane.md` (the state model, and what is asked of
+  the UI and its verification).
+- `crates/server/src/control.rs` (`KEEPALIVE`), `fixtures/control/volume.json` and
+  `fixtures/control/mute.json`.
+- The record names no source outside this repository.
