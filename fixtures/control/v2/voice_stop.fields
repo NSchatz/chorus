@@ -1,0 +1,12 @@
+# Canonical input for the catalog v2 voice_stop vector.
+#
+# Encoding these field values must produce exactly voice_stop.json, and
+# decoding voice_stop.json must recover exactly these field values.
+#
+# (voice, P8) Ends the room's voice run, if it has one.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = voice_stop
+zone = kitchen

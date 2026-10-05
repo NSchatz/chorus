@@ -104,7 +104,7 @@
 use crate::catalog::{
     alarm_value, autoplay_value, centi_db_value, filters_value, input_label_value, is_display_name,
     is_identifier, members_value, soloist_value, stored_source_value, texts, window_value, Command,
-    Refusal, Volume, MAX_IDENTIFIER_LEN, VOLUME_SCALE,
+    Refusal, Volume, WakeWord, MAX_IDENTIFIER_LEN, VOLUME_SCALE,
 };
 use crate::firmware::{self, image_value, Image};
 use crate::json::{self, Value};
@@ -331,6 +331,9 @@ pub struct Zones {
     /// never in the state: it is the server's configuration, served on
     /// `GET /api/server`.
     announce_origins: Vec<Origin>,
+    /// (v2, voice) The wake-word models the server runs, listed in the
+    /// state as `wake_words` when there is any. Never persisted.
+    wake_words: Vec<WakeWord>,
 }
 
 /// (goal 18) What [`Zones::announce_begin`] changed, which is what the end of
@@ -790,6 +793,15 @@ impl Zones {
             Command::VoiceEnabled { enabled, .. } => {
                 self.zones[room()].voice_enabled = *enabled;
             }
+            Command::VoiceStart { zone } => {
+                // The room model agrees or refuses; the run is the server's
+                // to open (crates/server/src/voice.rs), and nothing of it is
+                // kept here.
+                self.voice_start_check(zone)?;
+            }
+            // The room exists (resolved above); ending a run is the
+            // server's, and a room with no run is not an error.
+            Command::VoiceStop { .. } => {}
             Command::AlarmSet(alarm) => {
                 self.persistent_target(&alarm.target)?;
                 if let Source::Stored(id) = &alarm.source {
@@ -2083,6 +2095,47 @@ impl Zones {
         true
     }
 
+    /// (voice, P8) Whether a voice run may open in room `zone` now, or the
+    /// refusal that says why not, by name: `voice-disabled` for a room whose
+    /// voice path is switched off, `mic-muted` for one with no microphone
+    /// reporting its gate live (a room with no microphone at all included).
+    pub fn voice_start_check(&self, zone: &str) -> Result<(), Refusal> {
+        let room = &self.zones[self.index(zone)?];
+        if !room.voice_enabled {
+            return Err(Refusal::rejected(
+                "zone",
+                format!(
+                    "voice-disabled: room '{}' has voice switched off, so nothing listens \
+                     there; voice_enabled switches it on",
+                    zone
+                ),
+            ));
+        }
+        if self.mic_muted(room) {
+            return Err(Refusal::rejected(
+                "zone",
+                format!(
+                    "mic-muted: no microphone in room '{}' reports its gate live (the mute \
+                     switch is the speaker's own, and no command opens it)",
+                    zone
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    /// (voice, P8) The wake-word models the server runs, for the state's
+    /// `wake_words`. Set once, at start, before any state is served, so the
+    /// serial does not move. Never persisted: it is a fact about the build.
+    pub fn set_wake_words(&mut self, wake_words: Vec<WakeWord>) {
+        self.wake_words = wake_words;
+    }
+
+    /// (voice, P8) The wake-word models the server runs.
+    pub fn wake_words(&self) -> &[WakeWord] {
+        &self.wake_words
+    }
+
     /// (goal 18) The origins an `announce` URL may come from. Set once, at
     /// start; the state does not carry them, so the serial does not move.
     pub fn set_announce_origins(&mut self, origins: Vec<Origin>) {
@@ -2518,6 +2571,14 @@ impl Zones {
         // runs them, after everything else for the same reason.
         if let Some(soloist) = &self.soloist {
             state.push(("soloist".to_string(), soloist_value(soloist)));
+        }
+        // (voice, P8) The wake-word models, written only by a server that
+        // runs any, after everything else for the same reason.
+        if !self.wake_words.is_empty() {
+            state.push((
+                "wake_words".to_string(),
+                Value::Arr(self.wake_words.iter().map(WakeWord::value).collect()),
+            ));
         }
         Value::Obj(state)
     }

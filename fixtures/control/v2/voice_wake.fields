@@ -1,0 +1,13 @@
+# Canonical input for the catalog v2 voice_wake vector.
+#
+# Encoding these field values must produce exactly voice_wake.json: what a
+# server sends a `GET /api/voice-events` subscriber when a room's microphone
+# heard a wake word. It is not a state, no command produces it and nothing
+# decodes it. It names the room and the phrase and carries no audio and no run.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = voice_wake
+zone = kitchen
+phrase = Okay Nabu

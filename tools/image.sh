@@ -107,6 +107,9 @@ MPL_CRATES="$(cargo tree --locked -e normal -p chorus-server --prefix none --for
 [ -n "$MPL_CRATES" ] || { echo "image: no MPL-2.0 crate found, but chorus-server links Symphonia"; exit 2; }
 mkdir -p "$STAGE/usr/share/doc/chorus"
 install -m 0644 third_party/opus/COPYING "$STAGE/usr/share/doc/chorus/libopus-COPYING"
+# The wake-word model compiled into the server (Apache-2.0): its licence and NOTICE.
+install -m 0644 third_party/wakeword/LICENSE "$STAGE/usr/share/doc/chorus/wakeword-LICENSE"
+install -m 0644 third_party/wakeword/NOTICE "$STAGE/usr/share/doc/chorus/wakeword-NOTICE"
 {
     cat deploy/THIRD-PARTY-NOTICES.md
     while read -r name ver; do
@@ -201,6 +204,10 @@ echo "image test: chorus-server is a static PIE (no NEEDED, no INTERP): $(stat -
 DOC="$T/bundle/rootfs/usr/share/doc/chorus"
 cmp -s third_party/opus/COPYING "$DOC/libopus-COPYING" ||
     { echo "image test: FAIL: the image does not carry libopus's COPYING"; exit 1; }
+for notice in LICENSE NOTICE; do
+    cmp -s "third_party/wakeword/$notice" "$DOC/wakeword-$notice" ||
+        { echo "image test: FAIL: the image does not carry the wake-word model's $notice"; exit 1; }
+done
 while read -r name ver; do
     grep -qF "https://crates.io/crates/$name/$ver" "$DOC/THIRD-PARTY-NOTICES.md" ||
         { echo "image test: FAIL: the notices do not say where $name $ver's source is"; exit 1; }
