@@ -385,7 +385,7 @@ give them.
 | `input_label` | `input` (`<endpoint>/<input>`), `name`, `role` (`"line-in"` or `"streamer"`) | (goal 17) names an input and says what is wired to it; an empty `name` with `role` `line-in` removes the label; below |
 | `soloist_restart` | none | (goal 17) every Spotify Soloist receiver's supervisor reads its binary again and starts again; refused (`no-receivers`) on a server started without `--soloist-receivers`; below |
 | `playback` | `target` (a room, a saved group or a formed group), `action` (`"pause"`, `"resume"`, `"next"` or `"previous"`) | (goal 17) forwarded to the Spotify receiver the target's group is playing; refused for a group that plays anything else; below |
-| `announce` | `target` (a room, a saved group or a formed group), `url`, optional `volume` | (goal 18) plays a clip from a configured origin in the target's group, then puts back what the group played; refused for a URL from any other origin; below |
+| `announce` | `target` (a room, a saved group or a formed group), `url`, optional `volume` | (goal 18) plays a clip from a configured origin over what the target's rooms play (the music ducks, the clip is mixed over it, the music comes back), and says in the state how it ended; refused for a URL from any other origin; below |
 
 ```json
 {"v":2,"t":"bond","zone":"living","members":[{"endpoint":"endpoint-a","role":"FL"},{"endpoint":"endpoint-b","role":"FR"}]}
@@ -946,17 +946,17 @@ with no origin refuses every `announce` by name.
 | `url` | `http://` or `https://`, under the shape rules a stored `url` source has (a host, no control character, space, quote or backslash, at most 2048 bytes), from a configured origin |
 | `volume` | optional: the volume the target's rooms play the clip at, CLAMPED to each room's effective limit like every volume path; the rooms get their own back afterwards. Absent: the rooms keep their volumes |
 
-The answer is `200` with the resulting state (the group's source is the
-player, its now-playing record says `via` `announce`), or `400` with an
-`error` naming the field:
+The answer is `200` with the resulting state and one more member,
+`announcement`, the number of this announcement (below, "How it ended"), or
+`400` with an `error` naming the field:
 
 | field | when |
 |---|---|
 | `target` | no room or group has that id; or an alarm is ringing in a room that would hear the announcement (an announcement does not interrupt a ringing alarm) |
 | `url` | not `http`/`https` or not the shape above (the decoder); no origin configured (`no-announce-origin: ...`); an origin that is not on the list, or a URL with userinfo or a port that is not one (the refusal lists the configured origins) |
 | `volume` | outside `0.000` to `1.000` |
-| `t` | the server runs no player (`no-players: ...`, a server started without `--players`), or none is free (`no-free-player: ...`) |
-| `source` | no stream slot is free for the group (the slots' own refusal) |
+| `t` | the server runs no player (`no-players: ...`, a server started without `--players`), none is free (`no-free-player: ...`), or no announcement mix is free (`no-free-mix: ...`) |
+| `source` | an announcement that interrupts (below): no stream slot is free for the group (the slots' own refusal) |
 
 An origin is compared whole: the scheme, the host as text (ASCII
 case-insensitive; a name is never resolved to compare it) and the port, the
@@ -967,57 +967,105 @@ connection it makes**: the fetcher follows redirects (up to 5), and a redirect
 that leaves the origin fails the fetch (`refused: origin ...`) without
 connecting to where it points.
 
-**What it does is interrupt and restore, and nothing more** (goal 20 builds
-the ducking mixer, K31, and replaces the playback here, not the command):
+**What it does is duck, mix and restore** (K31; the arithmetic is
+`docs/dsp.md`, "The announcement mixer", and
+`docs/decisions/0173-the-announcement-mixer.md`; where it runs and how long
+it takes is
+`docs/decisions/0175-announcements-are-mixed-per-room-on-the-slots-grid.md`):
 
-1. The clip plays through a held player session, as a ringing alarm's stored
-   URL does (`docs/inputs.md`): the server takes a free player, the target's
-   group plays `player:p<i>`, and the state shows it (`now_playing`, title
-   `Announcement`, `via` `announce`). A room plays in **the group it is in**,
-   so everybody in that group hears it and nobody is regrouped; a saved group
-   that is not active is taken first (K78), as any play on a saved group
-   does, and stays formed afterwards.
-2. With `volume`, every room of the group is set to it, clamped.
-3. When the clip ends, fails (a 404, a refused redirect, an undecodable
+1. The clip plays through a held player session that **no group plays**: the
+   server takes a free player, and no group's source and no now-playing
+   record changes. A saved group that is not active is taken first (K78), as
+   any play on a saved group does, and stays formed afterwards.
+2. **The rooms that hear it** are the target's own: a room target is that
+   room ALONE, whatever group it is in, and the rest of its group plays on
+   untouched, on the same timeline; a formed or saved group target is every
+   room of it. With `volume`, those rooms are set to it, clamped.
+3. In those rooms the music goes down 20 dB over 200 ms, the clip plays over
+   it at 0.9 of its level from the moment the music is fully down, and from
+   the frame after the clip's last the music comes back over 500 ms. The mix
+   is made on the server, in a stream of its own on the grid every stream is
+   cut on, so the rooms that are ducked and the rooms that are not stay in
+   sync.
+4. When the clip ends, fails (a 404, a refused redirect, an undecodable
    file), or has played for 10 minutes (ASSUMED bound: a URL that turns out
-   to be an endless stream must not hold a room), the group goes back to the
-   source it had, the player is given back, and each room whose volume is
-   still the one the announcement set goes back to the volume it had. A
-   failed fetch restores at once: the command was answered `200` (the fetch
-   runs on the player's thread), and the server's log has the reason
-   (`announce owner=announce:<n> ended group=<g> restored=<source>
-   failure="<words>"`).
+   to be an endless stream must not hold a room), the music comes back and
+   each room whose volume is still the one the announcement set goes back to
+   the volume it had. A failed fetch restores at once: the command was
+   answered `200` (the fetch runs on the player's thread), the state says
+   `failed` with the reason, and so does the server's log
+   (`announce owner=announce:<n> id=<id> ended group=<g> restored=<source>
+   outcome=failed failure="<words>"`).
+
+The timing, in frames of the stream (ADR 0175, measured in
+`docs/measurements/2026-10-05-announcement-duck-timing.md`): the music is
+fully ducked before the clip's first frame, always; and it is fully back
+within the restore ramp and one chunk of the clip's last frame (24 960
+frames, 520 ms, at 48 kHz and the default chunk).
+
+#### How it ended
+
+Every announcement has a number, counted from 1 since the server started: the
+`announcement` member of its command's answer. The state lists the ones that
+are playing and the last eight that are over under `announcements`, written
+only while there is one to name (never persisted, never in the v1 shape):
+
+```json
+"announcements":[{"id":7,"target":"kitchen","rooms":["kitchen"],"state":"playing"}]
+"announcements":[{"id":7,"target":"kitchen","rooms":["kitchen"],"state":"failed","reason":"http status 404"}]
+```
+
+| `state` | meaning |
+|---|---|
+| `playing` | its rooms are ducked for it, or its clip is playing |
+| `finished` | the clip played to its end; the music is on its way back |
+| `failed` | the clip could not be fetched or decoded, or was cut at the bound; `reason` has the server's words |
+| `displaced` | something else took its rooms; `reason` says what (an alarm, a later announcement, a regrouping) |
+
+A caller that wants to wait for playback reads `announcement` from its
+answer and watches `GET /api/events` (or polls `GET /api/state`) until that
+`id` is no longer `playing`. The ones that are over are listed in the order
+they ended; one that has dropped off the list ended more than eight
+announcements ago.
 
 The limits, plainly:
 
-- **No mixing, no ducking.** The music stops for the clip; it is not turned
-  down under it.
-- **Interrupted, not paused.** The stream, a line-in and a chime come back
-  as they are when the clip ends (they are live or generated, so there is no
-  position to keep). A UPnP cast and a Spotify receiver do NOT come back: a
-  player is given back the moment its group stops playing it and a receiver
-  is paused by its manager, so a group that was playing either plays `none`
-  after the announcement and is started again from the app that drove it.
+- **A Spotify receiver is paused, not ducked** (proposal P7; decided by the
+  owner 2026-10-04). An announcement whose target's group plays a Soloist
+  receiver INTERRUPTS as goal 18 built it: the clip becomes the group's
+  source (`player:p<i>`, now-playing `via` `announce`), the whole group hears
+  it, the receiver is paused by its manager, and the group plays `none`
+  afterwards and is started again from the Spotify app. A server without
+  stream slots (`--slots 0`) has no mix and interrupts every group the same
+  way, going back to the source the group had.
 - **One player per announcement.** A server whose players are all in use (a
   cast in another room, an alarm's stream) refuses the announcement
   (`no-free-player`). A group that is casting needs a second player for the
-  clip.
-- **A room target in a multi-room group is heard by the whole group.**
-- **An announcement during another**, in the same group, replaces it on the
-  same player; what the group goes back to is what it played before the
-  first. In another group it needs a player of its own.
-- **An alarm that rings during an announcement** takes its rooms as it always
-  does and the announcement ends; when the alarm ends the rooms go back to
-  what they played, and the volumes they had, BEFORE the announcement. **An
-  announcement for a room an alarm is ringing in** is refused, field
-  `target`.
-- **A person's command during the clip wins.** A `take`, a `join` or a group
-  change that gives the group something else ends the announcement and is
-  not undone; a volume a person set during the clip is kept.
+  clip; the cast plays on under it.
+- **Two mixes per player.** An announcement in other rooms while every mix is
+  in use (a clip playing, or music still coming back) is refused
+  (`no-free-mix`).
+- **An announcement during another**, in rooms the first is still playing
+  in, replaces it on the same mix and player: the music stays down, the new
+  clip plays, the first one's rooms keep hearing the mix, and the state says
+  `displaced` of the first. In other rooms it needs a player of its own.
+- **An alarm that rings in one of its rooms** ends the announcement
+  (`displaced`): the mix is called off and what the rooms hear is back at
+  full level within the restore ramp, so an alarm is not left ducked; when
+  the alarm ends the rooms go back to the volumes they had BEFORE the
+  announcement. **An announcement for a room an alarm is ringing in** is
+  refused, field `target`.
+- **A person's command during the clip.** A new source for the group does not
+  end the announcement: the clip goes on over what the group plays now. A
+  regrouping that takes every one of its rooms out of the group it started
+  in ends it (`displaced`); a room that leaves while others stay only stops
+  hearing it. A volume a person set during the clip is kept.
 - A volume the announcement set is persisted like any volume, so a server
   that stops in the middle of a clip starts again at the clip's volume.
 - The schedule runtime is not told of an `announce` as it is of a person's
   command: it ends no autoplay and detaches no room.
+- A visualizer of a room that is being announced in shows the room's music,
+  not the mix.
 
 `crates/server/tests/announce.rs` runs it on the real binary;
 `docs/decisions/0136-a-server-identity-and-an-announce-command.md` records

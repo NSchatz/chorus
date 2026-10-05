@@ -107,6 +107,10 @@ struct Session {
     state: PlayState,
     /// (goal 17) A held session: what its group plays is its caller's.
     held: bool,
+    /// (announcements, ADR 0175) A held session no group plays: its audio
+    /// is mixed over what its caller's rooms play, so it has no group to
+    /// show a record in and none whose source could give it away.
+    over: bool,
 }
 
 /// Why a play did not start (goal 17: the callers that fall back need to
@@ -240,7 +244,7 @@ impl PlayerSessions {
     /// the server runs none, or when the `take` is refused (an unknown
     /// target, a player that plays elsewhere); a refusal changes nothing.
     pub fn play(&self, request: &PlayRequest) -> Result<usize, String> {
-        self.begin(request, true, None)
+        self.begin(request, true, None, false)
             .map_err(|refused| refused.to_string())
     }
 
@@ -252,7 +256,18 @@ impl PlayerSessions {
     /// ends or fails the session leaves the group alone, gives the player
     /// back and reports the end through [`PlayerSessions::take_ended`].
     pub fn play_held(&self, request: &PlayRequest, take: TakeBy<'_>) -> Result<usize, PlayRefused> {
-        self.begin(request, true, Some(take))
+        self.begin(request, true, Some(take), false)
+    }
+
+    /// (announcements, ADR 0175) [`PlayerSessions::play_held`] for a clip
+    /// that is mixed OVER what its caller's rooms play (`crate::mixer`): the
+    /// same, except that no group is made to play the player. `take` is the
+    /// caller's own half of the start (it may still refuse), the session
+    /// writes no now-playing record, and [`PlayerSessions::reconcile`]
+    /// leaves it alone: it ends when its track does, or when its caller
+    /// releases it.
+    pub fn play_over(&self, request: &PlayRequest, take: TakeBy<'_>) -> Result<usize, PlayRefused> {
+        self.begin(request, true, Some(take), true)
     }
 
     /// [`PlayerSessions::play`] for an owner whose player already has
@@ -260,7 +275,7 @@ impl PlayerSessions {
     /// at Play): the same, without the load, so what is open, and a next URI
     /// queued behind it, are kept.
     pub fn start_loaded(&self, request: &PlayRequest) -> Result<usize, String> {
-        self.begin(request, false, None)
+        self.begin(request, false, None, false)
             .map_err(|refused| refused.to_string())
     }
 
@@ -269,6 +284,7 @@ impl PlayerSessions {
         request: &PlayRequest,
         load: bool,
         held: Option<TakeBy<'_>>,
+        over: bool,
     ) -> Result<usize, PlayRefused> {
         if self.players.is_empty() {
             return Err(PlayRefused::NoPlayers);
@@ -301,6 +317,7 @@ impl PlayerSessions {
             stream_title: None,
             state: PlayState::Buffering,
             held: is_held,
+            over,
         });
         lock(&self.failures)[index] = None;
         if let Some(handle) = self.players.handle(index) {
@@ -504,7 +521,8 @@ impl PlayerSessions {
     /// The player is unloaded; the group is left as that somebody made it.
     pub fn reconcile(&self) {
         for index in 0..self.players.len() {
-            if lock(&self.held)[index].is_none() {
+            // (announcements) A session mixed over its rooms has no group.
+            if lock(&self.held)[index].as_ref().is_none_or(|s| s.over) {
                 continue;
             }
             if self.state.player_group(&player_id(index)).is_some() {
@@ -585,6 +603,9 @@ impl PlayerSessions {
         let Some(session) = lock(&self.held)[index].clone() else {
             return;
         };
+        if session.over {
+            return;
+        }
         let Some(group) = self.state.player_group(&player_id(index)) else {
             return;
         };

@@ -311,6 +311,37 @@ impl PlayerPort {
         }
         take
     }
+
+    /// (announcements, ADR 0175) The port's next frames for a mixer on the
+    /// audio thread, which takes as many of them as it asks for: up to
+    /// `scratch.len() / channels` frames, oldest first, are copied into
+    /// `scratch` and handed to `take` with whether they are the clip's last
+    /// (the producer said [`PlayerPort::finish`] and nothing is queued
+    /// behind them) and the port's generation; `take` returns how many
+    /// frames it used, and exactly those leave the ring and are counted as
+    /// played. A held port hands in none. One hold of the ring's lock, so a
+    /// flush never falls between the look and the take; no allocation, and
+    /// no underrun is counted (a mix holds its music down under a clip that
+    /// is late, it does not play a gap).
+    pub fn feed<F: FnOnce(&[f32], bool, u64) -> usize>(&self, scratch: &mut [f32], take: F) {
+        let mut ring = lock(&self.ring);
+        let generation = ring.generation;
+        if self.paused.load(Ordering::SeqCst) {
+            take(&[], false, generation);
+            return;
+        }
+        let cap = ring.buf.len();
+        let frames = (ring.len / self.channels).min(scratch.len() / self.channels);
+        let samples = frames * self.channels;
+        let first = samples.min(cap - ring.start);
+        scratch[..first].copy_from_slice(&ring.buf[ring.start..ring.start + first]);
+        scratch[first..samples].copy_from_slice(&ring.buf[..samples - first]);
+        let last = ring.finished && ring.len == samples;
+        let used = take(&scratch[..samples], last, generation).min(frames);
+        ring.start = (ring.start + used * self.channels) % cap;
+        ring.len -= used * self.channels;
+        ring.played += used as u64;
+    }
 }
 
 #[cfg(test)]

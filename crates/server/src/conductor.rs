@@ -397,6 +397,11 @@ impl Conductor {
         {
             timeout = RETRY;
         }
+        // (ADR 0175) While an announcement is playing or its music is
+        // coming back: the end of a restore wakes nobody.
+        if self.announcer.as_ref().is_some_and(|a| a.any_live()) {
+            timeout = RETRY;
+        }
         if let Some(s) = &self.schedule {
             timeout = timeout.min(s.clocks.until(s.next_tick_ns));
         }
@@ -444,10 +449,22 @@ impl Conductor {
         // one slot or the other at every tick, never on a slot not yet
         // playing it.
         self.route_inputs(&snapshot, &mut report, true);
+        // (ADR 0175) The rooms an announcement is mixed over: their player
+        // sessions hear its mix, from the command to the end of the
+        // restore. Everything else about them is their room's as before.
+        let mixed = self
+            .announcer
+            .as_ref()
+            .map(|a| a.routes())
+            .unwrap_or_default();
         for session in self.router.sessions() {
             let room = snapshot.room_of(&session.endpoint);
-            let route = room
-                .and_then(|r| r.route)
+            let mix = room
+                .filter(|_| session.roles & roles::PLAYER != 0)
+                .and_then(|r| mixed.iter().find(|(id, _)| *id == r.id))
+                .and_then(|(_, mix)| self.router.mix_route(*mix));
+            let route = mix
+                .or_else(|| room.and_then(|r| r.route))
                 .unwrap_or_else(|| self.router.idle());
             if self.router.slots() > 0 && self.router.move_to(session.id, route) {
                 report.moves += 1;
@@ -469,6 +486,11 @@ impl Conductor {
                     None => report.owed += 1,
                 }
             }
+        }
+        // (ADR 0175) Only now, with the sessions on their mixes, is the
+        // audio thread told to start a clip's duck.
+        if let Some(announcer) = &self.announcer {
+            report.owed += announcer.direct(&snapshot);
         }
         self.voice_controls(&snapshot, &mut report);
         // The rooms an HTTP subscriber watches the visualizer of

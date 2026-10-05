@@ -547,8 +547,9 @@ impl Runtime {
     /// what it had given a group must not come back: every room the runtime
     /// holds whose snapshot says it played `player` (the announcement's
     /// player, given back by now) goes back to `previous` instead, and one
-    /// whose snapshot holds a volume the announcement set goes back to the
-    /// volume it had before (`volumes`: the room, the volume it had, the
+    /// whose snapshot holds a volume the announcement set (whether or not
+    /// it played the player: an announcement mixed over its rooms gives
+    /// nobody its player) goes back to the volume it had before (`volumes`: the room, the volume it had, the
     /// volume the announcement gave it). Returns how many snapshots changed.
     pub fn announcement_over(
         &mut self,
@@ -559,16 +560,20 @@ impl Runtime {
         let mut changed = 0;
         for (room, hold) in self.holds.iter_mut() {
             let snap = &mut hold.snapshot;
-            if snap.source != *player {
-                continue;
+            let mut moved = false;
+            if snap.source == *player {
+                snap.source = previous.clone();
+                moved = true;
             }
-            snap.source = previous.clone();
+            // (ADR 0175) An announcement mixed over its rooms gave no group
+            // its player, so only the volume it set can be in a snapshot.
             if let Some((_, before, set)) = volumes.iter().find(|(r, _, _)| r == room) {
-                if snap.volume == *set {
+                if snap.volume == *set && set != before {
                     snap.volume = *before;
+                    moved = true;
                 }
             }
-            changed += 1;
+            changed += usize::from(moved);
         }
         changed
     }

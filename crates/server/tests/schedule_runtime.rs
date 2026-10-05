@@ -348,6 +348,56 @@ fn an_alarm_that_displaced_an_announcement_puts_back_what_played_before_it() {
     assert_eq!(h.volume("kitchen"), 500);
 }
 
+/// (ADR 0175) The same for an announcement that is mixed over its room: it
+/// gave no group its player, so the alarm's snapshot holds the music the
+/// room played but the ANNOUNCEMENT's volume. Told that the announcement is
+/// over, the runtime puts the room back at the volume it had before it.
+#[test]
+fn an_alarm_that_displaced_a_mixed_announcement_puts_back_the_volume_from_before_it() {
+    let p0 = Source::Player("p0".to_string());
+    let v = |t: i64| chorus_control::Volume::from_thousandths(t).unwrap();
+    let mut h = House::new(Zone::utc(), thursday(6, 59, 0), &[("kitchen", 500)]);
+    let announced = h
+        .zones
+        .announce_over_begin("kitchen", Some(v(300)))
+        .unwrap();
+    assert_eq!(announced.previous, Source::Stream);
+    assert_eq!(announced.rooms, ["kitchen".to_string()]);
+    assert_eq!(announced.volumes, [("kitchen".to_string(), v(500), v(300))]);
+    assert_eq!(h.source_of("kitchen"), Source::Stream, "no source changes");
+    h.command(Command::AlarmSet(alarm(
+        "wake",
+        "kitchen",
+        "07:00",
+        "chime:bell",
+        600,
+        10,
+    )));
+    h.run(60_000, 100);
+    assert_eq!(h.source_of("kitchen"), Source::Chime("bell".to_string()));
+    // The announcer sees the alarm ring in the announcement's room.
+    assert_eq!(
+        h.zones
+            .announce_watch(&announced.rooms, &announced.group)
+            .ringing
+            .as_deref(),
+        Some("wake")
+    );
+    assert_eq!(
+        h.rt.announcement_over(&p0, &announced.previous, &announced.volumes),
+        1
+    );
+    assert_eq!(
+        h.rt.announcement_over(&p0, &announced.previous, &announced.volumes),
+        0,
+        "a second telling changes nothing"
+    );
+    h.run(70_000, 100);
+    assert!(!h.zones.is_ringing("wake") && h.rt.ringing().is_empty());
+    assert_eq!(h.source_of("kitchen"), Source::Stream);
+    assert_eq!(h.volume("kitchen"), 500);
+}
+
 /// (goal 16) A player plays in one group. A room that was playing one when
 /// its alarm rang gets it back when the alarm ends, unless another group
 /// took the player meanwhile: then the room plays nothing, and is not left

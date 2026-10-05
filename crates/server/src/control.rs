@@ -441,6 +441,69 @@ impl ControlState {
             .ok_or_else(|| Refusal::rejected("t", "the announcement did not start".to_string()))
     }
 
+    /// (ADR 0175) The rooms an announcement to `target` would be mixed over
+    /// (`Zones::announce_over_rooms`), and what the group it would play in
+    /// plays now (`Zones::announce_source`), read together.
+    pub fn announce_over_plan(&self, target: &str) -> (Vec<String>, Option<Source>) {
+        let held = self.locked();
+        (
+            held.zones.announce_over_rooms(target),
+            held.zones.announce_source(target),
+        )
+    }
+
+    /// (ADR 0175) The room model's half of starting an announcement that is
+    /// mixed over what its rooms play (`Zones::announce_over_begin`),
+    /// committed as [`ControlState::announce_begin`] is.
+    pub fn announce_over_begin(
+        &self,
+        target: &str,
+        volume: Option<chorus_control::Volume>,
+    ) -> Result<chorus_control::zones::Announced, Refusal> {
+        let (announced, state) = {
+            let mut held = self.locked();
+            let mut announced = None;
+            Self::commit(&mut held, |zones| {
+                announced = Some(zones.announce_over_begin(target, volume)?);
+                Ok(())
+            })?;
+            self.persist(&held.zones);
+            (announced, held.zones.encode_state())
+        };
+        self.applied.fetch_add(1, Ordering::Relaxed);
+        self.publish(state);
+        announced
+            .ok_or_else(|| Refusal::rejected("t", "the announcement did not start".to_string()))
+    }
+
+    /// (ADR 0175) Whether an announcement mixed over `rooms`, started in
+    /// `group`, still has them (`Zones::announce_watch`).
+    pub fn announce_watch(
+        &self,
+        rooms: &[String],
+        group: &str,
+    ) -> chorus_control::zones::AnnounceWatch {
+        self.locked().zones.announce_watch(rooms, group)
+    }
+
+    /// (ADR 0175) Say which announcements are playing and how the last few
+    /// ended (`Zones::set_announcements`): the announcer's hook. Fanned out
+    /// only when something changed; nothing is persisted.
+    pub fn set_announcements(
+        &self,
+        announcements: Vec<chorus_control::zones::Announcement>,
+    ) -> bool {
+        let state = {
+            let mut held = self.locked();
+            if !held.zones.set_announcements(announcements) {
+                return false;
+            }
+            held.zones.encode_state()
+        };
+        self.publish(state);
+        true
+    }
+
     /// (goal 18) The end of an announcement: the group that plays `player`
     /// now, if one still does, goes back to `back` (to `none` when the room
     /// model refuses `back`), and every room in `volumes` (the room, the

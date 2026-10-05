@@ -9,7 +9,7 @@
 
 use chorus_control::catalog::{decode_command, decode_message, Command, Volume};
 use chorus_control::rooms::{Origin, Source};
-use chorus_control::zones::{Zone, Zones};
+use chorus_control::zones::{Announcement, AnnouncementState, Zone, Zones};
 
 const URL: &str = "http://ha.example:8123/api/tts_proxy/abc.mp3";
 
@@ -249,4 +249,161 @@ fn an_announcement_does_not_interrupt_a_ringing_alarm() {
     apply(&mut zones, &announce("study", URL));
     zones.set_alarm_ringing("wake", false).unwrap();
     apply(&mut zones, &announce("living", URL));
+}
+
+#[test]
+fn an_announcement_mixed_over_a_room_changes_no_source_and_only_that_rooms_volume() {
+    let mut zones = house();
+    apply(
+        &mut zones,
+        r#"{"v":2,"t":"group_save","group":"downstairs","name":"Downstairs","zones":["living","kitchen"]}"#,
+    );
+    // A saved group that is not active: the rooms it lists, and no group
+    // to play in yet.
+    assert_eq!(
+        zones.announce_over_rooms("downstairs"),
+        ["living".to_string(), "kitchen".to_string()]
+    );
+    assert_eq!(zones.announce_source("downstairs"), None);
+    apply(
+        &mut zones,
+        r#"{"v":2,"t":"take","target":"downstairs","source":"chime:bell"}"#,
+    );
+    apply(
+        &mut zones,
+        r#"{"v":2,"t":"volume","zone":"kitchen","volume":0.250}"#,
+    );
+    let living_before = zones.zone("living").unwrap().volume;
+
+    // One room of the playing group: that room alone, at the clip's
+    // volume, and the group plays what it played.
+    assert_eq!(
+        zones.announce_over_rooms("kitchen"),
+        ["kitchen".to_string()]
+    );
+    assert_eq!(
+        zones.announce_source("kitchen"),
+        Some(Source::Chime("bell".to_string()))
+    );
+    let one = zones.announce_over_begin("kitchen", Some(v(400))).unwrap();
+    assert_eq!(one.group, "downstairs");
+    assert_eq!(one.previous, Source::Chime("bell".to_string()));
+    assert_eq!(one.rooms, ["kitchen".to_string()]);
+    assert_eq!(one.volumes, [("kitchen".to_string(), v(250), v(400))]);
+    assert_eq!(
+        zones.source("downstairs"),
+        Source::Chime("bell".to_string())
+    );
+    assert_eq!(zones.zone("living").unwrap().volume, living_before);
+    assert_eq!(zones.zone("living").unwrap().group, "downstairs");
+
+    // The group: every room of it, and still no source changes.
+    let all = zones.announce_over_begin("downstairs", None).unwrap();
+    assert_eq!(all.rooms.len(), 2);
+    assert!(all.volumes.is_empty());
+    assert_eq!(
+        zones.source("downstairs"),
+        Source::Chime("bell".to_string())
+    );
+
+    // An unknown target is refused with nothing changed.
+    let before = zones.encode_state();
+    assert_eq!(
+        zones.announce_over_begin("garage", None).unwrap_err().field,
+        "target"
+    );
+    assert_eq!(zones.encode_state(), before);
+    assert!(zones.announce_over_rooms("garage").is_empty());
+}
+
+#[test]
+fn a_mixed_announcement_is_watched_for_an_alarm_a_regrouping_and_its_groups_source() {
+    let mut zones = house();
+    apply(
+        &mut zones,
+        r#"{"v":2,"t":"join","zone":"living","target":"kitchen"}"#,
+    );
+    let group = zones.zone("kitchen").unwrap().group.clone();
+    let rooms = ["kitchen".to_string(), "living".to_string()];
+    let watch = zones.announce_watch(&rooms, &group);
+    assert_eq!(watch.here, rooms);
+    assert_eq!(watch.ringing, None);
+    assert_eq!(watch.source, Source::Stream);
+
+    // A room that leaves the group is no longer one of its rooms.
+    apply(
+        &mut zones,
+        r#"{"v":2,"t":"join","zone":"living","target":"study"}"#,
+    );
+    assert!(!zones
+        .announce_watch(&rooms, &group)
+        .here
+        .contains(&"living".to_string()));
+    let group = zones.zone("kitchen").unwrap().group.clone();
+    assert_eq!(
+        zones.announce_watch(&rooms, &group).here,
+        ["kitchen".to_string()]
+    );
+
+    // An alarm that rings in one of its rooms is named.
+    apply(
+        &mut zones,
+        r#"{"v":2,"t":"alarm_set","alarm":"wake","target":"kitchen","time":"07:00","days":[],"source":"chime:bell","volume":0.500,"ramp_s":0,"duration_min":5,"enabled":true}"#,
+    );
+    assert_eq!(zones.announce_watch(&rooms, &group).ringing, None);
+    zones.set_alarm_ringing("wake", true).unwrap();
+    assert_eq!(
+        zones.announce_watch(&rooms, &group).ringing.as_deref(),
+        Some("wake")
+    );
+}
+
+#[test]
+fn the_state_lists_announcements_only_while_there_is_one_to_name() {
+    let mut zones = house();
+    let bare = zones.encode_state();
+    assert!(!bare.contains("announcements"), "{}", bare);
+    let playing = Announcement {
+        id: 3,
+        target: "kitchen".to_string(),
+        rooms: vec!["kitchen".to_string()],
+        state: AnnouncementState::Playing,
+        reason: None,
+    };
+    assert!(zones.set_announcements(vec![playing.clone()]));
+    assert!(
+        !zones.set_announcements(vec![playing.clone()]),
+        "no change, no new state"
+    );
+    let state = zones.encode_state();
+    assert!(
+        state.ends_with(
+            r#","announcements":[{"id":3,"target":"kitchen","rooms":["kitchen"],"state":"playing"}]}"#
+        ),
+        "{}",
+        state
+    );
+    let failed = Announcement {
+        state: AnnouncementState::Failed,
+        reason: Some("http status 404".to_string()),
+        ..playing
+    };
+    assert!(zones.set_announcements(vec![failed]));
+    assert!(
+        zones.encode_state().ends_with(
+            r#"{"id":3,"target":"kitchen","rooms":["kitchen"],"state":"failed","reason":"http status 404"}]}"#
+        ),
+        "{}",
+        zones.encode_state()
+    );
+    for (state, word) in [
+        (AnnouncementState::Finished, "finished"),
+        (AnnouncementState::Displaced, "displaced"),
+    ] {
+        assert_eq!(state.name(), word);
+    }
+    // The v1 shape of the state never carries the list.
+    assert!(!zones.encode_state_at(1).contains("announcements"));
+    assert!(zones.set_announcements(Vec::new()));
+    assert!(!zones.encode_state().contains("announcements"));
 }
