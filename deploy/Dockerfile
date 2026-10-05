@@ -39,6 +39,10 @@ COPY third_party/wakeword ./third_party/wakeword
 # (crates/server/src/control.rs includes docs/control-page.md), so the build
 # context carries that one document (B-14).
 COPY docs/control-page.md ./docs/control-page.md
+# The server compiles the app's committed build output into itself
+# (crates/server/build.rs walks web/dist), so the build context carries that
+# directory and nothing else of web/: no JavaScript toolchain runs in this build.
+COPY web/dist ./web/dist
 
 # No external dependencies, so no network is needed past the base image.
 # --locked is not belt and braces: it makes a resolution that would change the
