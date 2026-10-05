@@ -1,4 +1,4 @@
-# 0000: the app's further screens each have an address in the fragment (`#/rooms/<room>/sound`), register themselves with one registry, are opened as entries of the browser's history, and the first is a room's sound screen whose every control sends one `sound` command with its one field
+# 0197: the app's further screens each have an address in the fragment (`#/rooms/<room>/sound`), register themselves with one registry, are opened as entries of the browser's history, and the first is a room's sound screen whose every control sends one `sound` command with its one field
 
 - Status: accepted, 2026-10-05.
 - Decided by: the owner for what is asked (the task: a way to open screens beyond groups and

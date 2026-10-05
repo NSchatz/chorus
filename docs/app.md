@@ -49,7 +49,7 @@ further screen has an address of its own (below).
 | Groups | every saved group, then every live group, each with its rooms, what it plays and what is playing | group volume (the server scales every room and keeps their ratio, K77); "Remove" a room; "Group these rooms" for a saved group that is not formed; choose an input |
 | Rooms | every room with its bonded set, its volume and its mute; a room alone also says what it plays and what is playing | volume, mute; move the room by dragging its handle onto a room or a group, or with the "Plays with" list on its card; choose an input; open the room's sound screen ("Sound") |
 
-**Further screens and their addresses** (`docs/decisions/0000-further-screens-have-an-address-in-the-fragment.md`).
+**Further screens and their addresses** (`docs/decisions/0197-further-screens-have-an-address-in-the-fragment.md`).
 A screen beyond the home has an address in the fragment, `#/` and a path, and is painted alone
 in the main region, across both columns on a desktop, under a "Back" link:
 

@@ -16,7 +16,7 @@ out for a phone, for a desktop and as a wall tablet's kiosk
 (`docs/decisions/0191-phone-and-desktop-layouts-and-the-kiosk.md`; "Layouts and the kiosk"
 below). Beyond the groups and the rooms it has further screens, each at an address of its own
 in the fragment, and the first is a room's sound: bass, treble, loudness, night mode and speech
-enhancement (`docs/decisions/0000-further-screens-have-an-address-in-the-fragment.md`; "Further
+enhancement (`docs/decisions/0197-further-screens-have-an-address-in-the-fragment.md`; "Further
 screens" below).
 
 | Path | What |
