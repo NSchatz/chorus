@@ -84,13 +84,27 @@ ha-live: tools-executable
 # web-build: web/src into web/dist, the committed output chorus-server embeds. Deterministic:
 # run it after changing web/src and commit web/dist with the change. Gate step `web-build`
 # rebuilds and fails when web/dist differs from what is committed.
+# web-smoke: the one browser test (web/smoke/app.spec.js): Playwright's headless Chromium loads
+# the app from a real chorus-server through a fake login and asserts rendered text and no
+# Content-Security-Policy violation. Run as
+# `CHORUS_SERVER_BIN=<a built chorus-server> make web-smoke`, ending with `web-smoke: PASS`.
+# Without CHORUS_SERVER_BIN it is skipped by name (the run ends with `web-smoke: SKIPPED`);
+# under CI (CI=true) and in the gate that is a failure. Gate step `web-smoke`, after the build.
+# web-smoke-install: download the Chromium build the pinned @playwright/test names, once
+# (`bash tools/web.sh smoke-install --with-deps` adds its system libraries where there is root).
 web-test: tools-executable
 	bash tools/web.sh test
 
 web-build: tools-executable
 	bash tools/web.sh build
 
-.PHONY: web-test web-build
+web-smoke: tools-executable
+	bash tools/web.sh smoke
+
+web-smoke-install: tools-executable
+	bash tools/web.sh smoke-install
+
+.PHONY: web-test web-build web-smoke web-smoke-install
 
 # Regenerate fixtures/decode (goal 16): one short file per settled input format with what a
 # reference decoder made of it. Never run by the gate. REFDEC is a conda-forge prefix holding

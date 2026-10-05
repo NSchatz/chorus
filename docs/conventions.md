@@ -231,14 +231,18 @@ root, and `license.workspace = true` in every crate, which the workspace sets to
   `ignoreScripts: true`, every `allowBuilds` entry there is `false`, and `web/package.json`
   declares no scripts (pnpm 12 takes no script setting from an `.npmrc`, so there is none). The direct
   dependencies are exactly the settled stack (lit, esbuild, happy-dom,
-  `@happy-dom/global-registrator`); another package comes with an ADR and a change to the check.
+  `@happy-dom/global-registrator`, and `@playwright/test` for the one browser smoke test);
+  another package comes with an ADR and a change to the check.
   Every package of `web/pnpm-lock.yaml`, build-only and other platforms' binaries included,
   comes from the registry with an integrity digest and has a line in `web/licences.txt` whose
   licence is on the same allowlist as the crates'. It tests itself on damaged copies each run.
   `tools/web.sh` (gate steps `web-test` and `web-build`) holds each installed package's own
   `license` field to its line. The app's output `web/dist` is committed, and the gate step
   `web-build` rebuilds it and fails on a difference (`make web-build`, then commit `web/dist`
-  with the change).
+  with the change). Exactly one test starts a browser: `web/smoke/app.spec.js`, gate step
+  `web-smoke` (`make web-smoke`), whose Chromium build is the one the pinned
+  `@playwright/test` names; `tools/web.sh` fails a run whose browser tests are in more than
+  one file.
 
 ## 14. Pins
 
@@ -257,7 +261,7 @@ exists (brief section 0.9):
 | The emulator (goal 14) | `tools/qemu/pins.conf` (the QEMU release, micromamba), `tools/qemu/libs.explicit.txt` (its conda-forge libraries, each an exact build) | the release archive's, the program's and micromamba's sha256; a sha256 per library package |
 | The `chorus-soloist` image (goal 17) | `tools/soloist-image.sh` (the Debian base: a dated tag and its digest), `deploy/soloist/debian-packages.pins` (every Debian package: exact version, the snapshot.debian.org timestamp it is fetched at) | the base image digest; a sha256 and a size per package file |
 | The Home Assistant integration's Python, test harness and tools (goal 18) | `integrations/homeassistant/harness.pin` (the harness, the Home Assistant it requires, the core tag hassfest runs from, the Python), `integrations/homeassistant/pyproject.toml` (every development dependency `==x.y.z`), `mise.toml` (uv) | the harness wheel's sha256 and the core tag's commit in `harness.pin`; a sha256 per file of every locked package in `integrations/homeassistant/uv.lock`; uv's in `mise.lock` |
-| The web app (P5, ADR 0181) | `mise.toml` (node, pnpm), `web/package.json` (every dependency an exact `x.y.z`) | node's and pnpm's sha256 in `mise.lock`; an integrity digest per package in `web/pnpm-lock.yaml` (`check-web.sh`) |
+| The web app (P5, ADR 0181) | `mise.toml` (node, pnpm), `web/package.json` (every dependency an exact `x.y.z`; `@playwright/test`'s version names the Chromium build of the smoke test) | node's and pnpm's sha256 in `mise.lock`; an integrity digest per package in `web/pnpm-lock.yaml` (`check-web.sh`) |
 
 `check-pins.sh` checks the table: exact versions, the digests, the three Rust toolchain names
 agreeing, the ESP-IDF tag and commit, each ESP-IDF component's exact version with its hash in
