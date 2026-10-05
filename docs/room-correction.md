@@ -160,14 +160,52 @@ one sweep length late, peaking at the band's share of the spectrum ((f2 - f1) / 
 5%), flat within 1 dB from 20 Hz to 10 kHz and with nothing above -60 dB of the peak more than
 30 ms from it.
 
+## Playing the sweep in a room
+
+The playback half of the measurement is built: the control catalog's `measure_sweep` command
+(`docs/control-plane.md`, "Room correction: the `measure_sweep` command";
+`docs/decisions/0195-the-measurement-sweep-plays-on-a-stream-of-its-own.md`).
+
+- **What is played** is `Sweep::recommended` at the stream's own rate, the samples
+  `Sweep::signal` returns, written at the stream's sample format (16-bit: `round(x * 32768)`)
+  and copied to every channel of the stream. The server renders it once, at start
+  (`crates/server/src/sweep.rs`), so the sweep a room plays and the sweep the fitter
+  deconvolves with are one function's output. Every channel carrying it is ASSUMED: it measures
+  the room's speakers together, which is what `room_eq` corrects (one filter set per room).
+- **Where it is played**: in one room. The sweep has a stream of its own beside the stream
+  slots; the measured room's players are routed to it and back, so no source changes and the
+  rest of the room's group keeps playing. That music is a noise source for the measurement
+  when it is audible at the microphone: the fitter's `too_noisy` refusal is what catches it,
+  and pausing the rest of the house first is the person's choice, not the command's.
+- **Around it**: 0.5 s of silence before (ASSUMED: the fitter's response window, so what the
+  room was playing has that long to ring out) and 1 s after (ASSUMED: the "sweep plus a
+  second" below, so the recording's tail holds the room's response and not music). The state's
+  `measurement` carries the three lengths (`lead_ms`, `sweep_ms`, `tail_ms`): record from the
+  command's answer for at least their sum.
+- **How loud**: the sweep's samples are half full scale, and the room's volume decides the
+  rest. The command's optional `volume` sets it for the sweep, clamped to the room's effective
+  limit (its own limit and any active quiet-hours window), and the room gets its own volume
+  back afterwards. A recording that comes out `too_quiet` or `clipped` is measured again at
+  another `volume`.
+- **What is not claimed**: when the room hears the sweep. The sweep's chunks are stamped on
+  the slots' grid like any stream's and play after the room's tier latency, and the fitter
+  searches the recording for the response's peak rather than assuming where it is. No number
+  for the sweep's alignment exists, and none is stated, until one is measured.
+- **Open for the recording's task**: the sweep plays through the room's tone controls and any
+  `room_eq` already set, so a room measured with filters enabled is the corrected room. Either
+  the fit is applied on top of what is set, or the filters are switched off for the
+  measurement (`room_eq` with `enabled` false); that choice belongs with accepting the
+  recording.
+
 ## For goal 22 (the measurement)
 
 - Ask the browser for `{echoCancellation: false, noiseSuppression: false, autoGainControl:
   false, channelCount: 1}` and record what `getSettings()` returns (W3C Media Capture and
   Streams, https://www.w3.org/TR/mediacapture-streams/; on WebKit, `echoCancellation: false` is
   the switch that turns the processing off, WebKit bug 179411).
-- Play `Sweep::recommended(48_000)`, record at least the sweep plus a second, and repeat it two
-  or three times; averaging the deconvolved responses aligned on their peaks is a follow-up.
+- Play `Sweep::recommended(48_000)` (`measure_sweep`, above: one sweep per command), record at
+  least the sweep plus a second, and repeat it two or three times; averaging the deconvolved
+  responses aligned on their peaks is a follow-up.
 - An uncalibrated phone's low end is the largest unknown: a microphone roll-off is smooth and
   cannot make a narrow mode, but a mode riding on it reads lower than it is. Detrending
   against a heavily (1 octave) smoothed copy before fitting, and per-model calibration (Sonos's

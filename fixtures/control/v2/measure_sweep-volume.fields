@@ -1,0 +1,13 @@
+# Canonical input for the catalog v2 measure_sweep-volume vector.
+#
+# Encoding these field values must produce exactly measure_sweep-volume.json, and decoding
+# measure_sweep-volume.json must recover exactly these field values.
+#
+# (room correction, ADR 0195) The sweep at a volume: the room plays it at that, clamped to its effective limit, and gets its own back afterwards.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = measure_sweep
+zone = kitchen
+volume = 0.300

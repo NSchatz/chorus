@@ -477,6 +477,16 @@ pub enum Command {
         /// room's effective limit; absent keeps their volumes.
         volume: Option<Volume>,
     },
+    /// (v2, room correction) Play the measurement sweep in one room, once,
+    /// and then give the room back to what its group plays. No source
+    /// changes; the room alone hears the sweep.
+    MeasureSweep {
+        /// The room.
+        zone: String,
+        /// The volume the room plays the sweep at, clamped to the room's
+        /// effective limit; absent keeps the room's own.
+        volume: Option<Volume>,
+    },
 }
 
 impl Command {
@@ -527,6 +537,7 @@ impl Command {
             Command::SoloistRestart => "soloist_restart",
             Command::Playback { .. } => "playback",
             Command::Announce { .. } => "announce",
+            Command::MeasureSweep { .. } => "measure_sweep",
         }
     }
 
@@ -572,7 +583,8 @@ impl Command {
             | Command::Sound { zone, .. }
             | Command::BassManagement { zone, .. }
             | Command::RoomEq { zone, .. }
-            | Command::AvTrim { zone, .. } => Some(zone),
+            | Command::AvTrim { zone, .. }
+            | Command::MeasureSweep { zone, .. } => Some(zone),
             _ => None,
         }
     }
@@ -800,6 +812,12 @@ impl Command {
             } => {
                 text("target", target);
                 text("url", url);
+                if let Some(volume) = volume {
+                    m.push(("volume".to_string(), Value::Num(volume.literal())));
+                }
+            }
+            Command::MeasureSweep { zone, volume } => {
+                text("zone", zone);
                 if let Some(volume) = volume {
                     m.push(("volume".to_string(), Value::Num(volume.literal())));
                 }
@@ -1907,6 +1925,15 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
                 url,
                 volume,
             }
+        }
+        "measure_sweep" => {
+            fields(&["v", "t", "zone"], &["volume"])?;
+            let zone = id("zone")?;
+            let volume = match value.get("volume") {
+                None => None,
+                Some(_) => Some(volume_field(value, "volume").map_err(at)?),
+            };
+            Command::MeasureSweep { zone, volume }
         }
         "source_store" => {
             fields(&["v", "t", "id", "kind", "value", "name"], &[])?;

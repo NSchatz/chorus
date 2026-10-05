@@ -30,7 +30,7 @@ use chorus_control::sound::{EqFilter, FixedPoint, Polarity};
 use chorus_control::speakers::KeyChange;
 use chorus_control::theater::TvUpmix;
 use chorus_control::transport::{Transport, ZoneTransports};
-use chorus_control::zones::{GroupKind, Zone, Zones};
+use chorus_control::zones::{GroupKind, MeasurementState, Zone, Zones};
 use chorus_protocol::v2::{self as wire, ControllerCommand};
 use chorus_server::controller::{translate, ControllerAction};
 
@@ -77,6 +77,7 @@ const EVERY_V2_MESSAGE_TYPE: &[&str] = &[
     "soloist_restart",
     "playback",
     "announce",
+    "measure_sweep",
     "server",
     "controller_event",
     "voice_wake",
@@ -315,6 +316,30 @@ fn server_from(fields: &Fields) -> Zones {
             .apply(&command)
             .unwrap_or_else(|e| panic!("{}: {}", text, e));
         n += 1;
+    }
+    // (ADR 0195) The measurement sweep the server started after the
+    // commands: `measuring = <zone>` (at the room's own volume) or
+    // `measuring = <zone> <volume>`, with the lengths the server plays
+    // (500 ms of silence, the 5 s sweep, 1 s of silence), and
+    // `measurement_ended = finished` or `measurement_ended = cancelled
+    // <reason>` when it is over.
+    if fields.has("measuring") {
+        let line = fields.get("measuring");
+        let (zone, volume) = match line.split_once(' ') {
+            Some((zone, volume)) => (zone, Some(Volume::parse(volume).unwrap())),
+            None => (line.as_str(), None),
+        };
+        let measured = zones
+            .measure_begin(zone, volume, (500, 5_000, 1_000))
+            .unwrap_or_else(|e| panic!("{}: {}", line, e));
+        if fields.has("measurement_ended") {
+            let ended = fields.get("measurement_ended");
+            let (state, reason) = match ended.split_once(' ') {
+                Some((_, reason)) => (MeasurementState::Cancelled, Some(reason.to_string())),
+                None => (MeasurementState::Finished, None),
+            };
+            assert!(zones.measure_end(measured.id, state, reason, measured.before, measured.set));
+        }
     }
     // And after them: the sessions that are up (`session.N = <id> | <software>
     // | <roles>`) and the key changes refused (`changed.N = <id> <pinned>
@@ -691,6 +716,10 @@ fn command_from(fields: &Fields) -> Command {
         "announce" => Command::Announce {
             target: get("target"),
             url: get("url"),
+            volume: fields.has("volume").then(|| vol("volume")),
+        },
+        "measure_sweep" => Command::MeasureSweep {
+            zone: get("zone"),
             volume: fields.has("volume").then(|| vol("volume")),
         },
         "input_label" => Command::InputLabel(InputLabel {

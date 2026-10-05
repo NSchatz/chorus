@@ -1,0 +1,19 @@
+# Canonical input for the catalog v2 error-measure-sweep-elsewhere vector.
+#
+# `input` is refused, by the decoder or by the room state the lines below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-measure-sweep-elsewhere.json. Nothing of it is applied.
+#
+# (room correction, ADR 0195) A sweep while another room plays one: a server plays one sweep at a time.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+zones = kitchen,study
+command.0 = {"v":1,"t":"attach","zone":"kitchen","endpoint":"endpoint-a"}
+command.1 = {"v":1,"t":"attach","zone":"study","endpoint":"endpoint-b"}
+measuring = kitchen
+input = {"v":2,"t":"measure_sweep","zone":"study"}
+field = zone
+ends_the_session = 0

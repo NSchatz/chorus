@@ -954,7 +954,8 @@ fn main() -> ExitCode {
         // (ADR 0175) Two announcement mixes a player: one for the clip a
         // player plays and one for the mix whose music is still coming back
         // when that player's next clip starts.
-        Router::slotted_with_mixes(config.slots, 2 * config.players)
+        // (ADR 0195) And, last, the measurement sweep's stream.
+        Router::slotted_with_mixes_and_sweep(config.slots, 2 * config.players)
     } else {
         Router::single(Arc::new(chorus_server::stream::Fanout::new()))
     });
@@ -1007,6 +1008,18 @@ fn main() -> ExitCode {
         media.mixes = (0..router.mixes())
             .map(|_| Arc::new(chorus_server::mixer::MixPort::new()))
             .collect();
+        // (ADR 0195) The measurement sweep's program (the silence before
+        // it, `Sweep::recommended` at this server's rate on every channel,
+        // the silence after it), rendered here so the audio thread
+        // allocates nothing for it, and what that thread says about it.
+        media.sweep = Some((
+            chorus_server::sweep::SweepProgram::render(
+                format.sample_rate_hz,
+                format.channels,
+                format.sample_format,
+            ),
+            Arc::new(chorus_server::sweep::SweepPort::new()),
+        ));
         // (goal 17) The Soloist receivers' ports, `--soloist-receivers` of
         // them, allocated here like the player ports. None without the
         // flag.
@@ -1033,6 +1046,7 @@ fn main() -> ExitCode {
     // with the rest, each take the producer's side of one port.
     let player_ports = media.players.clone();
     let mix_ports = media.mixes.clone();
+    let sweep_media = media.sweep.clone();
     if let Some((_, state)) = &control {
         state.set_players(player_ports.len());
     }
@@ -1089,7 +1103,7 @@ fn main() -> ExitCode {
     // conductor (bounded, drained at every chunk boundary), and what the
     // audio thread says about the configured stream, to this thread.
     let (slot_commands, slot_inbox) =
-        mpsc::sync_channel::<SlotCommand>(4 * config.slots.max(1) + 4 * router.mixes());
+        mpsc::sync_channel::<SlotCommand>(4 * config.slots.max(1) + 4 * router.mixes() + 2);
     let (slot_events, slot_outcomes) = mpsc::channel::<SlotEvent>();
     let (slots_failed, slots_stopped) = mpsc::channel::<ServeError>();
     {
@@ -1496,6 +1510,27 @@ fn main() -> ExitCode {
         announcer
     });
 
+    // (ADR 0195) The measurer: what carries out the `measure_sweep`
+    // command, on the worker that takes the command (the start) and on the
+    // conductor (the routing and the end). No thread. Only a server with
+    // stream slots has the sweep's stream; without, the command is refused
+    // by name (`no-sweep-stream`).
+    let measurer = match (&control, &sweep_media) {
+        (Some((_, state)), Some((program, port))) => {
+            let status = status.clone();
+            let measurer = Arc::new(chorus_server::measure::Measurer::new(
+                Arc::clone(&router),
+                slot_commands.clone(),
+                Arc::clone(port),
+                program.lengths_ms(),
+                Box::new(move |line: &str| status.say(line)),
+            ));
+            state.measure_through(Arc::clone(&measurer));
+            Some(measurer)
+        }
+        _ => None,
+    };
+
     // The control plane's whole thread population, created here, on this
     // thread, which holds no real-time policy for any of them to inherit, and
     // before the scheduling report below. Nothing a subscriber does creates a
@@ -1545,6 +1580,9 @@ fn main() -> ExitCode {
             }
             if let Some(announcer) = &announcer {
                 conductor = conductor.with_announcer(Arc::clone(announcer));
+            }
+            if let Some(measurer) = &measurer {
+                conductor = conductor.with_measurer(Arc::clone(measurer));
             }
             if let Some(relay) = &tv_relay {
                 conductor = conductor.with_tv_relay(Arc::clone(relay));
