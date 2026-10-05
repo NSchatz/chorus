@@ -26,9 +26,10 @@
 //           a house-wide one)
 //   title   the words the screen's region is labelled with
 //   render  the screen, as a Lit template. `context` is what the shell holds:
-//           { view, refusals, refusalFields }, the store's view and the
+//           { view, refusals, refusalFields, store }, the store's view, the
 //           server's words (and the field it named) for the last refused
-//           command of each subject
+//           command of each subject, and the store itself, for a screen
+//           that has to await the server's answers (room-correction.js)
 //
 // and a link to it anywhere under the shell, `<a href=${addressOf(id, params)}
 // data-route>`: the shell opens it as an entry of the browser's history, so

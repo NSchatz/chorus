@@ -1,14 +1,14 @@
 # Room correction
 
 How chorus turns a recording of a sweep played in a room into the room's `room_eq` filters
-(goal 12, K31). The measurement itself, a phone's microphone through the control app, is goal
-22's (K87); this is the fitting, from a recording, and it runs on the server
-(`crates/dsp/src/roomfit.rs`). An endpoint only runs the filters it is sent. The decision record
+(goal 12, K31). The fitting, from a recording, runs on the server
+(`crates/dsp/src/roomfit.rs`); the measurement, a phone's microphone through the control app
+(K87), is "The measurement in the app" and "Per-phone limits" below. An endpoint only runs the filters it is sent. The decision record
 is `docs/decisions/0083-room-correction-fitting.md`; the sources, with what each says, are
 `docs/research/room-correction-sources.md`.
 
-Every value below is either cited (URL, read 2026-10-01) or marked **ASSUMED**: a starting point
-for goal 22 to confirm on real rooms and real phones, not a measured fact.
+Every value below is either cited (URL, read 2026-10-01 unless its own date is given) or marked
+**ASSUMED**: a starting point to confirm on real rooms and real phones, not a measured fact.
 
 ## The bounds
 
@@ -236,20 +236,137 @@ The recording half is built too: `POST /api/room-fit` and the catalog's `room_eq
   fixtures are the only recordings the route has been given; the first real one is the next
   measurement to report.
 
-## For goal 22 (the measurement)
+## The measurement in the app
 
-- Ask the browser for `{echoCancellation: false, noiseSuppression: false, autoGainControl:
-  false, channelCount: 1}` and record what `getSettings()` returns (W3C Media Capture and
-  Streams, https://www.w3.org/TR/mediacapture-streams/; on WebKit, `echoCancellation: false` is
-  the switch that turns the processing off, WebKit bug 179411).
-- Play `Sweep::recommended(48_000)` (`measure_sweep`, above: one sweep per command), record at
-  least the sweep plus a second at 48 kHz, send it to `POST /api/room-fit` (above), and repeat
-  it two or three times; averaging the deconvolved responses aligned on their peaks is a
-  follow-up.
-- An uncalibrated phone's low end is the largest unknown: a microphone roll-off is smooth and
-  cannot make a narrow mode, but a mode riding on it reads lower than it is. Detrending
-  against a heavily (1 octave) smoothed copy before fitting, and per-model calibration (Sonos's
-  Trueplay calibrates every iOS model, https://tech-blog.sonos.com/posts/trueplay-spectral-correction/)
-  are follow-ups that need real phones.
+The measurement is built in the control app: a room's "Correction" screen
+(`web/src/room-correction.js`, `web/src/capture.js`; `docs/app.md`, "A room's correction";
+`docs/decisions/0000-the-room-is-recorded-with-an-audio-worklet.md`).
+
+- **What the browser is asked for**: `{echoCancellation: false, noiseSuppression: false,
+  autoGainControl: false, channelCount: 1}` (W3C Media Capture and Streams,
+  https://www.w3.org/TR/mediacapture-streams/, read 2026-10-05). What the track's
+  `getSettings()` then says is shown on the screen, each of the three as off, as kept on
+  (flagged) or as not reported. The specification calls a setting "a target value that complies
+  with constraints", which "may differ from measured performance at times": the screen shows
+  what the browser says, not what its audio path did.
+- **How it is recorded**: uncompressed, by an AudioWorklet in an audio context asked for at
+  48 kHz, first channel only; where the browser gives another rate the page resamples to 48 kHz
+  before the upload. The file is the route's: 16-bit mono WAV, `round(x * 32768)` held to the
+  16-bit range.
+- **The order**: the room's correction is switched off if it was on, the recording starts,
+  `measure_sweep` is sent, and the recording ends one second (ASSUMED) after the state's
+  `measurement` says `finished`; a sweep that is `cancelled`, or whose end is not heard of
+  within its own length and five seconds (ASSUMED), is given up with nothing uploaded. The
+  recording goes to `POST /api/room-fit` with no sweep in the query, which is the sweep
+  `measure_sweep` plays, and the correction is switched back on if it was.
+- **What is shown**: the fit's filters with the fitter's two RMS figures, called what they are
+  (a prediction from one recording), and nothing is applied until "Apply" (`room_eq` with the
+  filters). A refused recording is shown under the fitter's name and in its words, with what to
+  do: `too_short` (keep the screen open until the sweep ends), `clipped` (turn the room down or
+  move away), `too_quiet` (turn the room up, move closer, uncover the microphone), `too_noisy`
+  (quiet the room or turn it up).
+- **The correction afterwards**: the screen lists the room's filters as the server holds them,
+  switches them off and on (`room_eq` with `enabled`) and undoes the last apply
+  (`room_eq_undo`).
+- **Where the recording goes**: to this server's route and nowhere else. The page writes it to
+  no storage and keeps no sample once the route has answered; the microphone is stopped when
+  the recording is taken, when a step fails and when the screen is left
+  (`web/test/room-correction.test.js`).
+- **What is tested, and what is not**: `web/live/room-correction.live.js` runs the screen
+  against the real server, its sweep and its fitter, with the fixtures above in the
+  microphone's place (the capture seam): fixtures 01 to 03 end with the table's filters in
+  `GET /api/state`, 04 to 07 in their refusals. **No real phone has been measured**, and no
+  real room.
+
+## Per-phone limits
+
+**No real phone has been measured with this.** Everything below is what a specification, a
+vendor's documentation, a bug tracker's page or MDN's compatibility data says (each read
+2026-10-05), or is marked **ASSUMED** or **not known**. It is the list of what the first real
+measurements have to settle, not a description of how any phone behaves. No browser's source was
+read.
+
+**The three constraints.**
+
+| | iOS Safari (WebKit) | Android Chrome |
+|---|---|---|
+| `echoCancellation: false` | The constraint is supported since Safari 11 (MDN browser-compat-data, `api/MediaStreamTrack.json`, `echoCancellation_constraint`, with Safari on iOS mirroring Safari; https://raw.githubusercontent.com/mdn/browser-compat-data/main/api/MediaStreamTrack.json). A WebKit engineer on the bug that fixed it: "When setting echoCancellation to false, we both disable AGC and echo cancellation" (https://bugs.webkit.org/show_bug.cgi?id=179411, comment 19, 2019; the bug is resolved fixed). A later comment there: "It might be that some filters are still active." | Supported since Chrome 59, Chrome Android mirroring Chrome (the same file). What Chrome's capture path on Android then does is **not known**: no Chromium document that says it was found. |
+| `noiseSuppression: false` | The same file records the constraint as not supported in Safari (`noiseSuppression_constraint`, `version_added: false`). Whether WebKit's `echoCancellation: false` also turns noise suppression off is **not known**: the bug's comment names AGC and echo cancellation only. | Supported since Chrome 67 (the same file). The path behind it is **not known**, as above. |
+| `autoGainControl: false` | Recorded as not supported in Safari (`autoGainControl_constraint`, `version_added: false`); the request for it is still open (https://bugs.webkit.org/show_bug.cgi?id=204444, "Add support for ... autoGainControl", status NEW). Per bug 179411's comment 19, `echoCancellation: false` is the switch that disables it. | Supported since Chrome 67 (the same file). |
+| `channelCount: 1` | Recorded as not supported in Safari (`channelCount_constraint`, `version_added: false`). The app records the first channel whatever it is given. | Supported since Chrome 59. |
+
+What follows for the screen: on an iPhone the browser is expected to report nothing, or `true`,
+for `noiseSuppression` and `autoGainControl` whatever it did (**ASSUMED** from the rows above,
+not seen), so the screen's flag there says what the browser reported and is not evidence of
+processing; and on every phone a reported `false` is the browser's word, a "target value", not a
+measurement of the path. Every iOS browser is WebKit outside the regions where Apple grants
+another engine (App Store Review Guidelines 2.5.6, "Apps that browse the web must use the
+appropriate WebKit framework and WebKit JavaScript", with an entitlement for an alternative
+engine in the EU and Japan; https://developer.apple.com/app-store/review/guidelines/), so the
+iOS column is Chrome's and Firefox's on an iPhone too.
+
+**Sample rate.** The route takes 48 kHz only. The app asks for an audio context at 48 kHz (the
+constructor's `sampleRate` option: Chrome 74, Firefox 61, Safari 14.1, with the phones'
+browsers mirroring them; MDN browser-compat-data, `api/AudioContext.json`,
+`options_sampleRate_parameter`), which per the Web Audio API sets the context's rate ("If
+contextOptions.sampleRate is specified, set the sampleRate of context to this value",
+https://www.w3.org/TR/webaudio/). At what rate a phone's microphone runs, whether Safari
+reports `sampleRate` in `getSettings()`, and how each browser resamples a microphone into a
+context at another rate are **not known**: no source read says. The screen shows the rate the
+browser reports for the microphone and the rate it recorded at. Where the context is not at
+48 kHz the page resamples (`resample`, `web/src/capture.js`); the fit of a resampled recording
+has not been compared with the fit of the same recording at 48 kHz.
+
+**The uncalibrated low end.** A phone's microphone has no calibration here, and the fit band
+is 20 to 300 Hz. For Android the only bound found is the compatibility definition's, and it
+binds only a device that offers the unprocessed source to apps ("If device implementations
+intent to support unprocessed audio source and make it available to third-party apps"): such a
+device "MUST exhibit approximately flat amplitude-versus-frequency characteristics in the
+mid-frequency range: specifically ±10dB from 100 Hz to 7000 Hz", "MUST exhibit amplitude
+levels in the low frequency range: specifically from ±20 dB from 5 Hz to 100 Hz compared to the
+mid-frequency range", and "MUST not have any other signal processing (e.g. Automatic Gain
+Control, High Pass Filter, or Echo cancellation) in the path other than a level multiplier"
+(Android 11 CDD, section 5.11, https://source.android.com/docs/compatibility/11/android-11-cdd).
+Whether Chrome records from that source is **not known**. For iOS nothing was found that
+states a microphone's response. Measurement software handles this with a file of the
+microphone's own response that is subtracted from what it measured (Room EQ Wizard,
+https://www.roomeqwizard.com/help/help_en-GB/html/calfiles.html); the app has none. What the
+fitter does about it is unchanged and is above: no boost below 100 Hz, and a level taken from
+300 Hz to 3 kHz. A microphone's roll-off is smooth and cannot make a narrow mode, but a mode
+riding on it reads lower than it is, so a cut below 100 Hz may be shallower than the room
+needs. The screen says so in its guidance, and leaves the result to the person's ears, with the
+switch and the undo beside it.
+
+**The secure context.** `navigator.mediaDevices` exists only in a secure context (W3C Media
+Capture and Streams: `[SameObject, SecureContext] readonly attribute MediaDevices
+mediaDevices`), and MDN says the same of the AudioWorklet ("available only in secure contexts
+(HTTPS), in some or all supporting browsers",
+https://developer.mozilla.org/en-US/docs/Web/API/AudioWorklet). MDN's table of what is one
+lists `http://localhost` as secure and `http://example.com` as not, and names an `https`
+scheme or a loopback host among what makes an origin trustworthy
+(https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Secure_Contexts): the server's
+own plain `http` address on the house network is none of those, so the screen can measure only
+where the app is served over HTTPS, which is how the household's reverse proxy serves it
+(`docs/app.md`, "Where it is served"). Opened over plain HTTP the screen says so and asks for
+nothing. The AudioWorklet is recorded as available from Chrome 66 and Safari 14.1, the phones'
+browsers mirroring them (MDN browser-compat-data, `api/AudioWorklet.json`); a browser without
+it is told that it cannot measure.
+
+**Also not known**, and the phone check's to find (`docs/app.md`, "Phone check"): whether an
+installed app on iOS is given the microphone and runs the worklet; whether a phone keeps
+recording when its screen locks during the 6.5 s program (the guidance says to keep the screen
+open); and how loud a sweep at a room's usual volume is at a phone's microphone, that is,
+whether `clipped` or `too_quiet` is the common first answer.
+
+## Follow-ups for the measurement
+
+Not built, each needing real phones or real rooms first:
+
+- Repeating the sweep two or three times and averaging the deconvolved responses aligned on
+  their peaks. One sweep is one recording and one fit.
+- A level for the sweep on the screen (`measure_sweep`'s `volume`).
+- Detrending against a heavily (1 octave) smoothed copy before fitting, and per-model
+  calibration (Sonos's Trueplay calibrates every iOS model,
+  https://tech-blog.sonos.com/posts/trueplay-spectral-correction/, read 2026-10-01).
 - Averaging several seats, and the speaker-to-phone clock mismatch (Farina 2007 lists
-  counter-skewing the response when the clocks differ), are follow-ups too.
+  counter-skewing the response when the clocks differ).

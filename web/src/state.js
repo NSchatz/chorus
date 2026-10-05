@@ -133,6 +133,43 @@ export function tvInputsOf(state) {
     .map((entry) => ({ input: entry.input, kind: entry.kind }));
 }
 
+// A room's correction as its screen reads it (docs/control-plane.md,
+// "Per-room sound" and "Room correction: a recording, its fit and the undo"):
+// { enabled, filters, undo }. `filters` are the server's, each
+// { freq_hz, gain_db, q } in its own spelling; `enabled` is null where the
+// state does not say; `undo` is whether `room_eq_undo` has a correction to
+// put back.
+export function correctionOf(zone) {
+  const held = zone && zone.room_eq && typeof zone.room_eq === "object" ? zone.room_eq : {};
+  const number = (value) => typeof value === "number" && Number.isFinite(value);
+  return {
+    enabled: typeof held.enabled === "boolean" ? held.enabled : null,
+    filters: (Array.isArray(held.filters) ? held.filters : [])
+      .filter((filter) => filter && number(filter.freq_hz) && number(filter.gain_db) && number(filter.q))
+      .map(({ freq_hz, gain_db, q }) => ({ freq_hz, gain_db, q })),
+    undo: held.undo === true,
+  };
+}
+
+// The measurement sweep the server plays or last played (the state's
+// `measurement`, written only once it has played one), or null:
+// { id, zone, state, leadMs, sweepMs, tailMs, reason }. `state` is `playing`,
+// `finished` or `cancelled`, and a cancelled one says why in `reason`.
+export function measurementOf(state) {
+  const held = state && state.measurement && typeof state.measurement === "object" ? state.measurement : null;
+  if (!held || typeof held.id !== "number" || typeof held.zone !== "string" || typeof held.state !== "string") return null;
+  const ms = (value) => (typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null);
+  return {
+    id: held.id,
+    zone: held.zone,
+    state: held.state,
+    leadMs: ms(held.lead_ms),
+    sweepMs: ms(held.sweep_ms),
+    tailMs: ms(held.tail_ms),
+    reason: typeof held.reason === "string" ? held.reason : "",
+  };
+}
+
 // The roles of a bonded set that only a theater has: a centre, a sub and the
 // surrounds (docs/control-plane.md, "A bonded set"). A pair, `FL FR`, is not one.
 const SURROUNDS = ["SL", "SR", "BL", "BR"];
@@ -411,6 +448,8 @@ function readRoom(zone, speakerNames, playing, tvInputs, rules) {
     limits: limitsOf(zone),
     // Its TV path and its bass management (theaterOf).
     theater: theaterOf(zone, tvInputs, rules),
+    // Its room correction (correctionOf).
+    correction: correctionOf(zone),
     // The id of the group the room plays in: its own id when it is alone.
     group,
     // What the room plays while it is alone in the group named for it (a
@@ -591,11 +630,23 @@ export function createStore(client) {
     return result;
   }
 
+  // Send one recording of the measurement sweep for the server to fit
+  // (api.js, `roomFit`). The answer is the fit or a refusal and changes no
+  // state, so nothing is held here; a recording that met the login says so.
+  async function roomFit(zone, wav, sweep) {
+    const result = await client.roomFit(zone, wav, sweep);
+    if (result.signedOut && status !== "signed-out") {
+      status = "signed-out";
+      tell();
+    }
+    return result;
+  }
+
   function subscribe(listener) {
     listeners.add(listener);
     listener(view());
     return () => listeners.delete(listener);
   }
 
-  return { start, stop, command, subscribe, view };
+  return { start, stop, command, roomFit, subscribe, view };
 }

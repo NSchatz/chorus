@@ -47,7 +47,7 @@ further screen has an address of its own (below).
 | Region | What it shows | What it does |
 |---|---|---|
 | Groups | every saved group, then every live group, each with its rooms, what it plays and what is playing | group volume (the server scales every room and keeps their ratio, K77); "Remove" a room; "Group these rooms" for a saved group that is not formed; choose an input |
-| Rooms | every room with its bonded set, its volume and its mute; a room alone also says what it plays and what is playing | volume, mute; move the room by dragging its handle onto a room or a group, or with the "Plays with" list on its card; choose an input; open the room's sound screen ("Sound"), its limits screen ("Limits") and, for a room with a TV input or a theater set, its theater screen ("Theater"). Under the rooms, "Autoplay" opens the house's autoplay rules and "Alarms" its alarms, stored sources and sleep timers |
+| Rooms | every room with its bonded set, its volume and its mute; a room alone also says what it plays and what is playing | volume, mute; move the room by dragging its handle onto a room or a group, or with the "Plays with" list on its card; choose an input; open the room's sound screen ("Sound"), its limits screen ("Limits"), its room correction ("Correction") and, for a room with a TV input or a theater set, its theater screen ("Theater"). Under the rooms, "Autoplay" opens the house's autoplay rules and "Alarms" its alarms, stored sources and sleep timers |
 
 **Further screens and their addresses** (`docs/decisions/0197-further-screens-have-an-address-in-the-fragment.md`).
 A screen beyond the home has an address in the fragment, `#/` and a path, and is painted alone
@@ -59,12 +59,13 @@ in the main region, across both columns on a desktop, under a "Back" link:
 | `/app/#/rooms/<room id>/sound` | the sound of that room |
 | `/app/#/rooms/<room id>/limits` | the volume limit and the quiet hours of that room |
 | `/app/#/rooms/<room id>/theater` | the theater settings of that room: A/V trim, TV autoplay, TV upmix, bass management |
+| `/app/#/rooms/<room id>/correction` | the room correction of that room: measure it with this device's microphone, apply, switch, undo |
 | `/app/#/autoplay` | the house's autoplay rules, one for each input |
 | `/app/#/alarms` | the house's alarms, its stored sources and its sleep timers |
 | `/app/#/speakers` | the adopted speakers: names, rooms, presence, and any refused changed key |
 | `/app/#/speakers/setup` | the walk-through for a compact Wi-Fi speaker |
 
-- Opening a screen from the app (the "Sound" or "Limits" link on a room's card, "Autoplay",
+- Opening a screen from the app (the "Sound", "Limits" or "Correction" link on a room's card, "Autoplay",
   "Alarms" or "Speakers" under the rooms, "Set up a Wi-Fi speaker" on the speakers screen) is a new entry of the
   browser's history, so the browser's back button, a phone's back gesture and the forward
   button work as on any site, and an address can be bookmarked, reloaded or sent to another
@@ -168,6 +169,63 @@ the screen until the server's answer says so, a refused command is shown as "Ref
 person has hold of. The screen shows the numbers a person sets and the server holds. It says
 nothing about how well picture and sound line up: that is set by eye and ear, and nothing here
 measures it.
+
+**A room's correction** (`web/src/room-correction.js`, `web/src/capture.js`; the catalog's
+`measure_sweep`, `room_eq` and `room_eq_undo` and the route `POST /api/room-fit`,
+`docs/control-plane.md`, "Room correction: the `measure_sweep` command" and "Room correction: a
+recording, its fit and the undo"; `docs/room-correction.md`, "The measurement in the app" and
+"Per-phone limits"; `docs/decisions/0000-the-room-is-recorded-with-an-audio-worklet.md`). Every
+room's card has a "Correction" link. The screen measures the room with the microphone of the
+device it is open on, shows what the server's fitter proposes, and applies it only when told to.
+The measurement is a walk, each step a press:
+
+| Step | What the screen shows | What happens |
+|---|---|---|
+| 1. Guidance | where to hold the phone (the listening place, ear height, microphone uncovered, held still), a quiet room, what will play (half a second of silence, one rising tone of 5 seconds from the lowest bass to the highest treble, a second of silence, in this room only, at this room's volume), that the recording is kept nowhere, and that a phone's microphone is not calibrated | nothing is asked of the browser or the server yet |
+| 2. "Use the microphone" | "What the browser granted": echo cancellation, noise suppression and automatic gain control, each "off, as asked", "on ...: asked off, and the browser kept it on" (flagged, with "a fit of this recording may be wrong") or "not reported by this browser"; the channels; the microphone's sample rate; the rate recorded at | the browser is asked for the microphone with the three kinds of processing off and one channel; the browser's own permission prompt appears |
+| 3. "Play the sweep and record" | "The sweep is playing and the microphone is recording. Hold still.", then "The recording is with the server, being fitted. The microphone is off." | a correction that is on is switched off (`room_eq`, `enabled` false); `measure_sweep`; the recording ends one second after the server says the sweep finished and is sent to `POST /api/room-fit`; the correction is switched back on if it was |
+| 4. "Apply" or "Discard" | "Proposed filters", each as "45 Hz, -9.32 dB, Q 6.409", and the fitter's own two figures (the deviation before, and predicted after); "Nothing has changed in the room yet." | "Apply" sends `room_eq` with the filters, switched on; "Discard" sends nothing. A fit with no filters says there is nothing to correct and offers no apply |
+
+Every way a step can fail ends in words and a "Measure again" button, never in a screen that
+waits:
+
+- **No microphone.** Opened over plain HTTP: the page is not a secure context, the browser
+  gives it no microphone, and the screen says to open the app at its https address. A denied
+  permission, no microphone on the device, a microphone another app holds, and a browser that
+  cannot record uncompressed audio each have their own sentence.
+- **No sweep.** The server's refusal of `measure_sweep` is shown in its words (the room is
+  muted, has no speaker, an alarm rings, another room is being measured). A sweep the server
+  calls off, or whose end it does not report within the sweep's own length and five seconds,
+  ends the measurement with nothing uploaded.
+- **A recording the fitter refuses** is shown under the fitter's name and in its words, which
+  carry the numbers, with what to do about that one: `too_short`, keep the screen open and the
+  phone awake until the sweep has finished; `clipped`, turn the room down or hold the phone
+  further away; `too_quiet`, turn the room up, move closer, uncover the microphone; `too_noisy`,
+  pause music elsewhere, quiet the room, or turn the room up. Nothing is applied and there is
+  no apply to press.
+
+Below the walk is the room's correction as the server holds it: its filters, a "Correction"
+switch (`room_eq` with `enabled` alone; pressed when on, disabled for a room with no filters)
+and "Undo" (`room_eq_undo`: the correction as it was before the last apply; disabled when the
+state says there is nothing to undo). As on every screen, what is shown is the server's state,
+a refused command is shown in the server's words, and a change made anywhere else appears with
+no reload.
+
+The recording is in the page's memory from the sweep to the upload. It is sent to this
+server's one route and nowhere else, written to no storage, and not kept once the route has
+answered; the service worker neither answers nor keeps anything of the API
+(`web/test/worker.test.js`). The microphone is stopped when the recording is taken, when a step
+fails, on "Stop", and when the screen is left; a room whose correction was switched off for a
+sweep gets it back on when the screen is left meanwhile.
+
+**The correction screen has never measured a room.** `web/test/room-correction.test.js` is the
+screen over a scripted browser (a faked `navigator.mediaDevices`, audio context and worklet) and
+a scripted server; `web/live/room-correction.live.js` is the screen against a real
+`chorus-server`, its sweep and its fitter, with the fitter's synthetic recordings
+(`fixtures/roomfit/`) in the microphone's place. No phone, no microphone and no room is in
+either, the screen says nothing about how well a room is corrected, and what each phone's
+browser does with the three constraints is in `docs/room-correction.md`, "Per-phone limits",
+as read and not as seen.
 
 **Alarms, stored sources and sleep timers** (`web/src/alarms.js`; the catalog's `alarm_set`,
 `alarm_delete`, `alarm_stop`, `sleep`, `source_store` and `source_forget`,
@@ -624,5 +682,11 @@ owner's own words; that session records it and closes the item. What the answer 
   a certificate the phones trust (step 1).
 - A step that did not go as written becomes a task of its own, with the phone's line and the
   report as its evidence.
-- Not part of this check: the microphone inside an installed app (`getUserMedia`), which belongs
-  to the room-correction screen and is checked when that screen exists.
+- Not part of steps 1 to 8: the microphone. The room-correction screen exists now ("A room's
+  correction", above) and has never been in a hand. Its check is a step of its own for the
+  owner's queue, on each phone, in the browser and in the installed app: open a room's
+  "Correction", press "Use the microphone" and report the permission prompt and every line of
+  "What the browser granted"; press "Play the sweep and record" at the room's usual volume and
+  report what the screen then says (the proposed filters, or the refusal's name and its words),
+  and whether the phone kept recording to the end. What it settles is `docs/room-correction.md`,
+  "Per-phone limits".

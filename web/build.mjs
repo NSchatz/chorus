@@ -3,6 +3,9 @@
 //   dist/index.html                  src/index.html with the two asset names filled in
 //   dist/assets/main-<hash>.js       the app and the Lit runtime, bundled and minified
 //   dist/assets/app-<hash>.css       app.css and tokens.css, bundled and minified
+//   dist/assets/capture-worklet-<hash>.js
+//                                    the room-correction recorder's audio worklet,
+//                                    a module the browser loads by its address
 //   dist/manifest.webmanifest        src/manifest.webmanifest, as written
 //   dist/icons/icon-<size>.png       src/icons/, as committed (icons.mjs draws them)
 //   dist/sw.js                       the service worker: sw.js and worker.js, bundled
@@ -36,9 +39,32 @@ const dist = path.join(root, "dist");
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 
+// The audio worklet of the room-correction measurement (src/capture-worklet.js)
+// first: the browser loads it by its address, so it is a file of its own, and
+// the app is built knowing the name it got.
+const worklet = await build({
+  absWorkingDir: root,
+  entryPoints: ["src/capture-worklet.js"],
+  outdir: "dist",
+  entryNames: "assets/[name]-[hash]",
+  bundle: true,
+  minify: true,
+  format: "esm",
+  platform: "browser",
+  target: "es2022",
+  legalComments: "eof",
+  charset: "utf8",
+  metafile: true,
+  logLevel: "warning",
+});
+const workletFile = path.posix.relative("dist", Object.keys(worklet.metafile.outputs)[0]);
+
 const result = await build({
   absWorkingDir: root,
   entryPoints: ["src/main.js", "src/app.css"],
+  // Relative, like the names in index.html: the page resolves it against its
+  // own address, wherever the server mounts the app.
+  define: { __CHORUS_CAPTURE_WORKLET__: JSON.stringify(workletFile) },
   outdir: "dist",
   entryNames: "assets/[name]-[hash]",
   bundle: true,
@@ -82,7 +108,7 @@ for (const file of copied) {
 // The service worker, last: it names every file above. The shell is all of
 // them, the document as "" (the app's directory itself, which is what a
 // navigation asks for).
-const files = ["index.html", ...[...asset.values()].sort(), ...copied];
+const files = ["index.html", ...[...asset.values(), workletFile].sort(), ...copied];
 const digest = createHash("sha256");
 for (const file of files) {
   digest.update(`${file}\n`);
