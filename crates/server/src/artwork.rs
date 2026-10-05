@@ -1,5 +1,5 @@
 //! A group's now-playing artwork, fetched by this server and served from its
-//! own origin (`docs/decisions/0000-artwork-is-proxied-not-the-policy-widened.md`).
+//! own origin (`docs/decisions/0184-artwork-is-proxied-not-the-policy-widened.md`).
 //!
 //! The app's pages are served under a Content-Security-Policy whose image
 //! rule is `img-src 'self' data:`, and a now-playing record's artwork is at

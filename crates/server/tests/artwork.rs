@@ -1,5 +1,5 @@
 //! A group's now-playing artwork, served from the control plane's own origin
-//! (`docs/decisions/0000-artwork-is-proxied-not-the-policy-widened.md`).
+//! (`docs/decisions/0184-artwork-is-proxied-not-the-policy-widened.md`).
 //!
 //! The control plane is assembled in this process (the room model, the fixed
 //! worker pool, the accept loop: the pieces `main.rs` wires) so the test can

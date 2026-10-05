@@ -1,4 +1,4 @@
-# 0000: now-playing artwork is fetched by chorus-server and served from its own origin by group, under the fetch policy, a size bound and a deadline; the Content-Security-Policy is not widened
+# 0184: now-playing artwork is fetched by chorus-server and served from its own origin by group, under the fetch policy, a size bound and a deadline; the Content-Security-Policy is not widened
 
 - Status: accepted, 2026-10-05. Decides how a page of this server shows the artwork of a
   group's now-playing record.

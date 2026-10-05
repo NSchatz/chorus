@@ -1431,7 +1431,7 @@ request, under the same write timeout as any other.
 A now-playing record's artwork URL is somebody else's address, and every page this server
 hands a browser carries `img-src 'self' data:`, so a page cannot load it. The server fetches
 it instead and serves it from its own origin; the Content-Security-Policy is not widened
-(`docs/decisions/0000-artwork-is-proxied-not-the-policy-widened.md`,
+(`docs/decisions/0184-artwork-is-proxied-not-the-policy-widened.md`,
 `crates/server/src/artwork.rs`).
 
 `GET /api/artwork?group=<id>` names a group and nothing else. The URL fetched is the one in

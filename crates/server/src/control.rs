@@ -2833,7 +2833,7 @@ fn serve_visualizer(mut connection: TcpStream, state: &Arc<ControlState>, target
 
 /// Serve the artwork of one group's now-playing record from this origin
 /// (`crate::artwork`, `docs/control-plane.md`, "Now-playing artwork";
-/// `docs/decisions/0000-*`).
+/// `docs/decisions/0184-*`).
 ///
 /// `GET /api/artwork?group=<id>`: the image at the artwork URL of that
 /// group's now-playing record, fetched now by this worker, with its media
