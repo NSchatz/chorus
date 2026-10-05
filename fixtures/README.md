@@ -463,6 +463,34 @@ the Rust one, not a worked example); every other expected value is printed in, o
 the cited source by `tools/dsp-fixtures/generate.py` (standard-library Python, independent of
 both implementations). Regenerated only by running that script by hand.
 
+### `dsp/duck/`
+
+Rust-only by declaration (`check-shared-fixtures.sh`): the announcement mixer's contract
+(`crates/dsp/src/duck.rs`; `docs/dsp.md`, "The announcement mixer"). The mix runs on the server,
+before a room's stream is encoded, so no endpoint mixes and there is no C mirror; both walks of
+`dsp/` pass this subdirectory by. `crates/dsp/tests/duck_fixtures.rs` reads every file and fails
+on one that is not `kind = duck`. The format is `dsp/`'s, with the same signal recipes.
+
+A fixture is one announcement over `frames` frames of music: the parameters (`duck_gain`,
+`clip_gain`, `duck_ramp_frames`, `restore_ramp_frames`, `limit`), the music and the clip per
+channel (`music.<c>`, `clip.<c>`, `clip_frames`), and the frames its events fall on: `start_at`
+(the first frame of the duck ramp) and, optionally, `cancel_at` (the first frame of the restore).
+Its expectations are worked by hand from the envelope `docs/dsp.md` states, never taken from the
+implementation: `duck_reached_at` (the first frame at the duck gain), `clip_first_at`,
+`clip_frames_played`, `restored_at` (the first frame that is the music's own again, bit for bit),
+`gain_at` / `expect_gain` and `clip_gain_at` / `expect_clip_gain` (the two gains at chosen
+frames, within `tolerance`) and `max_gain_step` (the slope bound: the depth over the shorter
+ramp).
+
+| file | what it holds |
+|---|---|
+| `duck-defaults-48000.txt` | the defaults at 48 kHz, stereo: 9600 frames down, a 100 ms clip, 24000 frames back |
+| `duck-short-clip-44100.txt` | a clip that ends after ten frames: the restore still runs whole |
+| `duck-no-clip.txt` | a clip of no frames: down and straight back |
+| `duck-cancel-mid-ramp.txt` | cancelled half way down: the ramp turns round from where it is, in half the restore; no clip frame plays |
+| `duck-cancel-mid-clip.txt` | cancelled while the clip plays: the clip fades out with the restore |
+| `duck-limit-full-scale.txt` | music and clip both at the limit (0.5): the mix reaches it exactly and never passes it |
+
 ## `roomfit/`
 
 Room-correction fitting's inputs (goal 12, `docs/room-correction.md`), Rust-only by declaration

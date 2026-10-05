@@ -161,6 +161,9 @@ it does not read.
 `fixtures/wakeword` is Rust-only by declaration too: the wake-word detector runs in
 chorus-server alone (`crates/wakeword`, ADR 0167), and `crates/wakeword/tests/reference.rs` reads
 every file and fails on one it does not read.
+`fixtures/dsp/duck` is Rust-only by declaration too: the announcement mixer (duck, mix and
+restore) runs in chorus-server alone (`crates/dsp/src/duck.rs`), and
+`crates/dsp/tests/duck_fixtures.rs` reads every file and fails on one it does not read.
 `fixtures/soloist` (goal 17) is Rust-only by declaration too: the Soloist WebSocket API model,
 the supervisor protocol and the `--version` shapes are spoken by `chorus-soloistd` and
 chorus-server alone, and `crates/soloist/tests/fixtures.rs` reads every vector and fails on a

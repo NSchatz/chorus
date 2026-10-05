@@ -1,0 +1,29 @@
+# The announcement mixer (crates/dsp/src/duck.rs; docs/dsp.md, "The announcement mixer").
+# Rust-only by declaration: the mix runs on the server, there is no C mirror. Read by
+# crates/dsp/tests/duck_fixtures.rs. Every expected value below is worked by hand from the
+# envelope docs/dsp.md states; none is the implementation's output.
+kind = duck
+source = docs/dsp.md
+read = 2026-10-05
+# A clip of no frames at all: the music goes down and comes straight back.
+rate_hz = 48000
+channels = 1
+frames = 300
+duck_gain = 0.5
+clip_gain = 0.5
+duck_ramp_frames = 100
+restore_ramp_frames = 50
+limit = 1
+music.0 = noise 11 0.9
+clip.0 = silence
+clip_frames = 0
+start_at = 10
+duck_reached_at = 109
+clip_frames_played = 0
+# Frame 109 is the last of the way down; the 50th frame after it.
+restored_at = 159
+gain_at = 9 59 109 134 159
+expect_gain = 1 0.75 0.5 0.75 1
+# 0.5 / 50.
+max_gain_step = 0.01
+tolerance = 0.000001

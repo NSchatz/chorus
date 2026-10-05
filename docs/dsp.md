@@ -169,6 +169,69 @@ What step 6 plays when the stream and the room's set do not match: a stereo TV i
 - **Positions past 5.1** (FLC, FRC, BC, the tops) are not folded: they are silent on an endpoint
   that does not play them, as before.
 
+## The announcement mixer
+
+`crates/dsp/src/duck.rs` (`chorus_dsp::duck`): the music ramps down to a duck gain, a clip mixes
+over it, and the music ramps back. It is not a stage of the chain above and has no C mirror: it
+runs on the server, on a room's stream before it is encoded, so every endpoint of the room plays
+one mixed stream in sync and the endpoint's chain (and its limiter) is unchanged
+(`docs/decisions/` "the announcement mixer"). The library is the core only; nothing calls it yet
+(the server's wiring and the `announce` command's use of it are later tasks, and a room whose
+source is a Soloist instance is paused for an announcement, never mixed: `docs/soloist.md`).
+
+Pure, as the rest: it reads no clock. Every length is a count of frames and only a frame passing
+through `Duck::process` moves its state, so an event lands on a frame by ending the block there.
+
+**The envelope.** One integer `level` runs from 0 (untouched) to `D x R` (fully ducked), `D` the
+duck ramp and `R` the restore ramp in frames. A ducking frame adds `R`, a restoring frame takes
+`D` away. With `p = level / (D x R)`:
+
+- the music's gain is `g = 1 - (1 - duck_gain) p`, exactly `duck_gain` at `p = 1`;
+- the clip's gain is `clip_gain` while the music is held down, and `clip_gain x p` for a
+  cancelled clip, which fades out with the restore instead of being cut;
+- the output is `music x g + clip x w`, clamped to `-limit..=limit`;
+- at `level = 0` the frame is copied, not multiplied.
+
+`p` is computed in `f64` from the integers and each gain rounded to `f32` once. What follows
+from it, each held by `crates/dsp/tests/duck_fixtures.rs` against `fixtures/dsp/duck/`:
+
+- **Down in `D` frames, to the frame.** After `start`, frame `n` (from 0) is at
+  `1 - (1 - duck_gain)(n + 1) / D`; frame `D - 1` is the first at the duck gain.
+- **The clip starts when the ramp ends**: its first frame is frame `D`, and no clip frame is
+  taken on the way down ("The start of the notification playback is synchronized with the end of
+  the ducking ramp", Android [AF]). While the music is held, each frame takes one clip frame; with
+  none to take (a decoder that is late) the music stays ducked under silence.
+- **Back in `R` frames, bit for bit.** `finish` says the clip has no more frames than those
+  handed in; the frame after its last begins the restore, and the `R`th frame after it, and every
+  frame from there, is the music's own sample (a copy: a negative zero stays one).
+- **A clip that ends early** (ten frames, or none) restores the same way.
+- **A cancel** begins the restore on the next frame from the gain the music is at: half way down
+  it is back in `R / 2` frames, with no jump and no clip frame played; while the clip plays, the
+  clip fades over the `R` frames. A `start` during a restore ducks again from where it is.
+- **Click-free.** The music's gain moves by at most `(1 - duck_gain) / min(D, R)` per frame
+  (`DuckParams::max_gain_step`), so a steady music's output moves by no more than that times its
+  level; a cancelled clip's gain moves by at most `clip_gain / R` per frame.
+- **Never above the limit.** `duck_gain + clip_gain <= 1` is checked when the parameters are
+  made (refused otherwise), and `g + w <= 1` on every frame, so a music and a clip inside the
+  limit mix to a sum inside it; the clamp takes the last rounding. Frames the mixer does not
+  touch are not clamped: they are the music's, and the chain's limiter holds the room to its
+  ceiling as before.
+
+**Parameters** (`DuckParams`; `DuckParams::from_ms` makes the frame counts from milliseconds and a
+rate by `(ms x rate + 500) / 1000` in integers, at least one frame):
+
+| Parameter | Range | Default | Source |
+|---|---|---|---|
+| `duck_gain` (the depth) | 0..=1 linear; -50..=0 dB in `from_ms` | -20 dB (0.1) | cited: the ESPHome mixer speaker's `apply_ducking` example, `decibel_reduction: 20`; its range "between 0 and 50" [EM]. The Audacity manual's Auto Duck default is -12 dB [AD]: the deeper of the two is taken because the clip is speech over music |
+| `clip_gain` | 0..=`1 - duck_gain` | `1 - duck_gain` (0.9, -0.9 dB), rounded down | computed: the most the limit bound leaves |
+| `duck_ramp_frames` | 1..=3 840 000 (10 s at 384 kHz) | 200 ms (9600 frames at 48 kHz) | ASSUMED: not measured; shorter than the restore because the clip waits for it. The sources' fades are 0.5 s [AD] and a 2 s example [EM], neither for a clip that waits |
+| `restore_ramp_frames` | 1..=3 840 000 | 500 ms (24000 frames at 48 kHz) | cited: Auto Duck's fade up length, "default: 0.5 seconds" [AD] |
+| `limit` | (0, 1] | 1.0, full scale | the stream's own range; the room's limit stays the chain limiter's (K81, I10) |
+
+A stream of 1 to 8 channels; the clip has the music's channel count and rate (making it so is
+the caller's). How the defaults sound is unmeasured: they are starting points until a room is
+listened to.
+
 ## On the endpoints
 
 Both endpoints run the chain on every frame they write (the decisions: `docs/decisions/` "the DSP
@@ -247,6 +310,10 @@ the code.
 | `tv_upmix` default | off (silence on the surrounds of a stereo stream) | ASSUMED |
 | Ambient surround band slopes | 2nd order each (RBJ, Q 1/sqrt 2) | ASSUMED; corners cited |
 | Folding past 5.1 (7.1 side and back both) | each at 1/sqrt 2 | ASSUMED extension of BS.775-4 |
+| Announcement duck depth | -20 dB | cited (the ESPHome mixer's example) [EM] |
+| Announcement duck ramp | 200 ms | ASSUMED |
+| Announcement restore ramp | 500 ms | cited (Audacity's Auto Duck default) [AD] |
+| Announcement clip gain | `1 - duck_gain` | computed (the limit bound) |
 
 ## Citations
 
@@ -296,6 +363,21 @@ All read 2026-10-01.
 - [MS] Microsoft, `KSAUDIO_CHANNEL_CONFIG` (`KSAUDIO_SPEAKER_5POINT1` with back speakers,
   `KSAUDIO_SPEAKER_5POINT1_SURROUND` with side speakers):
   <https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ksmedia/ns-ksmedia-ksaudio_channel_config>.
+
+Read 2026-10-05, for the announcement mixer (documentation pages only; neither project's source
+was opened):
+
+- [EM] ESPHome, "Mixer Speaker", the `mixer_speaker.apply_ducking` action (`decibel_reduction`:
+  "The reduction of the media stream in decibels. Must be between 0 and 50."; `duration`: "The
+  length of time to transition between the current reduction level and the new reduction
+  level."; the example `decibel_reduction: 20`, `duration: 2.0s`):
+  <https://esphome.io/components/speaker/mixer/>.
+- [AD] Audacity Manual, "Auto Duck" (duck amount -12 dB; fade down and fade up lengths, each
+  "default: 0.5 seconds"): <https://manual.audacityteam.org/man/auto_duck.html>.
+- [AF] Android Developers, "Manage audio focus" (ducking is "temporarily reducing the audio level
+  of one app so that another can be heard clearly"; "The start of the notification playback is
+  synchronized with the end of the ducking ramp"):
+  <https://developer.android.com/media/optimize/audio-focus>.
 
 No GPL source was opened. The code is written here from the formulas above.
 
