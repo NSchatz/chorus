@@ -147,6 +147,63 @@ export function autoplayCommand(input, target, enabled, { stopOnStandby = true, 
   }${stopOnStandby === false ? ',"stop_on_standby":false' : ""}${lowLatency === false ? ',"low_latency":false' : ""}}`;
 }
 
+// Alarms, sleep timers and stored sources (docs/control-plane.md, "The
+// commands catalog version 2 adds" and "Stored sources and input labels"), in
+// the same canonical encoding; fixtures/control/v2 has the vector of each.
+//
+// The catalog's bounds: an alarm's ramp in seconds, how long it plays by
+// itself in minutes (0 plays until stopped), and a sleep timer's minutes.
+export const MAX_RAMP_S = 600;
+export const MAX_DURATION_MIN = 720;
+export const MAX_SLEEP_MIN = 720;
+
+const whole = (value, max) => Math.min(max, Math.max(0, Math.round(Number(value) || 0)));
+
+// `alarm_set`: an alarm, created or replaced whole. `target` is a room or a
+// saved group; `time` is "HH:MM" on the server's civil clock; `days` are the
+// days it rings on, written once each and in week order, and none is once, at
+// the next `time`; `source` is one of the four spellings (`chime:<name>`,
+// `line-in:<endpoint>/<input>`, `stored:<id>` for a stored stream URL or a
+// stored Spotify URI); `volume` is in thousandths.
+export function alarmSetCommand({ alarm, target, time, days = [], source, volume, rampS, durationMin, enabled }) {
+  const written = WEEK.filter((day) => days.includes(day));
+  return `{"v":2,"t":"alarm_set","alarm":${JSON.stringify(alarm)},"target":${JSON.stringify(target)},"time":${JSON.stringify(
+    String(time),
+  )},"days":${JSON.stringify(written)},"source":${JSON.stringify(source)},"volume":${volumeLiteral(volume)},"ramp_s":${whole(
+    rampS,
+    MAX_RAMP_S,
+  )},"duration_min":${whole(durationMin, MAX_DURATION_MIN)},"enabled":${enabled ? "true" : "false"}}`;
+}
+
+// `alarm_delete`: the alarm is forgotten (and stopped, if it rings).
+export function alarmDeleteCommand(alarm) {
+  return `{"v":2,"t":"alarm_delete","alarm":${JSON.stringify(alarm)}}`;
+}
+
+// `alarm_stop`: the alarm stops ringing and is kept.
+export function alarmStopCommand(alarm) {
+  return `{"v":2,"t":"alarm_stop","alarm":${JSON.stringify(alarm)}}`;
+}
+
+// `sleep`: a sleep timer for a room or a formed group; 0 minutes cancels it.
+export function sleepCommand(target, minutes) {
+  return `{"v":2,"t":"sleep","target":${JSON.stringify(target)},"minutes":${whole(minutes, MAX_SLEEP_MIN)}}`;
+}
+
+// `source_store`: a stored source, stored or replaced: a stream URL (`kind`
+// "url") or a Spotify URI ("spotify"), which an alarm names as `stored:<id>`.
+export function sourceStoreCommand(id, kind, value, name) {
+  return `{"v":2,"t":"source_store","id":${JSON.stringify(id)},"kind":${JSON.stringify(kind)},"value":${JSON.stringify(
+    value,
+  )},"name":${JSON.stringify(name)}}`;
+}
+
+// `source_forget`: the stored source is forgotten; the server refuses while
+// an alarm plays it.
+export function sourceForgetCommand(id) {
+  return `{"v":2,"t":"source_forget","id":${JSON.stringify(id)}}`;
+}
+
 // Where a group's now-playing artwork is, for an <img>: the server's own
 // route (docs/control-plane.md, "Now-playing artwork"), which names the group
 // and nothing else. The record's own artwork address is somebody else's, and

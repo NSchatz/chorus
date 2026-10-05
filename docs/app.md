@@ -47,7 +47,7 @@ further screen has an address of its own (below).
 | Region | What it shows | What it does |
 |---|---|---|
 | Groups | every saved group, then every live group, each with its rooms, what it plays and what is playing | group volume (the server scales every room and keeps their ratio, K77); "Remove" a room; "Group these rooms" for a saved group that is not formed; choose an input |
-| Rooms | every room with its bonded set, its volume and its mute; a room alone also says what it plays and what is playing | volume, mute; move the room by dragging its handle onto a room or a group, or with the "Plays with" list on its card; choose an input; open the room's sound screen ("Sound") and its limits screen ("Limits"). Under the rooms, "Autoplay" opens the house's autoplay rules |
+| Rooms | every room with its bonded set, its volume and its mute; a room alone also says what it plays and what is playing | volume, mute; move the room by dragging its handle onto a room or a group, or with the "Plays with" list on its card; choose an input; open the room's sound screen ("Sound") and its limits screen ("Limits"). Under the rooms, "Autoplay" opens the house's autoplay rules and "Alarms" its alarms, stored sources and sleep timers |
 
 **Further screens and their addresses** (`docs/decisions/0197-further-screens-have-an-address-in-the-fragment.md`).
 A screen beyond the home has an address in the fragment, `#/` and a path, and is painted alone
@@ -59,9 +59,10 @@ in the main region, across both columns on a desktop, under a "Back" link:
 | `/app/#/rooms/<room id>/sound` | the sound of that room |
 | `/app/#/rooms/<room id>/limits` | the volume limit and the quiet hours of that room |
 | `/app/#/autoplay` | the house's autoplay rules, one for each input |
+| `/app/#/alarms` | the house's alarms, its stored sources and its sleep timers |
 
-- Opening a screen from the app (the "Sound" or "Limits" link on a room's card, "Autoplay"
-  under the rooms) is a new entry of the
+- Opening a screen from the app (the "Sound" or "Limits" link on a room's card, "Autoplay" or
+  "Alarms" under the rooms) is a new entry of the
   browser's history, so the browser's back button, a phone's back gesture and the forward
   button work as on any site, and an address can be bookmarked, reloaded or sent to another
   person of the household.
@@ -128,6 +129,58 @@ shows. A rule's TV options (`stop_on_standby`, `low_latency`) are not on this sc
 that has one switched off keeps it through a change made here. A refusal is shown on the input
 it was for.
 
+**Alarms, stored sources and sleep timers** (`web/src/alarms.js`; the catalog's `alarm_set`,
+`alarm_delete`, `alarm_stop`, `sleep`, `source_store` and `source_forget`,
+`docs/control-plane.md`; the four alarm sources, `docs/inputs.md` and
+`docs/decisions/0129-stored-alarm-sources-line-in-sharing-and-streamer-inputs.md`, K80). One
+screen in three parts.
+
+| Part | What it shows | What it does |
+|---|---|---|
+| Alarms | every alarm of the state: its name (the catalog's id), its time and its days ("once" for an alarm with no day), what it plays and where, its volume, its rise and how long it plays; "Ringing now" while the state says `ringing` | "Alarm", a button pressed when the alarm is on: `alarm_set` with the alarm as the server holds it and `enabled` the opposite. "Stop", shown only while it rings: `alarm_stop`. "Edit": copies the alarm into the form below and sends nothing. "Delete": `alarm_delete` |
+| Set an alarm | a draft: its name, where it rings (a room or a saved group), its time, a button for each day (none pressed is once, at the next such time), what it plays, its volume (a slider), "Rises over, seconds" (0 to 600), "Plays for, minutes" (0 to 720; 0 plays until it is stopped) and "Switched on". It starts as 07:00 on Monday to Friday, at 30%, rising over 30 s, for 60 min, in the first room, playing the first source offered | nothing until "Save alarm", which sends one `alarm_set` with every field. The catalog's command creates or replaces a whole alarm: saving under the name of an alarm that exists replaces it (the form says so), and under another name makes a second one |
+| Stored sources | every stored source of the state: its name, its kind ("Stream URL" or "Spotify URI"), its id and its value | "Forget": `source_forget`. The server refuses while an alarm plays the source, and its words, which name the alarm, are shown on that source |
+| Store a source | a draft: the kind, an id, a name and the address (an `http://` or `https://` stream) or the Spotify URI (`spotify:playlist:<id>`, or an album, a track or an episode) | nothing until "Store source", which sends `source_store`. A value the server refuses is shown as "Refused (value): <the server's words>", which name what it takes (a scheme that is not `http://` or `https://` is refused there, not when the alarm rings), and what was written stays in the form to be put right |
+| Sleep timers | every timer of the state, by the name of its room or its group, with the time left ("17 min 22 s left") | "Cancel": `sleep` with 0 minutes |
+| Start a sleep timer | a room or a group formed now, and the minutes (0 to 720) | "Start": `sleep`. 0 minutes cancels the timer the target has |
+
+**What an alarm plays** is one of four kinds, and the picker lists what the state names of each,
+under a heading for the kind. The app has no list of its own: the chime names are the state's
+`chimes` (`docs/chimes.md`), read from the server's own build.
+
+| Kind | What the picker offers | The source it sends | What the server needs to play it |
+|---|---|---|---|
+| A chime | every name in the state's `chimes` | `chime:<name>` | nothing more: every server that runs the schedule has the chimes |
+| A line-in | every input offered now (the state's `inputs`), by the name a person gave it | `line-in:<endpoint>/<input>` | the input offered when the alarm rings: its speaker connected |
+| A stored stream URL | every stored source of kind `url`, by its name | `stored:<id>` | **a network media player**: the server started with `--players` (one more than the casts it expects at that hour), and a URL its fetch policy allows (`docs/streams.md`) |
+| A stored Spotify URI | every stored source of kind `spotify`, by its name | `stored:<id>` | **a Spotify receiver for the alarm's room or saved group, and the alarm switch**: the server started with `--soloist-receivers` and with `--soloist-alarms`, which is off by default and the owner's to turn (`docs/inputs.md`, "The Spotify playlist source"; `docs/soloist.md`), the receiver running, and a person of the household having chosen that room's device in the Spotify app once |
+
+An alarm is never refused for a source the server cannot play that morning: it is set, and it
+rings the `bell` chime instead, with the reason in the server's log (`docs/inputs.md`). So the
+screen says what the state lets it know beforehand, on the alarm and under the picker, each
+ending "rings the bell chime instead":
+
+| The screen says | When the state says |
+|---|---|
+| "This server does not say which chimes it has" | it has no `chimes` (a server that runs no schedule); the picker then offers no chime |
+| "This server has no chime ..." | the alarm names a chime that is not in `chimes` |
+| "The input ... is not offered now: its speaker is not connected" | the alarm's line-in is not in `inputs` |
+| "This server has no stored source ..." | the alarm names a stored source that is not in `stored_sources` |
+| "This server runs no Spotify receiver" | it has no `soloist` member, which a server started without `--soloist-receivers` does not write |
+| "No Spotify receiver is running for ..." | `soloist.receivers` has no receiver in the state `running` whose target is the alarm's room or saved group |
+
+Two things the server needs are **not in the state**, so the screen cannot say them and offers
+the source without a warning: whether the server has a player (`--players`) for a stream URL,
+and whether Spotify alarms are switched on (`--soloist-alarms`). On a server without them such
+an alarm is set, shows no warning, and rings the bell (`no-players`, `soloist-off` in the log).
+
+A sleep timer's time left is the server's count (`remaining_s`, ADR 0194). The server sends a
+state for the countdown alone only when the whole minutes change, so between two states the
+screen counts the seconds down itself, on the browser's monotonic clock, and takes every state's
+value as the truth; the entry leaves the screen when it leaves the state, not when the screen's
+own count reaches zero. On a server that does not count (no `remaining_s`) it shows the minutes
+asked for. There is no snooze: the catalog has no command for one.
+
 - **The server owns the state** (`docs/decisions/0185-the-apps-state-layer-and-its-live-test.md`).
   The app reads `GET /api/state`, follows `GET /api/events` and sends `POST /api/command`. An
   element shows what the last state message says and keeps no value of its own: a control changes
@@ -148,8 +201,7 @@ it was for.
   `img-src 'self'` stands. A record with no artwork, or one whose image does not load, shows a
   placeholder.
 
-Not built yet, and later tasks: bass management and the TV upmix; alarms and sleep timers;
-room correction with the phone's microphone; adoption, naming and firmware approval.
+Not built yet, and later tasks: bass management and the TV upmix; room correction with the phone's microphone; adoption, naming and firmware approval.
 
 ## Installing, and the service worker's cache rules
 
@@ -221,7 +273,7 @@ The one breakpoint is `DESKTOP_MIN_EM` in `web/src/layout.js` and is written now
 `chorus-app` reflects the layout as an attribute and the styles select on it, so no element holds
 a media query. A touch target is at least 44 by 44 CSS pixels outside the kiosk.
 
-A further screen (a room's sound, its limits, the autoplay rules) is the same in all three: one column as wide as the page, with
+A further screen (a room's sound, its limits, the autoplay rules, the alarms) is the same in all three: one column as wide as the page, with
 its "Back" link inside the screen's own region, because a wide kiosk paints no header. On a
 phone the navigation bar stays at the bottom edge and leads back to the groups or the rooms.
 
@@ -245,12 +297,26 @@ all three in `make gate`; here each is a narrow run of its own.
 
 | Command | What it is | It ends with |
 |---|---|---|
-| `make web-test` | the unit tests: `node --test` over happy-dom, no browser, no server. The elements by their labels, the store, the worker's rules against a scripted network and cache, the signed-out state, the layouts and the kiosk's switch, the navigation over happy-dom's own address and history, and the sound, limits and autoplay screens over a scripted server | node's own summary, `fail 0` |
-| `CHORUS_SERVER_BIN=<a built chorus-server> make web-live` | the live tests (`web/live/*.live.js`): the same elements and store in node, no browser, against a real `chorus-server`. Each screen's controls are driven by their labels and what the page shows is compared with the server's `/api/state`, in both directions | `web-live: PASS` |
+| `make web-test` | the unit tests: `node --test` over happy-dom, no browser, no server. The elements by their labels, the store, the worker's rules against a scripted network and cache, the signed-out state, the layouts and the kiosk's switch, the navigation over happy-dom's own address and history, and the sound, limits, autoplay and alarms screens over a scripted server | node's own summary, `fail 0` |
+| `CHORUS_SERVER_BIN=<a built chorus-server> make web-live` | the live tests (`web/live/*.live.js`): the same elements and store in node, no browser, against a real `chorus-server`. Each screen's controls are driven by their labels and what the page shows is compared with the server's `/api/state`, in both directions. `alarms.live.js` also needs the two test programs built beside the server (below) | `web-live: PASS` |
 | `CHORUS_SERVER_BIN=<a built chorus-server> make web-smoke` | the one browser test (`web/smoke/app.spec.js`, `docs/decisions/0183-the-one-browser-smoke-test.md`): Playwright's headless Chromium loads `/app/` from a real `chorus-server` through a fake login | `web-smoke: PASS` |
 
 - `web-live` and `web-smoke` without `CHORUS_SERVER_BIN` end `web-live: SKIPPED` and
   `web-smoke: SKIPPED`; under `CI=true` and in the gate a skip is a failure.
+- `web/live/alarms.live.js` runs the server with its civil clock started three schedule minutes
+  before 07:00 and its schedule ten times faster (`--civil-time-from`,
+  `--schedule-time-scale`), sets an alarm of each of the four kinds through the screen, and
+  holds each to ringing as its own kind in `/api/state` and on the screen (the room plays
+  `chime:<name>`, `line-in:<input>`, `player:p0` and `soloist:r0`, and the log has no
+  `fallback=chime`), then stops each with the screen's "Stop"; a sleep timer set through the
+  screen then ends by itself and leaves the state and the screen. What each kind needs it
+  starts itself (`web/live/house.js`, `web/live/endpoint.js`): an endpoint session offering a
+  line-in, a stream on loopback (`--players 1 --media-allow-loopback`), and the fake Soloist
+  under the real receiver supervisor (`--soloist-receivers 1 --soloist-alarms`). The last two
+  are the test programs `server-test-soloistd` and `server-test-fake-soloist`, which it looks
+  for in `examples/` beside `CHORUS_SERVER_BIN`: `cargo build -p chorus-server --examples`
+  builds them, and so does the gate's build of every target. No real Soloist, Spotify account
+  or network is used.
 - `make web-smoke-install` downloads, once, the Chromium build the pinned `@playwright/test`
   names; a run never downloads it. On a host with no root Chromium's libraries and fonts come
   from two prefixes, as `web/README.md` writes out.
