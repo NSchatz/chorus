@@ -82,6 +82,9 @@ device, unassigned under the server.
 | an Autoplay `switch` | `{"v":2,"t":"autoplay","input":I,"target":T,"enabled":false}`, with the rule's `stop_on_standby` and `low_latency` written again when they are `false`: the command replaces the rule |
 | the room's Voice enabled `switch` | `{"v":2,"t":"voice_enabled","zone":Z,"enabled":true}` |
 | a wake word heard in the room (no action of Home Assistant's) | `{"v":2,"t":"voice_start","zone":Z}`, then `GET /api/voice-audio?run=<the answer's identifier>`, then `{"v":2,"t":"voice_stop","zone":Z}` |
+| the satellite's wake words, set in Home Assistant's voice settings | `{"v":2,"t":"voice_wake_words","zone":Z,"wake_words":["okay_nabu"]}` |
+| a reply that asks for more, `assist_satellite.start_conversation` and `assist_satellite.ask_question` | `announce` for the reply or the prompt, waited for, then `voice_start`, the run's audio and `voice_stop` as after a wake word |
+| a timer of the room's device that finishes | `{"v":2,"t":"announce","target":Z,"url":<Home Assistant's chime>}`, three times, each waited for |
 | the room's satellite, `assist_satellite.announce`, and a pipeline's reply | `{"v":2,"t":"announce","target":Z,"url":U}`, once for the chime and once for the clip, each waited for |
 | a speaker's Firmware `update`, `update.install` | `{"v":2,"t":"firmware_install","speaker":S,"image":I}`: that speaker, the verified staged image, never `all`, never `force` |
 
@@ -252,7 +255,8 @@ is subscribed and never kept.
 
 ## Voice rooms: an Assist satellite per room that has a microphone
 
-The model is `docs/decisions/0176-the-home-assistant-voice-satellite.md`; the path is proposal
+The model is `docs/decisions/0176-the-home-assistant-voice-satellite.md` and, for what goes
+beyond the basic run, `docs/decisions/0179-a-rooms-choice-of-wake-words.md`; the path is proposal
 P8, Option A, and the server's half is `docs/control-plane.md`, "Voice: `voice_enabled` and
 `mic_muted`" and "Voice: the wake word, the run and its audio".
 
@@ -296,9 +300,33 @@ P8, Option A, and the server's half is `docs/control-plane.md`, "Voice: `voice_e
 - **A server that serves no run here.** `voice_start` refused with `no-voice-integration`,
   or the audio route refused with `not-the-voice-integration`, is a repair issue naming the
   flag (`--voice-integration`); it is removed when a run's audio is next read.
-- **What is not built yet** (the next voice task): timers, continue conversation, start
-  conversation, ask question, and a choice of wake word. The satellite's configuration
-  lists the server's models, all active, and refuses a change.
+- **Continue conversation.** The satellite reads `continue_conversation` off the pipeline's
+  `intent-end`. When it is true and the reply was played to its end, it opens a second run
+  itself (`voice_start` with no `voice_wake` before it) and starts a pipeline at
+  speech-to-text with no wake word phrase; Home Assistant's base class carries the
+  conversation's id over. Nothing is continued when the reply failed, when the gate closed,
+  or when another run or a prompt came first.
+- **Start conversation and ask question.** The entity declares `START_CONVERSATION` and
+  implements `async_start_conversation`, which the base class calls for both actions: it
+  plays the chime and the prompt as an announcement, waits for a run that was in progress to
+  finish ending, opens a run and its audio, and returns; the pipeline then runs in the
+  background (for a question the base class ends it at speech-to-text and returns the
+  words). A wake word during the prompt is ignored. Where the room does not listen, the
+  prompt is played and the call raises `not_listening_voice_disabled`,
+  `not_listening_mic_muted` or `not_listening` (with the server's reason), from the last
+  state's gate without asking the server, or from the server's own refusal by name. A
+  question whose pipeline is over without an answer (it raised before its first event) is
+  answered with none, so the action cannot wait for ever.
+- **Timers.** The satellite registers Home Assistant's timer handler
+  (`intent.async_register_timer_handler`) for the room's device, which is what lets a timer
+  be set by voice there. A `finished` event plays Home Assistant's own chime three times
+  through `announce` (`TIMER_SOUND`, `TIMER_SOUND_TIMES`), each waited for; every other
+  event is a debug line. The manifest lists `intent` for it.
+- **The wake word choice.** `async_get_configuration` lists the state's `wake_words` as
+  available and, as active, the room's own `wake_words` (every one for a room that never
+  chose); `async_set_configuration` sends `voice_wake_words` with the chosen ids, and an id
+  the server does not run is the translated `unknown_wake_word`
+  (`docs/decisions/0179-a-rooms-choice-of-wake-words.md`).
 
 Privacy (I4): the integration holds no microphone audio beyond the chunk in flight, writes
 none to a log or a file, and never logs the run's identifier (`VoiceRun` keeps it out of its
@@ -306,7 +334,8 @@ none to a log or a file, and never logs the run's identifier (`VoiceRun` keeps i
 `tests/test_assist_satellite.py` holds all of the above against the fake server and a faked
 pipeline, and `tests/aiochorus/test_voice.py` holds the client to the shared vectors
 (`voice_enabled.json`, `voice_start.json`, `voice_stop.json`, `voice_wake.json`,
-`voice_run.json`, `state-voice.json`, `error-voice-start-*.json`).
+`voice_run.json`, `state-voice.json`, `error-voice-start-*.json`, `voice_wake_words.json`,
+`state-wake-words.json`, `error-voice-wake-words-unknown.json`).
 
 ## The room visualizer: one sensor per room, disabled by default, five states a second at most
 

@@ -113,12 +113,23 @@
 //! format 1 to 7 file loads unchanged with every room's voice path off,
 //! which is the default; the next write is format 8. What a microphone's
 //! gate reports is a fact about now and stays out.
+//!
+//! # Format 9 (a room's choice of wake words)
+//!
+//! Format 9 adds one field to `[zone]`, required: `wake_words`, either `*`
+//! (the room listens for every wake word the server runs, the default) or
+//! the ids the room chose, comma-separated, possibly none. A format 1 to 8
+//! file loads unchanged with `*` in every room; the next write is format 9.
+//! Which models a build runs is a fact about the build and stays out, so an
+//! id is held to its shape only.
 
 use std::fmt;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use crate::catalog::{is_display_name, is_identifier, Command, Volume};
+use crate::catalog::{
+    is_display_name, is_identifier, is_wake_word_id, Command, Volume, MAX_WAKE_WORDS,
+};
 use crate::rooms::{
     validate_layout, Alarm, Autoplay, BondMember, ClockTime, Days, InputId, InputLabel, InputRole,
     Link, QuietWindow, Role, SavedGroup, Source, StoredKind, StoredSource, MAX_DURATION_MIN,
@@ -132,10 +143,10 @@ use crate::theater::{TvUpmix, AV_TRIM_MS};
 use crate::zones::{Zone, Zones};
 
 /// The version of this file format, which is what every write produces.
-pub const STATE_FORMAT: u32 = 8;
+pub const STATE_FORMAT: u32 = 9;
 
 /// Every format this build reads.
-pub const READ_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8];
+pub const READ_FORMATS: &[u32] = &[1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 /// Why persisted state could not be read.
 #[derive(Debug)]
@@ -257,7 +268,8 @@ pub fn render(zones: &Zones) -> String {
     out.push_str("# format 5 the adopted speakers ([speaker]: name, named, room);\n");
     out.push_str("# format 6 stored sources ([stored-source]) and input labels ([input-label]);\n");
     out.push_str("# format 7 whether a room's quiet hours are switched on (quiet_enabled);\n");
-    out.push_str("# format 8 whether a room's voice path is switched on (voice_enabled).\n");
+    out.push_str("# format 8 whether a room's voice path is switched on (voice_enabled);\n");
+    out.push_str("# format 9 which wake words a room listens for (wake_words, * for every one).\n");
     out.push('\n');
     out.push_str(&format!("format = {}\n", STATE_FORMAT));
     out.push_str(&format!("serial = {}\n", zones.serial()));
@@ -323,6 +335,13 @@ pub fn render(zones: &Zones) -> String {
         out.push_str(&format!(
             "voice_enabled = {}\n",
             u8::from(zone.voice_enabled)
+        ));
+        out.push_str(&format!(
+            "wake_words = {}\n",
+            match &zone.wake_words {
+                None => "*".to_string(),
+                Some(chosen) => chosen.join(","),
+            }
         ));
     }
     for (endpoint, link) in zones.links() {
@@ -920,6 +939,25 @@ fn load_zone(
     if format >= 8 {
         zone.voice_enabled = section.flag("voice_enabled")?;
     }
+    if format >= 9 {
+        let text = section.get("wake_words")?;
+        if text != "*" {
+            let chosen = list(&text);
+            let mut seen = chosen.clone();
+            seen.sort();
+            seen.dedup();
+            if chosen.len() > MAX_WAKE_WORDS
+                || seen.len() != chosen.len()
+                || !chosen.iter().all(|id| is_wake_word_id(id))
+            {
+                return Err(section.fail(format!(
+                    "wake_words = '{}', which is not * or at most {} different wake-word ids",
+                    text, MAX_WAKE_WORDS
+                )));
+            }
+            zone.wake_words = Some(chosen);
+        }
+    }
     Ok(zone)
 }
 
@@ -1129,9 +1167,9 @@ mod tests {
 
     #[test]
     fn a_state_file_this_build_does_not_understand_is_refused_rather_than_guessed() {
-        // Format 8 is this build's own; the next one is not.
-        let err = load("format = 9\nserial = 1\n", "x").unwrap_err();
-        assert!(err.to_string().contains("declares format 9"), "{}", err);
+        // Format 9 is this build's own; the next one is not.
+        let err = load("format = 10\nserial = 1\n", "x").unwrap_err();
+        assert!(err.to_string().contains("declares format 10"), "{}", err);
         let err = load("serial = 1\n", "x").unwrap_err();
         assert!(err.to_string().contains("no format version"), "{}", err);
     }

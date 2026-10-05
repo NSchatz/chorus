@@ -480,8 +480,8 @@ fn a_house_with_speakers() -> Zones {
 fn everything_goal_14_holds_survives_the_state_file_as_format_5() {
     let mut zones = a_house_with_speakers();
     let text = render(&zones);
-    assert_eq!(STATE_FORMAT, 8);
-    assert!(text.contains("format = 8\n"));
+    assert_eq!(STATE_FORMAT, 9);
+    assert!(text.contains("format = 9\n"));
     assert!(
         text.contains(&format!(
             "[speaker {}]\nname = Kitchen \\#1\nnamed = 1\nroom = kitchen\n",
@@ -541,7 +541,7 @@ fn a_format_4_file_loads_unchanged_with_no_speaker() {
     // What goal 13's build wrote: format 4, no [speaker] section anywhere.
     let zones = house();
     let five = render(&zones);
-    let four = five.replace("format = 8\n", "format = 4\n");
+    let four = five.replace("format = 9\n", "format = 4\n");
     assert!(!four.contains("\n[speaker "));
     let back = load(&four, "127.0.0.1:4010").expect("format 4 still loads");
     assert!(back.speakers().all().is_empty());
@@ -549,7 +549,7 @@ fn a_format_4_file_loads_unchanged_with_no_speaker() {
     assert_eq!(render(&back), five);
 
     // And a format 4 file has no [speaker] section: it was added in 5.
-    let with = render(&a_house_with_speakers()).replace("format = 8\n", "format = 4\n");
+    let with = render(&a_house_with_speakers()).replace("format = 9\n", "format = 4\n");
     let err = load(&with, "x").unwrap_err();
     assert!(
         err.to_string()

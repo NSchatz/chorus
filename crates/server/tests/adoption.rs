@@ -432,7 +432,7 @@ fn a_new_speaker_is_adopted_named_and_assigned_a_room() {
     drop(linux_player);
     drop(server);
     let saved = std::fs::read_to_string(&state_file).unwrap();
-    assert!(saved.contains("format = 8\n"), "{}", saved);
+    assert!(saved.contains("format = 9\n"), "{}", saved);
     assert!(
         saved.contains(&format!(
             "[speaker {}]\nname = Kitchen shelf\nnamed = 1\nroom = kitchen\n",

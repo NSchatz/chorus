@@ -299,8 +299,8 @@ fn everything_sound_holds_survives_the_state_file_as_format_3() {
     }
     let text = render(&zones);
     // Format 5 (goal 14) still holds every format 3 field, in its place.
-    assert_eq!(STATE_FORMAT, 8);
-    assert!(text.contains("format = 8\n"), "{}", text);
+    assert_eq!(STATE_FORMAT, 9);
+    assert!(text.contains("format = 9\n"), "{}", text);
     assert!(text.contains(
         "bass = -4\ntreble = 2\nloudness = 0\nnight = 1\nspeech = 1\ncrossover_hz = 120\n\
          sub_level_db = -1.75\nsub_polarity = inverted\nroom_eq = 0\n\
@@ -347,7 +347,7 @@ fn a_format_2_file_loads_unchanged_with_the_sound_defaults() {
     assert!(z.room_eq.filters.is_empty() && z.room_eq.enabled);
     let again = render(&zones);
     // The next write is the current format (5 since goal 14).
-    assert!(again.contains("format = 8\n"));
+    assert!(again.contains("format = 9\n"));
     assert_eq!(render(&load(&again, "x").unwrap()), again);
 }
 

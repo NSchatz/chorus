@@ -952,6 +952,18 @@ class FakeChorusServer:
             zone["voice_enabled"] = command["enabled"]
             if not command["enabled"]:
                 self._end_run(command["zone"], "voice-disabled")
+        elif kind == "voice_wake_words":
+            zone = self._zone(command["zone"])
+            runs = [word["id"] for word in self.model.get("wake_words", [])]
+            for word in command["wake_words"]:
+                if word not in runs:
+                    raise Refusal(
+                        "wake_words",
+                        f"unknown-wake-word: this server runs no wake word '{word}', "
+                        f"so room '{command['zone']}' cannot listen for it; it runs "
+                        f"{', '.join(runs) or 'none'}",
+                    )
+            zone["wake_words"] = list(command["wake_words"])
         elif kind == "sound":
             sound = self._zone(command["zone"])["sound"]
             for key in ("bass", "treble"):

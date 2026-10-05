@@ -803,3 +803,68 @@ fn the_route_is_served_to_the_registered_address_and_to_no_other() {
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_file(&source);
 }
+
+#[test]
+fn a_room_that_chose_its_wake_words_answers_to_those_and_to_no_other() {
+    let dir = scratch("words");
+    let source = constant_source("voice-run-words");
+    let mut server = server(&dir, &source, &["--voice-integration", HERE]);
+    let wakes = Stream::open(&server.control, "/api/voice-events");
+    let mut mic = Mic::listening_in(&mut server, "kitchen", "voice-words-ep");
+    assert!(
+        !server.state().contains(r#""mic_muted":false,"wake_words""#),
+        "a room that never chose carries no choice"
+    );
+
+    // --- a wake word the server does not run is refused by name --------------
+    let (status, answer) = server
+        .command(r#"{"v":2,"t":"voice_wake_words","zone":"kitchen","wake_words":["hey_jarvis"]}"#);
+    assert!(status.contains("400"), "{status} {answer}");
+    assert!(
+        answer.contains(r#""field":"wake_words""#) && answer.contains("unknown-wake-word: "),
+        "{answer}"
+    );
+
+    // --- the room chose none: the phrase said there is no wake word ----------
+    server.applied(r#"{"v":2,"t":"voice_wake_words","zone":"kitchen","wake_words":[]}"#);
+    assert!(
+        server
+            .state()
+            .contains(r#""voice_enabled":true,"mic_muted":false,"wake_words":[]"#),
+        "the room carries its choice: {}",
+        server.state()
+    );
+    let fixture = wake_fixture();
+    mic.say(&fixture);
+    mic.say(&speech(0xD1, 10));
+    // Long enough for the pass that would have heard it: a wake word is
+    // reported within one pass of its last frame.
+    std::thread::sleep(Duration::from_secs(1));
+    assert_eq!(count_of(&wakes.text(), "voice_wake"), 0, "{}", wakes.text());
+    assert_eq!(said(&mut server, &["voice wake room=kitchen"]), 0);
+    // A run is still opened there by a command.
+    let (run, _) = start(&server, "kitchen");
+    mic.until_listening(true);
+    let line = until_said(&mut server, &["voice run room=kitchen", "started"], 1);
+    assert!(line.contains("after_wake=0"), "{line}");
+    server.applied(r#"{"v":2,"t":"voice_stop","zone":"kitchen"}"#);
+    mic.until_listening(false);
+    assert!(!server.state().contains(&run));
+
+    // --- the room chose the model: the phrase is a wake word again -----------
+    server.applied(r#"{"v":2,"t":"voice_wake_words","zone":"kitchen","wake_words":["okay_nabu"]}"#);
+    assert!(
+        server
+            .state()
+            .contains(r#""mic_muted":false,"wake_words":["okay_nabu"]"#),
+        "{}",
+        server.state()
+    );
+    mic.say(&fixture);
+    until_said(&mut server, &["voice wake room=kitchen"], 1);
+    let wake = r#"data: {"v":2,"t":"voice_wake","zone":"kitchen","phrase":"Okay Nabu"}"#;
+    wait_for("the wake event", Duration::from_secs(5), || {
+        wakes.text().contains(wake)
+    });
+    assert_eq!(count_of(&wakes.text(), "voice_wake"), 1, "{}", wakes.text());
+}

@@ -152,6 +152,11 @@ pub struct Zone {
     /// gate, `voice_enabled`). Off by default: no microphone of the room is
     /// asked for audio until a person switches it on.
     pub voice_enabled: bool,
+    /// (v2, voice) The ids of the wake words the room listens for, as a
+    /// `voice_wake_words` chose them; `None` until one did, which means every
+    /// one the server runs. An id the running build has no model for (a
+    /// state file from another build) is kept and matches nothing.
+    pub wake_words: Option<Vec<String>>,
     /// (v2) The bonded set, or empty where the room has none and plays the
     /// stream's channels as v1 did.
     pub bond: Vec<BondMember>,
@@ -187,6 +192,7 @@ impl Zone {
             quiet_active: Vec::new(),
             quiet_enabled: true,
             voice_enabled: false,
+            wake_words: None,
             bond: Vec::new(),
             ramp: None,
             sound: SoundSettings::default(),
@@ -869,6 +875,33 @@ impl Zones {
             }
             Command::VoiceEnabled { enabled, .. } => {
                 self.zones[room()].voice_enabled = *enabled;
+            }
+            Command::VoiceWakeWords { zone, wake_words } => {
+                if let Some(unknown) = wake_words
+                    .iter()
+                    .find(|id| !self.wake_words.iter().any(|w| &w.id == *id))
+                {
+                    let runs = self
+                        .wake_words
+                        .iter()
+                        .map(|w| w.id.as_str())
+                        .collect::<Vec<_>>();
+                    return Err(Refusal::rejected(
+                        "wake_words",
+                        format!(
+                            "unknown-wake-word: this server runs no wake word '{}', so room \
+                             '{}' cannot listen for it; it runs {}",
+                            unknown,
+                            zone,
+                            if runs.is_empty() {
+                                "none".to_string()
+                            } else {
+                                runs.join(", ")
+                            }
+                        ),
+                    ));
+                }
+                self.zones[room()].wake_words = Some(wake_words.clone());
             }
             Command::VoiceStart { zone } => {
                 // The room model agrees or refuses; the run is the server's
@@ -2213,6 +2246,23 @@ impl Zones {
         &self.wake_words
     }
 
+    /// (voice) Whether room `zone` listens for the wake word spelled
+    /// `phrase`: every room does until a `voice_wake_words` chose for it,
+    /// and then only for the models it named. A room this server does not
+    /// have listens for nothing.
+    pub fn listens_for(&self, zone: &str, phrase: &str) -> bool {
+        let Some(room) = self.zones.iter().find(|z| z.id == zone) else {
+            return false;
+        };
+        match &room.wake_words {
+            None => true,
+            Some(chosen) => self
+                .wake_words
+                .iter()
+                .any(|w| w.phrase == phrase && chosen.contains(&w.id)),
+        }
+    }
+
     /// (goal 18) The origins an `announce` URL may come from. Set once, at
     /// start; the state does not carry them, so the serial does not move.
     pub fn set_announce_origins(&mut self, origins: Vec<Origin>) {
@@ -2885,6 +2935,15 @@ impl Zones {
             ("voice_enabled".to_string(), Value::Bool(z.voice_enabled)),
             ("mic_muted".to_string(), Value::Bool(self.mic_muted(z))),
         ]);
+        // (voice) The room's own choice of wake words, only once it made
+        // one: a room without the member listens for every one the server
+        // runs (the state's own `wake_words`).
+        if let Some(chosen) = &z.wake_words {
+            fields.push((
+                "wake_words".to_string(),
+                Value::Arr(chosen.iter().map(|id| Value::text(id)).collect()),
+            ));
+        }
         // (goal 16) What the room's group is playing, on the room itself and
         // only when there is a record: the room object is what a consumer of
         // one room reads (the MQTT room topic is this object, byte for byte),

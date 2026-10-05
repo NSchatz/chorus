@@ -53,6 +53,7 @@ const EVERY_V2_MESSAGE_TYPE: &[&str] = &[
     "quiet_hours",
     "quiet_hours_enabled",
     "voice_enabled",
+    "voice_wake_words",
     "voice_start",
     "voice_stop",
     "alarm_set",
@@ -570,6 +571,10 @@ fn command_from(fields: &Fields) -> Command {
         "voice_enabled" => Command::VoiceEnabled {
             zone: get("zone"),
             enabled: get("enabled") == "1",
+        },
+        "voice_wake_words" => Command::VoiceWakeWords {
+            zone: get("zone"),
+            wake_words: list(&get("wake_words")),
         },
         "voice_start" => Command::VoiceStart { zone: get("zone") },
         "voice_stop" => Command::VoiceStop { zone: get("zone") },

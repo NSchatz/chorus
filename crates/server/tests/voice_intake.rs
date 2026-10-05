@@ -683,7 +683,7 @@ fn voice_is_off_in_every_room_by_default_and_survives_a_restart() {
             voice(&server.state(), "kitchen") == (true, false)
         });
         let saved = std::fs::read_to_string(dir.join("zones.state")).unwrap();
-        assert!(saved.contains("format = 8\n"), "{saved}");
+        assert!(saved.contains("format = 9\n"), "{saved}");
         assert_eq!(saved.matches("voice_enabled = 1\n").count(), 1, "{saved}");
         assert_eq!(saved.matches("voice_enabled = 0\n").count(), 1, "{saved}");
     }

@@ -1,0 +1,1 @@
+{"v":2,"t":"error","field":"wake_words","detail":"unknown-wake-word: this server runs no wake word 'hey_jarvis', so room 'kitchen' cannot listen for it; it runs okay_nabu"}

@@ -79,7 +79,8 @@ already encoded and not encoded a second time. The two below are the `kitchen` r
 A room's payload is the room's object byte for byte, so it gains a field whenever the state
 message does and no topic changes: `quiet_enabled` (whether the room's quiet hours are switched
 on, after `quiet`) arrived that way with the `quiet_hours_enabled` command. So did
-`voice_enabled` and `mic_muted` (after `room_eq`), with the `voice_enabled` command. The publisher stays
+`voice_enabled` and `mic_muted` (after `room_eq`), with the `voice_enabled` command, and a room that
+chose its wake words carries `wake_words` after them (the `voice_wake_words` command). The publisher stays
 read-only; nothing is commanded over MQTT.
 
 `chorus/v1/rooms/kitchen/state`:

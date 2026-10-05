@@ -78,6 +78,7 @@ A **zone** is a room (catalog v2's documents say "room"; the wire keeps the key
 | `bond` (v2) | the room's bonded set: endpoints each playing a channel role, or none |
 | `voice_enabled` (v2) | whether the room's voice path is switched on, `false` unless switched on: only then is a microphone of the room asked for audio |
 | `mic_muted` (v2) | read-only: `true` unless a speaker present in the room reports its mic gate live; never persisted, and no command sets it |
+| `wake_words` (v2) | only in a room that chose them (`voice_wake_words`): the ids of the wake words the room listens for, possibly none. A room without it listens for every one the server runs |
 | `sound` (v2, goal 12) | tone, loudness, night mode and speech enhancement |
 | `bass_management` (v2, goal 12) | crossover, sub level and sub polarity, in force when the set has an `LFE` member |
 | `room_eq` (v2, goal 12) | up to 8 room-correction filters and whether they are applied |
@@ -510,9 +511,37 @@ configuration (`fixtures/control/v2/state-voice.json`):
 "wake_words":[{"id":"okay_nabu","phrase":"Okay Nabu"}]
 ```
 
-Every model runs in every voice room; there is no per-room choice yet. Which
-models a build carries, and under which licences, is
+Which models a build carries, and under which licences, is
 `third_party/wakeword/LICENCES.md` (`docs/decisions/0167-the-wake-word-runtime.md`).
+
+**A room's choice of wake words.** Every model runs on every voice room's
+audio, and a room listens for every one of them until it is told otherwise
+(`fixtures/control/v2/voice_wake_words.json`,
+`docs/decisions/0179-a-rooms-choice-of-wake-words.md`):
+
+```json
+{"v":2,"t":"voice_wake_words","zone":"kitchen","wake_words":["okay_nabu"]}
+```
+
+| type | fields | effect |
+|---|---|---|
+| `voice_wake_words` | `zone`, `wake_words` (an array of at most 16 ids of the state's `wake_words[].id`, none twice) | the room listens for these wake words and no other. An empty array: the room answers to no wake word, and a run is still opened there by a `voice_start` |
+
+The room then carries its choice in the state as its own `wake_words`, after
+`mic_muted` (`fixtures/control/v2/state-wake-words.json`); a room without the
+member never chose and listens for every one. A phrase said in a room that
+does not listen for it is no wake word there: no `voice_wake`, no hold-off,
+and a run opened afterwards starts at its command. The choice is persisted
+(state-file format 9). There is no command that returns a room to "every
+one"; naming every id the state lists says the same until the build gains a
+model. An id is refused when the server runs no such model:
+
+| `field` | `detail` starts with | when |
+|---|---|---|
+| `wake_words` | `unknown-wake-word: ` | an id is not one of the state's `wake_words[].id` (`fixtures/control/v2/error-voice-wake-words-unknown.json`). Nothing is changed |
+
+A choice loaded from a state file is kept as it is written: an id the running
+build has no model for matches nothing and is listed all the same.
 
 **2. The run.** `voice_start` opens a run in a room: after a `voice_wake`, or
 without one (Home Assistant's start conversation and ask question). The answer
@@ -1151,7 +1180,7 @@ of each, `fixtures/control/v2/state-empty.json` the empty house):
 
 | field | notes |
 |---|---|
-| `zones[]` | v1's fields, then `transport` (`wired` or `wireless`, as declared), `limit`, `effective_limit`, `quiet` (`[{"days","start","end","limit","active"}]`; `active` says the clock is inside the window, whether or not the room's quiet hours are switched on), `quiet_enabled` (`true` or `false`: whether an active window caps the room; `true` unless `quiet_hours_enabled` switched it off), `bond` (`[{"endpoint","role"}]`, `[]` for none), `ramp` (a running ramp's target, or `null`), and (goal 12) `sound` (`{"bass","treble","loudness","night","speech"}`), `bass_management` (`{"crossover_hz","sub_level_db","sub_polarity","active"}`) and `room_eq` (`{"enabled","filters"}`), then `voice_enabled` and `mic_muted` (`true` or `false` each; before `source` and `now_playing` where a room has those) |
+| `zones[]` | v1's fields, then `transport` (`wired` or `wireless`, as declared), `limit`, `effective_limit`, `quiet` (`[{"days","start","end","limit","active"}]`; `active` says the clock is inside the window, whether or not the room's quiet hours are switched on), `quiet_enabled` (`true` or `false`: whether an active window caps the room; `true` unless `quiet_hours_enabled` switched it off), `bond` (`[{"endpoint","role"}]`, `[]` for none), `ramp` (a running ramp's target, or `null`), and (goal 12) `sound` (`{"bass","treble","loudness","night","speech"}`), `bass_management` (`{"crossover_hz","sub_level_db","sub_polarity","active"}`) and `room_eq` (`{"enabled","filters"}`), then `voice_enabled` and `mic_muted` (`true` or `false` each), then, only in a room that chose its wake words, `wake_words` (the ids it listens for, possibly none; "Voice: the wake word, the run and its audio"); all before `source` and `now_playing` where a room has those |
 | `zones[].source`, `zones[].now_playing` | (goal 16) **written only while the room's group has a now-playing record**, last in the room's object, in that order: the group's `source` (a `player:<id>`) and the record, below |
 | `groups[]` | every formed group, in the order its first room was configured: `id`, `kind`, `zones`, `volume` (the group volume), `source`, `audio` |
 | `groups[].now_playing` | (goal 16) **written only while the group has a now-playing record**, after `audio`: `title`, `artist`, `album`, `art_url` (each a string, or `null` where not known), `duration_ms` (a whole number, or `null` for a live stream or an unknown length), `state` (`playing`, `paused` or `buffering`), `via` (an identifier: `upnp` for a UPnP AV control point). Never persisted |
@@ -1793,7 +1822,7 @@ No firmware image travels over this channel (goal 14): a request is at most
 16 KiB and an image is megabytes. Images are staged as files in
 `--firmware-dir`, and the bytes go to a speaker inside its own audio session.
 
-## What survives a restart (state-file format 8)
+## What survives a restart (state-file format 9)
 
 The server persists, in `--state-file`, everything a person configured: each
 room's name, group, volume, mute, endpoints, `limit`, quiet-hours windows,
@@ -1808,7 +1837,9 @@ speaker's `name`, `named` and `room`, in a `[speaker <id>]` section; and
 on (`quiet_enabled`, 0 or 1, in its `[zone]` section, required in a format 7
 file); and (format 8) whether each room's voice path is switched on
 (`voice_enabled`, 0 or 1, in its `[zone]` section, required in a format 8
-file). It does
+file); and (format 9) which wake words each room listens for (`wake_words`
+in its `[zone]` section, `*` for every one the server runs or the ids it
+chose, comma-separated, required in a format 9 file). It does
 not persist what is a fact about now: which endpoints are present, which quiet
 window is active, which alarm is ringing, a running ramp, what a group is
 playing (its source and, goal 16, its now-playing record), a sleep timer,
@@ -1826,7 +1857,8 @@ every id it has pinned when it starts), and a format 5 file (goal 14 to 16's
 builds) with no stored source and no input label, and a format 6 file (goal
 17's builds and later, before `quiet_hours_enabled`) with every room's quiet
 hours enabled, which is what its windows meant then, and a format 7 file
-(before `voice_enabled`) with every room's voice path off, the default; the
-next write is format 8. A write goes to a temporary that is `fsync`ed, renamed over the file, and the
+(before `voice_enabled`) with every room's voice path off, the default, and a
+format 8 file (before `voice_wake_words`) with every room listening for every
+wake word; the next write is format 9. A write goes to a temporary that is `fsync`ed, renamed over the file, and the
 directory is `fsync`ed, and a render that would not read back as the same state
 is never installed (`crates/control/src/persist.rs`).

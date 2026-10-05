@@ -1243,7 +1243,27 @@ impl ControlState {
     /// Returns when the next open run reaches its limit.
     pub fn voice_pass(&self, now: Instant) -> Option<Instant> {
         let voice = self.voice.get()?;
-        let pass = voice.pass(now);
+        // (voice) What the rooms that chose their wake words do not listen
+        // for, read before the pass so that it takes no lock of this state
+        // while it holds its own. Empty in a house where no room chose.
+        let deaf: Vec<(String, String)> = {
+            let held = self.locked();
+            let words = held.zones.wake_words();
+            held.zones
+                .zones()
+                .iter()
+                .filter(|z| z.wake_words.is_some())
+                .flat_map(|z| {
+                    words
+                        .iter()
+                        .filter(|w| !held.zones.listens_for(&z.id, &w.phrase))
+                        .map(|w| (z.id.clone(), w.phrase.clone()))
+                })
+                .collect()
+        };
+        let pass = voice.pass_where(now, |room, phrase| {
+            !deaf.iter().any(|(r, p)| r == room && p == phrase)
+        });
         for line in &pass.lines {
             println!("chorus-server: {}", line);
         }
