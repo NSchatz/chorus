@@ -175,9 +175,11 @@ What step 6 plays when the stream and the room's set do not match: a stereo TV i
 over it, and the music ramps back. It is not a stage of the chain above and has no C mirror: it
 runs on the server, on a room's stream before it is encoded, so every endpoint of the room plays
 one mixed stream in sync and the endpoint's chain (and its limiter) is unchanged
-(`docs/decisions/` "the announcement mixer"). The library is the core only; nothing calls it yet
-(the server's wiring and the `announce` command's use of it are later tasks, and a room whose
-source is a Soloist instance is paused for an announcement, never mixed: `docs/soloist.md`).
+(`docs/decisions/` "the announcement mixer"). The library is the core only. The server calls it
+from its audio thread, once a tick for each announcement that is playing
+(`crates/server/src/mixer.rs`, `docs/control-plane.md` "Announcements", and the record
+"an announcement is mixed over its rooms" in `docs/decisions/`); a room whose source is a Soloist
+instance is paused for an announcement, never mixed: `docs/soloist.md`.
 
 Pure, as the rest: it reads no clock. Every length is a count of frames and only a frame passing
 through `Duck::process` moves its state, so an event lands on a frame by ending the block there.
