@@ -5,7 +5,10 @@ The chorus app: Lit 3 elements bundled by esbuild (proposal P5, Option C; the de
 and the rooms screen: `chorus-app` holds the server's state, live, and shows every room with
 its bonded set, its volume and its mute (`docs/decisions/0185-the-apps-state-layer-and-its-live-test.md`),
 and above them every saved and live group, with a drag and a list to move a room between them
-and the server's group volume (`docs/decisions/0187-groups-in-the-app.md`).
+and the server's group volume (`docs/decisions/0187-groups-in-the-app.md`). A room alone and
+every formed group also say what they play and what is playing (title, artist, album, artwork
+and whether it is playing, paused or buffering), with one button for each input the server
+offers (`docs/decisions/0000-inputs-and-now-playing-in-the-app.md`).
 
 | Path | What |
 |---|---|
@@ -13,9 +16,10 @@ and the server's group volume (`docs/decisions/0187-groups-in-the-app.md`).
 | `src/api.js`, `src/state.js` | the server as the app uses it (`api/state`, `api/events`, `POST api/command`) and the store that holds its last state message: the snapshot, then every event-stream update |
 | `src/rooms.js`, `src/room-card.js` | the rooms screen and one room's card |
 | `src/groups.js`, `src/group-card.js` | the groups region (every saved group, then every live one) and one group's card, with the group volume |
+| `src/playing.js` | what a room alone or a group plays: the now-playing record with its artwork (an image on the server's own `api/artwork` route), the source in words, and the picker of the offered inputs |
 | `src/grouping.js`, `src/drag.js` | a move (a room and a destination) as its one command, and the drag gesture on Pointer Events that makes one |
 | `test/` | the unit tests (`*.test.js`), `setup.js` (happy-dom's globals, loaded before Lit), `label-query.js` (find an element by its label, through shadow roots) and `fake-server.js` (a scripted server: the three routes, answered as the test says) |
-| `live/` | the live tests (`rooms.live.js`, `groups.live.js`): the same elements and store, in node with no browser, against a real `chorus-server`; `house.js` starts that server and `setup.js` gives the tests happy-dom's document and node's own network |
+| `live/` | the live tests (`rooms.live.js`, `groups.live.js`, `playing.live.js`): the same elements and store, in node with no browser, against a real `chorus-server`; `house.js` starts that server and `setup.js` gives the tests happy-dom's document and node's own network. `endpoint.js` is a scripted endpoint session that offers a line-in, and `control-point.js` a UPnP control point with the media and the cover it plays: what `playing.live.js` gives the server from outside |
 | `smoke/` | the one browser test (`app.spec.js`) and the fake login it signs in through (`fake-login.js`); `playwright.config.js` configures it |
 | `build.mjs` | the build: `src/` into `dist/`, deterministic |
 | `dist/` | the build's output, committed: `chorus-server` embeds it and never runs node |
@@ -38,7 +42,12 @@ appears in the card with no reload. `groups.live.js` does the same for grouping,
 rooms and a saved group: a room dragged onto another forms a live group, the group slider
 moves every room and keeps their ratio, a room taken out dissolves the group and forming the
 saved group fills it, each read back from `/api/state` and compared with the levels the page
-shows. It ends `web-live: PASS`; without `CHORUS_SERVER_BIN` it
+shows. `playing.live.js` does it for inputs and what is playing, on a server with one network
+player and its renderers: an endpoint session offers a line-in and the picker lists it, by the
+label a client then gives it; choosing it through the picker changes the group's `source` in
+`/api/state`; and a track a control point plays on a room's renderer shows its title and
+artist in that room's card, with an artwork image whose address the server answers `200` with
+the cover. It ends `web-live: PASS`; without `CHORUS_SERVER_BIN` it
 ends `web-live: SKIPPED`, which under `CI=true` and in the gate is a failure. **A later screen
 proves itself the same way**: a file `live/<screen>.live.js` that starts the server its screen
 needs, drives the screen's controls by their labels and compares with `/api/state`.
