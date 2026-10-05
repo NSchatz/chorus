@@ -11,7 +11,10 @@ and whether it is playing, paused or buffering), with one button for each input 
 offers (`docs/decisions/0189-inputs-and-now-playing-in-the-app.md`). It installs behind the
 household login: a manifest fetched with credentials, a hand-written service worker that
 never answers or keeps the API, and the words "Signed out" with a link to sign in when the
-login has lapsed (`docs/decisions/0190-the-app-installs-behind-the-login.md`).
+login has lapsed (`docs/decisions/0190-the-app-installs-behind-the-login.md`). It lays itself
+out for a phone, for a desktop and as a wall tablet's kiosk
+(`docs/decisions/0191-phone-and-desktop-layouts-and-the-kiosk.md`; "Layouts and the kiosk"
+below).
 
 | Path | What |
 |---|---|
@@ -22,6 +25,7 @@ login has lapsed (`docs/decisions/0190-the-app-installs-behind-the-login.md`).
 | `src/rooms.js`, `src/room-card.js` | the rooms screen and one room's card |
 | `src/groups.js`, `src/group-card.js` | the groups region (every saved group, then every live one) and one group's card, with the group volume |
 | `src/playing.js` | what a room alone or a group plays: the now-playing record with its artwork (an image on the server's own `api/artwork` route), the source in words, and the picker of the offered inputs |
+| `src/layout.js`, `src/mode.js`, `src/wake-lock.js` | the two layouts and the one breakpoint between them; the kiosk's switch (`?kiosk`) and its memory; the screen wake lock a kiosk holds |
 | `src/grouping.js`, `src/drag.js` | a move (a room and a destination) as its one command, and the drag gesture on Pointer Events that makes one |
 | `test/` | the unit tests (`*.test.js`), `setup.js` (happy-dom's globals, loaded before Lit), `label-query.js` (find an element by its label, through shadow roots) and `fake-server.js` (a scripted server: the three routes, answered as the test says) |
 | `live/` | the live tests (`rooms.live.js`, `groups.live.js`, `playing.live.js`): the same elements and store, in node with no browser, against a real `chorus-server`; `house.js` starts that server and `setup.js` gives the tests happy-dom's document and node's own network. `endpoint.js` is a scripted endpoint session that offers a line-in, and `control-point.js` a UPnP control point with the media and the cover it plays: what `playing.live.js` gives the server from outside |
@@ -67,7 +71,10 @@ through it, the caches hold the files of `dist/` and no entry under `/api/`; and
 login expired the page says "Signed out", its link leads to the login page, and no cache holds
 that page. Without `CHORUS_SERVER_BIN` it ends `web-smoke: SKIPPED`; under `CI=true` and in
 the gate that is a failure. It is the only test that starts a browser: a later change that
-needs one adds to `smoke/app.spec.js`.
+needs one adds to `smoke/app.spec.js`. The tests after the first in that file are the layouts
+and the kiosk, each named for what it holds: the phone layout at 390 pixels, the desktop
+layout at 1280, the breakpoint (767 pixels is one column, 768 is two, followed as the window
+is resized) and kiosk mode.
 
 The Chromium build is the one the pinned `@playwright/test` names. Install it once with
 `make web-smoke-install` (CI: `bash tools/web.sh smoke-install --with-deps`, which also
@@ -80,6 +87,30 @@ micromamba create -y -p /cache/opt/chromium-libs -c conda-forge nss nspr glib db
     at-spi2-atk at-spi2-core xorg-libxcomposite xorg-libxdamage xorg-libxrandr alsa-lib
 micromamba create -y -p /cache/opt/chromium-fonts -c conda-forge fontconfig fonts-conda-ecosystem
 ```
+
+## Layouts and the kiosk
+
+| | When | What is painted |
+|---|---|---|
+| phone | the viewport is narrower than 48em (768 CSS pixels at the default text size) | one column, the groups and then the rooms; the navigation ("Groups", "Rooms") in a bar fixed to the bottom edge, under the thumb |
+| desktop | the viewport is 48em wide or wider | two columns, the groups with what each plays beside the rooms; the navigation in the header |
+| kiosk | the app was opened with `?kiosk` | either layout, by its width, with no wordmark (and, wide, no header), every control at least 64 by 64 CSS pixels and larger text; the screen kept on |
+
+The breakpoint is `DESKTOP_MIN_EM` in `src/layout.js` and is written nowhere else: `chorus-app`
+reflects the layout as its `layout` attribute and the styles select on it, so no style holds
+a media query. There is no television layout (K86).
+
+Kiosk mode is for a tablet on a wall. Its switch is the address: open `/app/?kiosk` once and
+that browser is a kiosk from then on (the choice is kept in `localStorage`, so it survives a
+reload and the installed app's start address); `/app/?kiosk=0` leaves it. A touch target is at
+least 44 by 44 CSS pixels in the ordinary app (`--control-size` in `src/tokens.css`) and at
+least 64 by 64 in the kiosk (`--kiosk-control-size` in `src/app.css`). A kiosk asks the
+browser for a screen wake lock and asks again each time the page becomes visible, because a
+browser takes the lock back when the page is hidden. The Screen Wake Lock API exists only in
+a secure context (HTTPS, or the loopback address): without it, or refused, the kiosk works
+the same and the screen sleeps as the tablet is set. The browser's own chrome is not the
+page's to remove: install the app (it is `standalone`) or set the tablet's browser up as a
+kiosk.
 
 Rules, each held by a check (`docs/conventions.md`, rules 13 and 14):
 
@@ -97,6 +128,9 @@ Rules, each held by a check (`docs/conventions.md`, rules 13 and 14):
   function of `worker.js` with a unit test, not a line of `sw.js`.
 - Every request of `src/api.js` is made with `redirect: "manual"`: a redirect is the login's
   answer, and the page says "Signed out" instead of reading a login page as the server's.
+- A layout is an attribute `chorus-app` reflects (`layout`, `mode`), never a media query in an
+  element's styles: the breakpoint is a length, and it is written once, in `src/layout.js`.
+  What a browser paints in a layout is asserted in `smoke/app.spec.js`.
 - A test finds a control by its label (`getByLabel`), which also proves it has one.
 - The server owns the state. An element shows what the store's last state message says and
   keeps no value of its own; a command changes the page when the state that resulted comes
