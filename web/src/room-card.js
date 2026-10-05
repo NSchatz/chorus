@@ -89,8 +89,11 @@ export class ChorusRoomCard extends LitElement {
       margin: var(--reset-margin);
       font-size: var(--heading-size);
     }
+    /* The name, then the handle and the links to the room's screens: more of
+     * them than a phone's width holds beside the name, so they wrap. */
     .head {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       gap: var(--surface-gap);
     }

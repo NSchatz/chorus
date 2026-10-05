@@ -615,8 +615,16 @@ export function createStore(client) {
   // that resulted, the bytes every subscriber is sent, and is held when it is
   // newer than what the stream has delivered; a refusal changes nothing here
   // and is returned for the screen to show.
+  //
+  // Commands leave one at a time, in the order they were asked for: each is a
+  // request of its own, and two under way at once may reach the server in
+  // either order, so the earlier of two quick changes to one thing (a
+  // window's cap, then one of its days) could be the one that stands.
+  let sent = Promise.resolve();
   async function command(body) {
-    const result = await client.command(body);
+    const answer = sent.then(() => client.command(body));
+    sent = answer.catch(() => {});
+    const result = await answer;
     // A command that met the login says so at once; the event stream, still
     // open from before the login lapsed, may not have noticed yet.
     if (result.signedOut && status !== "signed-out") {
