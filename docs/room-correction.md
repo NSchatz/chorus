@@ -240,7 +240,7 @@ The recording half is built too: `POST /api/room-fit` and the catalog's `room_eq
 
 The measurement is built in the control app: a room's "Correction" screen
 (`web/src/room-correction.js`, `web/src/capture.js`; `docs/app.md`, "A room's correction";
-`docs/decisions/0000-the-room-is-recorded-with-an-audio-worklet.md`).
+`docs/decisions/0207-the-room-is-recorded-with-an-audio-worklet.md`).
 
 - **What the browser is asked for**: `{echoCancellation: false, noiseSuppression: false,
   autoGainControl: false, channelCount: 1}` (W3C Media Capture and Streams,

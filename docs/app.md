@@ -174,7 +174,7 @@ measures it.
 `measure_sweep`, `room_eq` and `room_eq_undo` and the route `POST /api/room-fit`,
 `docs/control-plane.md`, "Room correction: the `measure_sweep` command" and "Room correction: a
 recording, its fit and the undo"; `docs/room-correction.md`, "The measurement in the app" and
-"Per-phone limits"; `docs/decisions/0000-the-room-is-recorded-with-an-audio-worklet.md`). Every
+"Per-phone limits"; `docs/decisions/0207-the-room-is-recorded-with-an-audio-worklet.md`). Every
 room's card has a "Correction" link. The screen measures the room with the microphone of the
 device it is open on, shows what the server's fitter proposes, and applies it only when told to.
 The measurement is a walk, each step a press:

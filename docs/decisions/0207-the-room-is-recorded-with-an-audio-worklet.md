@@ -1,4 +1,4 @@
-# 0000: the app records the measurement sweep as uncompressed samples through an AudioWorklet in a 48 kHz context, not with MediaRecorder; it asks the browser's processing off and shows what was granted, converts to the route's WAV in the page, and the screen measures with the room's correction off and puts it back
+# 0207: the app records the measurement sweep as uncompressed samples through an AudioWorklet in a 48 kHz context, not with MediaRecorder; it asks the browser's processing off and shows what was granted, converts to the route's WAV in the page, and the screen measures with the room's correction off and puts it back
 
 - Status: accepted, 2026-10-05
 - Decided by: the task for the scope (a room-correction flow in the app: guidance, capture with
