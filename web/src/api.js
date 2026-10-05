@@ -204,6 +204,30 @@ export function sourceForgetCommand(id) {
   return `{"v":2,"t":"source_forget","id":${JSON.stringify(id)}}`;
 }
 
+// Speakers (docs/control-plane.md, "Speakers: adoption, names and rooms"), in
+// the same canonical encoding; fixtures/control/v2 has the vector of each. A
+// speaker is named by the id its sessions authenticate as.
+//
+// `speaker_name`: the name a person gives an adopted speaker.
+export function speakerNameCommand(speaker, name) {
+  return `{"v":2,"t":"speaker_name","speaker":${JSON.stringify(speaker)},"name":${JSON.stringify(name)}}`;
+}
+
+// `speaker_room`: the speaker becomes a member of the room and leaves every
+// other; `null` takes it out of every room. The member is always written: the
+// server refuses a `room` left out, so that no room is said out loud.
+export function speakerRoomCommand(speaker, room) {
+  return `{"v":2,"t":"speaker_room","speaker":${JSON.stringify(speaker)},"room":${
+    typeof room === "string" && room ? JSON.stringify(room) : "null"
+  }}`;
+}
+
+// `speaker_forget`: the speaker's record, its place in any room and its
+// pinned key are removed; its next session is adopted afresh.
+export function speakerForgetCommand(speaker) {
+  return `{"v":2,"t":"speaker_forget","speaker":${JSON.stringify(speaker)}}`;
+}
+
 // Where a group's now-playing artwork is, for an <img>: the server's own
 // route (docs/control-plane.md, "Now-playing artwork"), which names the group
 // and nothing else. The record's own artwork address is somebody else's, and

@@ -26,8 +26,8 @@
 // link is in the screen's region and not the header, which a wide kiosk does
 // not show. The navigation's two buttons leave a further screen for the
 // region they name. A room's screens are linked from the room's card; a
-// screen of the whole house (autoplay.js, alarms.js) is linked from the home,
-// under the rooms.
+// screen of the whole house (autoplay.js, alarms.js, speakers.js) is linked
+// from the home, under the rooms.
 //
 // It lays itself out twice over (the ADR of the layouts and the kiosk):
 //   layout   "phone" or "desktop", from the viewport's width (layout.js). A
@@ -55,6 +55,7 @@ import { MODES } from "./mode.js";
 import "./rooms.js";
 import { HOME, HOME_ADDRESS, addressOf, createNavigation, screenOf } from "./routes.js";
 import "./sound.js";
+import { SPEAKERS_SCREEN } from "./speakers.js";
 
 export class ChorusApp extends LitElement {
   static properties = {
@@ -493,6 +494,7 @@ export class ChorusApp extends LitElement {
         ></chorus-rooms>
         <a class="more" href=${addressOf(AUTOPLAY_SCREEN)} data-route aria-label="Autoplay rules">Autoplay</a>
         <a class="more" href=${addressOf(ALARMS_SCREEN)} data-route aria-label="Alarms and sleep timers">Alarms</a>
+        <a class="more" href=${addressOf(SPEAKERS_SCREEN)} data-route aria-label="Speakers and their setup">Speakers</a>
         <slot></slot>
       </main>
     `;

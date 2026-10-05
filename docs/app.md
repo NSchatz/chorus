@@ -60,9 +60,11 @@ in the main region, across both columns on a desktop, under a "Back" link:
 | `/app/#/rooms/<room id>/limits` | the volume limit and the quiet hours of that room |
 | `/app/#/autoplay` | the house's autoplay rules, one for each input |
 | `/app/#/alarms` | the house's alarms, its stored sources and its sleep timers |
+| `/app/#/speakers` | the adopted speakers: names, rooms, presence, and any refused changed key |
+| `/app/#/speakers/setup` | the walk-through for a compact Wi-Fi speaker |
 
-- Opening a screen from the app (the "Sound" or "Limits" link on a room's card, "Autoplay" or
-  "Alarms" under the rooms) is a new entry of the
+- Opening a screen from the app (the "Sound" or "Limits" link on a room's card, "Autoplay",
+  "Alarms" or "Speakers" under the rooms, "Set up a Wi-Fi speaker" on the speakers screen) is a new entry of the
   browser's history, so the browser's back button, a phone's back gesture and the forward
   button work as on any site, and an address can be bookmarked, reloaded or sent to another
   person of the household.
@@ -181,6 +183,82 @@ value as the truth; the entry leaves the screen when it leaves the state, not wh
 own count reaches zero. On a server that does not count (no `remaining_s`) it shows the minutes
 asked for. There is no snooze: the catalog has no command for one.
 
+**Speakers** (`web/src/speakers.js`; the catalog's `speaker_name`, `speaker_room` and
+`speaker_forget` and the state's `speakers` and `key_changes`, `docs/control-plane.md`,
+"Speakers: adoption, names and rooms"; `docs/decisions/0106-speakers-adopted-named-and-assigned-rooms.md`).
+Adoption is the server's and is automatic (trust on first use, R11): a speaker's first session
+pins its key and lists it, unnamed and in no room. The app adopts nothing; this screen is where
+that speaker surfaces. It lists every speaker of the state, in the server's order, each with its
+name, its id, whether a session of it is up ("Connected" or "Not connected"), its link ("Wired",
+"Wi-Fi", or "Not reported" for an endpoint with no control client), the software its latest
+`hello` named and the fingerprint of its pinned key. A speaker with `named: false` and
+`room: null` is marked "New: adopted, not named and in no room yet", and stops being new when
+it has either.
+
+| Control | What it is | What it sends |
+|---|---|---|
+| Name, "Save name" | a text field holding the server's name, and a button (Enter in the field does the same). The field is the one thing on the screen that holds what a person types, until the server has it | `speaker_name` with the name as typed, less the spaces around it. An empty name, and the name a person already gave, send nothing; the name the server made for an unnamed speaker can be saved as it stands |
+| Room | a list of "No room" and the rooms, on the speaker's assigned room (a room the server no longer has is still named) | `speaker_room` with the room, or with `"room":null` for "No room" |
+| Forget | a button that asks first ("Yes, forget it", "Keep it"), saying what goes: the name, the room and the pinned key | `speaker_forget`, on the second press only |
+
+Each sends one command, in the bytes of its vector in `fixtures/control/v2`, and the screen
+changes when the state that resulted comes back. A refusal is shown on the speaker it was for,
+in the server's words: moving or forgetting a speaker that plays in a room's bonded set says
+"speaker '<id>' plays in room '<room>''s bonded set; unbond room '<room>' first".
+
+**A changed key is shown as the refusal it is.** For each entry of `key_changes` the screen
+says, above the speakers, that a session under that id offered a key other than the one the id
+is pinned to, that the server refused it and that the pin did not move, with both fingerprints
+("Pinned key", "Offered key, refused"). The entry has no control: nothing in the app accepts the
+offered key, and the catalog has no command that would. What it says instead is the owner's one
+way past, which is the server's: forgetting the speaker (the "Forget" button on its own row,
+which asks first), after which the next session under that id is adopted as a new speaker. An
+entry for an id that is not among the listed speakers says that nothing on the screen can forget
+it. A speaker's firmware (the state's `firmware`) is not on this screen.
+
+**The walk-through for a compact Wi-Fi speaker** (`web/src/speaker-setup.js`;
+`docs/decisions/0103-wifi-provisioning-over-softap.md`, decisions 2 to 4, which names this
+screen as where it lives). It is guidance and a watch on the state, and nothing else: the
+server has no route for provisioning, and the app cannot drive the speaker's join page (a
+secure page cannot portably fetch a plain-HTTP device, which is why the speaker serves the page). Its four
+steps are the decision's:
+
+1. Switch the speaker on. With no network it raises its own access point, `chorus-setup-<6
+   characters>`; its 12-character setup secret is the access point's password, and the speaker
+   prints it and the address of its join page on its serial console.
+2. Join that access point from the phone's Wi-Fi settings, with the setup secret.
+3. Open the address the speaker printed in the phone's browser: the speaker's own page ("chorus
+   speaker setup", `GET /`), a form with two fields. The house network's name and passphrase are
+   typed there and posted to the speaker (`POST /join`); a failed join leaves the access point
+   up and the page says why (`auth-error`, `network-not-found`).
+4. Come back to the house's network.
+
+**The app never asks for the network's passphrase and never holds it**: the walk-through has no
+field of any kind and sends no request. What it keeps is the ids of the speakers that were
+adopted when it began, and it completes by itself, with nothing pressed, when the state lists a
+speaker that is not one of them: adoption on the audio network is the success signal (K92). It
+then names the speaker and links to the speakers screen, where the speaker is new.
+
+The phone leaves the house's network to reach the speaker, so the app loses the server while
+the walk-through is open. That is the store's ordinary "lost" status (or "signed-out", when the
+login lapsed meanwhile): the steps stay, the screen says the server cannot be reached and that
+this is expected, and the event stream's own retry brings the state back with no reload. A
+phone may also discard the page while its owner is in the Wi-Fi settings, so the ids it began
+with are kept in the tab's session storage and a page loaded again goes on from them; leaving
+the screen ends the walk-through and removes them. Session storage holds those ids and nothing
+else.
+
+**The walk-through has never run against a real speaker.** What is tested is the app's half:
+the steps' words against decision 0103, and completion on an arrival in the state, which
+`web/live/speakers.live.js` produces with a scripted endpoint session adopted by a real
+`chorus-server`. No access point, join page or radio has been part of any test, and the
+firmware's own binding has not run on hardware either (decision 0103, "NOT host-tested"). The
+first run on a speaker is the owner's bench step, `docs/bench-packet.md` S9. Two things in the
+steps are therefore taken from the records and not seen: that a phone's browser reaches the
+page at the printed address, and that the phone returns to the house's network on its own. The
+setup secret and the page's address are on the speaker's serial console only (decision 0103,
+follow-ups), so today the walk-through needs someone who can read that console.
+
 - **The server owns the state** (`docs/decisions/0185-the-apps-state-layer-and-its-live-test.md`).
   The app reads `GET /api/state`, follows `GET /api/events` and sends `POST /api/command`. An
   element shows what the last state message says and keeps no value of its own: a control changes
@@ -201,7 +279,7 @@ asked for. There is no snooze: the catalog has no command for one.
   `img-src 'self'` stands. A record with no artwork, or one whose image does not load, shows a
   placeholder.
 
-Not built yet, and later tasks: bass management and the TV upmix; room correction with the phone's microphone; adoption, naming and firmware approval.
+Not built yet, and later tasks: bass management and the TV upmix; room correction with the phone's microphone; firmware state and approval.
 
 ## Installing, and the service worker's cache rules
 
@@ -273,7 +351,7 @@ The one breakpoint is `DESKTOP_MIN_EM` in `web/src/layout.js` and is written now
 `chorus-app` reflects the layout as an attribute and the styles select on it, so no element holds
 a media query. A touch target is at least 44 by 44 CSS pixels outside the kiosk.
 
-A further screen (a room's sound, its limits, the autoplay rules, the alarms) is the same in all three: one column as wide as the page, with
+A further screen (a room's sound, its limits, the autoplay rules, the alarms, the speakers and the walk-through) is the same in all three: one column as wide as the page, with
 its "Back" link inside the screen's own region, because a wide kiosk paints no header. On a
 phone the navigation bar stays at the bottom edge and leads back to the groups or the rooms.
 
@@ -317,6 +395,12 @@ all three in `make gate`; here each is a narrow run of its own.
   for in `examples/` beside `CHORUS_SERVER_BIN`: `cargo build -p chorus-server --examples`
   builds them, and so does the gate's build of every target. No real Soloist, Spotify account
   or network is used.
+- `web/live/speakers.live.js` opens the speakers screen and, from it, the walk-through, then has
+  a scripted endpoint session (`web/live/endpoint.js`) connect under an id the server has never
+  seen. The open walk-through completes on that arrival; the speaker is then new on the speakers
+  screen, is named, put in a room, taken out and forgotten through the screen, and each step is
+  read back from `/api/state`. The server is started with an identity directory, where its pins
+  are kept. No speaker, access point or join page is part of it.
 - `make web-smoke-install` downloads, once, the Chromium build the pinned `@playwright/test`
   names; a run never downloads it. On a host with no root Chromium's libraries and fonts come
   from two prefixes, as `web/README.md` writes out.

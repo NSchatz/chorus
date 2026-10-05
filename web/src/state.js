@@ -208,6 +208,52 @@ export function receiversOf(state) {
     .map((receiver) => receiver.target);
 }
 
+// The adopted speakers (the state's `speakers`, written only when there is
+// one), in the server's order: { id, name, named, room, present, software,
+// link, key, roles }.
+//   name      the name a person gave it, or the one the server made for it
+//   named     whether a person has named it
+//   room      the room it is assigned to, or null
+//   present   whether a session of it is up now
+//   software  what its latest `hello` said it runs, or null before one
+//   link      what it reported its link as ("wired", "wireless", "unknown")
+//   key       the fingerprint of the key it is pinned to, or null
+//   roles     its latest `hello`'s roles, by name
+// `isNew` is a speaker nobody has dealt with yet: adopted, not named and in
+// no room.
+export function speakersOf(state) {
+  const speakers = state && Array.isArray(state.speakers) ? state.speakers : [];
+  return speakers
+    .filter((speaker) => speaker && typeof speaker === "object" && typeof speaker.id === "string" && speaker.id)
+    .map((speaker) => {
+      const named = speaker.named === true;
+      const room = textOrNull(speaker.room);
+      return {
+        id: speaker.id,
+        name: textOrNull(speaker.name) ?? speaker.id,
+        named,
+        room,
+        isNew: !named && room === null,
+        present: speaker.present === true,
+        software: textOrNull(speaker.software),
+        link: textOrNull(speaker.link) ?? "unknown",
+        key: textOrNull(speaker.key),
+        roles: (Array.isArray(speaker.roles) ? speaker.roles : []).filter((role) => typeof role === "string" && role),
+      };
+    });
+}
+
+// The handshakes refused for a changed key (the state's `key_changes`, the
+// latest per id, written only when there is one), in the server's order:
+// { id, pinned, offered }, the fingerprint of the key the id is pinned to,
+// which did not move, and of the key that was offered and refused.
+export function keyChangesOf(state) {
+  const changes = state && Array.isArray(state.key_changes) ? state.key_changes : [];
+  return changes
+    .filter((change) => change && typeof change === "object" && typeof change.id === "string" && change.id)
+    .map((change) => ({ id: change.id, pinned: textOrNull(change.pinned), offered: textOrNull(change.offered) }));
+}
+
 // The room with this id among the rooms the store holds, or null.
 export function roomOf(rooms, id) {
   return (Array.isArray(rooms) ? rooms : []).find((room) => room.id === id) ?? null;
