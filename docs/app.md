@@ -524,8 +524,8 @@ all three in `make gate`; here each is a narrow run of its own.
   received whole by the endpoint (`verified`, byte for byte the staged file) and confirmed by
   its next session. The endpoint is a script with no flash: the real update unit against the
   real server is `crates/server/tests/firmware_install.rs`, whose C endpoint the gate builds
-  after this step. Loopback only; it refuses to run with `CHORUS_OWNER_AT_BENCH` set and never
-  sets it.
+  after this step. Loopback only, where the server's guard does not apply; it never sets or
+  reads `CHORUS_OWNER_AT_BENCH` (the flash guard lets no JavaScript file name it).
 - `make web-smoke-install` downloads, once, the Chromium build the pinned `@playwright/test`
   names; a run never downloads it. On a host with no root Chromium's libraries and fonts come
   from two prefixes, as `web/README.md` writes out.
