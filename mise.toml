@@ -42,6 +42,14 @@
 #   uv installs the pinned Python and the hash-locked test harness of the Home Assistant
 #   integration (integrations/homeassistant/uv.lock; `make ha-test`, gate step `ha-integration`;
 #   docs/home-assistant.md says why it).
+#   node 24.21.0        MIT         https://nodejs.org/dist/index.json ("v24.21.0", date 2026-09-07, lts
+#     "Krypton"; read 2026-10-05); licence https://github.com/nodejs/node/blob/v24.21.0/LICENSE
+#   pnpm 12.8.1         MIT         https://registry.npmjs.org/pnpm (12.8.1 published 2026-09-28; read
+#     2026-10-05); https://github.com/pnpm/pnpm/releases/tag/v12.8.1
+#   node runs the web app's build script and its unit tests (`node --test`), and pnpm installs
+#   its locked packages with install scripts off (web/; `make web-build`, `make web-test`, gate
+#   steps `web-test` and `web-build`; docs/decisions/0000-the-web-app-stack.md says why them).
+#   Neither is part of the Rust build: chorus-server embeds the committed output of web/dist.
 # The GPL-3.0 tools run as unmodified binaries; their source is never read (brief section 0.9).
 
 [tools]
@@ -57,6 +65,8 @@
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.146"
 "aqua:prometheus/prometheus" = "3.13.3"
 "aqua:astral-sh/uv" = "0.12.22"
+"core:node" = "24.21.0"
+"aqua:pnpm/pnpm" = "12.8.1"
 
 [settings]
 lockfile = true

@@ -62,13 +62,25 @@ jobs:
           fetch-depth: 0
 
       # The gate's pinned tools from mise.toml, checked against mise.lock's
-      # digests (gitleaks, cargo-deny, the linters). mise-action v5.0.0,
+      # digests (gitleaks, cargo-deny, the linters, and the node and pnpm
+      # the web-test and web-build steps run web/ with). mise-action v5.0.0,
       # https://github.com/jdx/mise-action/releases/tag/v5.0.0 (read
       # 2026-09-30); mise itself pinned to the release this repository uses.
       - name: Pinned tools
         uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5  # v5.0.0
         with:
           version: 2026.7.5
+
+      # The web app's toolchain is the two pins the step above installed
+      # (mise.toml: core:node, aqua:pnpm/pnpm): the runner's own node must
+      # not be the one on PATH. tools/web.sh refuses any other version again
+      # when the gate runs it.
+      - name: Node and pnpm
+        run: |
+          pin() { sed -n "s|^\"$1\" = \"\(.*\)\"\$|\1|p" mise.toml; }
+          echo "node $(node --version), pnpm $(pnpm --version)"
+          test "$(node --version)" = "v$(pin core:node)"
+          test "$(pnpm --version)" = "$(pin aqua:pnpm/pnpm)"
 
       # rust-toolchain.toml names the exact toolchain; rustup installs it on
       # first use.

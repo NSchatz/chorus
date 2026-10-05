@@ -23,7 +23,8 @@
 #   make gate             # everything
 #   make gate-fast        # the conventions checks only, for docs-only changes
 #   make tier-fast        # the conventions checks, fmt, clippy, the Home Assistant
-#                         # integration's tests and the workspace tests: the fast
+#                         # integration's tests, the web app's tests and rebuild
+#                         # and the workspace tests: the fast
 #                         # tier run on every PR (the goals program's gate tiers, W15, W36);
 #                         # `make tier-full` is `make gate`, run at goal end and nightly on main
 #
@@ -50,7 +51,10 @@
 #   CHORUS_HA_CORE            where the ha-hassfest step keeps its checkout of Home Assistant
 #                             core at the pinned tag (default /cache/chorus-ha-core); cloned
 #                             once, then no network
-#   NEXTEST_TEST_THREADS      how many tests run at once (default: .config/nextest.toml)
+#   (the web-test and web-build steps install web/'s locked packages into web/node_modules
+#   with the pinned node and pnpm of mise.toml; the first run fetches them once, into pnpm's
+#   store; a missing tool fails the step, under CI too)
+#   NEXTEST_TEST_THREADS     how many tests run at once (default: .config/nextest.toml)
 #   CHORUS_FIRMWARE_JOBS      make's job count for the firmware host build (default 8)
 
 # Every step function is invoked by name through step(), which shellcheck
@@ -276,6 +280,36 @@ ha_summary() {
     sed -n -e "s/^$1: \\(PASS.*\\)/gate: $1 \\1/p" -e "s/^\\(FAIL: .*\\)/gate: $1 \\1/p" "$LOG/$1.log" | tee -a "$LOG/summary.txt"
 }
 
+# A web step (web-test, web-build) is green only when it ran, like a Home Assistant step: its
+# make target exits 0 and prints its own `<name>: PASS` line (tools/web.sh).
+web_step() {
+    local name="$1" out rc=0
+    out="$(mktemp "${TMPDIR:-/tmp}/chorus-gate-$name.XXXXXX")"
+    make --no-print-directory "$name" > "$out" 2>&1 || rc=$?
+    cat "$out"
+    if [ "$rc" -eq 0 ] && ! grep -q "^$name: PASS" "$out"; then
+        echo "FAIL: the $name step exited 0 without its '$name: PASS' line; it did not run whole"
+        rc=1
+    fi
+    rm -f "$out"
+    return "$rc"
+}
+# The app's output is committed (chorus-server embeds web/dist with no node in the Rust build),
+# so it must be what web/src builds: rebuild it, then fail on any difference from the index, a
+# changed file or one the build added or removed.
+web_build() {
+    local changed
+    web_step web-build || return 1
+    changed="$(git status --porcelain -- web/dist)"
+    if [ -n "$changed" ]; then
+        printf '%s\n' "$changed"
+        git --no-pager diff --stat -- web/dist
+        echo "FAIL: web/dist is not what web/src builds; run \`make web-build\` and commit web/dist with the change"
+        return 1
+    fi
+    echo "web-build: web/dist is byte for byte what web/src builds"
+}
+
 echo "gate: $MODE, $(git rev-parse --short HEAD 2>/dev/null), $(cargo --version), IDF_PY_BUILD_JOBS=${IDF_PY_BUILD_JOBS:-2}" | tee -a "$LOG/summary.txt"
 
 conventions
@@ -286,19 +320,23 @@ if [ "$MODE" = tier-fast ]; then
     # separate build step is left to the full tier.
     step fmt              cargo fmt --all --check
     step clippy           cargo clippy --workspace --all-targets --locked -- -D warnings
-    stop_if_cheap_steps_failed ha-test test
+    stop_if_cheap_steps_failed ha-test web-test web-build test
     # The Home Assistant integration's own lint, types and tests (goal 18): under a minute,
     # so before the workspace tests. (The conventions check of the same rule,
     # check-ha-integration.sh, ran above as step ha-integration.)
     step ha-test          ha_step ha-test
     ha_summary ha-test
+    # The web app (web/): its unit tests under node with no browser, then its committed
+    # output rebuilt and held to the index. Seconds each.
+    step web-test         web_step web-test
+    step web-build        web_build
     step test             workspace_tests
 fi
 
 if [ "$MODE" = full ]; then
     step fmt              cargo fmt --all --check
     step clippy           cargo clippy --workspace --all-targets --locked -- -D warnings
-    stop_if_cheap_steps_failed ha-test ha-hassfest build ha-live test determinism firmware-check verify alsa-null \
+    stop_if_cheap_steps_failed ha-test ha-hassfest web-test web-build build ha-live test determinism firmware-check verify alsa-null \
         firmware-esp32s3-wired firmware-esp32s3-wifi firmware-esp32s3-qemu firmware-profiles \
         qemu-boot ota-qemu image soloist-image soloist-lists endpoint-packages
     # The Home Assistant integration (goal 18): its lint, types and tests under the pinned
@@ -308,6 +346,10 @@ if [ "$MODE" = full ]; then
     ha_summary ha-test
     step ha-hassfest      ha_step ha-hassfest
     ha_summary ha-hassfest
+    # The web app (web/): its unit tests under node with no browser, then its committed
+    # output rebuilt and held to the index. Seconds each, so before the builds.
+    step web-test         web_step web-test
+    step web-build        web_build
     step build            cargo build --workspace --all-targets --locked
     # The integration against the chorus-server the build step just made, on loopback: join,
     # unjoin, volume, group volume, sources and an announcement through Home Assistant's
