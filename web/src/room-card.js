@@ -89,8 +89,9 @@ export class ChorusRoomCard extends LitElement {
       margin: var(--reset-margin);
       font-size: var(--heading-size);
     }
-    /* The name, then the handle and the links to the room's screens: more of
-     * them than a phone's width holds beside the name, so they wrap. */
+    /* The name and the room's controls. In a narrow card (a phone, a kiosk's
+     * sizes) the controls that do not fit beside the name take a further
+     * line: the card is never wider than its column. */
     .head {
       display: flex;
       flex-wrap: wrap;
