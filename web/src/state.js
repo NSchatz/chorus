@@ -136,6 +136,78 @@ export function autoplayOf(state) {
     }));
 }
 
+// The house's alarms (the state's `alarms`), in the server's order: { id,
+// target, time, days, source, volume, rampS, durationMin, enabled, ringing }.
+// `volume` is in thousandths; `days` empty is an alarm that rings once.
+export function alarmsOf(state) {
+  const alarms = state && Array.isArray(state.alarms) ? state.alarms : [];
+  const count = (value) => (Number.isInteger(value) && value >= 0 ? value : 0);
+  return alarms
+    .filter((alarm) => alarm && typeof alarm.alarm === "string" && alarm.alarm && typeof alarm.target === "string")
+    .map((alarm) => ({
+      id: alarm.alarm,
+      target: alarm.target,
+      time: typeof alarm.time === "string" ? alarm.time : "",
+      days: (Array.isArray(alarm.days) ? alarm.days : []).filter((day) => typeof day === "string"),
+      source: typeof alarm.source === "string" ? alarm.source : "",
+      volume: thousandths(alarm.volume) ?? 0,
+      rampS: count(alarm.ramp_s),
+      durationMin: count(alarm.duration_min),
+      enabled: alarm.enabled === true,
+      ringing: alarm.ringing === true,
+    }));
+}
+
+// The sleep timers asked for (the state's `sleep`), in the server's order:
+// { target, minutes, remainingS }. `minutes` is what was asked for;
+// `remainingS` is the whole seconds left as the server last counted them, or
+// null on a server that does not say (ADR 0194).
+export function sleepOf(state) {
+  const timers = state && Array.isArray(state.sleep) ? state.sleep : [];
+  return timers
+    .filter((timer) => timer && typeof timer.target === "string" && timer.target)
+    .map((timer) => ({
+      target: timer.target,
+      minutes: Number.isInteger(timer.minutes) ? timer.minutes : null,
+      remainingS: Number.isInteger(timer.remaining_s) && timer.remaining_s >= 0 ? timer.remaining_s : null,
+    }));
+}
+
+// The stored sources (the state's `stored_sources`), in the server's order:
+// { id, kind, value, name }, `kind` "url" or "spotify". An alarm names one as
+// `stored:<id>`.
+export function storedSourcesOf(state) {
+  const stored = state && Array.isArray(state.stored_sources) ? state.stored_sources : [];
+  return stored
+    .filter((source) => source && typeof source.id === "string" && source.id && typeof source.kind === "string")
+    .map((source) => ({
+      id: source.id,
+      kind: source.kind,
+      value: typeof source.value === "string" ? source.value : "",
+      name: typeof source.name === "string" && source.name ? source.name : source.id,
+    }));
+}
+
+// The built-in chimes (the state's `chimes`, ADR 0194), in the server's
+// order, or null on a server that does not say which it has. The app has no
+// list of its own.
+export function chimesOf(state) {
+  if (!state || !Array.isArray(state.chimes)) return null;
+  return state.chimes.filter((name) => typeof name === "string" && name);
+}
+
+// The Spotify receivers (the state's `soloist`, written only by a server
+// started with receivers): the targets whose receiver is running, as the
+// server spells them (`room:<id>`, `group:<id>`), or null on a server that
+// runs none.
+export function receiversOf(state) {
+  const soloist = state && state.soloist && typeof state.soloist === "object" ? state.soloist : null;
+  if (!soloist) return null;
+  return (Array.isArray(soloist.receivers) ? soloist.receivers : [])
+    .filter((receiver) => receiver && receiver.state === "running" && typeof receiver.target === "string" && receiver.target)
+    .map((receiver) => receiver.target);
+}
+
 // The room with this id among the rooms the store holds, or null.
 export function roomOf(rooms, id) {
   return (Array.isArray(rooms) ? rooms : []).find((room) => room.id === id) ?? null;

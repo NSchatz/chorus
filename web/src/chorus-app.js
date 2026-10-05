@@ -26,8 +26,8 @@
 // link is in the screen's region and not the header, which a wide kiosk does
 // not show. The navigation's two buttons leave a further screen for the
 // region they name. A room's screens are linked from the room's card; a
-// screen of the whole house (autoplay.js) is linked from the home, under the
-// rooms.
+// screen of the whole house (autoplay.js, alarms.js) is linked from the home,
+// under the rooms.
 //
 // It lays itself out twice over (the ADR of the layouts and the kiosk):
 //   layout   "phone" or "desktop", from the viewport's width (layout.js). A
@@ -45,6 +45,7 @@
 import { LitElement, css, html, nothing } from "lit";
 
 import { createDrag } from "./drag.js";
+import { ALARMS_SCREEN } from "./alarms.js";
 import { groupOfRoom, moveCommand } from "./grouping.js";
 import { AUTOPLAY_SCREEN } from "./autoplay.js";
 import "./groups.js";
@@ -203,6 +204,9 @@ export class ChorusApp extends LitElement {
     /* The home's links to the house-wide screens, under the rooms. */
     a.more {
       margin-top: var(--surface-gap);
+    }
+    a.more + a.more {
+      margin-left: var(--surface-gap);
     }
     p {
       margin: var(--reset-margin);
@@ -488,6 +492,7 @@ export class ChorusApp extends LitElement {
           .over=${this._over}
         ></chorus-rooms>
         <a class="more" href=${addressOf(AUTOPLAY_SCREEN)} data-route aria-label="Autoplay rules">Autoplay</a>
+        <a class="more" href=${addressOf(ALARMS_SCREEN)} data-route aria-label="Alarms and sleep timers">Alarms</a>
         <slot></slot>
       </main>
     `;

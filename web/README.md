@@ -16,7 +16,8 @@ out for a phone, for a desktop and as a wall tablet's kiosk
 (`docs/decisions/0191-phone-and-desktop-layouts-and-the-kiosk.md`; "Layouts and the kiosk"
 below). Beyond the groups and the rooms it has further screens, each at an address of its own
 in the fragment: a room's sound (bass, treble, loudness, night mode and speech enhancement), a
-room's volume limit and quiet hours, and the house's autoplay rules
+room's volume limit and quiet hours, the house's autoplay rules, and its alarms, stored sources
+and sleep timers
 (`docs/decisions/0197-further-screens-have-an-address-in-the-fragment.md`; "Further screens"
 below).
 
@@ -33,10 +34,11 @@ below).
 | `src/sound.js` | a room's sound screen, registered at `#/rooms/<room>/sound`: one control for each field of the `sound` command |
 | `src/limits.js` | a room's volume limit and quiet hours, registered at `#/rooms/<room>/limits`: the limit, the on/off switch, and the windows (days, start, end, limit) with the server's `effective_limit` and which window is active |
 | `src/autoplay.js` | the house's autoplay rules, registered at `#/autoplay`: a switch and a target picker (rooms and saved groups) for each input |
+| `src/alarms.js` | the house's alarms, stored sources and sleep timers, registered at `#/alarms`: an alarm's source picker offers the four kinds from the state (chimes, inputs, stored stream URLs, stored Spotify URIs) |
 | `src/layout.js`, `src/mode.js`, `src/wake-lock.js` | the two layouts and the one breakpoint between them; the kiosk's switch (`?kiosk`) and its memory; the screen wake lock a kiosk holds |
 | `src/grouping.js`, `src/drag.js` | a move (a room and a destination) as its one command, and the drag gesture on Pointer Events that makes one |
 | `test/` | the unit tests (`*.test.js`), `setup.js` (happy-dom's globals, loaded before Lit), `label-query.js` (find an element by its label, through shadow roots) and `fake-server.js` (a scripted server: the three routes, answered as the test says) |
-| `live/` | the live tests (`rooms.live.js`, `groups.live.js`, `playing.live.js`, `sound.live.js`, `limits.live.js`, `autoplay.live.js`): the same elements and store, in node with no browser, against a real `chorus-server`; `house.js` starts that server and `setup.js` gives the tests happy-dom's document and node's own network. `endpoint.js` is a scripted endpoint session that offers a line-in, and `control-point.js` a UPnP control point with the media and the cover it plays: what `playing.live.js` gives the server from outside (`autoplay.live.js` uses the endpoint too) |
+| `live/` | the live tests (`rooms.live.js`, `groups.live.js`, `playing.live.js`, `sound.live.js`, `limits.live.js`, `autoplay.live.js`, `alarms.live.js`): the same elements and store, in node with no browser, against a real `chorus-server`; `house.js` starts that server and `setup.js` gives the tests happy-dom's document and node's own network. `endpoint.js` is a scripted endpoint session that offers a line-in, and `control-point.js` a UPnP control point with the media and the cover it plays: what `playing.live.js` gives the server from outside (`autoplay.live.js` uses the endpoint too). `house.js` also starts what `alarms.live.js` needs for a stored source: a stream on loopback and the fake Soloist under the real receiver supervisor |
 | `smoke/` | the one browser test (`app.spec.js`) and the fake login it signs in through (`fake-login.js`); `playwright.config.js` configures it |
 | `build.mjs` | the build: `src/` into `dist/`, deterministic |
 | `dist/` | the build's output, committed: `chorus-server` embeds it and never runs node |
@@ -75,7 +77,11 @@ volume down, a window added through the screen that covers the held time is `act
 room's card) is shown as the server clamps it, and editing, switching off and removing the
 windows are each read back. `autoplay.live.js` has an endpoint session offer a line-in, makes
 that input's rule through the screen (a room, the switch, a saved group) and reads each step
-back from the `autoplay` of `/api/state`. It ends `web-live: PASS`; without `CHORUS_SERVER_BIN` it
+back from the `autoplay` of `/api/state`. `alarms.live.js` runs the server's schedule ten times
+faster from three schedule minutes before 07:00, sets an alarm of each of the four source kinds
+through the screen and holds each to ringing as its own kind, stops them through the screen, and
+lets a sleep timer end by itself (`docs/app.md`, "Running the tests", says what it starts and
+which two test programs it needs beside the server). It ends `web-live: PASS`; without `CHORUS_SERVER_BIN` it
 ends `web-live: SKIPPED`, which under `CI=true` and in the gate is a failure. **A later screen
 proves itself the same way**: a file `live/<screen>.live.js` that starts the server its screen
 needs, drives the screen's controls by their labels and compares with `/api/state`.
@@ -118,6 +124,7 @@ layout and in the kiosk:
 | `#/rooms/<room>/sound` | a room's sound | `src/sound.js` |
 | `#/rooms/<room>/limits` | a room's volume limit and quiet hours | `src/limits.js` |
 | `#/autoplay` | the house's autoplay rules | `src/autoplay.js` |
+| `#/alarms` | the house's alarms, stored sources and sleep timers | `src/alarms.js` |
 
 A later screen is one module and one link:
 
