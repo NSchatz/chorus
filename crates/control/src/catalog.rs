@@ -299,6 +299,21 @@ pub enum Command {
         /// Whether the room's microphones may send audio to the voice path.
         enabled: bool,
     },
+    /// (v2) Open a voice run in a room: for the run's length the room's
+    /// microphone audio is served on the run-scoped route, to the holder of
+    /// the identifier the server answers with (a `voice_run` message, never
+    /// a state). Made after a `voice_wake` event, or without one (start
+    /// conversation). Changes nothing in the room model.
+    VoiceStart {
+        /// The room.
+        zone: String,
+    },
+    /// (v2) End the room's voice run, if it has one. Changes nothing in the
+    /// room model, and is not an error in a room with no run.
+    VoiceStop {
+        /// The room.
+        zone: String,
+    },
     /// (v2) Create or replace an alarm.
     AlarmSet(Alarm),
     /// (v2) Forget an alarm.
@@ -476,6 +491,8 @@ impl Command {
             Command::QuietHours { .. } => "quiet_hours",
             Command::QuietHoursEnabled { .. } => "quiet_hours_enabled",
             Command::VoiceEnabled { .. } => "voice_enabled",
+            Command::VoiceStart { .. } => "voice_start",
+            Command::VoiceStop { .. } => "voice_stop",
             Command::AlarmSet(_) => "alarm_set",
             Command::AlarmDelete { .. } => "alarm_delete",
             Command::AlarmStop { .. } => "alarm_stop",
@@ -536,6 +553,8 @@ impl Command {
             | Command::QuietHours { zone, .. }
             | Command::QuietHoursEnabled { zone, .. }
             | Command::VoiceEnabled { zone, .. }
+            | Command::VoiceStart { zone }
+            | Command::VoiceStop { zone }
             | Command::Sound { zone, .. }
             | Command::BassManagement { zone, .. }
             | Command::RoomEq { zone, .. }
@@ -630,6 +649,7 @@ impl Command {
                 text("zone", zone);
                 m.push(("enabled".to_string(), Value::Bool(*enabled)));
             }
+            Command::VoiceStart { zone } | Command::VoiceStop { zone } => text("zone", zone),
             Command::AlarmSet(alarm) => {
                 if let Value::Obj(fields) = alarm_value(alarm) {
                     m.extend(fields);
@@ -863,6 +883,92 @@ impl ControllerEvent {
             ("value".to_string(), Value::int(self.value)),
             ("target".to_string(), Value::text(&self.target)),
             ("outcome".to_string(), Value::text(&self.outcome)),
+        ])
+    }
+
+    /// The bytes it is on the wire.
+    pub fn encode(&self) -> String {
+        json::write(&self.value())
+    }
+}
+
+/// (voice, P8) One wake-word model a server runs, as the state lists it
+/// under `wake_words` for the Home Assistant integration's configuration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WakeWord {
+    /// The model's name: lower-case ASCII letters, digits and underscores
+    /// (`okay_nabu`).
+    pub id: String,
+    /// The phrase it listens for, as a `voice_wake` event names it.
+    pub phrase: String,
+}
+
+impl WakeWord {
+    /// The object, in the declared member order: `id`, then `phrase`.
+    pub fn value(&self) -> Value {
+        Value::Obj(vec![
+            ("id".to_string(), Value::text(&self.id)),
+            ("phrase".to_string(), Value::text(&self.phrase)),
+        ])
+    }
+}
+
+/// (voice, P8) A wake word was heard in a room, as a subscriber of
+/// `GET /api/voice-events` is sent it. Not a state and not a command: nothing
+/// decodes it, no state message carries it, and it is never kept for a
+/// subscriber that attaches later. It carries the room and the phrase and
+/// nothing else: no audio, and no run (a run exists only once a `voice_start`
+/// asks for one).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VoiceWake {
+    /// The room whose microphone heard it.
+    pub zone: String,
+    /// The phrase, as the model's manifest spells it.
+    pub phrase: String,
+}
+
+impl VoiceWake {
+    /// The message, in the declared member order.
+    pub fn value(&self) -> Value {
+        Value::Obj(vec![
+            ("v".to_string(), Value::int(CATALOG_VERSION)),
+            ("t".to_string(), Value::text("voice_wake")),
+            ("zone".to_string(), Value::text(&self.zone)),
+            ("phrase".to_string(), Value::text(&self.phrase)),
+        ])
+    }
+
+    /// The bytes it is on the wire.
+    pub fn encode(&self) -> String {
+        json::write(&self.value())
+    }
+}
+
+/// (voice, P8) What a server answers a `voice_start` with: the run it
+/// opened. It is the ONLY place the run's identifier is ever written: the
+/// reply to the command that asked, to the peer that asked. No state, no
+/// event and no log line carries it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VoiceRun {
+    /// The room the run is in.
+    pub zone: String,
+    /// The run's identifier: 32 lower-case hexadecimal digits, made new for
+    /// every run. Whoever holds it, at the registered address, may read the
+    /// run's audio once.
+    pub run: String,
+    /// The longest the run lasts, in milliseconds, whatever else happens.
+    pub limit_ms: i64,
+}
+
+impl VoiceRun {
+    /// The message, in the declared member order.
+    pub fn value(&self) -> Value {
+        Value::Obj(vec![
+            ("v".to_string(), Value::int(CATALOG_VERSION)),
+            ("t".to_string(), Value::text("voice_run")),
+            ("zone".to_string(), Value::text(&self.zone)),
+            ("run".to_string(), Value::text(&self.run)),
+            ("limit_ms".to_string(), Value::int(self.limit_ms)),
         ])
     }
 
@@ -1469,6 +1575,14 @@ fn decode_v2(value: &Value, type_name: &str, fields: &FieldCheck<'_>) -> Result<
                 zone: id("zone")?,
                 enabled: boolean(value, "enabled").map_err(at)?,
             }
+        }
+        "voice_start" => {
+            fields(&["v", "t", "zone"], &[])?;
+            Command::VoiceStart { zone: id("zone")? }
+        }
+        "voice_stop" => {
+            fields(&["v", "t", "zone"], &[])?;
+            Command::VoiceStop { zone: id("zone")? }
         }
         "alarm_set" => {
             fields(

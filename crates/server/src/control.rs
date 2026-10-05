@@ -55,7 +55,7 @@
 //! discovered.
 
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
@@ -63,7 +63,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use chorus_control::catalog::{decode_message, ControllerEvent, Refusal};
+use chorus_control::catalog::{decode_message, ControllerEvent, Refusal, VoiceRun, VoiceWake};
 use chorus_control::fanout::ControlFanout;
 use chorus_control::persist;
 use chorus_control::rooms::{CivilTime, NowPlaying, PlayState, Role, Source};
@@ -222,6 +222,18 @@ pub struct ControlState {
     /// state's, and nothing kept: a broadcast with nobody attached is gone,
     /// so a stream opened afterwards is never sent a past press.
     presses: Arc<ControlFanout>,
+    /// (voice, P8) The third fanout: one `voice_wake` per wake word heard,
+    /// to every `GET /api/voice-events` stream, under the rules of the
+    /// second: bounded, and nothing kept for a stream opened later.
+    voice_events: Arc<ControlFanout>,
+    /// (voice, P8) The voice path ([`ControlState::voice_through`]): where a
+    /// `voice_start` opens a run and the reader of one is handed its audio.
+    /// Unset, every `voice_start` is refused by name.
+    voice: OnceLock<Arc<crate::voice::Voice>>,
+    /// (voice, P8) The one address a run's audio is served to
+    /// (`--voice-integration`, the home automation's own). Unset, no run
+    /// opens, because nothing could read it.
+    voice_integration: OnceLock<IpAddr>,
     /// The visualizer stream's tap (`crate::lights`), which the router owns:
     /// what a `GET /api/visualizer` stream subscribes to. Set once, at start.
     lights: OnceLock<Arc<crate::lights::LightTap>>,
@@ -324,6 +336,9 @@ impl ControlState {
             held: Mutex::new(Held { zones, slots: None }),
             fanout: Arc::new(ControlFanout::new()),
             presses: Arc::new(ControlFanout::new()),
+            voice_events: Arc::new(ControlFanout::new()),
+            voice: OnceLock::new(),
+            voice_integration: OnceLock::new(),
             lights: OnceLock::new(),
             state_file,
             applied: AtomicU64::new(0),
@@ -925,6 +940,33 @@ impl ControlState {
                 .announce(self, target, url, *volume)
                 .map_err(|r| r.at(version));
         }
+        // (voice, P8) A run is the voice path's, not the room model's: the
+        // model agrees or refuses, and nothing of the run is a state.
+        match &command {
+            Command::VoiceStart { zone } => {
+                return self.voice_start(zone).map_err(|r| r.at(version));
+            }
+            Command::VoiceStop { zone } => {
+                let state = {
+                    let held = self.locked();
+                    // A room that is muted or switched off has no run and
+                    // is not an error to stop; a room that does not exist
+                    // is, in the words every command naming it is refused.
+                    if held.zones.zone(zone).is_none() {
+                        held.zones
+                            .voice_start_check(zone)
+                            .map_err(|r| r.at(version))?;
+                    }
+                    held.zones.encode_state()
+                };
+                if let Some(voice) = self.voice.get() {
+                    voice.stop(zone);
+                }
+                self.applied.fetch_add(1, Ordering::Relaxed);
+                return Ok(state);
+            }
+            _ => {}
+        }
         let state = {
             let mut held = self.locked();
             Self::commit(&mut held, |zones| {
@@ -1063,6 +1105,96 @@ impl ControlState {
             self.publish(state);
         }
         Ok(applied)
+    }
+
+    /// (voice, P8) The voice path, and the one address a run's audio is
+    /// served to (`--voice-integration`; `None`: every `voice_start` is
+    /// refused by name). From now on the event writer makes the path's pass
+    /// and a run opening or ending wakes the conductor. Called once, at
+    /// start, after [`ControlState::set_event_streams`] and before any
+    /// thread runs.
+    pub fn voice_through(&self, voice: Arc<crate::voice::Voice>, integration: Option<IpAddr>) {
+        voice.connect(self.events.waker(), self.conductor_wake.clone());
+        let _ = self.voice.set(voice);
+        if let Some(address) = integration {
+            let _ = self.voice_integration.set(address.to_canonical());
+        }
+    }
+
+    /// (voice, P8) Open a run in `zone` and answer with it: the `voice_run`
+    /// message, which is the only place the run's identifier is ever
+    /// written. Refused by name when the room has voice switched off
+    /// (`voice-disabled`), when no microphone of it is live (`mic-muted`),
+    /// and when this server could serve the run to nobody
+    /// (`no-voice-integration`).
+    fn voice_start(&self, zone: &str) -> Result<String, Refusal> {
+        let endpoints = {
+            let held = self.locked();
+            held.zones.voice_start_check(zone)?;
+            held.zones
+                .zone(zone)
+                .map(|z| z.present.clone())
+                .unwrap_or_default()
+        };
+        let (Some(voice), Some(_)) = (self.voice.get(), self.voice_integration.get()) else {
+            return Err(Refusal::rejected(
+                "t",
+                "no-voice-integration: this server was started without --voice-integration, \
+                 so no address may read a voice run's audio and none is opened"
+                    .to_string(),
+            ));
+        };
+        let random = crate::session::random_32().map_err(|e| {
+            Refusal::rejected(
+                "t",
+                format!("no-voice-run: a run identifier could not be made ({})", e),
+            )
+        })?;
+        let run: String = random[..16].iter().map(|b| format!("{:02x}", b)).collect();
+        let Some(limit) = voice.start(zone, &endpoints, run.clone(), Instant::now()) else {
+            // The gate closed between the room model's answer and here.
+            return Err(Refusal::rejected(
+                "zone",
+                format!(
+                    "mic-muted: no microphone in room '{}' reports its gate live (the mute \
+                     switch is the speaker's own, and no command opens it)",
+                    zone
+                ),
+            ));
+        };
+        self.applied.fetch_add(1, Ordering::Relaxed);
+        // The event writer prints the run's line and watches its limit.
+        self.events.wake();
+        Ok(VoiceRun {
+            zone: zone.to_string(),
+            run,
+            limit_ms: i64::try_from(limit.as_millis()).unwrap_or(i64::MAX),
+        }
+        .encode())
+    }
+
+    /// (voice, P8) The voice path's pass, made by the event writer on every
+    /// one of its own (`crate::events`): the wake word is heard, each one is
+    /// fanned out as a `voice_wake` to the `GET /api/voice-events` streams,
+    /// runs past their limit end, and the path's status lines are printed.
+    /// Returns when the next open run reaches its limit.
+    pub fn voice_pass(&self, now: Instant) -> Option<Instant> {
+        let voice = self.voice.get()?;
+        let pass = voice.pass(now);
+        for line in &pass.lines {
+            println!("chorus-server: {}", line);
+        }
+        for wake in pass.wakes {
+            // Built and dropped when nobody is attached: kept for no one.
+            self.voice_events.broadcast(Arc::new(
+                VoiceWake {
+                    zone: wake.room,
+                    phrase: wake.phrase,
+                }
+                .encode(),
+            ));
+        }
+        pass.due
     }
 
     /// Mark an endpoint as gone and fan out the result.
@@ -2141,6 +2273,8 @@ fn serve_connection(connection: TcpStream, state: &Arc<ControlState>) {
     };
     let path = request.path.split('?').next().unwrap_or("/").to_string();
     let version = requested_version(&request.path);
+    // Who is asking, for the one route that is served to one address.
+    let peer = connection.peer_addr().ok().map(|a| a.ip().to_canonical());
     // The two routes that change anything are held to the rules a browser
     // needs to keep a page elsewhere from using them. See post_refusal.
     if request.method == "POST" && (path == "/api/command" || path == "/api/leaving") {
@@ -2229,7 +2363,13 @@ fn serve_connection(connection: TcpStream, state: &Arc<ControlState>) {
             &state.metrics(),
         ),
         ("GET", "/api/events") => serve_events(connection, state, version),
-        ("GET", "/api/controller-events") => serve_controller_events(connection, state),
+        ("GET", "/api/controller-events") => {
+            serve_message_events(connection, state, &state.presses, ": controller events")
+        }
+        ("GET", "/api/voice-events") => {
+            serve_message_events(connection, state, &state.voice_events, ": voice events")
+        }
+        ("GET", "/api/voice-audio") => serve_voice_audio(connection, state, &request.path, peer),
         ("GET", "/api/visualizer") => serve_visualizer(connection, state, &request.path),
         ("POST", "/api/command") => {
             match state.apply(request.body.trim()) {
@@ -2317,7 +2457,16 @@ fn serve_events(mut connection: TcpStream, state: &Arc<ControlState>, version: i
 /// start: a press is not a state, there is no "press as it stands", and one
 /// made before this stream was opened is never sent to it. The message is
 /// catalog version 2's alone, so `?v=1` changes nothing here.
-fn serve_controller_events(mut connection: TcpStream, state: &Arc<ControlState>) {
+///
+/// `GET /api/voice-events` (voice, P8) is the same subscriber again, fed by
+/// the third fanout: one `data: <voice_wake>` per wake word heard from now
+/// on, after the opening comment line `: voice events`.
+fn serve_message_events(
+    mut connection: TcpStream,
+    state: &Arc<ControlState>,
+    fanout: &ControlFanout,
+    opening: &str,
+) {
     let Some(claim) = state.events.claim() else {
         state.turned_away.fetch_add(1, Ordering::Relaxed);
         let detail = format!(
@@ -2335,11 +2484,12 @@ fn serve_controller_events(mut connection: TcpStream, state: &Arc<ControlState>)
     };
     // Attached before the headers go out, so a subscriber that has read them
     // is sent every press accepted after that.
-    let inbox = state.presses.subscribe();
+    let inbox = fanout.subscribe();
     if write!(
         connection,
         "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\n\
-         Connection: close\r\n\r\n: controller events\n\n"
+         Connection: close\r\n\r\n{}\n\n",
+        opening
     )
     .is_err()
         || connection.flush().is_err()
@@ -2349,6 +2499,138 @@ fn serve_controller_events(mut connection: TcpStream, state: &Arc<ControlState>)
     // Written as they are: the writer renders nothing for a stream at the
     // build's own version.
     claim.hand_over(connection, inbox, chorus_control::CATALOG_VERSION);
+}
+
+/// What the body of `GET /api/voice-audio` is: raw samples, no container.
+pub const VOICE_AUDIO_CONTENT_TYPE: &str = "application/octet-stream";
+
+/// The header that says what those samples are.
+pub const VOICE_AUDIO_FORMAT: &str = "pcm_s16le; rate=16000; channels=1";
+
+/// (voice, P8) Serve one open voice run's audio to its one reader
+/// (`docs/control-plane.md`, "Voice: the wake word, the run and its audio";
+/// `docs/decisions/0000-*`).
+///
+/// `GET /api/voice-audio?run=<id>`: the microphone audio of the room the run
+/// is in, raw 16 kHz mono 16-bit little-endian PCM, from the response's
+/// headers until the run ends, when the server closes the connection. This
+/// is the only route that carries microphone audio, and the control plane
+/// has no authentication, so it is served under four rules, checked in this
+/// order, each refused by name and logged without the identifier:
+///
+/// 1. the caller's address is the one the server was started with
+///    (`--voice-integration`), else `403`;
+/// 2. the request names a run, else `400`;
+/// 3. a run with that identifier is open, else `404`: one answer for "no
+///    run at all" and "not this one", so a wrong guess learns nothing;
+/// 4. nobody is reading the run yet, else `409`.
+///
+/// The reader is then one of the event writer's streams and costs no worker.
+fn serve_voice_audio(
+    mut connection: TcpStream,
+    state: &Arc<ControlState>,
+    target: &str,
+    peer: Option<IpAddr>,
+) {
+    let refuse = |connection: &mut TcpStream, status: &str, reason: &str, detail: &str| {
+        state.refused.fetch_add(1, Ordering::Relaxed);
+        println!(
+            "chorus-server: voice route refused reason={} peer={}",
+            reason,
+            peer.map_or("unknown".to_string(), |p| p.to_string())
+        );
+        respond(
+            connection,
+            status,
+            "application/json",
+            &error_body(&format!("{}: {}", reason, detail)),
+        );
+    };
+    let allowed = state.voice_integration.get();
+    if allowed.is_none() || peer.as_ref() != allowed {
+        refuse(
+            &mut connection,
+            "403 Forbidden",
+            "not-the-voice-integration",
+            "a voice run's audio is served to the address this server was started with \
+             (--voice-integration) and to no other",
+        );
+        return;
+    }
+    let query = target.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let run = query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("run="))
+        .unwrap_or("");
+    if run.is_empty() {
+        refuse(
+            &mut connection,
+            "400 Bad Request",
+            "no-run-named",
+            "name the run: GET /api/voice-audio?run=<the identifier voice_start answered with>",
+        );
+        return;
+    }
+    let Some(voice) = state.voice.get() else {
+        refuse(
+            &mut connection,
+            "404 Not Found",
+            "no-voice-run",
+            "no voice run with that identifier is open",
+        );
+        return;
+    };
+    // The stream is claimed before the run is, so a reader turned away at
+    // the ceiling has taken nothing.
+    let Some(claim) = state.events.claim() else {
+        state.turned_away.fetch_add(1, Ordering::Relaxed);
+        let detail = format!(
+            "every one of this server's {} event streams is held; try again, or start the \
+             server with a higher --event-streams",
+            state.events.ceiling()
+        );
+        respond(
+            &mut connection,
+            "503 Service Unavailable",
+            "application/json",
+            &error_body(&detail),
+        );
+        return;
+    };
+    match voice.claim(run, Instant::now()) {
+        Ok(()) => {}
+        Err(crate::voice::ClaimRefused::NoRun) => {
+            refuse(
+                &mut connection,
+                "404 Not Found",
+                "no-voice-run",
+                "no voice run with that identifier is open",
+            );
+            return;
+        }
+        Err(crate::voice::ClaimRefused::Taken) => {
+            refuse(
+                &mut connection,
+                "409 Conflict",
+                "voice-run-taken",
+                "this voice run has its reader already, and a run has one",
+            );
+            return;
+        }
+    }
+    if write!(
+        connection,
+        "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nX-Chorus-Audio-Format: {}\r\n\
+         Cache-Control: no-store\r\nConnection: close\r\n\r\n",
+        VOICE_AUDIO_CONTENT_TYPE, VOICE_AUDIO_FORMAT
+    )
+    .is_err()
+        || connection.flush().is_err()
+    {
+        voice.reader_gone(run, "reader-gone");
+        return;
+    }
+    claim.hand_over_mic(connection, Arc::clone(voice), run.to_string());
 }
 
 /// Open one room's visualizer stream and hand it to the event writer

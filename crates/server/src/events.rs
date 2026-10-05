@@ -33,6 +33,21 @@
 //! frame, and the writer wakes itself when a held-back subscriber's cap runs
 //! out.
 //!
+//! # A fourth kind, which is not an event stream
+//!
+//! A `GET /api/voice-audio?run=<id>` stream (`crate::voice`,
+//! `docs/control-plane.md`, "Voice: the wake word, the run and its audio") is
+//! the reader of one open voice run: raw 16 kHz mono PCM, no `data:` lines
+//! and no keepalive comment, for as long as the run lasts. It is held here
+//! for the reason the others are, so a run costs no control worker, and
+//! under the same ceiling and stall bound. The writer asks the voice module
+//! for the run's next bytes when it has written the last, and closes the
+//! stream when the module says the run has ended; a reader that closes or
+//! stalls ends its run. The same thread makes the voice module's pass
+//! ([`ControlState::voice_pass`]): the wake word is heard here, off every
+//! session's reader, and a `voice_wake` is fanned out to the
+//! `GET /api/voice-events` streams, which are one more [`Feed::Messages`].
+//!
 //! # A ceiling, and a stalled peer
 //!
 //! The writer holds at most `--event-streams` streams (default
@@ -51,7 +66,7 @@
 //! the audio thread. Its only clock is the monotonic one, for the keepalive
 //! and the stall bound.
 
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TryRecvError};
@@ -60,6 +75,7 @@ use std::time::{Duration, Instant};
 
 use crate::control::{ControlState, KEEPALIVE, WRITE_TIMEOUT};
 use crate::lights::LightSubscription;
+use crate::voice::{RunRead, Voice};
 
 /// Event streams one server holds at once when `--event-streams` is not
 /// given. ASSUMED: a house of a few dozen endpoints and pages, with room to
@@ -84,7 +100,17 @@ enum Feed {
     },
     /// A room's latest visualizer frame, under the rate cap.
     Light(LightSubscription),
+    /// One open voice run's audio, for its one reader.
+    Mic {
+        voice: Arc<Voice>,
+        /// The run's identifier, as its reader offered it.
+        run: String,
+    },
 }
+
+/// The most of a run's audio taken for its reader at once: a quarter of a
+/// second. What a reader has not taken waits in the run's own bounded queue.
+const MIC_CHUNK_BYTES: usize = 8_000;
 
 /// One stream the writer holds.
 struct Peer {
@@ -202,15 +228,25 @@ impl Claim<'_> {
         self.hand(socket, Feed::Light(subscription));
     }
 
+    /// Give the writer the reader of one open voice run
+    /// (`GET /api/voice-audio`): its socket, and the run it claimed.
+    pub fn hand_over_mic(self, socket: TcpStream, voice: Arc<Voice>, run: String) {
+        self.hand(socket, Feed::Mic { voice, run });
+    }
+
     fn hand(mut self, socket: TcpStream, feed: Feed) {
-        let sent = self
-            .streams
-            .handoff
-            .try_send(HandOver { socket, feed })
-            .is_ok();
-        if sent {
-            self.handed = true;
-            self.streams.wake();
+        match self.streams.handoff.try_send(HandOver { socket, feed }) {
+            Ok(()) => {
+                self.handed = true;
+                self.streams.wake();
+            }
+            // Never taken by the writer: a run whose reader this was has
+            // none, and ends.
+            Err(mpsc::TrySendError::Full(lost)) | Err(mpsc::TrySendError::Disconnected(lost)) => {
+                if let Feed::Mic { voice, run } = &lost.feed {
+                    voice.reader_gone(run, "reader-gone");
+                }
+            }
         }
     }
 }
@@ -233,6 +269,9 @@ pub fn run_writer(state: Arc<ControlState>, keep: Arc<AtomicBool>) {
         return;
     };
     let mut peers: Vec<Peer> = Vec::new();
+    // When the next open voice run reaches its limit: the writer looks up
+    // then, so a run ends at its limit and not at the next idle wake.
+    let mut voice_due: Option<Instant> = None;
     while keep.load(Ordering::SeqCst) {
         let waiting = peers.iter().any(|p| p.written < p.pending.len());
         // A visualizer subscriber the rate cap is holding back is looked at
@@ -242,8 +281,9 @@ pub fn run_writer(state: Arc<ControlState>, keep: Arc<AtomicBool>) {
             .iter()
             .filter_map(|p| match &p.feed {
                 Feed::Light(subscription) => subscription.wait(now),
-                Feed::Messages { .. } => None,
+                Feed::Messages { .. } | Feed::Mic { .. } => None,
             })
+            .chain(voice_due.map(|due| due.saturating_duration_since(now)))
             .min();
         let rest = if waiting { RETRY } else { IDLE_WAKE };
         match woken.recv_timeout(capped.map_or(rest, |c| c.min(rest))) {
@@ -254,6 +294,9 @@ pub fn run_writer(state: Arc<ControlState>, keep: Arc<AtomicBool>) {
             let now = Instant::now();
             if handed.socket.set_nonblocking(true).is_err() {
                 streams.held.fetch_sub(1, Ordering::SeqCst);
+                if let Feed::Mic { voice, run } = &handed.feed {
+                    voice.reader_gone(run, "reader-gone");
+                }
                 continue;
             }
             peers.push(Peer {
@@ -265,12 +308,25 @@ pub fn run_writer(state: Arc<ControlState>, keep: Arc<AtomicBool>) {
                 last_write: now,
             });
         }
+        // The voice path's pass, before the streams are written: a wake word
+        // heard now is on its subscribers' queues for this pass, and a run
+        // past its limit has ended before its reader is served.
         let now = Instant::now();
+        voice_due = state.voice_pass(now);
         let before = peers.len();
         peers.retain_mut(|peer| match serve(peer, &state, now) {
             Served::Keep => true,
-            Served::Gone => false,
+            Served::Gone => {
+                // A run whose reader went has nobody to listen for.
+                if let Feed::Mic { voice, run } = &peer.feed {
+                    voice.reader_gone(run, "reader-gone");
+                }
+                false
+            }
             Served::Stalled => {
+                if let Feed::Mic { voice, run } = &peer.feed {
+                    voice.reader_gone(run, "reader-stalled");
+                }
                 streams.stalled.fetch_add(1, Ordering::Relaxed);
                 eprintln!(
                     "chorus-server: event stream dropped reason=no-write-progress waited_ms={}",
@@ -295,9 +351,50 @@ enum Served {
 /// One pass over one peer: take its next message when it has written the
 /// last, a keepalive when it has been quiet, and write what it will take.
 fn serve(peer: &mut Peer, state: &ControlState, now: Instant) -> Served {
+    if let Feed::Mic { voice, run } = &peer.feed {
+        // A run that has ended (stopped, muted, at its limit) is written
+        // nothing more, not even what its reader had been handed and had
+        // not yet taken: that is overwritten and the stream is closed.
+        if !voice.is_open(run, now) {
+            peer.pending.fill(0);
+            return Served::Gone;
+        }
+        // The reader sends nothing after its request, so the only thing a
+        // read can say is that it has gone. Asked on every pass: a run with
+        // nothing to write would otherwise not learn it.
+        let mut scratch = [0u8; 64];
+        match peer.socket.read(&mut scratch) {
+            Ok(0) => return Served::Gone,
+            Ok(_) => {}
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                ) => {}
+            Err(_) => return Served::Gone,
+        }
+    }
     if peer.written == peer.pending.len() {
+        // What was written held microphone audio when this is a run's
+        // reader: it is overwritten before it is let go.
+        if let Feed::Mic { .. } = &peer.feed {
+            peer.pending.fill(0);
+        }
         peer.pending.clear();
         peer.written = 0;
+        if let Feed::Mic { voice, run } = &peer.feed {
+            // Raw bytes, no event framing and no keepalive: the run's next
+            // audio, or the end of the stream with the run.
+            match voice.read(run, MIC_CHUNK_BYTES, now) {
+                RunRead::Audio(bytes) => {
+                    peer.pending = bytes;
+                    peer.progress = now;
+                }
+                RunRead::Nothing => {}
+                RunRead::Ended => return Served::Gone,
+            }
+            return write_pending(peer, now);
+        }
         // The next message, if there is one to write now.
         let next = match &mut peer.feed {
             Feed::Messages { inbox, version } => match inbox.try_recv() {
@@ -320,6 +417,8 @@ fn serve(peer: &mut Peer, state: &ControlState, now: Instant) -> Served {
             // The room's latest frame, when the cap allows one and there is
             // one newer than the last this subscriber was sent.
             Feed::Light(subscription) => subscription.next(now),
+            // Handled above.
+            Feed::Mic { .. } => None,
         };
         match next {
             Some(text) => {
@@ -334,6 +433,11 @@ fn serve(peer: &mut Peer, state: &ControlState, now: Instant) -> Served {
             }
         }
     }
+    write_pending(peer, now)
+}
+
+/// Write what `peer` has pending, as far as its socket takes it.
+fn write_pending(peer: &mut Peer, now: Instant) -> Served {
     while peer.written < peer.pending.len() {
         match peer.socket.write(&peer.pending[peer.written..]) {
             Ok(0) => return Served::Gone,

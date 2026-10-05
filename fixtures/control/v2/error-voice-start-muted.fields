@@ -1,0 +1,18 @@
+# Canonical input for the catalog v2 error-voice-start-muted vector.
+#
+# `input` is refused, by the decoder or by the room state the lines below
+# built on a server configured with these zones, and encoding the refusal must
+# produce exactly error-voice-start-muted.json. Nothing of it is applied.
+#
+# (voice, P8) A run asked for in a room with voice switched on and no
+# microphone reporting its gate live: refused by name.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = error
+zones = kitchen
+command.0 = {"v":2,"t":"voice_enabled","zone":"kitchen","enabled":true}
+input = {"v":2,"t":"voice_start","zone":"kitchen"}
+field = zone
+ends_the_session = 0

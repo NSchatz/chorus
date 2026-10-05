@@ -1,0 +1,13 @@
+# Canonical input for the catalog v2 voice_start vector.
+#
+# Encoding these field values must produce exactly voice_start.json, and
+# decoding voice_start.json must recover exactly these field values.
+#
+# (voice, P8) Opens a voice run in a room, after a voice_wake event or without
+# one (start conversation). The answer is a voice_run message, not a state.
+#
+# Format: one "key = value" per line. A line whose first non-space character is
+# '#' is a comment; a '#' anywhere else is an ordinary character.
+
+message_type = voice_start
+zone = kitchen

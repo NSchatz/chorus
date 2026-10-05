@@ -197,6 +197,15 @@ pub struct ServerConfig {
     /// refuses every `announce` by name. Needs `--control-listen`, because
     /// `announce` is a control command.
     pub announce_origins: Vec<chorus_control::rooms::Origin>,
+    /// (voice, P8) `--voice-integration <ip address>`: the one address a
+    /// voice run's microphone audio is served to (the home automation's
+    /// own). `None`, the default, opens no run: every `voice_start` is
+    /// refused by name. Needs `--control-listen`.
+    pub voice_integration: Option<std::net::IpAddr>,
+    /// (voice, P8) `--voice-run-limit-ms <n>`: the longest a voice run
+    /// lasts, 1 to `crate::voice::RUN_LIMIT_MAX`; the default is
+    /// `crate::voice::RUN_LIMIT`.
+    pub voice_run_limit_ms: u64,
     /// (goal 16) The UPnP AV media renderers' flags (`crate::upnp`,
     /// `docs/upnp.md`). Off unless `--upnp` is given.
     pub upnp: UpnpFlags,
@@ -650,6 +659,8 @@ impl Default for ServerConfig {
             players: 0,
             media_allow_loopback: false,
             announce_origins: Vec::new(),
+            voice_integration: None,
+            voice_run_limit_ms: crate::voice::RUN_LIMIT.as_millis() as u64,
             upnp: UpnpFlags::default(),
             soloist: SoloistFlags::default(),
         }
@@ -718,6 +729,15 @@ pub enum ServerConfigError {
     NotAGroupAddress {
         /// The value as it was given.
         value: String,
+    },
+    /// (voice, P8) A `--voice-integration` that is not an IP address, or
+    /// one given without a control plane, or a `--voice-run-limit-ms`
+    /// outside its range.
+    Voice {
+        /// The argument at fault.
+        argument: String,
+        /// What is wrong.
+        detail: String,
     },
     /// (goal 18) An `--announce-origin` that is not `scheme://host[:port]`.
     NotAnOrigin {
@@ -875,6 +895,9 @@ impl fmt::Display for ServerConfigError {
                  is served, for example --group-audio downstairs=127.0.0.1:4011",
                 value
             ),
+            ServerConfigError::Voice { argument, detail } => {
+                write!(f, "{}: {}", argument, detail)
+            }
             ServerConfigError::NotAnOrigin { value, detail } => write!(
                 f,
                 "'{}' is not an origin: {}; --announce-origin names where announcements may \
@@ -1049,6 +1072,34 @@ impl ServerConfig {
                     if !config.announce_origins.contains(&origin) {
                         config.announce_origins.push(origin);
                     }
+                }
+                "--voice-integration" => {
+                    let text = value()?;
+                    let address: std::net::IpAddr =
+                        text.parse().map_err(|_| ServerConfigError::Voice {
+                            argument: arg.clone(),
+                            detail: format!(
+                                "'{}' is not an IP address; it names the one address a voice \
+                                 run's microphone audio is served to (the home automation's \
+                                 own), for example --voice-integration 192.0.2.10",
+                                text
+                            ),
+                        })?;
+                    config.voice_integration = Some(address.to_canonical());
+                }
+                "--voice-run-limit-ms" => {
+                    let limit = number(&arg, &value()?)?;
+                    let most = crate::voice::RUN_LIMIT_MAX.as_millis() as u64;
+                    if limit == 0 || limit > most {
+                        return Err(ServerConfigError::Voice {
+                            argument: arg.clone(),
+                            detail: format!(
+                                "a voice run lasts 1 to {} ms and {} is not in that range",
+                                most, limit
+                            ),
+                        });
+                    }
+                    config.voice_run_limit_ms = limit;
                 }
                 "--soloist-receivers" => {
                     config.soloist.receivers_given = true;
@@ -1230,6 +1281,14 @@ impl ServerConfig {
         config
             .soloist
             .check(config.control_listen.is_some(), config.slots)?;
+        if config.voice_integration.is_some() && config.control_listen.is_none() {
+            return Err(ServerConfigError::Voice {
+                argument: "--voice-integration".to_string(),
+                detail: "it says who may read a voice run's audio on the control API, and \
+                         this server has no control API: give --control-listen <address>"
+                    .to_string(),
+            });
+        }
         if !config.announce_origins.is_empty() && config.control_listen.is_none() {
             return Err(ServerConfigError::AnnounceNeedsTheControlPlane);
         }
@@ -1744,6 +1803,44 @@ mod tests {
         // Port 0 is for a loopback listener (tests) only.
         assert!(ServerConfig::from_args(args(&on(&["--upnp-listen", "127.0.0.1:0"]))).is_ok());
 
+        // (voice, P8) --voice-integration and --voice-run-limit-ms.
+        let c = ServerConfig::from_args(args(&[
+            "--control-listen",
+            "127.0.0.1:0",
+            "--voice-integration",
+            "192.0.2.10",
+            "--voice-run-limit-ms",
+            "1500",
+        ]))
+        .unwrap();
+        assert_eq!(c.voice_integration, Some("192.0.2.10".parse().unwrap()));
+        assert_eq!(c.voice_run_limit_ms, 1500);
+        assert_eq!(ServerConfig::default().voice_integration, None);
+        assert_eq!(ServerConfig::default().voice_run_limit_ms, 30_000);
+        for bad in [
+            &["--voice-integration", "ha.example"][..],
+            &["--voice-integration", "192.0.2.10"][..],
+            &[
+                "--control-listen",
+                "127.0.0.1:0",
+                "--voice-run-limit-ms",
+                "0",
+            ][..],
+            &[
+                "--control-listen",
+                "127.0.0.1:0",
+                "--voice-run-limit-ms",
+                "120001",
+            ][..],
+        ] {
+            assert!(
+                matches!(
+                    ServerConfig::from_args(args(bad)).unwrap_err(),
+                    ServerConfigError::Voice { .. }
+                ),
+                "{bad:?}"
+            );
+        }
         // (goal 18) --announce-origin: repeatable, one spelling each, a
         // repeat is one origin; refused by name when it is not an origin and
         // when there is no control API to announce through.
