@@ -99,6 +99,37 @@ use chorus_schedule::{
     due_between, Alarm as AlarmSchedule, Chime, Days, Ramp, SleepTimer, TimeOfDay, Zone,
 };
 
+/// (ADR 0000) The built-in chimes an alarm may name, in the schedule
+/// library's own order: its list (`chorus_schedule::chime::CHIMES`), read and
+/// never copied, so a chime added there is listed here.
+pub fn chime_names() -> Vec<String> {
+    chorus_schedule::chime::CHIMES
+        .iter()
+        .map(|c| c.name().to_string())
+        .collect()
+}
+
+/// (ADR 0000) Tell a room model that a schedule runtime runs over it, before
+/// any state is served: the chimes an alarm may name are listed in the state
+/// (`chimes`), and each sleep timer carries how long it has left
+/// (`remaining_s`), which [`Runtime::tick`] counts.
+pub fn describe_in(zones: &mut Zones) {
+    zones.set_chimes(chime_names());
+    zones.set_sleep_counted(true);
+}
+
+/// (ADR 0000) The room model's word for a source endpoint's kind of input:
+/// the same three, by the same names.
+pub fn input_kind(kind: chorus_protocol::v2::SourceKind) -> chorus_control::rooms::InputKind {
+    use chorus_control::rooms::InputKind;
+    use chorus_protocol::v2::SourceKind;
+    match kind {
+        SourceKind::LineIn => InputKind::LineIn,
+        SourceKind::Optical => InputKind::Optical,
+        SourceKind::HdmiArc => InputKind::HdmiArc,
+    }
+}
+
 const NS_PER_MS: u64 = 1_000_000;
 const NS_PER_S: u64 = 1_000_000_000;
 
@@ -1455,6 +1486,14 @@ impl Runtime {
                 ));
                 self.sleeping[i].fade = Some(rooms);
             }
+        }
+        // (ADR 0000) What is left of each, in whole seconds rounded up, for
+        // the state's `remaining_s`: the model keeps the count every pass
+        // and sends a state when the whole minutes left change.
+        for s in &self.sleeping {
+            let left_ns = s.timer.expiry_ns().saturating_sub(now);
+            let left_s = left_ns.div_ceil(NS_PER_MS * 1000);
+            zones.sleep_remaining(&s.target, u32::try_from(left_s).unwrap_or(u32::MAX));
         }
         let expired: Vec<String> = self
             .sleeping

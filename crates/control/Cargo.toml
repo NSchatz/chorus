@@ -21,5 +21,10 @@ chorus-server = { path = "../server" }
 # the "a button is never a bypass" half of the clamp rule.
 chorus-protocol = { path = "../protocol" }
 
+# tests/state_facts_v2.rs holds the state's `chimes` to the chimes the
+# schedule library defines (ADR 0000): the names have one home, and the
+# catalog reads them there only in a test.
+chorus-schedule = { path = "../schedule" }
+
 [lints]
 workspace = true
