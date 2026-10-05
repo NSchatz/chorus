@@ -1,19 +1,27 @@
 // The app shell: the one element index.html holds. It paints the header and a
 // labelled main region, and every screen a later change adds is rendered
-// inside that region. Its properties are the layout and the rooms the server
-// has (rooms.js), which it lists by name.
+// inside that region. It is the one element that holds the state layer's
+// store (state.js): it subscribes, passes what the store holds down to the
+// screens as properties, and sends the commands the screens ask for with a
+// `chorus-command` event. A command the server refuses is shown, in the
+// server's words, on the room it was for.
 
 import { LitElement, css, html } from "lit";
 
 import { MODES } from "./mode.js";
+import "./rooms.js";
 
 export class ChorusApp extends LitElement {
   static properties = {
     // "app" or "kiosk" (mode.js). Reflected, so the styles below and a test
     // can read it off the element.
     mode: { type: String, reflect: true },
-    // The server's rooms as { id, name }, in the server's order.
-    rooms: { attribute: false },
+    // The state layer's store (state.js), given by main.js.
+    store: { attribute: false },
+    // What the store holds: { state, rooms, status }.
+    _view: { state: true },
+    // The server's words for the last refused command, by room id.
+    _refusals: { state: true },
   };
 
   // Adopted as a constructable stylesheet, which chorus-server's
@@ -38,11 +46,6 @@ export class ChorusApp extends LitElement {
     main {
       padding: var(--surface-pad);
     }
-    ul {
-      margin: var(--reset-margin);
-      padding: var(--reset-margin);
-      list-style: none;
-    }
     /* A wall tablet shows the rooms and nothing of the app around them. */
     :host([mode="kiosk"]) header {
       display: none;
@@ -52,11 +55,44 @@ export class ChorusApp extends LitElement {
   constructor() {
     super();
     this.mode = "app";
-    this.rooms = [];
+    this.store = null;
+    this._view = { state: null, rooms: [], status: "connecting" };
+    this._refusals = {};
+    this._unsubscribe = null;
   }
 
-  willUpdate() {
+  willUpdate(changed) {
     if (!MODES.includes(this.mode)) this.mode = "app";
+    if (changed.has("store")) this._follow();
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this._follow();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this._unsubscribe?.();
+    this._unsubscribe = null;
+  }
+
+  // Subscribe to the store this element has now, and to no other.
+  _follow() {
+    this._unsubscribe?.();
+    this._unsubscribe = null;
+    if (!this.store || !this.isConnected) return;
+    this._unsubscribe = this.store.subscribe((view) => {
+      this._view = view;
+    });
+  }
+
+  async _onCommand(event) {
+    const { room, body } = event.detail;
+    if (!this.store) return;
+    this._refusals = { ...this._refusals, [room]: "" };
+    const result = await this.store.command(body);
+    if (!result.ok) this._refusals = { ...this._refusals, [room]: result.refusal };
   }
 
   render() {
@@ -64,10 +100,12 @@ export class ChorusApp extends LitElement {
       <header>
         <h1>chorus</h1>
       </header>
-      <main aria-label="Rooms">
-        <ul>
-          ${this.rooms.map((room) => html`<li data-room=${room.id}>${room.name}</li>`)}
-        </ul>
+      <main aria-label="Rooms" @chorus-command=${this._onCommand}>
+        <chorus-rooms
+          .rooms=${this._view.state === null ? null : this._view.rooms}
+          .status=${this._view.status}
+          .refusals=${this._refusals}
+        ></chorus-rooms>
         <slot></slot>
       </main>
     `;

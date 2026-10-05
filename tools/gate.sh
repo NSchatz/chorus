@@ -285,7 +285,7 @@ ha_summary() {
     sed -n -e "s/^$1: \\(PASS.*\\)/gate: $1 \\1/p" -e "s/^\\(FAIL: .*\\)/gate: $1 \\1/p" "$LOG/$1.log" | tee -a "$LOG/summary.txt"
 }
 
-# A web step (web-test, web-build, web-smoke) is green only when it ran, like a Home Assistant
+# A web step (web-test, web-build, web-live, web-smoke) is green only when it ran, like a Home Assistant
 # step: its make target exits 0 and prints its own `<name>: PASS` line and no SKIPPED line
 # (tools/web.sh).
 web_step() {
@@ -304,6 +304,10 @@ web_step() {
     fi
     rm -f "$out"
     return "$rc"
+}
+# The app's live test, against the chorus-server the build step made.
+web_live() {
+    CHORUS_SERVER_BIN="${CARGO_TARGET_DIR:-$ROOT/target}/debug/chorus-server" web_step web-live
 }
 # The one browser test, against the chorus-server the build step made.
 web_smoke() {
@@ -351,7 +355,7 @@ fi
 if [ "$MODE" = full ]; then
     step fmt              cargo fmt --all --check
     step clippy           cargo clippy --workspace --all-targets --locked -- -D warnings
-    stop_if_cheap_steps_failed ha-test ha-hassfest web-test web-build build ha-live web-smoke test determinism firmware-check verify alsa-null \
+    stop_if_cheap_steps_failed ha-test ha-hassfest web-test web-build build ha-live web-live web-smoke test determinism firmware-check verify alsa-null \
         firmware-esp32s3-wired firmware-esp32s3-wifi firmware-esp32s3-qemu firmware-profiles \
         qemu-boot ota-qemu image soloist-image soloist-lists endpoint-packages
     # The Home Assistant integration (goal 18): its lint, types and tests under the pinned
@@ -371,6 +375,11 @@ if [ "$MODE" = full ]; then
     # service calls (goal 18; tests/test_live_server.py).
     step ha-live          ha_live
     ha_summary ha-live
+    # The app's live test (web/live/): its elements and state layer in node, with no browser,
+    # against the server just built: two rooms and a bonded set rendered, a volume change and
+    # a mute through them read back from /api/state, another client's change followed. About 2 s.
+    step web-live         web_live
+    ha_summary web-live
     # The one browser test (web/smoke/): headless Chromium loads the app from the server
     # just built, through a fake login. About 5 s.
     step web-smoke        web_smoke
