@@ -6,7 +6,9 @@ version: 1
   set adds no acoustic design: its three speakers are `chorus-twoway-v1`
   (`docs/hardware/twoway-speaker.md`) unchanged, and its hub is P4's "At install: the two TV
   hubs" (`docs/proposals/P4-bench-purchase.md`). Every number not read from a cited page is
-  arithmetic on cited numbers or marked **ASSUMED**.
+  arithmetic on cited numbers or marked **ASSUMED**. The prices rest on the two-way's budget,
+  which is PROPOSED (the owner decides its class budget and tier), so the totals here are
+  PROPOSED for the same reason.
 - What this is: the theater front of both TV rooms, the living room and the master bedroom, as
   K72's "separate-LCR set (three clean speakers with no visible controls; TV inputs on a hidden
   hub)" within P2's settled scope (Option A: stereo LPCM from the TV's optical output, CEC
@@ -33,6 +35,9 @@ The set is not the whole room. A 5.1 TV room is the set plus `chorus-sub-v1`
 (`docs/hardware/compact-speaker.md`), as P4's house plan has it.
 
 ## The hub's wiring
+
+The bench packet's TV session wires and enables the same hub
+(`docs/bench-packet.md`, S8); this section is that wiring as installed.
 
 ```
 TV optical out --TOSLINK--> Digi+ I/O optical in --I2S (40-pin header)--> Pi 5
@@ -83,8 +88,8 @@ How it goes together:
   --line-in-kind optical` offers the TV to any room, and `--cec` makes it the TV's Audio System so
   the TV's remote drives the room's volume and the TV's power starts and stops the TV input
   (`docs/cec.md`; K81's autoplay). Its own ALSA output is the Digi+ I/O's optical and coaxial
-  outputs, which are left unconnected. Whether a room endpoint outside the set plays anything in
-  a bonded room is the control plane's; nothing is wired to the hub's outputs either way.
+  outputs, which are left unconnected. An endpoint in no set plays the two-output downmix
+  (`docs/dsp.md`, "What step 6 plays"), so the hub sends that to outputs wired to nothing.
 - **What a stereo TV plays on 5.1 (P2 Option A).** The TV sends two channels. `FL` and `FR`
   play them; `FC` plays `(FL + FR) / sqrt 2`, the passive matrix's centre; `LFE` plays the
   managed bass; `SL` and `SR` are silent with the room's `tv_upmix` off (the default) or play the
@@ -96,15 +101,14 @@ How it goes together:
 
 ## A start for the hub's command line
 
-The flags are those of `docs/linux-endpoint.md`. The ALSA name of the Digi+ I/O and the CEC
-device are **ASSUMED** until the bench session (S8) lists them with `arecord -L` and
-`ls /dev/cec*`; the Pi's config enables the HAT with HiFiBerry's overlay for the board
-(**ASSUMED** `dtoverlay=hifiberry-digi`, not read in this task; the bench session confirms
-it on a Pi 5).
+The flags are those of `docs/linux-endpoint.md`. The HAT is enabled as the bench packet says
+(`dtoverlay=hifiberry-digi`, **ASSUMED** there, `docs/bench-packet.md` S8); `<digi card>` is the
+card number `arecord -l` gives, and `/dev/cec0` is **ASSUMED** until `ls /dev/cec*` on the
+bench.
 
 ```
-chorus-client --zone living --device hw:CARD=sndrpihifiberry \
-  --line-in hw:CARD=sndrpihifiberry --line-in-kind optical --line-in-name "Living room TV" \
+chorus-client --zone living --device hw:<digi card>,0 \
+  --line-in hw:<digi card>,0 --line-in-kind optical --line-in-name "Living room TV" \
   --cec /dev/cec0 --cec-osd-name chorus
 ```
 
@@ -184,9 +188,10 @@ the parts are on the bench and measured with calipers.
   operating range of 0 to 70 °C (product brief RP-008348-DS, read 2026-10-06). The hub's load
   is a stereo capture, a resampler and a CEC thread, so the case is **ASSUMED** passive: slots
   in the floor and the lid over the SoC, giving a convection path that does not depend on
-  which way the case is mounted. The bench session records the SoC temperature behind a running
-  TV (`vcgencmd measure_temp`); if it passes 70 °C the case takes Raspberry Pi's Active Cooler
-  and a lid opening for its fan.
+  which way the case is mounted. The 0 to 70 °C range is the board's surroundings, so the bench
+  session records the air inside the closed case behind a running TV against it, and the SoC
+  (`vcgencmd measure_temp`) for throttling (**ASSUMED** to begin near 80 °C, not read); if
+  either is reached the case takes Raspberry Pi's Active Cooler and a lid opening for its fan.
 - **Mounting behind the TV:** two keyhole slots on the back face for screws into a printed plate
   held by the TV's VESA screws, or a flat back for adhesive mounting tape (**ASSUMED**; the TV
   models and their VESA patterns are the owner's TV Needs item). The cut-outs face down or to
@@ -224,7 +229,7 @@ the parts are on the bench and measured with calipers.
   `docs/hardware/compact-speaker.md`, `docs/proposals/P2-theater-scope.md`,
   `docs/proposals/P4-bench-purchase.md`, `docs/proposals/P12-enclosures.md`,
   `docs/proposals/P13-rack-amp-zones.md`, `docs/linux-endpoint.md`, `docs/cec.md`,
-  `docs/dsp.md`, `docs/control-plane.md`, `docs/inputs.md`, at `origin/main` 9144a4f, read
+  `docs/dsp.md`, `docs/control-plane.md`, `docs/inputs.md`, `docs/bench-packet.md` (S8), at `origin/main` 9144a4f, read
   2026-10-06.
 - The sellers' pages in the bill of materials, at the dates in their rows.
 - Raspberry Pi 5 product page, https://www.raspberrypi.com/products/raspberry-pi-5/, and product

@@ -1,4 +1,4 @@
-# 0232: the LCR set is three unchanged two-ways and a hidden Raspberry Pi 5 hub with a Digi+ I/O on the TV's optical output and CEC over the Pi's HDMI; 770.35 USD a set, 1573.20 USD for both TV rooms
+# 0232: the LCR set is three unchanged two-ways and a hidden Raspberry Pi 5 hub with a Digi+ I/O on the TV's optical output and CEC over the Pi's HDMI; 770.35 USD a set with the 2GB hub, 1573.20 USD for both TV rooms
 
 - Status: proposed; it writes down the plan the owner approved on 2026-10-06 (goals project 33,
   planning task 95: "LCR set = 3x two-way + the hidden TV hub (Pi, Digi+ I/O, CEC over HDMI)")
