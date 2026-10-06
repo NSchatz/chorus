@@ -371,7 +371,7 @@ the code.
 | Limiter release snap | 1e-6 below unity | ASSUMED |
 | Unbonded two-way input | `(FL + FR)/2`, else the mono channel, else the mean of the mains | ASSUMED |
 | A role the stream lacks | silence (a mono stream plays on every main role) | ASSUMED |
-| Two-way example | 2 kHz | ASSUMED (until goals 24-25 design the drivers) |
+| Two-way example | 2 kHz | designed for the active two-way (ADR 0217, `chorus-twoway-v1`); `two_way` stays off by default in `endpoint.conf` |
 | Driver trim range | -24..0 dB | ASSUMED |
 | Gain block on the endpoints | 32 frames at one room gain while it ramps | ASSUMED |
 | One chain output, no output map | on every device channel (both I2S slots) | ASSUMED |

@@ -185,11 +185,16 @@ section is the mitigation: moving the pin is the two commands above, not an
 archaeology exercise.
 
 There is no scheduled job watching these for rot, deliberately. A stale pin
-shows up when a build fails, and the failure names the pin.
+shows up when a build fails, and the failure names the pin; `docs/pins.md`
+records, at each release, how far behind each base digest is.
 
-## The action pin
+## The action pins
 
-`.github/workflows/ci.yml` pins `actions/checkout` to the commit
+Every workflow in `.github/workflows/` pins each action it uses to a 40-hex
+SHA (`check-pins.sh`): `actions/checkout`, `jdx/mise-action`,
+`Swatinem/rust-cache`, `actions/upload-artifact` and `actions/download-artifact`.
+`docs/pins.md` says which release each is and how far behind it is. The first,
+`actions/checkout`, is pinned to the commit
 `11d5960a326750d5838078e36cf38b85af677262`, with `# v4` beside it so a reader
 can tell which release that is. The `v4` tag is moved by its publisher
 under every consumer that wrote `@v4`; when this pin was taken it resolved to a

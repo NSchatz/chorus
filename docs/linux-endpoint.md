@@ -217,10 +217,12 @@ not measured yet (ASSUMED).
 
 ## A front panel
 
-An endpoint with buttons and a status light (the rack amp, ADR 0067) runs them as the controller
-role with `--front-panel <file>`. The board's device-tree overlays turn the buttons into a
-gpio-keys input device and the light into an LED class device (the example file names the
-overlay lines; all of it ASSUMED until the rack amp's board is designed). Then:
+An endpoint with buttons and a status light runs them as the controller role with
+`--front-panel <file>` (ADR 0067, written for the rack amp, which is not designed: ADR 0231; the
+LCR set's hub has no front panel, `docs/hardware/lcr-set.md`). The board's device-tree overlays
+turn the buttons into a gpio-keys input device and the light into an LED class device (the
+example file names the overlay lines; all of it ASSUMED until a board with a front panel is
+designed). Then:
 
 1. Copy the example and edit it for the board:
    `sudo cp /usr/share/doc/chorus-endpoint/examples/front-panel-rack-amp.conf /etc/chorus/front-panel.conf`

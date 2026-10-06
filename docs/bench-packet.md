@@ -5,8 +5,8 @@ each one should print. Written in chorus goal 7 (2026-09-30) against proposal P4
 tier; rewritten on 2026-10-04 to the owner's final list (P4, "Decision: the owner's final list"),
 which puts a prototype wired from modules (ESP32-S3, W5500, TAS5825M) where the Audio Brick was
 and PCM5102 boards where the DAC+ was. Nothing is ordered by the program (K4, K38).
-Every session here is the owner's (brief §0.6); each has its own item in the owner's queue (issues
-in the owner's agent harness; `goals needs add`, `/goals:needs`). How a bench script turns a run into a report and a
+Every session here is the owner's (brief §0.6); each is an owner step of its own (`goals item add`
+in the owner's agent harness). How a bench script turns a run into a report and a
 pull request is `docs/bench.md`.
 
 Nothing in this file is a measurement. Every expected result below is a criterion or an
@@ -115,7 +115,7 @@ owner's account.
 Expected: `gh auth status` says logged in; `cargo build` ends `Finished`; `aplay -l` lists the DAC's
 card on both Pis; `arecord -l` on A lists the UMC202HD ("U-PHORIA UMC202HD" or similar).
 What changes: nothing in the repo; every later session can run. Record the card names in the
-Needs item (no hostnames, no addresses).
+owner step (no hostnames, no addresses).
 
 ### S1. SOUND-2: first sound and the ten-minute run
 
@@ -247,9 +247,9 @@ it reaches Play, or stops naming the fault register and its bits, then stops at 
 session if no server is configured. From goal 8 the default image is the `brick-s3-wired` board
 profile (ADR 0057; the Brick it names is not bought), so it configures that board's pins as
 outputs (the amplifier power-down line driven low then high, the I2S pins, the I2C pins); on the
-bare DevKitC wire nothing to them for this session, which runs before the prototype's own profile
-(S7) exists and stops at `amp=amplifier-did-not-answer` by design. Paste
-the log lines from the ESP-IDF version line to the stop into the Needs item, with any `MAC:` line
+bare DevKitC wire nothing to them for this session, which runs on the default profile rather than
+the prototype's (S7) and stops at `amp=amplifier-did-not-answer` by design. Paste
+the log lines from the ESP-IDF version line to the stop into the owner step, with any `MAC:` line
 deleted (K27). What changes: goal 9 knows the v6.1
 image boots on this board, and S6 below can run on the same board right after, through the
 console.
@@ -303,20 +303,27 @@ rig. A fifth, the GPIO marker cross-check, needs a logic analyzer and a free pin
 | S7.4 | S2's trusted rig (endpoint A, endpoint B, the UMC202HD) and a load-and-divider set for the Hat's speaker-level output | F1-F4, F6, F8, F13, F14, F16, F23 |
 | S7.5 | the logic analyzer and jumpers, and the second module prototype (the second DevKitC, W5500 and Hat Plus) | F21, F24, and S7.1's lines again |
 
-**A board profile comes first.** No profile in `firmware/boards/` describes the module prototype:
-`brick-s3-wired.conf` names the Brick, which is not bought; `compact-s3-wifi.conf` is its Wi-Fi
-twin; `qemu-s3-openeth.conf` is the emulator's. Before S7.1 a firmware change adds the
-prototype's profile with:
-- the DevKitC GPIOs for the W5500 (SPI clock, MOSI, MISO, CS, INT, RST);
-- the DevKitC GPIOs for the Hat Plus (I2S bit clock, word select and data; I2C SDA and SCL; PDN);
-- the I2C address the Hat answers on: its listing says "0x4C-0x4F auto-detected", and the
-  endpoint's default is 0x4C with ADR to ground (`ASSUMED`);
-- a free GPIO as `pin_marker` (S7.5);
+**The board profile.** `firmware/boards/devkitc-s3-louderhat-wired.conf` (ADR 0230,
+`docs/hardware/compact-speaker.md`) is the compact speaker on bought modules, `ASSUMED` (wired by
+nobody yet): an Espressif ESP32-S3-DevKitC-1-N8R8, the Hat Plus 1X and a WIZnet WIZ850io (a W5500
+with its own jack and magnetics). It carries:
+- the DevKitC GPIOs for the W5500, the reference board's: SPI clock 12, MOSI 11, MISO 13, CS 10,
+  INT 6, RST 5;
+- the DevKitC GPIOs for the Hat Plus: I2S bit clock 14, word select 15, data 16 (no MCLK); I2C
+  SDA 8, SCL 9; PDN 17;
+- the I2C address 0x4C: the Hat's listing says "0x4C-0x4F auto-detected", and 0x4C is ADR to
+  ground (`ASSUMED`);
+- `pin_marker = none`;
 - the octal-PSRAM pins left alone (GPIO33-37, ADR 0015).
 
-Below, `<prototype>` stands for that profile's name. Every command builds and flashes it with
-`CHORUS_BOARD_PROFILE=<prototype>`, as S9 does with its profile. Until the profile exists, S7
-cannot run.
+It is not exactly the prototype this packet buys: F5's AITRIP N16R8 has 16 MB of flash where the
+profile says 8, F20 is a W5500 module rather than a WIZ850io (the same chip, wired to the same
+pins), and with no marker pin S7.5 cannot run until a firmware change names a free DevKitC GPIO
+as `pin_marker`. The other profiles: `brick-s3-wired.conf` names the Brick, which is not bought;
+`compact-s3-wifi.conf` is its Wi-Fi twin; `qemu-s3-openeth.conf` is the emulator's.
+
+Below, `<prototype>` stands for `devkitc-s3-louderhat-wired`. Every command builds and flashes it
+with `CHORUS_BOARD_PROFILE=<prototype>`, as S9 does with its profile.
 
 **Wiring** (the GPIO numbers on the DevKitC side are the profile's):
 
@@ -377,7 +384,8 @@ order (tags `chorus`, `chorus-console`, `chorus-playout`, `chorus-marker`; times
    profile's own model and status.
 3. `chorus-console: console up: power-save, server, status, decode-cost, resources (values are runtime only)`
 4. `chorus-marker: marker on GPIO<n> every <ms> ms of the server timeline` (the profile's
-   `pin_marker`; `firmware/main/esp_marker.c`)
+   `pin_marker`; `firmware/main/esp_marker.c`), or `marker off (pin_marker = none)` while the
+   profile names no marker pin
 5. `chorus-playout: jitter buffer 57600 bytes (9600 frames), internal RAM free after it: <n> bytes`
 6. The amplifier's bring-up (the TAS5825M's datasheet sequence, ADR 0064):
    `chorus: the amplifier at I2C address 0x4c answered as device 0x95, reported no fault, took 0.000 dB of analog gain against a ceiling of 0.000 dB, and reached Play after its clock was applied in Deep Sleep`.
@@ -393,7 +401,7 @@ order (tags `chorus`, `chorus-console`, `chorus-playout`, `chorus-marker`; times
 
 What changes with the answer: nothing to edit if it matches. If the amplifier's bring-up line is a
 refusal instead, it names the key and the datasheet page to re-check in
-`firmware/config/endpoint.conf`; paste the lines into the Needs item and stop here.
+`firmware/config/endpoint.conf`; paste the lines into the owner step and stop here.
 
 #### S7.3 The bring-up and abuse run (unattended, about 10 minutes)
 
@@ -415,7 +423,7 @@ report `embedded5-bringup-<date>` is **PASS** with `amp_status = ok`, `cycles_re
 a pull request `bench/<date>-embedded5-bringup` opens. Then, by hand: pull the W5500's Ethernet
 cable for 30 s and plug it back; `status` on the console (`printf 'status\r\n' > /dev/ttyACM0`
 while `idf.py monitor` shows the reply, or rerun the script) should show `audio=running` again
-within 15 s. Note the result in the Needs item. What changes: a stack figure near zero grows that
+within 15 s. Note the result in the owner step. What changes: a stack figure near zero grows that
 task's stack (ADRs 0058 and 0060); a FAIL names the round and the status line it stopped on.
 
 #### S7.4 The sync against a Linux client, on the rig (after S2)
@@ -468,8 +476,9 @@ endpoint with a Linux client. Until a later goal adds one, the pair is checked w
 #### S7.5 The GPIO marker cross-check (the logic analyzer and both prototypes)
 
 The firmware drives a marker pin at every server-timeline second (ADR 0065,
-`firmware/main/esp_marker.c`). The prototype's profile names a free DevKitC GPIO as `pin_marker`
-(S7), which the Brick could not offer. With both prototypes flashed (S7.1) and synced to the same
+`firmware/main/esp_marker.c`). The prototype's profile must name a free DevKitC GPIO as
+`pin_marker` first (S7: it is `none` today, and the console says `marker off`), which the Brick
+could not offer. With both prototypes flashed (S7.1) and synced to the same
 server, wire each marker pin and a common ground to the analyzer's D0 and D1 (F21, F24), and
 capture a minute:
 
@@ -480,8 +489,8 @@ sigrok-cli -d fx2lafw --config samplerate=24m --channels D0,D1 --time 60s -O csv
 **Expected:** one edge per second on each channel, the same level on both at each second, the
 edge delta between D0 and D1 at most tens of microseconds once both are synced; each endpoint's
 `resources` shows `marker_edges` rising and `marker_missed` at 0. No chorus tool reads the
-capture yet and a Linux client has no marker until the Linux tier (chorus goal 10) adds one: put
-`marker.csv` in the Needs item, and a later goal turns it into a report.
+capture yet and a Linux client has no marker (section 6): put
+`marker.csv` in the owner step, and a later goal turns it into a report.
 
 ### S8. The TV capture session: a TV's sound into the hub, measured (goal 13; after S0 and S1)
 
@@ -492,7 +501,7 @@ answers it, and each step below names the value its answer replaces. Nothing her
 burns or changes a TV setting beyond its own audio menu; run it at the owner's pace, one TV at a
 time.
 
-**First, the TVs (no hardware).** The owner answered part of the Needs item "The three TVs:
+**First, the TVs (no hardware).** The owner answered part of the question "The three TVs:
 model, eARC port, optical out and audio menu" on 2026-10-04: chorus plays two of them (the living
 room's and the master bedroom's), and both have an optical (TOSLINK) output. Still open, per TV:
 the model (from the label or Settings > System > About), which HDMI port says ARC or eARC, and
@@ -564,7 +573,7 @@ refused_rate=0 frames_dropped=<n>`. **Expected:** `ppm` inside +/-1000 (IEC 6095
 ADR 0090), no ring over- or underflow, `refused_rate=0`. Repeat on each TV. What changes: the
 TV's measured rate error replaces the modelled +/-200 and +/-1400 ppm sources of
 `tests/tv_capture.rs` as the case that matters, and a TV near the +/-1500 ppm clamp is named in
-the Needs item.
+the owner step.
 
 #### S8.2 CEC through chorus's own client (no `cec-ctl` needed)
 
@@ -690,7 +699,7 @@ port with `--cec-arc`), recorded per TV.
 **The reports.** None of S8's steps has a bench script, a grader or a topic in
 `tools/bench/topics.conf` (a topic needs its grader); each result is written by hand as a report
 under `docs/measurements/` with `Source: hardware`, the build commit, the device notes (TV model
-from the Needs item, the hub, the receiver) and the raw files (`s8-hub.log`, `s8-amixer.txt`,
+from the owner's answer, the hub, the receiver) and the raw files (`s8-hub.log`, `s8-amixer.txt`,
 `hub-w5ms.raw`, `hub-w1ms.raw`, `s8-udp.txt`, the lip-sync frame counts) under
 `docs/measurements/raw/tv-capture-<date>/`, on a `bench/<date>-tv-capture` branch with a pull
 request from the hub, as the production wakeup run does (section 6). A later chorus goal
@@ -707,7 +716,8 @@ from the chip family, verify against the datasheet; an open network is refused b
 Nothing beyond S7's parts. A chorus server on the network is not needed for this session. The
 owner keeps the Wi-Fi option but plans no Wi-Fi speaker (2026-10-04), so this session is
 optional. `compact-s3-wifi` below is the Brick's Wi-Fi twin: on the prototype, use a Wi-Fi twin
-of the prototype's profile (its pins with `link_transport = wireless`), added with it.
+of the prototype's profile (its pins with `link_transport = wireless`). None exists yet for
+`devkitc-s3-louderhat-wired`; it is a firmware change made before this session.
 
 This is goal 14's hardware step for the compact Wi-Fi speakers (K91): the speaker learns its
 network at run time from a phone, because the repository declares `link_wifi_ssid` and
@@ -792,7 +802,7 @@ passphrase. Expected on the console: the four lines of S9.2. The app's last tick
 received by the phone"); the console is the authority. The app's screens are not something this repository has seen: say what
 differed.
 
-Paste into the Needs item: only the console lines that contain `provision:` or `store:`, with the
+Paste into the owner step: only the console lines that contain `provision:` or `store:`, with the
 `setup secret <12 characters>` line deleted, plus any `MAC:` line deleted if one is in the range
 (K27); those lines carry no network name, no passphrase and no address of the house's network by
 construction, and nothing else from the log is needed. Add the phone's model and browser, the
@@ -871,7 +881,7 @@ rebooting`; the bootloader starts the good image again (`running slot=1 state=va
 version=<good>`), and the state shows `rolled_back` with reason `not_confirmed`, `image_version`
 the bad one and `version` the good one.
 
-Paste into the Needs item: the console lines containing `chorus-ota:`, `chorus-identity:`,
+Paste into the owner step: the console lines containing `chorus-ota:`, `chorus-identity:`,
 `chorus-discovery:` or `chorus-endpoint:`, the server's `endpoint adopted` and `firmware` lines, and the speaker's
 `firmware` object from the state after S10.4 and after S10.5, with any `MAC:` line and any LAN
 address deleted (K27), plus the seconds of S10.4. Afterwards remove the bench variable from the
@@ -917,7 +927,7 @@ negative) in the second scrape.
 Expected for its label: exactly `chorus_speaker_connected` 0, `chorus_speaker_info` and
 `chorus_speaker_firmware_info`; every other series of it gone.
 
-Paste into the Needs item: the `chorus_speaker_` lines of each scrape (the `speaker` label is the
+Paste into the owner step: the `chorus_speaker_` lines of each scrape (the `speaker` label is the
 random `chorus-<12 hex>` id, not a hardware address; delete any LAN address, K27) and
 `chorusctl endpoints list`'s output from S11.1.
 
@@ -964,7 +974,7 @@ group that holds A and B. Expected: both rooms play the group's track together (
 raise the volume to full from the control point application. Expected: the room stays at the
 limit and the application's slider shows the limited value after a moment.
 
-Paste into the Needs item: the application's name and version, the `ss` output, what S12.2 to
+Paste into the owner step: the application's name and version, the `ss` output, what S12.2 to
 S12.5 showed, and the server's log lines starting `chorus-server: upnp` (delete any LAN address,
 K27).
 
@@ -976,12 +986,13 @@ port answer decides whether the homelab deploy needs `--upnp-ssdp-port`.
 
 S0 first; S1 needs one Pi; S2 needs both and the interface; S3 needs S2's rig trusted; S4 after
 S3. S5 is independent (a bare DevKitC) and can run any time; S6 follows S5 on the same
-board. S7 needs the module prototype and its board profile (a firmware change first): S7.1-S7.3
+board. S7 needs the module prototype and its board profile (`devkitc-s3-louderhat-wired`; S7.5
+also needs its marker pin set, a firmware change first): S7.1-S7.3
 after S0 alone, S7.4 after S2's rig is trusted, S7.5 once both prototypes play. S8 waits for the
 hub parts bought at install (H1 to H3), then one Pi as the hub (S0); the TVs' models stay open
-in their Needs item; S8.5 and S8.7 also need S1's endpoint. S9 (optional: no Wi-Fi speaker is
+(a question for the owner); S8.5 and S8.7 also need S1's endpoint. S9 (optional: no Wi-Fi speaker is
 planned) follows S7.2 on a prototype whose amplifier bring-up reaches Play, flashed with the
-Wi-Fi twin of its profile; it needs a phone and the house's 2.4 GHz network and no chorus server, and it unblocks
+Wi-Fi twin of its profile (not yet written, see S9); it needs a phone and the house's 2.4 GHz network and no chorus server, and it unblocks
 WIFI-7's characterization run (section 6). S10 follows S5 (and S7.1, so the board is known to
 play) on the wired profile with a chorus server on the audio network. S11 follows S10 on the
 same board and server (its Wi-Fi half follows S9). S12 needs only a server with `--upnp` and two
@@ -995,22 +1006,23 @@ Each evidence run (S1-S4, S6, S7.3, S7.4) commits its report on `bench/<date>-<t
 from endpoint A (`docs/bench.md`); the owner does nothing else. If the report or pull-request half
 fails after a measurement, nothing is lost: fix the cause and run the same script with
 `--report-from <run directory>` (printed at the start) from the same commit. S0, S5, S9, S10 and S11 are
-answered in their Needs items; S9's answer is console lines only, chosen so that no network name,
+answered in their owner steps; S9's answer is console lines only, chosen so that no network name,
 passphrase or address is pasted.
 
 ## 6. Not in this packet
 
 - A reader for the GPIO marker's capture (S7.5 records it as a CSV only) and a marker on the
   Linux client: chorus goal 10 decided not to build the Linux marker before a Linux board and pin
-  exist and assigned it to goal 26 (ADR 0067), and the goal that has a capture to read writes its
-  report.
+  exist and assigned it to goal 26 (ADR 0067); goal 26 closed with no rack amp (ADRs 0231 and
+  0234), so no Linux board or pin was designed there and the marker still waits for one. The goal
+  that has a capture to read writes its report.
 - WIFI-7 (`tools/wireless-characterization-run.sh`, the compact speakers' Wi-Fi tier): it needs a
   speaker on a wireless network the repository declares unknown. Chorus goal 14 built the
   provisioning path (S9); the run itself still waits for S9's answer and the capture rig.
 - A QR code for the speaker's setup network, a captive-portal redirect so the phone opens the
   join page by itself, and a list of scanned networks on the page: none is built (ADR 0103); the
   page is reached by typing the address the console prints.
-- The production host's SCHED_FIFO wakeup-jitter run: a homelab-side Needs item, not a bench
+- The production host's SCHED_FIFO wakeup-jitter run: a homelab-side owner step, not a bench
   session (`docs/measurements/host-wakeup-jitter.md`). Its output files come back the bench way:
   committed under `docs/measurements/raw/production-wakeup-<date>/` on a
   `bench/<date>-production-wakeup` branch with a pull request, from which a chorus goal writes the

@@ -259,7 +259,7 @@ chorus/
   docs/decisions/          # decision log
   docs/measurements/       # saved harness reports
   crates/                  # e.g. protocol / sync / dsp / server / client-linux
-  firmware/esp32s3/        # ESP-IDF project with mirrored components
+  firmware/esp32s3/        # ESP-IDF project with mirrored components (built as firmware/)
   fixtures/                # protocol vectors, dsp vectors, sync traces
   tools/measure/           # harness scripts
   deploy/                  # Dockerfile, compose, systemd units
@@ -289,7 +289,7 @@ The /goal program in [`.claude/goals/2026-09-chorus.md`](https://github.com/NSch
 | Program phase | Goals | Serves | Success looks like |
 |---|---|---|---|
 | Start-up, audit and proposals | 1 | all | a cold audit of every phase and the research proposals, decided at Checkpoint K |
-| Fixes and the gate | 2 | 1 | the audit's fixes; `make gate` is the one merge check |
+| Fixes and the gate | 2 | 1 | the audit's fixes; `make gate` is the one merge check (since 2026-10-04 CI is the gate: a pull request runs `make gate-changed` and the full `make gate` runs nightly on main, decision 0140) |
 | Conventions, licence and identity | 3 | 1 | chorus's own conventions, each enforced by a check; MIT OR Apache-2.0; the identity scan |
 | Reversals, loose ends, first release, deploy PR | 4 | 1, 6 | this amendment; release v0.1.0; the homelab deploy PR opened for the owner |
 | Protocol v2 | 5, 6 | 1, 5 | capabilities, channel maps, PCM/FLAC/Opus, encrypted sessions with trust-on-first-use adoption, the metadata, controller, visualizer and source roles; Rust and C agree on shared fixtures |

@@ -2,6 +2,7 @@
 
 - Decisions: K57, K58
 - Status: PROPOSED (chorus goal 1, 2026-09-30); decided at Checkpoint K
+- Outcome: approved at Checkpoint K, Option B (`docs/upnp.md`, `docs/decisions/0120-the-media-fetcher.md`) (recorded 2026-10-06)
 - If deferred: UPnP AV only
 - Builds on: goal 4 (§8, BRIEF §2.3's streaming line per R7), goal 16 (§20 item 3, UPnP AV renderers per room, saved group and live group), goal 17 (§21 item 2, "Other protocols per P6"; line C), goal 18 (§22, sources and media players in HA)
 

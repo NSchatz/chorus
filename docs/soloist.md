@@ -344,7 +344,9 @@ The owner's steps, on the host that runs both:
 4. **Place the key**: the Soloist API key as the single line of `secrets/api_key`, mode 0400,
    owner 65532. It is read at each start of Soloist and never logged.
 5. **Start** the receivers with the image pinned by digest (`CHORUS_SOLOIST_IMAGE`: the
-   manifest digest `make soloist-image` prints, which the release notes repeat), and
+   manifest digest `make soloist-image` prints; CI publishes the image as
+   `ghcr.io/nschatz/chorus-soloist:<ver>` and its job summary lists it as `<repo>:<tag>@<digest>`,
+   `docs/release.md`, "Pushing the images to a registry"), and
    chorus-server with the override (`docker compose -f deploy/compose.yaml -f
    deploy/soloist/server.compose.yaml up -d`), with the same `CHORUS_SOLOIST_RECEIVERS`.
 6. **Every 90 days at the latest, replace the binary**: put the new build at `bin/soloist`,

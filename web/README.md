@@ -16,8 +16,9 @@ out for a phone, for a desktop and as a wall tablet's kiosk
 (`docs/decisions/0191-phone-and-desktop-layouts-and-the-kiosk.md`; "Layouts and the kiosk"
 below). Beyond the groups and the rooms it has further screens, each at an address of its own
 in the fragment: a room's sound (bass, treble, loudness, night mode and speech enhancement), a
-room's volume limit and quiet hours, the house's autoplay rules, and its alarms, stored sources
-and sleep timers
+room's volume limit and quiet hours, a room's correction, a room's theater settings, the house's
+autoplay rules, its alarms, stored sources and sleep timers, its speakers with their firmware,
+and the walk-through for a Wi-Fi speaker
 (`docs/decisions/0197-further-screens-have-an-address-in-the-fragment.md`; "Further screens"
 below).
 
@@ -36,10 +37,13 @@ below).
 | `src/room-correction.js`, `src/capture.js`, `src/capture-worklet.js` | a room's correction, registered at `#/rooms/<room>/correction`: the walk (guidance, the microphone and what the browser granted, the sweep and the recording, the proposed filters and the apply), the switch and the undo; the microphone with its processing asked off, the 48 kHz 16-bit WAV the server's route takes and the resampler for a browser at another rate; and the audio worklet that hands over uncompressed samples, which the build makes a file of its own (`dist/assets/capture-worklet-<hash>.js`). The screen records through a capture session it opens with its `capture` property, which is where a test gives it another source |
 | `src/autoplay.js` | the house's autoplay rules, registered at `#/autoplay`: a switch and a target picker (rooms and saved groups) for each input |
 | `src/alarms.js` | the house's alarms, stored sources and sleep timers, registered at `#/alarms`: an alarm's source picker offers the four kinds from the state (chimes, inputs, stored stream URLs, stored Spotify URIs) |
+| `src/theater.js` | a room's theater settings, registered at `#/rooms/<room>/theater`: the A/V trim, TV autoplay for the room's TV inputs, the TV upmix and the sub's bass management; a room's card links to it only for a room with a TV input or a bonded set larger than a pair |
+| `src/speakers.js` | the house's speakers, registered at `#/speakers`: each adopted speaker's name, room, presence and link, a refused changed key, and its firmware (the update, install, cancel and rescan); it also registers the walk-through's address |
+| `src/speaker-setup.js` | the walk-through for a compact Wi-Fi speaker, at `#/speakers/setup`: the steps at the speaker, and a watch on the state that ends it when a new speaker is adopted |
 | `src/layout.js`, `src/mode.js`, `src/wake-lock.js` | the two layouts and the one breakpoint between them; the kiosk's switch (`?kiosk`) and its memory; the screen wake lock a kiosk holds |
 | `src/grouping.js`, `src/drag.js` | a move (a room and a destination) as its one command, and the drag gesture on Pointer Events that makes one |
 | `test/` | the unit tests (`*.test.js`), `setup.js` (happy-dom's globals, loaded before Lit), `label-query.js` (find an element by its label, through shadow roots) and `fake-server.js` (a scripted server: the three routes, answered as the test says) |
-| `live/` | the live tests (`rooms.live.js`, `groups.live.js`, `playing.live.js`, `sound.live.js`, `limits.live.js`, `autoplay.live.js`, `alarms.live.js`, `room-correction.live.js`): the same elements and store, in node with no browser, against a real `chorus-server`; `house.js` starts that server and `setup.js` gives the tests happy-dom's document and node's own network. `endpoint.js` is a scripted endpoint session that offers a line-in, and `control-point.js` a UPnP control point with the media and the cover it plays: what `playing.live.js` gives the server from outside (`autoplay.live.js` uses the endpoint too). `house.js` also starts what `alarms.live.js` needs for a stored source: a stream on loopback and the fake Soloist under the real receiver supervisor |
+| `live/` | the live tests (`rooms.live.js`, `groups.live.js`, `playing.live.js`, `sound.live.js`, `limits.live.js`, `autoplay.live.js`, `alarms.live.js`, `room-correction.live.js`, `theater.live.js`, `speakers.live.js`, `firmware.live.js`): the same elements and store, in node with no browser, against a real `chorus-server`; `house.js` starts that server and `setup.js` gives the tests happy-dom's document and node's own network. `endpoint.js` is a scripted endpoint session that offers a line-in, and `control-point.js` a UPnP control point with the media and the cover it plays: what `playing.live.js` gives the server from outside (`autoplay.live.js` uses the endpoint too). `house.js` also starts what `alarms.live.js` needs for a stored source: a stream on loopback and the fake Soloist under the real receiver supervisor |
 | `smoke/` | the one browser test (`app.spec.js`) and the fake login it signs in through (`fake-login.js`); `playwright.config.js` configures it |
 | `build.mjs` | the build: `src/` into `dist/`, deterministic |
 | `dist/` | the build's output, committed: `chorus-server` embeds it and never runs node |
@@ -132,6 +136,9 @@ layout and in the kiosk:
 | `#/rooms/<room>/correction` | a room's correction: the measurement with the device's microphone, the proposed filters, apply, switch and undo | `src/room-correction.js` |
 | `#/autoplay` | the house's autoplay rules | `src/autoplay.js` |
 | `#/alarms` | the house's alarms, stored sources and sleep timers | `src/alarms.js` |
+| `#/rooms/<room>/theater` | a room's theater settings: A/V trim, TV autoplay, TV upmix, bass management | `src/theater.js` |
+| `#/speakers` | the adopted speakers: names, rooms, presence, firmware, and any refused changed key | `src/speakers.js` |
+| `#/speakers/setup` | the walk-through for a compact Wi-Fi speaker | `src/speaker-setup.js` (address registered in `src/speakers.js`) |
 
 A later screen is one module and one link:
 

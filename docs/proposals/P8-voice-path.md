@@ -2,6 +2,7 @@
 
 - Decisions: K71
 - Status: PROPOSED (chorus goal 1, 2026-09-30); decided at Checkpoint K
+- Outcome: approved at Checkpoint K, Option A (K71; `docs/decisions/0166-the-voice-role-on-the-wire.md`, `0176-the-home-assistant-voice-satellite.md`) (recorded 2026-10-06)
 - If deferred: The recommendation
 - Builds on: goal 9 (§13 item 2, "the mic mute switch cuts the mic in firmware"), goal 18 (§22, the integration's shape, harness and "no unauthenticated endpoint"), goal 19 (§23, entities and the homelab install PR; §3.3 "voice satellites per P8"), goal 20 (§24 items 1-4 and done-when A-B: "each voice room as an HA Assist satellite by the settled path, tested against a fake pipeline"), goals 24 and 26 (the compact speaker's and the soundbar's mic with hardware mute, K67, K72)
 

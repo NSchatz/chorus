@@ -78,9 +78,9 @@ player, and refuses to start without each, naming it.
 `--upnp-listen` says otherwise, and discovery uses UDP 1900 (multicast
 239.255.255.250). `docs/proposals/P6-casting-receivers.md` records that the
 homelab host firewall already accepts UDP 1900 from the LAN and that a
-host-network service's TCP port has to be listed there: adding TCP 4030 is
-the owner's step, through a homelab change in goal 17, not something this
-repository does. The server also connects out: to the media URLs it is given,
+host-network service's TCP port has to be listed there. That is done: the
+owner's homelab change opens TCP 4010 and 4030 there; this repository changes
+no firewall. The server also connects out: to the media URLs it is given,
 and to each subscriber's event callback.
 
 **How many can play at once.** A renderer plays through one of the server's
@@ -429,9 +429,11 @@ plays on its device), and the two have not been run together.
 Linn or Home Assistant was run against the OpenHome services either: whether
 they list a chorus renderer as an OpenHome device in the single-device
 layout, and which service versions they bind, is open until a bench run with
-one (the owner's queue). The control point in that test
-is a script. No phone app, no desktop player and no Home Assistant was run
-against these renderers; that is goal 17's work. Also not tested: multicast
+one (an owner step, `goals item add` in the owner's agent harness). The control
+point in that test is a script. No phone app, no desktop player and no Home
+Assistant was run against these renderers; goal 17 closed (ADR 0128) without
+one, so that run is still the owner's (`docs/bench-packet.md`'s S12 casts from a
+phone app). Also not tested: multicast
 on a real interface (the test sends its searches to the server's port and
 receives the announcements on a loopback socket), a second host, and the
 `SEARCHPORT` route with a real control point.

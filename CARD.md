@@ -13,7 +13,8 @@ Multiroom and surround audio: server, sync protocol, speaker firmware. For sibli
 - MQTT topics for the house: `docs/mqtt.md`. Home Assistant integration:
   `integrations/homeassistant`, `docs/home-assistant.md`.
 - Speaker acoustic designs (drivers, box, crossover, the tolerances an enclosure must hold):
-  `docs/hardware/compact-speaker.md`, `docs/hardware/twoway-speaker.md`; enclosure proposal
+  `docs/hardware/compact-speaker.md`, `docs/hardware/twoway-speaker.md`,
+  `docs/hardware/subwoofer.md`, `docs/hardware/lcr-set.md`; enclosure proposal
   `docs/proposals/P12-enclosures.md`.
 - Pure Rust cores to reuse: `crates/protocol`, `crates/sync`, `crates/dsp`, `crates/schedule`.
 
@@ -45,8 +46,8 @@ or an install on hardware by an agent.
 - Speaker design record (`speaker-design-record` v1, exported by shopkit and committed byte for
   byte): `fixtures/design-record/`, read by `crates/dsp/src/design_record.rs`.
 - The server container's contract (ports, state path, rtprio, memlock): `deploy/README.md`.
-- Pins: toolchain `rust-toolchain.toml`, tools `mise.toml` and `mise.lock`, ESP-IDF
-  `firmware/config/endpoint.conf`.
+- Pins: every one, current or held back and why, in `docs/pins.md` (toolchain
+  `rust-toolchain.toml`, tools `mise.toml` and `mise.lock`, ESP-IDF `firmware/config/endpoint.conf`).
 
 ## Not here
 

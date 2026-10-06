@@ -2,6 +2,7 @@
 
 - Decisions: K79
 - Status: PROPOSED (chorus goal 1, 2026-09-30); decided at Checkpoint K
+- Outcome: approved at Checkpoint K, Option A (K79; `docs/decisions/0044-the-vendored-decoders.md`, `0122-the-server-decoders.md`) (recorded 2026-10-06)
 - If deferred: MP3, FLAC, Vorbis, Opus, ALAC and WAV as recommended; AAC off
 - Builds on: goal 4 (§8, release notes say where the source of any MPL-licensed dependency is), goal 6 (§10, FLAC and Opus on the C endpoint and in the Linux client "per P9"), goal 16 (§20, "the settled formats and implementations", the MPL ADR and allowlist exception, `make image` green with any C decoder), goal 17 (§21, stored alarm stream URLs), goal 20 (§24, HA announcements and TTS through the ducking mixer)
 

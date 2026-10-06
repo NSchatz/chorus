@@ -2,6 +2,7 @@
 
 - Decisions: K84, K46
 - Status: PROPOSED (chorus goal 1, 2026-09-30); decided at Checkpoint K
+- Outcome: approved at Checkpoint K (`docs/mqtt.md`, `docs/decisions/0138-the-home-assistant-integration.md`) (recorded 2026-10-06)
 - If deferred: Stock cards; MQTT off by default
 - Builds on: goal 15 (MQTT, "device discovery for what P10 says MQTT carries, against a fake broker"), goal 18 (the room and saved-group media players the dashboard shows), goal 19 ("the settled card or stock-card setup" and the homelab install PR)
 

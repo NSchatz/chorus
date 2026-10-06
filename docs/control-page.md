@@ -10,7 +10,9 @@ served beside it at `GET /docs/control-page.md`, so a link from a region resolve
 in a browser rather than pointing at a file the browser cannot reach.
 `docs/control-plane.md` is the contract for the messages underneath all of it.
 
-The installable app (rooms, groups, inputs, what is playing) is a separate thing, served by
+The installable app (rooms, groups, inputs, what is playing, and part 2's further screens:
+a room's sound, limits, correction and theater settings, autoplay, alarms, the speakers with
+their firmware and the Wi-Fi speaker walk-through) is a separate thing, served by
 the same listener under `/app/` beside this page; `docs/app.md` is its document.
 
 ## What the page is

@@ -2,6 +2,7 @@
 
 - Decisions: K23
 - Status: PROPOSED (chorus goal 1, 2026-09-30); decided at Checkpoint K
+- Outcome: overtaken. The speaker designs landed through the devices repo's own tasks (devices pull requests 120, 121 and 128; `docs/decisions/0233-goal-25-closed-the-twoway-and-sub-landed-in-devices.md`, `0234-goal-26-closed-no-rack-amp-or-soundbar-and-the-lcr-set-landed.md`), so no chorus pull request in devices was needed (recorded 2026-10-06)
 - If deferred: Drafts on chorus branches only
 - Builds on: goal 24 (§28 item 3, the compact speaker "a devices PR if devices has finished or P14 was approved; otherwise the draft branch"), goal 25 (§29 item 3, the two-way and the subwoofer, "landing per §28 item 3"), goal 26 (§30 item 4, the rack amp, soundbar and LCR set), goal 27 (§31 item 4, "if it has [finished], or P14 was approved, open the devices PRs from the draft branches")
 

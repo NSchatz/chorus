@@ -15,8 +15,8 @@ Nothing on this page is a measurement, and nothing here has been seen on a phone
 can show is a headless Chromium on a development host. What only the owner's phones can show is
 the "Phone check" section at the end, and what only the owner's phones, a real speaker and the
 owner's bench can show of part 2 is "Phone check, part 2" after it. Both are the owner's (K4), and
-each has an item in the owner's queue. "Part 2 as built, and what was never run on real hardware"
-is the list of what stays unproven until then.
+each is an owner step (`goals item add` in the owner's agent harness). "Part 2 as built, and what
+was never run on real hardware" is the list of what stays unproven until then.
 
 ## Where it is served
 
@@ -52,7 +52,7 @@ further screen has an address of its own (below).
 | Region | What it shows | What it does |
 |---|---|---|
 | Groups | every saved group, then every live group, each with its rooms, what it plays and what is playing | group volume (the server scales every room and keeps their ratio, K77); "Remove" a room; "Group these rooms" for a saved group that is not formed; choose an input |
-| Rooms | every room with its bonded set, its volume and its mute; a room alone also says what it plays and what is playing | volume, mute; move the room by dragging its handle onto a room or a group, or with the "Plays with" list on its card; choose an input; open the room's sound screen ("Sound"), its limits screen ("Limits"), its room correction ("Correction") and, for a room with a TV input or a theater set, its theater screen ("Theater"). Under the rooms, "Autoplay" opens the house's autoplay rules and "Alarms" its alarms, stored sources and sleep timers |
+| Rooms | every room with its bonded set, its volume and its mute; a room alone also says what it plays and what is playing | volume, mute; move the room by dragging its handle onto a room or a group, or with the "Plays with" list on its card; choose an input; open the room's sound screen ("Sound"), its limits screen ("Limits"), its room correction ("Correction") and, for a room with a TV input or a theater set, its theater screen ("Theater"). Under the rooms, "Autoplay" opens the house's autoplay rules, "Alarms" its alarms, stored sources and sleep timers, and "Speakers" the adopted speakers and their setup |
 
 **Further screens and their addresses** (`docs/decisions/0197-further-screens-have-an-address-in-the-fragment.md`).
 A screen beyond the home has an address in the fragment, `#/` and a path, and is painted alone
@@ -571,8 +571,10 @@ refuses, the kiosk works the same and the screen sleeps as the tablet is set.
 
 ## Running the tests
 
-From the repository root, with the pinned node and pnpm of `mise.toml` (`mise install`). CI runs
-all three in `make gate`; here each is a narrow run of its own.
+From the repository root, with the pinned node and pnpm of `mise.toml` (`mise install`). CI is the
+gate (ADR 0140): a pull request that touches `web/` runs `web-test` and `web-build` in
+`make gate-changed`, and the nightly `make gate` on main runs all three; here each is a narrow run
+of its own.
 
 | Command | What it is | It ends with |
 |---|---|---|
@@ -667,8 +669,8 @@ What no test here holds is everything below.
 ## Phone check
 
 The owner's, on the owner's own phones: no agent has a phone, the household's login or the
-household's network. Its item is in the owner's queue (issues in the owner's agent harness;
-`goals needs add`, `/goals:needs`), and this section is what it carries. It settles what
+household's network. It is an owner step (`goals item add` in the owner's agent harness), and
+this section is what it carries. It settles what
 `docs/proposals/P5-app-stack.md` ("Open inputs") still marks `ASSUMED` about Safari and iOS, and
 it is the first time the app is in a hand.
 
@@ -746,15 +748,14 @@ owner's own words; that session records it and closes the item. What the answer 
 - A step that did not go as written becomes a task of its own, with the phone's line and the
   report as its evidence.
 - Not part of steps 1 to 8: the microphone, and everything else of part 2. That is the check
-  below, with an item of its own in the owner's queue.
+  below, an owner step of its own.
 
 ## Phone check, part 2
 
 The owner's as well, and for the same reason: the screens of part 2 have never been in a hand,
 the correction screen has never heard a room, the walk-through has never met a speaker, and no
-install pressed in the app has written a board. Its item is in the owner's queue (an issue in
-the owner's agent harness; `goals needs add`, `/goals:needs`), and this section is what it
-carries. It can be done in three sittings, since they need different things: steps 1 to 4 and 7
+install pressed in the app has written a board. It is an owner step (`goals item add` in the
+owner's agent harness), and this section is what it carries. It can be done in three sittings, since they need different things: steps 1 to 4 and 7
 need the phones and a room that plays; step 5 needs a speaker built for Wi-Fi; step 6 needs the
 bench. A sitting that cannot happen yet (no Wi-Fi speaker is planned, 2026-10-04) is reported as
 "not run", which is an answer.
@@ -896,7 +897,7 @@ changes:
 - This page: "The correction screen has never measured a room", "The walk-through has never run
   against a real speaker", "Nothing here ran on a board" and the table of what was never run
   on real hardware each lose the lines the report settles, with the date.
-- `docs/bench-packet.md`: S9's and S10's own Needs items are answered by their sessions as that
+- `docs/bench-packet.md`: S9's and S10's own owner steps are answered by their sessions as that
   packet says; steps 5 and 6 add only what the app's screen showed beside them.
 - A step that did not go as written becomes a task of its own, with the phone's line and the
   report as its evidence. A correction that sounds worse is such a task and not a reason to

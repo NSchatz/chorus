@@ -6,8 +6,10 @@ half is `chorus-client`'s output map (`crates/client-linux/src/outmap.rs`, ADR 0
 `docs/decisions/0068-the-output-map.md`); this page is the hardware half and how the two
 meet.
 
-**The Linux board is an unanswered owner input** (P4 deferred; the Needs items "The room list and
-its wiring" and "The rack: free units and depth"). Everything below that names a board, a HAT, a
+**The Linux boards are settled, and the rack amp is not designed.** P4 was decided on
+2026-10-04: the theater hub is a Raspberry Pi 5 with a HiFiBerry Digi+ I/O (decision 0232,
+`docs/hardware/lcr-set.md`), and no room wires speakers back to the rack, so the rack amp
+section below is the design a rack amp would use (decision 0231). Everything below that names a board, a HAT, a
 zone count or a channel layout is the design's example, **ASSUMED**, and parameterised: the
 client takes the device's channel count and the map on its command line, so a different board is
 a different command line, not different code.

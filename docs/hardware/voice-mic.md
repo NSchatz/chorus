@@ -107,7 +107,7 @@ and page:
 ## What this page does not do
 
 It orders nothing and spends nothing; it chooses no pins, no driver and no part; it designs no
-echo cancellation; it files nothing in any queue. The purchase is an item in the owner's queue.
+echo cancellation; it files nothing. The purchase is the owner's, an owner step.
 
 ## Sources
 

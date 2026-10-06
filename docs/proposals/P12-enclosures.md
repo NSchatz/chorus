@@ -391,6 +391,10 @@ against 160 mm for 3 L) and its baffle edge radius, so its baffle-step arithmeti
   The owner's inventory asks for each by its own date.
 - **Illustrative volumes** (3 L, 15 L, 50 L, a 1 m soundbar) are placeholders; every cost and
   resonance figure is recalculated when the acoustic designs fix the volumes.
+  Since written (2026-10-06): the designs fixed the net volumes at 1.80 L for the compact
+  (decision 0216), 9.29 L for the two-way (0217) and 73.54 L for the subwoofer (0229), and no
+  soundbar is designed (0231), so its row and the soundbar enclosure above no longer apply. The
+  figures here are not yet recalculated; that is part of the owner's decision on this proposal.
 - **12 mm plywood** properties and price are taken from the 18 mm sheet (**ASSUMED**).
 - **Finish:** a painting kit for the subwoofer and a clear finish for the birch are purchases the
   build packets list.

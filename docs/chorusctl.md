@@ -222,7 +222,7 @@ A stored source (goal 17, `docs/inputs.md`) is something an ALARM can play, name
 referred to as `stored:<id>` in an alarm's `source`. The kind is `url` (an `http://` or
 `https://` stream URL, at most 2048 bytes) or `spotify`
 (`spotify:<track|album|playlist|episode>:<id>`). chorusctl refuses a value that is not one of
-those before sending anything (usage, exit 2); whether the server may fetch a URL is its fetch
+those before sending anything (usage, exit 1); whether the server may fetch a URL is its fetch
 policy's to say when the alarm rings. There is no verb that plays a stored source in a room: only
 an alarm does (brief section 4.8), and a `groups take --source stored:<id>` is the server's
 refusal. `sources forget` is refused while an alarm plays the source.
