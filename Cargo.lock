@@ -80,26 +80,26 @@ dependencies = [
 
 [[package]]
 name = "chorus-alsa"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "chorus-audio"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chorus-protocol",
 ]
 
 [[package]]
 name = "chorus-audio-path"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "chorus-cec"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "chorus-client-linux"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chorus-alsa",
  "chorus-audio",
@@ -118,7 +118,7 @@ dependencies = [
 
 [[package]]
 name = "chorus-control"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chorus-protocol",
  "chorus-schedule",
@@ -127,21 +127,21 @@ dependencies = [
 
 [[package]]
 name = "chorus-controls"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chorus-protocol",
 ]
 
 [[package]]
 name = "chorus-ctl"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chorus-control",
 ]
 
 [[package]]
 name = "chorus-decode"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chorus-opus-sys",
  "sha2",
@@ -150,15 +150,15 @@ dependencies = [
 
 [[package]]
 name = "chorus-discovery"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "chorus-dsp"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "chorus-fetch"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ring",
  "rustls",
@@ -166,18 +166,18 @@ dependencies = [
 
 [[package]]
 name = "chorus-hostctl"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "chorus-hostprobe"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chorus-hostctl",
 ]
 
 [[package]]
 name = "chorus-measure"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chorus-alsa",
  "chorus-audio",
@@ -186,21 +186,21 @@ dependencies = [
 
 [[package]]
 name = "chorus-mqtt"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chorus-control",
 ]
 
 [[package]]
 name = "chorus-opus-sys"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "cc",
 ]
 
 [[package]]
 name = "chorus-protocol"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chacha20poly1305",
  "hmac",
@@ -210,14 +210,14 @@ dependencies = [
 
 [[package]]
 name = "chorus-schedule"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chorus-audio-path",
 ]
 
 [[package]]
 name = "chorus-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chorus-audio",
  "chorus-audio-path",
@@ -244,14 +244,14 @@ dependencies = [
 
 [[package]]
 name = "chorus-soloist"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chorus-control",
 ]
 
 [[package]]
 name = "chorus-soloist-fake"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chorus-control",
  "chorus-soloist",
@@ -260,7 +260,7 @@ dependencies = [
 
 [[package]]
 name = "chorus-soloistd"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chorus-control",
  "chorus-soloist",
@@ -269,18 +269,18 @@ dependencies = [
 
 [[package]]
 name = "chorus-sync"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chorus-protocol",
 ]
 
 [[package]]
 name = "chorus-upnp"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "chorus-wakeword"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "cipher"

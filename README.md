@@ -374,7 +374,7 @@ The program's phases (BRIEF.md section 8.1):
 | The app (21, 22) | built, both parts; never opened on a phone |
 | Acoustic design tools (23) | belongs to the owner's shared Python library, not this repository |
 | The speaker designs (24 to 26) | designed: the compact speaker, the two-way, the subwoofer and the LCR set, each landed in the owner's devices repo ([`docs/hardware/`](docs/hardware/), decisions 0233 and 0234); no rack amp and no soundbar ([P13](docs/proposals/P13-rack-amp-zones.md), decision 0231); nothing built or bought |
-| Finale (27) | under way: the docs, the pins ([`docs/pins.md`](docs/pins.md)) and the parity checklist; v0.1.0 is the only release so far |
+| Finale (27) | under way: the docs, the pins ([`docs/pins.md`](docs/pins.md)) and the parity checklist; release v0.2.0 |
 
 Since 2026-10-04 the remaining work arrives as tasks from the owner's agent harness rather than as
 program goals.
@@ -630,7 +630,7 @@ on a real device.
 - **Releases** are cut by CI from a `v<x.y.z>` tag on main
   ([`.github/workflows/release.yml`](.github/workflows/release.yml), which runs
   `make release`), and the same tag publishes the images to ghcr.io
-  ([`docs/release.md`](docs/release.md)). v0.1.0 is the only release so far.
+  ([`docs/release.md`](docs/release.md)). The releases so far are v0.1.0 and v0.2.0.
 
 ## Contributing
 
