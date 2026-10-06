@@ -71,7 +71,7 @@ is built on a workstation or the agent host.
 | Tag | Commit |
 |---|---|
 | v0.1.0 | `c233198c370ce528323db619ac25b6930fc249f9`, the squash-merge of #38 |
-| v0.2.0 | the squash-merge of the pull request that set the workspace version to 0.2.0 (#PRNUM) |
+| v0.2.0 | the squash-merge of the pull request that set the workspace version to 0.2.0 (#239) |
 
 ## Source of MPL-licensed dependencies (P9)
 
