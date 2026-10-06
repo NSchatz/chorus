@@ -16,6 +16,12 @@ gate: tools-executable
 gate-fast: tools-executable
 	bash tools/gate.sh fast
 
+# The pull request's gate (.github/workflows/ci.yml): the conventions checks, then only what the
+# change touches since CHORUS_GATE_BASE (default: its merge base with origin/main), as
+# tools/changed.sh maps it. Two minutes is the target; over it, a warning.
+gate-changed: tools-executable
+	bash tools/gate.sh changed
+
 # The gate tiers (the goals program, W15, W36): tier-fast on every PR, tier-full at a goal's
 # end and nightly on main. tier-full is the gate itself; gate and gate-fast keep their meaning.
 # Callers take chorus-heavy.lock for both, as for the gate.

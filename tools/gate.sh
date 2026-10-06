@@ -22,6 +22,9 @@
 #
 #   make gate             # everything
 #   make gate-fast        # the conventions checks only, for docs-only changes
+#   make gate-changed     # a pull request's gate: the conventions checks, then only the
+#                         # crates, trees and tests the change touches (tools/changed.sh),
+#                         # two minutes the target; `make gate` runs nightly on main
 #   make tier-fast        # the conventions checks, fmt, clippy, the Home Assistant
 #                         # integration's tests, the web app's tests and rebuild
 #                         # and the workspace tests: the fast
@@ -364,8 +367,66 @@ if [ "$MODE" = tier-fast ]; then
     step test             workspace_tests
 fi
 
+if [ "$MODE" = changed ]; then
+    # The pull request's gate: the conventions checks above, then only what the change
+    # touches (tools/changed.sh): fmt, clippy and the tests of the touched crates and the
+    # crates that depend on them, the Home Assistant integration's tests, the app's tests and
+    # rebuild, and the firmware's host checks, each only when its tree changed. A docs-only
+    # change builds and tests nothing. The full gate runs nightly on main
+    # (.github/workflows/nightly.yml). The target is two minutes: over it, a warning, not a
+    # failure.
+    base="${CHORUS_GATE_BASE:-$(git merge-base origin/main HEAD 2> /dev/null || echo HEAD)}"
+    plan="$(bash tools/changed.sh "$base")" || { echo "gate: tools/changed.sh failed"; exit 1; }
+    mapfile -t crates < <(printf '%s\n' "$plan" | awk '$1 == "crate" { print $2 }')
+    mapfile -t libs < <(printf '%s\n' "$plan" | awk '$1 == "crate" && $3 == "lib" { print $2 }')
+    pkgs=()
+    for c in "${crates[@]}"; do pkgs+=(-p "$c"); done
+    docpkgs=()
+    for c in "${libs[@]}"; do docpkgs+=(-p "$c"); done
+    printf 'gate: changed since %s: %s\n' "$(git rev-parse --short "$base")" \
+        "$(printf '%s\n' "$plan" | awk '{ print ($1 == "crate" ? $2 : $1) }' | paste -sd' ' -)" |
+        tee -a "$LOG/summary.txt"
+    [ -n "$plan" ] || echo "gate: nothing to build or test (no crate, web/, integrations/ or firmware/ change)" | tee -a "$LOG/summary.txt"
+    if [ "${#crates[@]}" -gt 0 ]; then
+        step fmt          cargo fmt --all --check
+        step clippy       cargo clippy "${pkgs[@]}" --all-targets --locked -- -D warnings
+    fi
+    stop_if_cheap_steps_failed ha-test web-test web-build firmware-check test
+    if printf '%s\n' "$plan" | grep -qx ha; then
+        step ha-test      ha_step ha-test
+        ha_summary ha-test
+    fi
+    if printf '%s\n' "$plan" | grep -qx web; then
+        step web-test     web_step web-test
+        step web-build    web_build
+    fi
+    if printf '%s\n' "$plan" | grep -qx firmware; then
+        step firmware-check env CHORUS_OUTAGE_SECONDS="${CHORUS_GATE_OUTAGE_SECONDS:-30}" \
+                              make --no-print-directory firmware-check
+    fi
+    if [ "${#crates[@]}" -gt 0 ]; then
+        changed_tests() {
+            local rc=0
+            MISE_TRUSTED_CONFIG_PATHS="$ROOT" \
+                mise exec "aqua:nextest-rs/nextest/cargo-nextest@$NEXTEST_VERSION" -- \
+                cargo nextest run "${pkgs[@]}" --locked --no-tests=pass || rc=1
+            if [ "${#docpkgs[@]}" -gt 0 ]; then
+                cargo test --doc "${docpkgs[@]}" --locked || rc=1
+            fi
+            return "$rc"
+        }
+        step test         changed_tests
+    fi
+    T1=$(date +%s.%N)
+    took="$(elapsed "$T0" "$T1")"
+    if awk -v t="$took" 'BEGIN { exit !(t > 120) }'; then
+        msg="the changed-only gate took ${took}s, over its two-minute target"
+        if [ "${GITHUB_ACTIONS:-}" = true ]; then echo "::warning::$msg"; else echo "gate: WARNING: $msg"; fi
+    fi
+fi
+
 if [ "$MODE" = full ]; then
-    step fmt              cargo fmt --all --check
+    step fmt             cargo fmt --all --check
     step clippy           cargo clippy --workspace --all-targets --locked -- -D warnings
     stop_if_cheap_steps_failed ha-test ha-hassfest web-test web-build build ha-live web-live web-smoke test determinism firmware-check verify alsa-null \
         firmware-esp32s3-wired firmware-esp32s3-wifi firmware-esp32s3-qemu firmware-profiles \
