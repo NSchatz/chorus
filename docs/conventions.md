@@ -304,8 +304,10 @@ written before this rule.
 
 ## 17. CLAUDE.md length
 
-`CLAUDE.md` stays at or under 200 lines (K52). Detail belongs here, in `docs/decisions/` and in
-`docs/measurements/`.
+`CLAUDE.md` stays at or under 200 lines (K52) and 500 words (goals DECISIONS.md 13): it is in
+every session's context, so it holds the must-knows and a short "Details" index. Detail belongs in
+`docs/working-agreement.md`, here, in `docs/decisions/` and in `docs/measurements/`. `CARD.md`,
+the one-page card sibling repos' agents read, stays at or under 60 lines.
 
 ## 18. No em dashes
 
