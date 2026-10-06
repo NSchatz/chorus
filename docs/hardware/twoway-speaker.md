@@ -14,7 +14,7 @@ version: 1
   this file.
 - The choice of drivers, alignment, crossover frequency and amplifier arrangement, and its
   reasons: the decision record
-  `docs/decisions/0000-the-two-way-speaker-drivers-and-alignment.md`. The driver survey:
+  `docs/decisions/0217-the-two-way-speaker-drivers-and-alignment.md`. The driver survey:
   `docs/research/twoway-speaker-drivers.md`.
 - A change to any design number bumps `version` and re-exports the record.
 

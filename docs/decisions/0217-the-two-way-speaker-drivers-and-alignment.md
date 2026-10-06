@@ -1,4 +1,4 @@
-# 0000: the active two-way is a vented box on one TAS5825M: a Dayton Audio DC160-8 woofer and DC28F-8 tweeter (the good tier of three priced tiers) in 9.29 L tuned to 41.5 Hz (the QB3 alignment the acoustics package designs), crossed over LR4 at 2000 Hz, one amplifier channel per driver, with a 3 dB baffle-step shelf at 550 Hz
+# 0217: the active two-way is a vented box on one TAS5825M: a Dayton Audio DC160-8 woofer and DC28F-8 tweeter (the good tier of three priced tiers) in 9.29 L tuned to 41.5 Hz (the QB3 alignment the acoustics package designs), crossed over LR4 at 2000 Hz, one amplifier channel per driver, with a 3 dB baffle-step shelf at 550 Hz
 
 - Status: accepted, 2026-10-06. A paper design: nothing is built or measured, and every number
   is a starting point the first box confirms or corrects.

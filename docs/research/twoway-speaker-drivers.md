@@ -1,7 +1,7 @@
 # Drivers for the active two-way: a survey of 5 to 7 inch woofers and dome tweeters at a US seller
 
 Research for the active two-way's acoustic design (`docs/hardware/twoway-speaker.md`), 2026-10-06;
-what `docs/decisions/0000-the-two-way-speaker-drivers-and-alignment.md` rests on. Every number
+what `docs/decisions/0217-the-two-way-speaker-drivers-and-alignment.md` rests on. Every number
 was read on 2026-10-06 from the URL pattern named for it. Labels: NOT READ (no page read gives
 it), LEAD (seen in a search snippet only; never used as a fact). Nothing below is a LEAD.
 
