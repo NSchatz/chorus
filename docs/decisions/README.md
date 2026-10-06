@@ -140,3 +140,4 @@ the number of the pull request that added it.
 | 0217 | [the active two-way is a vented box on one TAS5825M: a DC160-8 woofer and a DC28F-8 tweeter (the good tier of three) in 9.29 L tuned to 41.5 Hz, crossed over LR4 at 2000 Hz, one amplifier channel per driver, with a 3 dB baffle-step shelf at 550 Hz](0217-the-two-way-speaker-drivers-and-alignment.md) |
 | 0222 | [CI publishes the chorus-server and chorus-soloist images to ghcr.io, from a commit on main, with the job's own token](0222-ci-publishes-the-images.md) |
 | 0224 | [the Spotify Soloist terms shown in the developer dashboard have no clause on instances, servers or commercial use; the pool of 16 slots stands](0224-the-soloist-dashboard-terms-have-no-instance-clause.md) |
+| 0225 | [the host contract sets a thread's scheduling policy through the pthread calls, because musl's sched_setscheduler is a stub](0225-the-host-contract-sets-policy-through-pthread-calls.md) |
