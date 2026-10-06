@@ -42,11 +42,12 @@ Asked whether to push by hand now, add a CI publish job, or wait, the owner chos
 
 CI rebuilt `a835a5f` with the pinned digests as inputs. `chorus-soloist` matched its pin
 (`sha256:bfc6dcaa...984c`); `chorus-server` did not: CI built `sha256:b955a817...a067` against the
-workstation build's `sha256:4a5a6e51...3909`, and nothing was pushed. Asked whether to re-pin to
+workstation build's `sha256:4a5a6e51...3909`, and nothing was pushed
+(https://github.com/NSchatz/chorus/actions/runs/37473725188). Asked whether to re-pin to
 the CI build, find the drift first, or push the workstation tarball by hand, the owner chose the
 re-pin. A second CI run with `b955a817...` as the expected digest built the same server again and
 pushed both images under `g17-a835a5f`
-(https://github.com/NSchatz/chorus/actions/runs/37474179001). The pin change is homelab task #181;
+(https://github.com/NSchatz/chorus/actions/runs/37474179001). The pin change is homelab task #181, a homelab pull request the owner merges;
 why the workstation and CI server builds differ is not yet known.
 
 ## Not chosen
