@@ -49,10 +49,9 @@ umbrella's section, its specs, stages and pointers, is removed.)
 - Local runs are narrow tests only: one crate's focused test on a built tree, or one
   `tools/conventions/check-*.sh`. No gate, tier, whole-workspace cargo build or test, or
   image build runs on the development host. A measurement that has to run here (a QEMU
-  run, a soak) holds `goals lock goals-heavy -- goals lock chorus-heavy -- ...`, subagents'
-  included; a throwaway build keeps its cargo target directory where `tools/build-dir.sh`
+  run, a soak) is the exception; a throwaway build keeps its cargo target directory where `tools/build-dir.sh`
   says (`/scratch` when it fits, else `/cache/wt/chorus/target/shared`).
-- Flashing, eFuses, deploys to the homelab and OTA installs on installed speakers are the owner's actions (K4, K28, K93); nothing in this repo sets `CHORUS_OWNER_AT_BENCH`. Each one is an issue in the owner's queue in the owner's agent harness (`goals needs add`, `/goals:needs`), and a request to another repository is a `from:chorus` issue (`goals request add`).
+- Flashing, eFuses, deploys to the homelab and OTA installs on installed speakers are the owner's actions (K4, K28, K93); nothing in this repo sets `CHORUS_OWNER_AT_BENCH`. Ask the owner for each one with AskUserQuestion in the session, never in an issue.
 - BRIEF.md is kept current by the work: verified corrections and the owner's
   decisions are written into it, each dated with its decision IDs. Its section
   3.1 guardrails are never relaxed or removed by any task; they may only be
