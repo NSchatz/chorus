@@ -40,6 +40,36 @@ typedef enum {
 
 const char *chorus_audio_output_name(chorus_audio_output_t output);
 
+/* The status light a board carries (docs/hardware/controls.md): `none`, or one
+ * WS2812-class addressable RGB LED (WS2812B, SK6812) on one data pin. */
+typedef enum {
+    CHORUS_STATUS_LED_NONE = 0,
+    CHORUS_STATUS_LED_WS2812
+} chorus_status_led_t;
+
+const char *chorus_status_led_name(chorus_status_led_t led);
+
+/* The controls, the status light and the microphone a board profile wires
+ * (docs/hardware/controls.md; the compact class's, K67-K70). Every pin is a
+ * GPIO or CHORUS_PIN_NONE, and endpoint.conf carries `none` for each, so a
+ * board without them (every profile before the compact's modules) drives none.
+ * Buttons switch to ground against the S3's internal pull-up. The microphone
+ * is an I2S MEMS part on the S3's second I2S controller, as an input; its mute
+ * switch's second pole reads low when muted. */
+typedef struct {
+    uint32_t play_pause;
+    uint32_t volume_up;
+    uint32_t volume_down;
+    uint32_t next;
+    uint32_t previous;
+    chorus_status_led_t status_led;
+    uint32_t status_led_data;
+    uint32_t mic_bclk;
+    uint32_t mic_ws;
+    uint32_t mic_din;
+    uint32_t mic_mute;
+} chorus_board_controls_t;
+
 /* The board a profile describes (firmware/boards/<profile>.conf). */
 typedef struct {
     char profile[CHORUS_ENDPOINT_TEXT];
@@ -80,6 +110,9 @@ typedef struct {
 
     chorus_i2s_clock_t clock;
     chorus_pin_map_t pins;
+    /* The buttons, the status light and the microphone (all `none` but on a
+     * board that wires them). */
+    chorus_board_controls_t controls;
     chorus_mem_placement_t dma_placement;
     /* The GPIO marker's period on the server timeline (pins.marker drives it). */
     uint32_t marker_period_ms;

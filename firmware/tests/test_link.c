@@ -152,6 +152,82 @@ static void every_profile_reads_as_the_image_reads_it(void)
         chorus_check(count == 0, "compact-s3-wifi breaks no rule (%zu findings)", count);
     }
 
+    if (load_profile("devkitc-s3-louderhat-wired")) {
+        chorus_check(profiled.link.transport == CHORUS_TRANSPORT_WIRED &&
+                         profiled.board.model_status == CHORUS_BOARD_ASSUMED &&
+                         strcmp(profiled.board.needs_item, NEEDS_ITEM) == 0,
+                     "devkitc-s3-louderhat-wired: link %s, model \"%s\" %s",
+                     chorus_transport_name(profiled.link.transport), profiled.board.model,
+                     chorus_board_status_name(profiled.board.model_status));
+        /* The reference board's Ethernet and audio pins, carried over. */
+        chorus_check(profiled.eth.sclk == committed.eth.sclk &&
+                         profiled.eth.int_pin == committed.eth.int_pin &&
+                         profiled.eth.spi_clock_mhz == committed.eth.spi_clock_mhz &&
+                         memcmp(&profiled.pins, &committed.pins, sizeof(profiled.pins)) == 0,
+                     "devkitc-s3-louderhat-wired keeps the reference board's W5500 and "
+                     "amplifier pins");
+        const chorus_board_controls_t *c = &profiled.controls;
+        chorus_check(c->play_pause == 1 && c->volume_up == 2 && c->volume_down == 4 &&
+                         c->next == 7 && c->previous == 18,
+                     "devkitc-s3-louderhat-wired: five buttons on GPIO1, 2, 4, 7 and 18");
+        chorus_check(c->status_led == CHORUS_STATUS_LED_WS2812 && c->status_led_data == 47,
+                     "devkitc-s3-louderhat-wired: a %s status light on GPIO%u",
+                     chorus_status_led_name(c->status_led), (unsigned)c->status_led_data);
+        chorus_check(c->mic_bclk == 40 && c->mic_ws == 39 && c->mic_din == 41 && c->mic_mute == 21,
+                     "devkitc-s3-louderhat-wired: the microphone on GPIO40, 39, 41, its mute "
+                     "switch on GPIO21");
+        chorus_finding_t findings[32];
+        size_t count = 0;
+        chorus_endpoint_config_validate(&profiled, findings, 32, &count);
+        for (size_t i = 0; i < count; i++) {
+            printf("  finding %s :: %s\n", findings[i].rule, findings[i].detail);
+        }
+        chorus_check(count == 0, "devkitc-s3-louderhat-wired breaks no rule (%zu findings)", count);
+
+        /* The controls are held to the pin rules and to their sets. */
+        const struct {
+            const char *what;
+            uint32_t *pin;
+            uint32_t value;
+            const char *rule;
+        } broken[] = {
+            {"a button on the W5500's chip select", &profiled.controls.next, 10,
+             "gpio-assigned-twice"},
+            {"a button on the amplifier's power-down", &profiled.controls.play_pause, 17,
+             "gpio-assigned-twice"},
+            {"two buttons on one pin", &profiled.controls.volume_up, 1, "gpio-assigned-twice"},
+            {"a button on a strapping pin", &profiled.controls.previous, 0,
+             "gpio-is-a-strapping-pin"},
+            {"the light on the octal PSRAM", &profiled.controls.status_led_data, 35,
+             "gpio-reserved-for-octal-flash-or-psram"},
+            {"the light with no pin", &profiled.controls.status_led_data, CHORUS_PIN_NONE,
+             "status-led-half-wired"},
+            {"a microphone with no data line", &profiled.controls.mic_din, CHORUS_PIN_NONE,
+             "microphone-half-wired"},
+            {"a microphone with no mute switch", &profiled.controls.mic_mute, CHORUS_PIN_NONE,
+             "microphone-without-mute-switch"},
+        };
+        for (size_t i = 0; i < sizeof(broken) / sizeof(broken[0]); i++) {
+            uint32_t was = *broken[i].pin;
+            *broken[i].pin = broken[i].value;
+            count = 0;
+            chorus_endpoint_config_validate(&profiled, findings, 32, &count);
+            int found = 0;
+            for (size_t j = 0; j < count; j++) {
+                found |= strcmp(findings[j].rule, broken[i].rule) == 0;
+            }
+            chorus_check(found, "%s is refused as %s", broken[i].what, broken[i].rule);
+            *broken[i].pin = was;
+        }
+        profiled.controls.mic_bclk = profiled.controls.mic_ws = profiled.controls.mic_din =
+            CHORUS_PIN_NONE;
+        count = 0;
+        chorus_endpoint_config_validate(&profiled, findings, 32, &count);
+        chorus_check(count == 1 && strcmp(findings[0].rule, "mute-switch-without-microphone") == 0,
+                     "a mute switch with no microphone is refused as "
+                     "mute-switch-without-microphone");
+    }
+
     if (load_profile("qemu-s3-openeth")) {
         chorus_check(profiled.link.transport == CHORUS_TRANSPORT_EMULATED &&
                          strcmp(profiled.board.profile, "qemu-s3-openeth") == 0,

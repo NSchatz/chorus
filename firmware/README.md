@@ -35,6 +35,10 @@ embedded in the image:
 boards/brick-s3-wired.conf    the default: the wired classes, W5500 on SPI2
 boards/compact-s3-wifi.conf   the compact speakers' Wi-Fi tier
 boards/qemu-s3-openeth.conf   not a speaker: the emulator's board (goal 14)
+boards/devkitc-s3-louderhat-wired.conf
+                              the compact on three bought modules: DevKitC-1-N8R8,
+                              Louder Raspberry Hat Plus (TAS5825M), WIZ850io (W5500),
+                              with its buttons, status light and microphone
 ```
 
 The first two name P1's bought reference board, the Esparagus Audio Brick (ESP32-S3), and
@@ -46,7 +50,10 @@ machine: its link is `emulated` (the emulator's OpenCores Ethernet), it plays
 through nothing (`board_audio_output = none`; the emulator has no I2C and no
 I2S), and `make qemu-boot` boots its image against a real server
 (`docs/decisions/0109-an-emulator-board-profile-and-the-pinned-emulator.md`);
-`tools/firmware-flash.sh` refuses to write that image to a device. The W5500 driver is the Component Registry's
+`tools/firmware-flash.sh` refuses to write that image to a device. The fourth is
+the compact speaker on three bought modules (the Brick is no longer sold), on the
+reference board's pins plus the compact's buttons, light and microphone
+(`docs/decisions/0230-the-compact-on-bought-modules.md`). The W5500 driver is the Component Registry's
 `espressif/w5500`, pinned in `main/idf_component.yml` and `dependencies.lock`.
 Why: `docs/decisions/0057-board-profiles-and-the-wired-link.md`.
 

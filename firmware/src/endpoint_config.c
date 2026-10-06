@@ -69,6 +69,11 @@ const char *chorus_audio_output_name(chorus_audio_output_t output)
     return (output == CHORUS_AUDIO_OUTPUT_NONE) ? "none" : "amplifier";
 }
 
+const char *chorus_status_led_name(chorus_status_led_t led)
+{
+    return (led == CHORUS_STATUS_LED_WS2812) ? "ws2812" : "none";
+}
+
 /* A GPIO number, or `none` for a pin the board does not route out. */
 static int read_pin(const chorus_conf_t *conf, const char *key, uint32_t *out, char *detail,
                     size_t detail_len)
@@ -392,6 +397,33 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
     }
     NEED(chorus_conf_bool(conf, "board_octal_psram", &out->pins.octal_psram, detail, detail_len));
 
+    /* The controls, the status light and the microphone (docs/hardware/controls.md). */
+    chorus_board_controls_t *controls = &out->controls;
+    if (read_pin(conf, "pin_button_play_pause", &controls->play_pause, detail, detail_len) != 0 ||
+        read_pin(conf, "pin_button_volume_up", &controls->volume_up, detail, detail_len) != 0 ||
+        read_pin(conf, "pin_button_volume_down", &controls->volume_down, detail, detail_len) != 0 ||
+        read_pin(conf, "pin_button_next", &controls->next, detail, detail_len) != 0 ||
+        read_pin(conf, "pin_button_previous", &controls->previous, detail, detail_len) != 0 ||
+        read_pin(conf, "pin_status_led", &controls->status_led_data, detail, detail_len) != 0 ||
+        read_pin(conf, "pin_mic_bclk", &controls->mic_bclk, detail, detail_len) != 0 ||
+        read_pin(conf, "pin_mic_ws", &controls->mic_ws, detail, detail_len) != 0 ||
+        read_pin(conf, "pin_mic_din", &controls->mic_din, detail, detail_len) != 0 ||
+        read_pin(conf, "pin_mic_mute", &controls->mic_mute, detail, detail_len) != 0) {
+        return -1;
+    }
+    char led_text[CHORUS_ENDPOINT_TEXT];
+    NEED(chorus_conf_string(conf, "board_status_led", led_text, sizeof(led_text), detail,
+                            detail_len));
+    if (strcmp(led_text, "none") == 0) {
+        controls->status_led = CHORUS_STATUS_LED_NONE;
+    } else if (strcmp(led_text, "ws2812") == 0) {
+        controls->status_led = CHORUS_STATUS_LED_WS2812;
+    } else {
+        snprintf(detail, detail_len, "%s: board_status_led = %s is not `none` or `ws2812`",
+                 conf->path, led_text);
+        return -1;
+    }
+
     char placement[CHORUS_ENDPOINT_TEXT];
     NEED(chorus_conf_string(conf, "dma_descriptor_placement", placement, sizeof(placement), detail,
                             detail_len));
@@ -495,6 +527,122 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
     return 0;
 }
 
+#define CONTROL_PIN_COUNT 10
+#define BOARD_PIN_MAX 24 /* the controls, eight audio pins and six Ethernet pins */
+
+/* Every pin the profile names but the controls', for the one-signal-per-pin
+ * rule below; the Ethernet pins only when the link drives them. */
+static size_t board_pins(const chorus_endpoint_config_t *config, const char **names, uint32_t *pins)
+{
+    const chorus_board_controls_t *c = &config->controls;
+    const chorus_pin_map_t *p = &config->pins;
+    const chorus_eth_config_t *e = &config->eth;
+    const char *const control_names[CONTROL_PIN_COUNT] = {
+        "pin_button_play_pause", "pin_button_volume_up", "pin_button_volume_down",
+        "pin_button_next",       "pin_button_previous",  "pin_status_led",
+        "pin_mic_bclk",          "pin_mic_ws",           "pin_mic_din",
+        "pin_mic_mute"};
+    const uint32_t control_pins[CONTROL_PIN_COUNT] = {
+        c->play_pause,      c->volume_up, c->volume_down, c->next,    c->previous,
+        c->status_led_data, c->mic_bclk,  c->mic_ws,      c->mic_din, c->mic_mute};
+    size_t n = 0;
+    for (size_t i = 0; i < CONTROL_PIN_COUNT; i++) {
+        names[n] = control_names[i];
+        pins[n++] = control_pins[i];
+    }
+    const char *const audio_names[] = {"pin_i2s_mclk",       "pin_i2s_bclk", "pin_i2s_ws",
+                                       "pin_i2s_dout",       "pin_i2c_sda",  "pin_i2c_scl",
+                                       "pin_amp_power_down", "pin_marker"};
+    const uint32_t audio_pins[] = {p->mclk, p->bclk,           p->ws,    p->dout, p->sda,
+                                   p->scl,  p->amp_power_down, p->marker};
+    for (size_t i = 0; i < sizeof(audio_pins) / sizeof(audio_pins[0]) && n < BOARD_PIN_MAX; i++) {
+        names[n] = audio_names[i];
+        pins[n++] = audio_pins[i];
+    }
+    if (config->link.transport == CHORUS_TRANSPORT_WIRED) {
+        const char *const eth_names[] = {"pin_eth_sclk", "pin_eth_mosi", "pin_eth_miso",
+                                         "pin_eth_cs",   "pin_eth_int",  "pin_eth_rst"};
+        const uint32_t eth_pins[] = {e->sclk, e->mosi, e->miso, e->cs, e->int_pin, e->rst};
+        for (size_t i = 0; i < sizeof(eth_pins) / sizeof(eth_pins[0]) && n < BOARD_PIN_MAX; i++) {
+            names[n] = eth_names[i];
+            pins[n++] = eth_pins[i];
+        }
+    }
+    return n;
+}
+
+static void add_finding(chorus_finding_t *findings, size_t capacity, size_t *count,
+                        const char *rule, const char *detail)
+{
+    if (*count < capacity) {
+        snprintf(findings[*count].rule, sizeof(findings[*count].rule), "%s", rule);
+        snprintf(findings[*count].detail, sizeof(findings[*count].detail), "%s", detail);
+        (*count)++;
+    }
+}
+
+/* The controls' rules: each pin is held to the GPIO rules every other pin is,
+ * no control shares a pin with any signal, and the parts that come as a set
+ * are wired as a set. */
+static void validate_controls(const chorus_endpoint_config_t *config, chorus_finding_t *findings,
+                              size_t capacity, size_t *count)
+{
+    const char *names[BOARD_PIN_MAX];
+    uint32_t pins[BOARD_PIN_MAX];
+    size_t n = board_pins(config, names, pins);
+    char detail[CHORUS_FINDING_TEXT];
+
+    for (size_t i = 0; i < CONTROL_PIN_COUNT; i++) {
+        chorus_gpio_validate(names[i], pins[i], config->pins.octal_psram, findings, capacity,
+                             count);
+    }
+    /* The controls come first in the list, so every pair with a control in it
+     * is (i, j) with i a control; the pairs of the other pins are the pin map's
+     * and the link's own rules. */
+    for (size_t i = 0; i < CONTROL_PIN_COUNT; i++) {
+        if (pins[i] == CHORUS_PIN_NONE) {
+            continue;
+        }
+        for (size_t j = i + 1; j < n; j++) {
+            if (pins[i] == pins[j]) {
+                snprintf(detail, sizeof(detail), "%s and %s are both GPIO%u", names[i], names[j],
+                         (unsigned)pins[i]);
+                add_finding(findings, capacity, count, "gpio-assigned-twice", detail);
+            }
+        }
+    }
+
+    const chorus_board_controls_t *c = &config->controls;
+    if ((c->status_led == CHORUS_STATUS_LED_NONE) != (c->status_led_data == CHORUS_PIN_NONE)) {
+        snprintf(detail, sizeof(detail),
+                 "board_status_led = %s with pin_status_led %s; a status light has a data pin "
+                 "and a data pin has a light",
+                 chorus_status_led_name(c->status_led),
+                 c->status_led_data == CHORUS_PIN_NONE ? "= none" : "set");
+        add_finding(findings, capacity, count, "status-led-half-wired", detail);
+    }
+    size_t mic_routed = (c->mic_bclk != CHORUS_PIN_NONE) + (c->mic_ws != CHORUS_PIN_NONE) +
+                        (c->mic_din != CHORUS_PIN_NONE);
+    if (mic_routed != 0 && mic_routed != 3) {
+        add_finding(findings, capacity, count, "microphone-half-wired",
+                    "pin_mic_bclk, pin_mic_ws and pin_mic_din are all set or all `none`: an I2S "
+                    "microphone needs its bit clock, word select and data");
+    }
+    /* docs/hardware/controls.md: a microphone is behind a hardware mute switch
+     * whose second pole the firmware reads, and a switch reads nothing alone. */
+    if (mic_routed == 3 && c->mic_mute == CHORUS_PIN_NONE) {
+        add_finding(findings, capacity, count, "microphone-without-mute-switch",
+                    "the microphone is wired and pin_mic_mute = none; a speaker's microphone is "
+                    "behind a hardware mute switch whose second pole goes to a GPIO "
+                    "(docs/hardware/controls.md)");
+    }
+    if (mic_routed == 0 && c->mic_mute != CHORUS_PIN_NONE) {
+        add_finding(findings, capacity, count, "mute-switch-without-microphone",
+                    "pin_mic_mute is set and no microphone is wired (pin_mic_bclk, pin_mic_ws, "
+                    "pin_mic_din = none)");
+    }
+}
+
 size_t chorus_endpoint_config_validate(const chorus_endpoint_config_t *config,
                                        chorus_finding_t *findings, size_t capacity, size_t *count)
 {
@@ -503,6 +651,7 @@ size_t chorus_endpoint_config_validate(const chorus_endpoint_config_t *config,
     chorus_pin_map_validate(&config->pins, findings, capacity, count);
     chorus_dma_validate_placement(config->dma_placement, findings, capacity, count);
     chorus_link_validate(&config->link, &config->eth, &config->pins, findings, capacity, count);
+    validate_controls(config, findings, capacity, count);
 
     /* Only the I2S master clock may be left unrouted: every other audio pin
      * carries a signal the amplifier cannot run without. */
