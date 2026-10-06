@@ -167,7 +167,7 @@ item in the owner's queue says so. No server release or image is part of this re
 (Harness task 25, 2026-10-06.) Homelab #253 was merged on 2026-10-04 (squash `10162a4`) on the
 owner's word, "Merge on the replayed checks", without a `make ci` run of the merging session's
 own (homelab's checks need a Docker daemon). Still the owner's: `scripts/update-all.sh` on the
-host, adding the entry (Host `10.230.0.1`, the proxy bridge's gateway that homelab's
+host, adding the entry (Host: the proxy bridge's gateway that homelab's
 `networking/traefik/dynamic/chorus.yml` names; Control port `4020`) and naming each room's entity
 prefixes so `dashboards/chorus.yaml` gets the real rooms.
 
