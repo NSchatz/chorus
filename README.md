@@ -333,6 +333,8 @@ chorus is built in phases:
   [`docs/verification-record.md`](docs/verification-record.md).
 - The cold audit of phases 1 to 10, from the start of the program, is
   [`docs/audit/2026-09-audit.md`](docs/audit/2026-09-audit.md).
+- Every item of section 8 and of the owner's parity decisions, with its state and evidence, is
+  [`docs/parity.md`](docs/parity.md).
 
 **One rule is behind every row: hardware criteria are graded only on hardware.** Simulations,
 host runs on ALSA `null`, QEMU boots and fakes prove the logic. They never pass a timing
