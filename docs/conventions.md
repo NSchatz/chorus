@@ -164,6 +164,10 @@ every file and fails on one it does not read.
 `fixtures/dsp/duck` is Rust-only by declaration too: the announcement mixer (duck, mix and
 restore) runs in chorus-server alone (`crates/dsp/src/duck.rs`), and
 `crates/dsp/tests/duck_fixtures.rs` reads every file and fails on one it does not read.
+`fixtures/design-record` is Rust-only by declaration too: a speaker design record exported by
+the acoustics package of the owner's shared Python library is read by
+`crates/dsp/src/design_record.rs`, and `crates/dsp/tests/design_record.rs` reads every file,
+holds each record to the sha256 in its provenance and fails on a file it does not read.
 `fixtures/soloist` (goal 17) is Rust-only by declaration too: the Soloist WebSocket API model,
 the supervisor protocol and the `--version` shapes are spoken by `chorus-soloistd` and
 chorus-server alone, and `crates/soloist/tests/fixtures.rs` reads every vector and fails on a

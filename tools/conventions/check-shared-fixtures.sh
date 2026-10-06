@@ -45,6 +45,11 @@
 # fixtures/wakeword is Rust-only by declaration: the wake-word detector runs in chorus-server
 # alone (crates/wakeword, read by crates/wakeword/tests/reference.rs, which also fails on a file
 # no test reads); no endpoint runs it and there is no C implementation.
+# fixtures/design-record is Rust-only by declaration: a speaker design record (the JSON export of
+# the acoustics package in the owner's shared Python library) is read where a design becomes
+# settings (crates/dsp/src/design_record.rs, read by crates/dsp/tests/design_record.rs, which
+# also fails on a file it does not read); an endpoint only runs the filters it is sent and there
+# is no C reader of it.
 . "$(dirname "$0")/lib.sh"
 # directory | extensions both sides read | where Rust reads it | where C reads it
 shared=(
