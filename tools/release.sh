@@ -79,6 +79,13 @@ git fetch -q origin main
 git merge-base --is-ancestor HEAD origin/main || { echo "release: REFUSED: HEAD $(git rev-parse --short HEAD) is not on origin/main"; exit 2; }
 
 TD="${CARGO_TARGET_DIR:-$ROOT/target}"
+# The image builds' build directory (tools/build-dir.sh), named once and handed to both
+# image scripts: tools/soloist-image.sh stages the notices step 2b reads there, and asking
+# again after the builds could name another directory once they have filled /scratch.
+# shellcheck source=tools/build-dir.sh
+. "$ROOT/tools/build-dir.sh"
+IMAGE_BD="$(throwaway_build_dir image)"
+IMAGE_BUILD_DIR="$(dirname "$IMAGE_BD")"
 OUT="$ROOT/dist/v$VER"
 rm -rf "$OUT"
 mkdir -p "$OUT"
@@ -99,18 +106,16 @@ install -m 0755 "$TD/$TARGET/release/chorus-server" "$OUT/chorus-server-v$VER-$T
 "$OUT/chorus-server-v$VER-$TARGET" --help | head -n 1
 
 # 2. The OCI image tarball, built and tested by tools/image.sh.
-CHORUS_IMAGE_OUT="$OUT/chorus-server-v$VER-oci.tar" bash tools/image.sh
+CHORUS_BUILD_DIR="$IMAGE_BUILD_DIR" CHORUS_IMAGE_OUT="$OUT/chorus-server-v$VER-oci.tar" bash tools/image.sh
 MANIFEST_DIGEST="$(tar -xOf "$OUT/chorus-server-v$VER-oci.tar" index.json |
     python3 -c 'import json,sys; m=json.load(sys.stdin)["manifests"]; assert len(m)==1; print(m[0]["digest"])')"
 
 # 2b. The Soloist receiver image, built and tested by tools/soloist-image.sh, and its notices
 # (the file the image carries at /usr/share/doc/chorus/THIRD-PARTY-NOTICES.md). No Soloist
 # file is in it: the binary is the owner's, mounted at run time (docs/soloist.md).
-CHORUS_SOLOIST_IMAGE_OUT="$OUT/chorus-soloist-v$VER-oci.tar" bash tools/soloist-image.sh
-# tools/soloist-image.sh stages it under its build directory, which tools/build-dir.sh names.
-# shellcheck source=tools/build-dir.sh
-. "$ROOT/tools/build-dir.sh"
-install -m 0644 "$(throwaway_build_dir image)/image/soloist-work/stage-chorus/usr/share/doc/chorus/THIRD-PARTY-NOTICES.md" \
+CHORUS_BUILD_DIR="$IMAGE_BUILD_DIR" CHORUS_SOLOIST_IMAGE_OUT="$OUT/chorus-soloist-v$VER-oci.tar" \
+    bash tools/soloist-image.sh
+install -m 0644 "$IMAGE_BD/image/soloist-work/stage-chorus/usr/share/doc/chorus/THIRD-PARTY-NOTICES.md" \
     "$OUT/chorus-soloist-v$VER-NOTICES.md"
 SOLOIST_DIGEST="$(tar -xOf "$OUT/chorus-soloist-v$VER-oci.tar" index.json |
     python3 -c 'import json,sys; m=json.load(sys.stdin)["manifests"]; assert len(m)==1; print(m[0]["digest"])')"
