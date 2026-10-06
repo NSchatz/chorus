@@ -289,6 +289,17 @@ A third is the active two-way's: `fixtures/design-record/chorus-twoway-v1.json`,
 same form). `the_twoway_record_is_the_exported_one_and_runs` holds it by name to its sha256
 and to its crossover's levels: measured 2026-10-06, at most 0.000027 dB off.
 
+A fourth is the subwoofer's: `fixtures/design-record/chorus-sub-v1.json`, the bass-management
+LR4 of chain item 8 at the default `crossover_hz`, 80 Hz for 48 kHz
+(`docs/hardware/subwoofer.md`, with that speaker's protective high-pass in the same form, its
+amplifier sizing and what its level and phase knobs set).
+`the_sub_record_is_the_exported_one_and_runs` holds it by name to its sha256 and to its
+crossover's levels. This low in the band the running filters' `f32` coefficients are a visible
+part of the difference: rounding them moves the designed response by up to 0.006324 dB (at
+20 Hz; 0.000023 dB for the two-way's 2000 Hz), so the test takes that rounding out of every
+record's running check before it holds the filters to 0.001 dB (measured 2026-10-06: 0.000990 dB
+for this record, 0.000011 dB for the two-way's) and holds the rounding itself under 0.02 dB.
+
 To refresh a fixture: `fixtures/README.md`, "`design-record/`".
 
 ## On the endpoints
