@@ -1,0 +1,22 @@
+# Where chorus-sub-v1.json came from: the subwoofer's bass-management crossover
+# (docs/hardware/subwoofer.md, version 1), one LR4 at 80 Hz for 48 kHz. Its low branch is the
+# subwoofer's low-pass and its high branch the high-pass a main plays in a bonded set with a
+# subwoofer (docs/dsp.md, chain item 8), at the chain's default crossover_hz. The record is
+# committed as it was exported, byte for byte: crates/dsp/tests/design_record.rs holds the file
+# to the sha256 below (and to the same digest written in the test), so an edit by hand fails the
+# test. To refresh it: fixtures/README.md, "design-record/".
+#
+# The command is the call the acoustics package's README documents for writing a record, run with
+# the package installed from the release tag (uv, rootless). The package and its module are
+# written as placeholders: the library is the owner's and is not named here. Release v1.50.0 was
+# the current release on the day of the export; between v1.49.0 (the compact's and the two-way's
+# release) and v1.50.0 the acoustics package changed only its own version number.
+
+record = chorus-sub-v1.json
+source = the acoustics package of the owner's shared Python library
+release = v1.50.0
+command = uv run --package <the acoustics package> python -c "from <its module> import *; write_record(design_record('chorus-sub-v1', [linkwitz_riley(48000, 80)], response_hz=(20, 40, 80, 160, 320)), 'chorus-sub-v1.json')"
+exported = 2026-10-06
+schema = speaker-design-record
+version = 1
+sha256 = 7efc717e20999a509a2c5790601803249dd0462a750836cbf6f0363433b6e0ed

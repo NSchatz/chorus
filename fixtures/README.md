@@ -657,7 +657,9 @@ exported and never edited by hand. Beside each `<name>.json` is `<name>.provenan
 
 `crates/dsp/tests/design_record.rs` reads every file: it recomputes each record's sha256
 against its provenance, reads the record with `chorus_dsp::design_record`, runs its crossover
-through chorus's own biquads and holds the result to the record's response points. A file that
+through chorus's own biquads and holds the result to the record's response points (less what
+rounding the coefficients to `f32` does to the design, which shows at a crossover as low as the
+subwoofer's and is itself held under 0.02 dB). A file that
 is neither a record nor a provenance, a record without its provenance and a record of a schema
 version the reader does not know each fail it.
 
@@ -666,6 +668,7 @@ version the reader does not know each fail it.
 | `lr4-2000hz-48k.json` | one LR4 crossover at 2000 Hz for 48 kHz, with response points at 250, 1000, 2000, 4000 and 16000 Hz; from release v1.49.0, exported 2026-10-06 |
 | `chorus-compact-v1.json` | the compact speaker's crossover (`docs/hardware/compact-speaker.md`, version 1): one LR4 at 3500 Hz for 48 kHz between its woofer and its tweeter, with response points at 500, 1000, 1750, 3500, 7000 and 14000 Hz; from release v1.49.0, exported 2026-10-06. `the_compact_record_is_the_exported_one_and_runs` holds it to its sha256 by name |
 | `chorus-twoway-v1.json` | the active two-way's crossover (`docs/hardware/twoway-speaker.md`, version 1): one LR4 at 2000 Hz for 48 kHz between its woofer and its tweeter, with response points at 250, 500, 1000, 2000, 4000, 8000 and 16000 Hz; from release v1.49.0, exported 2026-10-06. `the_twoway_record_is_the_exported_one_and_runs` holds it to its sha256 by name |
+| `chorus-sub-v1.json` | the subwoofer's bass-management crossover (`docs/hardware/subwoofer.md`, version 1): one LR4 at 80 Hz for 48 kHz, the chain's default `crossover_hz`, whose low branch is the subwoofer's low-pass and whose high branch is a main's high-pass in a bonded set, with response points at 20, 40, 80, 160 and 320 Hz; from release v1.50.0, exported 2026-10-06. `the_sub_record_is_the_exported_one_and_runs` holds it to its sha256 by name |
 
 To refresh a record (a new library release, or a new design): run the `command` of its
 provenance with the acoustics package installed from the release tag (`uv run`, rootless),

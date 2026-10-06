@@ -17,7 +17,9 @@
 //!    response frequency goes through both branches, and once settled each
 //!    branch's level (where the record puts it above [`RUN_FLOOR_DB`], the
 //!    crossover frequency always among them) and the level of the two added
-//!    are within [`RUN_TOLERANCE_DB`] of the record's points;
+//!    are within [`RUN_TOLERANCE_DB`] of the record's points, once what
+//!    rounding the coefficients to `f32` does to the design is taken out
+//!    (itself held under [`ROUNDING_LIMIT_DB`]: it shows at a low crossover);
 //! 3. for an LR4, that the record's sections are the ones chorus designs for
 //!    the same rate and frequency, and that `Lr4` built from the record gives
 //!    the cascade's samples bit for bit.
@@ -38,9 +40,12 @@ use chorus_dsp::fixture::Fields;
 /// points, in dB. The record's own `tolerance_db` (1e-6) is for a response
 /// computed in double precision; a filter running in single precision "agrees
 /// to its own precision, which is the consumer's to state" (the record's
-/// schema). Stated here: 0.001 dB, about 0.01 % in amplitude. The run prints
-/// the largest difference it measured (`--nocapture`): 0.000027 dB for
-/// `lr4-2000hz-48k.json` on 2026-10-06.
+/// schema). Stated here: 0.001 dB, about 0.01 % in amplitude, once the
+/// rounding of the coefficients themselves ([`ROUNDING_LIMIT_DB`]) is taken
+/// out. The run prints the largest difference it measured (`--nocapture`):
+/// 0.000027 dB for `lr4-2000hz-48k.json` on 2026-10-06 with that rounding
+/// left in, 0.000011 dB with it out; 0.000990 dB for `chorus-sub-v1.json`
+/// (the mains' branch at 40 Hz, 24.6 dB down).
 const RUN_TOLERANCE_DB: f64 = 0.001;
 
 /// A branch is held to its point by the running check only where the record
@@ -48,6 +53,18 @@ const RUN_TOLERANCE_DB: f64 = 0.001;
 /// rounding noise is a visible part of what comes out. The designed response
 /// (check 1) holds every point at every level.
 const RUN_FLOOR_DB: f64 = -40.0;
+
+/// How far the designed response of a record's sections may move when their
+/// coefficients are rounded to the `f32` the running filters hold, in dB. A
+/// section's gain at the bottom of the band is its numerator over
+/// `1 + a1 + a2`, and at a low crossover that denominator is small beside the
+/// rounding of `a1` and `a2` (half a unit in the last place each: 6.0e-8 and
+/// 3.0e-8). For the subwoofer's 80 Hz at 48 kHz `1 + a1 + a2` is 1.09e-4, so a
+/// section may move by 8.2e-4 of its gain and the two of an LR4 branch by
+/// 0.0143 dB; at 2000 Hz the same sum is 0.058 and the bound is 0.00003 dB.
+/// Stated here: 0.02 dB. The run prints the largest it found (`--nocapture`):
+/// 0.006324 dB for `chorus-sub-v1.json` on 2026-10-06, at 20 Hz.
+const ROUNDING_LIMIT_DB: f64 = 0.02;
 
 /// The amplitude of the sine the running check plays.
 const SINE_AMPLITUDE: f64 = 0.5;
@@ -180,6 +197,49 @@ fn run_levels(c: &Crossover, f_hz: f64) -> (f64, f64, f64) {
     (level(squares.0), level(squares.1), level(squares.2))
 }
 
+/// The crossover whose coefficients are the `f32` values the running filters
+/// hold (`Biquad::new` rounds each to single precision), written back as
+/// `f64`: what the running check really plays through.
+fn as_run(c: &Crossover) -> Crossover {
+    let round = |s: &Coefficients| {
+        let [b0, b1, b2, a1, a2] = Biquad::new(s).coefficients().map(f64::from);
+        Coefficients { b0, b1, b2, a1, a2 }
+    };
+    Crossover {
+        low: c.low.iter().map(round).collect(),
+        high: c.high.iter().map(round).collect(),
+        ..c.clone()
+    }
+}
+
+/// How far rounding the coefficients to `f32` moves the designed level of the
+/// low branch, of the high branch and of their sum at `f_hz`, in dB.
+fn rounding_db(c: &Crossover, f_hz: f64) -> (f64, f64, f64) {
+    let run = as_run(c);
+    (
+        db_of(run.response_low(f_hz)) - db_of(c.response_low(f_hz)),
+        db_of(run.response_high(f_hz)) - db_of(c.response_high(f_hz)),
+        db_of(run.response_sum(f_hz)) - db_of(c.response_sum(f_hz)),
+    )
+}
+
+/// The largest [`rounding_db`] among the levels the running check holds at a
+/// record's response points.
+fn worst_rounding_db(c: &Crossover) -> f64 {
+    let mut worst = 0f64;
+    for p in &c.response {
+        let (low, high, sum) = rounding_db(c, p.f_hz);
+        if p.low_db > RUN_FLOOR_DB {
+            worst = worst.max(low.abs());
+        }
+        if p.high_db > RUN_FLOOR_DB {
+            worst = worst.max(high.abs());
+        }
+        worst = worst.max(sum.abs());
+    }
+    worst
+}
+
 fn check_crossover(name: &str, tolerance_db: f64, c: &Crossover) -> f64 {
     // 1. the designed response, to the record's own tolerance.
     c.check_response(tolerance_db)
@@ -219,11 +279,20 @@ fn check_crossover(name: &str, tolerance_db: f64, c: &Crossover) -> f64 {
     let mut worst = 0f64;
     for p in &c.response {
         let (low, high, sum) = run_levels(c, p.f_hz);
-        let mut hold = |what: &str, got: f64, want: f64| {
-            let off = (got - want).abs();
+        // What rounding the coefficients to f32 does to each designed level:
+        // small by statement, and taken out before the running filters are
+        // held to the record, so the tolerance is the filters' own.
+        let (low_rounding, high_rounding, sum_rounding) = rounding_db(c, p.f_hz);
+        let mut hold = |what: &str, got: f64, want: f64, rounding: f64| {
+            assert!(
+                rounding.abs() <= ROUNDING_LIMIT_DB,
+                "{name}: rounding its coefficients to f32 moves {what} at {} Hz by {rounding} dB",
+                p.f_hz
+            );
+            let off = (got - rounding - want).abs();
             assert!(
                 off <= RUN_TOLERANCE_DB,
-                "{name}: {what} at {} Hz runs at {got} dB, the record says {want} dB",
+                "{name}: {what} at {} Hz runs at {got} dB ({rounding} dB of it f32 coefficient rounding), the record says {want} dB",
                 p.f_hz
             );
             worst = worst.max(off);
@@ -242,13 +311,13 @@ fn check_crossover(name: &str, tolerance_db: f64, c: &Crossover) -> f64 {
             }
         }
         if p.low_db > RUN_FLOOR_DB {
-            hold("the low branch", low, p.low_db);
+            hold("the low branch", low, p.low_db, low_rounding);
         }
         if p.high_db > RUN_FLOOR_DB {
-            hold("the high branch", high, p.high_db);
+            hold("the high branch", high, p.high_db, high_rounding);
         }
         // The flat sum, at every point.
-        hold("the sum", sum, p.sum_db);
+        hold("the sum", sum, p.sum_db, sum_rounding);
         if c.kind == CrossoverKind::Lr4 {
             assert!(
                 p.sum_db.abs() <= tolerance_db,
@@ -278,8 +347,14 @@ fn every_record_runs_its_crossover() {
                 );
             }
         }
+        let rounding = l
+            .record
+            .crossovers
+            .iter()
+            .map(worst_rounding_db)
+            .fold(0f64, f64::max);
         println!(
-            "{} (release {}): {} crossovers; the running f32 filters are within {worst:.6} dB of the record (tolerance {RUN_TOLERANCE_DB} dB)",
+            "{} (release {}): {} crossovers; the running f32 filters are within {worst:.6} dB of the record (tolerance {RUN_TOLERANCE_DB} dB) once the rounding of their coefficients to f32 is taken out (at most {rounding:.6} dB, limit {ROUNDING_LIMIT_DB} dB)",
             l.name,
             l.release,
             l.record.crossovers.len()
@@ -415,6 +490,104 @@ fn the_twoway_record_is_the_exported_one_and_runs() {
     assert!(sum.abs() <= RUN_TOLERANCE_DB, "the sum runs at {sum} dB");
     println!(
         "{TWOWAY_RECORD}: at {TWOWAY_CROSSOVER_HZ} Hz the branches run at {low:.6} and {high:.6} dB, the sum at {sum:.6} dB; within {worst:.6} dB of the record at every point"
+    );
+}
+
+/// The subwoofer's record (`docs/hardware/subwoofer.md`): the file and the
+/// sha256 it was exported with, written here as well as in the provenance for
+/// the reason given at [`COMPACT_SHA256`].
+const SUB_RECORD: &str = "chorus-sub-v1.json";
+const SUB_SHA256: &str = "7efc717e20999a509a2c5790601803249dd0462a750836cbf6f0363433b6e0ed";
+/// The subwoofer's low-pass: the default bass-management frequency the design
+/// document states, which is the chain's own default.
+const SUB_LOWPASS_HZ: f64 = 80.0;
+
+#[test]
+fn the_sub_record_is_the_exported_one_and_runs() {
+    // Held to its sha256: the bytes are the exported ones.
+    let bytes = std::fs::read(dir().join(SUB_RECORD)).expect("the subwoofer record reads");
+    assert_eq!(
+        hex(&sha256(&bytes)),
+        SUB_SHA256,
+        "{SUB_RECORD} is not the exported file"
+    );
+    // The provenance beside it names the same digest (the walk recomputes it).
+    let loaded = walk(&dir()).unwrap_or_else(|e| panic!("fixtures/design-record: {e}"));
+    let sub = loaded
+        .iter()
+        .find(|l| l.name == SUB_RECORD)
+        .expect("the walk reads the subwoofer record");
+    let prov = std::fs::read_to_string(dir().join(SUB_RECORD).with_extension("provenance"))
+        .expect("the subwoofer provenance reads");
+    assert_eq!(
+        Fields::parse(&prov).expect("it parses").get("sha256"),
+        Some(SUB_SHA256)
+    );
+
+    // Parsed with chorus's own reader: one LR4 for 48 kHz at the design's
+    // low-pass frequency, which is the default the chain's settings hold.
+    let record = DesignRecord::parse(&String::from_utf8(bytes).expect("the record is UTF-8"))
+        .expect("the subwoofer record parses");
+    assert_eq!(record, sub.record);
+    assert_eq!(record.name, "chorus-sub-v1");
+    assert_eq!(
+        record.crossovers.len(),
+        1,
+        "bass management is one crossover"
+    );
+    let c = &record.crossovers[0];
+    assert_eq!(c.kind, CrossoverKind::Lr4);
+    assert_eq!(c.sample_rate_hz, 48000.0);
+    assert_eq!(c.crossover_hz, SUB_LOWPASS_HZ);
+    assert_eq!(
+        SUB_LOWPASS_HZ,
+        f64::from(chorus_dsp::settings::CROSSOVER_DEFAULT_HZ),
+        "the design's low-pass is the chain's default crossover"
+    );
+    assert!(c.lr4_design().is_some());
+
+    // Its branch and sum levels through chorus's own filters: the designed
+    // response to the record's tolerance, the sections against chorus's own
+    // LR4 design, and the running f32 filters at every response point. At the
+    // low-pass frequency the subwoofer's branch (low) and a main's branch
+    // (high) each run at -6.02 dB and add to a flat sum.
+    let worst = check_crossover(SUB_RECORD, record.tolerance_db, c);
+    assert!(worst <= RUN_TOLERANCE_DB);
+    let (low, high, sum) = run_levels(c, SUB_LOWPASS_HZ);
+    // This low in the band the f32 coefficients' rounding is the larger part
+    // of what the running filters are off by ([`ROUNDING_LIMIT_DB`]): it is
+    // held small, and the filters are held to the design less that rounding.
+    let (low_rounding, high_rounding, sum_rounding) = rounding_db(c, SUB_LOWPASS_HZ);
+    let rounding = worst_rounding_db(c);
+    assert!(rounding <= ROUNDING_LIMIT_DB);
+    let half = 20.0 * 0.5f64.log10();
+    assert!(
+        (low - low_rounding - half).abs() <= RUN_TOLERANCE_DB,
+        "the subwoofer branch runs at {low} dB"
+    );
+    assert!(
+        (high - high_rounding - half).abs() <= RUN_TOLERANCE_DB,
+        "the mains' branch runs at {high} dB"
+    );
+    assert!(
+        (sum - sum_rounding).abs() <= RUN_TOLERANCE_DB,
+        "the sum runs at {sum} dB"
+    );
+    // And as they run, rounding and all: each branch and the sum within the
+    // stated rounding limit of -6.02 dB and of flat.
+    assert!((low - half).abs() <= ROUNDING_LIMIT_DB);
+    assert!((high - half).abs() <= ROUNDING_LIMIT_DB);
+    assert!(sum.abs() <= ROUNDING_LIMIT_DB);
+    for p in &c.response {
+        let (l, h, s) = run_levels(c, p.f_hz);
+        let (lr, hr, sr) = rounding_db(c, p.f_hz);
+        println!(
+            "{SUB_RECORD}: at {} Hz low {l:.6} (record {:.6}, rounding {lr:.6}), high {h:.6} (record {:.6}, rounding {hr:.6}), sum {s:.6} (rounding {sr:.6})",
+            p.f_hz, p.low_db, p.high_db
+        );
+    }
+    println!(
+        "{SUB_RECORD}: at {SUB_LOWPASS_HZ} Hz the branches run at {low:.6} and {high:.6} dB, the sum at {sum:.6} dB ({low_rounding:.6}, {high_rounding:.6} and {sum_rounding:.6} dB of that from rounding the coefficients to f32); less the rounding, within {worst:.6} dB of the record at every point; the rounding is at most {rounding:.6} dB at any point"
     );
 }
 
