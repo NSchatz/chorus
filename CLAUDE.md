@@ -1,8 +1,7 @@
 # chorus
 
-From-scratch multiroom and surround audio: a containerized Rust server, a custom encrypted sync
-protocol, C firmware for ESP32-S3 speakers and a Rust Linux endpoint. BRIEF.md is the guiding
-document; it recommends, it does not dictate. The repository is public.
+From-scratch multiroom and surround audio: Rust server, custom sync protocol, ESP32-S3 firmware.
+BRIEF.md guides; it recommends, it does not dictate. This repository is public.
 
 ## Never
 
@@ -27,15 +26,15 @@ document; it recommends, it does not dictate. The repository is public.
 ## The gate
 
 CI is the gate (`docs/decisions/0140-ci-is-the-gate.md`). A pull request runs only what its
-change touches (`make gate-changed`) in 2 minutes or less; the full gate (`make gate`) runs
-nightly on main, and a red night gets a fix-forward task. `make gate-fast` is the conventions
-checks alone. Rules and their checks: `docs/conventions.md`.
+change touches (`make gate-changed`), in 2 minutes or less (a warning when over); the full gate
+(`make gate`) runs nightly on main, and a red main or night gets a fix-forward task.
+`make gate-fast` is the conventions checks alone. Rules and their checks: `docs/conventions.md`.
 
 ## Git
 
-- One branch and PR per task, in a worktree from `origin/main`, never this session's checkout.
+- One branch `task/<n>` and PR per task, in a worktree from `origin/main`, never this checkout.
 - Subject `<area>: <summary>`, lower-case area, at most 100 characters (conventions rule 21).
-- One fresh-context reviewer reads the diff; then squash-merge. History is never rewritten.
+- One fresh-context reviewer passes it; squash-merge without waiting for CI. Never rewrite history.
 
 ## Questions
 
@@ -57,4 +56,5 @@ correct the brief in the same change.
 - `docs/working-agreement.md`: the full working agreement and plan of record ("CLAUDE.md rule N").
 - `docs/conventions.md`: every rule and the check that holds it.
 - `docs/clean-room.md`: what may be read, and how sources are cited.
-- `docs/release.md`: what a release carries; `deploy/README.md`: the server container.
+- `docs/release.md`: what a release carries.
+- `deploy/README.md`: the server container.
