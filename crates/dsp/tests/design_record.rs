@@ -353,6 +353,71 @@ fn the_compact_record_is_the_exported_one_and_runs() {
     );
 }
 
+/// The active two-way's record (`docs/hardware/twoway-speaker.md`): the file
+/// and the sha256 it was exported with, written here as well as in the
+/// provenance for the reason given at [`COMPACT_SHA256`].
+const TWOWAY_RECORD: &str = "chorus-twoway-v1.json";
+const TWOWAY_SHA256: &str = "b2dbe5805ce21b43ebc7404f4f627c78020bb3a7a5c8613f6ed7235218e0dcf5";
+/// The two-way's crossover: the frequency the design document states.
+const TWOWAY_CROSSOVER_HZ: f64 = 2000.0;
+
+#[test]
+fn the_twoway_record_is_the_exported_one_and_runs() {
+    // Held to its sha256: the bytes are the exported ones.
+    let bytes = std::fs::read(dir().join(TWOWAY_RECORD)).expect("the two-way record reads");
+    assert_eq!(
+        hex(&sha256(&bytes)),
+        TWOWAY_SHA256,
+        "{TWOWAY_RECORD} is not the exported file"
+    );
+    // The provenance beside it names the same digest (the walk recomputes it).
+    let loaded = walk(&dir()).unwrap_or_else(|e| panic!("fixtures/design-record: {e}"));
+    let twoway = loaded
+        .iter()
+        .find(|l| l.name == TWOWAY_RECORD)
+        .expect("the walk reads the two-way record");
+    let prov = std::fs::read_to_string(dir().join(TWOWAY_RECORD).with_extension("provenance"))
+        .expect("the two-way provenance reads");
+    assert_eq!(
+        Fields::parse(&prov).expect("it parses").get("sha256"),
+        Some(TWOWAY_SHA256)
+    );
+
+    // Parsed with chorus's own reader: one LR4 for 48 kHz at the design's
+    // crossover frequency.
+    let record = DesignRecord::parse(&String::from_utf8(bytes).expect("the record is UTF-8"))
+        .expect("the two-way record parses");
+    assert_eq!(record, twoway.record);
+    assert_eq!(record.name, "chorus-twoway-v1");
+    assert_eq!(record.crossovers.len(), 1, "a two-way has one crossover");
+    let c = &record.crossovers[0];
+    assert_eq!(c.kind, CrossoverKind::Lr4);
+    assert_eq!(c.sample_rate_hz, 48000.0);
+    assert_eq!(c.crossover_hz, TWOWAY_CROSSOVER_HZ);
+    assert!(c.lr4_design().is_some());
+
+    // Its branch and sum levels through chorus's own filters: the designed
+    // response to the record's tolerance, the sections against chorus's own
+    // LR4 design, and the running f32 filters at every response point (each
+    // branch at -6.02 dB at the crossover, the sum flat).
+    let worst = check_crossover(TWOWAY_RECORD, record.tolerance_db, c);
+    assert!(worst <= RUN_TOLERANCE_DB);
+    let (low, high, sum) = run_levels(c, TWOWAY_CROSSOVER_HZ);
+    let half = 20.0 * 0.5f64.log10();
+    assert!(
+        (low - half).abs() <= RUN_TOLERANCE_DB,
+        "the woofer branch runs at {low} dB"
+    );
+    assert!(
+        (high - half).abs() <= RUN_TOLERANCE_DB,
+        "the tweeter branch runs at {high} dB"
+    );
+    assert!(sum.abs() <= RUN_TOLERANCE_DB, "the sum runs at {sum} dB");
+    println!(
+        "{TWOWAY_RECORD}: at {TWOWAY_CROSSOVER_HZ} Hz the branches run at {low:.6} and {high:.6} dB, the sum at {sum:.6} dB; within {worst:.6} dB of the record at every point"
+    );
+}
+
 fn committed_record() -> String {
     std::fs::read_to_string(dir().join("lr4-2000hz-48k.json")).expect("the record reads")
 }

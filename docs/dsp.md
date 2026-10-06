@@ -284,6 +284,11 @@ speaker's EQ sections in the same `b0 b1 b2 a1 a2` form). The same test reads it
 other file, and `the_compact_record_is_the_exported_one_and_runs` holds it by name to its
 sha256 and to its crossover's levels: measured 2026-10-06, at most 0.000006 dB off.
 
+A third is the active two-way's: `fixtures/design-record/chorus-twoway-v1.json`, an LR4 at
+2000 Hz for 48 kHz (`docs/hardware/twoway-speaker.md`, with that speaker's EQ sections in the
+same form). `the_twoway_record_is_the_exported_one_and_runs` holds it by name to its sha256
+and to its crossover's levels: measured 2026-10-06, at most 0.000027 dB off.
+
 To refresh a fixture: `fixtures/README.md`, "`design-record/`".
 
 ## On the endpoints
