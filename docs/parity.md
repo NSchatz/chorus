@@ -42,7 +42,7 @@ How to read it:
 | 8.1-1 | Start-up, audit and proposals (goal 1) | done | `docs/audit/2026-09-audit.md`; `docs/proposals/` | - |
 | 8.1-2 | Fixes and the gate (goal 2) | done | `tools/gate.sh`; `docs/decisions/0112-a-faster-gate-with-the-same-checks.md`; `docs/decisions/0140-ci-is-the-gate.md` | - |
 | 8.1-3 | Conventions, licence and identity (goal 3) | done | `docs/conventions.md`; `LICENSE-MIT`; `LICENSE-APACHE`; `tools/conventions/check-identity.sh` | - |
-| 8.1-4 | Reversals, loose ends, first release, deploy PR (goal 4) | done | `docs/release.md`; `docs/proposals/P3-speaker-network-homelab-pr.md`; `deploy/README.md` | - |
+| 8.1-4 | Reversals, loose ends, first release, deploy PR (goal 4) | done | `docs/release.md`; `deploy/README.md`; `docs/proposals/P3-speaker-network-homelab-pr.md` (the homelab repo has since merged it as its PR 264) | - |
 | 8.1-5 | Protocol v2 (goals 5, 6) | done | `docs/protocol.md`; `docs/decisions/0039-the-v2-key-exchange.md`; `docs/decisions/0041-protocol-v2-framing.md`; `docs/decisions/0044-the-vendored-decoders.md` | - |
 | 8.1-6 | Sound, rig and sync in software; bench packets (goal 7) | done | `docs/bench-packet.md`; `docs/measurements/sim-house-8-rooms.md`; `docs/decisions/0048-the-house-scale-simulation.md` | - |
 | 8.1-7 | The embedded platform (goals 8, 9) | done | `docs/decisions/0057-board-profiles-and-the-wired-link.md`; `docs/decisions/0058-the-endpoint-playout-path.md`; `docs/decisions/0062-the-guarded-flashing-tool.md`; `docs/decisions/0064-the-tas5825m-register-map-and-bring-up.md` | - |
@@ -55,7 +55,7 @@ How to read it:
 | 8.1-14 | The Home Assistant integration (goals 18, 19) | done | `docs/home-assistant.md`; `integrations/homeassistant/`; `docs/decisions/0138-the-home-assistant-integration.md` | - |
 | 8.1-15 | Voice and announcements (goal 20) | done | `docs/decisions/0172-the-voice-run-and-the-run-scoped-mic-route.md`; `docs/decisions/0175-announcements-are-mixed-per-room-on-the-slots-grid.md`; `docs/decisions/0176-the-home-assistant-voice-satellite.md` | - |
 | 8.1-16 | The app (goals 21, 22) | done | `docs/app.md`; `web/`; `docs/decisions/0181-the-web-app-stack.md` | - |
-| 8.1-17 | Acoustic design tools (goal 23) | done | `docs/hardware/compact-speaker.md`; `docs/decisions/0216-the-compact-speaker-drivers-and-alignment.md` | - |
+| 8.1-17 | Acoustic design tools (goal 23): the acoustics package lives in the owner's shared Python library; chorus reads its released v1.49.0 | done | `docs/hardware/compact-speaker.md`; `docs/decisions/0216-the-compact-speaker-drivers-and-alignment.md` | - |
 | 8.1-18 | The speaker designs (goals 24, 25, 26) | done | `docs/hardware/compact-speaker.md`; `docs/hardware/twoway-speaker.md`; `docs/hardware/subwoofer.md`; `docs/hardware/lcr-set.md`; `docs/decisions/0234-goal-26-closed-no-rack-amp-or-soundbar-and-the-lcr-set-landed.md` | - |
 | 8.1-19 | Finale (goal 27) | partial | `docs/release.md`; `docs/parity.md` | In progress: the release, the fresh-clone gate and the program report are goal 27's other tasks |
 
@@ -86,14 +86,14 @@ How to read it:
 | K64 | Inputs only, no content in chorus | done | `docs/inputs.md` | - |
 | K65 | Metadata and artwork, controller, visualizer and source roles | done | `docs/decisions/0184-artwork-is-proxied-not-the-policy-widened.md`; `docs/decisions/0067-the-linux-front-panel-and-one-controller-model.md`; `docs/decisions/0084-the-visualizer-stream.md`; `docs/decisions/0066-line-in-capture-as-the-source-role.md` | - |
 | K66 | Spotify Soloist per room, saved group and live group | done | `docs/decisions/0130-the-soloist-receiver-supervisor.md`; `docs/decisions/0131-the-chorus-soloist-image.md`; `docs/decisions/0132-the-soloist-receivers-in-the-server.md` | - |
-| K67 | Compact speaker controls: buttons, status LED, mic with hardware mute | done | `docs/hardware/controls.md`; `docs/decisions/0063-controls-led-and-mic-gate.md`; `docs/decisions/0230-the-compact-on-bought-modules.md` | - |
+| K67 | Compact speaker controls: buttons, status LED, mic with hardware mute (the logic; the image's GPIO, LED and I2S-input binding is not written yet, `docs/hardware/controls.md`) | done | `docs/hardware/controls.md`; `firmware/tests/test_controls.c`; `docs/decisions/0063-controls-led-and-mic-gate.md`; `docs/decisions/0230-the-compact-on-bought-modules.md` | - |
 | K68 | Two-way controls: hidden pairing button, rear status light | done | `docs/hardware/twoway-speaker.md`; `docs/hardware/controls.md` | - |
 | K69 | Subwoofer controls: pairing button, status LED, level and phase knobs | done | `docs/hardware/subwoofer.md`; `docs/decisions/0229-the-subwoofer-driver-alignment-and-amplifier.md` | - |
-| K70 | The streaming amp with rack variant | dropped | `docs/decisions/0231-no-rack-amp-and-no-soundbar.md`; `docs/proposals/P13-rack-amp-zones.md` | The owner's house plan of 2026-10-04 wires no room back to the rack; P13 awaits the owner's decision |
+| K70 | The streaming amp with rack variant | dropped | `docs/proposals/P4-bench-purchase.md`; `docs/decisions/0231-no-rack-amp-and-no-soundbar.md`; `docs/proposals/P13-rack-amp-zones.md` | Dropped by the owner's house plan of 2026-10-04 (P4), which wires no room back to the rack; P13 records zero zones, pending the owner |
 | K71 | Voice path to HA (research and propose) | done | `docs/proposals/P8-voice-path.md`; `docs/decisions/0166-the-voice-role-on-the-wire.md`; `docs/decisions/0176-the-home-assistant-voice-satellite.md` | - |
 | K72 | Theater front: a soundbar and a separate LCR set | partial | `docs/decisions/0232-the-lcr-set-is-three-two-ways-and-a-pi-hub.md`; `docs/hardware/lcr-set.md`; `docs/decisions/0231-no-rack-amp-and-no-soundbar.md` | The LCR set is designed; the soundbar is not, since the house plan puts a soundbar in no room (P13, decision 0231) |
 | K73 | Wake word on the server, permissive models only | done | `docs/decisions/0167-the-wake-word-runtime.md`; `tools/conventions/check-wakeword.sh` | - |
-| K74 | A 2U rack-mount multi-zone amp | dropped | `docs/proposals/P13-rack-amp-zones.md`; `docs/decisions/0231-no-rack-amp-and-no-soundbar.md` | P13 counts zero zones and zero channels from the house plan; the owner decides P13 |
+| K74 | A 2U rack-mount multi-zone amp | dropped | `docs/proposals/P4-bench-purchase.md`; `docs/proposals/P13-rack-amp-zones.md`; `docs/decisions/0231-no-rack-amp-and-no-soundbar.md` | Dropped by the owner's house plan of 2026-10-04 (P4); P13 counts zero zones and zero channels, pending the owner |
 | K75 | Up to 8 rooms | done | `docs/decisions/0048-the-house-scale-simulation.md`; `docs/measurements/sim-house-8-rooms.md`; `docs/measurements/house-soak-8-rooms.md` | - |
 | K76 | Concurrent streams limit (research and propose) | done | `docs/proposals/P11-concurrent-streams.md`; `docs/measurements/concurrent-streams-host.md` | - |
 | K77 | Sonos-style group volume | done | `docs/decisions/0075-control-catalog-v2.md` | - |

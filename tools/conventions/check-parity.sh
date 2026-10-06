@@ -2,7 +2,8 @@
 # Rule "The parity checklist" (goal 27): docs/parity.md lists every item of BRIEF.md section 8
 # (8-1 to 8-10, the roadmap; 8.1-1 to 8.1-19, the program's phases) and of the program brief's
 # K30, K31 (four features each) and K57 to K94, each once, with one known state, at least one
-# evidence path in backticks that exists in the tree, and a reason for any state but `done`.
+# evidence path in backticks that git tracks (a file, or a directory holding tracked files), and
+# a reason for any state but `done`.
 # Prints the count per state.
 . "$(dirname "$0")/lib.sh"
 doc=docs/parity.md
@@ -26,14 +27,20 @@ while IFS= read -r row; do
     seen[$item]=1
     case "$state" in
         done | partial | deferred | dropped | "not started") count[$state]=$((${count[$state]:-0} + 1)) ;;
-        *) bad "item $item: state '$state' is not one of done, partial, deferred, dropped, not started" ;;
+        *)
+            bad "item $item: state '$state' is not one of done, partial, deferred, dropped, not started"
+            continue
+            ;;
     esac
+    # shellcheck disable=SC2016 # the backticks are literal Markdown, not an expansion
     paths="$(printf '%s' "$evidence" | command grep -o '`[^`]*`' | tr -d '`' || true)"
     [ -n "$paths" ] || bad "item $item names no evidence path"
-    for p in $paths; do
-        [ -e "$p" ] || bad "item $item: evidence path $p does not exist"
-    done
-    if [ "$state" != done ] && { [ -z "$reason" ] || [ "$reason" = - ]; }; then
+    # A path is a tracked file, or a directory holding tracked files.
+    while IFS= read -r p; do
+        [ -n "$p" ] || continue
+        [ -n "$(git ls-files -- ":(literal)$p" 2> /dev/null | head -n 1)" ] || bad "item $item: evidence path $p is not tracked in this repository"
+    done <<< "$paths"
+    if [ "$state" != "done" ] && { [ -z "$reason" ] || [ "$reason" = - ]; }; then
         bad "item $item is $state with no reason or follow-up"
     fi
 done < <(command grep -E '^\| (8|8\.1|K[0-9]+)-?[0-9]* \|' "$doc")
@@ -47,7 +54,7 @@ for extra in "${!seen[@]}"; do
 done
 
 summary=""
-for s in done partial deferred dropped "not started"; do
+for s in "done" partial deferred dropped "not started"; do
     summary="$summary, $s ${count[$s]:-0}"
 done
 [ "$rc" = 0 ] && echo "parity: ${#want[@]} items, each with a state and evidence${summary}"

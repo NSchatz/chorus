@@ -474,6 +474,6 @@ phases of BRIEF.md section 8, the program's phases of section 8.1, and the owner
 K31 (four features each) and K57 to K94 of the program brief (goal 27, brief section 31 item 1).
 `check-parity.sh` fails when an item is missing or listed twice, when a row is not one of those
 items, when a state is not one of `done`, `partial`, `deferred`, `dropped` and `not started`, when
-a row names no evidence path in backticks or a path that does not exist, or when a state other
+a row names no evidence path in backticks or a path git does not track, or when a state other
 than `done` has no reason or follow-up. It prints the count per state. Whether a state is true
 is **Review-only (no check)**: the check holds the shape, a reviewer reads the evidence.
