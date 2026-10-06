@@ -1,36 +1,24 @@
 ---
 name: ci
 
-# CI is the gate (docs/decisions/0140-ci-is-the-gate.md, decided by the
-# owner 2026-10-04). This job installs what `make gate` (tools/gate.sh)
-# needs on a fresh runner and calls it, nothing more, so the gate has one
-# definition. It runs on every pull request, on every push to main, nightly
-# on main and by hand, and every run is the full tier (`make tier-full` is
-# `make gate`). A pull request merges when an independent reviewer passes
-# it: the merge does not wait for this run, and a red run on main gets a
-# fix-forward task. Nothing gates on a developer's machine; local runs are
-# narrow tests only. The repository is public, so these runs cost no
-# minutes.
+# The changed-only gate (`make gate-changed`, tools/gate.sh changed; decided by
+# the owner 2026-10-06), on every pull request, on every push to main and by
+# hand: the conventions checks, then fmt, clippy and the tests of only the
+# crates the change touches and the crates that depend on them
+# (tools/changed.sh, from `cargo metadata`), and the Home Assistant, web and
+# firmware host checks only when their trees changed. A docs-only change builds
+# and tests nothing. Two minutes is the target; a slower run warns and does not
+# fail. The full gate (`make gate`) runs nightly on main from
+# .github/workflows/nightly.yml.
 #
-# A push to a pull request's branch starts only the `pull_request` run
-# (`push` is main only), and a pull request's concurrency group is its
-# branch's name, so a branch never runs twice at once: a newer push cancels
-# the run in progress. The nightly run has a group of its own, so a merge to
-# main never cancels it.
-#
-# A push to main is never cancelled: its group is its own commit, and
-# `cancel-in-progress` is off for `push`. Pull requests merge without
-# waiting for this run, so main often moves while its run is in progress,
-# and every commit on main needs a finished result of its own. A shared
-# `main` group would not do even with `cancel-in-progress` off: a group
-# holds one pending run, so a third push would cancel the second's while it
-# waits.
+# A pull request merges when its gate passes and one fresh-context reviewer has
+# read the diff; a red night gets a fix-forward task. A push to a pull request's
+# branch cancels the run in progress for that branch; a push to main is never
+# cancelled.
 on:
   pull_request:
   push:
     branches: [main]
-  schedule:
-    - cron: '41 7 * * *'
   workflow_dispatch:
 
 permissions:
@@ -38,104 +26,83 @@ permissions:
 
 concurrency:
   group: >-
-    ci-${{ github.event_name == 'schedule' && 'nightly'
-    || github.event_name == 'push' && github.sha
+    ci-${{ github.event_name == 'push' && github.sha
     || github.head_ref || github.ref_name }}
   cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   gate:
-    name: make gate
+    name: make gate-changed
     runs-on: ubuntu-24.04
     env:
-      CARGO_BUILD_JOBS: "2"
-      CMAKE_BUILD_PARALLEL_LEVEL: "2"
-      IDF_PY_BUILD_JOBS: "2"
-      CHORUS_CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CARGO_BUILD_JOBS: "4"
     steps:
-      # Full history: the conventions checks read it (a report's build commit,
-      # the PR that added a decision record, every commit message since the
-      # conventions base). On a shallow clone those parts print SKIPPED.
+      # Full history: the conventions checks read it, and the change is the
+      # diff from the base.
       - name: Check out
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           fetch-depth: 0
 
+      # The base the change is measured from: a pull request's base commit, a
+      # push's previous main, or (by hand) origin/main.
+      - name: What changed
+        id: plan
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          base="${PR_BASE:-$PUSH_BEFORE}"
+          if [ -z "$base" ] ||
+            ! git cat-file -e "$base^{commit}" 2> /dev/null; then
+            base="$(git merge-base origin/main HEAD)"
+          fi
+          echo "CHORUS_GATE_BASE=$base" >> "$GITHUB_ENV"
+          git diff --name-only "$base"...HEAD | sed 's/^/changed: /'
+          tree='^(firmware/|fixtures/|third_party/|config/|[^/]*\.conf$)'
+          if git diff --name-only "$base"...HEAD | grep -q -E "$tree"; then
+            echo "firmware-tree=1" >> "$GITHUB_OUTPUT"
+          fi
+
       # The gate's pinned tools from mise.toml, checked against mise.lock's
-      # digests (gitleaks, cargo-deny, the linters, and the node and pnpm
-      # the web-test and web-build steps run web/ with). mise-action v5.0.0,
-      # https://github.com/jdx/mise-action/releases/tag/v5.0.0 (read
-      # 2026-09-30); mise itself pinned to the release this repository uses.
+      # digests (mise-action v5.0.0,
+      # https://github.com/jdx/mise-action/releases/tag/v5.0.0, read
+      # 2026-09-30).
       - name: Pinned tools
         uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5  # v5.0.0
         with:
           version: 2026.7.5
 
-      # The web app's toolchain is the two pins the step above installed
-      # (mise.toml: core:node, aqua:pnpm/pnpm): the runner's own node must
-      # not be the one on PATH. tools/web.sh refuses any other version again
-      # when the gate runs it.
-      - name: Node and pnpm
-        run: |
-          pin() { sed -n "s|^\"$1\" = \"\(.*\)\"\$|\1|p" mise.toml; }
-          echo "node $(node --version), pnpm $(pnpm --version)"
-          test "$(node --version)" = "v$(pin core:node)"
-          test "$(pnpm --version)" = "$(pin aqua:pnpm/pnpm)"
-
-      # The gate's one browser test (step web-smoke) runs the Chromium build
-      # that the pinned @playwright/test names: web/package.json fixes the
-      # version, web/pnpm-lock.yaml its digest, and that version's own list
-      # fixes the build. tools/web.sh installs the locked packages and then
-      # downloads that build alone (the headless shell); --with-deps has
-      # Playwright install the shared libraries and fonts it needs with apt.
-      # The gate step downloads nothing and fails when the build is absent.
-      - name: Chromium for the browser smoke test
-        run: bash tools/web.sh smoke-install --with-deps
-
       # rust-toolchain.toml names the exact toolchain; rustup installs it on
       # first use.
       - name: Toolchain
-        run: |
-          rustup show active-toolchain
-          sudo apt-get update && sudo apt-get install -y ccache
+        run: rustup show active-toolchain
 
-      # The version and commit are firmware/config/endpoint.conf's pin; the gate
-      # refuses any other.
-      - name: ESP-IDF
+      # The nightly full gate saves this cache from main; a pull request only
+      # restores it. Swatinem/rust-cache v2.9.2,
+      # https://github.com/Swatinem/rust-cache/releases/tag/v2.9.2 (read
+      # 2026-10-06).
+      - name: Rust build cache
+        # Swatinem/rust-cache v2.9.2
+        uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
+        with:
+          shared-key: chorus-gate
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # Only when the change can reach the firmware: its host build compiles
+      # the crypto library (TF-PSA-Crypto) from the ESP-IDF v6.1 tree, pinned
+      # by commit in firmware/Makefile, which refuses any other. The source
+      # tree alone; no toolchain is installed.
+      - name: ESP-IDF v6.1 crypto sources
+        if: steps.plan.outputs.firmware-tree == '1'
         run: |
           git clone --branch v6.1 --depth 1 --recursive --shallow-submodules \
             https://github.com/espressif/esp-idf.git "$HOME/esp-idf"
-          git -C "$HOME/esp-idf" rev-parse HEAD
-          "$HOME/esp-idf/install.sh" esp32s3
-          # cmake and ninja are installed on request in v6.1 (ADR 0042).
-          (cd "$HOME/esp-idf" && python3 tools/idf_tools.py install cmake ninja)
-          printf '. %s/export.sh\n' "$HOME/esp-idf" > "$HOME/idf-env.sh"
-          echo "CHORUS_IDF_ENV=$HOME/idf-env.sh" >> "$GITHUB_ENV"
+          echo "CHORUS_IDF_V61_DIR=$HOME/esp-idf" >> "$GITHUB_ENV"
 
-      # The endpoint's host build compiles its crypto library (TF-PSA-Crypto)
-      # from the ESP-IDF v6.1 tree cloned above, pinned by commit in
-      # firmware/Makefile, which refuses any other.
-      - name: ESP-IDF v6.1 crypto sources
-        run: echo "CHORUS_IDF_V61_DIR=$HOME/esp-idf" >> "$GITHUB_ENV"
-
-      # The emulator the gate boots the endpoint image on (goal 14): the pinned
-      # release and its pinned libraries, each checked against its sha256
-      # (tools/qemu/pins.conf, tools/qemu/libs.explicit.txt), rootless.
-      - name: Emulator
-        run: |
-          echo "CHORUS_QEMU_HOME=$HOME/chorus-qemu" >> "$GITHUB_ENV"
-          echo "CHORUS_QEMU_LIBS=$HOME/chorus-qemu-libs" >> "$GITHUB_ENV"
-          export CHORUS_QEMU_HOME="$HOME/chorus-qemu"
-          export CHORUS_QEMU_LIBS="$HOME/chorus-qemu-libs"
-          bash tools/qemu-env.sh install
-
-      # The identity step's private term list comes from the repository
-      # secret CHORUS_IDENTITY_TERMS_LIST, written to the runner's temp
-      # directory and never into the workspace. Each term is masked before
-      # anything else runs, and check-identity.sh prints where a term is,
-      # never what. A fork's pull request gets no secrets, so there (and only
-      # there) the identity step prints SKIPPED; on this repository's own
-      # events an empty secret fails the job rather than skipping the check.
+      # The identity step's private term list, as in nightly.yml: written to
+      # the runner's temp directory, every term masked; a fork's pull request
+      # has no secrets and the step prints SKIPPED there only.
       - name: Identity term list
         env:
           TERMS: ${{ secrets.CHORUS_IDENTITY_TERMS_LIST }}
@@ -158,15 +125,10 @@ jobs:
             if [ -n "$t" ]; then echo "::add-mask::$t"; fi
           done < "$f"
           echo "CHORUS_IDENTITY_TERMS=$f" >> "$GITHUB_ENV"
-          n="$(grep -c . "$f")"
-          echo "identity term list: $n term(s) from the repository secret"
 
-      - name: make gate
-        run: make gate
+      - name: make gate-changed
+        run: make gate-changed
 
-      # Nothing gates on a developer's machine, so a red run must explain
-      # itself: each step's whole log (the job log shows only its last 15
-      # lines). check-identity.sh never writes a term into them.
       - name: Gate logs
         if: failure()
         # actions/upload-artifact v4.6.2

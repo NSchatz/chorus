@@ -1,0 +1,165 @@
+---
+name: nightly
+
+# The full gate (`make gate`, tools/gate.sh full), nightly on main and by hand.
+# Pull requests and pushes to main run the changed-only gate instead
+# (.github/workflows/ci.yml, decided by the owner 2026-10-06): this workflow is
+# where the long steps (the whole workspace's tests, the determinism run, the
+# firmware images, the emulator runs, the images and packages) run. A red night
+# gets a fix-forward task. The repository is public, so these runs cost no
+# minutes.
+on:
+  schedule:
+    - cron: '41 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: make gate (nightly)
+    runs-on: ubuntu-24.04
+    env:
+      CARGO_BUILD_JOBS: "2"
+      CMAKE_BUILD_PARALLEL_LEVEL: "2"
+      IDF_PY_BUILD_JOBS: "2"
+      CHORUS_CCACHE_DIR: ${{ github.workspace }}/.ccache
+    steps:
+      # Full history: the conventions checks read it (a report's build commit,
+      # the PR that added a decision record, every commit message since the
+      # conventions base). On a shallow clone those parts print SKIPPED.
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          fetch-depth: 0
+
+      # The gate's pinned tools from mise.toml, checked against mise.lock's
+      # digests (gitleaks, cargo-deny, the linters, and the node and pnpm
+      # the web-test and web-build steps run web/ with). mise-action v5.0.0,
+      # https://github.com/jdx/mise-action/releases/tag/v5.0.0 (read
+      # 2026-09-30); mise itself pinned to the release this repository uses.
+      - name: Pinned tools
+        uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5  # v5.0.0
+        with:
+          version: 2026.7.5
+
+      # The web app's toolchain is the two pins the step above installed
+      # (mise.toml: core:node, aqua:pnpm/pnpm): the runner's own node must
+      # not be the one on PATH. tools/web.sh refuses any other version again
+      # when the gate runs it.
+      - name: Node and pnpm
+        run: |
+          pin() { sed -n "s|^\"$1\" = \"\(.*\)\"\$|\1|p" mise.toml; }
+          echo "node $(node --version), pnpm $(pnpm --version)"
+          test "$(node --version)" = "v$(pin core:node)"
+          test "$(pnpm --version)" = "$(pin aqua:pnpm/pnpm)"
+
+      # The gate's one browser test (step web-smoke) runs the Chromium build
+      # that the pinned @playwright/test names: web/package.json fixes the
+      # version, web/pnpm-lock.yaml its digest, and that version's own list
+      # fixes the build. tools/web.sh installs the locked packages and then
+      # downloads that build alone (the headless shell); --with-deps has
+      # Playwright install the shared libraries and fonts it needs with apt.
+      # The gate step downloads nothing and fails when the build is absent.
+      - name: Chromium for the browser smoke test
+        run: bash tools/web.sh smoke-install --with-deps
+
+      # rust-toolchain.toml names the exact toolchain; rustup installs it on
+      # first use.
+      - name: Toolchain
+        run: |
+          rustup show active-toolchain
+          sudo apt-get update && sudo apt-get install -y ccache
+
+      # The Rust build cache the changed-only gate on pull requests starts from
+      # (ci.yml restores it under the same shared key). Swatinem/rust-cache
+      # v2.9.2, https://github.com/Swatinem/rust-cache/releases/tag/v2.9.2
+      # (read 2026-10-06). Saved from main only.
+      - name: Rust build cache
+        # Swatinem/rust-cache v2.9.2
+        uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
+        with:
+          shared-key: chorus-gate
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # The version and commit are firmware/config/endpoint.conf's pin; the gate
+      # refuses any other.
+      - name: ESP-IDF
+        run: |
+          git clone --branch v6.1 --depth 1 --recursive --shallow-submodules \
+            https://github.com/espressif/esp-idf.git "$HOME/esp-idf"
+          git -C "$HOME/esp-idf" rev-parse HEAD
+          "$HOME/esp-idf/install.sh" esp32s3
+          # cmake and ninja are installed on request in v6.1 (ADR 0042).
+          (cd "$HOME/esp-idf" && python3 tools/idf_tools.py install cmake ninja)
+          printf '. %s/export.sh\n' "$HOME/esp-idf" > "$HOME/idf-env.sh"
+          echo "CHORUS_IDF_ENV=$HOME/idf-env.sh" >> "$GITHUB_ENV"
+
+      # The endpoint's host build compiles its crypto library (TF-PSA-Crypto)
+      # from the ESP-IDF v6.1 tree cloned above, pinned by commit in
+      # firmware/Makefile, which refuses any other.
+      - name: ESP-IDF v6.1 crypto sources
+        run: echo "CHORUS_IDF_V61_DIR=$HOME/esp-idf" >> "$GITHUB_ENV"
+
+      # The emulator the gate boots the endpoint image on (goal 14): the pinned
+      # release and its pinned libraries, each checked against its sha256
+      # (tools/qemu/pins.conf, tools/qemu/libs.explicit.txt), rootless.
+      - name: Emulator
+        run: |
+          echo "CHORUS_QEMU_HOME=$HOME/chorus-qemu" >> "$GITHUB_ENV"
+          echo "CHORUS_QEMU_LIBS=$HOME/chorus-qemu-libs" >> "$GITHUB_ENV"
+          export CHORUS_QEMU_HOME="$HOME/chorus-qemu"
+          export CHORUS_QEMU_LIBS="$HOME/chorus-qemu-libs"
+          bash tools/qemu-env.sh install
+
+      # The identity step's private term list comes from the repository
+      # secret CHORUS_IDENTITY_TERMS_LIST, written to the runner's temp
+      # directory and never into the workspace. Each term is masked before
+      # anything else runs, and check-identity.sh prints where a term is,
+      # never what. A fork's pull request gets no secrets, so there (and only
+      # there) the identity step prints SKIPPED; on this repository's own
+      # events an empty secret fails the job rather than skipping the check.
+      - name: Identity term list
+        env:
+          TERMS: ${{ secrets.CHORUS_IDENTITY_TERMS_LIST }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$TERMS" ]; then
+            if [ -n "$HEAD_REPO" ] && [ "$HEAD_REPO" != "$THIS_REPO" ]; then
+              echo "a fork's pull request has no secrets:" \
+                "the identity step prints SKIPPED"
+              exit 0
+            fi
+            echo "::error::the CHORUS_IDENTITY_TERMS_LIST secret is empty;" \
+              "the identity scan cannot run"
+            exit 1
+          fi
+          f="$RUNNER_TEMP/identity-terms.txt"
+          printf '%s\n' "$TERMS" > "$f"
+          while IFS= read -r t; do
+            if [ -n "$t" ]; then echo "::add-mask::$t"; fi
+          done < "$f"
+          echo "CHORUS_IDENTITY_TERMS=$f" >> "$GITHUB_ENV"
+          n="$(grep -c . "$f")"
+          echo "identity term list: $n term(s) from the repository secret"
+
+      - name: make gate
+        run: make gate
+
+      # Nothing gates on a developer's machine, so a red run must explain
+      # itself: each step's whole log (the job log shows only its last 15
+      # lines). check-identity.sh never writes a term into them.
+      - name: Gate logs
+        if: failure()
+        # actions/upload-artifact v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: gate-logs
+          path: target/gate/*.log
+          retention-days: 7

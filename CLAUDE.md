@@ -42,9 +42,12 @@ umbrella's section, its specs, stages and pointers, is removed.)
   BRIEF.md section 8's "success looks like" and the program's done-when lines.
 - Conventions and the rule-to-check table: `docs/conventions.md`. CI is the gate
   (`docs/decisions/0140-ci-is-the-gate.md`, decided by the owner 2026-10-04):
-  `.github/workflows/ci.yml` runs `make gate` (= `make tier-full`) on every pull request,
-  on every push to main and nightly. A PR merges when an independent reviewer passes it;
-  the merge does not wait for CI, and a red main gets a fix-forward task. `make gate-fast`
+  a PR runs only what its change touches (`make gate-changed`, `.github/workflows/ci.yml`:
+  the conventions checks, then fmt, clippy and tests of the touched crates and their
+  dependents, and the web, HA and firmware checks only when those trees changed; docs-only
+  builds nothing), in 2 minutes or less, warning (not failing) when over. The full gate
+  (`make gate`) runs nightly on main (`.github/workflows/nightly.yml`, plus by hand); a
+  red night gets a fix-forward task (decided by the owner 2026-10-06). `make gate-fast`
   is the conventions checks alone.
 - Local runs are narrow tests only: one crate's focused test on a built tree, or one
   `tools/conventions/check-*.sh`. No gate, tier, whole-workspace cargo build or test, or

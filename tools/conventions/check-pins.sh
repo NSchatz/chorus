@@ -63,7 +63,7 @@ ver="$(sed -n 's/^espidf_version = //p' firmware/config/endpoint.conf)"
 sha="$(sed -n 's/^espidf_commit = //p' firmware/config/endpoint.conf)"
 [[ "$ver" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || bad "espidf_version '$ver' is not an exact tag"
 [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || bad "espidf_commit '$sha' is not a 40-hex commit"
-command grep -q -- "--branch $ver " .github/workflows/ci.yml || bad "ci.yml does not clone ESP-IDF $ver"
+for w in ci nightly; do command grep -q -- "--branch $ver " ".github/workflows/$w.yml" || bad "$w.yml does not clone ESP-IDF $ver"; done
 echo "esp-idf: $ver at $sha"
 
 # ESP-IDF components (goal 8): every registry dependency in an idf_component.yml
