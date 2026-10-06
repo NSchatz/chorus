@@ -24,7 +24,7 @@ Goal 26 is closed:
 |---|---|---|
 | P13 | `docs/proposals/P13-rack-amp-zones.md`, 112 lines | line 4, `Status: PROPOSED (2026-10-06)`, "zero zones and zero channels"; lines 50 and 52, "Zones: 0." and "Channels: 0." |
 | The rack amp | not designed: decision 0231, item 1; P13, "Zones and channels" | no room wires passive speakers back to the rack, so no zone, no channel, no package, and no `builds/chorus-rackamp-v1/` |
-| The soundbar | not designed: decision 0231, item 2; P13, "The theater front: the soundbar is not designed" | no room on the owner's list uses one; P2's soundbar ARC input would also need the unapproved Option B board |
+| The soundbar | not designed: decision 0231, item 2 and "Not chosen"; P13, "The theater front: the soundbar is not designed" | no room on the owner's list uses one; P2's soundbar ARC input would also need the unapproved Option B board |
 | The LCR set | `docs/hardware/lcr-set.md` (`version: 1`), decision 0232 | three unchanged `chorus-twoway-v1` speakers and the hidden Raspberry Pi 5 hub |
 | Landed in devices by | https://github.com/NSchatz/devices/pull/128 (task 244) | `projects/chorus-lcr/v1/acoustics.md`, transcribed from chorus `e00b730` |
 | Per-set total | 770.35 USD (the 2GB hub) | the same in chorus's doc and the devices record |
