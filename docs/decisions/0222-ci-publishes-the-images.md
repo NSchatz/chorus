@@ -1,4 +1,4 @@
-# 0000: CI publishes the chorus-server and chorus-soloist images to ghcr.io, from a commit on main, with the job's own token
+# 0222: CI publishes the chorus-server and chorus-soloist images to ghcr.io, from a commit on main, with the job's own token
 
 - Status: decided by the owner, 2026-10-06 (harness task 17, the homelab PR #237 deploy)
 - Recorded by: the owner's agent harness, in the pull request that adds this record

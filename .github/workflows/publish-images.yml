@@ -2,10 +2,10 @@
 name: publish-images
 
 # Builds the chorus-server and chorus-soloist OCI images of one commit on main
-# and pushes them to ghcr.io/<owner>/ (decided by the owner 2026-10-06; the
-# decision record "CI publishes the images" in docs/decisions). The images are
-# built exactly as the gate builds them, `make image` and `make soloist-image`,
-# with no container daemon, and each is tested unpacked before it is pushed.
+# and pushes them to ghcr.io/<owner>/ (decided by the owner 2026-10-06, ADR
+# 0222). The images are built exactly as the gate builds them, `make image` and
+# `make soloist-image`, with no container daemon, and each is tested unpacked
+# before it is pushed.
 #
 # A release tag `v<x.y.z>` publishes under `<x.y.z>`. By hand, `ref` names the
 # commit and `tag` the registry tag; a homelab compose file pins an image by
@@ -65,12 +65,14 @@ jobs:
           else
             tag="$IN_TAG"
           fi
-          if ! printf '%s' "$tag" | grep -q -E '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'; then
+          ok='^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'
+          if ! printf '%s' "$tag" | grep -q -E "$ok"; then
             echo "::error::'$tag' is not a registry tag"
             exit 1
           fi
           if ! git merge-base --is-ancestor HEAD origin/main; then
-            echo "::error::$(git rev-parse HEAD) is not on main; only main is published"
+            echo "::error::$(git rev-parse HEAD) is not on main;" \
+              "only main is published"
             exit 1
           fi
           echo "commit $(git rev-parse HEAD), tag $tag"
@@ -111,7 +113,8 @@ jobs:
             if [ "$name" = chorus-soloist ]; then want="$WANT_SOLOIST"; fi
             echo "$name: $got"
             if [ -n "$want" ] && [ "$want" != "$got" ]; then
-              echo "::error::$name built as $got, expected $want; nothing pushed"
+              echo "::error::$name built as $got, expected $want;" \
+                "nothing pushed"
               bad=1
             fi
           done

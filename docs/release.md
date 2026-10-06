@@ -93,7 +93,7 @@ that is the position and what the owner would add before publishing the image to
 
 ## Pushing the images to a registry
 
-CI pushes them (decided by the owner 2026-10-06, docs/decisions, "CI publishes the images").
+CI pushes them (decided by the owner 2026-10-06, ADR 0222).
 `.github/workflows/publish-images.yml` builds `make image` and `make soloist-image` from a commit
 on `main`, unpacks each tarball to its OCI layout and pushes it unchanged with `crane` (the tool
 `tools/image.sh` pins, `aqua:google/go-containerregistry` 0.22.1), so the manifest digest the
