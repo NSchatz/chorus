@@ -272,16 +272,16 @@ Moot since 2026-10-05, when the owner accepted option B'. What held from Checkpo
 `chorus-g7/speaker-network` and did not open it, and its done-when F was met by the branch.
 Nothing else in chorus waited on it: endpoints keep a configured server address, adoption
 (goal 14) and the sync work run on the simulator and fixtures. What still holds: no placement is
-live until the owner fills in the numbers below and applies the branch, and until then K92's
+live until the branch is merged and the owner applies it, and until then K92's
 auto-adoption trusts whatever network the owner patches the speakers into.
 
 ## Open inputs
 
 - Closed: the owner's choice among A, B, B', C. It is B' (2026-10-05).
-- The one input the decision leaves open, and it is the owner's: the audio network's VLAN tag,
-  its subnet and the server's address on it, filled in on the homelab branch
-  `chorus-g7/speaker-network` (step 1 of the owner action in
-  `docs/proposals/P3-speaker-network-homelab-pr.md`; never written by chorus).
+- Closed: the audio network's VLAN tag, its subnet, pool and the server's address on it. The
+  owner gave them on 2026-10-06 (`docs/decisions/0228-the-speaker-network-numbers-are-given.md`);
+  homelab task 207 fills them in on the branch `chorus-g7/speaker-network`, opens it and merges
+  it. They are never written in chorus (K27).
 - The room list with Cat6, PoE and speaker-wire runs (goal-1 Needs item): decides port count and
   whether per-room switches are needed.
 - Router-hop cost on the real firewall: **ASSUMED** tens of microseconds idle (planning research);

@@ -304,8 +304,10 @@ written before this rule.
 
 ## 17. CLAUDE.md length
 
-`CLAUDE.md` stays at or under 200 lines (K52). Detail belongs here, in `docs/decisions/` and in
-`docs/measurements/`.
+`CLAUDE.md` stays at or under 200 lines (K52) and 500 words (goals DECISIONS.md 13): it is in
+every session's context, so it holds the must-knows and a short "Details" index. Detail belongs in
+`docs/working-agreement.md`, here, in `docs/decisions/` and in `docs/measurements/`. `CARD.md`,
+the one-page card sibling repos' agents read, stays at or under 60 lines.
 
 ## 18. No em dashes
 
@@ -381,8 +383,9 @@ since goal 3 began (the older history keeps its subjects); identity terms are
 **Review-only (no check):** the area names what changed (a crate, `firmware`, `tools`, `docs`,
 `deploy` or `ci`); work arrives as tasks from the owner's agent harness, each on a branch
 `task/<n>`; changes merge as squashed pull requests once an independent reviewer passes them,
-without waiting for CI, which runs `make gate` on every pull request, on main and nightly; a red
-main gets a fix-forward task (decision 0140); history is never rewritten.
+without waiting for CI, which runs `make gate-changed` on every pull request and on main and
+`make gate` nightly; a red main or night gets a fix-forward task (decision 0140); history is
+never rewritten.
 
 ## 22. Every rule has a check
 

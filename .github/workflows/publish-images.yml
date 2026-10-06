@@ -1,0 +1,153 @@
+---
+name: publish-images
+
+# Builds the chorus-server and chorus-soloist OCI images of one commit on main
+# and pushes them to ghcr.io/<owner>/ (decided by the owner 2026-10-06, ADR
+# 0222). The images are built exactly as the gate builds them, `make image` and
+# `make soloist-image`, with no container daemon, and each is tested unpacked
+# before it is pushed.
+#
+# A release tag `v<x.y.z>` publishes under `<x.y.z>`. By hand, `ref` names the
+# commit and `tag` the registry tag; a homelab compose file pins an image by
+# digest, so `server-digest` and `soloist-digest`, when given, are the digests
+# the built images must have: the run fails before pushing anything if one
+# differs. The job's own token pushes; no personal token is involved.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit on main to build (a SHA, full or short, or a tag)
+        required: true
+      tag:
+        description: Registry tag, for example g17-a835a5f
+        required: true
+      server-digest:
+        description: Expected chorus-server manifest digest (optional)
+        required: false
+      soloist-digest:
+        description: Expected chorus-soloist manifest digest (optional)
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-images
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: build and push the images
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # Full history: the ref is checked against main, and the image's
+      # timestamps are its commit's. No credential is left in .git/config
+      # while the builds run third-party build scripts.
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Only a commit on main is published, under a tag a registry accepts.
+      # checkout takes a full SHA, a branch or a tag only, so a short SHA is
+      # resolved here.
+      - name: What to publish
+        env:
+          IN_REF: ${{ inputs.ref }}
+          IN_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          if [ -n "$IN_REF" ]; then
+            sha="$(git rev-parse --verify "$IN_REF^{commit}")"
+            git checkout -q --detach "$sha"
+          fi
+          if [ "$REF_TYPE" = tag ] && [ -z "$IN_TAG" ]; then
+            tag="${REF_NAME#v}"
+          else
+            tag="$IN_TAG"
+          fi
+          ok='^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'
+          if ! printf '%s' "$tag" | grep -q -E "$ok"; then
+            echo "::error::'$tag' is not a registry tag"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::$(git rev-parse HEAD) is not on main;" \
+              "only main is published"
+            exit 1
+          fi
+          echo "commit $(git rev-parse HEAD), tag $tag"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          echo "REPO=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+
+      # mise and zig (mise.toml, checked against mise.lock), as in ci.yml;
+      # crane and umoci are pinned where tools/image.sh runs them.
+      - name: Pinned tools
+        uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5  # v5.0.0
+        with:
+          version: 2026.7.5
+
+      - name: Toolchain
+        run: rustup show active-toolchain
+
+      - name: make image
+        run: make image
+
+      - name: make soloist-image
+        run: make soloist-image
+
+      # Each tarball is unpacked to its OCI layout; the one manifest it holds
+      # is what is pushed, and its digest is what a compose file pins.
+      - name: Digests
+        env:
+          WANT_SERVER: ${{ inputs.server-digest }}
+          WANT_SOLOIST: ${{ inputs.soloist-digest }}
+        run: |
+          bad=0
+          for name in chorus-server chorus-soloist; do
+            mkdir -p "$RUNNER_TEMP/$name"
+            tar -xf "target/image/$name-oci.tar" -C "$RUNNER_TEMP/$name"
+            got="$(jq -r '.manifests | if length == 1 then .[0].digest
+              else error("one manifest expected") end' \
+              "$RUNNER_TEMP/$name/index.json")"
+            want="$WANT_SERVER"
+            if [ "$name" = chorus-soloist ]; then want="$WANT_SOLOIST"; fi
+            echo "$name: $got"
+            if [ -n "$want" ] && [ "$want" != "$got" ]; then
+              echo "::error::$name built as $got, expected $want;" \
+                "nothing pushed"
+              bad=1
+            fi
+          done
+          exit "$bad"
+
+      - name: Push
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          crane() {
+            mise exec aqua:google/go-containerregistry@0.22.1 -- crane "$@"
+          }
+          printf '%s' "$TOKEN" |
+            crane auth login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          for name in chorus-server chorus-soloist; do
+            # A tag that exists already is pushed again only with its digest.
+            idx="$RUNNER_TEMP/$name/index.json"
+            want="$(jq -r '.manifests[0].digest' "$idx")"
+            if had="$(crane digest "$REPO/$name:$TAG" 2> /dev/null)" &&
+              [ "$had" != "$want" ]; then
+              echo "::error::$REPO/$name:$TAG is $had already; not replaced"
+              exit 1
+            fi
+            crane push "$RUNNER_TEMP/$name" "$REPO/$name:$TAG"
+            d="$(crane digest "$REPO/$name:$TAG")"
+            echo "$name pushed: $REPO/$name:$TAG@$d"
+            echo "- \`$REPO/$name:$TAG@$d\`" >> "$GITHUB_STEP_SUMMARY"
+          done

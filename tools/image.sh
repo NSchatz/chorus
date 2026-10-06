@@ -8,7 +8,7 @@
 # binary's `--help`, and starts it with the control plane on loopback and reads
 # `GET /api/state` back, so the image is shown to hold a server that serves.
 #
-# Nothing is pushed anywhere: pushing to a registry is the owner's step.
+# Nothing is pushed from here: CI pushes (.github/workflows/publish-images.yml).
 #
 # Tools (rootless, pinned): crane 0.22.1 (aqua:google/go-containerregistry) and
 # umoci 0.6.0 (aqua:opencontainers/umoci), run through mise; the Rust toolchain
@@ -72,6 +72,11 @@ CARGO_TARGET_DIR="$BD" cargo build --release --locked --target "$TARGET" -p chor
 # deployed container (docs/measurements/host-wakeup-jitter.md, "Next"); it never
 # runs unless invoked.
 CARGO_TARGET_DIR="$BD" cargo build --release --locked --target "$TARGET" -p chorus-hostprobe --bin chorus-wakeup-probe
+# The host contract's own tests under the image's libc: musl stubs some calls glibc
+# implements (sched_setscheduler fails with ENOSYS there, docs/decisions/0225), and the
+# workspace suite runs on glibc only.
+echo "image: chorus-hostctl's tests on $TARGET"
+CARGO_TARGET_DIR="$BD" cargo test --release --locked --target "$TARGET" -p chorus-hostctl
 
 if [ ! -f "$BASE_CACHE/index.json" ]; then
     echo "image: pulling $BASE_REF@$BASE_DIGEST"

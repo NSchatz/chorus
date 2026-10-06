@@ -377,7 +377,7 @@ Log each of these in docs/decisions/ when made, with a sentence of reasoning. Ro
 
 ## Appendix A: CLAUDE.md starter (removed)
 
-Removed (R17, decided 2026-09-29 by the owner, K33, K39, with R1-R4 of the same date): the starter no longer matched the repository's working agreement. `CLAUDE.md` in the repository root is the working agreement; it carries the clean-room tightening (R3), the plan of record and the owner-actions line (R1), BRIEF.md kept current by the program (R2), and rule 8 without its old citation (R4).
+Removed (R17, decided 2026-09-29 by the owner, K33, K39, with R1-R4 of the same date): the starter no longer matched the repository's working agreement. `CLAUDE.md` in the repository root is the working agreement; it carries the clean-room tightening (R3), the plan of record and the owner-actions line (R1), BRIEF.md kept current by the program (R2), and rule 8 without its old citation (R4). Since 2026-10-06 (harness task 10, goals DECISIONS.md 13) the full text of all four lives in `docs/working-agreement.md`, moved word for word, and `CLAUDE.md` keeps their must-knows and points there.
 
 ---
 

@@ -76,6 +76,9 @@ struct RawRlimit {
     rlim_max: u64,
 }
 
+/// `pthread_t`: an `unsigned long` on Linux under glibc and musl.
+type PthreadT = std::os::raw::c_ulong;
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct SchedParam {
@@ -85,8 +88,16 @@ struct SchedParam {
 extern "C" {
     fn getrlimit(resource: c_int, rlim: *mut RawRlimit) -> c_int;
     fn setrlimit(resource: c_int, rlim: *const RawRlimit) -> c_int;
-    fn sched_setscheduler(pid: c_int, policy: c_int, param: *const SchedParam) -> c_int;
-    fn sched_getscheduler(pid: c_int) -> c_int;
+    // Not sched_setscheduler(2) and sched_getscheduler(2): musl, the libc of
+    // the static server image, implements both as stubs that always fail with
+    // ENOSYS (docs/decisions/0225), so the image could never take a policy.
+    // The pthread pair is implemented by glibc and musl alike and acts on one
+    // thread, which is what every caller here means. Both return the error
+    // number instead of setting errno.
+    fn pthread_self() -> PthreadT;
+    fn pthread_setschedparam(thread: PthreadT, policy: c_int, param: *const SchedParam) -> c_int;
+    fn pthread_getschedparam(thread: PthreadT, policy: *mut c_int, param: *mut SchedParam)
+        -> c_int;
     fn sched_get_priority_min(policy: c_int) -> c_int;
     fn sched_get_priority_max(policy: c_int) -> c_int;
     fn mlockall(flags: c_int) -> c_int;
@@ -381,22 +392,15 @@ pub fn take_real_time_policy(wanted: u32) -> Result<RealTimeGrant, HostError> {
     let param = SchedParam {
         sched_priority: priority as c_int,
     };
-    // SAFETY: pid 0 names the calling thread, and &param points at a live
-    // repr(C) SchedParam with struct sched_param's layout (one int) that the
-    // kernel only reads during the call.
-    let rc = unsafe { sched_setscheduler(0, SCHED_FIFO, &param) };
-    if rc != 0 {
-        let (errno, detail) = errno_now();
+    if let Err(e) = set_own_policy(SCHED_FIFO, &param) {
         return Err(HostError::PolicyDenied {
             ceiling: ceiling.soft,
             wanted,
-            errno,
-            detail,
+            errno: e.raw_os_error().unwrap_or(0),
+            detail: e.to_string(),
         });
     }
-    // SAFETY: no pointers; pid 0 names the calling thread, which exists for
-    // the whole call.
-    let policy = unsafe { sched_getscheduler(0) };
+    let policy = current_policy();
     Ok(RealTimeGrant {
         ceiling: ceiling.soft,
         priority,
@@ -413,16 +417,20 @@ pub fn take_real_time_policy(wanted: u32) -> Result<RealTimeGrant, HostError> {
 /// real-time too, unbounded by any decision of its own. Lowering a policy
 /// needs no privilege (`sched_setscheduler(2)`), so a failure here is the
 /// kernel's own error, returned as it came.
+pub fn leave_real_time_policy() -> io::Result<()> {
+    set_own_policy(SCHED_OTHER, &SchedParam { sched_priority: 0 })
+}
+
+/// Set the calling thread's policy and priority.
 // Unsafe allowed on this item: it is a libc FFI wrapper (the crate lint policy denies unsafe elsewhere).
 #[allow(unsafe_code)]
-pub fn leave_real_time_policy() -> io::Result<()> {
-    let param = SchedParam { sched_priority: 0 };
-    // SAFETY: pid 0 names the calling thread, and &param points at a live
-    // repr(C) SchedParam with struct sched_param's layout (one int) that the
-    // kernel only reads during the call.
-    let rc = unsafe { sched_setscheduler(0, SCHED_OTHER, &param) };
+fn set_own_policy(policy: c_int, param: &SchedParam) -> io::Result<()> {
+    // SAFETY: pthread_self() names the calling thread, which exists for the
+    // whole call, and param points at a live repr(C) SchedParam with struct
+    // sched_param's layout (one int) that is only read during the call.
+    let rc = unsafe { pthread_setschedparam(pthread_self(), policy, param) };
     if rc != 0 {
-        return Err(io::Error::last_os_error());
+        return Err(io::Error::from_raw_os_error(rc));
     }
     Ok(())
 }
@@ -469,13 +477,24 @@ pub fn thread_id() -> i32 {
     unsafe { gettid() }
 }
 
-/// This thread's scheduling policy, straight from the kernel.
+/// This thread's scheduling policy, as `pthread_getschedparam(3)` reports it.
+///
+/// glibc may answer from what it cached at the last `pthread_setschedparam`, so a
+/// change made from outside (`chrt -p`) can go unseen here; [`thread_facts`] reads
+/// `/proc` and is the kernel's own word.
 // Unsafe allowed on this item: it is a libc FFI wrapper (the crate lint policy denies unsafe elsewhere).
 #[allow(unsafe_code)]
 pub fn current_policy() -> c_int {
-    // SAFETY: no pointers; pid 0 names the calling thread, which exists for
-    // the whole call. A -1 is handed to the caller unchanged.
-    unsafe { sched_getscheduler(0) }
+    let mut policy: c_int = -1;
+    let mut param = SchedParam { sched_priority: 0 };
+    // SAFETY: pthread_self() names the calling thread, which exists for the
+    // whole call; both pointers are to live, writable locals of the types
+    // the call writes (an int and a one-int struct sched_param).
+    let rc = unsafe { pthread_getschedparam(pthread_self(), &mut policy, &mut param) };
+    if rc != 0 {
+        return -1;
+    }
+    policy
 }
 
 /// A scheduling policy rendered the way `sched(7)` names it.
@@ -1106,6 +1125,15 @@ mod tests {
             .find(|f| f.tid == tid)
             .expect("this thread is in /proc/self/task");
         assert_eq!(me.policy, current_policy());
+    }
+
+    #[test]
+    fn the_policy_calls_work_under_this_libc() {
+        // Lowering to SCHED_OTHER needs no privilege, so this passes anywhere
+        // the policy calls are real; under musl's sched_setscheduler stub it
+        // failed with ENOSYS (docs/decisions/0225).
+        leave_real_time_policy().expect("SCHED_OTHER is always permitted");
+        assert_eq!(current_policy(), SCHED_OTHER);
     }
 
     #[test]

@@ -495,7 +495,8 @@ make firmware-check  # the ESP32-S3 endpoint on a host: no board, no ESP-IDF too
 make web-test        # the app's unit tests (node, no browser)
 make ha-test         # the Home Assistant integration under its pinned harness
 make gate-fast       # the conventions checks alone
-make gate            # everything CI runs
+make gate-changed    # what a pull request runs: only what the change touches
+make gate            # everything, nightly on main
 ```
 
 **The gate.** `make gate` (`tools/gate.sh`) runs every check a change is held to, and times each
@@ -509,8 +510,11 @@ step:
 - the app's tests, its build and its browser smoke test;
 - the Home Assistant steps.
 
-CI runs the gate ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) on every pull request,
-on every push to main and nightly. A pull request merges when an independent reviewer passes it,
+A pull request runs `make gate-changed` ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
+the conventions checks, then fmt, clippy and the tests of only the crates the change touches and
+the crates that depend on them, plus the app, Home Assistant and firmware host checks only when
+those trees changed. A docs-only change builds nothing. Its target is two minutes. The full gate
+runs nightly on main ([`.github/workflows/nightly.yml`](.github/workflows/nightly.yml)). A pull request merges when an independent reviewer passes it,
 without waiting for CI, and a red main gets a fix-forward task
 ([ADR 0140](docs/decisions/0140-ci-is-the-gate.md)). On a development host, local runs stay
 narrow: one crate's focused test, or one conventions check.

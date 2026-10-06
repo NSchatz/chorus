@@ -90,7 +90,7 @@ change to that Home Assistant goes through.
 | Home Assistant it was tested under | 2026.9.3 |
 | Files | 29 |
 | sha256 of `chorus.lock` | `4f3603bcc550039eb2cd0b2eddfe2f62feb44be08365d18e0434dadfba88792d` |
-| Delivered as | pull request #253 of the owner's homelab repo, opened and left open |
+| Delivered as | pull request #253 of the owner's homelab repo, opened and left open; merged 2026-10-04 on the owner's word (see "Install status") |
 
 `tools/ha-export.sh <dir> 180bbf8897171e5c65b7f9940cfe0ecb06abd16c` reproduces it from any
 checkout that has the commit.
@@ -161,3 +161,17 @@ item in the owner's queue says so. No server release or image is part of this re
   under the same version; Python cannot write byte code beside them and does not need to),
   and that the frontend hides a section whose `state` condition names a missing entity.
   Both are checks of the owner's install action.
+
+## Install status
+
+(Harness task 25, 2026-10-06.) Homelab #253 was merged on 2026-10-04 (squash `10162a4`) on the
+owner's word, "Merge on the replayed checks", without a `make ci` run of the merging session's
+own (homelab's checks need a Docker daemon). Still the owner's: `scripts/update-all.sh` on the
+host, adding the entry (Host `10.230.0.1`, the proxy bridge's gateway that homelab's
+`networking/traefik/dynamic/chorus.yml` names; Control port `4020`) and naming each room's entity
+prefixes so `dashboards/chorus.yaml` gets the real rooms.
+
+The entry needed a server at 180bbf8 or later; the deployed `g17-a835a5f` predates it. Asked on
+2026-10-06, the owner chose to publish `ghcr.io/nschatz/chorus-server:main-c78a008`
+(`sha256:635b303b...e4b`, which also carries the real-time fix of 0225) and to re-pin homelab
+to it (homelab task #206, the owner merges and deploys).
