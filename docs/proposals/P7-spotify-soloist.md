@@ -103,7 +103,7 @@ Not legal advice. "Inference" marks a reading, not a fact.
 | Developer Policy | "Do not create any product or service which is integrated with streams or content from another service" | Inference: chorus never combines a Spotify stream with another service's stream; a room plays one source at a time (K78). Reported |
 | Developer Policy | "Do not analyze the Spotify Content ... for any purpose, including ... creating new or derived listenership metrics"; and, beside it, "Do not synchronize any sound recordings with any visual media, including any advertising, film, television program, slideshow, video, or similar content" | Both bear on K65's visualizer computed from the audio. The launch blog itself suggests "an LED matrix visualizer", and the synchronize clause's examples are video-like media, so Spotify does not appear to read it as covering LEDs (inference). Both reported to the owner, never a reason to drop Soloist (K66); the visualizer keeps nothing |
 | Developer Policy | "Streaming ... shall only be made available to subscribers to the Premium Spotify Service" | Soloist's blog: "once it's running both Free and Premium users can connect". Soloist, not chorus, does the streaming; reported |
-| Instance limits | None found in any public page | The dashboard clause stays a Needs item (goal 1, §5 item 5) |
+| Instance limits | None found in any public page; the owner reports the dashboard's Soloist terms have no such clause (2026-10-06, `docs/decisions/0224-the-soloist-dashboard-terms-have-no-instance-clause.md`) | None: the pool of 16 stands as accepted |
 
 ## The design common to every option
 
@@ -301,10 +301,12 @@ Spotify reduces to "move this room to a group" in the chorus app).
 
 ## Open inputs
 
-- **Soloist dashboard terms** (instances per key and per household; any Soloist-specific clause
-  beyond the consumer Terms of Use): the goal-1 Needs item (§5 item 5). Also asks whether the
-  owner reads the Developer Terms and Policy as applying to chorus's controller, including the
-  Terms' "for private personal use; and ... on Approved Devices" grant (desktops, laptops,
+- **Soloist dashboard terms: answered 2026-10-06.** The owner reports the dashboard's
+  Soloist terms have no clause on instances per key, account, host or household, on servers or
+  containers, or on personal versus commercial use
+  (`docs/decisions/0224-the-soloist-dashboard-terms-have-no-instance-clause.md`). Still open:
+  whether the owner reads the Developer Terms and Policy as applying to chorus's controller,
+  including the Terms' "for private personal use; and ... on Approved Devices" grant (desktops, laptops,
   netbooks, tablets, mobile, or devices approved in writing; a home server is not listed) and the
   Policy's "Do not synchronize any sound recordings with any visual media" clause (K65's
   visualizer). Reported, never a reason to drop Soloist (K66).
