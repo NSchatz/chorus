@@ -337,7 +337,8 @@ fn transient_read_failure_is_an_error_not_an_omission() {
         said
     );
     assert!(
-        said.contains("Input/output error"),
+        // EIO in glibc's words or musl's.
+        said.contains("(os error 5)"),
         "the message names the reason: {}",
         said
     );
