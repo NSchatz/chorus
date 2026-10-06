@@ -20,7 +20,7 @@ hand was also one nobody else could see being built.
    `rust-toolchain.toml`, and ESP-IDF v6.1 at the commit `firmware/config/endpoint.conf` pins.
    `tools/release.sh` keeps every refusal it had (dirty tree, commit not on main, version not
    `Cargo.toml`'s, ESP-IDF not the pinned one, a directory that is not `--list`); the workflow
-   adds none of its own beyond the tag being a version.
+   adds only that the tag is a version and that a publish runs on a tag.
 2. **Two jobs, and only the second can write.** The build job runs with `contents: read` and no
    credential left in `.git/config`, since the build runs third-party build scripts; it uploads
    `dist/v<ver>/` as the artifact `chorus-v<ver>`. The publish job, `contents: write` and nothing
@@ -28,8 +28,9 @@ hand was also one nobody else could see being built.
    the body and every other file attached, and fails unless the release lists exactly them. It
    never creates or moves a tag.
 3. **A dry run by hand.** `workflow_dispatch` with `dry-run` (the default) builds the release of
-   the ref it runs on with `Cargo.toml`'s version and stops after the upload. `dry-run: false`
-   publishes only when run on a `v<x.y.z>` tag, to retry a release whose tag run failed.
+   a commit on main (release.sh refuses any other) with `Cargo.toml`'s version and stops after the upload. `dry-run: false`
+   publishes only when run on a `v<x.y.z>` tag, to retry a release whose tag run failed; a release or draft a failed `gh release create`
+   left behind is deleted first.
 4. **Tagging stays a deliberate act.** Pushing the tag is what publishes, as before; the same push
    has `publish-images.yml` push the images.
 

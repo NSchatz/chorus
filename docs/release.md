@@ -36,7 +36,7 @@ is built on a workstation or the agent host.
    branch up to date with `main`, counts).
 2. The workspace version in `Cargo.toml` is the release's version (a PR changes it first
    if needed).
-3. Optionally, a dry run of that commit first: it builds the release with `Cargo.toml`'s
+3. Optionally, a dry run of `main` first (its tip, so run it before anything else merges): it builds the release with `Cargo.toml`'s
    version and uploads `dist/v<ver>/` as the workflow artifact `chorus-v<ver>`, publishing
    nothing.
 
@@ -60,7 +60,9 @@ is built on a workstation or the agent host.
    `publish-images.yml` push the images (below).
 5. If the release job failed after the tag was pushed, fix forward on `main` only when the
    tagged commit itself is wrong (a new version and tag); otherwise run it again on the tag:
-   `gh workflow run release.yml --ref v<ver> -f dry-run=false`.
+   `gh workflow run release.yml --ref v<ver> -f dry-run=false`. If the failure was in
+   `gh release create` itself, delete the release or draft it left behind first
+   (`gh release delete v<ver>`, which keeps the tag).
 6. `gh release view v<ver>` lists the assets; the goal's ledger records the tag's SHA.
 
 ## Source of MPL-licensed dependencies (P9)

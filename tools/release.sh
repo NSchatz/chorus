@@ -22,9 +22,9 @@
 #                                                    checked against Cargo.lock's checksum
 #   SHA256SUMS, NOTES.md                             digests; the release notes body
 #
-# Nothing is published, flashed or pushed here: `gh release create` is a separate,
-# visible step (docs/release.md), flashing is the owner's at the bench, and pushing
-# the image to a registry is the owner's Needs step.
+# Nothing is published, flashed or pushed here: `gh release create` is the separate
+# publish job of .github/workflows/release.yml (docs/release.md), flashing is the owner's
+# at the bench, and .github/workflows/publish-images.yml pushes the images.
 #
 # `tools/release.sh --list` prints the artifact names of the workspace's version and builds
 # nothing (`make soloist-lists` reads it); a release's directory is held to the same list

@@ -9,10 +9,10 @@ name: release
 # differs from Cargo.toml, a dirty tree or an ESP-IDF that is not the pinned
 # one, and holds the directory to `tools/release.sh --list`.
 #
-# By hand, `dry-run` (the default) builds the release of the ref it runs on,
-# with Cargo.toml's version, and uploads dist/ as a workflow artifact,
-# publishing nothing. `dry-run: false` on a v<x.y.z> tag publishes, which
-# retries a tag whose run failed. The build runs with a read-only token; only
+# By hand, `dry-run` (the default) builds the release of a commit on main,
+# with Cargo.toml's version (a tag's own, run on a tag), and uploads dist/
+# as a workflow artifact, publishing nothing. `dry-run: false` on a v<x.y.z>
+# tag publishes, which retries a tag whose run failed. The build runs with a read-only token; only
 # the publish job, which runs no build script, can write.
 on:
   push:
@@ -81,6 +81,10 @@ jobs:
         with:
           version: 2026.7.5
 
+      # release.sh refuses a dirty tree; say here if setup made it one.
+      - name: Tree still clean
+        run: git diff --exit-code && test -z "$(git status --porcelain)"
+
       # rust-toolchain.toml names the exact toolchain; rustup installs it on
       # first use, with the musl target the server binary is built for.
       - name: Toolchain
@@ -105,7 +109,6 @@ jobs:
           CARGO_BUILD_JOBS: "2"
           IDF_PY_BUILD_JOBS: "2"
         run: |
-          git status --porcelain
           make release VERSION="$VERSION"
           {
             echo "### chorus v$VERSION from \`$(git rev-parse HEAD)\`"
