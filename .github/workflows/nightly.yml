@@ -24,9 +24,10 @@ jobs:
   gate:
     name: make gate (nightly)
     runs-on: ubuntu-24.04
+    # The build-parallelism variables are on the gate step, not here:
+    # rust-cache folds CARGO_* and CMAKE_* into its key, and ci.yml restores
+    # this cache under the same key.
     env:
-      CARGO_BUILD_JOBS: "2"
-      CMAKE_BUILD_PARALLEL_LEVEL: "2"
       IDF_PY_BUILD_JOBS: "2"
       CHORUS_CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
@@ -150,6 +151,9 @@ jobs:
           echo "identity term list: $n term(s) from the repository secret"
 
       - name: make gate
+        env:
+          CARGO_BUILD_JOBS: "2"
+          CMAKE_BUILD_PARALLEL_LEVEL: "2"
         run: make gate
 
       # Nothing gates on a developer's machine, so a red run must explain

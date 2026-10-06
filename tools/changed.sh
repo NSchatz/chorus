@@ -5,7 +5,8 @@
 #   crate <package> <lib|bin>  a workspace crate the change touches, or one that depends on such
 #                              a crate (any dependency kind, from `cargo metadata`); `lib` when
 #                              it has a library target (and so documentation tests)
-#   web | ha | firmware        the app (web/), the Home Assistant integration (integrations/),
+#   web | ha | firmware        the app (web/, which also touches chorus-server, the crate that
+#                              embeds web/dist), the Home Assistant integration (integrations/),
 #                              the ESP32-S3 endpoint (firmware/)
 # A file under fixtures/, config/ or third_party/, or a root .conf, touches every crate and tree
 # that names its path. The workspace manifest, the lock file, the toolchain pin and the nextest
@@ -32,7 +33,8 @@ for f in "${files[@]}"; do
     case "$f" in
         Cargo.toml | Cargo.lock | rust-toolchain.toml | .config/nextest.toml) all=1 ;;
         crates/*/*) d="${f#crates/}"; dirs+=("crates/${d%%/*}") ;;
-        web/*) web=1 ;;
+        # chorus-server embeds web/dist (crates/server/build.rs) and its tests read it.
+        web/*) web=1; dirs+=("crates/server") ;;
         integrations/*) ha=1 ;;
         firmware/*) firmware=1 ;;
         fixtures/* | config/* | third_party/* | *.conf)

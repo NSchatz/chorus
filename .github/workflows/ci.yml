@@ -33,9 +33,9 @@ concurrency:
 jobs:
   gate:
     name: make gate-changed
+    # No CARGO_*, CMAKE_* or RUST* variable at the job level: rust-cache folds
+    # them into its key, and this job restores nightly.yml's cache.
     runs-on: ubuntu-24.04
-    env:
-      CARGO_BUILD_JOBS: "4"
     steps:
       # Full history: the conventions checks read it, and the change is the
       # diff from the base.
@@ -78,7 +78,7 @@ jobs:
       - name: Toolchain
         run: rustup show active-toolchain
 
-      # The nightly full gate saves this cache from main; a pull request only
+      # The nightly full gate saves this cache from main; this job only
       # restores it. Swatinem/rust-cache v2.9.2,
       # https://github.com/Swatinem/rust-cache/releases/tag/v2.9.2 (read
       # 2026-10-06).
@@ -87,7 +87,7 @@ jobs:
         uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7
         with:
           shared-key: chorus-gate
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: false
 
       # Only when the change can reach the firmware: its host build compiles
       # the crypto library (TF-PSA-Crypto) from the ESP-IDF v6.1 tree, pinned
