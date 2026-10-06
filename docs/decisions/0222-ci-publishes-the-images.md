@@ -26,6 +26,12 @@ Asked whether to push by hand now, add a CI publish job, or wait, the owner chos
 3. **A pinned digest is checked before anything is pushed.** The optional `server-digest` and
    `soloist-digest` inputs are the digests a homelab compose file pins; a build that differs fails
    the run with nothing pushed. A pin is never edited to match a build the owner did not ask for.
+   An existing registry tag is never replaced by a different digest.
+
+   Two builds of one commit are meant to be identical (`tools/image.sh` fixes every timestamp to
+   the commit's) except where umoci is not reproducible, so a CI build of a commit first built on
+   a workstation, such as `a835a5f`, may not match the pin. The check then fails safe, and the
+   pin moves to the CI digest only through a homelab pull request the owner merges.
 4. **The job's `GITHUB_TOKEN` (`packages: write`, this job only) authenticates.** No personal
    registry credential is stored or created; the rest of the repository's workflows stay
    `contents: read`.

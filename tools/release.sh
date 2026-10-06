@@ -177,8 +177,8 @@ Artifacts:
 - \`chorus-server-v$VER-$TARGET\`: the static server binary.
 - \`chorus-server-v$VER-oci.tar\`: the server as an OCI image layout tarball (base
   \`gcr.io/distroless/static-debian12:nonroot\`, digest-pinned in tools/image.sh). Manifest
-  digest \`$MANIFEST_DIGEST\`. It is in no registry; pushing it is the owner's step
-  (docs/release.md).
+  digest \`$MANIFEST_DIGEST\`. \`.github/workflows/publish-images.yml\` pushes it to ghcr.io
+  under the release's version (docs/release.md).
 - \`chorus-soloist-v$VER-oci.tar\`: one Spotify Soloist receiver as an OCI image layout
   tarball: PipeWire, WirePlumber and \`chorus-soloistd\` on \`debian:trixie-slim\`
   (digest-pinned in tools/soloist-image.sh), with $SOLOIST_PACKAGES Debian packages pinned by

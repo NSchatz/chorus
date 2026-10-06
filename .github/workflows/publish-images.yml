@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Commit on main to build (a SHA, full or short)
+        description: Commit on main to build (a SHA, full or short, or a tag)
         required: true
       tag:
         description: Registry tag, for example g17-a835a5f
@@ -46,20 +46,28 @@ jobs:
       packages: write
     steps:
       # Full history: the ref is checked against main, and the image's
-      # timestamps are its commit's.
+      # timestamps are its commit's. No credential is left in .git/config
+      # while the builds run third-party build scripts.
       - name: Check out
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           fetch-depth: 0
-          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
 
       # Only a commit on main is published, under a tag a registry accepts.
+      # checkout takes a full SHA, a branch or a tag only, so a short SHA is
+      # resolved here.
       - name: What to publish
         env:
+          IN_REF: ${{ inputs.ref }}
           IN_TAG: ${{ inputs.tag }}
           REF_NAME: ${{ github.ref_name }}
           REF_TYPE: ${{ github.ref_type }}
         run: |
+          if [ -n "$IN_REF" ]; then
+            sha="$(git rev-parse --verify "$IN_REF^{commit}")"
+            git checkout -q --detach "$sha"
+          fi
           if [ "$REF_TYPE" = tag ] && [ -z "$IN_TAG" ]; then
             tag="${REF_NAME#v}"
           else
@@ -79,8 +87,8 @@ jobs:
           echo "TAG=$tag" >> "$GITHUB_ENV"
           echo "REPO=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
 
-      # The pinned tools from mise.toml (crane, umoci, zig), checked against
-      # mise.lock's digests; as in ci.yml.
+      # mise and zig (mise.toml, checked against mise.lock), as in ci.yml;
+      # crane and umoci are pinned where tools/image.sh runs them.
       - name: Pinned tools
         uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5  # v5.0.0
         with:
@@ -130,6 +138,14 @@ jobs:
           printf '%s' "$TOKEN" |
             crane auth login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           for name in chorus-server chorus-soloist; do
+            # A tag that exists already is pushed again only with its digest.
+            idx="$RUNNER_TEMP/$name/index.json"
+            want="$(jq -r '.manifests[0].digest' "$idx")"
+            if had="$(crane digest "$REPO/$name:$TAG" 2> /dev/null)" &&
+              [ "$had" != "$want" ]; then
+              echo "::error::$REPO/$name:$TAG is $had already; not replaced"
+              exit 1
+            fi
             crane push "$RUNNER_TEMP/$name" "$REPO/$name:$TAG"
             d="$(crane digest "$REPO/$name:$TAG")"
             echo "$name pushed: $REPO/$name:$TAG@$d"
