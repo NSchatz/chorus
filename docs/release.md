@@ -2,8 +2,8 @@
 
 A chorus release is a `v<x.y.z>` tag on a squash-merge commit of `main` plus a GitHub
 release on NSchatz/chorus with its artifacts attached (K41). Versions are SemVer `0.x`
-until the program's finale says otherwise. Nothing is pushed to a registry by the
-program: that is the owner's step (below).
+until the program's finale says otherwise. The images are pushed to
+ghcr.io by CI, `.github/workflows/publish-images.yml` (below; decided by the owner 2026-10-06).
 
 ## What a release carries
 
@@ -91,26 +91,31 @@ timestamp the binary came from; the release attaches that notices file as
 snapshot archive is where they are. `docs/decisions/0131-the-chorus-soloist-image.md` says why
 that is the position and what the owner would add before publishing the image to others.
 
-## Pushing the image to a registry (the owner's step)
+## Pushing the images to a registry
 
-The program never pushes (no registry credential exists here and none is created, K4,
-K41). With the release's OCI tarball on a machine where the owner is logged in to the
-registry, `crane` (the tool `tools/image.sh` pins, `aqua:google/go-containerregistry`
-0.22.1) pushes the layout unchanged, so the manifest digest in the release notes is the
-digest the registry serves ("If the PATH is a directory, it will be read as an OCI image
-layout", crane push reference,
-https://github.com/google/go-containerregistry/blob/main/cmd/crane/doc/crane_push.md,
-read 2026-09-30):
+CI pushes them (decided by the owner 2026-10-06, docs/decisions, "CI publishes the images").
+`.github/workflows/publish-images.yml` builds `make image` and `make soloist-image` from a commit
+on `main`, unpacks each tarball to its OCI layout and pushes it unchanged with `crane` (the tool
+`tools/image.sh` pins, `aqua:google/go-containerregistry` 0.22.1), so the manifest digest the
+build prints is the digest the registry serves ("If the PATH is a directory, it will be read as
+an OCI image layout", crane push reference,
+https://github.com/google/go-containerregistry/blob/main/cmd/crane/doc/crane_push.md, read
+2026-09-30). It authenticates with the job's own `GITHUB_TOKEN` (`packages: write`); no personal
+registry credential exists here and none is created (K4, K41).
 
-```
-mkdir chorus-oci && tar -xf chorus-server-v<ver>-oci.tar -C chorus-oci
-mise exec aqua:google/go-containerregistry@0.22.1 -- crane push chorus-oci ghcr.io/nschatz/chorus-server:<ver>
-mise exec aqua:google/go-containerregistry@0.22.1 -- crane digest ghcr.io/nschatz/chorus-server:<ver>
-```
+- A pushed release tag `v<ver>` publishes `ghcr.io/nschatz/chorus-server:<ver>` and
+  `ghcr.io/nschatz/chorus-soloist:<ver>`.
+- By hand, for a commit that has no release (a homelab pin such as `g17-a835a5f`):
 
-The last line must print the manifest digest from the release notes; the homelab stack
-pins `image:` to that digest.
+  ```
+  gh workflow run publish-images.yml -f ref=<sha> -f tag=<tag> \
+      -f server-digest=<pinned digest> -f soloist-digest=<pinned digest>
+  ```
 
-The receiver image is pushed the same way from `chorus-soloist-v<ver>-oci.tar` (to a
-`chorus-soloist` repository), and the receivers' stack pins `image:` to the digest the
-release notes give for it, which is the digest `make soloist-image` prints.
+  With the digests given, the run fails before pushing anything if a build differs from them.
+  The job summary lists each pushed image as `<repo>:<tag>@<digest>`; the homelab stacks pin
+  `image:` to that digest.
+
+The registry packages are the owner's: a package is private when first pushed, so the host
+either logs in (`docker login ghcr.io` with a read-only packages token) or the owner makes the
+package public once in its GitHub settings.
