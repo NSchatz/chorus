@@ -1,4 +1,4 @@
-# 0000: the Spotify Soloist terms shown in the developer dashboard have no clause on instances, servers or commercial use; the pool of 16 slots stands
+# 0224: the Spotify Soloist terms shown in the developer dashboard have no clause on instances, servers or commercial use; the pool of 16 slots stands
 
 - Status: decided by the owner, 2026-10-06 (harness task 18, goals issue #94)
 - Recorded by: the owner's agent harness, in the pull request that adds this record
