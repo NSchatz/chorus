@@ -115,9 +115,12 @@ across both endpoints; a wired endpoint of either kind answers
 
 **No credential is in this repository.** The endpoint's network name and its
 secret are declared `unknown` in `firmware/config/endpoint.conf` and will stay
-that way. An endpoint whose network is unknown refuses to join, names which
-value is unknown and where to set it, and reports the link down; there is no
-default network anywhere in this tree to fall back to.
+that way: since goal 14 `unknown` means provisioned at run time. A Wi-Fi
+endpoint with no network in its own store raises its own access point and
+learns the network from a phone, keeping it in that store and never in the
+tree (`firmware/src/provision.c`, `firmware/main/esp_provision.c`,
+`docs/decisions/0103-wifi-provisioning-over-softap.md`); there is no default
+network anywhere in this tree to fall back to.
 
 ## What has actually been measured
 

@@ -14,8 +14,7 @@ on real endpoints (AC-4) is a different run, below.
 ## Running it
 
 ```sh
-timeout 4300 goals lock -w 3600 goals-heavy -- goals lock -w 3600 chorus-heavy -- \
-    env CHORUS_HOUSE_SOAK_SECONDS=3600 make verify-house-soak
+timeout 4300 env CHORUS_HOUSE_SOAK_SECONDS=3600 make verify-house-soak
 ```
 
 About 62 minutes of wall clock (the hour of load, up to 40 s for the endpoints to come up and
@@ -46,7 +45,8 @@ with `python3 tools/house-soak/report.py --run-dir <dir> [--out <report>]`.
 - The server: `--slots 8 --control-listen --serve-forever --source tone --max-clients 16
   --control-workers 8 --civil-time ...`, with the stream contract from
   `config/verification.conf`. Eight rooms, ASSUMED names (the house of
-  `docs/measurements/sim-house-8-rooms.md`; the owner's room list is a Needs item): living,
+  `docs/measurements/sim-house-8-rooms.md`; the owner's room list of 2026-10-04, six rooms, is in
+  `docs/proposals/P12-enclosures.md`): living,
   kitchen, dining, primary, office, patio, bathroom (declared wireless), guest.
 - Ten endpoints on ALSA `null` (the client has no fake sink, by design): one per room and a second
   in living and kitchen, whose pairs are attached `link: wired` and bonded FL/FR before they play.
@@ -76,7 +76,7 @@ the state and the server log at its two ends); ten endpoints starting in one ins
 restart storm, and what happens before the window (connections turned away, a first session
 rejoined) is reported beside the result, not graded as the soak.
 
-## The three-day hardware soak (the owner's run, a Needs item)
+## The three-day hardware soak (the owner's run, an owner step)
 
 AC-4 is three days of wall clock on real endpoints with the RIG-3 capture rig measuring the sync
 bound; `tools/soak-run.sh` (`make verify-soak`) is that run and refuses anywhere it cannot be

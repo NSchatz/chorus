@@ -734,10 +734,11 @@ The server (with a control plane) sends it:
 
 A player that has never received one plays flat (the endpoint's DSP chain
 bypassed). The last one received is kept across a new stream and a new
-session. In goal 12's first phase the endpoints decode and keep it (the C
-session's `chorus_session_last_sound`, the Linux client's
-`ZoneWatch::last_sound` and `Announced::sound`); the endpoint DSP chain
-(`crates/dsp`, `firmware/src/dsp.c`) is configured from it in the next.
+session. The endpoints decode and keep it (the C session's
+`chorus_session_last_sound`, the Linux client's `ZoneWatch::last_sound` and
+`Announced::sound`) and configure their DSP chain from it (`crates/dsp`,
+`firmware/src/dsp.c`; `firmware/src/endpoint_dsp.c` and
+`crates/client-linux/src/dsp.rs` do the configuring).
 `fixtures/protocol/v2/sound_*.hex` are the vectors (a room at the defaults, a
 2.1 set's sub with its polarity inverted, eight filters at the corners of the
 bounds) and `fixtures/protocol/v2/rejected/sound_*.hex` one rejection per
@@ -1048,7 +1049,11 @@ catalog ends at 0x03.
 
 What this section does not define: the wake word, the voice run and its
 route to Home Assistant, what the server and the firmware do with the
-messages, and microphone capture. Those are later work.
+messages, and microphone capture. The server's side is built
+(`crates/server/src/voice.rs`, `docs/decisions/0169-*` and `0172-*`), and the
+C session sends `mic_state` and the `mic_audio` its controls pass
+(`firmware/src/session.c`); the ESP32-S3 image binds no microphone capture
+driver yet.
 
 ## Low-latency path
 
@@ -1534,7 +1539,7 @@ resynchronising by pattern search is how mis-framed bytes reach a DAC as noise.
 Rule 3 above, "skip an unassigned type using its length prefix", is a rule
 about a decoder handed one frame. It is exactly right when the transport
 preserved that frame's boundaries, and it is what makes adding a type byte a
-non-event for every existing implementation, including the future C mirror.
+non-event for every existing implementation, including the C mirror (`firmware/src/protocol_v2.c`).
 
 On a stream transport it needs care, and this is a property of the transport
 rather than of the protocol. If alignment has already been lost, the byte a

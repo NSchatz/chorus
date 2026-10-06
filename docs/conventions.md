@@ -3,7 +3,7 @@
 chorus's own rules for code, fixtures, dependencies, pins, docs, identity and commits, written
 from chorus's requirements (decided 2026-09-29 by the owner, K18). Each rule exists because chorus
 needs it: two implementations of one protocol that must not drift, firmware that must never burn
-an eFuse or flash itself, timing claims that must be measured, and a private repository built to
+an eFuse or flash itself, timing claims that must be measured, and a public repository built to
 be run by outsiders.
 
 How the rules work:
@@ -127,8 +127,9 @@ the repository-wide rules (em dashes, identity).
 
 `cppcheck` (pinned) over `firmware/src`, `firmware/main`, `firmware/check` and `firmware/tests`
 with `warning` and `portability` enabled, the exhaustive check level and `--error-exitcode=1`
-(it found a dangling stack lifetime in `app_main.c` the day it joined, goal 3). A suppression is a line in `firmware/cppcheck-suppressions.txt`
-or an inline `cppcheck-suppress` with the reason beside it, and only for a proven false positive.
+(it found a dangling stack lifetime in `app_main.c` the day it joined, goal 3). A suppression is an inline
+`cppcheck-suppress` with the reason beside it (`--inline-suppr`; the one global suppression is
+`missingIncludeSystem`, in `check-cppcheck.sh`), and only for a proven false positive.
 
 ## 7. Shell scripts
 
@@ -140,8 +141,10 @@ and a `# shellcheck shell=bash` line.
 ## 8. Workflows and YAML
 
 `.github/workflows/*.yml` are clean under `actionlint`, and every tracked YAML file under
-`yamllint -s` with the repository's `.yamllint` (both pinned). CI calls `make gate` and nothing
-else that could drift from a local run (R12).
+`yamllint -s` with the repository's `.yamllint` (both pinned). CI calls only make targets, so
+nothing in a workflow can drift from a local run (R12): `make gate-changed` on a pull request,
+`make gate` nightly, `make release` on a release tag, `make image` and `make soloist-image` to
+publish the images.
 
 ## 9. Shared fixtures
 
@@ -253,7 +256,8 @@ root, and `license.workspace = true` in every crate, which the workspace sets to
 ## 14. Pins
 
 Everything that builds or checks chorus is pinned to an exact version, and to a digest where one
-exists (brief section 0.9):
+exists (brief section 0.9). Whether each pin is current, and why any is held back, is recorded in
+one place: [`docs/pins.md`](pins.md), re-read on every pin change and at each release.
 
 | What | Where | Digest |
 |---|---|---|

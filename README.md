@@ -13,7 +13,7 @@ wired speakers, measured with a rig rather than asserted, plus a lip-sync-grade 
 Snapcast, squeezelite, shairport-sync and Roc are studied as prior art under a clean-room rule.
 None of them is a dependency.
 
-> **Status, 2026-10-05.** chorus is built and tested in software end to end: the server,
+> **Status, 2026-10-06.** chorus is built and tested in software end to end: the server,
 > protocol v2, the sync engine, the Linux endpoint, the ESP32-S3 firmware, rooms and groups, DSP,
 > the TV path, inputs (UPnP, Spotify Soloist, line-ins), firmware updates, the Home Assistant
 > integration, voice and the installable app. It runs against simulators, fakes, ALSA's `null`
@@ -32,6 +32,7 @@ None of them is a dependency.
 - [Building and testing](#building-and-testing)
 - [Running it](#running-it)
 - [Deploying](#deploying)
+- [Contributing](#contributing)
 - [How the project is run](#how-the-project-is-run)
 - [Documentation map](#documentation-map)
 - [Licence](#licence)
@@ -45,7 +46,7 @@ chorus is one server and many speakers on a home network:
   the control plane.
 - **Speakers run chorus's own code.** ESP32-S3 smart speakers drive a TAS5825M class-D amplifier
   over I2S. They connect through a W5500 Ethernet module with PoE, or over Wi-Fi in casual rooms.
-  Linux endpoints (Raspberry Pi class) cover the rack amp, multichannel outputs and the TV hub.
+  Linux endpoints (Raspberry Pi class) cover multichannel outputs and the TV hub.
 - **Content arrives only as inputs:**
   - every room and group is a UPnP AV and OpenHome renderer;
   - official Spotify Soloist receivers run unmodified, as separate processes;
@@ -372,8 +373,8 @@ The program's phases (BRIEF.md section 8.1):
 | Voice and announcements (20) | built in software; no microphone has been chosen or bought |
 | The app (21, 22) | built, both parts; never opened on a phone |
 | Acoustic design tools (23) | belongs to the owner's shared Python library, not this repository |
-| The speaker designs (24 to 26) | not started |
-| Finale (27) | not started; v0.1.0 is the only release |
+| The speaker designs (24 to 26) | designed: the compact speaker, the two-way, the subwoofer and the LCR set, each landed in the owner's devices repo ([`docs/hardware/`](docs/hardware/), decisions 0233 and 0234); no rack amp and no soundbar ([P13](docs/proposals/P13-rack-amp-zones.md), decision 0231); nothing built or bought |
+| Finale (27) | under way: the docs, the pins ([`docs/pins.md`](docs/pins.md)) and the parity checklist; v0.1.0 is the only release so far |
 
 Since 2026-10-04 the remaining work arrives as tasks from the owner's agent harness rather than as
 program goals.
@@ -395,7 +396,7 @@ Hardware results come back as schema-checked reports on `bench/*` branches
 
 ```
 BRIEF.md                     the guiding document: goals, targets, guardrails, design areas, roadmap
-CLAUDE.md                    the working agreement for the agents that build chorus
+CLAUDE.md                    the must-knows for the agents that build chorus (in full: docs/working-agreement.md)
 crates/                      26 Rust crates: the server, the Linux client, chorusctl, the pure cores
 firmware/                    the ESP32-S3 endpoint in C (ESP-IDF v6.1) and its host test suites
 web/                         the app (Lit 3, esbuild); its build output, dist/, is committed
@@ -626,8 +627,58 @@ on a real device.
   first flash, updates go over the network as described under [Fleet](#fleet).
 - **Soloist receivers** run as their own containers, from an image that contains no Soloist file
   ([`deploy/soloist/`](deploy/soloist/), [`docs/soloist.md`](docs/soloist.md)).
-- **Releases** are cut with `make release VERSION=<v>` ([`docs/release.md`](docs/release.md)).
-  v0.1.0 is the only release so far.
+- **Releases** are cut by CI from a `v<x.y.z>` tag on main
+  ([`.github/workflows/release.yml`](.github/workflows/release.yml), which runs
+  `make release`), and the same tag publishes the images to ghcr.io
+  ([`docs/release.md`](docs/release.md)). v0.1.0 is the only release so far.
+
+## Contributing
+
+chorus is public, and changes come as pull requests against `main`. What a change is held to:
+
+- **Build and test it narrowly.** Set up the toolchains under
+  [Building and testing](#building-and-testing): `mise install` for the gate's tools, rustup
+  for the pinned Rust. Then run the focused tests of what you touched: one crate's
+  `cargo test -p <crate>`, `make firmware-check` for `firmware/`, `make web-test` for `web/`,
+  `make ha-test` for the Home Assistant integration. `make gate-fast` runs the conventions checks
+  alone, with no build.
+- **CI is the gate.** Every pull request runs `make gate-changed`: the conventions checks, then
+  only the crates and trees the change touches and their dependants. The full `make gate` runs
+  nightly on main ([ADR 0140](docs/decisions/0140-ci-is-the-gate.md)). A change merges as one
+  squashed commit once an independent review passes it. A red main is fixed forward, never by
+  rewriting history.
+- **Follow the conventions.** [`docs/conventions.md`](docs/conventions.md) lists every rule and
+  the check that holds it. The ones a newcomer meets first:
+  - a commit subject is `<area>: <summary>`, with a lower-case area such as a crate name,
+    `firmware`, `web`, `docs`, `tools`, `deploy` or `ci`, in at most 100 characters (rule 21);
+  - no em dash anywhere: code, docs, commit messages or pull request bodies (rule 18);
+  - no personal name, address, LAN address, hostname or secret in a tracked file (rule 19);
+  - protocol, sync and DSP behaviour is specified by files in [`fixtures/`](fixtures/) that the
+    Rust and the C implementations both read, so a behaviour change adds or changes a fixture,
+    never a constant in one language only (rule 9);
+  - every timing claim cites a report in [`docs/measurements/`](docs/measurements/), labelled
+    with its source (rule 11), and only monotonic clocks enter the audio path (BRIEF.md
+    section 3.1);
+  - a new dependency, tool or version is pinned exactly ([`docs/pins.md`](docs/pins.md)).
+- **Keep the clean room.** Never open the source of a GPL project, or the design files of
+  reciprocally licensed hardware. Their docs, issues and specifications are fine, and so is
+  permissive source, cited. [`docs/clean-room.md`](docs/clean-room.md) lists the projects and
+  says how a reading is recorded.
+- **Never write code that can burn an eFuse or flash a board by itself.** The gate scans for
+  both (rule 20).
+- **Proposing a change.**
+  - A fix or a small feature is a pull request with its tests.
+  - A choice that is cheap to reverse is made in the pull request and recorded as a decision in
+    [`docs/decisions/`](docs/decisions/): draft it as `0000-<slug>.md`, rename it to the pull
+    request's number once that exists, and add it to the index (rule 15).
+  - A choice that is expensive to reverse, such as a toolchain upgrade, a new platform or a
+    change to a guardrail-adjacent rule, starts as a proposal in
+    [`docs/proposals/`](docs/proposals/), and the owner decides it.
+  - When a measurement contradicts BRIEF.md, the same change records it as a decision and
+    corrects the brief. The five guardrails of BRIEF.md section 3.1 may be tightened, never
+    relaxed.
+- **Contributions are licensed** under MIT OR Apache-2.0, like the rest of chorus (see
+  [Licence](#licence)).
 
 ## How the project is run
 
@@ -665,7 +716,8 @@ on a real device.
   The RTOS, network stacks, drivers and crypto primitives are platform. Vendored and pinned code
   is listed in [`third_party/README.md`](third_party/README.md) and `deny.toml`.
 - **Work arrives as tasks** from the owner's agent harness, each with a finish line written as
-  runnable checks. [`CLAUDE.md`](CLAUDE.md) is the working agreement for the agents doing it. The
+  runnable checks. [`CLAUDE.md`](CLAUDE.md) holds the must-knows for the agents doing it, and
+  [`docs/working-agreement.md`](docs/working-agreement.md) the full working agreement. The
   original program (its brief, goal files and ledgers) is pinned at
   [`.claude/goals`](https://github.com/NSchatz/chorus/tree/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals).
 
@@ -705,13 +757,15 @@ on a real device.
 |---|---|
 | [`docs/bench-packet.md`](docs/bench-packet.md) | the owner's buy list, wiring and sessions S0 to S12 |
 | [`docs/bench.md`](docs/bench.md) | how hardware results come back into the repository |
-| [`docs/hardware/`](docs/hardware/) | controls per speaker class, Linux multichannel, the voice-room microphone |
+| [`docs/hardware/`](docs/hardware/) | the speaker designs (compact, two-way, subwoofer, LCR set), controls per speaker class, Linux multichannel, the voice-room microphone |
 
 **Records**
 
 | Doc | What it covers |
 |---|---|
 | [`docs/verification-record.md`](docs/verification-record.md) | each phase's criteria: what ran, where, and what did not |
+| [`docs/parity.md`](docs/parity.md) | every parity item with its state and evidence |
+| [`docs/pins.md`](docs/pins.md) | every pin, whether it is current, and why any is held back |
 | [`docs/audit/`](docs/audit/) | the cold audit of every phase, and the Home Assistant mutation audit |
 | [`docs/decisions/`](docs/decisions/) | one record per significant decision |
 | [`docs/measurements/`](docs/measurements/) | measurement reports, each labelled with its source |
@@ -721,6 +775,6 @@ on a real device.
 ## Licence
 
 chorus is licensed under either the [MIT licence](LICENSE-MIT) or the
-[Apache License 2.0](LICENSE-APACHE), at your option. Vendored code keeps its own licence
-([`third_party/README.md`](third_party/README.md)). The images list theirs in
+[Apache License 2.0](LICENSE-APACHE), at your option. A contribution is licensed the same way unless it says otherwise.
+Vendored code keeps its own licence ([`third_party/README.md`](third_party/README.md)). The images list theirs in
 `deploy/THIRD-PARTY-NOTICES.md` and `deploy/soloist/THIRD-PARTY-NOTICES.md`.

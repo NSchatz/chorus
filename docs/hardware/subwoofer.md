@@ -435,12 +435,12 @@ range into equal steps (the budget's allocation is a linear one).
 
 ## The endpoint module, the amplifier's feed and the enclosure path
 
-- **The endpoint module chorus's firmware targets (ASSUMED while P1 is PROPOSED):** P1's
+- **The endpoint module chorus's firmware targets (P1 approved at Checkpoint K, decisions 0042 and 0057; the board ASSUMED):** P1's
   Option B, `docs/proposals/P1-embedded-platform.md`: an ESP32-S3 with a TAS5825M and W5500
   wired Ethernet on one bought board (the Esparagus Audio Brick, ESP32-S3 variant: "Stereo I²S
   DAC (TAS5825M) with built-in D-Class amp", "W5500 SPI Ethernet", "Power Source 5-26 V", per
   its seller's page read 2026-10-06). The firmware's reference board profile is
-  `firmware/boards/brick-s3-wired.conf`. If P1 is decided otherwise, this section and the
+  `firmware/boards/brick-s3-wired.conf`. If the board changes, this section and the
   budget change and `version` is bumped; the acoustics do not depend on the module.
 - **The amplifier is a separate bought module fed from the endpoint, and why.** The module's
   own TAS5825M gives 53 W into this driver ("Amplifier sizing"), half of what the driver can
@@ -616,8 +616,8 @@ precision coefficients for the bass-management sections would be a change to
 - **The line-level feed from the endpoint** is the board plan's to settle, and may need the
   owner's word where it departs from P1.
 - **The class's budget and tier are PROPOSED,** the owner's to decide.
-- **P1 and P12 are PROPOSED:** the module and the enclosure's construction are ASSUMED from
-  their recommendations.
+- **P12 is PROPOSED:** the enclosure's construction is ASSUMED from its recommendation (P1 is
+  approved: Option B, decisions 0042 and 0057).
 - **The better and best tiers** have a box from the package and no vent, high-pass or record
   of their own; their vent is beyond a straight tube and may be beyond the package.
 - **The targets** (110.4 dB at 1 m, 35 Hz) are this design's own.

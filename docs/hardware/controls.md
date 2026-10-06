@@ -12,8 +12,9 @@ Every one of those pins is ASSUMED (the devices repository's wiring for chorus-c
 may be moved here; devices' wiring follows. The configuration check holds each to the GPIO
 rules and to one signal per pin, a light to its data pin, and a microphone to its three lines
 and to a mute switch. The image does not drive them yet: no GPIO, LED or I2S-input binding of
-the controller is written, so a board image reads no button and lights no LED. The two-way,
-subwoofer and streaming-amp designs (goals 25-26) place theirs.
+the controller is written, so a board image reads no button and lights no LED. The two-way and
+subwoofer designs (goal 25, ADR 0233) name their controls but no pins (`docs/hardware/twoway-speaker.md`,
+`docs/hardware/subwoofer.md`); the streaming amp is not designed (ADR 0231).
 
 ## Per class
 
@@ -22,7 +23,7 @@ subwoofer and streaming-amp designs (goals 25-26) place theirs.
 | compact | buttons or touch: play/pause, volume up, volume down, next, previous | status LED, follows the visualizer while playing | yes, behind a hardware mute switch |
 | two-way | a hidden pairing button | a rear status light, status only (never the visualizer, so the front stays clean) | no |
 | subwoofer | a pairing button; level and phase knobs | status LED, follows the visualizer while playing | no |
-| streaming amp | a pairing button; front buttons: play/pause, volume up, volume down, next, previous | status LED, follows the visualizer while playing | no |
+| streaming amp (not designed, ADR 0231) | a pairing button; front buttons: play/pause, volume up, volume down, next, previous | status LED, follows the visualizer while playing | no |
 
 The streaming amp's line-in, optical in and line/sub out (K70) are inputs and outputs, the
 source role of goal 17, not controls.
@@ -104,10 +105,10 @@ microphone part or driver is chosen, so on a board the capture seam is empty and
 - **Classes without a microphone** (two-way, subwoofer, streaming amp) do not declare the voice
   role, never send a `mic_state` or a `mic_audio`, and never show listening.
 
-## The Linux front panel (the rack amp and other Linux endpoints)
+## The Linux front panel (Linux endpoints)
 
-A Linux endpoint (K96; first the 2U rack amp, K74, which is the streaming-amp class in a rack
-case) runs the same controller model as the firmware: `crates/controls` is the Rust twin of
+A Linux endpoint (K96; it was written for the 2U rack amp, K74, the streaming-amp class in a rack
+case, which is not designed: ADR 0231) runs the same controller model as the firmware: `crates/controls` is the Rust twin of
 `firmware/src/controls.c`, held to the same `fixtures/controls/*` (`docs/decisions/0067-*`). The
 Linux binding is `crates/client-linux/src/front_panel.rs`, started by
 `chorus-client --front-panel <file>`.
@@ -127,7 +128,8 @@ Linux binding is `crates/client-linux/src/front_panel.rs`, started by
   `brightness` scaled to `max_brightness`, which the kernel combines as "brightness *
   multi_intensity/max_brightness" (https://docs.kernel.org/leds/leds-class-multicolor.html, read
   2026-09-30). An RGB status light needs a board overlay for a multicolour LED (none of the Pi's
-  stock overlays makes one; ASSUMED until the rack amp's board is designed, goal 26).
+  stock overlays makes one; ASSUMED until a Linux board with a front panel is designed: the rack
+  amp is not, ADR 0231).
 - **Permissions (ASSUMED, the package's to set):** the service reads one input device (group
   `input` or a udev rule) and writes one LED directory (a udev rule on its `brightness` and
   `multi_intensity`); it needs no other privilege.

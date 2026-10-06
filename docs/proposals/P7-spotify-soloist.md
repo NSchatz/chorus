@@ -2,6 +2,7 @@
 
 - Decisions: K63, K66
 - Status: PROPOSED (chorus goal 1, 2026-09-30); decided at Checkpoint K
+- Outcome: approved at Checkpoint K, Option C (`docs/decisions/0130-the-soloist-receiver-supervisor.md` to `0132-the-soloist-receivers-in-the-server.md`) (recorded 2026-10-06)
 - If deferred: One instance per room only, on bridge networking
 - Builds on: goal 4 (§8, BRIEF §2.3's streaming line per R7), goal 11 (§15 item 3, alarms; Soloist sources join in goal 17), goal 17 (§21, Soloist sidecars, alarm sources, P11 and the homelab receivers PR), goal 18 (§22, sources and group volume in HA), goal 27 (§31, no Soloist file in any release)
 

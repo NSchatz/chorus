@@ -619,8 +619,8 @@ when the owner submits, since core's rules move:
 - **The tier** in the manifest (`quality_scale: platinum`) is a self-certification here; in
   core it is the reviewers' to grant.
 
-The owner's queue item for it was answered "not yet" on 2026-10-06 (0227); the owner reopens
-it by telling a chorus session.
+Asked in a session, the owner answered "not yet" on 2026-10-06 (0227); the owner reopens it by
+telling a chorus session.
 
 ## The security rules
 
@@ -733,4 +733,7 @@ no network.
    `conversation`, `tts` and `ffmpeg` manifests.
 3. `uv lock` in `integrations/homeassistant`, then regenerate `quality-scale-rules.txt` from
    the new tag's `script/hassfest/quality_scale.py` and reconcile `quality_scale.yaml`.
-4. `make ha-test`, `make ha-hassfest`, `make gate-fast`. One commit, saying why.
+4. One commit, saying why, in a pull request: CI is the gate (ADR 0140), so the pull request's
+   `make gate-changed` runs `ha-test` on it and the nightly `make gate` on main adds
+   `ha-hassfest`. A local run is at most a narrowed
+   `make ha-test HA_TEST_ARGS=...` or one `tools/conventions/check-*.sh`.

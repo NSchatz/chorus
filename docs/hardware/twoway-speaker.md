@@ -328,14 +328,15 @@ full level is an open item for the first box.
 
 ## The endpoint module, the controls and the enclosure path
 
-- **The endpoint module chorus's firmware targets (ASSUMED while P1 is PROPOSED):** P1's
+- **The endpoint module chorus's firmware targets (P1 approved at Checkpoint K, decisions 0042 and 0057; the board ASSUMED):** P1's
   Option B, `docs/proposals/P1-embedded-platform.md`: an ESP32-S3 with a TAS5825M and W5500
   wired Ethernet on one bought board (the Esparagus Audio Brick, ESP32-S3 variant: "Stereo I²S
   DAC (TAS5825M) with built-in D-Class amp", "W5500 SPI Ethernet", "Power Source 5-26 V", "2x
   30 W at 24 V at 8Ω, THD+N = 1% (Power mode)", "RGB LED (status and notifications)", per its
-  seller's page read 2026-10-06), fed 24 V by the mains supply. It is the compact's module
-  without the PoE+ splitter. The firmware's reference board profile is
-  `firmware/boards/brick-s3-wired.conf`. If P1 is decided otherwise, this section and the
+  seller's page read 2026-10-06), fed 24 V by the mains supply. The compact no longer uses it:
+  its seller lists it as no longer available, so the compact is three bought modules (decision
+  0230, `docs/hardware/compact-speaker.md`). The firmware's reference board profile is
+  `firmware/boards/brick-s3-wired.conf`. If the board changes, this section and the
   budget change and `version` is bumped; the acoustics do not depend on the module as long as
   it has two amplifier channels at 24 V into 8 ohms.
 - **Controls (K68):** none visible. "a clean front; a hidden pairing button and a rear status
@@ -474,8 +475,8 @@ response points (250, 500, 1000, 2000, 4000, 8000 and 16000 Hz; the test's toler
 - **The tweeter's sensitivity** is printed for 1 W where the woofer's is for 2.83 V; the trim
   rests on reading them as the same drive.
 - **The class's budget and tier are PROPOSED,** the owner's to decide.
-- **P1 and P12 are PROPOSED:** the module and the enclosure's construction are ASSUMED from
-  their recommendations.
+- **P12 is PROPOSED:** the enclosure's construction is ASSUMED from its recommendation (P1 is
+  approved: Option B, decisions 0042 and 0057).
 - **The supply:** outside the box or inside it is the electronics plan's choice.
 - **The better and best tiers** have a box from the package and no vent, EQ or record of
   their own; each is a later version if taken.

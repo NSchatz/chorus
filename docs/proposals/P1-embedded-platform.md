@@ -2,6 +2,7 @@
 
 - Decisions: K25, K37, K51
 - Status: PROPOSED (chorus goal 1, 2026-09-30); decided at Checkpoint K
+- Outcome: approved at Checkpoint K, Option B: ESP32-S3 everywhere on ESP-IDF v6.1 (`docs/decisions/0042-esp-idf-v6-1.md`, `docs/decisions/0057-board-profiles-and-the-wired-link.md`) (recorded 2026-10-06)
 - If deferred: ESP32-S3 on ESP-IDF v5.3.6 (no upgrade), Wi-Fi plus a W5500 wired path
 - Builds on: goal 6 (§10: the ESP-IDF pin, endpoint codecs and mbedTLS encryption), goal 7 (§11: the bench packet), goal 8 (§12: targets, wired link as default, Wi-Fi tier, playout), goal 9 (§13: TAS58xx registers, controls, EMBEDDED-5 packet), goals 24-26 (§28-§30: the speaker design packages name "the settled endpoint board")
 

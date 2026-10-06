@@ -32,8 +32,9 @@ CI cuts it (ADR 0235): `.github/workflows/release.yml` runs `make release` on a 
 with the pinned toolchains, as `nightly.yml` provisions them, and creates the release. Nothing
 is built on a workstation or the agent host.
 
-1. `main` is green: the last `make gate` on `main`'s tree passed (a PR's gate, run on the
-   branch up to date with `main`, counts).
+1. `main` is green: the last nightly `make gate` on `main` passed
+   (`.github/workflows/nightly.yml`), and no pull request merged since has a red
+   `make gate-changed`; the nightly workflow can also be run by hand on `main`'s tip.
 2. The workspace version in `Cargo.toml` is the release's version (a PR changes it first
    if needed).
 3. Optionally, a dry run of `main` first (its tip, so run it before anything else merges): it builds the release with `Cargo.toml`'s
@@ -63,7 +64,8 @@ is built on a workstation or the agent host.
    `gh workflow run release.yml --ref v<ver> -f dry-run=false`. If the failure was in
    `gh release create` itself, delete the release or draft it left behind first
    (`gh release delete v<ver>`, which keeps the tag).
-6. `gh release view v<ver>` lists the assets; the goal's ledger records the tag's SHA.
+6. `gh release view v<ver>` lists the assets; the task that cut the release records the tag's
+   SHA in its pull request or report.
 
 ## Source of MPL-licensed dependencies (P9)
 

@@ -2,6 +2,7 @@
 
 - Decisions: K17, K72
 - Status: PROPOSED (chorus goal 1, 2026-09-30); decided at Checkpoint K
+- Outcome: approved at Checkpoint K, Option A (`docs/decisions/0088-theater-maps-av-trim-and-tv-autoplay.md`) (recorded 2026-10-06)
 - If deferred: Stereo PCM from optical and ARC only
 - Builds on: goal 10 (§14, the Linux endpoint tier: multichannel, theater hub), goal 12 (§16, DSP: bass management, night and speech), goal 13 (§17, the TV path: capture per P2, CEC, theater bonding, A/V trim, TV autoplay), goal 26 (§30, the soundbar and LCR packages "limited to what P2 settled")
 

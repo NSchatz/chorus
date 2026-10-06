@@ -71,6 +71,7 @@ the report and PR half.
 | `rig3-free-run` | `tools/measure/free-run-run.sh [seconds]` | RIG-3 free-run drift baseline, correction disabled (audit A-4) | second Linux endpoint, playback device |
 | `sync4-hour` | `tools/sync-hour-run.sh` | SYNC-4 AC-1, one hour under the wired bound | as `rig3-capture` |
 | `embedded5-endpoint-rig` | `tools/endpoint-rig-run.sh` | EMBEDDED-5 AC-1 and AC-3 | ESP32-S3 endpoint with amplifier, Linux endpoint, capture interface |
+| `embedded5-bringup` | `tools/embedded5-bringup-run.sh` | EMBEDDED-5 bring-up: the TAS5825M comes up, a network stream plays, and the endpoint recovers unattended from rounds of server outages; its heap, stacks and FIFO are recorded (MEASURED, no bound) | ESP32-S3 endpoint with its amplifier wired to a loudspeaker and its serial console (ADR 0065; `docs/bench-packet.md` S7) |
 | `embedded5-decode-cost` | `tools/decode-cost-run.sh` | the S3's FLAC and Opus decode cost and its DSP chain's cost in four configurations, measured on the chip (MEASURED, no bound) | ESP32-S3 endpoint with its serial console (ADR 0060; `dsp-cost`, ADR 0086) |
 | `wifi7-wireless` | `tools/wireless-characterization-run.sh` | WIFI-7 AC-2 and AC-3 | as above on Wi-Fi; the endpoint console sets each power-save mode and its readback is kept (ADR 0060) |
 | `product6-soak` | `CHORUS_SOAK_SECONDS=259200 tools/soak-run.sh` | PRODUCT-6 AC-4, three days | two endpoints, three days |

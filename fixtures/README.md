@@ -82,9 +82,8 @@ read them by name.
 source, date read and licence (Unlicense) in its header;
 `crates/protocol/tests/noise_vector.rs` holds the key exchange to it.
 
-The C endpoint reads these when it moves to v2 (goal 6); until then
-`tools/conventions/check-shared-fixtures.sh` holds them to their Rust reader and
-prints that the C reader is pending.
+`firmware/tests/test_noise.c` holds the C endpoint's key exchange to the same
+vector, and `tools/conventions/check-shared-fixtures.sh` maps `noise/` to both readers.
 
 ### `protocol/lowlat/`
 
@@ -410,8 +409,8 @@ for the scripted presses in `firmware/tests/test_controls.c`, which must
 produce them byte for byte; `crates/server/tests/controller_role.rs` decodes
 the same bytes and applies them to a room, so the controller role is held end
 to end by one file. `visualizer-sequence.hex` is a stream of `color` and
-`visualizer_frame` frames (a stand-in until the DSP library computes the real
-one in goal 12) and `visualizer-sequence.led` what the compact class's LED
+`visualizer_frame` frames (written for the LED; the stream the server computes
+since goal 12 is held by `visualizer/`) and `visualizer-sequence.led` what the compact class's LED
 shows at chosen moments while it plays.
 
 Since goal 10 the model has a Rust twin, `crates/controls`
@@ -676,3 +675,16 @@ copy the file in unchanged, and write the new `release`, `exported` and `sha256`
 (`sha256sum <name>.json`) into the provenance. A release that changes the schema version is not
 a refresh: the reader refuses the new version until `crates/dsp/src/design_record.rs` is taught
 it.
+
+## `wakeword/`
+
+The wake-word detector's reference (`crates/wakeword`, ADR 0167), Rust-only by declaration: the
+detector runs in chorus-server alone and there is no C implementation. `okay-nabu.wav` is the
+phrase spoken once (from pymicro-wakeword, Apache-2.0) and `music.wav` four seconds of music
+synthesized by `make-music.py`, both 16 kHz mono 16-bit. Beside each, `make-reference.py` wrote
+`<name>.features` (per 10 ms frame, the 40 values of TensorFlow Lite's micro frontend) and
+`<name>.outputs` (per inference, the model's raw 8-bit output under TensorFlow Lite's reference
+kernels), with the pinned versions in its header. `crates/wakeword/tests/reference.rs` holds the
+frontend and the interpreter to those value for value, finds the phrase with its name, and finds
+nothing in music or in the silence and noise it generates itself; it reads every file and fails
+on one it does not read. Each file's origin and licence: `wakeword/README.md`.

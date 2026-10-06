@@ -672,8 +672,8 @@ whatever the room's set; the state's `active` says whether the set has an
 choices and the citations.
 
 - **`av_trim`** sets a room's signed A/V trim, `av_trim_ms`, a whole number of
-  milliseconds from -100 to 200 (ASSUMED bounds, waiting on the Needs item "The
-  three TVs: model, eARC port, optical out and audio menu"). Positive DELAYS
+  milliseconds from -100 to 200 (ASSUMED bounds, waiting on the owner's answer to
+  "The three TVs: model, eARC port, optical out and audio menu"). Positive DELAYS
   the room's TV audio (a TV whose picture is slower than its sound); negative
   brings it earlier. It applies only to the TV relay's stamps:
   `play_at = capture_stamp + max(L_floor, L_tv + trim)`, and a trim that asks
@@ -2137,8 +2137,7 @@ speaker never becomes a state change. Also absent, and belonging to later
 phases: presets. Catalog v2 names a group's source and the inputs offered, and
 (goal 16) the state says what a player source is playing; choosing what a
 player plays (a stream URL, a service) is not a control message: it is said to
-the player by what drives it (a UPnP AV control point, `docs/upnp.md` once the
-renderer lands). (goal 17) `source_store` stores a URL and plays nothing: the
+the player by what drives it (a UPnP AV control point, `docs/upnp.md`). (goal 17) `source_store` stores a URL and plays nothing: the
 one thing that plays a stored source is an alarm ringing, and a `take` naming
 one is refused. (goal 18) `announce` is the one message that carries a
 URL to be played now, and only from an origin the server was started with

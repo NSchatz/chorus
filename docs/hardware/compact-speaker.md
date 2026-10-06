@@ -259,7 +259,7 @@ first.
 
 - **The endpoint module (the owner's decision of 2026-10-06, "Separate US modules"):** P1's
   Option B, `docs/proposals/P1-embedded-platform.md` (an ESP32-S3, a TAS5825M, W5500 wired
-  Ethernet; ASSUMED while P1 is PROPOSED), built from three bought boards rather than the
+  Ethernet; approved at Checkpoint K, decisions 0042 and 0057), built from three bought boards rather than the
   Esparagus Audio Brick, which its seller lists as "No longer available" (read 2026-10-06):
   - **Espressif ESP32-S3-DevKitC-1-N8R8:** the ESP32-S3-WROOM-1-N8R8, 8 MB flash and 8 MB
     octal PSRAM (Espressif's user guide v1.1, "Ordering Information").
@@ -442,8 +442,8 @@ response points (500, 1000, 1750, 3500, 7000 and 14000 Hz; the test's tolerance 
   stated by the maker and is not modelled.
 - **Vent noise** at up to 24.4 m/s: the 22 mm fallback is computed above.
 - **The outdoor pair:** no weather-rated driver is chosen.
-- **P1 and P12 are PROPOSED:** the module and the enclosure's construction are ASSUMED from
-  their recommendations.
+- **P12 is PROPOSED:** the enclosure's construction is ASSUMED from its recommendation (P1 is
+  approved: Option B, decisions 0042 and 0057).
 - **The budget is 6.09 USD over** on shares of packs, before the unpriced lines and the
   amplifier board's shipping from Poland.
 - **The amplifier's channel order:** which of the HAT's channels A and B is the left I2S slot

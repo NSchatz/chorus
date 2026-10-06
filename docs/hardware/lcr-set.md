@@ -16,7 +16,8 @@ version: 1
   (P13, decision 0231).
 - The choices and their reasons: the decision record
   `docs/decisions/0232-the-lcr-set-is-three-two-ways-and-a-pi-hub.md`. The devices repository's
-  record for the set (`projects/chorus-lcr/v1/`) is made from this file elsewhere.
+  record for the set (`projects/chorus-lcr/v1/`) was made from this file and landed by devices
+  pull request 128 (decision 0234).
 
 ## What is in one set
 
@@ -194,7 +195,7 @@ the parts are on the bench and measured with calipers.
   either is reached the case takes Raspberry Pi's Active Cooler and a lid opening for its fan.
 - **Mounting behind the TV:** two keyhole slots on the back face for screws into a printed plate
   held by the TV's VESA screws, or a flat back for adhesive mounting tape (**ASSUMED**; the TV
-  models and their VESA patterns are the owner's TV Needs item). The cut-outs face down or to
+  models and their VESA patterns are the owner's to read off the TVs). The cut-outs face down or to
   the side so cables do not bend against the wall. Nothing on the case shows from the front of
   the TV.
 - **Material (P12):** P12's printed material is ASA ("Compact: printed ASA", and the two-way's

@@ -10,17 +10,15 @@ Why it is shaped the way it is, and every constant it fixed:
 
 ## The one thing to know first
 
-**Every register-level constant of the amplifier is DECLARED UNKNOWN.** TI's
-datasheet is normative for the TAS5825M register map and the research pass
-could not extract text from the PDF, so this phase asserts the bring-up
-BEHAVIOUR and names no address. `config/endpoint.conf` carries the literal word
-`unknown` for the I2C address and every register, and the bring-up sequencer
-refuses by name, leaves the output stage in high impedance and starts no I2S
-clock rather than guessing. There is not one register literal in
-`src/amp.c`, and `check/endpoint_scan.c` fails the suite if one appears.
-
-Read them off the datasheet at bring-up and write them into
-`config/endpoint.conf`. Nothing else needs to change.
+**Every register-level constant of the amplifier cites its datasheet page.**
+TI's TAS5825M datasheet (SLASEH7H rev H) is normative for the register map;
+`config/endpoint.conf` carries the I2C address and every register and value
+the bring-up uses, each line naming its page (`tools/conventions/check-amp-map.sh`),
+and the reading fact by fact is `docs/research/tas5825m-register-map.md`
+(`docs/decisions/0064-the-tas5825m-register-map-and-bring-up.md`). The address
+strap stays ASSUMED until the owner's boards settle it. There is not one
+register literal in `src/amp.c`, and `check/endpoint_scan.c` fails the suite if
+one appears: the driver reads every constant from the configuration.
 
 ## Boards and the link
 
@@ -42,8 +40,9 @@ boards/devkitc-s3-louderhat-wired.conf
 ```
 
 The first two name P1's bought reference board, the Esparagus Audio Brick (ESP32-S3), and
-mark it **ASSUMED** until the owner's own boards are identified (the Needs item
-"Your ESP32-S3 boards: module markings and a read-only chip report").
+mark it **ASSUMED** until the owner's own boards are identified (the owner step
+"Your ESP32-S3 boards: module markings and a read-only chip report", which
+`board_needs_item` names).
 `CHORUS_BOARD_PROFILE=compact-s3-wifi make firmware-image` builds the Wi-Fi
 image; `make gate` builds every profile. The third is Espressif's QEMU `esp32s3`
 machine: its link is `emulated` (the emulator's OpenCores Ethernet), it plays
@@ -120,8 +119,8 @@ ESP-IDF's mbedtls component; the host build compiles TF-PSA-Crypto 1.1.0 out of
 the same pinned ESP-IDF v6.1 checkout (commit
 fff9895c82d744c7237be8847347bdd1b07c6643) with `crypto/chorus_psa_config.h`,
 and refuses by name when that tree is absent. On the host the endpoint's key
-and its server pins are files (`--key`, `--server-pins`); the image keeps a key
-for the running boot only until its storage is decided.
+and its server pins are files (`--key`, `--server-pins`); the image keeps both
+in NVS through `chorus/store.h` (`main/esp_store.c`).
 
 ## What is graded here, and what is not
 

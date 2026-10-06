@@ -180,7 +180,7 @@ not a link to a dashboard.
 ## Bench
 
 What the gate cannot show and a bench session with real boards would, as one
-item in the owner's queue: flash a wired and a Wi-Fi speaker with a build that
+owner step (`goals item add` in the owner's agent harness): flash a wired and a Wi-Fi speaker with a build that
 has this exporter's firmware half, scrape `/metrics`, and record (in a report
 under `docs/measurements/`) that the wired speaker shows `link="wired"`, a
 heap figure and no RSSI; that the Wi-Fi speaker shows `link="wifi"` and an

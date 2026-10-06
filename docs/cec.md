@@ -8,8 +8,8 @@ TV in the room. Goal 13 (the TV path); the decision record is ADR 0087
 (`docs/decisions/0087-cec-audio-system-on-the-hub.md`).
 
 Nothing here is timing evidence. The code is tested on a fake CEC bus with scripted TVs; the
-bench steps below are the owner's, and a TV's real behaviour is a Needs item ("The three TVs:
-model, eARC port, optical out and audio menu").
+bench steps below are the owner's, and a TV's real behaviour waits on the owner's answer to the
+question "The three TVs: model, eARC port, optical out and audio menu".
 
 ## How it is built
 
