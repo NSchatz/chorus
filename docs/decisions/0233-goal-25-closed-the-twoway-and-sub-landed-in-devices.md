@@ -71,7 +71,8 @@ project 7), not chorus's.
 
 - Harness tasks 241, 55 and 56, read 2026-10-06.
 - chorus `origin/main` at `e00b730`: `docs/hardware/twoway-speaker.md` and
-  `docs/hardware/subwoofer.md` ("The budget", "The controls", "Open items"),
+  `docs/hardware/subwoofer.md` ("The budget", "The DSP sections", "Amplifier sizing", "The
+  controls", "Open items"),
   `fixtures/design-record/chorus-twoway-v1.provenance` and `chorus-sub-v1.provenance`,
   `docs/proposals/P14-devices-seam.md`, read 2026-10-06.
 - The owner's devices repo, `origin/main` at `eae8676`: the two exports (hashed) and the log of
