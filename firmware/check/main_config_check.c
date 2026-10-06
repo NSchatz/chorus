@@ -143,6 +143,22 @@ int main(int argc, char **argv)
            "octal_psram=%s\n",
            mclk, config.pins.bclk, config.pins.ws, config.pins.dout, config.pins.sda,
            config.pins.scl, config.pins.amp_power_down, config.pins.octal_psram ? "yes" : "no");
+    const chorus_board_controls_t *c = &config.controls;
+    const uint32_t control_pins[] = {c->play_pause, c->volume_up,       c->volume_down, c->next,
+                                     c->previous,   c->status_led_data, c->mic_bclk,    c->mic_ws,
+                                     c->mic_din,    c->mic_mute};
+    char text[10][16];
+    for (size_t i = 0; i < sizeof(control_pins) / sizeof(control_pins[0]); i++) {
+        if (control_pins[i] == CHORUS_PIN_NONE) {
+            snprintf(text[i], sizeof(text[i]), "none");
+        } else {
+            snprintf(text[i], sizeof(text[i]), "%u", (unsigned)control_pins[i]);
+        }
+    }
+    printf("  controls       buttons play_pause=%s volume_up=%s volume_down=%s next=%s "
+           "previous=%s, status_led=%s on %s, mic i2s1 bclk=%s ws=%s din=%s mute=%s\n",
+           text[0], text[1], text[2], text[3], text[4], chorus_status_led_name(c->status_led),
+           text[5], text[6], text[7], text[8], text[9]);
     printf("  analog gain    %.3f dB requested against a ceiling of %.3f dB\n", config.gain.db,
            config.amp.analog_gain_ceiling_db);
     chorus_amp_key_t keys[32];

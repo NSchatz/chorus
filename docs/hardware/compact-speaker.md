@@ -1,6 +1,6 @@
 # The compact speaker: acoustic design
 
-version: 1
+version: 2
 
 - Status: designed on paper, 2026-10-06. Nothing is ordered, printed, built or measured. Every
   number here is a datasheet value or a calculation from datasheet values (CLAUDE.md rule 6:
@@ -15,6 +15,11 @@ version: 1
   `docs/decisions/0216-the-compact-speaker-drivers-and-alignment.md`. The driver survey:
   `docs/research/compact-speaker-drivers.md`.
 - A change to any design number bumps `version` and re-exports the record.
+- Version 2 (2026-10-06): the endpoint is three bought modules (the ESP32-S3-DevKitC-1-N8R8,
+  the Sonocotta Louder Raspberry Hat Plus and the WIZnet WIZ850io), not the Esparagus Audio
+  Brick, which is no longer available; the splitter is the Phihong POE21-240-R. "The endpoint
+  module", "The budget" and "PoE" change; the acoustics, the crossover and the design record do
+  not.
 
 **How the numbers were computed.** Every computed number names the call that produced it. The
 calls are those of the acoustics package of the owner's shared Python library at release
@@ -252,15 +257,26 @@ first.
 
 ## The endpoint module and the enclosure path
 
-- **The endpoint module chorus's firmware targets (ASSUMED while P1 is PROPOSED):** P1's
-  Option B, `docs/proposals/P1-embedded-platform.md`: an ESP32-S3 with a TAS5825M and W5500
-  wired Ethernet on one bought board (the Esparagus Audio Brick, ESP32-S3 variant: "Stereo I²S
-  DAC (TAS5825M) with built-in D-Class amp", "W5500 SPI Ethernet", "Power Source 5-26 V", "RGB
-  LED (status and notifications)", per its seller's page read 2026-10-06), fed 24 V by a bought
-  PoE+ splitter. The firmware's reference board profile is
-  `firmware/boards/brick-s3-wired.conf`. If P1 is decided otherwise, this section and the
-  budget change and `version` is bumped; the acoustics do not depend on the module as long as
-  it has two amplifier channels at 24 V.
+- **The endpoint module (the owner's decision of 2026-10-06, "Separate US modules"):** P1's
+  Option B, `docs/proposals/P1-embedded-platform.md` (an ESP32-S3, a TAS5825M, W5500 wired
+  Ethernet; ASSUMED while P1 is PROPOSED), built from three bought boards rather than the
+  Esparagus Audio Brick, which its seller lists as "No longer available" (read 2026-10-06):
+  - **Espressif ESP32-S3-DevKitC-1-N8R8:** the ESP32-S3-WROOM-1-N8R8, 8 MB flash and 8 MB
+    octal PSRAM (Espressif's user guide v1.1, "Ordering Information").
+  - **Sonocotta Louder Raspberry Hat Plus, 1X (2.0):** one TAS5825M, both channels in 2.0 mode,
+    I2C address 0x4C, no MCLK line, "7..26V from external source" and a 5 V output that powers
+    the host (the maker's README, sonocotta/raspberry-media-center at 3d8a3d7). Channel A
+    drives the woofer and channel B the tweeter; which of A and B is the left I2S slot is
+    **ASSUMED** (A = left) until a bench tone says.
+  - **WIZnet WIZ850io:** a W5500 with its own RJ45 jack and magnetics.
+
+  They are wired by jumper leads on the reference board's Ethernet, I2S, I2C and power-down
+  pins; the board profile is `firmware/boards/devkitc-s3-louderhat-wired.conf`, which also names
+  the five buttons, the status light and the microphone (`docs/hardware/controls.md`). The
+  HAT takes 24 V from a bought PoE+ splitter, the Phihong POE21-240-R, and feeds the DevKitC
+  its 5 V. The wiring, the sellers and the sizes of every part are the devices repository's
+  build plan for chorus-compact-v1. The acoustics do not depend on the module as long as it
+  has two amplifier channels at 24 V.
 - **The amplifier's load.** TI's TAS5825M datasheet (page 6, read 2026-10-06) gives the minimum
   speaker load in BTL mode as 3.2 ohms minimum, 4 ohms nominal. The woofer is 4 ohms nominal
   with an Re of 3.2 ohms: at the limit, not under it. The datasheet tabulates no output power
@@ -283,50 +299,63 @@ first.
 ## The budget (K89: under about $150 of parts, not labour)
 
 Single-unit list prices in US dollars before shipping and tax, each read from its URL on the
-date in its row. The drivers are the chosen parts. Every other line is a **priced allocation**:
-the part that prices it is an example, and the board plan, the bill of materials and the
-enclosure model choose the real ones. Where a part is sold only in a pack, the line is this
+date in its row. The drivers are chorus's chosen parts; the endpoint's boards, the splitter,
+the status light, the mute switch, the panel jack and the speaker wire are the parts the devices
+repository's build plan chose and priced (read by it on that date). Every line marked
+**allocation** is a priced allocation: the part that prices it is an example, and the bill of
+materials and the enclosure model choose the real ones. Where a part is sold only in a pack, the line is this
 speaker's share of the pack and says so (the room list builds more than one speaker).
 
 | Line | What prices it | Price | URL, date read |
 |---|---|---|---|
 | Woofer | Dayton Audio TCP115-4, one | 15.98 | https://www.parts-express.com/Dayton-Audio-TCP115-4-4-Treated-Paper-Cone-Midbass-Woofer-4-Ohm-295-415, 2026-10-06 |
 | Tweeter | Dayton Audio ND16FA-6, one | 8.98 | https://www.parts-express.com/Dayton-Audio-ND16FA-6-5-8-Soft-Dome-Neodymium-Tweeter-275-025, 2026-10-06 |
-| Endpoint board with the amplifier (allocation) | Esparagus Audio Brick, ESP32-S3 variant: the ESP32-S3, the TAS5825M, the W5500 and the status LED on one board, so the amplifier and the light have no line of their own. "$ 59"; the page said "No longer available" on the day read (another shop listed it at $59.00 in stock, https://www.elecrow.com/esparagus-audio-brick.html, ship-from not stated) | 59.00 | https://www.crowdsupply.com/sonocotta/esparagus-audio-brick, 2026-10-06 |
-| PoE+ splitter (allocation) | PoE Texas GAT-24V25W, 802.3at to 24 V, "25 watts", gigabit data out; "Sold out" on the day read | 31.99 | https://shop.poetexas.com/products/gat-24v25w, 2026-10-06 |
+| Endpoint board | Espressif ESP32-S3-DevKitC-1-N8R8, Mouser 356-EP32S3DVKTC1N8R8 (a search listing; the live page refused a scripted read) | 15.00 | https://www.mouser.com/en/ProductDetail/Espressif-Systems/ESP32-S3-DevKitC-1-N8R8?qs=7D1LtPJG0i2PiuUUKucutQ%3D%3D, 2026-10-06 |
+| Amplifier board | Sonocotta Louder Raspberry Hat Plus, 1X (2.0), TAS5825M, Tindie, 27 in stock | 25.00 | https://www.tindie.com/products/sonocotta/louder-raspberry-hat-plus/, 2026-10-06 |
+| Ethernet module | WIZnet WIZ850io (W5500), Mouser (a search listing) | 19.58 | https://www.mouser.com/ProductDetail/WIZnet/WIZ850io?qs=W0yvOO0ixfFLSlENQWBCKg%3D%3D, 2026-10-06 |
+| PoE+ splitter | Phihong POE21-240-R, 802.3at to 24 V at 21 W, "Efficiency 80% (typical)", Bravo Electro, "In Stock". The PoE Texas GAT-24V25W (24 V, 25 W, 90%, $31.99) was "Sold out" | 31.35 | https://www.bravoelectro.com/poe21-240-r.html, 2026-10-06 |
+| Status light | one NeoPixel Mini Button PCB (WS2812B/SK6812): 1 of a 5 pack at $4.95. The Brick carried its light; these boards do not | 0.99 | https://www.adafruit.com/product/1612, 2026-10-06 |
 | Controls (allocation) | five tactile buttons: 5 of a 20 pack at $2.50 | 0.63 | https://www.adafruit.com/product/367, 2026-10-06 |
 | Microphone (allocation) | I2S MEMS microphone breakout, SPH0645LM4H (M1 of `docs/hardware/voice-mic.md`), in stock | 6.95 | https://www.adafruit.com/product/3421, 2026-10-06 |
-| Mute switch (allocation) | a two-pole two-position slide switch, in stock | 1.75 | https://www.sparkfun.com/products/597, 2026-10-06 |
+| Mute switch | E-Switch EG2211, a through-hole DPDT slide switch that can be hand-wired, DigiKey (a search listing) | 1.03 | digikey.com search listing, 2026-10-06 |
+| Panel Ethernet jack | Adafruit 909, a panel-mount RJ45 extension (version 1 left the cable entry unpriced) | 4.95 | https://www.adafruit.com/product/909, 2026-10-06 |
+| Speaker wire | 18 AWG, about 1 m of a 50 ft (15.2 m) roll at $15.98 (a search listing) | 1.05 | parts-express.com, Parts Express 101-782, 2026-10-06 |
 | Enclosure: ASA (allocation) | 0.90 kg of a 1 kg spool at $24.99 (P12's mass for a compact box) | 22.49 | https://shop.polymaker.com/products/asa.js, 2026-10-06 |
 | Enclosure: panel gasket (allocation) | closed-cell foam gasket tape: 3 ft of a 50 ft roll at $13.98 | 0.84 | https://www.parts-express.com/Speaker-Gasketing-Tape-1-8-x-3-8-x-50-ft.-Roll-260-540, 2026-10-06 |
 | Enclosure: threaded inserts (allocation) | M3 brass heat-set inserts: 8 of a 50 pack at $5.95 | 0.95 | https://www.adafruit.com/product/4255, 2026-10-06 |
 | Enclosure: screws (allocation) | M3 machine screws: 8 of a 420 piece set at $16.95 | 0.32 | https://www.adafruit.com/product/4685, 2026-10-06 |
-| **Total** | | **149.88** | |
+| **Total** | | **156.09** | |
 
-Total: 149.88 USD, at most 150.00.
+Total: 156.09 USD, **over the 150.00 limit by 6.09**.
 
 What the total does and does not say:
 
-- **It is 12 cents under the limit.** It holds only with pack parts counted by share and with
-  the enclosure at 0.90 kg of ASA or less. An estimate for this design's own box, a 2.25 L
-  cavity (the 1.804 L net plus the woofer, the vent and the electronics inside it) in 8 mm
-  walls at P12's 78% of a solid wall's mass, is about 0.90 kg with the vent (arithmetic,
-  **ASSUMED** dimensions); a separate electronics chamber would go over it. Bought as whole
-  packs for a single speaker (buttons 2.50, inserts 5.95, gasket 13.98, screws 16.95, a whole
-  spool 24.99) the same list is 189.02 USD.
-- **Ship-from:** the drivers and the gasket from Springboro, Ohio; the endpoint board from
-  Mansfield, Texas ("All orders are fulfilled directly by Mouser Electronics from our
-  distribution center in Mansfield, TX, USA", https://www.crowdsupply.com/guide/ordering-paying-shipping-details,
-  read 2026-10-06) though made in Poland; the buttons, microphone, inserts and screws from
-  Brooklyn, New York ("ALL ORDERS SHIP FROM THE ADAFRUIT FACTORY, BROOKLYN, NY, USA",
-  https://www.adafruit.com/shipping, read 2026-10-06). The splitter's, the switch's and the
+- **It is 6.09 over the limit.** The three boards and the splitter (90.93) cost what the
+  Brick and the PoE Texas splitter did (90.99); what is new is the status light (0.99, the
+  Brick had one), the panel Ethernet jack (4.95) and the speaker wire (1.05), with the mute
+  switch 0.72 cheaper. The total counts pack parts by share and the enclosure at 0.90 kg of ASA
+  (an estimate for a 2.25 L cavity in 8 mm walls at P12's 78% of a solid wall's mass,
+  **ASSUMED** dimensions; a separate electronics chamber would add to it). Bought as whole packs
+  for a single speaker (buttons 2.50, light 4.95, inserts 5.95, gasket 13.98, screws 16.95,
+  speaker wire 15.98, a whole spool 24.99) the same list is 214.12 USD. Ways back under the
+  limit (a sealed cable gland instead of the panel jack, the GAT-24V25W if it returns) are the
+  bill of materials' to propose; none is decided here.
+- **Ship-from:** the drivers, the gasket and the speaker wire from Springboro, Ohio; the
+  DevKitC and the WIZ850io from Mansfield, Texas (Mouser); the light, the microphone, the panel
+  jack, the inserts and the screws from Brooklyn, New York ("ALL ORDERS SHIP FROM THE ADAFRUIT
+  FACTORY, BROOKLYN, NY, USA", https://www.adafruit.com/shipping). **The amplifier board ships
+  from Poland** by UPS, and its page says standard shipments to the US are on hold because of
+  new tariffs, so its shipping and any duty are high and not in the price: no TAS58xx board was
+  found at a US seller at a usable price on the day read. The splitter's, the switch's and the
   filament's pages state no ship-from; their sellers are US shops (**ASSUMED** US ship-from).
-- **Two lines could not be bought on the day read:** the endpoint board at its US seller and
-  the splitter. Supply is P1's open item and the board plan's, not this file's.
+- **Stock:** the DevKitC's and the WIZ850io's prices and stock are search listings, not the
+  live pages; the DevKitC was out of stock at DigiKey and Adafruit. The live stock is checked
+  when the order is placed.
 - **Room in it:** the two-wire PDM microphone (M3, $4.95, https://www.adafruit.com/product/3492,
   read 2026-10-06) instead of M1 takes 2.00 off.
-- **Not priced:** hookup wire, the DC lead from the splitter to the board, the Ethernet patch
-  cable, a port screen for an outdoor speaker, any finish, shipping and tax.
+- **Not priced:** hookup wire, jumper leads, the barrel lead from the splitter to the HAT, the
+  Ethernet patch lead, the switch's perfboard carrier, a port screen for an outdoor speaker, any
+  finish, shipping and tax.
 
 ## PoE (K90): Class 4, against a 250 W switch
 
@@ -341,12 +370,14 @@ What leaves for the amplifier (arithmetic on the numbers cited; nothing measured
 | Step | Watts | From |
 |---|---|---|
 | At the powered device | 25.5 | Class 4 |
-| Out of the splitter at 24 V | 22.95 | 25.5 × 0.90: the splitter's page gives "90%" efficiency. Its "25 watts" output would need 27.8 W in, more than the class gives, so the class is the bound |
-| The endpoint's processor, Ethernet, light and microphone | -1.5 | **ASSUMED**; not measured |
-| Into the amplifier's supply | about 21.4 | |
-| Out of the amplifier to the two drivers, continuous | about 17 to 19 | × 0.80 to 0.90: the board's page gives "Up to 90% efficiency (>80% typical)", TI's datasheet "> 90% Power efficiency" |
+| Out of the splitter at 24 V | 20.40 | 25.5 × 0.80: Phihong's datasheet gives "Efficiency 80% (typical)". Under its 21 W rating, so the class is the bound |
+| The endpoint's processor, Ethernet, light and microphone, and the HAT's 5 V and 3.3 V regulators | -1.5 | **ASSUMED**; not measured (the W5500 alone is 0.47 W, 141 mA at 3.3 V, WIZnet) |
+| Into the amplifier's supply | about 18.9 | |
+| Out of the amplifier to the two drivers, continuous | about 15 to 17 | × 0.80 to 0.90: TI's datasheet gives "> 90% Power efficiency"; 0.80 is the floor version 1 took from the Brick's page |
 
-So about **17 to 19 W continuous** for the two drivers together (P1 estimated 18 to 20 W),
+So about **15 to 17 W continuous** for the two drivers together, about 2 W under version 1's 17
+to 19 W because this splitter is 80% efficient and the sold-out PoE Texas one 90% (P1 estimated
+18 to 20 W),
 inside the woofer's 40 watt rating; short peaks above it come from the board's supply
 capacitors (**ASSUMED**, not sized here). The 25.5 W ceiling is the firmware's to respect: a
 speaker that draws more is shut off by the switch.
@@ -379,8 +410,9 @@ then; they fit in practice only because music's average power is far below its p
 Said plainly: **by class, 8 compacts fit on this switch alone and 7 beside the access point;
 the room list's nine do not fit by class.** What is ASSUMED: that the switch allocates by
 class, the access point's class, the 1.5 W of the endpoint's own electronics, the amplifier
-and splitter efficiencies as their sellers state them, and that PoE Texas's splitter negotiates
-Class 4. How the ninth speaker (and the eighth beside the access point) is powered, by a second
+and splitter efficiencies as their makers state them, and that Phihong's splitter negotiates
+Class 4 (its datasheet does not state the class; 21 W out at 80% needs 26.25 W in, above Class
+3's 13.00 W at the device). How the ninth speaker (and the eighth beside the access point) is powered, by a second
 PoE source, by measured-draw budgeting shown on the switch's own PoE page, or by a firmware
 power cap, is the owner's network decision and an open item of P3; this file decides none.
 
@@ -413,8 +445,10 @@ response points (500, 1000, 1750, 3500, 7000 and 14000 Hz; the test's tolerance 
 - **The outdoor pair:** no weather-rated driver is chosen.
 - **P1 and P12 are PROPOSED:** the module and the enclosure's construction are ASSUMED from
   their recommendations.
-- **The budget's margin** is 0.12 USD on shares of packs, with two lines out of stock on the
-  day read.
+- **The budget is 6.09 USD over** on shares of packs, before the unpriced lines and the
+  amplifier board's shipping from Poland.
+- **The amplifier's channel order:** which of the HAT's channels A and B is the left I2S slot
+  (ASSUMED A), confirmed with a tone on one channel before a driver is connected.
 - **PoE for nine:** above.
 
 ## Sources
@@ -428,9 +462,16 @@ Read 2026-10-06 unless a line says otherwise.
   and its `baffle` module's notes. The package cites its own sources for every formula.
 - The amplifier: TI, TAS5825M datasheet (SLASEH7H), https://www.ti.com/lit/ds/symlink/tas5825m.pdf,
   pages 1, 6 and 8.
-- The endpoint board: https://www.crowdsupply.com/sonocotta/esparagus-audio-brick and the
-  ordering guide https://www.crowdsupply.com/guide/ordering-paying-shipping-details.
-- The splitter: https://shop.poetexas.com/products/gat-24v25w.
+- The endpoint modules: the devices repository's build plan for chorus-compact-v1 (NSchatz/devices
+  at 6bdbb10, `builds/chorus-compact-v1/log.md`), which read the sellers' pages in the budget;
+  Espressif's ESP32-S3-DevKitC-1 user guide v1.1,
+  https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s3/esp32-s3-devkitc-1/user_guide_v1.1.html;
+  the Louder Raspberry Hat Plus's README, https://github.com/sonocotta/raspberry-media-center/blob/3d8a3d7f28bb6956408fb2f7a1ac272632ae7c46/README.md
+  (GPL-3.0: the README only, never its design files); WIZnet,
+  https://docs.wiznet.io/Product/ioModule/WIZ850io. The Brick's page,
+  https://www.crowdsupply.com/sonocotta/esparagus-audio-brick ("No longer available").
+- The splitter: Phihong's datasheet, https://www.phihong.com/wp-content/uploads/POE21.pdf;
+  version 1's, https://shop.poetexas.com/products/gat-24v25w ("Sold out").
 - PoE classes: the Ethernet Alliance overview above. The switch: its product page and user
   guide above.
 - The budget's other lines: the URLs in the table.

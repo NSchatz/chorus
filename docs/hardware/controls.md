@@ -2,11 +2,18 @@
 
 What each class carries (K67-K70), how the firmware reads it
 (`firmware/include/chorus/controls.h`, `docs/decisions/0063-*`), and the hardware rule for
-the microphone mute switch. Pins are not given: the owner's boards are not identified yet
-(the Needs item "Your ESP32-S3 boards: module markings and a read-only chip report"), and the
-reference board profile (`firmware/boards/brick-s3-wired.conf`, ASSUMED) has no buttons, LED,
-knobs or microphone. A board profile that adds them names its pins; until then every control
-pin is absent and the image drives none. The speaker designs (goals 24-26) place them.
+the microphone mute switch. Pins are board keys (`pin_button_*`, `board_status_led` and `pin_status_led`, `pin_mic_*` in
+`firmware/config/endpoint.conf`), `none` on every board but one: the compact on its bought
+modules, `firmware/boards/devkitc-s3-louderhat-wired.conf`, names five buttons (play/pause
+GPIO1, volume up GPIO2, volume down GPIO4, next GPIO7, previous GPIO18, each to ground with the
+internal pull-up), one WS2812-class status light (GPIO47), an SPH0645LM4H microphone on I2S1
+(BCLK GPIO40, WS GPIO39, DIN GPIO41) and its mute switch's sense line (GPIO21, low = muted).
+Every one of those pins is ASSUMED (the devices repository's wiring for chorus-compact-v1) and
+may be moved here; devices' wiring follows. The configuration check holds each to the GPIO
+rules and to one signal per pin, a light to its data pin, and a microphone to its three lines
+and to a mute switch. The image does not drive them yet: no GPIO, LED or I2S-input binding of
+the controller is written, so a board image reads no button and lights no LED. The two-way,
+subwoofer and streaming-amp designs (goals 25-26) place theirs.
 
 ## Per class
 
