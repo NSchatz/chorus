@@ -578,7 +578,7 @@ The integration is written as a draft for Home Assistant core (K42, K61): it is 
 a custom integration and kept in the form core asks for. **Submitting it is the owner's
 choice and the owner's action**; no task of this repository opens a pull request, an issue
 or a comment outside the owner's repositories. Asked on 2026-10-06, the owner chose **not yet** (decision
-0000): nothing is submitted until the owner tells a chorus session to. The draft is this directory at a commit on
+0227): nothing is submitted until the owner tells a chorus session to. The draft is this directory at a commit on
 `main`: `integrations/homeassistant/custom_components/chorus` with its tests in
 `integrations/homeassistant/tests` and its documentation in
 `integrations/homeassistant/README.md`.

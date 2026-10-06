@@ -1,4 +1,4 @@
-# 0000: the Home Assistant integration is not submitted to Home Assistant core yet; it stays a custom integration, kept as the draft
+# 0227: the Home Assistant integration is not submitted to Home Assistant core yet; it stays a custom integration, kept as the draft
 
 - Status: decided by the owner, 2026-10-06 (harness task 26, goals issue #490)
 - Recorded by: the owner's agent harness, in the pull request that adds this record
