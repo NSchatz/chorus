@@ -27,3 +27,9 @@ personal versus commercial use, the owner answered: no such clause.
    "private personal use ... on Approved Devices" grant and the Developer Policy's clauses
    (webcasting, visual media) as they bear on chorus's controller. Reported, never a reason to
    drop Soloist (K66).
+
+## What was read
+
+- `docs/proposals/P7-spotify-soloist.md` and its sources (the public Soloist docs, Spotify
+  Developer Terms v10, Developer Policy, Terms of Use, as read there on 2026-09-30).
+- The owner's answer, 2026-10-06. No agent read the dashboard terms (K4).
