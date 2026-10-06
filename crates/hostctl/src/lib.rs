@@ -477,7 +477,11 @@ pub fn thread_id() -> i32 {
     unsafe { gettid() }
 }
 
-/// This thread's scheduling policy, straight from the kernel.
+/// This thread's scheduling policy, as `pthread_getschedparam(3)` reports it.
+///
+/// glibc may answer from what it cached at the last `pthread_setschedparam`, so a
+/// change made from outside (`chrt -p`) can go unseen here; [`thread_facts`] reads
+/// `/proc` and is the kernel's own word.
 // Unsafe allowed on this item: it is a libc FFI wrapper (the crate lint policy denies unsafe elsewhere).
 #[allow(unsafe_code)]
 pub fn current_policy() -> c_int {
