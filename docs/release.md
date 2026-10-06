@@ -64,8 +64,14 @@ is built on a workstation or the agent host.
    `gh workflow run release.yml --ref v<ver> -f dry-run=false`. If the failure was in
    `gh release create` itself, delete the release or draft it left behind first
    (`gh release delete v<ver>`, which keeps the tag).
-6. `gh release view v<ver>` lists the assets; the task that cut the release records the tag's
-   SHA in its pull request or report.
+6. `gh release view v<ver>` lists the assets; the table below records the tag's commit.
+
+## Releases so far
+
+| Tag | Commit |
+|---|---|
+| v0.1.0 | `c233198c370ce528323db619ac25b6930fc249f9`, the squash-merge of #38 |
+| v0.2.0 | the squash-merge of the pull request that set the workspace version to 0.2.0 (#PRNUM) |
 
 ## Source of MPL-licensed dependencies (P9)
 
