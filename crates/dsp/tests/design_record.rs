@@ -287,6 +287,72 @@ fn every_record_runs_its_crossover() {
     }
 }
 
+/// The compact speaker's record (`docs/hardware/compact-speaker.md`): the file
+/// and the sha256 it was exported with. The digest is written here as well as
+/// in the provenance, so a change of the record and its provenance together
+/// still fails until this test is changed with them.
+const COMPACT_RECORD: &str = "chorus-compact-v1.json";
+const COMPACT_SHA256: &str = "eb578e02df7df63e3b376e8b2f49a9fda812ab0898fcd159de03f35ddce9b67d";
+/// The compact's crossover: the frequency the design document states.
+const COMPACT_CROSSOVER_HZ: f64 = 3500.0;
+
+#[test]
+fn the_compact_record_is_the_exported_one_and_runs() {
+    // Held to its sha256: the bytes are the exported ones.
+    let bytes = std::fs::read(dir().join(COMPACT_RECORD)).expect("the compact record reads");
+    assert_eq!(
+        hex(&sha256(&bytes)),
+        COMPACT_SHA256,
+        "{COMPACT_RECORD} is not the exported file"
+    );
+    // The provenance beside it names the same digest (the walk recomputes it).
+    let loaded = walk(&dir()).unwrap_or_else(|e| panic!("fixtures/design-record: {e}"));
+    let compact = loaded
+        .iter()
+        .find(|l| l.name == COMPACT_RECORD)
+        .expect("the walk reads the compact record");
+    let prov = std::fs::read_to_string(dir().join(COMPACT_RECORD).with_extension("provenance"))
+        .expect("the compact provenance reads");
+    assert_eq!(
+        Fields::parse(&prov).expect("it parses").get("sha256"),
+        Some(COMPACT_SHA256)
+    );
+
+    // Parsed with chorus's own reader: one LR4 for 48 kHz at the design's
+    // crossover frequency.
+    let record = DesignRecord::parse(&String::from_utf8(bytes).expect("the record is UTF-8"))
+        .expect("the compact record parses");
+    assert_eq!(record, compact.record);
+    assert_eq!(record.name, "chorus-compact-v1");
+    assert_eq!(record.crossovers.len(), 1, "a two-way has one crossover");
+    let c = &record.crossovers[0];
+    assert_eq!(c.kind, CrossoverKind::Lr4);
+    assert_eq!(c.sample_rate_hz, 48000.0);
+    assert_eq!(c.crossover_hz, COMPACT_CROSSOVER_HZ);
+    assert!(c.lr4_design().is_some());
+
+    // Its branch and sum levels through chorus's own filters, as for every
+    // record: the designed response to the record's tolerance, the sections
+    // against chorus's own LR4 design, and the running f32 filters at every
+    // response point (each branch at -6.02 dB at the crossover, the sum flat).
+    let worst = check_crossover(COMPACT_RECORD, record.tolerance_db, c);
+    assert!(worst <= RUN_TOLERANCE_DB);
+    let (low, high, sum) = run_levels(c, COMPACT_CROSSOVER_HZ);
+    let half = 20.0 * 0.5f64.log10();
+    assert!(
+        (low - half).abs() <= RUN_TOLERANCE_DB,
+        "the woofer branch runs at {low} dB"
+    );
+    assert!(
+        (high - half).abs() <= RUN_TOLERANCE_DB,
+        "the tweeter branch runs at {high} dB"
+    );
+    assert!(sum.abs() <= RUN_TOLERANCE_DB, "the sum runs at {sum} dB");
+    println!(
+        "{COMPACT_RECORD}: at {COMPACT_CROSSOVER_HZ} Hz the branches run at {low:.6} and {high:.6} dB, the sum at {sum:.6} dB; within {worst:.6} dB of the record at every point"
+    );
+}
+
 fn committed_record() -> String {
     std::fs::read_to_string(dir().join("lr4-2000hz-48k.json")).expect("the record reads")
 }

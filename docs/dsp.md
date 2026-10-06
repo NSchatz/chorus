@@ -278,7 +278,13 @@ the module carries its own reader of the JSON a record uses (RFC 8259,
 dependency for one file format. The test computes the sha256 itself (FIPS 180-4,
 <https://csrc.nist.gov/pubs/fips/180-4/upd1/final>, read 2026-10-06) for the same reason.
 
-To refresh the fixture: `fixtures/README.md`, "`design-record/`".
+A second record is a real design: `fixtures/design-record/chorus-compact-v1.json`, the compact
+speaker's LR4 at 3500 Hz for 48 kHz (`docs/hardware/compact-speaker.md`, which also lists that
+speaker's EQ sections in the same `b0 b1 b2 a1 a2` form). The same test reads it with every
+other file, and `the_compact_record_is_the_exported_one_and_runs` holds it by name to its
+sha256 and to its crossover's levels: measured 2026-10-06, at most 0.000006 dB off.
+
+To refresh a fixture: `fixtures/README.md`, "`design-record/`".
 
 ## On the endpoints
 
