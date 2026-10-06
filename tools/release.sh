@@ -107,7 +107,10 @@ MANIFEST_DIGEST="$(tar -xOf "$OUT/chorus-server-v$VER-oci.tar" index.json |
 # (the file the image carries at /usr/share/doc/chorus/THIRD-PARTY-NOTICES.md). No Soloist
 # file is in it: the binary is the owner's, mounted at run time (docs/soloist.md).
 CHORUS_SOLOIST_IMAGE_OUT="$OUT/chorus-soloist-v$VER-oci.tar" bash tools/soloist-image.sh
-install -m 0644 "$TD/image/soloist-work/stage-chorus/usr/share/doc/chorus/THIRD-PARTY-NOTICES.md" \
+# tools/soloist-image.sh stages it under its build directory, which tools/build-dir.sh names.
+# shellcheck source=tools/build-dir.sh
+. "$ROOT/tools/build-dir.sh"
+install -m 0644 "$(throwaway_build_dir image)/image/soloist-work/stage-chorus/usr/share/doc/chorus/THIRD-PARTY-NOTICES.md" \
     "$OUT/chorus-soloist-v$VER-NOTICES.md"
 SOLOIST_DIGEST="$(tar -xOf "$OUT/chorus-soloist-v$VER-oci.tar" index.json |
     python3 -c 'import json,sys; m=json.load(sys.stdin)["manifests"]; assert len(m)==1; print(m[0]["digest"])')"
