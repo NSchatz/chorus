@@ -81,7 +81,8 @@ daemon (`tools/image.sh`): a static musl `chorus-server` on the digest-pinned
 `target/image/chorus-server-oci.tar`. Its test unpacks the tarball rootless,
 runs `chorus-server --help`, starts the unpacked server and reads
 `GET /api/state` back, and checks that this Dockerfile's build context compiles.
-Pushing the tarball to a registry is the owner's step, never the build's.
+The build pushes nothing; CI publishes the images (`.github/workflows/publish-images.yml`,
+ADR 0222).
 
 ## The Soloist receiver image (`make soloist-image`) and its compose file
 

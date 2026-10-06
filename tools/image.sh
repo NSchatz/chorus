@@ -8,7 +8,7 @@
 # binary's `--help`, and starts it with the control plane on loopback and reads
 # `GET /api/state` back, so the image is shown to hold a server that serves.
 #
-# Nothing is pushed anywhere: pushing to a registry is the owner's step.
+# Nothing is pushed from here: CI pushes (.github/workflows/publish-images.yml).
 #
 # Tools (rootless, pinned): crane 0.22.1 (aqua:google/go-containerregistry) and
 # umoci 0.6.0 (aqua:opencontainers/umoci), run through mise; the Rust toolchain

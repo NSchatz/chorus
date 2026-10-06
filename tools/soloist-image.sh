@@ -25,7 +25,7 @@
 # files are reached by path and the PipeWire directories are named by
 # environment; in a container they are the compiled-in defaults.
 #
-# Nothing is pushed anywhere: pushing to a registry is the owner's step.
+# Nothing is pushed from here: CI pushes (.github/workflows/publish-images.yml).
 #
 # Tools: crane 0.22.1 and umoci 0.6.0 through mise (as tools/image.sh),
 # dpkg-deb, curl, readelf, python3, and the Rust toolchain's musl target.
