@@ -301,9 +301,8 @@ Spotify reduces to "move this room to a group" in the chorus app).
 
 ## Open inputs
 
-- **Soloist dashboard terms: answered 2026-10-06.** The owner reports no clause in the
-  dashboard's Soloist terms beyond the public Terms of Use: none on instances per key, account,
-  host or household, on servers or containers, or on personal versus commercial use
+- **Soloist dashboard terms: answered 2026-10-06.** The owner reports the dashboard's
+  Soloist terms have no clause on instances per key, account, host or household, on servers or containers, or on personal versus commercial use
   (`docs/decisions/0224-the-soloist-dashboard-terms-have-no-instance-clause.md`). Still open:
   whether the owner reads the Developer Terms and Policy as applying to chorus's controller,
   including the Terms' "for private personal use; and ... on Approved Devices" grant (desktops, laptops,

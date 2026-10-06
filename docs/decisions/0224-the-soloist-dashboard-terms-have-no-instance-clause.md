@@ -25,8 +25,12 @@ personal versus commercial use, the owner answered: no such clause.
    changes.
 3. Still open in P7, and not answered by this: the owner's reading of the Developer Terms'
    "private personal use ... on Approved Devices" grant and the Developer Policy's clauses
-   (webcasting, visual media) as they bear on chorus's controller. Reported, never a reason to
+   (alarms, voice, webcasting, visual media) as they bear on chorus's controller. Reported, never a reason to
    drop Soloist (K66).
+
+## Not chosen
+
+- An agent reading the dashboard terms itself: the dashboard login is the owner's (K4).
 
 ## What was read
 
