@@ -18,7 +18,7 @@
 # firmware update (goal 14: two app slots, the bootloader's rollback, the
 # update unit and its one glue unit, firmware/main/esp_ota.c), but nothing here
 # installs anything: an install is an explicit action on the server, and on an
-# installed speaker it is the owner's (CLAUDE.md, the plan of record).
+# installed speaker it is the owner's (docs/working-agreement.md, the plan of record).
 #
 # THE BOARD PROFILE. CHORUS_BOARD_PROFILE names one of firmware/boards/*.conf
 # (default: the one endpoint.conf names, brick-s3-wired, the wired classes'
