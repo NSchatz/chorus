@@ -665,6 +665,7 @@ version the reader does not know each fail it.
 |---|---|
 | `lr4-2000hz-48k.json` | one LR4 crossover at 2000 Hz for 48 kHz, with response points at 250, 1000, 2000, 4000 and 16000 Hz; from release v1.49.0, exported 2026-10-06 |
 | `chorus-compact-v1.json` | the compact speaker's crossover (`docs/hardware/compact-speaker.md`, version 1): one LR4 at 3500 Hz for 48 kHz between its woofer and its tweeter, with response points at 500, 1000, 1750, 3500, 7000 and 14000 Hz; from release v1.49.0, exported 2026-10-06. `the_compact_record_is_the_exported_one_and_runs` holds it to its sha256 by name |
+| `chorus-twoway-v1.json` | the active two-way's crossover (`docs/hardware/twoway-speaker.md`, version 1): one LR4 at 2000 Hz for 48 kHz between its woofer and its tweeter, with response points at 250, 500, 1000, 2000, 4000, 8000 and 16000 Hz; from release v1.49.0, exported 2026-10-06. `the_twoway_record_is_the_exported_one_and_runs` holds it to its sha256 by name |
 
 To refresh a record (a new library release, or a new design): run the `command` of its
 provenance with the acoustics package installed from the release tag (`uv run`, rootless),
