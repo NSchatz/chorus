@@ -259,7 +259,7 @@ chorus/
   docs/decisions/          # decision log
   docs/measurements/       # saved harness reports
   crates/                  # e.g. protocol / sync / dsp / server / client-linux
-  firmware/esp32s3/        # ESP-IDF project with mirrored components (built as firmware/)
+  firmware/                # ESP-IDF project with mirrored components (suggested as firmware/esp32s3/)
   fixtures/                # protocol vectors, dsp vectors, sync traces
   tools/measure/           # harness scripts
   deploy/                  # Dockerfile, compose, systemd units

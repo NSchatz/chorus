@@ -775,6 +775,6 @@ chorus is public, and changes come as pull requests against `main`. What a chang
 ## Licence
 
 chorus is licensed under either the [MIT licence](LICENSE-MIT) or the
-[Apache License 2.0](LICENSE-APACHE), at your option. A contribution is licensed the same way unless it says otherwise. Vendored code
-keeps its own licence ([`third_party/README.md`](third_party/README.md)). The images list theirs in
+[Apache License 2.0](LICENSE-APACHE), at your option. A contribution is licensed the same way unless it says otherwise.
+Vendored code keeps its own licence ([`third_party/README.md`](third_party/README.md)). The images list theirs in
 `deploy/THIRD-PARTY-NOTICES.md` and `deploy/soloist/THIRD-PARTY-NOTICES.md`.

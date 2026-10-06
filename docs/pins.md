@@ -45,6 +45,10 @@ is the pin refresh named at the end.
 | node | 24.21.0 | 24.21.0 is the newest LTS; 26.10.0 (2026-09-21) is not LTS yet | current: the app builds on the LTS line (ADR 0181) |
 | pnpm | 12.8.1 | 12.9.1 (2026-10-03) | behind 3 days: not yet taken |
 
+mise itself is pinned in each workflow (`jdx/mise-action` with `version: 2026.7.5`); the newest
+is v2026.10.3 (2026-10-05), so it is behind 1 day: not yet taken, and it moves with the
+mise-action refresh below. It counts as one pin.
+
 The image tools are pinned where they run (`tools/image.sh`, `tools/soloist-image.sh`): crane
 0.22.1 and umoci 0.6.0, both current.
 
@@ -54,8 +58,14 @@ The image tools are pinned where they run (`tools/image.sh`, `tools/soloist-imag
 |---|---|---|---|---|
 | The server image (`make image`) | `tools/image.sh` | `gcr.io/distroless/static-debian12:nonroot` at `afa5c87` | the tag still resolves to `afa5c87`; a `static-debian13` line exists | current for its tag; staying on Debian 12 is not a recorded choice, and a move to 13 is its own change with the image test |
 | `deploy/Dockerfile`, build stage | `deploy/Dockerfile` | `rust:1.98.1-slim-bookworm` at `ff52144` | the tag still resolves to `ff52144` | current: it follows the Rust pin (B-16) and moves with it |
-| `deploy/Dockerfile`, runtime stage | `deploy/Dockerfile` | `debian:bookworm-slim` at `8820086` (resolved 2026-09-08) | the tag resolves to `7c7b2c9` (2026-10-06); Debian 13 is stable | behind 28 days on the digest: the tag is rolling and the digest is re-resolved with the command in `deploy/README.md`; the released image is `make image`'s, not this file's |
+| `deploy/Dockerfile`, runtime stage | `deploy/Dockerfile` | `debian:bookworm-slim` at `8820086` (resolved 2026-09-08) | the tag resolves to `7c7b2c9` (2026-10-06); Debian 13 is stable | behind 0 days (the pinned digest is 28 days old): the tag is rolling and the digest is re-resolved with the command in `deploy/README.md`; the released image is `make image`'s, not this file's |
 | The `chorus-soloist` image | `tools/soloist-image.sh` | `debian:trixie-20260918-slim` at `a99cfc5` (resolved 2026-10-03) | `trixie-20261005-slim` (2026-10-06) | behind 0 days: the base date is the snapshot.debian.org timestamp of `deploy/soloist/debian-packages.pins`, so both move together |
+
+Two package lists follow their parent pin and are not counted apart: the 60 Debian packages of
+`deploy/soloist/debian-packages.pins` follow the Soloist base's snapshot date above, and the 56
+conda-forge packages of `tools/qemu/libs.explicit.txt` follow the emulator's QEMU and micromamba
+pins. The CI runner image (`runs-on: ubuntu-24.04`) is a named release line GitHub maintains, not a
+pin: the toolchains the jobs use come from mise and rustup, not from the runner.
 
 ## CI actions (`.github/workflows/`)
 
@@ -81,16 +91,21 @@ The image tools are pinned where they run (`tools/image.sh`, `tools/soloist-imag
 | lit, esbuild, happy-dom, @happy-dom/global-registrator, @playwright/test | `web/package.json` | 3.3.3, 0.28.2, 20.14.5, 20.14.5, 1.63.0 | the same | current |
 | Home Assistant core (hassfest's tag) | `integrations/homeassistant/harness.pin` | 2026.9.3 | 2026.9.4 (2026-09-27); 2026.10 is in beta | behind 9 days, held on purpose: the harness moves only with the homelab's Home Assistant pin (`docs/home-assistant.md`) |
 | pytest-homeassistant-custom-component | `integrations/homeassistant/harness.pin` | 0.13.366 | 0.13.369 (for 2026.10.0b2); 0.13.367 is 2026.9.4's | held with Home Assistant above; when it moves, the target is the release for the homelab's version, not the newest |
+| The Home Assistant components' test imports (hassil, home-assistant-intents, gazetteer-matcher, pymicro-vad, pyspeex-noise, mutagen, ha-ffmpeg) and hassfest's (infrared-protocols) | `integrations/homeassistant/pyproject.toml` | the versions core 2026.9.3 pins | follow core | held with Home Assistant above: each is the version core 2026.9.3 pins, as `pyproject.toml` says |
+| mypy | `integrations/homeassistant/pyproject.toml` | 2.3.1 | 2.4.0 (2026-10-01) | behind 5 days: not yet taken |
+| ruff | `integrations/homeassistant/pyproject.toml` | 0.16.3 | 0.16.10; 0.16.4 came out 2026-08-20 | behind 47 days: not yet taken, and no reason was recorded; a linter bump can raise new findings, so it lands with their fixes |
 
 ## Totals and the follow-up
 
-Of 44 pins, 26 are current, 3 are held on purpose with their reason (network_provisioning, Home
-Assistant and its harness), and 15 are behind with no hold: 10 by releases under two weeks old
-(Rust, clang-format, cppcheck, zig, promtool, uv, pnpm, mise-action, the crates, cc), 2 base
-digests that move with a dated tag (the Dockerfile's runtime stage, the Soloist base), and the 3
-GitHub actions several majors behind. The rust-cache pin is current but names a tag object.
+Of 48 pins, 26 are current, 4 are held on purpose with their reason (network_provisioning, Home
+Assistant, its harness and the components' test imports), and 18 are behind with no hold: 12 by
+releases under two weeks old (Rust, clang-format, cppcheck, zig, promtool, uv, pnpm, mise,
+mise-action, mypy, the crates, cc), ruff by 47 days, 2 base digests that move with a dated tag
+(the Dockerfile's runtime stage, the Soloist base), and the 3 GitHub actions several majors
+behind. The rust-cache pin is current but names a tag object.
 
-The follow-up is one pin refresh, a change of its own: the patch and tool releases above, the
+The follow-up is one pin refresh, a change of its own: the patch and tool releases above (ruff
+and mypy outside the Home Assistant harness's hold), the
 three actions to their current majors and rust-cache to its commit, each checked by the CI
 steps that use it; and a proposal for Rust 1.99.
 
@@ -103,7 +118,9 @@ steps that use it; and a proposal for Rust 1.99.
   actions/upload-artifact, actions/download-artifact, espressif/esp-idf, espressif/qemu,
   mamba-org/micromamba-releases, cppcheck-opensource/cppcheck, xiph/opus, mackron/dr_libs,
   esphome/micro-wake-word-models
-- PyPI: https://pypi.org/pypi/yamllint/json, https://pypi.org/pypi/clang-format/json,
+- mise: `gh api repos/jdx/mise/releases/latest`
+- PyPI: https://pypi.org/pypi/mypy/json, https://pypi.org/pypi/ruff/json,
+  https://pypi.org/pypi/yamllint/json, https://pypi.org/pypi/clang-format/json,
   https://pypi.org/pypi/cppcheck/json,
   https://pypi.org/pypi/pytest-homeassistant-custom-component/json,
   https://pypi.org/pypi/homeassistant/json

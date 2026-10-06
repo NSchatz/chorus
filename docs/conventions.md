@@ -141,8 +141,10 @@ and a `# shellcheck shell=bash` line.
 ## 8. Workflows and YAML
 
 `.github/workflows/*.yml` are clean under `actionlint`, and every tracked YAML file under
-`yamllint -s` with the repository's `.yamllint` (both pinned). CI calls `make gate` and nothing
-else that could drift from a local run (R12).
+`yamllint -s` with the repository's `.yamllint` (both pinned). CI calls only make targets, so
+nothing in a workflow can drift from a local run (R12): `make gate-changed` on a pull request,
+`make gate` nightly, `make release` on a release tag, `make image` and `make soloist-image` to
+publish the images.
 
 ## 9. Shared fixtures
 
