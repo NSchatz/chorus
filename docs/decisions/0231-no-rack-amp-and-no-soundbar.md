@@ -1,4 +1,4 @@
-# 0000: the rack amp has zero zones and zero channels and is not designed, and the soundbar is not designed; the LCR set is the theater front for both TV rooms
+# 0231: the rack amp has zero zones and zero channels and is not designed, and the soundbar is not designed; the LCR set is the theater front for both TV rooms
 
 - Status: proposed (P13, `Status: PROPOSED`); the count rests on the owner's room list of
   2026-10-04, and the plan that writes it down was approved by the owner on 2026-10-06 (goals

@@ -117,7 +117,7 @@ Pi 5 with a DAC8x, and changing it changes the command lines, not the code.
 ### The rack amp: several zones on one card
 
 No rack amp is designed: the owner dropped it on 2026-10-04 (P13,
-`docs/proposals/P13-rack-amp-zones.md`, and decision 0000). This section stays as the design a
+`docs/proposals/P13-rack-amp-zones.md`, and decision 0231). This section stays as the design a
 rack amp would use if a room is wired back to the rack.
 
 Each zone plays its own stream (a zone is what the server serves a stream to), and one
