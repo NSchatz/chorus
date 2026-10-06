@@ -1,0 +1,17 @@
+# Where lr4-2000hz-48k.json came from. The record is committed as it was exported, byte for
+# byte: crates/dsp/tests/design_record.rs holds the file to the sha256 below, so an edit by hand
+# fails the test. To refresh it: fixtures/README.md, "design-record/".
+#
+# The command is the one the acoustics package's README documents for writing a record, run with
+# the package installed from the release tag (uv, rootless). The package and its module are
+# written as placeholders: the library is the owner's and is not named here. The output is byte
+# for byte the example record that release holds among its own test fixtures.
+
+record = lr4-2000hz-48k.json
+source = the acoustics package of the owner's shared Python library
+release = v1.49.0
+command = uv run --package <the acoustics package> python -c "from <its module> import *; write_record(design_record('lr4-2000hz-48k', [linkwitz_riley(48000, 2000)], response_hz=(250, 1000, 2000, 4000, 16000)), 'lr4-2000hz-48k.json')"
+exported = 2026-10-06
+schema = speaker-design-record
+version = 1
+sha256 = 5b2a59364a165138bea1f4073eee1ef11e11156ae025fcae677e52fc0cd47568

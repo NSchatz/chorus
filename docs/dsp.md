@@ -234,6 +234,52 @@ A stream of 1 to 8 channels; the clip has the music's channel count and rate (ma
 the caller's). How the defaults sound is unmeasured: they are starting points until a room is
 listened to.
 
+## Design records
+
+`crates/dsp/src/design_record.rs` (`chorus_dsp::design_record`) reads a **speaker design
+record**: the plain JSON file that the acoustics package of the owner's shared Python library
+exports (BRIEF section 8, "Acoustic design tools"). The record is the whole seam between that
+library and chorus: chorus imports nothing from it and reads the file with its own reader.
+Nothing runs a record in a chain yet; what is proven is that chorus can read one and that its
+crossover, run through chorus's own biquads, gives the response the record states.
+
+The schema is `speaker-design-record`, **version 1**. A record holds a name, a `tolerance_db`
+and one or more crossovers; a crossover holds its kind (`lr4`, two sections per branch, or
+`lr2`, one), the sample rate its coefficients are for, the crossover frequency, each branch's
+biquads as `b0 b1 b2 a1 a2` with `a0 = 1` (the form `biquad::Coefficients` holds), and response
+points: the level in dB of the low branch, of the high branch and of the two added, at chosen
+frequencies. `DesignRecord::parse` refuses text that is not JSON, any other schema, any other
+version (one it does not know is never guessed at), a key version 1 does not have, a value out
+of range, and biquads that do not give the record's own response points within its
+`tolerance_db`, so a record edited by hand is not run. `Crossover::lr4_design` gives an `lr4`
+as the `Lr4Design` the chain's crossover runs.
+
+The fixture is `fixtures/design-record/lr4-2000hz-48k.json`, exported from library release
+v1.49.0 on 2026-10-06, with `lr4-2000hz-48k.provenance` beside it (the release tag, the export
+command, the date and the file's sha256). `crates/dsp/tests/design_record.rs` holds the file to
+that sha256, reads it, and checks:
+
+- the designed response (`f64`) at every response point, to the record's `tolerance_db`
+  (1e-6 dB);
+- the running `f32` filters: a sine at each response frequency through both branches, two
+  seconds played and the last one measured. Each branch's level where the record puts it above
+  -40 dB (the crossover frequency always among them: -6.0206 dB each for an LR4) and the level
+  of the two added (0 dB at every point: the flat sum) are within **0.001 dB** of the record.
+  Measured 2026-10-06: at most 0.000027 dB off. Below -40 dB a single-precision filter's own
+  rounding is a visible part of its output, so those levels are held by the designed response
+  alone;
+- that the record's sections are the ones `Lr4Design::new` designs for the same rate and
+  frequency (to 1e-12), and that `Lr4` built from the record gives the cascade's samples bit
+  for bit.
+
+Reading the JSON: `chorus-dsp` has no dependency, and the record's shape is fixed and small, so
+the module carries its own reader of the JSON a record uses (RFC 8259,
+<https://www.rfc-editor.org/rfc/rfc8259>, read 2026-10-06) instead of taking a JSON crate as a
+dependency for one file format. The test computes the sha256 itself (FIPS 180-4,
+<https://csrc.nist.gov/pubs/fips/180-4/upd1/final>, read 2026-10-06) for the same reason.
+
+To refresh the fixture: `fixtures/README.md`, "`design-record/`".
+
 ## On the endpoints
 
 Both endpoints run the chain on every frame they write (the decisions: `docs/decisions/` "the DSP

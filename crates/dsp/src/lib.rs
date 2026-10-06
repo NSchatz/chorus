@@ -43,6 +43,10 @@
 //! And one mixer the server runs before a room's stream is encoded: [`duck`], the
 //! announcement's duck, mix and restore (`docs/dsp.md`, "The announcement mixer").
 //!
+//! And one reader no chain runs yet: [`design_record`], the versioned JSON export of a speaker
+//! design from the owner's shared Python library, whose crossover biquads the blocks above run
+//! (`docs/dsp.md`, "Design records").
+//!
 //! What each block does, every citation and every ASSUMED default:
 //! `docs/dsp.md`. The decisions: `docs/decisions/` ("the DSP library").
 
@@ -53,6 +57,7 @@ pub mod chain;
 pub mod compressor;
 pub mod crossover;
 pub mod delay;
+pub mod design_record;
 pub mod duck;
 pub mod fixture;
 pub mod limiter;

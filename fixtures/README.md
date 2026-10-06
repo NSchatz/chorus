@@ -644,3 +644,30 @@ directory was read by none of it. `docs/soloist.md` cites the pages.
   build time; the test states the build time each gives, or that it gives none.
 - `protocol-<name>.line` are the supervisor protocol's messages, one line each, byte for byte:
   `encode` must write them and `decode` must read them.
+
+## `design-record/`
+
+Speaker design records (`docs/dsp.md`, "Design records"), Rust-only by declaration
+(`check-shared-fixtures.sh`: a record is read where a design becomes settings, and no endpoint
+does that). A record is the plain JSON file that the acoustics package of the owner's shared
+Python library exports: schema `speaker-design-record`, version 1. It is committed exactly as
+exported and never edited by hand. Beside each `<name>.json` is `<name>.provenance` (the
+`dsp/` text format): the library `release` tag, the export `command`, the date `exported`, the
+`schema` and `version`, and the file's `sha256`.
+
+`crates/dsp/tests/design_record.rs` reads every file: it recomputes each record's sha256
+against its provenance, reads the record with `chorus_dsp::design_record`, runs its crossover
+through chorus's own biquads and holds the result to the record's response points. A file that
+is neither a record nor a provenance, a record without its provenance and a record of a schema
+version the reader does not know each fail it.
+
+| File | What it holds |
+|---|---|
+| `lr4-2000hz-48k.json` | one LR4 crossover at 2000 Hz for 48 kHz, with response points at 250, 1000, 2000, 4000 and 16000 Hz; from release v1.49.0, exported 2026-10-06 |
+
+To refresh a record (a new library release, or a new design): run the `command` of its
+provenance with the acoustics package installed from the release tag (`uv run`, rootless),
+copy the file in unchanged, and write the new `release`, `exported` and `sha256`
+(`sha256sum <name>.json`) into the provenance. A release that changes the schema version is not
+a refresh: the reader refuses the new version until `crates/dsp/src/design_record.rs` is taught
+it.
