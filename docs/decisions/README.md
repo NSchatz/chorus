@@ -143,3 +143,4 @@ the number of the pull request that added it.
 | 0225 | [the host contract sets a thread's scheduling policy through the pthread calls, because musl's sched_setscheduler is a stub](0225-the-host-contract-sets-policy-through-pthread-calls.md) |
 | 0227 | [the Home Assistant integration is not submitted to Home Assistant core yet; it stays a custom integration, kept as the draft](0227-the-home-assistant-integration-is-not-submitted-upstream-yet.md) |
 | 0228 | [the owner gave the speaker network's VLAN tag, subnet, pool and server address; a homelab task fills them in on the drafted branch, opens it and merges it](0228-the-speaker-network-numbers-are-given.md) |
+| 0229 | [the subwoofer is a vented 12 inch box with a bought 100 W plate amplifier: an SD315A-88 (the good tier of three) in 73.54 L tuned to 28.7 Hz, a 4 inch vent, a fourth-order high-pass at 24 Hz, and chorus's LR4 bass management at 80 Hz](0229-the-subwoofer-driver-alignment-and-amplifier.md) |
