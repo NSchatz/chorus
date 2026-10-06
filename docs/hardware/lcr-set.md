@@ -13,7 +13,7 @@ version: 1
   through the kernel's CEC API, on a Linux hub). The soundbar variant of K72 is not designed
   (P13, decision 0231).
 - The choices and their reasons: the decision record
-  `docs/decisions/0000-the-lcr-set-is-three-two-ways-and-a-pi-hub.md`. The devices repository's
+  `docs/decisions/0232-the-lcr-set-is-three-two-ways-and-a-pi-hub.md`. The devices repository's
   record for the set (`projects/chorus-lcr/v1/`) is made from this file elsewhere.
 
 ## What is in one set
