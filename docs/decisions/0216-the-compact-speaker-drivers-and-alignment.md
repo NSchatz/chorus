@@ -1,4 +1,4 @@
-# 0000: the compact speaker is a vented two-way: a Dayton Audio TCP115-4 woofer and ND16FA-6 tweeter in 1.80 L tuned to 60.5 Hz (the QB3 alignment the acoustics package designs), crossed over LR4 at 3500 Hz, with a 3 dB baffle-step shelf at 820 Hz
+# 0216: the compact speaker is a vented two-way: a Dayton Audio TCP115-4 woofer and ND16FA-6 tweeter in 1.80 L tuned to 60.5 Hz (the QB3 alignment the acoustics package designs), crossed over LR4 at 3500 Hz, with a 3 dB baffle-step shelf at 820 Hz
 
 - Status: accepted, 2026-10-06. A paper design: nothing is built or measured, and every number
   is a starting point the first box confirms or corrects.

@@ -12,7 +12,7 @@ version: 1
   enclosure model, the board and electronics plan, the bill of materials and the part records
   are made from it elsewhere and are not in this file.
 - The choice of drivers and alignment and its reasons: the decision record
-  `docs/decisions/0000-the-compact-speaker-drivers-and-alignment.md`. The driver survey:
+  `docs/decisions/0216-the-compact-speaker-drivers-and-alignment.md`. The driver survey:
   `docs/research/compact-speaker-drivers.md`.
 - A change to any design number bumps `version` and re-exports the record.
 

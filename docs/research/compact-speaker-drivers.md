@@ -1,7 +1,7 @@
 # Drivers for the compact speaker: a survey of small woofers and dome tweeters at US sellers
 
 Research for the compact speaker's acoustic design (`docs/hardware/compact-speaker.md`), 2026-10-06;
-what `docs/decisions/0000-the-compact-speaker-drivers-and-alignment.md` rests on. Every number
+what `docs/decisions/0216-the-compact-speaker-drivers-and-alignment.md` rests on. Every number
 was read on 2026-10-06 from the URL pattern named for it. Labels: NOT READ (no page read gives
 it), LEAD (seen in a search snippet only; never used as a fact).
 
