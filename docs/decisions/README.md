@@ -142,3 +142,4 @@ the number of the pull request that added it.
 | 0224 | [the Spotify Soloist terms shown in the developer dashboard have no clause on instances, servers or commercial use; the pool of 16 slots stands](0224-the-soloist-dashboard-terms-have-no-instance-clause.md) |
 | 0225 | [the host contract sets a thread's scheduling policy through the pthread calls, because musl's sched_setscheduler is a stub](0225-the-host-contract-sets-policy-through-pthread-calls.md) |
 | 0227 | [the Home Assistant integration is not submitted to Home Assistant core yet; it stays a custom integration, kept as the draft](0227-the-home-assistant-integration-is-not-submitted-upstream-yet.md) |
+| 0228 | [the owner gave the speaker network's VLAN tag, subnet, pool and server address; a homelab task fills them in on the drafted branch, opens it and merges it](0228-the-speaker-network-numbers-are-given.md) |
