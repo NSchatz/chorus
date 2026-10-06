@@ -36,7 +36,7 @@ The owner's room list, answered on 2026-10-04 and recorded in two places:
 | Kitchen | a compact pair | PoE+ | no |
 | Garage | a compact pair | PoE+ | no |
 | Primary bath | one compact | PoE+ | no |
-| Deck (outdoor) | a pair | PoE+ | no |
+| Deck (outdoor) | an outdoor pair | PoE+ | no |
 
 Every speaker is a powered chorus speaker with its own amplifier on Ethernet (K90; P4 "every
 speaker gets Ethernet"). None is a passive in-wall, in-ceiling or outdoor speaker on a speaker
@@ -92,6 +92,10 @@ LCR set alone.
 ## Open inputs
 
 None. The owner's room list answers every input this proposal names.
+
+Owed elsewhere: the owner's devices repo still lists `builds/chorus-rackamp-v1/` and
+`builds/chorus-soundbar-v1/` as waiting on chorus, and P14 still counts them among its builds.
+Closing goal 26 (the project's last task) tells devices to drop both.
 
 ## What was read
 

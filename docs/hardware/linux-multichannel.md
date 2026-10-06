@@ -143,8 +143,9 @@ Consequences, each a design rule:
   channel count and maps its stream onto it (the sub on the same card is one more bound channel,
   fed `FL+FR`).
 
-Example, ASSUMED (four output pairs; P13 counts zero zones and zero channels, because the owner's
-house plan of 2026-10-04 wires no room back to the rack, so this layout waits on a room that does): an 8-channel card as zone A on 0-1, zone B on 2-3, zone C on 4-5, and zone A's sub plus a
+Example, ASSUMED (four output pairs; P13 counts zero zones and zero channels, because the
+owner's house plan of 2026-10-04 wires no room back to the rack, so this layout waits on a room
+that does): an 8-channel card as zone A on 0-1, zone B on 2-3, zone C on 4-5, and zone A's sub plus a
 line out to the AVR on 6-7. The `dshare` PCMs (in the endpoint's `asoundrc`; the slave is the
 card):
 

@@ -295,7 +295,7 @@ The /goal program in [`.claude/goals/2026-09-chorus.md`](https://github.com/NSch
 | Protocol v2 | 5, 6 | 1, 5 | capabilities, channel maps, PCM/FLAC/Opus, encrypted sessions with trust-on-first-use adoption, the metadata, controller, visualizer and source roles; Rust and C agree on shared fixtures |
 | Sound, rig and sync in software; bench packets | 7 | 2, 3, 4 | the sync engine held to its targets in simulation at 8 rooms; bench packets for phases 2-4 |
 | The embedded platform | 8, 9 | 5 | ESP32-S3 on ESP-IDF v6.1 with the W5500 link, the I2S playout path, the amp and controls; a flashing packet behind the owner-at-bench guard |
-| The Linux endpoint tier | 10 | 5, 9 | multichannel Linux endpoints for the theater hub (and the rack amp, which the owner's house plan of 2026-10-04 dropped; P13) |
+| The Linux endpoint tier | 10 | 5, 9 | multichannel Linux endpoints for the theater hub (no rack amp: the owner's house plan of 2026-10-04 dropped it; P13, decision 0231) |
 | Rooms and groups | 11 | 6 | bonded sets, saved and live groups, Sonos-style group volume, limits, quiet hours, alarms, sleep, autoplay |
 | DSP | 12 | 8 | the filter library on both platforms from shared fixtures; tone, loudness, night and speech modes; room-correction fitting |
 | The TV path | 13 | 9 | stereo LPCM from optical and ARC, CEC on a Linux theater hub, theater bonding, A/V trim |
