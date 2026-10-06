@@ -10,10 +10,8 @@
 The chorus integration is installed as a custom integration and kept in the form Home
 Assistant core asks for (0138, 0164, K42, K61). Submitting it to core is the owner's choice and
 the owner's action: no task of this repository opens a pull request, an issue or a comment
-outside the owner's repositories (K42). `docs/home-assistant.md` lists what a submission takes:
-the changes `tools/ha-hassfest.sh` already makes and grades, plus the client library `_aiochorus`
-published on PyPI from a public repository with public CI, the tests moved onto core's fixtures,
-the README turned into a home-assistant.io page, and core's generated files regenerated.
+outside the owner's repositories (K42). What a submission takes is listed in
+`docs/home-assistant.md`, "The upstream draft".
 
 ## Decision
 
@@ -22,14 +20,15 @@ Asked whether to submit now, not yet, or never, the owner answered: not yet.
 1. Nothing is submitted, and no core-form tree or submission files are prepared.
 2. The custom integration stays the installed form (0164), and the integration is still kept
    as the draft: `make ha-hassfest` keeps grading it as core in every gate run.
-3. The question is reopened only by the owner telling a chorus session to submit it (the
-   session then prepares the core, brands and documentation submissions as files for the owner
-   to open) or not to submit it ever.
+3. The question is reopened only by the owner telling a chorus session either to submit it or
+   never to submit it. On "submit", the session prepares the core, brands and documentation
+   submissions as files for the owner to open.
 
 ## Not chosen
 
-- **Submit now.** It needs a public repository and public CI for `_aiochorus` and the owner's
-  time on three upstream reviews; the owner chose to wait.
+- **Submit now.** The owner gave no reason beyond choosing to wait. What it would take (a public
+  repository and public CI for `_aiochorus`, three upstream reviews) is in
+  `docs/home-assistant.md`.
 - **Never.** It would drop the draft constraint on the integration; the owner kept the option
   open.
 
