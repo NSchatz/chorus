@@ -1,4 +1,4 @@
-# 0218: the subwoofer is a vented 12 inch box with a bought 100 W plate amplifier: a Dayton Audio SD315A-88 (the good tier of three priced tiers) in 73.54 L tuned to 28.7 Hz (the QB3 alignment the acoustics package designs), a 4 inch vent, a fourth-order protective high-pass at 24 Hz, and chorus's LR4 bass management at 80 Hz
+# 0229: the subwoofer is a vented 12 inch box with a bought 100 W plate amplifier: a Dayton Audio SD315A-88 (the good tier of three priced tiers) in 73.54 L tuned to 28.7 Hz (the QB3 alignment the acoustics package designs), a 4 inch vent, a fourth-order protective high-pass at 24 Hz, and chorus's LR4 bass management at 80 Hz
 
 - Status: accepted, 2026-10-06. A paper design: nothing is built or measured, and every number
   is a starting point the first box confirms or corrects.

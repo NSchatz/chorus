@@ -1,7 +1,7 @@
 # Drivers and amplifiers for the subwoofer: a survey of 10 to 15 inch subwoofer drivers, plate amplifiers and amplifier modules at a US seller
 
 Research for the subwoofer's acoustic design (`docs/hardware/subwoofer.md`), 2026-10-06; what
-`docs/decisions/0218-the-subwoofer-driver-alignment-and-amplifier.md` rests on. Every number
+`docs/decisions/0229-the-subwoofer-driver-alignment-and-amplifier.md` rests on. Every number
 was read on 2026-10-06 from the URL pattern named for it. Labels: NOT READ (no page read gives
 it), LEAD (seen in a search snippet only; never used as a fact). Nothing below is a LEAD.
 

@@ -14,7 +14,7 @@ version: 1
   model, the board and electronics plan, the knob and ADC pins, the bill of materials and the
   part records are made from it elsewhere and are not in this file.
 - The choice of driver, alignment, amplifier power and crossover, and its reasons: the decision
-  record `docs/decisions/0218-the-subwoofer-driver-alignment-and-amplifier.md`. The driver and
+  record `docs/decisions/0229-the-subwoofer-driver-alignment-and-amplifier.md`. The driver and
   amplifier survey: `docs/research/subwoofer-drivers-and-amplifiers.md`.
 - A change to any design number bumps `version` and re-exports the record.
 
