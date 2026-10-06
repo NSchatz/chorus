@@ -28,30 +28,42 @@ Soloist (conventions rule 24).
 
 ## Cutting one
 
+CI cuts it (ADR 0235): `.github/workflows/release.yml` runs `make release` on a GitHub runner
+with the pinned toolchains, as `nightly.yml` provisions them, and creates the release. Nothing
+is built on a workstation or the agent host.
+
 1. `main` is green: the last `make gate` on `main`'s tree passed (a PR's gate, run on the
    branch up to date with `main`, counts).
 2. The workspace version in `Cargo.toml` is the release's version (a PR changes it first
    if needed).
-3. From a clean checkout of that commit, under the heavy lock:
+3. Optionally, a dry run of `main` first (its tip, so run it before anything else merges): it builds the release with `Cargo.toml`'s
+   version and uploads `dist/v<ver>/` as the workflow artifact `chorus-v<ver>`, publishing
+   nothing.
 
    ```
-   git switch --detach origin/main
-   timeout 3600 goals lock -w 1800 goals-heavy -- goals lock -w 1800 chorus-heavy -- make release VERSION=<ver>
+   gh workflow run release.yml --ref main -f dry-run=true
    ```
 
-   `tools/release.sh` refuses by name on a dirty tree, a commit not on `origin/main`, a
-   version that differs from `Cargo.toml`, or an ESP-IDF that is not the pinned one. It
-   writes the artifacts, `SHA256SUMS` and the notes body (`NOTES.md`) to `dist/v<ver>/`.
-4. Tag that commit and publish:
+4. Tag the commit and push the tag:
 
    ```
    git tag -a v<ver> -m "chorus v<ver>" <sha> && git push origin v<ver>
-   gh release create v<ver> --verify-tag --title "chorus v<ver>" \
-       --notes-file dist/v<ver>/NOTES.md dist/v<ver>/chorus-* dist/v<ver>/*.crate \
-       dist/v<ver>/SHA256SUMS
    ```
 
-5. `gh release view v<ver>` lists the assets; the goal's ledger records the tag's SHA.
+   The tag push runs `make release VERSION=<ver>` on the tagged commit. `tools/release.sh`
+   refuses by name on a dirty tree, a commit not on `origin/main`, a version that differs from
+   `Cargo.toml`, or an ESP-IDF that is not the pinned one, and holds `dist/v<ver>/` to
+   `tools/release.sh --list`. A second job, the only one with `contents: write` and one that
+   runs no build script, then runs `gh release create v<ver> --verify-tag` with
+   `dist/v<ver>/NOTES.md` as the notes and every other file in that directory attached, and
+   fails unless the release lists exactly those assets. The same tag push has
+   `publish-images.yml` push the images (below).
+5. If the release job failed after the tag was pushed, fix forward on `main` only when the
+   tagged commit itself is wrong (a new version and tag); otherwise run it again on the tag:
+   `gh workflow run release.yml --ref v<ver> -f dry-run=false`. If the failure was in
+   `gh release create` itself, delete the release or draft it left behind first
+   (`gh release delete v<ver>`, which keeps the tag).
+6. `gh release view v<ver>` lists the assets; the goal's ledger records the tag's SHA.
 
 ## Source of MPL-licensed dependencies (P9)
 
