@@ -272,7 +272,7 @@ Moot since 2026-10-05, when the owner accepted option B'. What held from Checkpo
 `chorus-g7/speaker-network` and did not open it, and its done-when F was met by the branch.
 Nothing else in chorus waited on it: endpoints keep a configured server address, adoption
 (goal 14) and the sync work run on the simulator and fixtures. What still holds: no placement is
-live until the owner fills in the numbers below and applies the branch, and until then K92's
+live until the branch is merged and the owner applies it, and until then K92's
 auto-adoption trusts whatever network the owner patches the speakers into.
 
 ## Open inputs

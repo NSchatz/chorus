@@ -1,6 +1,6 @@
 # feat(network): chorus speaker network (chorus, never merged by agents)
 
-Branch: `chorus-g7/speaker-network` (the owner's homelab repo), commit `0d03e7c`, based on `main` at `d82e2ae`. Drafted by the chorus program, goal 7; not opened as a PR then, because the owner deferred the speaker-network decision at chorus's checkpoint. The owner accepted this placement on 2026-10-05, so it opens with this body. What remains is the owner's: the VLAN tag, the subnet, the pool and the server's address, filled in on this branch (step 1 of the owner action below).
+Branch: `chorus-g7/speaker-network` (the owner's homelab repo), commit `0d03e7c`, based on `main` at `d82e2ae`. Drafted by the chorus program, goal 7; not opened as a PR then, because the owner deferred the speaker-network decision at chorus's checkpoint. The owner accepted this placement on 2026-10-05, so it opens with this body. What remains is the owner's: the VLAN tag, the subnet, the pool and the server's address, filled in on this branch (step 1 of the owner action below). The owner gave those values on 2026-10-06 (chorus decision record 0228); homelab task 207 fills them in, and when it opens the PR it rewrites this paragraph, the Placeholders paragraph and step 1 to say so.
 
 ## What changes
 
