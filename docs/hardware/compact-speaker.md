@@ -377,8 +377,7 @@ What leaves for the amplifier (arithmetic on the numbers cited; nothing measured
 
 So about **15 to 17 W continuous** for the two drivers together, about 2 W under version 1's 17
 to 19 W because this splitter is 80% efficient and the sold-out PoE Texas one 90% (P1 estimated
-18 to 20 W),
-inside the woofer's 40 watt rating; short peaks above it come from the board's supply
+18 to 20 W), inside the woofer's 40 watt rating; short peaks above it come from the board's supply
 capacitors (**ASSUMED**, not sized here). The 25.5 W ceiling is the firmware's to respect: a
 speaker that draws more is shut off by the switch.
 

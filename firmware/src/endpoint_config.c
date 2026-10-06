@@ -528,7 +528,7 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
 }
 
 #define CONTROL_PIN_COUNT 10
-#define BOARD_PIN_MAX 24
+#define BOARD_PIN_MAX 24 /* the controls, eight audio pins and six Ethernet pins */
 
 /* Every pin the profile names but the controls', for the one-signal-per-pin
  * rule below; the Ethernet pins only when the link drives them. */
@@ -555,7 +555,7 @@ static size_t board_pins(const chorus_endpoint_config_t *config, const char **na
                                        "pin_amp_power_down", "pin_marker"};
     const uint32_t audio_pins[] = {p->mclk, p->bclk,           p->ws,    p->dout, p->sda,
                                    p->scl,  p->amp_power_down, p->marker};
-    for (size_t i = 0; i < sizeof(audio_pins) / sizeof(audio_pins[0]); i++) {
+    for (size_t i = 0; i < sizeof(audio_pins) / sizeof(audio_pins[0]) && n < BOARD_PIN_MAX; i++) {
         names[n] = audio_names[i];
         pins[n++] = audio_pins[i];
     }
@@ -563,7 +563,7 @@ static size_t board_pins(const chorus_endpoint_config_t *config, const char **na
         const char *const eth_names[] = {"pin_eth_sclk", "pin_eth_mosi", "pin_eth_miso",
                                          "pin_eth_cs",   "pin_eth_int",  "pin_eth_rst"};
         const uint32_t eth_pins[] = {e->sclk, e->mosi, e->miso, e->cs, e->int_pin, e->rst};
-        for (size_t i = 0; i < sizeof(eth_pins) / sizeof(eth_pins[0]); i++) {
+        for (size_t i = 0; i < sizeof(eth_pins) / sizeof(eth_pins[0]) && n < BOARD_PIN_MAX; i++) {
             names[n] = eth_names[i];
             pins[n++] = eth_pins[i];
         }
