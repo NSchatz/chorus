@@ -52,6 +52,7 @@ How the rules work:
 | 23 | Datasheet-cited amplifier map | `tools/conventions/check-amp-map.sh`; gate step `firmware-check` (`test_amp` drives the datasheet-modelled part with the committed map) |
 | 24 | No Soloist file is shipped | gate step `soloist-lists`: `make soloist-lists` (`tools/soloist-lists.py`, after gate steps `image` and `soloist-image` built what it lists) |
 | 25 | The Home Assistant integration | `tools/conventions/check-ha-integration.sh`; `tools/conventions/check-ha-export.sh` (the pinned install copy is reproducible); gate step `ha-test`: `make ha-test` (ruff, `mypy --strict`, the tests under the pinned harness with coverage, the no-unauthenticated-endpoint test; a run narrowed with `HA_TEST_ARGS` is the inner loop, not this step); gate step `ha-hassfest`: `make ha-hassfest` (Home Assistant's own hassfest from the pinned core checkout); gate step `ha-live`: `make ha-live` (the integration against the built `chorus-server` on loopback, full tier); each of the three runs or is red, never `SKIPPED` |
+| 26 | The parity checklist | `tools/conventions/check-parity.sh` |
 
 The rest of this file is each rule in full, in table order.
 
@@ -465,3 +466,14 @@ own `PASS` line: these steps are never `SKIPPED` (decision 0142). **Review-only 
 transitive packages are development tools, never shipped and never imported by the
 integration at run time, so the licence allowlist of rule 13 (what chorus builds and ships)
 does not range over them; the direct ones and their licences are in the ADR.
+
+## 26. The parity checklist
+
+`docs/parity.md` gives every item the program was asked to deliver one state: the ten roadmap
+phases of BRIEF.md section 8, the program's phases of section 8.1, and the owner's decisions K30,
+K31 (four features each) and K57 to K94 of the program brief (goal 27, brief section 31 item 1).
+`check-parity.sh` fails when an item is missing or listed twice, when a row is not one of those
+items, when a state is not one of `done`, `partial`, `deferred`, `dropped` and `not started`, when
+a row names no evidence path in backticks or a path git does not track, or when a state other
+than `done` has no reason or follow-up. It prints the count per state. Whether a state is true
+is **Review-only (no check)**: the check holds the shape, a reviewer reads the evidence.
