@@ -59,7 +59,7 @@ why the workstation and CI server builds differ is not yet known.
 - **Building with `docker build` and a buildx action:** a second build path that could drift
   from the gate's daemonless, tested one.
 
-## Sources
+## What was read
 
 - crane push reference, "If the PATH is a directory, it will be read as an OCI image layout",
   https://github.com/google/go-containerregistry/blob/main/cmd/crane/doc/crane_push.md (read

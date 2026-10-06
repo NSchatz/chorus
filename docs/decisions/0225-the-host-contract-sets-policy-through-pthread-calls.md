@@ -45,7 +45,7 @@ report then says the run has no real-time policy.
 - **Building the server on glibc**: the static musl image is decided (0122); one call pair does
   not reopen it.
 
-## Sources
+## What was read
 
 - musl libc, `src/sched/sched_setscheduler.c` and `src/sched/sched_getscheduler.c` (MIT): both
   return `__syscall_ret(-ENOSYS)`, https://git.musl-libc.org/cgit/musl/tree/src/sched (read
