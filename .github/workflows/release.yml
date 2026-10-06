@@ -12,8 +12,9 @@ name: release
 # By hand, `dry-run` (the default) builds the release of a commit on main,
 # with Cargo.toml's version (a tag's own, run on a tag), and uploads dist/
 # as a workflow artifact, publishing nothing. `dry-run: false` on a v<x.y.z>
-# tag publishes, which retries a tag whose run failed. The build runs with a read-only token; only
-# the publish job, which runs no build script, can write.
+# tag publishes, which retries a tag whose run failed. The build runs with a
+# read-only token; only the publish job, which runs no build script, can
+# write.
 on:
   push:
     tags: ['v*']
