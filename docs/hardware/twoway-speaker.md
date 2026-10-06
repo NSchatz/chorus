@@ -16,6 +16,8 @@ version: 1
   reasons: the decision record
   `docs/decisions/0217-the-two-way-speaker-drivers-and-alignment.md`. The driver survey:
   `docs/research/twoway-speaker-drivers.md`.
+- The LCR set (`docs/hardware/lcr-set.md`) is three of this speaker, unchanged, with the hidden
+  TV hub: the theater front of both TV rooms.
 - A change to any design number bumps `version` and re-exports the record.
 
 **How the numbers were computed.** Every computed number names the call that produced it. The
