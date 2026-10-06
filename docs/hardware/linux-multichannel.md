@@ -116,6 +116,10 @@ Pi 5 with a DAC8x, and changing it changes the command lines, not the code.
 
 ### The rack amp: several zones on one card
 
+No rack amp is designed: the owner dropped it on 2026-10-04 (P13,
+`docs/proposals/P13-rack-amp-zones.md`, and decision 0000). This section stays as the design a
+rack amp would use if a room is wired back to the rack.
+
 Each zone plays its own stream (a zone is what the server serves a stream to), and one
 `chorus-client` plays one zone's stream. So **one chorus-client per zone**, each on the channels of
 the card that are its zone's, and the card is shared through ALSA's `dshare` plugin: "This plugin
@@ -139,8 +143,8 @@ Consequences, each a design rule:
   channel count and maps its stream onto it (the sub on the same card is one more bound channel,
   fed `FL+FR`).
 
-Example, ASSUMED (four output pairs; the zone and channel count is P13, goal 26, from the room
-list): an 8-channel card as zone A on 0-1, zone B on 2-3, zone C on 4-5, and zone A's sub plus a
+Example, ASSUMED (four output pairs; P13 counts zero zones and zero channels, because the owner's
+house plan of 2026-10-04 wires no room back to the rack, so this layout waits on a room that does): an 8-channel card as zone A on 0-1, zone B on 2-3, zone C on 4-5, and zone A's sub plus a
 line out to the AVR on 6-7. The `dshare` PCMs (in the endpoint's `asoundrc`; the slave is the
 card):
 
