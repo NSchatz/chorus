@@ -1,0 +1,163 @@
+---
+name: release
+
+# Cuts a chorus release (docs/release.md, ADR 0235). A pushed tag `v<x.y.z>`
+# on a commit of main runs `make release VERSION=<x.y.z>` with the pinned
+# toolchains, as nightly.yml provisions them, and creates the GitHub release
+# from dist/v<x.y.z>/: NOTES.md is its body and every other file it holds
+# is attached. tools/release.sh refuses a commit not on main, a version that
+# differs from Cargo.toml, a dirty tree or an ESP-IDF that is not the pinned
+# one, and holds the directory to `tools/release.sh --list`.
+#
+# By hand, `dry-run` (the default) builds the release of the ref it runs on,
+# with Cargo.toml's version, and uploads dist/ as a workflow artifact,
+# publishing nothing. `dry-run: false` on a v<x.y.z> tag publishes, which
+# retries a tag whose run failed. The build runs with a read-only token; only
+# the publish job, which runs no build script, can write.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Build and upload dist/ only; publish nothing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: make release
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      # Full history: release.sh checks the commit against main and takes
+      # the artifacts' timestamps from it. No credential is left in
+      # .git/config while the builds run third-party build scripts.
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # A tag names the version; by hand it is Cargo.toml's. Publishing by
+      # hand needs a release tag to publish under.
+      - name: Version
+        id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          DRY_RUN: >-
+            ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+        run: |
+          if [ "$REF_TYPE" = tag ]; then
+            ver="${REF_NAME#v}"
+          else
+            ver="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          fi
+          if ! printf '%s' "$ver" | grep -q -E '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::'$ver' is not a release version x.y.z"
+            exit 1
+          fi
+          if [ "$DRY_RUN" != true ] && [ "$REF_TYPE" != tag ]; then
+            echo "::error::only a v<x.y.z> tag is published; run on the" \
+              "tag, or as a dry run"
+            exit 1
+          fi
+          echo "release v$ver from $(git rev-parse HEAD)"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      # The pinned tools from mise.toml, checked against mise.lock's digests
+      # (zig and cargo-zigbuild among them), as in nightly.yml.
+      - name: Pinned tools
+        uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5  # v5.0.0
+        with:
+          version: 2026.7.5
+
+      # rust-toolchain.toml names the exact toolchain; rustup installs it on
+      # first use, with the musl target the server binary is built for.
+      - name: Toolchain
+        run: rustup show active-toolchain
+
+      # The version and commit are firmware/config/endpoint.conf's pin;
+      # tools/firmware-image.sh refuses any other. As in nightly.yml.
+      - name: ESP-IDF
+        run: |
+          git clone --branch v6.1 --depth 1 --recursive --shallow-submodules \
+            https://github.com/espressif/esp-idf.git "$HOME/esp-idf"
+          git -C "$HOME/esp-idf" rev-parse HEAD
+          "$HOME/esp-idf/install.sh" esp32s3
+          # cmake and ninja are installed on request in v6.1 (ADR 0042).
+          (cd "$HOME/esp-idf" && python3 tools/idf_tools.py install cmake ninja)
+          printf '. %s/export.sh\n' "$HOME/esp-idf" > "$HOME/idf-env.sh"
+          echo "CHORUS_IDF_ENV=$HOME/idf-env.sh" >> "$GITHUB_ENV"
+
+      - name: make release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          CARGO_BUILD_JOBS: "2"
+          IDF_PY_BUILD_JOBS: "2"
+        run: |
+          git status --porcelain
+          make release VERSION="$VERSION"
+          {
+            echo "### chorus v$VERSION from \`$(git rev-parse HEAD)\`"
+            echo '```'
+            cat "dist/v$VERSION/SHA256SUMS"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The release as built: what the publish job attaches, and what a
+      # dry run is checked against (`tools/release.sh --list`).
+      - name: Upload dist
+        # actions/upload-artifact v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: chorus-v${{ steps.version.outputs.version }}
+          path: dist/v${{ steps.version.outputs.version }}/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: create the GitHub release
+    needs: build
+    if: github.event_name == 'push' || !inputs.dry-run
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download dist
+        # actions/download-artifact v4.3.0
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: chorus-v${{ needs.build.outputs.version }}
+          path: dist
+
+      # --verify-tag: the tag exists already, pushed by whoever cut the
+      # release; nothing here creates or moves one. NOTES.md is the body,
+      # everything else is attached.
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          cd dist
+          find . -maxdepth 1 -type f ! -name NOTES.md -printf '%f\n' |
+            LC_ALL=C sort > "$RUNNER_TEMP/assets.txt"
+          mapfile -t assets < "$RUNNER_TEMP/assets.txt"
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" \
+            --verify-tag --title "chorus v$VERSION" \
+            --notes-file NOTES.md "${assets[@]}"
+          gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '.assets[].name' |
+            LC_ALL=C sort > "$RUNNER_TEMP/published.txt"
+          diff "$RUNNER_TEMP/assets.txt" "$RUNNER_TEMP/published.txt"
+          n="$(wc -l < "$RUNNER_TEMP/published.txt")"
+          echo "published v$VERSION: $n assets" >> "$GITHUB_STEP_SUMMARY"
