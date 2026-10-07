@@ -104,10 +104,10 @@ Safety, electrical and licence:
    bridge-tied outputs never joined to ground (`docs/bench-packet.md`, S7). Flashing stays behind
    `CHORUS_OWNER_AT_BENCH=1`, and no eFuse is burned (`docs/bench.md`).
 3. **OTA rollback on a board, bench S10** (item 63; `docs/firmware-updates.md`).
-4. **Mains wiring for the two-way and the subwoofer**: a listed adapter or a fused inlet, a plate
-   amp or a bare board (`docs/hardware/twoway-speaker.md`, `docs/hardware/subwoofer.md`), the
-   owner's choice when those speakers are built. Not a chorus item: devices' plan for those
-   builds (devices roadmap project 7, open) carries it.
+4. **Mains wiring for the subwoofer**: a finished plate amp or a bare board with its mains
+   supply (`docs/hardware/subwoofer.md`). The two-way's is settled: an external 24 V adapter
+   (devices `projects/chorus-twoway/v1/log.md`, "Power"). Not a chorus item: devices' plan for
+   those builds (devices roadmap project 7, open) carries it.
 5. **Credentials**: the Spotify Soloist API key (item 59); the optional Mosquitto user (item 62).
 
 What unblocks the most (parity items in brackets, `docs/parity.md`):
@@ -142,7 +142,7 @@ Section 31 item 5, each filed in the harness:
 | Add the Home Assistant integration | item 117 | open |
 | The upstream draft (the Home Assistant core submission) | task 26 | decided: not yet (`docs/decisions/0227-the-home-assistant-integration-is-not-submitted-upstream-yet.md`); reopened only by the owner |
 | The Soloist image's source question | task 316 | open |
-| A follow-up goal for open requests | none needed | no request is open (below) |
+| A follow-up goal for open requests | none needed | each open request is a ready chorus task (below) |
 
 ## Proposals awaiting the owner
 
@@ -169,6 +169,8 @@ Addressed to chorus:
 | goals #230 (from goals) | Throwaway build target dirs on tmpfs; image builds under the heavy lock | DONE: chorus PR 134 (b5eb6ca), `tools/build-dir.sh` |
 | goals #191 (from devices, dev-14) | The six `acoustics.md` records devices' Audio lane waits on | DONE: four landed (table above); the rack amp and soundbar records are DECLINED as not designed (ADR 0231, P13); devices task 283 (ready) will record them as dropped |
 | harness task 201 (from devices, for devices task 50) | The compact's board profile for its separate modules | DONE: chorus PR 230 (747bde4), board profile `devkitc-s3-louderhat-wired` |
+| harness task 320 (from devices, for devices task 274) | The two-way's board profile and `docs/hardware/twoway-speaker.md` v2 for its separate modules | ACCEPTED: a ready chorus task in devices roadmap project 7 |
+| harness task 10 (from goals) | `CLAUDE.md` to the essentials, and `CARD.md` | DONE (`CARD.md`) |
 | harness task 114 (from devices) | Rename `builds/chorus-*` to `projects/chorus-*/v<n>/` in chorus docs | DEFERRED: a ready chorus task; it waits on devices task 112 |
 
 Filed by chorus:
@@ -179,11 +181,12 @@ Filed by chorus:
 | goals #110 (to devices, chorus-1) | chorus's speaker designs in devices | accepted by devices; its roadmap projects 6, 7 and 8 build them (open) |
 | harness tasks for siblings | homelab 181, 206, 207 (re-pins, the speaker network); devices 55, 56, 244 (the records); inventory 1 (driver records) | all done (`goals task list <repo>`) |
 
-So no request addressed to chorus is open (114 is deferred to its own ready task), and no follow-up goal is needed for one.
+The open requests addressed to chorus are tasks 320 (accepted) and 114 (deferred), each already
+a ready chorus task, so no follow-up goal is needed for them.
 
 ## Follow-ups
 
-- Task 114: the devices path rename above.
+- Tasks 114 and 320: the devices path rename and the two-way's board profile, above.
 - Tasks 316 to 319: the owner decision tasks in this report.
 - `docs/pins.md`: one change for the pins that are behind, and a proposal for the next Rust.
 - K67: the compact image's GPIO, LED and I2S-input binding is not written (`docs/parity.md`).
