@@ -52,6 +52,8 @@ chorus_playout_t *chorus_esp_playout_create(const chorus_endpoint_config_t *conf
         config->clock.dma_frame_num, CHORUS_PLAYOUT_BUFFER_MS);
     /* The endpoint's own volume ceiling (max_volume, ADR 0074). */
     c.max_volume_thousandths = config->max_volume_thousandths;
+    /* The output part's delay after the pins (the line DAC's filter). */
+    c.output_delay_frames = config->board.output_delay_frames;
     /* The GPIO marker's period, only when the board names a marker pin. */
     if (config->pins.marker != CHORUS_PIN_NONE) {
         c.marker_period_ns = (uint64_t)config->marker_period_ms * 1000000ull;

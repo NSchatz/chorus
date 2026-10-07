@@ -12,6 +12,7 @@
 
 #include "chorus/amp.h"
 #include "chorus/endpoint_config.h"
+#include "chorus/line_dac.h"
 #include "fake_amp.h"
 #include "harness.h"
 
@@ -508,6 +509,99 @@ static void a_stage_that_will_not_go_dead_stops_everything(void)
                  chorus_amp_status_name(status));
 }
 
+/* The subwoofer's line DAC (chorus/line_dac.h): no control bus, so no I2C at
+ * all; the mute low before the clock, the clock into a muted part, the mute
+ * released only when asked (the writer runs), and stopped mute first. */
+static void a_line_dac_is_muted_clocked_then_unmuted_with_no_i2c(void)
+{
+    rig_t rig;
+    rig_init(&rig);
+    chorus_amp_status_t status =
+        chorus_line_dac_start(&rig.clock, &rig.stage, &rig.controller, &rig.report);
+    chorus_check(status == CHORUS_AMP_OK, "the committed clock starts the line DAC (%s: %s)",
+                 chorus_amp_status_name(status), rig.report.detail);
+    int low = fake_amp_first(&rig.fake, FAKE_EV_HIGH_IMPEDANCE);
+    int clock = fake_amp_first(&rig.fake, FAKE_EV_CLOCK_APPLIED);
+    chorus_check(low == 0 && clock > low,
+                 "the mute goes low first (event %d), the clock after (%d)", low, clock);
+    chorus_check(rig.fake.pdn == FAKE_PDN_LOW && fake_amp_count(&rig.fake, FAKE_EV_POWER_UP) == 0 &&
+                     rig.report.output_in_high_impedance && rig.report.clock_started,
+                 "the clock runs into a muted part: the mute stays low until the writer runs");
+    chorus_check(fake_amp_i2c_transactions(&rig.fake) == 0 && !rig.report.fault_read,
+                 "no I2C transaction and no fault register: the PCM5102A has no control bus");
+
+    status = chorus_line_dac_unmute(&rig.stage, &rig.report);
+    chorus_check(status == CHORUS_AMP_OK && rig.fake.pdn == FAKE_PDN_HIGH &&
+                     !rig.report.output_in_high_impedance,
+                 "unmuted when the writer runs: the mute line high (%s)",
+                 chorus_amp_status_name(status));
+
+    size_t before = rig.fake.event_count;
+    chorus_line_dac_stop(&rig.stage, &rig.controller);
+    int stop_low = -1;
+    int stop_clock = -1;
+    for (size_t i = before; i < rig.fake.event_count; i++) {
+        if (rig.fake.events[i].kind == FAKE_EV_HIGH_IMPEDANCE && stop_low < 0) {
+            stop_low = (int)i;
+        }
+        if (rig.fake.events[i].kind == FAKE_EV_CLOCK_STOPPED && stop_clock < 0) {
+            stop_clock = (int)i;
+        }
+    }
+    chorus_check(stop_low >= 0 && stop_clock > stop_low && rig.fake.pdn == FAKE_PDN_LOW,
+                 "stopping mutes first (event %d) and stops the clock after (%d)", stop_low,
+                 stop_clock);
+    chorus_check(fake_amp_i2c_transactions(&rig.fake) == 0, "still no I2C transaction");
+}
+
+static void a_line_dac_refuses_what_it_cannot_run_from(void)
+{
+    /* 24-bit slots on the wire are 48 bit clocks a frame: the PCM5102A's PLL
+     * runs from 32 or 64 (SLAS859C Table 11, p. 25). */
+    rig_t rig;
+    rig_init(&rig);
+    rig.clock.wire_slot_bit_width = 24;
+    chorus_amp_status_t status =
+        chorus_line_dac_start(&rig.clock, &rig.stage, &rig.controller, &rig.report);
+    chorus_check(status == CHORUS_AMP_CLOCK_CONFIGURATION_REFUSED && rig.report.finding_count > 0 &&
+                     strcmp(rig.report.findings[0].rule, "bclk-ratio-unsupported-by-line-dac") == 0,
+                 "48 bit clocks a frame is refused as %s",
+                 rig.report.finding_count > 0 ? rig.report.findings[0].rule : "<none>");
+    chorus_check(fake_amp_count(&rig.fake, FAKE_EV_CLOCK_APPLIED) == 0 &&
+                     rig.fake.pdn == FAKE_PDN_LOW,
+                 "no clock, the mute low");
+    chorus_check(chorus_line_dac_bck_ratio_ok(32) && chorus_line_dac_bck_ratio_ok(64) &&
+                     !chorus_line_dac_bck_ratio_ok(48),
+                 "32 and 64 bit clocks a frame are the PLL's, 48 is not");
+
+    rig_t refused;
+    rig_init(&refused);
+    refused.fake.controller_refuses_clock = 1;
+    status =
+        chorus_line_dac_start(&refused.clock, &refused.stage, &refused.controller, &refused.report);
+    chorus_check(status == CHORUS_AMP_CLOCK_REFUSED && refused.fake.pdn == FAKE_PDN_LOW,
+                 "a controller that refuses the clock is %s, the mute low",
+                 chorus_amp_status_name(status));
+
+    rig_t dead;
+    rig_init(&dead);
+    dead.fake.stage_refuses_high_impedance = 1;
+    status = chorus_line_dac_start(&dead.clock, &dead.stage, &dead.controller, &dead.report);
+    chorus_check(status == CHORUS_AMP_OUTPUT_STAGE_REFUSED &&
+                     fake_amp_count(&dead.fake, FAKE_EV_CLOCK_APPLIED) == 0,
+                 "a mute that will not go low is %s and no clock starts",
+                 chorus_amp_status_name(status));
+
+    rig_t stuck;
+    rig_init(&stuck);
+    stuck.fake.stage_refuses_power_up = 1;
+    (void)chorus_line_dac_start(&stuck.clock, &stuck.stage, &stuck.controller, &stuck.report);
+    status = chorus_line_dac_unmute(&stuck.stage, &stuck.report);
+    chorus_check(status == CHORUS_AMP_OUTPUT_STAGE_REFUSED && stuck.fake.pdn == FAKE_PDN_LOW,
+                 "a mute that will not release is %s, driven low again",
+                 chorus_amp_status_name(status));
+}
+
 int main(void)
 {
     load_committed();
@@ -544,6 +638,10 @@ int main(void)
 
     chorus_section("an output stage that will not go dead");
     a_stage_that_will_not_go_dead_stops_everything();
+
+    chorus_section("the subwoofer's line DAC: no control bus, the mute on the power-down pin");
+    a_line_dac_is_muted_clocked_then_unmuted_with_no_i2c();
+    a_line_dac_refuses_what_it_cannot_run_from();
 
     return chorus_test_report("endpoint amplifier bring-up");
 }

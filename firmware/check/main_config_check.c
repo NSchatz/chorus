@@ -108,6 +108,10 @@ int main(int argc, char **argv)
     if (config.board.audio_output == CHORUS_AUDIO_OUTPUT_NONE) {
         printf("  audio output   none: no amplifier, no I2S and no I2C are brought up (the "
                "emulated board)\n");
+    } else if (config.board.audio_output == CHORUS_AUDIO_OUTPUT_LINE_DAC) {
+        printf("  audio output   line-dac: a PCM5102A on I2S, no I2C, its mute on the power-down "
+               "pin; output delay %u frames\n",
+               (unsigned)config.board.output_delay_frames);
     }
     if (config.link.transport == CHORUS_TRANSPORT_WIRED) {
         printf("  link           transport=wired phy=w5500 spi=%s clock=%u MHz sclk=%u mosi=%u "
@@ -133,21 +137,25 @@ int main(int argc, char **argv)
     printf("  dma            %u frames x %u descriptors, placed in %s memory\n",
            config.clock.dma_frame_num, config.clock.dma_desc_num,
            chorus_mem_placement_name(config.dma_placement));
-    char mclk[16];
-    if (config.pins.mclk == CHORUS_PIN_NONE) {
-        snprintf(mclk, sizeof(mclk), "none");
-    } else {
-        snprintf(mclk, sizeof(mclk), "%u", config.pins.mclk);
+    const uint32_t optional_pins[] = {config.pins.mclk, config.pins.sda, config.pins.scl};
+    char optional[3][16];
+    for (size_t i = 0; i < sizeof(optional_pins) / sizeof(optional_pins[0]); i++) {
+        if (optional_pins[i] == CHORUS_PIN_NONE) {
+            snprintf(optional[i], sizeof(optional[i]), "none");
+        } else {
+            snprintf(optional[i], sizeof(optional[i]), "%u", (unsigned)optional_pins[i]);
+        }
     }
-    printf("  pins           mclk=%s bclk=%u ws=%u dout=%u sda=%u scl=%u amp_pdn=%u "
+    printf("  pins           mclk=%s bclk=%u ws=%u dout=%u sda=%s scl=%s amp_pdn=%u "
            "octal_psram=%s\n",
-           mclk, config.pins.bclk, config.pins.ws, config.pins.dout, config.pins.sda,
-           config.pins.scl, config.pins.amp_power_down, config.pins.octal_psram ? "yes" : "no");
+           optional[0], config.pins.bclk, config.pins.ws, config.pins.dout, optional[1],
+           optional[2], config.pins.amp_power_down, config.pins.octal_psram ? "yes" : "no");
     const chorus_board_controls_t *c = &config.controls;
-    const uint32_t control_pins[] = {c->play_pause, c->volume_up, c->volume_down,     c->next,
-                                     c->previous,   c->pairing,   c->status_led_data, c->mic_bclk,
-                                     c->mic_ws,     c->mic_din,   c->mic_mute};
-    char text[11][16];
+    const uint32_t control_pins[] = {
+        c->play_pause, c->volume_up,  c->volume_down,     c->next,     c->previous, c->pairing,
+        c->knob_level, c->knob_phase, c->status_led_data, c->mic_bclk, c->mic_ws,   c->mic_din,
+        c->mic_mute};
+    char text[13][16];
     for (size_t i = 0; i < sizeof(control_pins) / sizeof(control_pins[0]); i++) {
         if (control_pins[i] == CHORUS_PIN_NONE) {
             snprintf(text[i], sizeof(text[i]), "none");
@@ -156,10 +164,10 @@ int main(int argc, char **argv)
         }
     }
     printf("  controls       buttons play_pause=%s volume_up=%s volume_down=%s next=%s "
-           "previous=%s pairing=%s, status_led=%s on %s, mic i2s1 bclk=%s ws=%s din=%s "
-           "mute=%s\n",
-           text[0], text[1], text[2], text[3], text[4], text[5],
-           chorus_status_led_name(c->status_led), text[6], text[7], text[8], text[9], text[10]);
+           "previous=%s pairing=%s, knobs level=%s phase=%s, status_led=%s on %s, mic i2s1 "
+           "bclk=%s ws=%s din=%s mute=%s\n",
+           text[0], text[1], text[2], text[3], text[4], text[5], text[6], text[7],
+           chorus_status_led_name(c->status_led), text[8], text[9], text[10], text[11], text[12]);
     printf("  analog gain    %.3f dB requested against a ceiling of %.3f dB\n", config.gain.db,
            config.amp.analog_gain_ceiling_db);
     chorus_amp_key_t keys[32];

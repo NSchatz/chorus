@@ -181,8 +181,9 @@ firmware_env() {
 
 # One image per board profile of the one P1 target (esp32s3): the wired
 # classes' W5500 default, the compact speakers' Wi-Fi tier, the compact and
-# the two-way on their bought modules (DevKitC, Louder Hat Plus, WIZ850io), and
-# the emulator's board (goal 14). $1 is the board profile (firmware/boards/),
+# the two-way on their bought modules (DevKitC, Louder Hat Plus, WIZ850io), the
+# subwoofer on its (DevKitC, PCM5102A line DAC, WIZ850io), and the emulator's
+# board (goal 14). $1 is the board profile (firmware/boards/),
 # each built in its own persistent directory and each held to the same safety
 # scans.
 firmware_idf() {
@@ -432,7 +433,7 @@ if [ "$MODE" = full ]; then
     step clippy           cargo clippy --workspace --all-targets --locked -- -D warnings
     stop_if_cheap_steps_failed ha-test ha-hassfest web-test web-build build ha-live web-live web-smoke test determinism firmware-check verify alsa-null \
         firmware-esp32s3-wired firmware-esp32s3-wifi firmware-esp32s3-modules firmware-esp32s3-twoway \
-        firmware-esp32s3-qemu \
+        firmware-esp32s3-sub firmware-esp32s3-qemu \
         firmware-profiles \
         qemu-boot ota-qemu image soloist-image soloist-lists endpoint-packages
     # The Home Assistant integration (goal 18): its lint, types and tests under the pinned
@@ -471,6 +472,7 @@ if [ "$MODE" = full ]; then
     step firmware-esp32s3-wifi  firmware_idf compact-s3-wifi
     step firmware-esp32s3-modules firmware_idf devkitc-s3-louderhat-wired
     step firmware-esp32s3-twoway  firmware_idf devkitc-s3-louderhat-twoway
+    step firmware-esp32s3-sub     firmware_idf devkitc-s3-pcm5102-sub
     step firmware-esp32s3-qemu  firmware_idf qemu-s3-openeth
     # Every board profile is built and scanned (goal 14): a profile added to
     # firmware/boards without an image step here would ship unbuilt and
@@ -479,7 +481,7 @@ if [ "$MODE" = full ]; then
     # What each image is, from its own build log, into the summary: the
     # target, the board and its ASSUMED status with the Needs item, the link,
     # and the safety scan's verdict for that target.
-    for p in wired wifi modules twoway qemu; do
+    for p in wired wifi modules twoway sub qemu; do
         sed -n -e 's/^  board: *\(.*\)/  board \1/p' -e 's/^  needs item: *\(.*\)/  needs item \1/p' \
             -e 's/^chorus: image built: \(.*\)/  built: \1/p' \
             -e 's/^\(safety scan: .*\)/  \1/p' "$LOG/firmware-esp32s3-$p.log" |

@@ -201,30 +201,35 @@ int chorus_esp_hal_init(const chorus_endpoint_config_t *config, chorus_i2c_bus_t
         return -1;
     }
 
-    i2c_master_bus_config_t bus_config = {
-        .i2c_port = -1,
-        .sda_io_num = (gpio_num_t)config->pins.sda,
-        .scl_io_num = (gpio_num_t)config->pins.scl,
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-        .glitch_ignore_cnt = 7,
-        .flags = {.enable_internal_pullup = true},
-    };
-    if (i2c_new_master_bus(&bus_config, &hal.i2c_bus) != ESP_OK) {
-        ESP_LOGE(TAG, "the I2C bus could not be created");
-        return -1;
-    }
+    /* A line DAC has no control bus (chorus/line_dac.h): no I2C bus is
+     * created, the bus interface is left without calls, and nothing reads
+     * it. The power-down line above is its mute. */
+    if (config->board.audio_output != CHORUS_AUDIO_OUTPUT_LINE_DAC) {
+        i2c_master_bus_config_t bus_config = {
+            .i2c_port = -1,
+            .sda_io_num = (gpio_num_t)config->pins.sda,
+            .scl_io_num = (gpio_num_t)config->pins.scl,
+            .clk_source = I2C_CLK_SRC_DEFAULT,
+            .glitch_ignore_cnt = 7,
+            .flags = {.enable_internal_pullup = true},
+        };
+        if (i2c_new_master_bus(&bus_config, &hal.i2c_bus) != ESP_OK) {
+            ESP_LOGE(TAG, "the I2C bus could not be created");
+            return -1;
+        }
 
-    /* The address comes from the committed configuration and is DECLARED
-     * UNKNOWN until somebody reads it off the datasheet. The sequencer refuses
-     * by name in that case, so this only ever runs with a real value. */
-    i2c_device_config_t device = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = config->amp.address.value,
-        .scl_speed_hz = 100000,
-    };
-    if (i2c_master_bus_add_device(hal.i2c_bus, &device, &hal.amp) != ESP_OK) {
-        ESP_LOGE(TAG, "the amplifier could not be added to the I2C bus");
-        return -1;
+        /* The address comes from the committed configuration and is DECLARED
+         * UNKNOWN until somebody reads it off the datasheet. The sequencer refuses
+         * by name in that case, so this only ever runs with a real value. */
+        i2c_device_config_t device = {
+            .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+            .device_address = config->amp.address.value,
+            .scl_speed_hz = 100000,
+        };
+        if (i2c_master_bus_add_device(hal.i2c_bus, &device, &hal.amp) != ESP_OK) {
+            ESP_LOGE(TAG, "the amplifier could not be added to the I2C bus");
+            return -1;
+        }
     }
 
     /* DMA descriptors live in internal RAM. The platform forbids anything else
@@ -284,8 +289,8 @@ int chorus_esp_hal_init(const chorus_endpoint_config_t *config, chorus_i2c_bus_t
     }
 
     bus->ctx = &hal;
-    bus->read = hal_read;
-    bus->write = hal_write;
+    bus->read = (hal.amp != NULL) ? hal_read : NULL;
+    bus->write = (hal.amp != NULL) ? hal_write : NULL;
     stage->ctx = &hal;
     stage->high_impedance = hal_high_impedance;
     stage->power_up = hal_power_up;

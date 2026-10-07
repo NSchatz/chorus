@@ -1,6 +1,7 @@
 #include "chorus/endpoint_config.h"
 
 #include "chorus/conf.h"
+#include "chorus/line_dac.h"
 #include "chorus/volume.h"
 
 #include <stdio.h>
@@ -66,7 +67,15 @@ const char *chorus_board_status_name(chorus_board_status_t status)
 
 const char *chorus_audio_output_name(chorus_audio_output_t output)
 {
-    return (output == CHORUS_AUDIO_OUTPUT_NONE) ? "none" : "amplifier";
+    switch (output) {
+    case CHORUS_AUDIO_OUTPUT_NONE:
+        return "none";
+    case CHORUS_AUDIO_OUTPUT_LINE_DAC:
+        return "line-dac";
+    case CHORUS_AUDIO_OUTPUT_AMPLIFIER:
+        break;
+    }
+    return "amplifier";
 }
 
 const char *chorus_status_led_name(chorus_status_led_t led)
@@ -272,13 +281,18 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
                             detail_len));
     if (strcmp(output_text, "amplifier") == 0) {
         out->board.audio_output = CHORUS_AUDIO_OUTPUT_AMPLIFIER;
+    } else if (strcmp(output_text, "line-dac") == 0) {
+        out->board.audio_output = CHORUS_AUDIO_OUTPUT_LINE_DAC;
     } else if (strcmp(output_text, "none") == 0) {
         out->board.audio_output = CHORUS_AUDIO_OUTPUT_NONE;
     } else {
-        snprintf(detail, detail_len, "%s: board_audio_output = %s is not `amplifier` or `none`",
-                 conf->path, output_text);
+        snprintf(detail, detail_len,
+                 "%s: board_audio_output = %s is not `amplifier`, `line-dac` or `none`", conf->path,
+                 output_text);
         return -1;
     }
+    NEED(chorus_conf_u32(conf, "board_output_delay_frames", &out->board.output_delay_frames, detail,
+                         detail_len));
 
     /* The W5500 (chorus/link.h). */
     char host_text[CHORUS_ENDPOINT_TEXT];
@@ -405,6 +419,8 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
         read_pin(conf, "pin_button_next", &controls->next, detail, detail_len) != 0 ||
         read_pin(conf, "pin_button_previous", &controls->previous, detail, detail_len) != 0 ||
         read_pin(conf, "pin_button_pairing", &controls->pairing, detail, detail_len) != 0 ||
+        read_pin(conf, "pin_knob_level", &controls->knob_level, detail, detail_len) != 0 ||
+        read_pin(conf, "pin_knob_phase", &controls->knob_phase, detail, detail_len) != 0 ||
         read_pin(conf, "pin_status_led", &controls->status_led_data, detail, detail_len) != 0 ||
         read_pin(conf, "pin_mic_bclk", &controls->mic_bclk, detail, detail_len) != 0 ||
         read_pin(conf, "pin_mic_ws", &controls->mic_ws, detail, detail_len) != 0 ||
@@ -528,8 +544,8 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
     return 0;
 }
 
-#define CONTROL_PIN_COUNT 11
-#define BOARD_PIN_MAX 25 /* the controls, eight audio pins and six Ethernet pins */
+#define CONTROL_PIN_COUNT 13
+#define BOARD_PIN_MAX 27 /* the controls, eight audio pins and six Ethernet pins */
 
 /* Every pin the profile names but the controls', for the one-signal-per-pin
  * rule below; the Ethernet pins only when the link drives them. */
@@ -541,11 +557,13 @@ static size_t board_pins(const chorus_endpoint_config_t *config, const char **na
     const char *const control_names[CONTROL_PIN_COUNT] = {
         "pin_button_play_pause", "pin_button_volume_up", "pin_button_volume_down",
         "pin_button_next",       "pin_button_previous",  "pin_button_pairing",
-        "pin_status_led",        "pin_mic_bclk",         "pin_mic_ws",
-        "pin_mic_din",           "pin_mic_mute"};
+        "pin_knob_level",        "pin_knob_phase",       "pin_status_led",
+        "pin_mic_bclk",          "pin_mic_ws",           "pin_mic_din",
+        "pin_mic_mute"};
     const uint32_t control_pins[CONTROL_PIN_COUNT] = {
-        c->play_pause,      c->volume_up, c->volume_down, c->next,    c->previous, c->pairing,
-        c->status_led_data, c->mic_bclk,  c->mic_ws,      c->mic_din, c->mic_mute};
+        c->play_pause, c->volume_up,  c->volume_down,     c->next,     c->previous, c->pairing,
+        c->knob_level, c->knob_phase, c->status_led_data, c->mic_bclk, c->mic_ws,   c->mic_din,
+        c->mic_mute};
     size_t n = 0;
     for (size_t i = 0; i < CONTROL_PIN_COUNT; i++) {
         names[n] = control_names[i];
@@ -614,6 +632,22 @@ static void validate_controls(const chorus_endpoint_config_t *config, chorus_fin
     }
 
     const chorus_board_controls_t *c = &config->controls;
+    /* A knob is read by ADC1, which is GPIO1 to GPIO10 on the ESP32-S3 (ESP-IDF
+     * v6.1 components/soc/esp32s3/include/soc/adc_channel.h: ADC1_GPIO1_CHANNEL
+     * 0 to ADC1_GPIO10_CHANNEL 9). ADC2 is not offered: its reads contend with
+     * the radio on a Wi-Fi board. */
+    const struct {
+        const char *name;
+        uint32_t pin;
+    } knobs[] = {{"pin_knob_level", c->knob_level}, {"pin_knob_phase", c->knob_phase}};
+    for (size_t i = 0; i < sizeof(knobs) / sizeof(knobs[0]); i++) {
+        if (knobs[i].pin != CHORUS_PIN_NONE && (knobs[i].pin < 1 || knobs[i].pin > 10)) {
+            snprintf(detail, sizeof(detail),
+                     "%s = %u; a knob is read by ADC1, GPIO1 to GPIO10 on the ESP32-S3",
+                     knobs[i].name, (unsigned)knobs[i].pin);
+            add_finding(findings, capacity, count, "knob-not-on-adc1", detail);
+        }
+    }
     if ((c->status_led == CHORUS_STATUS_LED_NONE) != (c->status_led_data == CHORUS_PIN_NONE)) {
         snprintf(detail, sizeof(detail),
                  "board_status_led = %s with pin_status_led %s; a status light has a data pin "
@@ -655,17 +689,44 @@ size_t chorus_endpoint_config_validate(const chorus_endpoint_config_t *config,
     validate_controls(config, findings, capacity, count);
 
     /* Only the I2S master clock may be left unrouted: every other audio pin
-     * carries a signal the amplifier cannot run without. */
+     * carries a signal the amplifier cannot run without. A line DAC has no
+     * control bus (chorus/line_dac.h), so its board routes no I2C at all, and
+     * its mute is on the power-down pin. */
+    const int line_dac = config->board.audio_output == CHORUS_AUDIO_OUTPUT_LINE_DAC;
     const uint32_t required[] = {config->pins.bclk, config->pins.ws,  config->pins.dout,
                                  config->pins.sda,  config->pins.scl, config->pins.amp_power_down};
     for (size_t i = 0; i < sizeof(required) / sizeof(required[0]); i++) {
-        if (required[i] == CHORUS_PIN_NONE && *count < capacity) {
+        int bus = i == 3 || i == 4; /* pin_i2c_sda, pin_i2c_scl */
+        if (required[i] == CHORUS_PIN_NONE && !(line_dac && bus) && *count < capacity) {
             snprintf(findings[*count].rule, sizeof(findings[*count].rule), "audio-pin-not-routed");
             snprintf(findings[*count].detail, sizeof(findings[*count].detail),
                      "an I2S, I2C or amplifier power-down pin reads `none`; only pin_i2s_mclk "
                      "may be left unrouted");
             (*count)++;
         }
+    }
+    if (line_dac && (config->pins.sda != CHORUS_PIN_NONE || config->pins.scl != CHORUS_PIN_NONE) &&
+        *count < capacity) {
+        snprintf(findings[*count].rule, sizeof(findings[*count].rule),
+                 "line-dac-with-a-control-bus");
+        snprintf(findings[*count].detail, sizeof(findings[*count].detail),
+                 "board_audio_output = line-dac with pin_i2c_sda or pin_i2c_scl set; the line "
+                 "DAC (PCM5102A) has no control bus, so both read `none`");
+        (*count)++;
+    }
+    /* The line DAC's filter delays every sample by its group delay, and the
+     * playout path counts the profile's figure in the device delay: the two
+     * agree, or the subwoofer plays that far from its sync target. */
+    if (line_dac && config->board.output_delay_frames != CHORUS_LINE_DAC_GROUP_DELAY_FRAMES &&
+        *count < capacity) {
+        snprintf(findings[*count].rule, sizeof(findings[*count].rule),
+                 "line-dac-output-delay-not-the-datasheets");
+        snprintf(findings[*count].detail, sizeof(findings[*count].detail),
+                 "board_output_delay_frames = %u with board_audio_output = line-dac; the "
+                 "PCM5102A's normal filter delays its output %u frames (SLAS859C Table 4, p. 17)",
+                 (unsigned)config->board.output_delay_frames,
+                 (unsigned)CHORUS_LINE_DAC_GROUP_DELAY_FRAMES);
+        (*count)++;
     }
 
     if (config->board.flash_size_mb < CHORUS_MIN_FLASH_MB && *count < capacity) {
@@ -695,9 +756,9 @@ size_t chorus_endpoint_config_validate(const chorus_endpoint_config_t *config,
         snprintf(findings[*count].rule, sizeof(findings[*count].rule),
                  "emulated-link-with-an-amplifier");
         snprintf(findings[*count].detail, sizeof(findings[*count].detail),
-                 "link_transport = emulated with board_audio_output = amplifier; the emulator "
-                 "has no I2C and no I2S, so the emulated board declares board_audio_output = "
-                 "none");
+                 "link_transport = emulated with board_audio_output = %s; the emulator has no "
+                 "I2C and no I2S, so the emulated board declares board_audio_output = none",
+                 chorus_audio_output_name(config->board.audio_output));
         (*count)++;
     }
     /* A trial too short rolls back a good image before its link is up; one
@@ -738,11 +799,21 @@ size_t chorus_endpoint_config_validate(const chorus_endpoint_config_t *config,
     /* The bit clock per frame the I2S configuration produces has to be the one
      * the amplifier is committed to (amp_sclk_per_frame, a ratio the TAS5825M
      * datasheet lists as supported, pp. 7 and 29), or the part reports a clock
-     * error and stays in Hi-Z (p. 29). */
+     * error and stays in Hi-Z (p. 29); on a line DAC, one its PLL runs from. */
     uint64_t per_frame = (config->clock.sample_rate_hz == 0)
                              ? 0
                              : chorus_i2s_bclk_hz(&config->clock) / config->clock.sample_rate_hz;
-    if (per_frame != config->amp.sclk_per_frame && *count < capacity) {
+    if (line_dac && !chorus_line_dac_bck_ratio_ok(per_frame) && *count < capacity) {
+        snprintf(findings[*count].rule, sizeof(findings[*count].rule),
+                 "bclk-ratio-unsupported-by-line-dac");
+        snprintf(findings[*count].detail, sizeof(findings[*count].detail),
+                 "i2s_sample_rate_hz, i2s_slot_bit_width and i2s_wire_slot_bit_width give %llu bit "
+                 "clocks per frame; the PCM5102A's PLL runs from 32 or 64 (SLAS859C Table 11, "
+                 "p. 25)",
+                 (unsigned long long)per_frame);
+        (*count)++;
+    }
+    if (!line_dac && per_frame != config->amp.sclk_per_frame && *count < capacity) {
         snprintf(findings[*count].rule, sizeof(findings[*count].rule),
                  "bclk-ratio-unsupported-by-amplifier");
         snprintf(findings[*count].detail, sizeof(findings[*count].detail),

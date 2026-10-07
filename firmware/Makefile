@@ -73,6 +73,7 @@ LIB_SRC := \
 	$(FW)/src/sync_scenario.c \
 	$(FW)/src/i2s.c \
 	$(FW)/src/amp.c \
+	$(FW)/src/line_dac.c \
 	$(FW)/src/telemetry.c \
 	$(FW)/src/monotonic.c \
 	$(FW)/src/session.c \
@@ -97,9 +98,10 @@ LIB_SRC := \
 # The four units the configuration checker itself needs. It is built without
 # the gate below, because it IS the gate. wifi.c is here because the reader
 # turns the link section's words into the enums that section declares, and a
-# checker that could not read the link could not refuse a bad one.
+# checker that could not read the link could not refuse a bad one; line_dac.c
+# because a line DAC's clock ratio is its rule.
 GATE_SRC := $(FW)/src/conf.c $(FW)/src/i2s.c $(FW)/src/wifi.c $(FW)/src/link.c \
-	$(FW)/src/endpoint_config.c $(FW)/src/amp.c $(FW)/src/volume.c
+	$(FW)/src/endpoint_config.c $(FW)/src/amp.c $(FW)/src/line_dac.c $(FW)/src/volume.c
 
 # The board profiles (firmware/boards/, docs/decisions/0057-*): each is laid over
 # endpoint.conf and checked the way the image reads it, and the default one,

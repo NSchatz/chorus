@@ -686,9 +686,10 @@ static double device_delay_frames(chorus_playout_t *p, uint64_t stamp, uint64_t 
         partial = queued;
     }
     /* The sound chain's latency (goal 12): frames inside the chain are as
-     * far from the pins as frames inside the DMA. */
+     * far from the pins as frames inside the DMA. And the output part's own
+     * delay after the pins: a frame in its filter is not yet heard. */
     double chain = (p->dsp != NULL) ? (double)chorus_endpoint_dsp_latency_frames(p->dsp) : 0.0;
-    return queued - partial + chain;
+    return queued - partial + chain + (double)c->output_delay_frames;
 }
 
 void chorus_playout_fifo(chorus_playout_t *p, double *frames, double *ns)

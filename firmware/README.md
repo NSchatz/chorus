@@ -40,6 +40,10 @@ boards/devkitc-s3-louderhat-wired.conf
 boards/devkitc-s3-louderhat-twoway.conf
                               the two-way on the same three modules, with its
                               pairing button and status light
+boards/devkitc-s3-pcm5102-sub.conf
+                              the subwoofer: DevKitC-1-N8R8, a PCM5102A line DAC
+                              (Adafruit 6250, no I2C), WIZ850io, with its pairing
+                              button, status light and level and phase knobs
 ```
 
 The first two name P1's bought reference board, the Esparagus Audio Brick (ESP32-S3), and

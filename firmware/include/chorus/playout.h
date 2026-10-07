@@ -20,7 +20,9 @@
  * device delay also carries the chain's fixed latency (the limiter's 2 ms
  * look-ahead): a frame written now is that much further from the pins, so the
  * loop writes content that much earlier and it is heard at the sync target,
- * the accounting the Linux client's sink makes too. A fine
+ * the accounting the Linux client's sink makes too. The output part's own
+ * fixed delay after the I2S pins (output_delay_frames: the subwoofer's line
+ * DAC filter, chorus/line_dac.h) is counted the same way. A fine
  * correction inserts or drops whole frames at the rate the servo names; a hard
  * resync steps the playout pointer under a mute. Both change WHAT is written,
  * never when, for the reason the Linux module gives.
@@ -93,6 +95,11 @@ typedef struct {
      * endpoint.conf; chorus/volume.h). chorus_playout_config_from sets the
      * default, CHORUS_VOLUME_DEFAULT_CEILING; above 1000 is not playable. */
     uint32_t max_volume_thousandths;
+    /* Frames the output part holds a sample after the I2S pins have it
+     * (`board_output_delay_frames` in endpoint.conf), counted in the device
+     * delay; 0 by default. The GPIO marker is a cross-check of the I2S line
+     * and does not count it. */
+    uint32_t output_delay_frames;
 } chorus_playout_config_t;
 
 /* The playout configuration config/sync.conf and the I2S clock imply. */
