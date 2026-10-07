@@ -198,10 +198,11 @@ a ready chorus task, so no follow-up goal is needed for them.
 - Alarms: a bound on an unanswered start, snooze as a command (ADR 0129).
 - The "Follow-ups" sections of the decision records (`grep -l '^## Follow-ups' docs/decisions`).
 
-## Worker variables for the owner to remove
+## Worker variables, removed
 
-Program brief section 0.12: the committed `.claude/settings.json` keeps the program's worker
-variables for the owner to remove after the finale (task 319 asks):
+Program brief section 0.12: the committed `.claude/settings.json` kept the program's worker
+variables for the owner to remove after the finale. Task 319 asked; the owner chose to remove
+all of them (CI sets its own build jobs), so the file is gone:
 
 - `env.CARGO_BUILD_JOBS = "12"`
 - `env.CMAKE_BUILD_PARALLEL_LEVEL = "12"`
