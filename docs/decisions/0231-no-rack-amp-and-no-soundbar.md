@@ -1,8 +1,8 @@
 # 0231: the rack amp has zero zones and zero channels and is not designed, and the soundbar is not designed; the LCR set is the theater front for both TV rooms
 
-- Status: proposed (P13, `Status: PROPOSED`); the count rests on the owner's room list of
-  2026-10-04, and the plan that writes it down was approved by the owner on 2026-10-06 (goals
-  project 33, planning task 95)
+- Status: accepted (2026-10-07, the owner accepted P13 as written, task 318); the count rests on
+  the owner's room list of 2026-10-04, and the plan that writes it down was approved by the owner
+  on 2026-10-06 (goals project 33, planning task 95)
 - Recorded by: the owner's agent harness, task 242, in the pull request that adds this record
 - Implemented in: `docs/proposals/P13-rack-amp-zones.md`; BRIEF.md section 8.1 (the Linux endpoint
   tier and speaker design rows); `docs/hardware/linux-multichannel.md` ("The rack amp: several

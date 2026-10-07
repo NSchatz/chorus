@@ -1,8 +1,9 @@
 # P13: The rack amp's zones and channels
 
 - Decisions: K70, K72, K74, K96
-- Status: PROPOSED (2026-10-06); the owner decides. The count is zero zones and zero channels:
-  the owner dropped the rack amp on 2026-10-04
+- Status: ACCEPTED (2026-10-07, the owner): as written, zero zones and zero channels; no rack amp
+  and no soundbar, the LCR set is the theater front for both TV rooms (first put forward
+  2026-10-06; the owner dropped the rack amp on 2026-10-04)
 - If deferred: No rack amp is designed and nothing else changes; the two TV rooms keep the LCR
   set and the hidden TV hub
 - Builds on: goal 26 (§30 item 1, "P13 (K74): zones and channels for the 2U rack amp from the
