@@ -1,4 +1,4 @@
-# 0000: the two-way's board profile is the compact's three modules with a pairing button key, and twoway-speaker.md version 2 names them and the external 24 V adapter
+# 0245: the two-way's board profile is the compact's three modules with a pairing button key, and twoway-speaker.md version 2 names them and the external 24 V adapter
 
 - Status: decided, 2026-10-07 (harness task 320; the owner's decision "Compact's modules" in
   the devices repository's task 274, and that repository's plan for chorus-twoway-v1)

@@ -21,7 +21,7 @@ version: 2
 - A change to any design number bumps `version` and re-exports the record.
 - Version 2 (2026-10-07): the endpoint is the compact's three bought modules, not the
   Esparagus Audio Brick, and the supply is the external 24 V adapter the devices repository's
-  plan chose (decision 0000). The acoustics, the EQ and the design record do not change.
+  plan chose (decision 0245). The acoustics, the EQ and the design record do not change.
 
 **How the numbers were computed.** Every computed number names the call that produced it. The
 calls are those of the acoustics package of the owner's shared Python library at release
