@@ -2,21 +2,27 @@
 
 What each class carries (K67-K70), how the firmware reads it
 (`firmware/include/chorus/controls.h`, `docs/decisions/0063-*`), and the hardware rule for
-the microphone mute switch. Pins are board keys (`pin_button_*`, `board_status_led` and `pin_status_led`, `pin_mic_*` in
-`firmware/config/endpoint.conf`), `none` on every board but two. The compact on its bought
+the microphone mute switch. Pins are board keys (`pin_button_*`, `pin_knob_level` and
+`pin_knob_phase`, `board_status_led` and `pin_status_led`, `pin_mic_*` in
+`firmware/config/endpoint.conf`), `none` on every board but three. The compact on its bought
 modules, `firmware/boards/devkitc-s3-louderhat-wired.conf`, names five buttons (play/pause
 GPIO1, volume up GPIO2, volume down GPIO4, next GPIO7, previous GPIO18, each to ground with the
 internal pull-up), one WS2812-class status light (GPIO47), an SPH0645LM4H microphone on I2S1
 (BCLK GPIO40, WS GPIO39, DIN GPIO41) and its mute switch's sense line (GPIO21, low = muted).
 The two-way on the same modules, `firmware/boards/devkitc-s3-louderhat-twoway.conf`, names
 its pairing button (`pin_button_pairing`, GPIO1, to ground with the internal pull-up) and the
-same status light (GPIO47), and no other button and no microphone. Every one of those pins is
-ASSUMED (the devices repository's wiring for chorus-compact-v1 and chorus-twoway-v1) and may be
-moved here; devices' wiring follows. The configuration check holds each to the GPIO
-rules and to one signal per pin, a light to its data pin, and a microphone to its three lines
-and to a mute switch. The image does not drive them yet: no GPIO, LED or I2S-input binding of
-the controller is written, so a board image reads no button and lights no LED. The subwoofer's
-design (goal 25, ADR 0233) names its controls but no pins (`docs/hardware/subwoofer.md`); the
+same status light (GPIO47), and no other button and no microphone. The subwoofer,
+`firmware/boards/devkitc-s3-pcm5102-sub.conf`, names the same pairing button and status light
+and its two knobs: linear potentiometers across 3.3 V with the anticlockwise end at 0 V, the
+level knob's wiper on GPIO2 (ADC1 channel 1) and the phase knob's on GPIO4 (ADC1 channel 3).
+Every one of those pins is ASSUMED (the devices repository's wiring for chorus-compact-v1,
+chorus-twoway-v1 and chorus-sub-v1) and may be moved here; devices' wiring follows. The
+configuration check holds each to the GPIO rules and to one signal per pin, a knob to ADC1
+(GPIO1 to GPIO10), a light to its data pin, and a microphone to its three lines and to a mute
+switch. The image reads the knobs: `firmware/main/esp_knobs.c` samples both wipers at 12 bits
+every 50 ms (ASSUMED) into `chorus_controls_knob`, and the steps it decides reach the sound
+chain's sub level and polarity. Nothing else is driven yet: no GPIO, LED or I2S-input binding
+of the controller is written, so a board image reads no button and lights no LED. The
 streaming amp is not designed (ADR 0231).
 
 ## Per class

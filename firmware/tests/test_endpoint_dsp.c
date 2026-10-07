@@ -7,7 +7,10 @@
  * path and when it is not, and what the playout path writes with it: the room
  * gain inside the chain, the latency counted in the device delay, bass
  * management and the two-way split at the levels the LR4 design predicts, and
- * the limiter holding every written sample at or under the room's limit.
+ * the limiter holding every written sample at or under the room's limit; and
+ * the subwoofer's board (devkitc-s3-pcm5102-sub): its LFE feed on both I2S
+ * slots, its line DAC's delay in the device delay, and its knobs' ADC codes
+ * through chorus_controls_knob to the chain's sub level and polarity.
  *
  * Deterministic: a fake clock, no device, no sleeps. Levels are arithmetic
  * on synthetic tones, not timing evidence. */
@@ -17,6 +20,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "chorus/controls.h"
+#include "chorus/endpoint_config.h"
 #include "chorus/endpoint_dsp.h"
 #include "chorus/playout.h"
 #include "chorus/protocol.h"
@@ -70,11 +75,16 @@ static chorus_v2_sound_t flat_wire(void)
 
 static const uint8_t STEREO[2] = {CHORUS_DSP_POS_FL, CHORUS_DSP_POS_FR};
 
+/* The output part's delay the next setup() configures (0 but for the
+ * subwoofer's board). */
+static uint32_t setup_output_delay;
+
 /* A fresh playout path with the chain handed in, on the timeline. */
 static int setup(const chorus_endpoint_two_way_t *two_way)
 {
     chorus_playout_config_t c =
         chorus_playout_config_from(&sync_conf, RATE, 24, 240, CHORUS_PLAYOUT_BUFFER_MS);
+    c.output_delay_frames = setup_output_delay;
     fake_now = 1000000000ull;
     if (chorus_playout_init(&p, &c, ring_storage, chunk_storage, fake_clock) != 0) {
         return -1;
@@ -377,6 +387,150 @@ static void test_two_way(void)
     }
 }
 
+/* The subwoofer's board (firmware/boards/devkitc-s3-pcm5102-sub.conf): what
+ * its image hands the playout path, and what the path does with the LFE role
+ * and the knobs. */
+#define KNOB_STEP_CODES(steps, step) ((uint32_t)(((step) * 4096u + 4096u / 2u) / (steps)))
+
+/* A knob's code, through the controls the board's ADC binding feeds
+ * (esp_knobs.c: chorus_controls_knob, then chorus_controls_poll, then
+ * chorus_playout_set_sub_knobs with both knobs' settings). */
+static void turn_knobs(uint32_t level_code, uint32_t phase_code)
+{
+    chorus_controls_t c;
+    (void)chorus_controls_init(&c, CHORUS_CLASS_SUBWOOFER, "", "");
+    (void)chorus_controls_knob(&c, CHORUS_INPUT_SUB_LEVEL_KNOB, level_code, 1);
+    (void)chorus_controls_knob(&c, CHORUS_INPUT_SUB_PHASE_KNOB, phase_code, 1);
+    chorus_control_action_t actions[CHORUS_CONTROLS_MAX_ACTIONS];
+    size_t n = chorus_controls_poll(&c, 2, actions, CHORUS_CONTROLS_MAX_ACTIONS);
+    int moved = 0;
+    for (size_t i = 0; i < n; i++) {
+        moved |= actions[i].kind == CHORUS_ACTION_SUB_LEVEL ||
+                 actions[i].kind == CHORUS_ACTION_SUB_PHASE;
+    }
+    if (moved) {
+        chorus_playout_set_sub_knobs(&p, c.sub_level_tenths_db, c.sub_phase_deg);
+    }
+}
+
+static int sub_setup(uint32_t delay)
+{
+    setup_output_delay = delay;
+    int rc = setup(NULL);
+    setup_output_delay = 0;
+    if (rc == 0) {
+        chorus_v2_sound_t w = flat_wire();
+        w.role = CHORUS_DSP_POS_LFE;
+        w.sub_present = 1;
+        chorus_playout_set_sound(&p, &w);
+    }
+    return rc;
+}
+
+static void test_subwoofer_board(void)
+{
+    chorus_section("the subwoofer's board: the LFE feed on both slots, the DAC's delay, the knobs");
+    static chorus_endpoint_config_t board;
+    char detail[512];
+    detail[0] = '\0';
+    int loaded = chorus_endpoint_config_load_profile(
+                     &board, CHORUS_REPO_ROOT "/firmware/config/endpoint.conf",
+                     CHORUS_REPO_ROOT "/firmware/boards/devkitc-s3-pcm5102-sub.conf", detail,
+                     sizeof(detail)) == 0;
+    chorus_check(loaded && board.board.audio_output == CHORUS_AUDIO_OUTPUT_LINE_DAC,
+                 "devkitc-s3-pcm5102-sub loads and plays through %s (%s)",
+                 chorus_audio_output_name(board.board.audio_output), detail[0] ? detail : "ok");
+    if (!loaded) {
+        return;
+    }
+    const uint32_t delay = board.board.output_delay_frames;
+
+    /* The LFE role's one output, written to both slots sample for sample, so
+     * both of the plate amplifier's inputs are driven. */
+    if (sub_setup(delay) != 0) {
+        chorus_check(0, "the playout initialises");
+        return;
+    }
+    tones_t t = {{40.0, 1000.0}, {0.2, 0.2}, 2};
+    play(&t, 1.5);
+    uint32_t same = 0;
+    for (uint32_t i = 0; i < KEEP; i++) {
+        same += kept[0][i] == kept[1][i];
+    }
+    const double in_db = 20.0 * log10(0.2);
+    double low = level_db(0, 40.0, 0) - in_db;
+    double high = level_db(0, 1000.0, 0) - in_db;
+    double want = lr4_db(80.0, 40.0, 0) + 20.0 * log10(2.0);
+    chorus_check(same == KEEP && fabs(low - want) < 0.05 && high < -40.0,
+                 "the LFE feed is on both slots (%u of %u frames identical): 40 Hz at %.2f dB "
+                 "(LR4 predicts %.2f), 1 kHz at %.1f dB",
+                 (unsigned)same, (unsigned)KEEP, low, want, high);
+    double level_0db = level_db(0, 40.0, 0);
+    int32_t normal[64];
+    memcpy(normal, kept[0], sizeof(normal));
+
+    /* The DAC's filter delay in the device delay: the same frames written,
+     * the same DMA, and the device delay that much further from the pins. */
+    double with_delay = 0.0, delay_ns = 0.0, without = 0.0, ns = 0.0;
+    chorus_playout_fifo(&p, &with_delay, &delay_ns);
+    if (sub_setup(0) == 0) {
+        play(&t, 1.5);
+        chorus_playout_fifo(&p, &without, &ns);
+    }
+    chorus_check(delay == 22u && fabs(with_delay - without - (double)delay) < 1e-9,
+                 "the device delay carries the PCM5102A's %u-frame filter delay (%.0f against "
+                 "%.0f frames, %.1f us)",
+                 (unsigned)delay, with_delay, without, (delay_ns - ns) / 1000.0);
+
+    /* The knobs: 12-bit codes onto sub_level_cdb and the polarity. */
+    const uint32_t level_steps = 25u, phase_steps = 13u;
+    const struct {
+        uint32_t level_code;
+        uint32_t phase_code;
+        int16_t sub_level_cdb;
+        bool inverted;
+        const char *what;
+    } turns[] = {
+        {0u, 0u, -1200, false, "both fully anticlockwise: the full cut, normal"},
+        {4095u, 0u, 0, false, "level fully clockwise: 0 dB, never a boost"},
+        {KNOB_STEP_CODES(level_steps, 12u), 0u, -600, false, "level at its middle step: -6 dB"},
+        {4095u, KNOB_STEP_CODES(phase_steps, 5u), 0, false, "phase at 75 degrees: normal"},
+        {4095u, KNOB_STEP_CODES(phase_steps, 6u), 0, true, "phase at 90 degrees: inverted"},
+        {4095u, 4095u, 0, true, "phase fully clockwise, 180 degrees: inverted"},
+    };
+    for (size_t i = 0; i < sizeof(turns) / sizeof(turns[0]); i++) {
+        if (sub_setup(delay) != 0) {
+            chorus_check(0, "the playout initialises");
+            return;
+        }
+        turn_knobs(turns[i].level_code, turns[i].phase_code);
+        chorus_check(dsp.chain.sound.sub_level_cdb == turns[i].sub_level_cdb &&
+                         dsp.chain.sound.sub_polarity_inverted == turns[i].inverted,
+                     "codes %u and %u, %s: sub_level_cdb %d, polarity %s", turns[i].level_code,
+                     turns[i].phase_code, turns[i].what, dsp.chain.sound.sub_level_cdb,
+                     dsp.chain.sound.sub_polarity_inverted ? "inverted" : "normal");
+    }
+
+    /* And they are heard: the full cut is 12 dB down, and the half turn
+     * inverts the feed sample for sample. */
+    if (sub_setup(delay) == 0) {
+        turn_knobs(0u, 0u);
+        play(&t, 1.5);
+        double cut = level_db(0, 40.0, 0) - level_0db;
+        chorus_check(fabs(cut + 12.0) < 0.05, "the level knob's full cut plays %.2f dB", cut);
+    }
+    if (sub_setup(delay) == 0) {
+        turn_knobs(4095u, 4095u);
+        play(&t, 1.5);
+        int negated = 1;
+        for (size_t i = 0; i < sizeof(normal) / sizeof(normal[0]); i++) {
+            int32_t d = kept[0][i] + normal[i];
+            negated &= d >= -1 && d <= 1;
+        }
+        chorus_check(negated, "the phase knob's half turn plays the feed inverted");
+    }
+}
+
 int main(void)
 {
     char detail[256];
@@ -391,5 +545,6 @@ int main(void)
     test_bass_management();
     test_limiter();
     test_two_way();
+    test_subwoofer_board();
     return chorus_test_report("test_endpoint_dsp");
 }

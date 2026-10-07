@@ -26,16 +26,20 @@ typedef enum {
 
 const char *chorus_board_status_name(chorus_board_status_t status);
 
-/* What a board plays through (goal 14). Every speaker has the amplifier on I2S
- * and I2C. The emulator has neither peripheral, so its profile declares `none`
- * and the image then brings up no I2C bus, no I2S channel, no amplifier and no
- * playout path: the session runs with nowhere to play, as the host session
- * binary does. chorus_endpoint_config_validate refuses `none` on any link but
- * the emulated one, so no speaker's profile can switch its amplifier's
- * bring-up off. */
+/* What a board plays through (goal 14). Every speaker but the subwoofer has the
+ * amplifier on I2S and I2C. The subwoofer feeds a bought plate amplifier at
+ * line level through a line DAC on I2S alone (`line-dac`: a PCM5102A, no
+ * control bus, chorus/line_dac.h), so its image brings up no I2C bus and reads
+ * no amplifier register, and drives the DAC's mute on the power-down pin. The
+ * emulator has neither peripheral, so its profile declares `none` and the
+ * image then brings up no I2C bus, no I2S channel, no amplifier and no playout
+ * path: the session runs with nowhere to play, as the host session binary
+ * does. chorus_endpoint_config_validate refuses `none` on any link but the
+ * emulated one, so no speaker's profile can switch its output's bring-up off. */
 typedef enum {
     CHORUS_AUDIO_OUTPUT_AMPLIFIER = 0,
-    CHORUS_AUDIO_OUTPUT_NONE
+    CHORUS_AUDIO_OUTPUT_NONE,
+    CHORUS_AUDIO_OUTPUT_LINE_DAC
 } chorus_audio_output_t;
 
 const char *chorus_audio_output_name(chorus_audio_output_t output);
@@ -63,6 +67,10 @@ typedef struct {
     uint32_t next;
     uint32_t previous;
     uint32_t pairing;
+    /* The subwoofer's level and phase knobs (K69): potentiometers across
+     * 3.3 V, each wiper on an ADC1 input, read as 12-bit codes. */
+    uint32_t knob_level;
+    uint32_t knob_phase;
     chorus_status_led_t status_led;
     uint32_t status_led_data;
     uint32_t mic_bclk;
@@ -80,6 +88,10 @@ typedef struct {
     char needs_item[CHORUS_ENDPOINT_TEXT];
     uint32_t flash_size_mb;
     chorus_audio_output_t audio_output;
+    /* Frames the output part holds a sample after the I2S pins have it
+     * (`board_output_delay_frames`): the line DAC's interpolation filter on
+     * the subwoofer. The playout path counts it in the device delay. */
+    uint32_t output_delay_frames;
 } chorus_board_t;
 
 /* The smallest flash the image's layout fits: two 3 MiB app slots, otadata,

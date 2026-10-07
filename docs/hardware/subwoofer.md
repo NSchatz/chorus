@@ -1,6 +1,6 @@
 # The subwoofer: acoustic design, amplifier sizing and controls
 
-version: 1
+version: 2
 
 - Status: designed on paper, 2026-10-06. Nothing is ordered, cut, built or measured. Every
   number here is a datasheet value or a calculation from datasheet values (CLAUDE.md rule 6:
@@ -10,13 +10,20 @@ version: 1
   driver and the amplifier in three priced tiers, the box alignment and port, the protective
   high-pass, the amplifier's size and the arithmetic behind it, the low-pass and bass
   management, the level and phase knobs and what each sets in chorus's DSP, the pairing button
-  and status light, the tolerances an enclosure must hold, and the priced budget. The enclosure
-  model, the board and electronics plan, the knob and ADC pins, the bill of materials and the
-  part records are made from it elsewhere and are not in this file.
+  and status light, the endpoint's boards and its feed to the amplifier, the tolerances an
+  enclosure must hold, and the priced budget. The enclosure model, the electronics plan and its
+  wiring, the bill of materials and the part records are made from it elsewhere (the devices
+  repository) and are not in this file; the knob and ADC pins are the board profile's
+  (`firmware/boards/devkitc-s3-pcm5102-sub.conf`).
 - The choice of driver, alignment, amplifier power and crossover, and its reasons: the decision
   record `docs/decisions/0229-the-subwoofer-driver-alignment-and-amplifier.md`. The driver and
   amplifier survey: `docs/research/subwoofer-drivers-and-amplifiers.md`.
 - A change to any design number bumps `version` and re-exports the record.
+- Version 2 (2026-10-07): the endpoint is an ESP32-S3-DevKitC-1-N8R8, an Adafruit PCM5102 line
+  DAC and a WIZ850io, not the Esparagus Audio Brick, on its own 5 V adapter; the feed to the
+  amplifier is settled as the line DAC (option 3 of version 1), with the amplifier's gain set
+  for its 2.1 V RMS (decision 0248, the owner's decision in the devices repository's plan). The
+  acoustics, the design record, the high-pass and the amplifier do not change.
 
 **How the numbers were computed.** Every computed number names the call that produced it. The
 calls are those of the acoustics package of the owner's shared Python library at release
@@ -35,7 +42,8 @@ One 12 inch driver in a braced MDF box with one round vent, a bought mains-power
 amplifier of 100 W in the box's rear wall, and chorus's endpoint beside it. The endpoint does
 all the signal processing (the low-pass, the level, the polarity, the protective high-pass) at
 48 kHz in chorus's DSP form and hands the amplifier a line-level signal; the amplifier's own
-filters are set out of the way once. Power is the mains; the network is wired Ethernet. The
+filters are set out of the way once. The amplifier takes the mains at its own plate and the
+endpoint its own 5 V adapter; the network is wired Ethernet. The
 rear panel carries the amplifier's plate, a pairing button, a level knob, a phase knob and the
 status light.
 
@@ -399,8 +407,12 @@ the mains in a room is the polarity, the phase knob and the room correction.
 K69: "Pairing button, status LED, level + phase knobs (physical, alongside the app's
 controls)". `docs/hardware/controls.md` gives the class "a pairing button; level and phase
 knobs", a "status LED, follows the visualizer while playing" and no microphone. All four are
-on the rear panel, beside the amplifier's plate. This file places none of them and chooses no
-pin; they appear in the budget as allocations.
+on the rear panel, beside the amplifier's plate. Their pins are the board profile's
+(`firmware/boards/devkitc-s3-pcm5102-sub.conf`, chosen by the devices repository's plan and
+**ASSUMED** there): the pairing button on GPIO1, the level knob's wiper on GPIO2 (ADC1 channel
+1), the phase knob's on GPIO4 (ADC1 channel 3), the status light (one WS2812-class pixel) on
+GPIO47. The knobs are linear potentiometers across 3.3 V with the anticlockwise end at 0 V,
+read at 12 bits (`firmware/main/esp_knobs.c`). The parts appear in the budget as allocations.
 
 | Control | What it sets | Range | How it is read | The chorus DSP setting it maps onto |
 |---|---|---|---|---|
@@ -428,35 +440,64 @@ range into equal steps (the budget's allocation is a linear one).
   Ethernet), since the Omada switch is 802.3af/at only". The subwoofer takes nothing from the
   switch's PoE budget.
 - **The amplifier** takes the mains at its own plate (above): at most 100 W by its manual.
-- **The endpoint** needs its own low-voltage supply, about 1.5 W (**ASSUMED**, as in the
-  compact) at 5 V or more; the budget prices a 5 V adapter as an allocation. Which supply, and
-  whether it shares the amplifier's inlet, is the electronics plan's.
+- **The endpoint** needs its own low-voltage supply, about 1.9 W (**ASSUMED**: 1.5 W for the
+  ESP32-S3 and the W5500 as in the compact, the DAC and the status light's most): a Mean Well
+  GST18U05-P1J wall adapter, "5Vdc", "3 Amps", "UL 62368-1 listed", "Class II, 2 pole"
+  (https://www.trcelectronics.com/View/Mean-Well/GST18U05-P1J.shtml, read 2026-10-07), into a
+  5 V jack on the endpoint's rear plate. It does not share the amplifier's inlet: the plate
+  has no mains outlet, and splitting its mains inside the box would put mains wiring the owner
+  makes in a wooden box (the devices repository's plan).
 - **Ethernet:** the endpoint board's W5500 wired port (below). Wi-Fi is not part of this class.
 
 ## The endpoint module, the amplifier's feed and the enclosure path
 
-- **The endpoint module chorus's firmware targets (P1 approved at Checkpoint K, decisions 0042 and 0057; the board ASSUMED):** P1's
-  Option B, `docs/proposals/P1-embedded-platform.md`: an ESP32-S3 with a TAS5825M and W5500
-  wired Ethernet on one bought board (the Esparagus Audio Brick, ESP32-S3 variant: "Stereo I²S
-  DAC (TAS5825M) with built-in D-Class amp", "W5500 SPI Ethernet", "Power Source 5-26 V", per
-  its seller's page read 2026-10-06). The firmware's reference board profile is
-  `firmware/boards/brick-s3-wired.conf`. If the board changes, this section and the
-  budget change and `version` is bumped; the acoustics do not depend on the module.
-- **The amplifier is a separate bought module fed from the endpoint, and why.** The module's
-  own TAS5825M gives 53 W into this driver ("Amplifier sizing"), half of what the driver can
-  use, so the 100 W comes from a bought mains amplifier and the endpoint's amplifier output is
-  not used. The endpoint feeds it at line level.
-- **The line-level feed is an open item for the board plan.** The module's maker says of the
-  board family "you can't use headphones or an external amp" and points to its sibling boards
-  with a line output (https://sonocotta.com/espragus-audio-brick/, read 2026-10-06). So the
-  feed is one of: a line-level I2S DAC (a PCM5102 class breakout, priced in the budget) on the
-  module's I2S bus, if the board plan finds the bus reachable; the maker's line-out sibling
-  ("PCM5100A", "Non-amplified stereo output, 2.1V RMS", wired Ethernet as a soldered-on W5500
-  header; $21.00, https://www.elecrow.com/hifi-esp32.html, read 2026-10-06), which is a
-  different module than P1 recommends; or P1's own fallback, "a PCM5102A DAC plus an analog
-  class-D board". Which one is the board plan's and, where it departs from P1, the owner's.
-  The acoustics above hold for all three: they need 19.8 V RMS at the driver from a 100 W
-  amplifier and the sections of this file run before it.
+- **The endpoint module: three bought boards** (the owner's decision of 2026-10-07,
+  "DevKitC+DAC+WIZ", in the devices repository's plan for chorus-sub-v1). Version 1 named P1's
+  one board, the Esparagus Audio Brick (ESP32-S3), whose TAS5825M this class would not use; the
+  Brick was out of stock at every seller read for the two-way on 2026-10-06. In its place:
+  - **Espressif ESP32-S3-DevKitC-1-N8R8:** the compact's and the two-way's board, 8 MB flash
+    and 8 MB octal PSRAM.
+  - **Adafruit 6250, a TI PCM5102A I2S DAC with a line output:** "does not need any MCLK or I2C
+    configuration", "Full Scale Output 2.1VRMS (GND center)", "the output is for no less than
+    1K ohm loads" (https://www.adafruit.com/product/6250, read 2026-10-07). It makes its own
+    clock from the bit clock (TI SLAS859C, p. 25), so it takes the endpoint's three I2S lines
+    and nothing else; its mute pad (MU, the part's XSMT: "pull this pin low to set the outputs
+    to ground", Adafruit's guide) is on the endpoint's power-down line, held low until playout
+    starts.
+  - **WIZnet WIZ850io:** a W5500 with its own RJ45 jack and magnetics, behind a rear panel jack.
+
+  The firmware's board profile is `firmware/boards/devkitc-s3-pcm5102-sub.conf`
+  (`board_audio_output = line-dac`, `firmware/include/chorus/line_dac.h`): the compact's
+  Ethernet and I2S pins, no I2C, the mute on GPIO17. Its bring-up writes no register and reads
+  no fault, since the PCM5102A has no control bus. The DAC's normal interpolation filter delays
+  every sample by 22 sample periods ("Filter group delay 22tS", TI SLAS859C Table 4, p. 17;
+  458 us at 48 kHz), and the profile's output delay (`board_output_delay_frames = 22`) counts it
+  in the playout path's device delay, so the subwoofer is heard at the same sync target as the
+  mains. The datasheet's summary table says 20 tS for the same filter (p. 4); the specific
+  table is taken, and a bench reading settles the two frames between them.
+- **The amplifier is a separate bought module fed from the endpoint, and why.** No endpoint
+  board here carries an amplifier, and the TAS5825M a module could carry gives 53 W into this
+  driver ("Amplifier sizing"), half of what the driver can use, so the 100 W comes from the
+  bought mains plate amplifier.
+- **The feed: the line DAC (version 1's option 3, "a PCM5102A DAC plus an analog class-D
+  board", with the plate as the class-D board).** The `LFE` role's one output goes out on both
+  I2S slots, the same samples on each (`firmware/src/endpoint_dsp.c`, graded by
+  `firmware/tests/test_endpoint_dsp.c`), so the DAC's left and right outputs both carry it to
+  the amplifier's two RCA inputs, which its manual asks for: "They will accept a stereo signal
+  and internally combine it into mono. Both left and right input jacks must be connected to
+  the source in order to drive the amplifier to full output." Version 1's other two options
+  (a DAC on the Brick's I2S bus; the maker's line-out sibling board) went with the Brick.
+- **The amplifier's gain, set once for 2.1 V in.** The endpoint's full scale (0 dBFS) is the
+  DAC's 2.1 V RMS, and the acoustics need 19.8 V RMS at the driver ("Amplifier sizing"): a gain
+  of 9.43, 19.5 dB (`20 log10(19.8 / 2.1)`, **arithmetic**). The manual gives "Maximum Input
+  Sensitivity Voltage: 180 mV" (the full 20.0 V for 180 mV at the gain knob's maximum, 40.9 dB),
+  so the knob sits about 21.4 dB below its maximum. The procedure (**ASSUMED**, as in
+  "Amplifier sizing"): on the first box, a 0 dBFS sine at 50 Hz from the endpoint, the
+  high-pass in place, the gain knob raised from its minimum until a meter across the driver's
+  terminals reads 19.8 V RMS, and the knob's place marked. Whether the amplifier's input stage
+  takes 2.1 V ahead of its gain knob is not in the manual (**ASSUMED** yes; if its clip light
+  shows at a 0 dBFS sine with the gain low, the endpoint's full scale comes down instead, the
+  voltage limit's follow-up).
 - **The enclosure path:** `docs/proposals/P12-enclosures.md` (ACCEPTED 2026-10-07 as written,
   decision 0242). Its recommendation: "subwoofer in braced 18 mm MDF with a doubled
   baffle", that is "18 mm MDF, a doubled (36 mm) baffle, window braces so that no unbraced
@@ -494,7 +535,7 @@ design's; a changed vent or volume goes through
 
 K89 caps the compact only and says of the others "budgets proposed with priced alternatives".
 This file **proposes** the subwoofer's: **under about $400 of parts at the designed (good)
-tier**, with the better tier at about $620 and the best at about $815 as priced alternatives.
+tier**, with the better tier at about $605 and the best at about $795 as priced alternatives.
 It is PROPOSED, not decided: the owner decides the class's budget and tier.
 
 Single-unit list prices in US dollars before shipping and tax, each read from its URL on the
@@ -508,9 +549,10 @@ subwoofers).
 |---|---|---|---|
 | Driver, good tier (designed) | Dayton Audio SD315A-88, one | 89.98 | https://www.parts-express.com/Dayton-Audio-SD315A-88-12-DVC-Subwoofer-295-488, 2026-10-06 |
 | Amplifier, good tier (designed) | Dayton Audio SPA100-D plate amplifier, one | 109.98 | https://www.parts-express.com/Dayton-Audio-SPA100-D-100-Watt-Class-D-Subwoofer-Plate-Amplifier-300-805, 2026-10-06 |
-| Endpoint board (allocation) | Esparagus Audio Brick, ESP32-S3 variant: the ESP32-S3 and the W5500 (its TAS5825M is not used). "As low as $59.00", "Availability: In stock", ship-from not stated; its US seller's page (https://www.crowdsupply.com/sonocotta/esparagus-audio-brick, "$59") said "No longer available" the same day | 59.00 | https://www.elecrow.com/esparagus-audio-brick.html, 2026-10-06 |
-| Line-level feed (allocation) | a PCM5102 I2S DAC breakout with a line-level output, in stock | 4.95 | https://www.adafruit.com/product/6250, 2026-10-06 |
-| Endpoint supply (allocation) | a 5 V 2.5 A switching wall supply, in stock | 8.25 | https://www.adafruit.com/product/1995, 2026-10-06 |
+| ESP32-S3 board | Espressif ESP32-S3-DevKitC-1-N8R8, Mouser 356-EP32S3DVKTC1N8R8 (a search listing; the live page refused a scripted read) | 15.00 | https://www.mouser.com/en/ProductDetail/Espressif-Systems/ESP32-S3-DevKitC-1-N8R8?qs=7D1LtPJG0i2PiuUUKucutQ%3D%3D, 2026-10-06 |
+| Line DAC | Adafruit 6250, PCM5102 I2S DAC with a line-level output, in stock | 4.95 | https://www.adafruit.com/product/6250, 2026-10-07 |
+| Ethernet module | WIZnet WIZ850io (W5500), Mouser (a search listing) | 19.58 | https://www.mouser.com/ProductDetail/WIZnet/WIZ850io?qs=W0yvOO0ixfFLSlENQWBCKg%3D%3D, 2026-10-06 |
+| 5 V adapter | Mean Well GST18U05-P1J wall adapter, 5 V 3 A, 5.5 x 2.1 mm plug, "UL 62368-1 listed"; in stock (147), TRC Electronics | 18.07 | https://www.trcelectronics.com/View/Mean-Well/GST18U05-P1J.shtml, 2026-10-07 |
 | Controls: level and phase knobs (allocation) | two panel-mount 10K linear potentiometers at $1.50, in stock | 3.00 | https://www.adafruit.com/product/3395, 2026-10-06 |
 | Controls: knob caps (allocation) | two potentiometer knobs at $0.50, in stock | 1.00 | https://www.adafruit.com/product/2047, 2026-10-06 |
 | Controls: pairing button (allocation) | a 16 mm panel-mount momentary push button, in stock | 0.95 | https://www.adafruit.com/product/1505, 2026-10-06 |
@@ -519,18 +561,22 @@ subwoofers).
 | Enclosure: vent (allocation) | a 4 inch flared port tube kit, "Create a port up to 17" long", in stock (128) | 20.89 | https://www.parts-express.com/Precision-Port-4-Flared-Port-Tube-Kit-268-352, 2026-10-06 |
 | Enclosure: gaskets (allocation) | closed-cell foam gasket tape: 6 ft of a 50 ft roll at $13.98 | 1.68 | https://www.parts-express.com/Speaker-Gasketing-Tape-1-8-x-3-8-x-50-ft.-Roll-260-540, 2026-10-06 |
 | Enclosure: driver and plate screws (allocation) | #8 x 1 inch pan head screws: 13 of a 100 pack at $7.79 | 1.01 | https://www.parts-express.com/8-x-1-Deep-Thread-Pan-Head-Screws-Black-100-Pcs.-081-425, 2026-10-06 |
-| **Total, good tier (designed)** | | **360.69** | |
+| **Total, good tier (designed)** | | **346.09** | |
 
-Total: 360.69 USD at the designed (good) tier, under the proposed 400.00.
+Total: 346.09 USD at the designed (good) tier, under the proposed 400.00. Version 1's was
+360.69: the DevKitC and the WIZ850io (34.58) are 24.42 under the Brick (59.00), and the adapter
+the devices repository's plan chose (18.07) is 9.82 over the allocation it replaces (8.25):
+360.69 - 24.42 + 9.82 = 346.09. That plan's own parts list, with the jacks, the fuse, the leads
+and the wire this budget leaves unpriced, came to 369.64 USD on 2026-10-07.
 
-The tiers, with every line but the driver and the amplifier unchanged (160.73 USD of
-allocations):
+The tiers, with every line but the driver and the amplifier unchanged (146.13 USD of
+the boards, the adapter and the allocations):
 
 | Tier | Driver | Amplifier | Driver and amplifier | Total | URLs, date read |
 |---|---|---|---|---|---|
-| **good (designed)** | SD315A-88, 89.98 | SPA100-D, 109.98 | 199.96 | **360.69** | the two rows above, 2026-10-06 |
-| better | RSS315HO-44, 249.98 | SPA250, 206.98 | 456.96 | 617.69 | https://www.parts-express.com/Dayton-Audio-RSS315HO-44-12-Reference-Series-HO-DVC-Subwoofer-295-467 and https://www.parts-express.com/Dayton-Audio-SPA250-250-Watt-Subwoofer-Amplifier-300-803, 2026-10-06 |
-| best | RSS315HO-44, 249.98 | SPA500, 399.98 | 649.96 | 810.69 | the driver's URL in the row above and https://www.parts-express.com/Dayton-Audio-SPA500-500W-Subwoofer-Plate-Amplifier-300-807, 2026-10-06 |
+| **good (designed)** | SD315A-88, 89.98 | SPA100-D, 109.98 | 199.96 | **346.09** | the two rows above, 2026-10-06 |
+| better | RSS315HO-44, 249.98 | SPA250, 206.98 | 456.96 | 603.09 | https://www.parts-express.com/Dayton-Audio-RSS315HO-44-12-Reference-Series-HO-DVC-Subwoofer-295-467 and https://www.parts-express.com/Dayton-Audio-SPA250-250-Watt-Subwoofer-Amplifier-300-803, 2026-10-06 |
+| best | RSS315HO-44, 249.98 | SPA500, 399.98 | 649.96 | 796.09 | the driver's URL in the row above and https://www.parts-express.com/Dayton-Audio-SPA500-500W-Subwoofer-Plate-Amplifier-300-807, 2026-10-06 |
 
 What the total does and does not say:
 
@@ -543,26 +589,32 @@ What the total does and does not say:
 - **The dearer tiers' other lines are not theirs.** Their box is smaller (40.78 L) and their
   vent is not a straight tube ("Driver"); their totals carry this tier's enclosure lines
   unchanged as a placeholder.
-- **The fallback without the amplifier** (the endpoint's own TAS5825M as one channel, 53 W,
-  with a 24 V supply in place of the 5 V one): the list less the amplifier, the DAC and the
-  5 V supply and plus a 24 V 120 W desktop adapter ($57.27,
-  https://www.trcelectronics.com/View/Mean-Well/GST120A24-P1M.shtml, in stock, read
-  2026-10-06) is 294.78 USD, for 2.7 dB less output.
-- **The cheaper module.** With the maker's line-out sibling ($21.00, above) in place of the
-  endpoint board and the DAC, the list is 317.74 USD; its Ethernet is a soldered-on module
-  that is not priced, and it is not P1's module.
+- **The fallback without the amplifier** (a TAS5825M as one channel, 53 W: the compact's
+  Sonocotta Louder Raspberry Hat Plus, $25.00, https://www.tindie.com/products/sonocotta/louder-raspberry-hat-plus/,
+  read 2026-10-07, in place of the DAC, with a 24 V supply in place of the 5 V one): the list
+  less the amplifier, the DAC and the 5 V adapter and plus the HAT and a 24 V 120 W desktop
+  adapter ($57.27, https://www.trcelectronics.com/View/Mean-Well/GST120A24-P1M.shtml, in stock,
+  read 2026-10-06) is 295.36 USD, for 2.7 dB less output.
+- **The cheaper module.** With the Brick's maker's line-out sibling ("PCM5100A", "Non-amplified
+  stereo output, 2.1V RMS", $21.00, https://www.elecrow.com/hifi-esp32.html, read 2026-10-06) in place of
+  the DevKitC, the DAC and the WIZ850io, the list is 327.56 USD; its Ethernet is a soldered-on
+  module that is not priced, and it is not the owner's choice.
 - **Pack shares.** Bought as whole packs for a single subwoofer (the LED pack 9.95, the gasket
-  roll 13.98, the screws 7.79) the same list is 388.72 USD.
+  roll 13.98, the screws 7.79) the same list is 374.12 USD.
 - **Ship-from:** the driver, the amplifier, the vent kit, the gasket and the screws from
-  Springboro, Ohio (above); the DAC, the supply, the potentiometers, the knobs, the button and
-  the LED from Brooklyn, New York ("ALL ORDERS SHIP FROM THE ADAFRUIT FACTORY, BROOKLYN, NY,
-  USA", https://www.adafruit.com/shipping, as read for `docs/hardware/compact-speaker.md` on
-  2026-10-06); the MDF is collected in Arizona ("available for Arizona pickup only"); the
-  endpoint board's in-stock seller states no ship-from and its maker is in Poland, so it is
-  the one line that is **not shown to ship from the US**.
-- **Not priced:** the mains cord, hookup and speaker wire, the RCA lead from the DAC to the
-  amplifier, the Ethernet patch cable and its panel jack, wood glue, paint, feet, a grille,
-  shipping and tax.
+  Springboro, Ohio (above); the ESP32-S3 board and the Ethernet module from Mansfield, Texas
+  (Mouser, as `docs/hardware/twoway-speaker.md` gives it); the 5 V adapter from Doylestown,
+  Pennsylvania (TRC Electronics, as the two-way's adapter page states; **ASSUMED** the same for
+  this one); the DAC, the potentiometers, the knobs, the button and the LED from Brooklyn, New
+  York ("ALL ORDERS SHIP FROM THE ADAFRUIT FACTORY, BROOKLYN, NY, USA",
+  https://www.adafruit.com/shipping, as read for `docs/hardware/compact-speaker.md` on
+  2026-10-06); the MDF is collected in Arizona ("available for Arizona pickup only"). Every
+  line ships from the US.
+- **Not priced:** the mains cord (the amplifier comes with one), hookup and speaker wire, the
+  endpoint's 5 V panel jack, its fuse and holder, the two RCA panel jacks and the RCA lead from
+  them to the amplifier, the Ethernet patch cable and its panel jack, the jumper leads, wood
+  glue, paint, feet, a grille, shipping and tax (the devices repository's parts list prices
+  them).
 
 ## The design record
 
@@ -613,8 +665,12 @@ precision coefficients for the bass-management sections would be a change to
   follow-up, "The controls").
 - **The amplifier's own low-pass stays in the path at 200 Hz**; the alternative without one
   is a bare mains module. Its safety listing was not found in what was read.
-- **The line-level feed from the endpoint** is the board plan's to settle, and may need the
-  owner's word where it departs from P1.
+- **The line-level feed is settled** (version 2: the PCM5102A line DAC on both of the
+  amplifier's inputs). What is not: the amplifier's gain setting for 2.1 V in is set and
+  measured on the first box; that its input stage takes 2.1 V ahead of the gain knob is
+  **ASSUMED**; the DAC's 22-sample filter delay is the datasheet's (its summary table says 20),
+  not measured; and the boards are **ASSUMED** against the boards Needs item, as every board
+  profile is.
 - **The class's budget and tier are PROPOSED,** the owner's to decide.
 - **P12 is ACCEPTED** (decision 0242): the enclosure's construction is its recommendation for
   this class; the cut and volume figures it gives are still **ASSUMED** until a box is measured
@@ -636,7 +692,14 @@ Read 2026-10-06 unless a line says otherwise.
   "Known limits"). The package cites its own sources for every formula.
 - TI, TAS5825M datasheet (SLASEH7H), https://www.ti.com/lit/ds/symlink/tas5825m.pdf, pages 1
   and 6.
-- The endpoint boards: https://www.crowdsupply.com/sonocotta/esparagus-audio-brick,
+- TI, PCM510xA datasheet (SLAS859C, revised May 2015),
+  https://www.ti.com/lit/ds/symlink/pcm5102a.pdf, read 2026-10-07: pages 4, 5, 16, 17 and 25.
+  Adafruit's product page https://www.adafruit.com/product/6250 and guide
+  https://learn.adafruit.com/adafruit-pcm510x-i2s-dac/pinouts, read 2026-10-07. The SPA100-D
+  manual's "Low-Level Inputs" and "Maximum Input Sensitivity Voltage", re-read 2026-10-07.
+- The devices repository's plan for chorus-sub-v1 (`projects/chorus-sub/v1/log.md` at
+  ade93a1), read 2026-10-07: the owner's decision, the boards, the adapter, the pins.
+- Version 1's endpoint boards: https://www.crowdsupply.com/sonocotta/esparagus-audio-brick,
   https://www.elecrow.com/esparagus-audio-brick.html, https://www.elecrow.com/hifi-esp32.html
   and the maker's product pages https://sonocotta.com/espragus-audio-brick/ and
   https://sonocotta.com/hifi-esp32-and-hifi-esp32s3/ (product pages only).

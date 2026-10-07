@@ -65,6 +65,7 @@ idf_component_register(
         "esp_link.c"
         "esp_playout.c"
         "esp_marker.c"
+        "esp_knobs.c"
         "console_esp.c"
         "esp_ota.c"
         "esp_store.c"
@@ -82,6 +83,7 @@ idf_component_register(
         "../src/sync_scenario.c"
         "../src/i2s.c"
         "../src/amp.c"
+        "../src/line_dac.c"
         "../src/telemetry.c"
         "../src/monotonic.c"
         "../src/session.c"
@@ -120,8 +122,10 @@ idf_component_register(
     # peripheral (docs.espressif.com/projects/esp-idf/en/v6.1/esp32s3/
     # migration-guides/release-6.x/6.0/peripherals.html, read 2026-09-30); the
     # endpoint names the three it includes: driver/gpio.h, driver/i2c_master.h
-    # and driver/i2s_std.h, and driver/gptimer.h for the GPIO marker (goal 9).
+    # and driver/i2s_std.h, and driver/gptimer.h for the GPIO marker (goal 9);
+    # esp_adc for the subwoofer's knobs (esp_adc/adc_oneshot.h).
     REQUIRES
+        esp_adc
         esp_driver_gpio
         esp_driver_gptimer
         esp_driver_i2c

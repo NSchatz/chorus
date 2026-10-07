@@ -25,6 +25,7 @@
 #include "esp_hal.h"
 #include "esp_heap_caps.h"
 #include "esp_identity.h"
+#include "esp_knobs.h"
 #include "esp_link.h"
 #include "esp_log.h"
 #include "esp_ota.h"
@@ -38,6 +39,7 @@
 #include "chorus/amp.h"
 #include "chorus/endpoint_config.h"
 #include "chorus/endpoint_dsp.h"
+#include "chorus/line_dac.h"
 #include "chorus/link.h"
 #include "chorus/playout.h"
 #include "chorus/session.h"
@@ -93,6 +95,7 @@ typedef struct {
     chorus_session_config_t session;
     chorus_i2s_controller_t *controller;
     chorus_output_stage_t *stage;
+    chorus_audio_output_t output;
     const chorus_amp_config_t *amp;
     chorus_i2c_bus_t *bus;
 } session_task_t;
@@ -123,6 +126,21 @@ static void fault_watch(void *argument)
     }
 }
 
+/* The output stage back to high impedance, on every path that stops after the
+ * output came up: the amplifier's shutdown, or the line DAC's mute and then its
+ * clock. A board that plays through nothing (the emulated one) has no output
+ * stage, and nothing is asked of a bus that was never created. */
+static void output_stage_off(chorus_audio_output_t output, const chorus_amp_config_t *amp,
+                             chorus_i2c_bus_t *bus, chorus_output_stage_t *stage,
+                             chorus_i2s_controller_t *controller)
+{
+    if (output == CHORUS_AUDIO_OUTPUT_AMPLIFIER) {
+        (void)chorus_amp_shut_down(amp, bus, stage, controller);
+    } else if (output == CHORUS_AUDIO_OUTPUT_LINE_DAC) {
+        chorus_line_dac_stop(stage, controller);
+    }
+}
+
 /* The session runs in its own task, sized for the decoders, rather than on
  * app_main's (CONFIG_ESP_MAIN_TASK_STACK_SIZE). */
 static void session_task(void *argument)
@@ -134,25 +152,14 @@ static void session_task(void *argument)
     /* run_seconds is zero, so the line above does not return while the board
      * has power. If it ever does, the output stage goes dead rather than being
      * left live with nothing feeding it. */
-    if (task->amp != NULL) {
-        (void)chorus_amp_shut_down(task->amp, task->bus, task->stage, task->controller);
+    if (task->output != CHORUS_AUDIO_OUTPUT_NONE) {
+        output_stage_off(task->output, task->amp, task->bus, task->stage, task->controller);
         ESP_LOGE(TAG, "the session ended; the output stage is in high impedance");
     } else {
         ESP_LOGE(TAG, "the session ended (%s): %s", chorus_session_end_name(result.end),
                  result.detail);
     }
     vTaskDelete(NULL);
-}
-
-/* The output stage back to high impedance, on every path that stops after the
- * amplifier came up. A board that plays through nothing (the emulated one) has
- * no output stage, and nothing is asked of a bus that was never created. */
-static void output_stage_off(int plays, const chorus_amp_config_t *amp, chorus_i2c_bus_t *bus,
-                             chorus_output_stage_t *stage, chorus_i2s_controller_t *controller)
-{
-    if (plays) {
-        (void)chorus_amp_shut_down(amp, bus, stage, controller);
-    }
 }
 
 void app_main(void)
@@ -225,12 +232,16 @@ void app_main(void)
     chorus_esp_ota_boot_report(config.ota_confirm_seconds);
 
     /* Whether this board plays through anything (goal 14, chorus/
-     * endpoint_config.h). Every speaker does. The emulator's board declares
-     * `none` (the validation above refuses that on any other link), and then
-     * no I2C bus, I2S channel, amplifier, playout path or fault watch is
-     * brought up: the session runs with nowhere to play, and everything else
-     * below is the code a speaker runs. */
-    const int plays = config.board.audio_output == CHORUS_AUDIO_OUTPUT_AMPLIFIER;
+     * endpoint_config.h), and through what. Every speaker does: the amplifier,
+     * or on the subwoofer a line DAC with no control bus (chorus/line_dac.h),
+     * which has no I2C bus, no register map and no fault watch. The
+     * emulator's board declares `none` (the validation above refuses that on
+     * any other link), and then no I2C bus, I2S channel, amplifier, playout
+     * path or fault watch is brought up: the session runs with nowhere to
+     * play, and everything else below is the code a speaker runs. */
+    const chorus_audio_output_t output = config.board.audio_output;
+    const int plays = output != CHORUS_AUDIO_OUTPUT_NONE;
+    const int amplifier = output == CHORUS_AUDIO_OUTPUT_AMPLIFIER;
     if (!plays) {
         ESP_LOGW(TAG, "board_audio_output = none: no amplifier, no I2S and no I2C are brought up "
                       "(the emulated board); the session runs with nowhere to play");
@@ -277,8 +288,8 @@ void app_main(void)
      * (esp_playout.c), never from external RAM (firmware/endpoint-units.conf
      * rule 3). Without the RAM the endpoint plays as before goal 12, with the
      * room's gain, and says so. The subwoofer's level and phase knobs reach
-     * the chain through chorus_playout_set_sub_knobs; their ADC binding is not
-     * written yet (ADR 0063), so until it is they sit at 0 dB and 0 degrees. */
+     * the chain through chorus_playout_set_sub_knobs, from their ADC binding
+     * (esp_knobs.c) on a board that wires them, below. */
     chorus_endpoint_dsp_t *dsp = plays ? heap_caps_malloc(sizeof(chorus_endpoint_dsp_t),
                                                           MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
                                        : NULL;
@@ -307,8 +318,12 @@ void app_main(void)
 
     static chorus_amp_report_t report;
     if (plays) {
-        chorus_amp_status_t status = chorus_amp_bring_up(&config.amp, &config.gain, &config.clock,
-                                                         &bus, &stage, &controller, &report);
+        /* The line DAC's clock starts into a muted part, which stays muted
+         * until the writer runs (below). */
+        chorus_amp_status_t status =
+            amplifier ? chorus_amp_bring_up(&config.amp, &config.gain, &config.clock, &bus, &stage,
+                                            &controller, &report)
+                      : chorus_line_dac_start(&config.clock, &stage, &controller, &report);
         chorus_telemetry_record_amp(&telemetry, &report);
         if (status != CHORUS_AMP_OK) {
             static char line[1024];
@@ -365,14 +380,30 @@ void app_main(void)
     if (!link.link_up) {
         ESP_LOGE(TAG, "the link is down (%s); no session is opened",
                  chorus_bring_up_status_name(link_status));
-        output_stage_off(plays, &config.amp, &bus, &stage, &controller);
+        output_stage_off(output, &config.amp, &bus, &stage, &controller);
         return;
     }
 
-    /* The writer, now that the clock runs: it paces itself on the DMA. */
+    /* The writer, now that the clock runs: it paces itself on the DMA. Then
+     * the line DAC's mute is released (pin_amp_power_down high), the moment
+     * playout starts. */
     if (plays && chorus_esp_playout_start(playout) != 0) {
-        output_stage_off(plays, &config.amp, &bus, &stage, &controller);
+        output_stage_off(output, &config.amp, &bus, &stage, &controller);
         return;
+    }
+    if (output == CHORUS_AUDIO_OUTPUT_LINE_DAC) {
+        if (chorus_line_dac_unmute(&stage, &report) != CHORUS_AMP_OK) {
+            ESP_LOGE(TAG, "%s", report.detail);
+            output_stage_off(output, &config.amp, &bus, &stage, &controller);
+            return;
+        }
+        ESP_LOGI(TAG, "%s", report.detail);
+    }
+
+    /* The subwoofer's knobs, into the sound chain once it plays (a board
+     * without them reads none, and a chain without its RAM takes none). */
+    if (plays && dsp != NULL) {
+        (void)chorus_esp_knobs_start(&config, playout);
     }
 
     static session_task_t task;
@@ -423,9 +454,10 @@ void app_main(void)
     session->health_ctx = &health_transport;
     task.controller = &controller;
     task.stage = &stage;
-    /* NULL on a board that plays through nothing: the session task then has no
-     * output stage to put in high impedance if the session ever ends. */
-    task.amp = plays ? &config.amp : NULL;
+    /* `none` on a board that plays through nothing: the session task then has
+     * no output stage to put in high impedance if the session ever ends. */
+    task.output = output;
+    task.amp = &config.amp;
     task.bus = &bus;
 
     /* The fault poll runs BESIDE the session, in its own task, rather than
@@ -442,10 +474,12 @@ void app_main(void)
     watch.stage = &stage;
     watch.controller = &controller;
     watch.telemetry = &telemetry;
-    if (plays && xTaskCreate(fault_watch, "chorus-amp-fault", 4096, &watch, 5, NULL) != pdPASS) {
+    /* An amplifier's alone: a line DAC has no fault register to read. */
+    if (amplifier &&
+        xTaskCreate(fault_watch, "chorus-amp-fault", 4096, &watch, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "the amplifier fault watch could not be started; nothing would notice a "
                       "fault, so the output stage goes back to high impedance");
-        output_stage_off(plays, &config.amp, &bus, &stage, &controller);
+        output_stage_off(output, &config.amp, &bus, &stage, &controller);
         return;
     }
 
@@ -463,7 +497,7 @@ void app_main(void)
     if (chorus_esp_identity_load(session) != 0) {
         ESP_LOGE(TAG, "this board has no identity it can keep; no session is opened and the "
                       "output stage goes back to high impedance");
-        output_stage_off(plays, &config.amp, &bus, &stage, &controller);
+        output_stage_off(output, &config.amp, &bus, &stage, &controller);
         return;
     }
     chorus_esp_discovery_locate(session);
@@ -476,7 +510,7 @@ void app_main(void)
                  (unsigned)SESSION_STACK_BYTES,
                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-        output_stage_off(plays, &config.amp, &bus, &stage, &controller);
+        output_stage_off(output, &config.amp, &bus, &stage, &controller);
     }
     /* app_main returns and its task is deleted (CONFIG_ESP_MAIN_TASK_STACK_SIZE
      * help: "If app_main() returns then this task is deleted"); everything the

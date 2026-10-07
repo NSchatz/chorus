@@ -18,6 +18,7 @@
  * that log and the fake radio's, never the bring-up's account of itself. */
 
 #include "chorus/endpoint_config.h"
+#include "chorus/line_dac.h"
 #include "chorus/link.h"
 #include "fake_radio.h"
 #include "harness.h"
@@ -290,6 +291,111 @@ static void every_profile_reads_as_the_image_reads_it(void)
             chorus_check(found, "%s is refused as %s", broken[i].what, broken[i].rule);
         }
         profiled.controls.pairing = 1;
+    }
+
+    if (load_profile("devkitc-s3-pcm5102-sub")) {
+        chorus_check(profiled.link.transport == CHORUS_TRANSPORT_WIRED &&
+                         profiled.board.model_status == CHORUS_BOARD_ASSUMED &&
+                         strcmp(profiled.board.needs_item, NEEDS_ITEM) == 0 &&
+                         profiled.board.flash_size_mb == 8 && profiled.pins.octal_psram,
+                     "devkitc-s3-pcm5102-sub: link %s, model \"%s\" %s, %u MB flash",
+                     chorus_transport_name(profiled.link.transport), profiled.board.model,
+                     chorus_board_status_name(profiled.board.model_status),
+                     (unsigned)profiled.board.flash_size_mb);
+        /* The DevKitC and the WIZ850io at the compact's pins; the DAC on its
+         * I2S pins, with no I2C and its mute on the power-down pin. */
+        chorus_check(
+            profiled.eth.sclk == committed.eth.sclk && profiled.eth.mosi == committed.eth.mosi &&
+                profiled.eth.miso == committed.eth.miso && profiled.eth.cs == committed.eth.cs &&
+                profiled.eth.int_pin == committed.eth.int_pin &&
+                profiled.eth.rst == committed.eth.rst &&
+                profiled.eth.spi_clock_mhz == committed.eth.spi_clock_mhz &&
+                profiled.pins.bclk == committed.pins.bclk &&
+                profiled.pins.ws == committed.pins.ws &&
+                profiled.pins.dout == committed.pins.dout &&
+                profiled.pins.mclk == CHORUS_PIN_NONE &&
+                profiled.pins.amp_power_down == committed.pins.amp_power_down,
+            "devkitc-s3-pcm5102-sub keeps the reference board's W5500, I2S and power-down pins");
+        chorus_check(profiled.board.audio_output == CHORUS_AUDIO_OUTPUT_LINE_DAC &&
+                         profiled.pins.sda == CHORUS_PIN_NONE &&
+                         profiled.pins.scl == CHORUS_PIN_NONE,
+                     "devkitc-s3-pcm5102-sub: plays through %s, with no I2C",
+                     chorus_audio_output_name(profiled.board.audio_output));
+        chorus_check(profiled.board.output_delay_frames == CHORUS_LINE_DAC_GROUP_DELAY_FRAMES &&
+                         committed.board.output_delay_frames == 0,
+                     "devkitc-s3-pcm5102-sub: an output delay of %u frames, the PCM5102A's "
+                     "filter (the reference board's is %u)",
+                     (unsigned)profiled.board.output_delay_frames,
+                     (unsigned)committed.board.output_delay_frames);
+        /* K69: a pairing button, a status light, a level and a phase knob. */
+        const chorus_board_controls_t *c = &profiled.controls;
+        chorus_check(c->pairing == 1 && c->play_pause == CHORUS_PIN_NONE &&
+                         c->volume_up == CHORUS_PIN_NONE && c->volume_down == CHORUS_PIN_NONE &&
+                         c->next == CHORUS_PIN_NONE && c->previous == CHORUS_PIN_NONE,
+                     "devkitc-s3-pcm5102-sub: the pairing button on GPIO%u and no other",
+                     (unsigned)c->pairing);
+        chorus_check(c->knob_level == 2 && c->knob_phase == 4,
+                     "devkitc-s3-pcm5102-sub: the level knob on GPIO%u, the phase knob on GPIO%u",
+                     (unsigned)c->knob_level, (unsigned)c->knob_phase);
+        chorus_check(c->status_led == CHORUS_STATUS_LED_WS2812 && c->status_led_data == 47 &&
+                         c->mic_bclk == CHORUS_PIN_NONE && c->mic_mute == CHORUS_PIN_NONE,
+                     "devkitc-s3-pcm5102-sub: a %s status light on GPIO%u, no microphone",
+                     chorus_status_led_name(c->status_led), (unsigned)c->status_led_data);
+        chorus_finding_t findings[32];
+        size_t count = 0;
+        chorus_endpoint_config_validate(&profiled, findings, 32, &count);
+        for (size_t i = 0; i < count; i++) {
+            printf("  finding %s :: %s\n", findings[i].rule, findings[i].detail);
+        }
+        chorus_check(count == 0, "devkitc-s3-pcm5102-sub breaks no rule (%zu findings)", count);
+
+        /* What a line DAC and its knobs are held to. */
+        const struct {
+            const char *what;
+            uint32_t knob_level;
+            uint32_t sda;
+            uint32_t delay;
+            uint32_t wire;
+            const char *rule;
+        } broken[] = {
+            {"the level knob on GPIO11, not an ADC1 input", 11, CHORUS_PIN_NONE, 22, 32,
+             "knob-not-on-adc1"},
+            {"the level knob on the pairing button's pin", 1, CHORUS_PIN_NONE, 22, 32,
+             "gpio-assigned-twice"},
+            {"the level knob on the W5500's interrupt", 6, CHORUS_PIN_NONE, 22, 32,
+             "gpio-assigned-twice"},
+            {"an I2C data pin on a line DAC", 2, 8, 22, 32, "line-dac-with-a-control-bus"},
+            {"no output delay for the line DAC's filter", 2, CHORUS_PIN_NONE, 0, 32,
+             "line-dac-output-delay-not-the-datasheets"},
+            {"24-bit slots on the wire, 48 bit clocks a frame", 2, CHORUS_PIN_NONE, 22, 24,
+             "bclk-ratio-unsupported-by-line-dac"},
+        };
+        for (size_t i = 0; i < sizeof(broken) / sizeof(broken[0]); i++) {
+            chorus_endpoint_config_t bad = profiled;
+            bad.controls.knob_level = broken[i].knob_level;
+            bad.pins.sda = broken[i].sda;
+            bad.board.output_delay_frames = broken[i].delay;
+            bad.clock.wire_slot_bit_width = broken[i].wire;
+            count = 0;
+            chorus_endpoint_config_validate(&bad, findings, 32, &count);
+            int found = 0;
+            for (size_t j = 0; j < count; j++) {
+                found |= strcmp(findings[j].rule, broken[i].rule) == 0;
+            }
+            chorus_check(found, "%s is refused as %s", broken[i].what, broken[i].rule);
+        }
+
+        /* An amplifier still needs its I2C: the line DAC's exemption is its own. */
+        chorus_endpoint_config_t amp = profiled;
+        amp.board.audio_output = CHORUS_AUDIO_OUTPUT_AMPLIFIER;
+        amp.board.output_delay_frames = 0;
+        count = 0;
+        chorus_endpoint_config_validate(&amp, findings, 32, &count);
+        int unrouted = 0;
+        for (size_t j = 0; j < count; j++) {
+            unrouted |= strcmp(findings[j].rule, "audio-pin-not-routed") == 0;
+        }
+        chorus_check(unrouted, "an amplifier with no I2C pins is refused as audio-pin-not-routed");
     }
 
     if (load_profile("qemu-s3-openeth")) {
