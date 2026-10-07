@@ -194,7 +194,7 @@ PoE powering: 802.3af yields ~13 W at the device (compact full-range endpoint), 
 
 Recommendation: ESP32-S3 + TAS5825M with the amp's DSP bypassed and all processing on the ESP32; W5500 wired or PoE via splitter; prototype on off-the-shelf breakouts and only consider a custom PCB after the design is proven and frozen.
 
-Open: exact modules/boards; PVDD voltage per speaker class; PoE class per zone; whether any zone justifies MA12070 or multichannel amps; enclosure/driver designs (owner's department). Enclosure material per class is proposal P12 (`docs/proposals/P12-enclosures.md`, PROPOSED 2026-10-06, K88).
+Open: exact modules/boards; PVDD voltage per speaker class; PoE class per zone; whether any zone justifies MA12070 or multichannel amps; enclosure/driver designs (owner's department). Enclosure material per class is proposal P12 (`docs/proposals/P12-enclosures.md`, K88), ACCEPTED 2026-10-07 as written (`docs/decisions/0242-p12-accepted-enclosures-per-class.md`).
 
 ### 5.6 DSP
 

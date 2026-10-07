@@ -457,8 +457,8 @@ range into equal steps (the budget's allocation is a linear one).
   class-D board". Which one is the board plan's and, where it departs from P1, the owner's.
   The acoustics above hold for all three: they need 19.8 V RMS at the driver from a 100 W
   amplifier and the sections of this file run before it.
-- **The enclosure path:** `docs/proposals/P12-enclosures.md` (PROPOSED, so its answer for this
-  class is **ASSUMED** here). Its recommendation: "subwoofer in braced 18 mm MDF with a doubled
+- **The enclosure path:** `docs/proposals/P12-enclosures.md` (ACCEPTED 2026-10-07 as written,
+  decision 0242). Its recommendation: "subwoofer in braced 18 mm MDF with a doubled
   baffle", that is "18 mm MDF, a doubled (36 mm) baffle, window braces so that no unbraced
   span is over about 200 mm, painted; a printed port flare if the design is vented. Birch
   plywood is the alternative at about $14 more per box." P12 puts a cut on the owner's saw at
@@ -616,8 +616,9 @@ precision coefficients for the bass-management sections would be a change to
 - **The line-level feed from the endpoint** is the board plan's to settle, and may need the
   owner's word where it departs from P1.
 - **The class's budget and tier are PROPOSED,** the owner's to decide.
-- **P12 is PROPOSED:** the enclosure's construction is ASSUMED from its recommendation (P1 is
-  approved: Option B, decisions 0042 and 0057).
+- **P12 is ACCEPTED** (decision 0242): the enclosure's construction is its recommendation for
+  this class; the cut and volume figures it gives are still **ASSUMED** until a box is measured
+  (P1 is approved: Option B, decisions 0042 and 0057).
 - **The better and best tiers** have a box from the package and no vent, high-pass or record
   of their own; their vent is beyond a straight tube and may be beyond the package.
 - **The targets** (110.4 dB at 1 m, 35 Hz) are this design's own.

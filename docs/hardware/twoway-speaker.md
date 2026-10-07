@@ -346,8 +346,8 @@ full level is an open item for the first box.
   front, the sides or the top. This file places neither; they appear in the budget as
   allocations. Both pass through the box's wall, so both are openings the enclosure seals or
   walls off (the tolerances below).
-- **The enclosure path:** `docs/proposals/P12-enclosures.md` (PROPOSED, so its answer for this
-  class is **ASSUMED** here). Its recommendation: "active two-way and LCR in braced 18 mm
+- **The enclosure path:** `docs/proposals/P12-enclosures.md` (ACCEPTED 2026-10-07 as written,
+  decision 0242). Its recommendation: "active two-way and LCR in braced 18 mm
   birch plywood with printed ports, carriers and templates", that is 18 mm birch plywood
   (13-ply, void-free), "braced so that no unbraced span is over about 200 mm", with printed
   fittings: the port and its flare, the electronics carrier and the router templates for the
@@ -475,8 +475,9 @@ response points (250, 500, 1000, 2000, 4000, 8000 and 16000 Hz; the test's toler
 - **The tweeter's sensitivity** is printed for 1 W where the woofer's is for 2.83 V; the trim
   rests on reading them as the same drive.
 - **The class's budget and tier are PROPOSED,** the owner's to decide.
-- **P12 is PROPOSED:** the enclosure's construction is ASSUMED from its recommendation (P1 is
-  approved: Option B, decisions 0042 and 0057).
+- **P12 is ACCEPTED** (decision 0242): the enclosure's construction is its recommendation for
+  this class; the cut and volume figures it gives are still **ASSUMED** until a box is measured
+  (P1 is approved: Option B, decisions 0042 and 0057).
 - **The supply:** outside the box or inside it is the electronics plan's choice.
 - **The better and best tiers** have a box from the package and no vent, EQ or record of
   their own; each is a later version if taken.

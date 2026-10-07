@@ -1,7 +1,7 @@
 # P12: Enclosures per speaker class (wood, printed or mixed)
 
 - Decisions: K88
-- Status: PROPOSED (2026-10-06); the owner decides
+- Status: ACCEPTED (2026-10-07, the owner): Option C as written, every class's recommendation unchanged (`docs/decisions/0242-p12-accepted-enclosures-per-class.md`); first put forward 2026-10-06. The compact's material is PETG for now, the devices repo's decision (the ADR says why)
 - If deferred: No enclosure is built. The compact acoustic design uses this file's compact answer (printed ASA, 8 mm wall, the volume and leakage tolerances below) marked ASSUMED, and the other classes' designs assume 18 mm wood panels
 - Builds on: goal 24 (§28 item 1, "P12 (K88): enclosures per class, written here and marked PROPOSED"; item 2, the compact speaker's "enclosure per P12's recommendation"), goal 25 (§29, the two-way and the subwoofer), goal 26 (§30, the soundbar and the LCR set), the amendment of 2026-10-01 item 3 (P12 stays chorus's proposal; the enclosure models are the owner's devices repo's) and item 7 (the acoustic design record names "the tolerances an enclosure must hold" and P12's path)
 
@@ -373,7 +373,7 @@ against 160 mm for 3 L) and its baffle edge radius, so its baffle-step arithmeti
 
 ## Open items
 
-- **The owner's decision** on the recommendation, and whether the compacts in the living rooms
+- **The owner's decision:** taken 2026-10-07, Option C as written (`docs/decisions/0242-p12-accepted-enclosures-per-class.md`). Still open: whether the compacts in the living rooms
   may look printed (layer lines, one colour) or want a wood or fabric face.
 - **ASA on the owner's printer:** unproven. One test print of a 160 mm ribbed box decides between
   ASA everywhere and PETG indoors; it also gives the shrinkage scale and the real print time.

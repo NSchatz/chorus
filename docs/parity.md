@@ -107,7 +107,7 @@ How to read it:
 | K85 | One household login, everyone equal | done | `docs/app.md`; `docs/decisions/0190-the-app-installs-behind-the-login.md` | - |
 | K86 | Phones, wall tablets in kiosk mode, desktop | done | `docs/decisions/0191-phone-and-desktop-layouts-and-the-kiosk.md`; `docs/app.md` | - |
 | K87 | Room-correction microphone: the phone, through the app | done | `docs/decisions/0200-a-recording-is-fitted-and-not-kept.md`; `docs/decisions/0207-the-room-is-recorded-with-an-audio-worklet.md`; `docs/room-correction.md` | - |
-| K88 | Enclosures per class (research and propose) | partial | `docs/proposals/P12-enclosures.md` | P12 is written and PROPOSED; the owner decides it |
+| K88 | Enclosures per class (research and propose) | done | `docs/proposals/P12-enclosures.md`; `docs/decisions/0242-p12-accepted-enclosures-per-class.md` | - |
 | K89 | Compact speaker parts under about 150 USD | partial | `docs/hardware/compact-speaker.md` | The priced list is 156.09 USD, 6.09 over; the ways back under are listed there for the owner |
 | K90 | PoE+ for the compact speaker, mains for the other classes | done | `docs/hardware/compact-speaker.md`; `docs/hardware/twoway-speaker.md`; `docs/hardware/subwoofer.md` | - |
 | K91 | Some compact speakers on Wi-Fi, never bonded | done | `docs/decisions/0103-wifi-provisioning-over-softap.md`; `docs/decisions/0075-control-catalog-v2.md`; `firmware/sdkconfig.compact-s3-wifi` | - |
