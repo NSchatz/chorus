@@ -151,3 +151,4 @@ the number of the pull request that added it.
 | 0234 | [goal 26 is closed: P13 is written (zero zones, zero channels, PROPOSED), the rack amp and the soundbar are not designed, and the LCR set landed in the devices repo (devices PR 128); 770.35 USD a set, 1573.20 USD for both TV rooms](0234-goal-26-closed-no-rack-amp-or-soundbar-and-the-lcr-set-landed.md) |
 | 0235 | [CI cuts the release from a version tag on main, building with a read-only token and publishing from a separate job](0235-ci-cuts-the-release.md) |
 | 0241 | [the Soloist image's releases attach the Debian source packages of every package in it, verified against the .dsc files](0241-the-soloist-image-attaches-its-debian-sources.md) |
+| 0242 | [P12 is accepted as written: the compact printed, the two-way and the LCR set in braced birch plywood with printed fittings, the subwoofer in braced MDF](0242-p12-accepted-enclosures-per-class.md) |

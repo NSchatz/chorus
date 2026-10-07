@@ -282,8 +282,8 @@ first.
   with an Re of 3.2 ohms: at the limit, not under it. The datasheet tabulates no output power
   at 24 V into 4 ohms in that mode, so the woofer channel's power is bounded by the limits
   above and by the PoE supply, and its heat is a thing the first box measures.
-- **The enclosure path:** `docs/proposals/P12-enclosures.md` (PROPOSED, so its compact answer
-  is **ASSUMED** here, as its "If deferred" line says): printed ASA, 8 mm walls with four
+- **The enclosure path:** `docs/proposals/P12-enclosures.md` (ACCEPTED 2026-10-07 as written,
+  decision 0242): printed (ASA in P12, PETG in the devices repo for now), 8 mm walls with four
   perimeters and 60% infill, ribbed to 80 mm, one body and one gasketed panel, net volume held
   to ± 2% and leakage to `ql` of 7 or better. Those are the tolerances the table above is
   computed against.
@@ -442,8 +442,9 @@ response points (500, 1000, 1750, 3500, 7000 and 14000 Hz; the test's tolerance 
   stated by the maker and is not modelled.
 - **Vent noise** at up to 24.4 m/s: the 22 mm fallback is computed above.
 - **The outdoor pair:** no weather-rated driver is chosen.
-- **P12 is PROPOSED:** the enclosure's construction is ASSUMED from its recommendation (P1 is
-  approved: Option B, decisions 0042 and 0057).
+- **P12 is ACCEPTED** (decision 0242): the construction is its compact answer; the devices
+  repo prints it in PETG until shopkit allows ASA off a car part. The tolerances are **ASSUMED**
+  until the first box is measured (P1 is approved: Option B, decisions 0042 and 0057).
 - **The budget is 6.09 USD over** on shares of packs, before the unpriced lines and the
   amplifier board's shipping from Poland.
 - **The amplifier's channel order:** which of the HAT's channels A and B is the left I2S slot
