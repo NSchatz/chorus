@@ -404,6 +404,7 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
         read_pin(conf, "pin_button_volume_down", &controls->volume_down, detail, detail_len) != 0 ||
         read_pin(conf, "pin_button_next", &controls->next, detail, detail_len) != 0 ||
         read_pin(conf, "pin_button_previous", &controls->previous, detail, detail_len) != 0 ||
+        read_pin(conf, "pin_button_pairing", &controls->pairing, detail, detail_len) != 0 ||
         read_pin(conf, "pin_status_led", &controls->status_led_data, detail, detail_len) != 0 ||
         read_pin(conf, "pin_mic_bclk", &controls->mic_bclk, detail, detail_len) != 0 ||
         read_pin(conf, "pin_mic_ws", &controls->mic_ws, detail, detail_len) != 0 ||
@@ -527,8 +528,8 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
     return 0;
 }
 
-#define CONTROL_PIN_COUNT 10
-#define BOARD_PIN_MAX 24 /* the controls, eight audio pins and six Ethernet pins */
+#define CONTROL_PIN_COUNT 11
+#define BOARD_PIN_MAX 25 /* the controls, eight audio pins and six Ethernet pins */
 
 /* Every pin the profile names but the controls', for the one-signal-per-pin
  * rule below; the Ethernet pins only when the link drives them. */
@@ -539,11 +540,11 @@ static size_t board_pins(const chorus_endpoint_config_t *config, const char **na
     const chorus_eth_config_t *e = &config->eth;
     const char *const control_names[CONTROL_PIN_COUNT] = {
         "pin_button_play_pause", "pin_button_volume_up", "pin_button_volume_down",
-        "pin_button_next",       "pin_button_previous",  "pin_status_led",
-        "pin_mic_bclk",          "pin_mic_ws",           "pin_mic_din",
-        "pin_mic_mute"};
+        "pin_button_next",       "pin_button_previous",  "pin_button_pairing",
+        "pin_status_led",        "pin_mic_bclk",         "pin_mic_ws",
+        "pin_mic_din",           "pin_mic_mute"};
     const uint32_t control_pins[CONTROL_PIN_COUNT] = {
-        c->play_pause,      c->volume_up, c->volume_down, c->next,    c->previous,
+        c->play_pause,      c->volume_up, c->volume_down, c->next,    c->previous, c->pairing,
         c->status_led_data, c->mic_bclk,  c->mic_ws,      c->mic_din, c->mic_mute};
     size_t n = 0;
     for (size_t i = 0; i < CONTROL_PIN_COUNT; i++) {

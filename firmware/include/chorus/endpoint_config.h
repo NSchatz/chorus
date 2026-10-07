@@ -62,6 +62,7 @@ typedef struct {
     uint32_t volume_down;
     uint32_t next;
     uint32_t previous;
+    uint32_t pairing;
     chorus_status_led_t status_led;
     uint32_t status_led_data;
     uint32_t mic_bclk;

@@ -1,6 +1,6 @@
 # The active two-way: acoustic design
 
-version: 1
+version: 2
 
 - Status: designed on paper, 2026-10-06. Nothing is ordered, cut, built or measured. Every
   number here is a datasheet value or a calculation from datasheet values (CLAUDE.md rule 6:
@@ -19,6 +19,9 @@ version: 1
 - The LCR set (`docs/hardware/lcr-set.md`) is three of this speaker, unchanged, with the hidden
   TV hub: the theater front of both TV rooms.
 - A change to any design number bumps `version` and re-exports the record.
+- Version 2 (2026-10-07): the endpoint is the compact's three bought modules, not the
+  Esparagus Audio Brick, and the supply is the external 24 V adapter the devices repository's
+  plan chose (decision 0245). The acoustics, the EQ and the design record do not change.
 
 **How the numbers were computed.** Every computed number names the call that produced it. The
 calls are those of the acoustics package of the owner's shared Python library at release
@@ -33,8 +36,8 @@ response is checked with the package.
 
 A two-way in one braced plywood box: one 6 1/2 inch woofer and one 1 1/8 inch dome tweeter,
 each on its own channel of a single stereo TAS5825M (no passive crossover part). The crossover
-and the EQ are digital, at 48 kHz, in chorus's DSP form. The box is vented. Power is a 24 V
-supply fed from the mains; the network is wired Ethernet. There is nothing on the front but
+and the EQ are digital, at 48 kHz, in chorus's DSP form. The box is vented. Power is an
+external 24 V adapter fed from the mains; the network is wired Ethernet. There is nothing on the front but
 the two drivers and the vent.
 
 ## Drivers
@@ -280,7 +283,10 @@ firmware, and choosing whether they run in chorus's chain or in the amplifier's 
 
 **One TAS5825M in its 2.0 mode (two bridge-tied channels): the woofer on one channel, the
 tweeter on the other.** The crossover's low branch is the stream the woofer's channel plays and
-its high branch the tweeter's; which channel is which, and every pin, is the board plan's.
+its high branch the tweeter's. On the amplifier board (below) channel A, the HAT's CN2 pins 4
+and 3, drives the woofer and channel B, pins 1 and 2, the tweeter (the devices repository's
+plan); which of A and B is the left I2S slot is **ASSUMED** (A = left, `two_way_woofer_slot =
+0`) until a bench tone on one channel says, with the tweeter not yet connected.
 
 Why this and not two amplifier chips:
 
@@ -295,11 +301,10 @@ Why this and not two amplifier chips:
   would deliver the same 30 W. It would pay only with a 4 ohm woofer.
 - 30 W is 60% of the woofer's 50 watt rating and of the tweeter's: the amplifier runs out
   before either driver's printed rating does.
-- It is the module P1 recommends, unchanged: one board, one amplifier chip, "two amp channels
-  for a two-way" (`docs/proposals/P1-embedded-platform.md`). The same board's maker lists a
-  variant with a second TAS5825M ("Dual DAC, ESP32-S3", $69.00 at
-  https://www.elecrow.com/esparagus-audio-brick.html, read 2026-10-06; the maker's own page
-  calls it "Dual DAC model (prototype)"): the step up if a later version takes a 4 ohm woofer.
+- It is P1's arrangement, unchanged: one amplifier chip, "two amp channels for a two-way"
+  (`docs/proposals/P1-embedded-platform.md`), here on the Louder Raspberry Hat Plus, 1X (2.0),
+  the compact's amplifier board. A second amplifier chip is the step up if a later version
+  takes a 4 ohm woofer.
 
 **Channel limits (ASSUMED from the datasheets):** each driver at most 20.0 V RMS (50 watts into
 8 ohms, arithmetic). The amplifier's 24 V supply cannot swing that far (17.0 V RMS), so here,
@@ -319,32 +324,45 @@ full level is an open item for the first box.
   plus about 1.5 W for the processor, the Ethernet and the light (**ASSUMED**, as in the
   compact). A 24 V supply of 100 W or more covers both channels at full sine power at once,
   which music never asks for; the budget below prices a 120 W one.
-- **Which supply** is the electronics plan's. The budget's allocation is a safety-listed 24 V
-  desktop adapter with an IEC inlet, which keeps every mains-voltage part outside the wooden
-  box and makes the speaker's own input 24 V DC. An enclosed supply inside the box behind a
-  fused IEC inlet is cheaper (priced under the budget) and puts mains wiring in a box the owner
-  builds; that choice is not this file's.
-- **Ethernet:** the endpoint board's W5500 wired port (below). Wi-Fi is not part of this class.
+- **The supply: an external 24 V adapter**, the devices repository's plan's choice: the Mean
+  Well GST120A24-P1M, 24 V 5 A, 120 W, "UL62368-1 listed", with an IEC C14 inlet, outside the
+  box. It keeps every mains-voltage part outside the wooden box and makes the speaker's own
+  input 24 V DC on a rear panel jack, which feeds the amplifier board; the amplifier board's
+  own 5 V regulator feeds the ESP32-S3 board. Not chosen: an enclosed supply inside the box
+  behind a fused IEC inlet, cheaper (priced under the budget) but with mains wiring in a box the
+  owner builds.
+- **Ethernet:** the W5500 module's wired port (below). Wi-Fi is not part of this class.
 
 ## The endpoint module, the controls and the enclosure path
 
-- **The endpoint module chorus's firmware targets (P1 approved at Checkpoint K, decisions 0042 and 0057; the board ASSUMED):** P1's
-  Option B, `docs/proposals/P1-embedded-platform.md`: an ESP32-S3 with a TAS5825M and W5500
-  wired Ethernet on one bought board (the Esparagus Audio Brick, ESP32-S3 variant: "Stereo I²S
-  DAC (TAS5825M) with built-in D-Class amp", "W5500 SPI Ethernet", "Power Source 5-26 V", "2x
-  30 W at 24 V at 8Ω, THD+N = 1% (Power mode)", "RGB LED (status and notifications)", per its
-  seller's page read 2026-10-06), fed 24 V by the mains supply. The compact no longer uses it:
-  its seller lists it as no longer available, so the compact is three bought modules (decision
-  0230, `docs/hardware/compact-speaker.md`). The firmware's reference board profile is
-  `firmware/boards/brick-s3-wired.conf`. If the board changes, this section and the
-  budget change and `version` is bumped; the acoustics do not depend on the module as long as
-  it has two amplifier channels at 24 V into 8 ohms.
+- **The endpoint module (the owner's decision of 2026-10-07, "Compact's modules"):** P1's
+  Option B, `docs/proposals/P1-embedded-platform.md` (an ESP32-S3, a TAS5825M, W5500 wired
+  Ethernet; approved at Checkpoint K, decisions 0042 and 0057), built from the compact's three
+  bought boards (decision 0230, `docs/hardware/compact-speaker.md`, "The endpoint module")
+  rather than the Esparagus Audio Brick, which was out of stock at every seller read on
+  2026-10-06:
+  - **Espressif ESP32-S3-DevKitC-1-N8R8:** the ESP32-S3-WROOM-1-N8R8, 8 MB flash and 8 MB
+    octal PSRAM.
+  - **Sonocotta Louder Raspberry Hat Plus, 1X (2.0):** one TAS5825M, both channels in 2.0 mode,
+    I2C address 0x4C, no MCLK line, fed 24 V from the adapter ("7–26V external source", its
+    seller's page read 2026-10-07), with a 5 V output that feeds the DevKitC.
+  - **WIZnet WIZ850io:** a W5500 with its own RJ45 jack and magnetics, behind a rear panel jack.
+
+  They are wired by jumper leads on the compact's pins, which are the reference board's
+  Ethernet, I2S, I2C and power-down pins. The board profile is
+  `firmware/boards/devkitc-s3-louderhat-twoway.conf`: the compact's boards and pins with the
+  class's controls (below), the pairing button on GPIO1 and the status light on GPIO47, both
+  **ASSUMED**. The wiring, the sellers and the sizes of every part are the devices repository's
+  build plan for chorus-twoway-v1. If the board changes again, this section and the budget
+  change and `version` is bumped; the acoustics do not depend on the module as long as it has
+  two amplifier channels at 24 V into 8 ohms.
 - **Controls (K68):** none visible. "a clean front; a hidden pairing button and a rear status
   light only"; `docs/hardware/controls.md` gives the class "a hidden pairing button" and "a
   rear status light, status only (never the visualizer, so the front stays clean)" and no
   microphone. So: one pairing button and one status light, both on the rear, nothing on the
-  front, the sides or the top. This file places neither; they appear in the budget as
-  allocations. Both pass through the box's wall, so both are openings the enclosure seals or
+  front, the sides or the top. The light is one WS2812-class RGB pixel, since the class's
+  light shows its states as colours (`docs/hardware/controls.md`). This file places neither;
+  they appear in the budget. Both pass through the box's wall, so both are openings the enclosure seals or
   walls off (the tolerances below).
 - **The enclosure path:** `docs/proposals/P12-enclosures.md` (ACCEPTED 2026-10-07 as written,
   decision 0242). Its recommendation: "active two-way and LCR in braced 18 mm
@@ -387,35 +405,39 @@ tier**, with the better tier at about $250 and the best at about $280 as priced 
 It is PROPOSED, not decided: the owner decides the class's budget and tier.
 
 Single-unit list prices in US dollars before shipping and tax, each read from its URL on the
-date in its row. The drivers are the chosen parts. Every other line is a **priced allocation**:
-the part that prices it is an example, and the board plan, the bill of materials and the
-enclosure model choose the real ones. Where a part is sold only in a pack, the line is this
+date in its row. The drivers, the three boards, the adapter and the light are the chosen
+parts (the boards and the adapter the devices repository's plan's). A line marked
+(allocation) is a **priced allocation**: the part that prices it is an example, and the bill
+of materials and the enclosure model choose the real ones. Where a part is sold only in a pack, the line is this
 speaker's share of the pack and says so (the room list builds six two-ways).
 
 | Line | What prices it | Price | URL, date read |
 |---|---|---|---|
 | Woofer, good tier (designed) | Dayton Audio DC160-8, one | 34.98 | https://www.parts-express.com/Dayton-Audio-DC160-8-6-1-2-Classic-Woofer-295-305, 2026-10-06 |
 | Tweeter, good tier (designed) | Dayton Audio DC28F-8, one | 24.98 | https://www.parts-express.com/Dayton-Audio-DC28F-8-1-1-8-Silk-Dome-Tweeter-275-070, 2026-10-06 |
-| Endpoint board with the amplifier (allocation) | Esparagus Audio Brick, ESP32-S3 variant: the ESP32-S3, the TAS5825M and the W5500 on one board, so the amplifier has no line of its own. "$59"; the page said "No longer available" on the day read (another shop listed it at $59.00, "In stock", https://www.elecrow.com/esparagus-audio-brick.html, ship-from not stated) | 59.00 | https://www.crowdsupply.com/sonocotta/esparagus-audio-brick, 2026-10-06 |
-| Mains supply (allocation) | Mean Well GST120A24-P1M desktop adapter: "24Vdc 5A", 120 W, "3 pole AC inlet IEC320-C14", "UL62368-1 listed"; in stock (1,492) | 57.27 | https://www.trcelectronics.com/View/Mean-Well/GST120A24-P1M.shtml, 2026-10-06 |
+| ESP32-S3 board | Espressif ESP32-S3-DevKitC-1-N8R8, Mouser 356-EP32S3DVKTC1N8R8 (a search listing; the live page refused a scripted read) | 15.00 | https://www.mouser.com/en/ProductDetail/Espressif-Systems/ESP32-S3-DevKitC-1-N8R8?qs=7D1LtPJG0i2PiuUUKucutQ%3D%3D, 2026-10-06 |
+| Amplifier board | Sonocotta Louder Raspberry Hat Plus, 1X (2.0), TAS5825M, Tindie, 27 in stock | 25.00 | https://www.tindie.com/products/sonocotta/louder-raspberry-hat-plus/, 2026-10-07 |
+| Ethernet module | WIZnet WIZ850io (W5500), Mouser (a search listing) | 19.58 | https://www.mouser.com/ProductDetail/WIZnet/WIZ850io?qs=W0yvOO0ixfFLSlENQWBCKg%3D%3D, 2026-10-06 |
+| 24 V adapter | Mean Well GST120A24-P1M desktop adapter: "24Vdc 5A", 120 W, "3 pole AC inlet IEC320-C14", "UL62368-1 listed"; in stock (1,492), TRC Electronics | 57.27 | https://www.trcelectronics.com/View/Mean-Well/GST120A24-P1M.shtml, 2026-10-06 |
 | Controls: pairing button (allocation) | a 16 mm panel-mount momentary push button, in stock | 0.95 | https://www.adafruit.com/product/1505, 2026-10-06 |
-| Controls: status light (allocation) | one diffused 5 mm LED: 1 of a 25 pack at $4.00 | 0.16 | https://www.adafruit.com/product/299, 2026-10-06 |
-| Controls: light holder (allocation) | a 5 mm panel LED holder: 1 of a 5 pack at $0.95 | 0.19 | https://www.adafruit.com/product/2174, 2026-10-06 |
+| Controls: status light | one NeoPixel Mini Button PCB (WS2812B/SK6812): 1 of a 5 pack at $4.95 | 0.99 | https://www.adafruit.com/product/1612, 2026-10-06 |
 | Enclosure: plywood (allocation) | 3/4 inch (13-ply, 18 mm) Baltic birch: one 20 x 30 inch panel at $13.29 and one 20 x 20 inch at $8.86, 0.645 m² together | 22.15 | https://ocoochhardwoods.com/plywood/baltic-birch-plywood/, 2026-10-06 |
 | Enclosure: printed port, flare, carrier and templates (allocation) | 0.10 kg of a 1 kg spool of ASA at $24.99 | 2.50 | https://shop.polymaker.com/products/asa.js, 2026-10-06 |
 | Enclosure: driver gaskets (allocation) | closed-cell foam gasket tape: 4 ft of a 50 ft roll at $13.98 | 1.12 | https://www.parts-express.com/Speaker-Gasketing-Tape-1-8-x-3-8-x-50-ft.-Roll-260-540, 2026-10-06 |
 | Enclosure: driver screws (allocation) | #8 x 1 inch pan head screws: 8 of a 100 pack at $7.79 | 0.62 | https://www.parts-express.com/8-x-1-Deep-Thread-Pan-Head-Screws-Black-100-Pcs.-081-425, 2026-10-06 |
-| **Total, good tier (designed)** | | **203.92** | |
+| **Total, good tier (designed)** | | **205.14** | |
 
-Total: 203.92 USD at the designed (good) tier, under the proposed 225.00.
+Total: 205.14 USD at the designed (good) tier, under the proposed 225.00. Version 1 priced
+the Brick (59.00) and a plain LED with its holder (0.35); the three boards are 59.58 and the
+RGB light 0.99, 1.22 more.
 
-The tiers, with every line but the drivers unchanged (143.96 USD of allocations):
+The tiers, with every line but the drivers unchanged (145.18 USD of allocations):
 
 | Tier | Woofer | Tweeter | Drivers | Total | URLs, date read |
 |---|---|---|---|---|---|
-| **good (designed)** | DC160-8, 34.98 | DC28F-8, 24.98 | 59.96 | **203.92** | the two rows above, 2026-10-06 |
-| better | RS180-8, 79.98 | DC28F-8, 24.98 | 104.96 | 248.92 | https://www.parts-express.com/Dayton-Audio-RS180-8-7-Reference-Woofer-295-355 and the tweeter's row above, 2026-10-06 |
-| best | RS180-8, 79.98 | DA25TX00-08, 56.25 | 136.23 | 280.19 | the woofer's URL in the row above and https://www.parts-express.com/Peerless-DA25TX00-08-1-Corundum-Dome-Tweeter-264-1676, 2026-10-06 |
+| **good (designed)** | DC160-8, 34.98 | DC28F-8, 24.98 | 59.96 | **205.14** | the two rows above, 2026-10-06 |
+| better | RS180-8, 79.98 | DC28F-8, 24.98 | 104.96 | 250.14 | https://www.parts-express.com/Dayton-Audio-RS180-8-7-Reference-Woofer-295-355 and the tweeter's row above, 2026-10-06 |
+| best | RS180-8, 79.98 | DA25TX00-08, 56.25 | 136.23 | 281.41 | the woofer's URL in the row above and https://www.parts-express.com/Peerless-DA25TX00-08-1-Corundum-Dome-Tweeter-264-1676, 2026-10-06 |
 
 What the total does and does not say:
 
@@ -424,27 +446,29 @@ What the total does and does not say:
   dimensions, arithmetic), has about 0.44 m² of panel with its brace; the two panels priced
   are 0.645 m². Whether the parts nest on them is the enclosure model's. P12 estimated about
   $17 for a 15 L box.
-- **The supply is the dearest allocation after the board.** Two cheaper ones were read the
+- **The supply is the dearest line.** Two cheaper ones were read the
   same day: a 24 V 5 A desktop adapter the drivers' seller describes as "UL certified for
   safety" at $30.25, in stock (63)
   (https://www.parts-express.com/24-VDC-5A-Switching-Power-Supply-with-2.5-x-5.5mm-Plug-120-055),
-  which would make the total 176.90; and an enclosed open-terminal supply for inside the box,
+  which would make the total 178.12 (the devices plan's first swap if its bill of materials is over budget); and an enclosed open-terminal supply for inside the box,
   the Mean Well LRS-100-24 ("24Vdc 4.5A", "Max Power: 108 Watts", "UL62368-1") at $16.48, in
   stock (769) (https://www.trcelectronics.com/View/Mean-Well/LRS-100-24.shtml), with a fused,
   switched IEC inlet at $2.98
   (https://www.parts-express.com/IEC-AC-Power-Jack-Chassis-Mount-with-Switch-and-Fuse-Holder-090-978),
-  which would make it 166.11 and puts mains wiring in the box.
-- **Pack shares.** Bought as whole packs for a single speaker (LEDs 4.00, holders 0.95,
-  gasket 13.98, screws 7.79, a whole spool 24.99) the same list is 251.04 USD.
+  which would make it 167.33 and puts mains wiring in the box.
+- **Pack shares.** Bought as whole packs for a single speaker (lights 4.95, gasket 13.98,
+  screws 7.79, a whole spool 24.99) the same list is 251.62 USD.
 - **Ship-from:** the drivers, the gasket and the screws from Springboro, Ohio (above); the
-  endpoint board from Mansfield, Texas though made in Poland
-  (`docs/hardware/compact-speaker.md`, "The budget"); the button, the LED and its holder from
-  Brooklyn, New York (the same section). The supply's, the plywood's and the filament's pages
+  ESP32-S3 board and the Ethernet module from Mansfield, Texas (Mouser); the amplifier board
+  from Wrocław, Poland (Tindie, whose page said standard shipments to the US were on hold, UPS
+  at elevated rates, read 2026-10-07); the button and the light from Brooklyn, New York
+  (`docs/hardware/compact-speaker.md`, "The budget"); the adapter from Doylestown,
+  Pennsylvania (its page's "Ships From"). The plywood's and the filament's pages
   state no ship-from; their sellers are US shops (**ASSUMED** US ship-from).
-- **One line could not be bought on the day read:** the endpoint board at its US seller.
-  Supply is P1's open item and the board plan's, not this file's.
-- **Not priced:** the mains cord, hookup wire, the DC lead and its panel jack, the Ethernet
-  patch cable and its panel jack, wood glue, the finish, a grille, a fuse, shipping and tax.
+- **Not priced here:** the mains cord, hookup wire and jumper leads, the DC lead, its panel
+  jack and fuse, the Ethernet patch cable and its panel jack, wood glue, the finish, a grille,
+  the amplifier board's shipping from Poland and any duty, shipping and tax. The devices
+  repository's parts list prices most of them (its bill of materials is its own).
 
 ## The design record
 
@@ -479,7 +503,10 @@ response points (250, 500, 1000, 2000, 4000, 8000 and 16000 Hz; the test's toler
   this class, its printed fittings in PETG for now (devices task 275); the cut and volume
   figures it gives are still **ASSUMED** until a box is measured (P1 is approved: Option B,
   decisions 0042 and 0057).
-- **The supply:** outside the box or inside it is the electronics plan's choice.
+- **The supply** is outside the box (version 2); the cheaper adapter above is the swap if the
+  bill of materials is over budget.
+- **The pairing button's and the light's pins** (GPIO1, GPIO47) are **ASSUMED**, and so is
+  which of the amplifier's channels is the left slot.
 - **The better and best tiers** have a box from the package and no vent, EQ or record of
   their own; each is a later version if taken.
 
@@ -495,11 +522,14 @@ Read 2026-10-06 unless a line says otherwise.
   and its `baffle` module's notes. The package cites its own sources for every formula.
 - The amplifier: TI, TAS5825M datasheet (SLASEH7H), https://www.ti.com/lit/ds/symlink/tas5825m.pdf,
   pages 1 and 6.
-- The endpoint board: https://www.crowdsupply.com/sonocotta/esparagus-audio-brick,
-  https://www.elecrow.com/esparagus-audio-brick.html and the maker's product page
-  https://sonocotta.com/espragus-audio-brick/ (product pages only).
-- The budget's other lines: the URLs in the table and under it. The button's, the LED's and
-  the holder's prices were read from the seller's product list
+- The endpoint modules: the devices repository's plan for chorus-twoway-v1 (its parts list,
+  at 997bd24, read 2026-10-07) and `docs/hardware/compact-speaker.md`, which cite the sellers'
+  pages; the amplifier board's seller page,
+  https://www.tindie.com/products/sonocotta/louder-raspberry-hat-plus/, read 2026-10-07. Version
+  1 read the Brick's: https://www.crowdsupply.com/sonocotta/esparagus-audio-brick,
+  https://www.elecrow.com/esparagus-audio-brick.html and https://sonocotta.com/espragus-audio-brick/.
+- The budget's other lines: the URLs in the table and under it. The button's and the light's
+  prices were read from the seller's product list
   (https://www.adafruit.com/api/products) by the survey.
 - In this repository: `docs/proposals/P1-embedded-platform.md`, `docs/proposals/P12-enclosures.md`,
   `docs/hardware/controls.md`, `docs/hardware/compact-speaker.md`,
