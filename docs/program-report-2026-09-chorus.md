@@ -54,9 +54,9 @@ there, so no devices task was needed.
 
 | Build | devices path | Landed in devices |
 |---|---|---|
-| compact | `projects/chorus-compact/v1/acoustics.md` | 5673283 (devices PR 126, the move to `projects/`) |
-| two-way | `projects/chorus-twoway/v1/acoustics.md` | 5673283 |
-| subwoofer | `projects/chorus-sub/v1/acoustics.md` | 5673283 |
+| compact | `projects/chorus-compact/v1/acoustics.md` | 3a85578 (devices PR 105), moved by 5673283 (devices PR 126) |
+| two-way | `projects/chorus-twoway/v1/acoustics.md` | 2d12774 (devices PR 120), moved by 5673283 |
+| subwoofer | `projects/chorus-sub/v1/acoustics.md` | eae8676 (devices PR 121), moved by 5673283 |
 | LCR set | `projects/chorus-lcr/v1/acoustics.md` | 4858734 (devices PR 128) |
 | rack amp, soundbar | none: not designed (`docs/decisions/0231-no-rack-amp-and-no-soundbar.md`, P13) | - |
 
@@ -151,7 +151,7 @@ Section 31 item 5, each filed in the harness:
 | P11, concurrent streams | accepted 2026-10-05 (`docs/proposals/P11-concurrent-streams.md`) | - |
 | P12, enclosures per speaker class (K88) | PROPOSED (`docs/proposals/P12-enclosures.md`) | task 317 |
 | P13, the rack amp's zones (K70, K72, K74, K96): zero zones, with ADR 0231 | PROPOSED (`docs/proposals/P13-rack-amp-zones.md`) | task 318 |
-| P14, the devices seam | decided at Checkpoint K, then overtaken: the designs landed through devices' own pull requests 120, 121 and 128 (its Outcome line); not awaiting the owner | task 114 adds its dated note |
+| P14, the devices seam | decided at Checkpoint K, then overtaken: the designs landed through devices' own pull requests 105, 120, 121 and 128 (its Outcome line names the last three); not awaiting the owner | task 114 adds its dated note |
 
 There is no proposal after P14. P1 to P10 were decided at Checkpoint K or later (each file's
 Status line).
