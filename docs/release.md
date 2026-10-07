@@ -109,7 +109,7 @@ naming every package, its version and its Debian source package at the snapshot.
 timestamp the binary came from; the release attaches that notices file as
 `chorus-soloist-v<ver>-NOTICES.md`. The owner decided on 2026-10-07 that a release also attaches
 the Debian source packages of every package in the image, verified against their `.dsc` files,
-v0.2.0 included (`docs/decisions/0000-the-soloist-image-attaches-its-debian-sources.md`, which
+v0.2.0 included (`docs/decisions/0241-the-soloist-image-attaches-its-debian-sources.md`, which
 supersedes ADR 0131 item 9's open point); until harness task 321 builds that step, the source
 is at Debian's snapshot archive only.
 

@@ -1,4 +1,4 @@
-# 0000: the Soloist image's releases attach the Debian source packages of every package in it, fetched from snapshot.debian.org and verified against the .dsc files, so LGPL-2.1 and GPL-2 source is offered from the same place as the image
+# 0241: the Soloist image's releases attach the Debian source packages of every package in it, fetched from snapshot.debian.org and verified against the .dsc files, so LGPL-2.1 and GPL-2 source is offered from the same place as the image
 
 - Status: decided by the owner, 2026-10-07 (harness task 316, filed by task 263, the 2026-09
   program report); supersedes the open point of ADR 0131 item 9 ("the owner either accepts the
