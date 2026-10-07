@@ -10,8 +10,10 @@
   and the notes), `deploy/soloist/THIRD-PARTY-NOTICES.md` and `tools/soloist-image.sh` (the
   notices name the asset), `tools/conventions/check-pins.sh`, `tools/soloist-lists.py`, and
   `.github/workflows/release.yml` (the `sources-for` input that attached v0.2.0's); measured
-  as resolved on 2026-10-07 from the snapshot's `Sources` index: 201 files, 246,628,688 bytes
-  (item 4's "more than 100 MB"; gcc-14 about 97 MB, libmysofa about 81 MB)
+  by the first run (CI, v0.2.0's, 2026-10-07): 154 files, 47 of them `.dsc`, 246,460,634
+  bytes (item 4's "more than 100 MB"; gcc-14 about 97 MB, libmysofa about 81 MB), the tar
+  246,599,680 bytes with its `SHA256SUMS`, sha256
+  `7aecf04017281a101c9cffd2e2733a33ad8cc6ada84df95ca4262383cf7cebf5`, attached to v0.2.0
 
 ## Context
 

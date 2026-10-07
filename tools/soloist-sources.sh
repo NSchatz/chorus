@@ -14,7 +14,7 @@
 #         owners and times are fixed, so the same pins give the same bytes.
 # Cache:  CHORUS_SOLOIST_IMAGE_CACHE (default /cache/chorus-soloist-image, else
 #         target/image/soloist-cache), under sources/, each file named by its sha256, as the
-#         image keeps its .deb files. Cold, the run fetches 201 files, about 246 MB, for the
+#         image keeps its .deb files. Cold, the run fetches 154 files (47 .dsc), about 246 MB, for the
 #         20260918T000000Z pins; warm, it needs no network.
 # Pins:   CHORUS_SOLOIST_SOURCES_PINS (default deploy/soloist/debian-sources.pins).
 #
