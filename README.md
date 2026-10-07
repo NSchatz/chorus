@@ -212,7 +212,7 @@ lacked.
 | Device delay | frames the I2S DMA consumed, counted and stamped in the interrupt | `snd_pcm_delay` |
 | Output | TAS5825M over I2S, 24-bit samples in 32-bit slots, with a register map read from TI's datasheet (page cited on every line) | any ALSA device; an output map drives N channels (the assumed multichannel board is a Pi 5 with an 8-channel DAC HAT) |
 | Extras | buttons and a status LED, a microphone gate (no microphone part chosen yet), Wi-Fi setup from a phone over the speaker's own access point, A/B OTA with rollback, a serial console | a front panel through evdev and the LED class, a line-in as a source, the TV hub (capture, CEC, the low-latency path) |
-| Variants | board profiles `brick-s3-wired` (the default), `compact-s3-wifi`, `devkitc-s3-louderhat-wired` (the compact on bought modules) and `qemu-s3-openeth` (the emulator) | the `chorus-endpoint` `.deb` for arm64 and amd64, with a hardened systemd unit |
+| Variants | board profiles `brick-s3-wired` (the default), `compact-s3-wifi`, `devkitc-s3-louderhat-wired` (the compact on bought modules), `devkitc-s3-louderhat-twoway` (the two-way on the same modules) and `qemu-s3-openeth` (the emulator) | the `chorus-endpoint` `.deb` for arm64 and amd64, with a hardened systemd unit |
 
 Both kinds of endpoint speak the same protocol and run the same DSP chain on every frame. The C
 cores are held to the Rust cores' fixtures.

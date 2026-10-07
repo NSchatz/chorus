@@ -37,6 +37,9 @@ boards/devkitc-s3-louderhat-wired.conf
                               the compact on three bought modules: DevKitC-1-N8R8,
                               Louder Raspberry Hat Plus (TAS5825M), WIZ850io (W5500),
                               with its buttons, status light and microphone
+boards/devkitc-s3-louderhat-twoway.conf
+                              the two-way on the same three modules, with its
+                              pairing button and status light
 ```
 
 The first two name P1's bought reference board, the Esparagus Audio Brick (ESP32-S3), and
