@@ -121,7 +121,7 @@ the two files to the same set of source packages). `tools/soloist-sources.sh` (`
 soloist-sources`, release step 2c) fetches each `.dsc`, checks it, then fetches every file its
 `Checksums-Sha256` field lists and checks each against it; a mismatch or a missing file fails
 the release. It reads only that field: no source file is unpacked or opened (BRIEF.md 3.1). The
-tar is uncompressed and flat, with a `SHA256SUMS` (154 files, 47 of them `.dsc`, about 246 MB
+tar is uncompressed and flat, with a `SHA256SUMS` (154 source files, 47 of them `.dsc`, about 246 MB
 at the `20260918T000000Z` pins, most of it gcc-14's and libmysofa's), and the same pins give
 the same bytes. The
 notices, in the image and as `chorus-soloist-v<ver>-NOTICES.md`, name this asset of the
