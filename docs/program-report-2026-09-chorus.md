@@ -1,7 +1,7 @@
 # Program report: 2026-09-chorus
 
 The closing report of the 2026-09-chorus program (program brief
-`.claude/goals/2026-09-chorus.md` at commit 535ed28, section 31 item 6; harness project 37,
+`535ed28:.claude/goals/2026-09-chorus.md`, section 31 item 6; harness project 37,
 task 263). Written 2026-10-07 at `origin/main` 0199d02, the `v0.2.0` tag. Every claim names
 the path, run or command it comes from.
 
@@ -91,8 +91,8 @@ commit, passed.
 
 ## Needs items
 
-Steps only the owner can do, safety first, then what unblocks the most. Each is a harness item
-(`goals item list`) or an Ask Noah task (`goals task list chorus`); none is a GitHub issue.
+Steps only the owner can do, safety first, then what unblocks the most. Each chorus step is a harness item
+(`goals item list`) or an owner decision task (`goals task list chorus`); none is a GitHub issue.
 
 Safety, electrical and licence:
 
@@ -106,7 +106,8 @@ Safety, electrical and licence:
 3. **OTA rollback on a board, bench S10** (item 63; `docs/firmware-updates.md`).
 4. **Mains wiring for the two-way and the subwoofer**: a listed adapter or a fused inlet, a plate
    amp or a bare board (`docs/hardware/twoway-speaker.md`, `docs/hardware/subwoofer.md`), the
-   owner's choice when those speakers are built (devices' builds of them are in progress).
+   owner's choice when those speakers are built. Not a chorus item: devices' plan for those
+   builds (devices roadmap project 7, open) carries it.
 5. **Credentials**: the Spotify Soloist API key (item 59); the optional Mosquitto user (item 62).
 
 What unblocks the most (parity items in brackets, `docs/parity.md`):
@@ -150,7 +151,7 @@ Section 31 item 5, each filed in the harness:
 | P11, concurrent streams | accepted 2026-10-05 (`docs/proposals/P11-concurrent-streams.md`) | - |
 | P12, enclosures per speaker class (K88) | PROPOSED (`docs/proposals/P12-enclosures.md`) | task 317 |
 | P13, the rack amp's zones (K70, K72, K74, K96): zero zones, with ADR 0231 | PROPOSED (`docs/proposals/P13-rack-amp-zones.md`) | task 318 |
-| P14, the devices seam | PROPOSED in its Status line, but overtaken: the designs landed in devices by PR (ADRs 0233, 0234); no decision needed | - |
+| P14, the devices seam | decided at Checkpoint K, then overtaken: the designs landed through devices' own pull requests 120, 121 and 128 (its Outcome line); not awaiting the owner | task 114 adds its dated note |
 
 There is no proposal after P14. P1 to P10 were decided at Checkpoint K or later (each file's
 Status line).
@@ -166,7 +167,8 @@ Addressed to chorus:
 | Request | What | State |
 |---|---|---|
 | goals #230 (from goals) | Throwaway build target dirs on tmpfs; image builds under the heavy lock | DONE: chorus PR 134 (b5eb6ca), `tools/build-dir.sh` |
-| goals #191 (from devices, dev-14) | The six `acoustics.md` records devices' Audio lane waits on | DONE: four landed (table above); the rack amp and soundbar records are DECLINED as not designed (ADR 0231, P13); devices task 283 records them as dropped |
+| goals #191 (from devices, dev-14) | The six `acoustics.md` records devices' Audio lane waits on | DONE: four landed (table above); the rack amp and soundbar records are DECLINED as not designed (ADR 0231, P13); devices task 283 (ready) will record them as dropped |
+| harness task 201 (from devices, for devices task 50) | The compact's board profile for its separate modules | DONE: chorus PR 230 (747bde4), board profile `devkitc-s3-louderhat-wired` |
 | harness task 114 (from devices) | Rename `builds/chorus-*` to `projects/chorus-*/v<n>/` in chorus docs | DEFERRED: a ready chorus task; it waits on devices task 112 |
 
 Filed by chorus:
@@ -174,15 +176,15 @@ Filed by chorus:
 | Request | What | State |
 |---|---|---|
 | goals #222 (to goals) | A heavy-lock waiter held a slot | done by goals (#223, #224) |
-| goals #110 (to devices, chorus-1) | chorus's speaker designs in devices | accepted by devices, served: devices projects 6, 7 and 8 build them |
+| goals #110 (to devices, chorus-1) | chorus's speaker designs in devices | accepted by devices; its roadmap projects 6, 7 and 8 build them (open) |
 | harness tasks for siblings | homelab 181, 206, 207 (re-pins, the speaker network); devices 55, 56, 244 (the records); inventory 1 (driver records) | all done (`goals task list <repo>`) |
 
-So no request is open, and no follow-up goal is needed for one.
+So no request addressed to chorus is open (114 is deferred to its own ready task), and no follow-up goal is needed for one.
 
 ## Follow-ups
 
 - Task 114: the devices path rename above.
-- Tasks 316 to 319: the Ask Noah tasks in this report.
+- Tasks 316 to 319: the owner decision tasks in this report.
 - `docs/pins.md`: one change for the pins that are behind, and a proposal for the next Rust.
 - K67: the compact image's GPIO, LED and I2S-input binding is not written (`docs/parity.md`).
 - The subwoofer's per-endpoint LFE high-pass and voltage limit, and a continuous phase control
