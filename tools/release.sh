@@ -11,6 +11,9 @@
 #                                                    and NO Soloist file (docs/soloist.md)
 #   chorus-soloist-v<ver>-NOTICES.md                 that image's third-party notices: every Debian
 #                                                    package in it and where its source is
+#   chorus-soloist-v<ver>-debian-sources.tar         the Debian source packages of every package in
+#                                                    that image, each held to its .dsc
+#                                                    (tools/soloist-sources.sh; ADR 0241)
 #   chorus-endpoint-esp32s3-v<ver>.bin               the endpoint application image
 #   chorus-endpoint-esp32s3-v<ver>.tar.gz            bootloader, partition table, application
 #                                                    and flasher_args.json (offsets and flags)
@@ -54,6 +57,7 @@ artifact_names() {
     echo "chorus-server-v$ver-oci.tar"
     echo "chorus-soloist-v$ver-oci.tar"
     echo "chorus-soloist-v$ver-NOTICES.md"
+    echo "chorus-soloist-v$ver-debian-sources.tar"
     echo "chorus-endpoint-esp32s3-v$ver.bin"
     echo "chorus-endpoint-esp32s3-v$ver.tar.gz"
     echo "chorus-endpoint_${ver}_arm64.deb"
@@ -120,6 +124,13 @@ install -m 0644 "$IMAGE_BD/image/soloist-work/stage-chorus/usr/share/doc/chorus/
 SOLOIST_DIGEST="$(tar -xOf "$OUT/chorus-soloist-v$VER-oci.tar" index.json |
     python3 -c 'import json,sys; m=json.load(sys.stdin)["manifests"]; assert len(m)==1; print(m[0]["digest"])')"
 SOLOIST_PACKAGES="$(command grep -c -v -E '^(#|[[:space:]]*$)' deploy/soloist/debian-packages.pins)"
+
+# 2c. The image's Debian source packages (ADR 0241): every .dsc of
+# deploy/soloist/debian-sources.pins and every file it lists, each held to its sha256, in one
+# uncompressed tar with a SHA256SUMS. Fetched and hashed only; no source file is opened.
+CHORUS_SOLOIST_SOURCES_OUT="$OUT/chorus-soloist-v$VER-debian-sources.tar" bash tools/soloist-sources.sh
+SOLOIST_SOURCES="$(command grep -c -v -E '^(#|[[:space:]]*$)' deploy/soloist/debian-sources.pins)"
+SOLOIST_SNAPSHOT="$(sed -n 's/^# snapshot = //p' deploy/soloist/debian-sources.pins)"
 
 # 3. The endpoint firmware image (ESP-IDF at the pinned version; guard-checked).
 if [ -z "${IDF_PATH:-}" ]; then
@@ -195,6 +206,11 @@ Artifacts:
   binary and API key (docs/soloist.md). It is in no registry.
 - \`chorus-soloist-v$VER-NOTICES.md\`: that image's notices: every Debian package in it, its
   version, and the Debian source package that is its source, at snapshot.debian.org.
+- \`chorus-soloist-v$VER-debian-sources.tar\`: the source of that image's Debian packages:
+  the $SOLOIST_SOURCES Debian source packages they are built from, each \`.dsc\` and every file it
+  lists, as Debian published them at snapshot.debian.org \`$SOLOIST_SNAPSHOT\` (also the
+  pointer in the notices), each held to the sha256 its \`.dsc\` gives and the \`.dsc\` to the
+  one deploy/soloist/debian-sources.pins pins. An uncompressed tar, flat, with a SHA256SUMS.
 - \`chorus-endpoint-esp32s3-v$VER.bin\` and \`.tar.gz\`: the ESP32-S3 endpoint image built
   with ESP-IDF $IDF_VER, with the bootloader, partition table and flasher_args.json. The
   firmware safety scans (no eFuse writes, Secure Boot, Flash Encryption or anti-rollback)

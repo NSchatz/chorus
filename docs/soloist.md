@@ -263,6 +263,13 @@ OCI image layout of one receiver, with no container daemon (ADR 0131 says why th
 | `/etc/ld.so.cache` | the image's own `ldconfig`, run by the build |
 | `/usr/share/doc/chorus/THIRD-PARTY-NOTICES.md`, `/usr/share/doc/<package>/copyright`, `/var/lib/dpkg/status.d/<package>` | `deploy/soloist/THIRD-PARTY-NOTICES.md` plus the package table; the packages themselves; each package's control file |
 
+The source of those Debian packages is attached to every release that carries the image, as
+`chorus-soloist-v<ver>-debian-sources.tar`: each source package's `.dsc`, held to the sha256 in
+`deploy/soloist/debian-sources.pins`, and every file it lists, held to the sha256 the `.dsc`
+gives (`make soloist-sources`, `tools/soloist-sources.sh`; ADR 0241). The image's notices name
+that asset, and snapshot.debian.org as well. v0.2.0's was attached after its release
+(`docs/release.md`).
+
 **No Soloist file is in the image**, and none is in the repository or a release: `make
 soloist-lists` prints what chorus ships and fails on any such file (conventions rule 24).
 PipeWire's and WirePlumber's configuration is not in the image either: `chorus-soloistd` writes
@@ -293,7 +300,8 @@ variables where a container would use the compiled-in paths. It shows:
 - the entrypoint, the command and the user of the image's configuration; `chorus-soloistd` is a
   static position-independent executable and runs; `/opt/soloist` is an empty directory;
 - every pinned package's copyright file and control record is present and the notices name each
-  package and its source;
+  package and its source, and name `chorus-soloist-v<ver>-debian-sources.tar`, the release asset
+  that holds the Debian source packages (`docs/release.md`, ADR 0241);
 - every `NEEDED` library of every program and library the packages brought is in the image's
   loader cache or the file's own `RUNPATH` (253 files): the loader finds them with no maintainer
   script having run, and nothing needs a file of an excluded package;

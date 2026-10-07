@@ -56,15 +56,16 @@ ALLOWED_IMAGE = {
     "var/lib/chorus-soloist": "dir",   # state
     "var/cache/chorus-soloist": "dir",  # cache
 }
-# chorus's own names in a release.
-ALLOWED_RELEASE = re.compile(r"^chorus-soloist-v[0-9]+\.[0-9]+\.[0-9]+(-oci\.tar|-NOTICES\.md)$")
+# chorus's own names in a release: the image, its notices, and its Debian source packages
+# (tools/soloist-sources.sh: only files held to the sha256 of a pinned .dsc).
+ALLOWED_RELEASE = re.compile(r"^chorus-soloist-v[0-9]+\.[0-9]+\.[0-9]+(-oci\.tar|-NOTICES\.md|-debian-sources\.tar)$")
 # The kinds of tracked file that may name soloist, first match wins.
 TRACKED = [
     ("source", re.compile(r"^crates/(soloist(d|-fake)?/.*|server/(src|tests|examples)/[a-z0-9_-]+)\.(rs|toml)$")),
     ("fixtures", re.compile(r"^fixtures/(soloist/[a-z0-9-]+\.(json|line|txt)|control/v2/[a-z0-9_-]+\.(json|fields))$")),
     ("docs", re.compile(r"^docs/(soloist\.md|decisions/[0-9]{4}-[a-z0-9-]+\.md|proposals/P7-spotify-soloist\.md)$")),
-    ("config", re.compile(r"^deploy/soloist/(compose\.yaml|server\.compose\.yaml|debian-packages\.pins|THIRD-PARTY-NOTICES\.md)$")),
-    ("tools", re.compile(r"^tools/soloist-(image\.sh|image-test\.py|lists\.py)$")),
+    ("config", re.compile(r"^deploy/soloist/(compose\.yaml|server\.compose\.yaml|debian-(packages|sources)\.pins|THIRD-PARTY-NOTICES\.md)$")),
+    ("tools", re.compile(r"^tools/soloist-(image\.sh|image-test\.py|lists\.py|sources\.sh)$")),
 ]
 BINARY_SUFFIX = re.compile(r"\.(tar|tgz|gz|xz|zst|zip|deb|rpm|bin|so|AppImage)$", re.I)
 
@@ -207,7 +208,8 @@ def self_test():
             if not any(want in line for line in found):
                 return "%s was not refused by name (wanted %r, got %s)" % (what, want, found)
         problems = []
-        check_release(["chorus-soloist-v1.2.3-oci.tar", "chorus-soloist-v1.2.3-NOTICES.md", "chorus-server-v1.2.3-oci.tar"], problems)
+        check_release(["chorus-soloist-v1.2.3-oci.tar", "chorus-soloist-v1.2.3-NOTICES.md",
+                       "chorus-soloist-v1.2.3-debian-sources.tar", "chorus-server-v1.2.3-oci.tar"], problems)
         if problems:
             return "chorus's own release names fail: %s" % problems
         for name in ("soloist-1.3.8-linux-x86_64.tar.gz", "chorus-fake-soloist", "chorus-soloist-v1.2.3-bin.tar"):
