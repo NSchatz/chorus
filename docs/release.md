@@ -107,9 +107,11 @@ binary packages (PipeWire, WirePlumber and what they depend on), some under the 
 links none of them. The image carries each package's Debian copyright file and a notices file
 naming every package, its version and its Debian source package at the snapshot.debian.org
 timestamp the binary came from; the release attaches that notices file as
-`chorus-soloist-v<ver>-NOTICES.md`. The source packages themselves are not attached: Debian's
-snapshot archive is where they are. `docs/decisions/0131-the-chorus-soloist-image.md` says why
-that is the position and what the owner would add before publishing the image to others.
+`chorus-soloist-v<ver>-NOTICES.md`. The owner decided on 2026-10-07 that a release also attaches
+the Debian source packages of every package in the image, verified against their `.dsc` files,
+v0.2.0 included (`docs/decisions/0000-the-soloist-image-attaches-its-debian-sources.md`, which
+supersedes ADR 0131 item 9's open point); until harness task 321 builds that step, the source
+is at Debian's snapshot archive only.
 
 ## Pushing the images to a registry
 
