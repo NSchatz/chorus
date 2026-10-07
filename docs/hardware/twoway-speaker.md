@@ -418,7 +418,7 @@ speaker's share of the pack and says so (the room list builds six two-ways).
 | ESP32-S3 board | Espressif ESP32-S3-DevKitC-1-N8R8, Mouser 356-EP32S3DVKTC1N8R8 (a search listing; the live page refused a scripted read) | 15.00 | https://www.mouser.com/en/ProductDetail/Espressif-Systems/ESP32-S3-DevKitC-1-N8R8?qs=7D1LtPJG0i2PiuUUKucutQ%3D%3D, 2026-10-06 |
 | Amplifier board | Sonocotta Louder Raspberry Hat Plus, 1X (2.0), TAS5825M, Tindie, 27 in stock | 25.00 | https://www.tindie.com/products/sonocotta/louder-raspberry-hat-plus/, 2026-10-07 |
 | Ethernet module | WIZnet WIZ850io (W5500), Mouser (a search listing) | 19.58 | https://www.mouser.com/ProductDetail/WIZnet/WIZ850io?qs=W0yvOO0ixfFLSlENQWBCKg%3D%3D, 2026-10-06 |
-| 24 V adapter (chosen) | Mean Well GST120A24-P1M desktop adapter: "24Vdc 5A", 120 W, "3 pole AC inlet IEC320-C14", "UL62368-1 listed"; in stock (1,492), TRC Electronics | 57.27 | https://www.trcelectronics.com/View/Mean-Well/GST120A24-P1M.shtml, 2026-10-06 |
+| 24 V adapter | Mean Well GST120A24-P1M desktop adapter: "24Vdc 5A", 120 W, "3 pole AC inlet IEC320-C14", "UL62368-1 listed"; in stock (1,492), TRC Electronics | 57.27 | https://www.trcelectronics.com/View/Mean-Well/GST120A24-P1M.shtml, 2026-10-06 |
 | Controls: pairing button (allocation) | a 16 mm panel-mount momentary push button, in stock | 0.95 | https://www.adafruit.com/product/1505, 2026-10-06 |
 | Controls: status light | one NeoPixel Mini Button PCB (WS2812B/SK6812): 1 of a 5 pack at $4.95 | 0.99 | https://www.adafruit.com/product/1612, 2026-10-06 |
 | Enclosure: plywood (allocation) | 3/4 inch (13-ply, 18 mm) Baltic birch: one 20 x 30 inch panel at $13.29 and one 20 x 20 inch at $8.86, 0.645 m² together | 22.15 | https://ocoochhardwoods.com/plywood/baltic-birch-plywood/, 2026-10-06 |
@@ -463,7 +463,7 @@ What the total does and does not say:
   from Wrocław, Poland (Tindie, whose page said standard shipments to the US were on hold, UPS
   at elevated rates, read 2026-10-07); the button and the light from Brooklyn, New York
   (`docs/hardware/compact-speaker.md`, "The budget"); the adapter from Doylestown,
-  Pennsylvania (its page's "Ships From"). The the plywood's and the filament's pages
+  Pennsylvania (its page's "Ships From"). The plywood's and the filament's pages
   state no ship-from; their sellers are US shops (**ASSUMED** US ship-from).
 - **Not priced here:** the mains cord, hookup wire and jumper leads, the DC lead, its panel
   jack and fuse, the Ethernet patch cable and its panel jack, wood glue, the finish, a grille,
