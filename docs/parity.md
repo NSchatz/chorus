@@ -57,7 +57,7 @@ How to read it:
 | 8.1-16 | The app (goals 21, 22) | done | `docs/app.md`; `web/`; `docs/decisions/0181-the-web-app-stack.md` | - |
 | 8.1-17 | Acoustic design tools (goal 23): the acoustics package lives in the owner's shared Python library; chorus reads its released v1.49.0 | done | `docs/hardware/compact-speaker.md`; `docs/decisions/0216-the-compact-speaker-drivers-and-alignment.md` | - |
 | 8.1-18 | The speaker designs (goals 24, 25, 26) | done | `docs/hardware/compact-speaker.md`; `docs/hardware/twoway-speaker.md`; `docs/hardware/subwoofer.md`; `docs/hardware/lcr-set.md`; `docs/decisions/0234-goal-26-closed-no-rack-amp-or-soundbar-and-the-lcr-set-landed.md` | - |
-| 8.1-19 | Finale (goal 27) | partial | `docs/release.md`; `docs/parity.md` | In progress: the release, the fresh-clone gate and the program report are goal 27's other tasks |
+| 8.1-19 | Finale (goal 27) | done | `docs/release.md`; `docs/parity.md`; `docs/program-report-2026-09-chorus.md`; `docs/decisions/0140-ci-is-the-gate.md` | - |
 
 ## K30 and K31: the parity features
 
