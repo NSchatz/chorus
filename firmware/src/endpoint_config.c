@@ -545,7 +545,7 @@ static int from_conf(chorus_endpoint_config_t *out, const chorus_conf_t *conf_in
 }
 
 #define CONTROL_PIN_COUNT 13
-#define BOARD_PIN_MAX 27 /* the controls, eight audio pins and six Ethernet pins */
+#define BOARD_PIN_MAX 27 /* 13 controls, eight audio pins and six Ethernet pins */
 
 /* Every pin the profile names but the controls', for the one-signal-per-pin
  * rule below; the Ethernet pins only when the link drives them. */

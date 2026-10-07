@@ -115,6 +115,7 @@ int chorus_esp_knobs_start(const chorus_endpoint_config_t *config, chorus_playou
     }
     if (knob_channel(&knobs[0], CHORUS_INPUT_SUB_LEVEL_KNOB, c->knob_level) != 0 ||
         knob_channel(&knobs[1], CHORUS_INPUT_SUB_PHASE_KNOB, c->knob_phase) != 0) {
+        (void)adc_oneshot_del_unit(adc);
         return -1;
     }
     target = playout;
