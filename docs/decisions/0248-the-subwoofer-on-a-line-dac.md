@@ -1,4 +1,4 @@
-# 0000: the subwoofer's board profile is a DevKitC, a PCM5102A line DAC and a WIZ850io, a new line-dac audio output with its filter delay counted, the knobs read by ADC1, and subwoofer.md version 2
+# 0248: the subwoofer's board profile is a DevKitC, a PCM5102A line DAC and a WIZ850io, a new line-dac audio output with its filter delay counted, the knobs read by ADC1, and subwoofer.md version 2
 
 - Status: decided, 2026-10-07 (harness task 322; the owner's decision "DevKitC+DAC+WIZ" in the
   devices repository's task 276, and that repository's plan for chorus-sub-v1)

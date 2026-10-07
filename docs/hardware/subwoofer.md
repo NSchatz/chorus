@@ -22,7 +22,7 @@ version: 2
 - Version 2 (2026-10-07): the endpoint is an ESP32-S3-DevKitC-1-N8R8, an Adafruit PCM5102 line
   DAC and a WIZ850io, not the Esparagus Audio Brick, on its own 5 V adapter; the feed to the
   amplifier is settled as the line DAC (option 3 of version 1), with the amplifier's gain set
-  for its 2.1 V RMS (decision 0000, the owner's decision in the devices repository's plan). The
+  for its 2.1 V RMS (decision 0248, the owner's decision in the devices repository's plan). The
   acoustics, the design record, the high-pass and the amplifier do not change.
 
 **How the numbers were computed.** Every computed number names the call that produced it. The
