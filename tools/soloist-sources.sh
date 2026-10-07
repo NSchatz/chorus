@@ -99,6 +99,6 @@ echo "soloist-sources: $PACKAGES source packages, $FILES files ($BYTES bytes) ve
 (cd "$STAGE" && LC_ALL=C command ls | xargs sha256sum > "$CACHE/SHA256SUMS.$$" && mv "$CACHE/SHA256SUMS.$$" SHA256SUMS)
 EPOCH="$(date -u -d "${SNAPSHOT:0:8} ${SNAPSHOT:9:2}:${SNAPSHOT:11:2}:${SNAPSHOT:13:2}" +%s)"
 (cd "$STAGE" && LC_ALL=C command ls) | tar -C "$STAGE" --sort=name --mtime="@$EPOCH" --owner=0 --group=0 \
-    --numeric-owner --mode=0644 -cf "$OUT.tmp.$$" -T -
+    --numeric-owner --mode=0644 --hard-dereference -cf "$OUT.tmp.$$" -T -
 mv "$OUT.tmp.$$" "$OUT"
 echo "soloist-sources: $OUT, $(du -k "$OUT" | cut -f1) KiB, $(tar -tf "$OUT" | wc -l) files, sha256 $(sha256sum "$OUT" | cut -d' ' -f1)"
