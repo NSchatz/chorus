@@ -476,8 +476,9 @@ response points (250, 500, 1000, 2000, 4000, 8000 and 16000 Hz; the test's toler
   rests on reading them as the same drive.
 - **The class's budget and tier are PROPOSED,** the owner's to decide.
 - **P12 is ACCEPTED** (decision 0242): the enclosure's construction is its recommendation for
-  this class; the cut and volume figures it gives are still **ASSUMED** until a box is measured
-  (P1 is approved: Option B, decisions 0042 and 0057).
+  this class, its printed fittings in PETG for now (devices task 275); the cut and volume
+  figures it gives are still **ASSUMED** until a box is measured (P1 is approved: Option B,
+  decisions 0042 and 0057).
 - **The supply:** outside the box or inside it is the electronics plan's choice.
 - **The better and best tiers** have a box from the package and no vent, EQ or record of
   their own; each is a later version if taken.

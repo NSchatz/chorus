@@ -15,6 +15,9 @@ or mixed. It recommended Option C, mixed by class. Two things had moved since it
   task 51; devices `docs/decisions.md`, 2026-10-06). The owner chose P12's compact answer,
   printed, with its construction; devices builds it in PETG, P12's own indoor fallback, because
   shopkit's rule `fdm:P29` prints ASA for car parts only. That settled devices' build, not P12.
+- For the same reason, devices builds the two-way's printed fittings (the vent, the rear plate,
+  the carrier, the router templates) in PETG, not P12's ASA, in an 18 mm birch plywood box
+  (devices task 275, 2026-10-07).
 - Goal 26 closed with no rack amp and no soundbar designed (decision 0234), so P12's soundbar
   and rack amp lines no longer have a build.
 
@@ -24,7 +27,8 @@ All on 2026-10-07.
 
 - `docs/proposals/P12-enclosures.md` (Option C, the compact section, If deferred, open items).
 - The devices repo's `docs/decisions.md` on its main branch: "chorus-compact-v1's enclosure
-  material" (task 35) and "chorus-compact-v1's enclosure is PETG, not ASA" (task 51).
+  material" (task 35), "chorus-compact-v1's enclosure is PETG, not ASA" (task 51) and
+  "chorus-twoway-v1's printed fittings are PETG, not ASA" (task 275).
 - Decision 0234, `docs/parity.md` row K88, BRIEF.md's open line on enclosure material.
 
 ## Options the owner was given
@@ -41,16 +45,18 @@ Only what was still open was asked: the two-way, the LCR set and the subwoofer.
 1. **Option 1: P12 is ACCEPTED as written,** Option C, mixed by class:
    - the compact: printed, 8 mm walls with four perimeters and 60% infill, ribbed to 80 mm, one
      body and one gasketed panel, net volume held to ± 2% and leakage to `ql` of 7 or better.
-     P12 names ASA; the material printed now is PETG, as devices decided, and ASA returns only
-     through a shopkit exemption to `fdm:P29`. The construction and tolerances do not change.
+     The construction and tolerances do not change.
    - the active two-way and the LCR set: braced 18 mm birch plywood, no unbraced span over about
      200 mm, with printed ports, flares, electronics carriers and router templates.
    - the subwoofer: braced 18 mm MDF with a doubled (36 mm) baffle, painted; a printed port flare
      if vented.
+   - every printed part: P12 names ASA; what is printed now is PETG, as devices decided (the
+     compact by its task 51, the two-way's fittings by its task 275), and ASA returns only
+     through a shopkit exemption to `fdm:P29`.
    - the soundbar and the rack amp: no build (decision 0234), so P12's lines for them stand as
      written and apply to nothing.
 2. **No class changed,** so no new enclosure task goes to the devices repo; its existing builds
-   already follow P12's recommendation.
+   already follow P12's construction, in PETG where P12 says ASA.
 3. **What stays ASSUMED:** P12's cut tolerance on the owner's saw, the wood volume figure, the
    sealing and ringing of printed walls and the shop facts it lists. Accepting the proposal does
    not measure them; the first box of each class does (P12's open items, BRIEF 3.1).

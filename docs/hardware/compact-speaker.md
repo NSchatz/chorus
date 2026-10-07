@@ -283,8 +283,7 @@ first.
   at 24 V into 4 ohms in that mode, so the woofer channel's power is bounded by the limits
   above and by the PoE supply, and its heat is a thing the first box measures.
 - **The enclosure path:** `docs/proposals/P12-enclosures.md` (ACCEPTED 2026-10-07 as written,
-  decision 0242; the devices repo prints it in PETG for now, the same construction): printed
-  ASA, 8 mm walls with four
+  decision 0242): printed (ASA in P12, PETG in the devices repo for now), 8 mm walls with four
   perimeters and 60% infill, ribbed to 80 mm, one body and one gasketed panel, net volume held
   to ± 2% and leakage to `ql` of 7 or better. Those are the tolerances the table above is
   computed against.
