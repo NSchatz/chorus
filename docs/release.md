@@ -13,6 +13,7 @@ ghcr.io by CI, `.github/workflows/publish-images.yml` (below; decided by the own
 | `chorus-server-v<ver>-oci.tar` | the server as an OCI image layout tarball on a digest-pinned distroless base, tested unpacked (`--help`, `GET /api/state`) | `tools/image.sh` |
 | `chorus-soloist-v<ver>-oci.tar` | one Spotify Soloist receiver as an OCI image layout tarball: PipeWire, WirePlumber and `chorus-soloistd` on a digest-pinned `debian:trixie-slim`, the Debian packages pinned by sha256; tested unpacked. **It holds no Soloist file** (`docs/soloist.md`) | `tools/soloist-image.sh` |
 | `chorus-soloist-v<ver>-NOTICES.md` | that image's third-party notices: each Debian package, its version, and the Debian source package that is its source (the file the image carries at `/usr/share/doc/chorus/THIRD-PARTY-NOTICES.md`) | `tools/soloist-image.sh` |
+| `chorus-soloist-v<ver>-debian-sources.tar` | the source of that image's Debian packages: each Debian source package's `.dsc` and every file it lists, flat, with a `SHA256SUMS` (below) | `tools/soloist-sources.sh` |
 | `chorus-endpoint-esp32s3-v<ver>.bin` | the ESP32-S3 endpoint application image | `tools/firmware-image.sh` (ESP-IDF at the pin in `firmware/config/endpoint.conf`, then the eFuse and image guard) |
 | `chorus-endpoint-esp32s3-v<ver>.tar.gz` | the bootloader, partition table, application and `flasher_args.json` (offsets and flash flags) | the same build |
 | `chorus-endpoint_<ver>_arm64.deb`, `chorus-endpoint_<ver>_amd64.deb` | the Linux endpoint package: `chorus-client`, its systemd unit, `/etc/chorus/client.conf`, real-time limits and `chorus-verify-host`, for glibc 2.36 and later (goal 10; `docs/linux-endpoint.md`) | `tools/endpoint-package.sh` (cross-built rootless with zig and cargo-zigbuild; readelf, dpkg-deb and `systemd-analyze verify` checks) |
@@ -110,8 +111,34 @@ timestamp the binary came from; the release attaches that notices file as
 `chorus-soloist-v<ver>-NOTICES.md`. The owner decided on 2026-10-07 that a release also attaches
 the Debian source packages of every package in the image, verified against their `.dsc` files,
 v0.2.0 included (`docs/decisions/0241-the-soloist-image-attaches-its-debian-sources.md`, which
-supersedes ADR 0131 item 9's open point); until harness task 321 builds that step, the source
-is at Debian's snapshot archive only.
+supersedes ADR 0131 item 9's open point), so the LGPL and GPL source is offered from the same
+place as the image.
+
+So every release that carries the image attaches `chorus-soloist-v<ver>-debian-sources.tar`.
+`deploy/soloist/debian-sources.pins` names, for each of the 47 source packages the binary pins
+name, its `.dsc` at the same snapshot with the `.dsc`'s sha256 and size (`check-pins.sh` holds
+the two files to the same set of source packages). `tools/soloist-sources.sh` (`make
+soloist-sources`, release step 2c) fetches each `.dsc`, checks it, then fetches every file its
+`Checksums-Sha256` field lists and checks each against it; a mismatch or a missing file fails
+the release. It reads only that field: no source file is unpacked or opened (BRIEF.md 3.1). The
+tar is uncompressed, flat (201 files, about 246 MB at the `20260918T000000Z` pins, most of it
+gcc-14's and libmysofa's), with a `SHA256SUMS`, and the same pins give the same bytes. The
+notices, in the image and as `chorus-soloist-v<ver>-NOTICES.md`, name this asset of the
+release of the image's version as the source, and keep the snapshot.debian.org pointer; the
+release notes say the same.
+
+v0.2.0 was released before this step existed, so its tar was built and attached afterwards by
+CI, not by a workstation or the agent host: its binary pins are identical to `main`'s, and
+`release.yml`'s `sources-for` input, on `main`, checks that, builds the tar and attaches it to
+the existing release (`gh release upload`, which refuses to replace an asset):
+
+```
+gh workflow run release.yml --ref main -f sources-for=v0.2.0 -f dry-run=false
+```
+
+The v0.2.0 image itself, and `ghcr.io/nschatz/chorus-soloist:0.2.0`, carry the notices of
+before: the snapshot pointer only. Its source is the v0.2.0 release's
+`chorus-soloist-v0.2.0-debian-sources.tar`.
 
 ## Pushing the images to a registry
 

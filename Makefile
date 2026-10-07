@@ -45,6 +45,13 @@ image: tools-executable
 soloist-image: tools-executable
 	bash tools/soloist-image.sh
 
+# The Debian source packages of the chorus-soloist image (ADR 0241): every .dsc of
+# deploy/soloist/debian-sources.pins and every file it lists, fetched from snapshot.debian.org,
+# held to their sha256 and put in one tar the release attaches (tools/soloist-sources.sh). Fetch
+# and hash only; no source file is opened. Needs no network once its cache is warm.
+soloist-sources: tools-executable
+	bash tools/soloist-sources.sh
+
 # What chorus ships, listed, and held to "no Soloist file and no fake Soloist in an image or a
 # release" (docs/conventions.md rule 24). Reads the trees `make image` and `make soloist-image`
 # left; builds nothing and refuses by name without them. LISTS_ARGS=--full prints every Debian
@@ -52,7 +59,7 @@ soloist-image: tools-executable
 soloist-lists: tools-executable
 	python3 tools/soloist-lists.py $(LISTS_ARGS)
 
-.PHONY: soloist-image soloist-lists
+.PHONY: soloist-image soloist-lists soloist-sources
 
 # The Home Assistant integration (goal 18; integrations/homeassistant, docs/home-assistant.md).
 # ha-test: the pinned Python and the hash-locked harness synced into a virtual environment

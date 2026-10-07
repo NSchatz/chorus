@@ -1,0 +1,65 @@
+# The Debian source packages of the chorus-soloist image: one line per source package that
+# deploy/soloist/debian-packages.pins names, its .dsc held to a sha256 and size.
+# tools/soloist-sources.sh fetches each .dsc from snapshot.debian.org at the timestamp below,
+# checks it, then fetches and checks every file its Checksums-Sha256 field lists; the release
+# attaches them as chorus-soloist-v<ver>-debian-sources.tar (ADR 0241, docs/release.md).
+# tools/conventions/check-pins.sh holds this file's shape, and that its (source, version) set is
+# exactly the one the binary pins name.
+#
+# How it was resolved (2026-10-07): the main/source/Sources.xz index of each of the three
+# suites the binary pins were resolved against, at the same snapshot timestamp, each index held
+# to the sha256 its suite's Release file gives; a .dsc's sha256 and size are that index's
+# Checksums-Sha256 entry for the file. All 47 are in debian trixie main. Moving the binary pins
+# moves these in the same commit.
+#
+# snapshot = 20260918T000000Z
+# archive = https://snapshot.debian.org/archive/
+#
+# Columns: source-package source-version dsc-sha256 dsc-size path
+abseil 20240722.0-4 d127496fe53d7dd0e6770c6eb3f873187fcb76e67fee68c4c8da745b41b7bbc6 1893 debian/20260918T000000Z/pool/main/a/abseil/abseil_20240722.0-4.dsc
+alsa-lib 1.2.14-1+deb13u1 45f15d45b0329394de2e59c85052d0ac084e4e0ac215346ac5299a09432f515e 2951 debian/20260918T000000Z/pool/main/a/alsa-lib/alsa-lib_1.2.14-1%2bdeb13u1.dsc
+avahi 0.8-16 a8c9a5e3bde8b314b6a2feb385f25fb658bc77960d5f1ed27bc9e159f8691a0a 4005 debian/20260918T000000Z/pool/main/a/avahi/avahi_0.8-16.dsc
+dbus 1.16.2-2 4bc35ba286891589d8ed9368da3d81db2a4d387144919850e4ea8e9ae2cf0364 3712 debian/20260918T000000Z/pool/main/d/dbus/dbus_1.16.2-2.dsc
+expat 2.8.3-1~deb13u1 d17f15fe413a553c72185d2d00448b87db72354e0d8fa6099ad19ee19e7117af 1638 debian/20260918T000000Z/pool/main/e/expat/expat_2.8.3-1%7edeb13u1.dsc
+fftw3 3.3.10-2 58bdea9754119c591f95e373c1c85ff2b6861383b20bf3bb1e81af9c76a51d71 2754 debian/20260918T000000Z/pool/main/f/fftw3/fftw3_3.3.10-2.dsc
+flac 1.5.0+ds-2 6104c7d69c96e7c8410248d9533bf70df71efd8365966b114c12e9e5cead041a 2366 debian/20260918T000000Z/pool/main/f/flac/flac_1.5.0%2bds-2.dsc
+gcc-14 14.2.0-19 7db1e202cce66617e9134a662c877a3a773de5b612fd52179815877e0ecfb847 47347 debian/20260918T000000Z/pool/main/g/gcc-14/gcc-14_14.2.0-19.dsc
+glib2.0 2.84.4-3~deb13u5 2587beb2f5b90511d0c88a7595c1d3b3ea7a5b7e6582713ecae3713864012858 5294 debian/20260918T000000Z/pool/main/g/glib2.0/glib2.0_2.84.4-3%7edeb13u5.dsc
+glibmm2.4 2.66.8-1 bd437c52ff5b864ea054f2b00c6851040027cadd224dc5599a934f29123dd20d 2351 debian/20260918T000000Z/pool/main/g/glibmm2.4/glibmm2.4_2.66.8-1.dsc
+lame 3.100-6 6a402771625fa80785a2b904697ba9c7e74a1ee4fa536354e9e88f08e2a4073b 2168 debian/20260918T000000Z/pool/main/l/lame/lame_3.100-6.dsc
+libasyncns 0.8-6 d6a3cccafadceda0bd1542c6325c6238ec34a8ff85276d6f2e5914e282c67dc6 1921 debian/20260918T000000Z/pool/main/liba/libasyncns/libasyncns_0.8-6.dsc
+libconfig 1.7.3-2 0bfbefdf63a12eb40c002fa97ab5c0b35ea9ef4f661c80f3c06ed6eda9f00d2b 2179 debian/20260918T000000Z/pool/main/libc/libconfig/libconfig_1.7.3-2.dsc
+libebur128 1.2.6-1 46140388068887be8fe9916e9c01f34a1117a7b37e972be512df5afb6aaa31fe 2032 debian/20260918T000000Z/pool/main/libe/libebur128/libebur128_1.2.6-1.dsc
+libffado 2.4.9-2 20ddc23cd6bdb62d22192ff6797cd8e8dc4d679a71e378d9a45b8ebc39476f8a 2423 debian/20260918T000000Z/pool/main/libf/libffado/libffado_2.4.9-2.dsc
+libffi 3.4.8-2 4424defe3f37c0084f062e03330b2ba3d3f927367c33be455cfacf7f85a78161 1948 debian/20260918T000000Z/pool/main/libf/libffi/libffi_3.4.8-2.dsc
+libiec61883 1.2.0-7 deb4dfad3db3db780e74b111a20b96a84854a4ce9b1d978d3cf26be0785a2f9d 1830 debian/20260918T000000Z/pool/main/libi/libiec61883/libiec61883_1.2.0-7.dsc
+libmysofa 1.3.3+dfsg-1 4132493ff13280969b8c27a12733f4ffd862c920e2c949964b826ba393965b2c 2386 debian/20260918T000000Z/pool/main/libm/libmysofa/libmysofa_1.3.3%2bdfsg-1.dsc
+libogg 1.3.5-3 dd0bac7c6961f95290250f82940aba93582edc3924372afc8fd310af5db995a0 2206 debian/20260918T000000Z/pool/main/libo/libogg/libogg_1.3.5-3.dsc
+libraw1394 2.1.2-2 682c04e351576bb77c6992af4994ed6f20e5ce5b70035a0f8774a1e613654578 1994 debian/20260918T000000Z/pool/main/libr/libraw1394/libraw1394_2.1.2-2.dsc
+libsigc++-2.0 2.12.1-3 d9499183391d059a3da2233aca10551e5819d1527e833a7febe4b31e55710cdf 2284 debian/20260918T000000Z/pool/main/libs/libsigc%2b%2b-2.0/libsigc%2b%2b-2.0_2.12.1-3.dsc
+libsndfile 1.2.2-2+deb13u1 17e76a64e2dc4d53955cb0729d505ac2d77fab7f139f796d08b858becd88e572 2488 debian/20260918T000000Z/pool/main/libs/libsndfile/libsndfile_1.2.2-2%2bdeb13u1.dsc
+libuv1 1.50.0-2 5691ae93bdd0c9b147e76290bc8816c805f565b6a52ad23691a31b6092056abc 2112 debian/20260918T000000Z/pool/main/libu/libuv1/libuv1_1.50.0-2.dsc
+libvorbis 1.3.7-3 14666d60addd93c86bbbf573ef3fbc9f17818235473514c026652073ed1b550b 2356 debian/20260918T000000Z/pool/main/libv/libvorbis/libvorbis_1.3.7-3.dsc
+libx11 2:1.8.12-1 745fb04a4b0f8942183f6ac84ebd9e2dae1416c37f90abeaacabb57dc11286f5 2490 debian/20260918T000000Z/pool/main/libx/libx11/libx11_1.8.12-1.dsc
+libxau 1:1.0.11-1 6058ab58b243ae2b175eee067b868f37b74cd4e8cc40b90607ce6d9ee99c50f9 2213 debian/20260918T000000Z/pool/main/libx/libxau/libxau_1.0.11-1.dsc
+libxcb 1.17.0-2 b2728d156f79d2e757e7378cfcefca52bd570739d2efffa87e1aaeaf4f21de3a 5318 debian/20260918T000000Z/pool/main/libx/libxcb/libxcb_1.17.0-2.dsc
+libxdmcp 1:1.1.5-1 d4a124405528eba3cf8794cc4fb8c4339ad74e79dd916fc0565b3a30c9fc1fe3 2331 debian/20260918T000000Z/pool/main/libx/libxdmcp/libxdmcp_1.1.5-1.dsc
+libxml++2.6 2.42.3-2 eab5da3a317ad738bbf622cbf45c3ed85ed0f7ac4c26e13bfd3e1bb86060cde3 2253 debian/20260918T000000Z/pool/main/libx/libxml%2b%2b2.6/libxml%2b%2b2.6_2.42.3-2.dsc
+libxml2 2.12.7+dfsg+really2.9.14-2.1+deb13u3 04b1da890535b11e3db231f39114ee09e643badceff79441d749d0ca78efaaa5 3085 debian/20260918T000000Z/pool/main/libx/libxml2/libxml2_2.12.7%2bdfsg%2breally2.9.14-2.1%2bdeb13u3.dsc
+lilv 0.24.26-1 71720a99fe5b2972b91aa2d24cd953b07afe3d45455f6dc7a4f6caba9b8a2f8b 2680 debian/20260918T000000Z/pool/main/l/lilv/lilv_0.24.26-1.dsc
+lua5.4 5.4.7-1 40b41bc566ac7246d748a954573ca9b10afa015112541f8d957bd41d8a56f767 2051 debian/20260918T000000Z/pool/main/l/lua5.4/lua5.4_5.4.7-1.dsc
+mpg123 1.32.10-1+deb13u1 1459a19e4c8cc7df81a6499a37eaf85041fb34af3267a5a73a4160766a71b75c 1917 debian/20260918T000000Z/pool/main/m/mpg123/mpg123_1.32.10-1%2bdeb13u1.dsc
+ncurses 6.5+20250216-2 00539cc2bc6bb84be1b8a8a5decf606682e14b6f39b76b9aa090e65d2c2d4580 3890 debian/20260918T000000Z/pool/main/n/ncurses/ncurses_6.5%2b20250216-2.dsc
+openfec 1.4.2.11+dfsg-1 871ce0379cf7d7076ccfba4ad0c4cf9e4bdf3f222b7c97303acdf3c6ab91c8a2 2048 debian/20260918T000000Z/pool/main/o/openfec/openfec_1.4.2.11%2bdfsg-1.dsc
+opus 1.5.2-2 cffb4091c9fc81ac4320402c061845200c2c21a63470587fd10c0d08e4f59215 2262 debian/20260918T000000Z/pool/main/o/opus/opus_1.5.2-2.dsc
+pipewire 1.4.2-1 602242d6287b6813c9c3f04307b438ad12cc257e5d7703afe22ace8b41b3645f 4665 debian/20260918T000000Z/pool/main/p/pipewire/pipewire_1.4.2-1.dsc
+pulseaudio 17.0+dfsg1-2 f3aa32ade32bf1b3bbd650ebb2ab368f1cef9300636af3b2130db3c8adb9eaca 3774 debian/20260918T000000Z/pool/main/p/pulseaudio/pulseaudio_17.0%2bdfsg1-2.dsc
+readline 8.2-6 6f94c7144d6b6b1ff88aaebd81480e87f8773b7638031782aac12ef93ffd2e71 2810 debian/20260918T000000Z/pool/main/r/readline/readline_8.2-6.dsc
+roc-toolkit 0.4.0+dfsg-5 aca931e532dcf8b46ac7d50394dab7efc59fd888e10ecc9979728395baf6f577 2347 debian/20260918T000000Z/pool/main/r/roc-toolkit/roc-toolkit_0.4.0%2bdfsg-5.dsc
+serd 0.32.4-1 698bc84a88a541655becb6cff460ec88fe980a0cdf7d8fec98a355e89dbe96b8 2486 debian/20260918T000000Z/pool/main/s/serd/serd_0.32.4-1.dsc
+sord 0.16.18-1 5fe7bc97314f1886ce97b49d790336e57229e425df2bcc67d6e76881d27581b3 2510 debian/20260918T000000Z/pool/main/s/sord/sord_0.16.18-1.dsc
+speexdsp 1.2.1-3 a9984758365f342ccda2d316849531c6885d376a2902a86add488986b5283ca4 2257 debian/20260918T000000Z/pool/main/s/speexdsp/speexdsp_1.2.1-3.dsc
+sratom 0.6.18-1 b7a48b5dbd9a5d5ed75151c237e862e1d2c2b6d0fac166159cea1311807600ba 2420 debian/20260918T000000Z/pool/main/s/sratom/sratom_0.6.18-1.dsc
+webrtc-audio-processing 1.3-3 0d2b6a4078075052851a0913a28c1118999759b048004f61e6967e56d59f2dd8 2458 debian/20260918T000000Z/pool/main/w/webrtc-audio-processing/webrtc-audio-processing_1.3-3.dsc
+wireplumber 0.5.8-2 ae558bcad62cd9eba43529436f1cb2aaccc4371f0158127fd5f8a310c007bdef 2935 debian/20260918T000000Z/pool/main/w/wireplumber/wireplumber_0.5.8-2.dsc
+zix 0.6.2-1 33db3e27fb5dff7798f71f6b42adc70d6732f1c650115dad64a958d6d4aaac21 2216 debian/20260918T000000Z/pool/main/z/zix/zix_0.6.2-1.dsc

@@ -175,7 +175,8 @@ install -m 0644 "$MERGED/etc/ld.so.cache" "$ADD/etc/ld.so.cache"
 # (/usr/share/doc/<package>/copyright); this file says what is here and where
 # the source of every package is.
 {
-    cat deploy/soloist/THIRD-PARTY-NOTICES.md
+    # The release of this version attaches the source packages (tools/soloist-sources.sh).
+    sed "s/@VERSION@/$VERSION/g" deploy/soloist/THIRD-PARTY-NOTICES.md
     echo
     echo "| Package | Version | Source package | Source |"
     echo "|---|---|---|---|"
@@ -265,7 +266,11 @@ while read -r pkg ver _ _ _ src srcver _; do
     cmp -s <(dpkg-deb -f "$CACHE/debs/$(pins | awk -v p="$pkg" '$1 == p {print $4}').deb") "$R/var/lib/dpkg/status.d/$pkg" ||
         { echo "soloist-image test: FAIL: /var/lib/dpkg/status.d/$pkg is not the package's control file"; exit 1; }
 done < <(pins)
-echo "soloist-image test: notices: $PACKAGES copyright files, each package and its source named, $PACKAGES status.d records"
+if ! grep -qF "\`chorus-soloist-v$VERSION-debian-sources.tar\`" "$R/usr/share/doc/chorus/THIRD-PARTY-NOTICES.md" ||
+    grep -q '@VERSION@' "$R/usr/share/doc/chorus/THIRD-PARTY-NOTICES.md"; then
+    echo "soloist-image test: FAIL: the notices do not name chorus-soloist-v$VERSION-debian-sources.tar as the source"; exit 1
+fi
+echo "soloist-image test: notices: $PACKAGES copyright files, each package and its source named (the release asset chorus-soloist-v$VERSION-debian-sources.tar and the snapshot), $PACKAGES status.d records"
 
 # The loader finds every library, with no maintainer script having run: every
 # NEEDED name of every program and library the packages brought is in the

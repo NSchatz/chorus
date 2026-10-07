@@ -31,12 +31,18 @@ is the authority, not this summary. These packages are separate works beside
 ## Source
 
 The complete corresponding source of every package below is its Debian source package, at
-the same archive snapshot the binary came from: in the directory named in the last column,
-the files `<source package>_<source version>.dsc` and the archives that `.dsc` names (an
-epoch such as `2:` is not part of a file name). The base image's packages are in the same
-snapshot, `https://snapshot.debian.org/archive/debian/20260918T000000Z/`, under
-`pool/main/`. snapshot.debian.org is the Debian project's permanent archive of every
-package it has published.
+the same archive snapshot the binary came from: the file `<source package>_<source
+version>.dsc` and the archives that `.dsc` names (an epoch such as `2:` is not part of a file
+name). It is offered in two places:
+
+- beside this image: the chorus release v@VERSION@
+  (`https://github.com/NSchatz/chorus/releases/tag/v@VERSION@`) attaches
+  `chorus-soloist-v@VERSION@-debian-sources.tar`, which holds every one of those files, each
+  checked against the sha256 its `.dsc` gives, with a `SHA256SUMS`;
+- at snapshot.debian.org, the Debian project's permanent archive of every package it has
+  published: in the directory named in the last column. The base image's packages are in the
+  same snapshot, `https://snapshot.debian.org/archive/debian/20260918T000000Z/`, under
+  `pool/main/`.
 
 The libraries are separate shared objects in `/usr/lib/x86_64-linux-gnu`, used through
 their published interfaces by the programs Debian built against them: replacing one with a

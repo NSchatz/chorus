@@ -15,6 +15,13 @@ name: release
 # tag publishes, which retries a tag whose run failed. The build runs with a
 # read-only token; only the publish job, which runs no build script, can
 # write.
+#
+# `sources-for: v<x.y.z>`, by hand on main, builds only the Debian source
+# packages of that release's Soloist image (tools/soloist-sources.sh, ADR
+# 0241) and, with `dry-run: false`, attaches them to that existing release:
+# for a release cut before its tarball was one of the artifacts (v0.2.0,
+# docs/release.md). The release's binary pins must be main's, so main's
+# source pins are that image's sources.
 on:
   push:
     tags: ['v*']
@@ -24,6 +31,12 @@ on:
         description: Build and upload dist/ only; publish nothing
         type: boolean
         default: true
+      sources-for:
+        description: >-
+          A release tag v<x.y.z>: build (and, without dry-run, attach) only
+          its Soloist image's Debian source packages
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -35,6 +48,7 @@ concurrency:
 jobs:
   build:
     name: make release
+    if: github.event_name == 'push' || inputs.sources-for == ''
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -165,3 +179,107 @@ jobs:
           diff "$RUNNER_TEMP/assets.txt" "$RUNNER_TEMP/published.txt"
           n="$(wc -l < "$RUNNER_TEMP/published.txt")"
           echo "published v$VERSION: $n assets" >> "$GITHUB_STEP_SUMMARY"
+
+  sources:
+    name: the Debian sources of a released Soloist image
+    if: github.event_name == 'workflow_dispatch' && inputs.sources-for != ''
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # From main only, for a release tag whose Soloist image was built from
+      # the binary pins main has now: then main's source pins, which
+      # check-pins.sh ties to them, are that image's sources.
+      - name: Same pins as the release
+        env:
+          TAG: ${{ inputs.sources-for }}
+          REF: ${{ github.ref }}
+        run: |
+          if ! printf '%s' "$TAG" | grep -q -E '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::'$TAG' is not a release tag v<x.y.z>"
+            exit 1
+          fi
+          if [ "$REF" != refs/heads/main ]; then
+            echo "::error::run sources-for on main, not $REF"
+            exit 1
+          fi
+          git rev-parse --verify "refs/tags/$TAG^{commit}"
+          pins=deploy/soloist/debian-packages.pins
+          if ! git diff --quiet "$TAG" HEAD -- "$pins"; then
+            echo "::error::deploy/soloist/debian-packages.pins at $TAG is not" \
+              "main's; its sources are not the ones main pins"
+            exit 1
+          fi
+          bash tools/conventions/check-pins.sh
+
+      - name: make soloist-sources
+        env:
+          TAG: ${{ inputs.sources-for }}
+          CHORUS_SOLOIST_IMAGE_CACHE: ${{ runner.temp }}/soloist-cache
+        run: |
+          out="dist/chorus-soloist-$TAG-debian-sources.tar"
+          CHORUS_SOLOIST_SOURCES_OUT="$out" make soloist-sources
+          {
+            echo "### Debian sources of the chorus $TAG Soloist image"
+            echo '```'
+            sha256sum "$out"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the tarball
+        # actions/upload-artifact v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: chorus-soloist-${{ inputs.sources-for }}-debian-sources
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  attach-sources:
+    name: attach them to the release
+    needs: sources
+    if: '!inputs.dry-run'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download the tarball
+        # actions/download-artifact v4.3.0
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: chorus-soloist-${{ inputs.sources-for }}-debian-sources
+          path: dist
+
+      # The release must carry the Soloist image these are the sources of,
+      # and not these already: nothing here replaces an asset.
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.sources-for }}
+        run: |
+          name="chorus-soloist-$TAG-debian-sources.tar"
+          assets="$RUNNER_TEMP/assets.txt"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '.assets[].name' > "$assets"
+          if ! grep -q -x "chorus-soloist-$TAG-oci.tar" "$assets"; then
+            echo "::error::release $TAG carries no Soloist image"
+            exit 1
+          fi
+          if grep -q -x "$name" "$assets"; then
+            echo "::error::release $TAG already carries $name"
+            exit 1
+          fi
+          gh release upload "$TAG" "dist/$name" --repo "$GITHUB_REPOSITORY"
+          size="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --json assets \
+            --jq ".assets[] | select(.name == \"$name\") | .size")"
+          if [ "$size" != "$(stat -c %s "dist/$name")" ]; then
+            echo "::error::$name on release $TAG is $size bytes, not" \
+              "$(stat -c %s "dist/$name")"
+            exit 1
+          fi
+          echo "attached $name to $TAG: $size bytes" >> "$GITHUB_STEP_SUMMARY"

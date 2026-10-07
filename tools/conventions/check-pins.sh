@@ -12,7 +12,8 @@
 #   tools/qemu/libs.explicit.txt is a conda-forge linux-64 build held to its sha256
 #   the chorus-soloist image (goal 17): tools/soloist-image.sh names its Debian base by dated tag
 #   and digest; every package of deploy/soloist/debian-packages.pins is an exact version with
-#   its sha256 and size at one snapshot.debian.org timestamp
+#   its sha256 and size at one snapshot.debian.org timestamp, and deploy/soloist/debian-sources.pins
+#   holds the .dsc of each of their source packages to a sha256 at that timestamp (ADR 0241)
 #   the gate builds and tests with --locked (cargo build, test, clippy and nextest run); any
 #   package.json pins exact versions beside a lockfile
 . "$(dirname "$0")/lib.sh"
@@ -127,6 +128,24 @@ done < <(command grep -v -E '^(#|[[:space:]]*$)' "$spins")
 [ "$debs" -gt 0 ] || bad "$spins lists no package"
 [ "$(command grep -v -E '^(#|[[:space:]]*$)' "$spins" | cut -d' ' -f1 | sort | uniq -d | wc -l)" -eq 0 ] || bad "$spins lists a package twice"
 echo "soloist image: base $(sed -n 's/^BASE_TAG="\(.*\)"$/\1/p' tools/soloist-image.sh) by digest, $debs Debian packages at snapshot $snap, each with a sha256"
+
+# Its Debian source packages (ADR 0241): deploy/soloist/debian-sources.pins names each .dsc at
+# the same snapshot with its sha256 and size, one line per (source, version) the binary pins
+# name and no other.
+srcpins=deploy/soloist/debian-sources.pins
+[ "$(sed -n 's/^# snapshot = //p' "$srcpins")" = "$snap" ] || bad "$srcpins is not at the binary pins' snapshot $snap"
+[ "$(sed -n 's/^# archive = //p' "$srcpins")" = "https://snapshot.debian.org/archive/" ] || bad "$srcpins does not fetch from https://snapshot.debian.org/archive/"
+dscs=0
+while read -r src srcver sha size path rest; do
+    dscs=$((dscs + 1))
+    [[ "$src" =~ ^[a-z0-9][a-z0-9+.-]+$ && "$srcver" =~ ^[0-9][A-Za-z0-9.+~:-]*$ && "$sha" =~ ^[0-9a-f]{64}$ &&
+        "$size" =~ ^[0-9]+$ && -z "$rest" && "$path" == debian*/"$snap"/pool/*/*_*.dsc ]] ||
+        bad "a source package of the chorus-soloist image not pinned to a .dsc, its sha256 and the snapshot $snap: $src $srcver"
+done < <(command grep -v -E '^(#|[[:space:]]*$)' "$srcpins")
+srcdiff="$(diff <(command grep -v -E '^(#|[[:space:]]*$)' "$spins" | awk '{print $6, $7}' | LC_ALL=C sort -u) \
+    <(command grep -v -E '^(#|[[:space:]]*$)' "$srcpins" | awk '{print $1, $2}' | LC_ALL=C sort))" ||
+    bad "$srcpins does not name exactly the (source, version) pairs of $spins (< binary pins only, > source pins only): $(printf '%s' "$srcdiff" | command grep '^[<>]' | tr '\n' ' ')"
+echo "soloist image sources: $dscs Debian source packages, each .dsc with a sha256, the set the binary pins name"
 
 for s in build test clippy 'nextest run'; do
     command grep -E "cargo $s .*--locked" tools/gate.sh > /dev/null || bad "the gate's cargo $s does not pass --locked"

@@ -4,7 +4,14 @@
   program report); supersedes the open point of ADR 0131 item 9 ("the owner either accepts the
   pointer ... or attaches the 47 source packages")
 - Recorded by: the owner's agent harness, in the pull request that adds this record
-- Implemented in: not yet; harness task 321 builds it (item 3 below)
+- Implemented in: harness task 321: `deploy/soloist/debian-sources.pins` (the 47 `.dsc` files,
+  each with its sha256 and size), `tools/soloist-sources.sh` (`make soloist-sources`: fetch,
+  verify, tar), `tools/release.sh` (step 2c, the asset `chorus-soloist-v<ver>-debian-sources.tar`
+  and the notes), `deploy/soloist/THIRD-PARTY-NOTICES.md` and `tools/soloist-image.sh` (the
+  notices name the asset), `tools/conventions/check-pins.sh`, `tools/soloist-lists.py`, and
+  `.github/workflows/release.yml` (the `sources-for` input that attached v0.2.0's); measured
+  as resolved on 2026-10-07 from the snapshot's `Sources` index: 201 files, 246,628,688 bytes
+  (item 4's "more than 100 MB"; gcc-14 about 97 MB, libmysofa about 81 MB)
 
 ## Context
 
