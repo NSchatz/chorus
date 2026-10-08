@@ -1,5 +1,7 @@
 #include "esp_knobs.h"
 
+#if defined(CHORUS_KNOBS)
+
 #include <stdint.h>
 
 #include "esp_adc/adc_oneshot.h"
@@ -129,3 +131,5 @@ int chorus_esp_knobs_start(const chorus_endpoint_config_t *config, chorus_playou
              c->knob_phase == CHORUS_PIN_NONE ? -1 : (int)c->knob_phase);
     return 0;
 }
+
+#endif /* CHORUS_KNOBS */
