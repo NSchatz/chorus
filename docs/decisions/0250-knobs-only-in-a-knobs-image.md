@@ -1,4 +1,4 @@
-# 0000: the knobs' ADC binding is compiled only into an image whose board profile wires a knob
+# 0250: the knobs' ADC binding is compiled only into an image whose board profile wires a knob
 
 - Status: decided, 2026-10-08 (harness task 457, the nightly of 2026-10-07 on main 6853ff5)
 - Recorded by: the owner's agent harness, in the pull request that adds this record
