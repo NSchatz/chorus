@@ -59,7 +59,8 @@ light and microphone, which no profile carried keys for.
 ## What was read
 
 - goals task 201, read 2026-10-06.
-- The devices repository's `builds/chorus-compact-v1/log.md` at 6bdbb10, read 2026-10-06.
+- The devices repository's `projects/chorus-compact/v1/log.md` at 6bdbb10 (then under devices' old
+  `builds/` directory), read 2026-10-06.
 - The Louder Raspberry Hat Plus's README, sonocotta/raspberry-media-center at 3d8a3d7 ("Boards
   Pinout", "Peripheral (Louder)", "DAC Configuration - Louder Raspberry Pi Media Center and
   Hat"), and the repository's licence (GPL-3.0) from GitHub's API, read 2026-10-06.

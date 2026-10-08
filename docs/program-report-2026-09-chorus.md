@@ -171,7 +171,7 @@ Addressed to chorus:
 | harness task 201 (from devices, for devices task 50) | The compact's board profile for its separate modules | DONE: chorus PR 230 (747bde4), board profile `devkitc-s3-louderhat-wired` |
 | harness task 320 (from devices, for devices task 274) | The two-way's board profile and `docs/hardware/twoway-speaker.md` v2 for its separate modules | ACCEPTED: a ready chorus task in devices roadmap project 7 |
 | harness task 10 (from goals) | `CLAUDE.md` to the essentials, and `CARD.md` | DONE (`CARD.md`) |
-| harness task 114 (from devices) | Rename `builds/chorus-*` to `projects/chorus-*/v<n>/` in chorus docs | DEFERRED: a ready chorus task; it waits on devices task 112 |
+| harness task 114 (from devices) | Point chorus docs at devices' `projects/chorus-*/v<n>/` build paths | DEFERRED: a ready chorus task; it waits on devices task 112 |
 
 Filed by chorus:
 
