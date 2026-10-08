@@ -154,3 +154,4 @@ the number of the pull request that added it.
 | 0242 | [P12 is accepted as written: the compact printed, the two-way and the LCR set in braced birch plywood with printed fittings, the subwoofer in braced MDF](0242-p12-accepted-enclosures-per-class.md) |
 | 0245 | [the two-way's board profile is the compact's three modules with a pairing button key, and twoway-speaker.md version 2 names them and the external 24 V adapter](0245-the-twoway-on-the-compacts-modules.md) |
 | 0248 | [the subwoofer's board profile is a DevKitC, a PCM5102A line DAC and a WIZ850io, a new line-dac audio output with its filter delay counted, the knobs read by ADC1, and subwoofer.md version 2](0248-the-subwoofer-on-a-line-dac.md) |
+| 0250 | [the knobs' ADC binding is compiled only into an image whose board profile wires a knob](0250-knobs-only-in-a-knobs-image.md) |
