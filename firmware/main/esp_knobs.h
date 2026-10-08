@@ -11,7 +11,11 @@
  * like the rest of firmware/main: what a knob reads on the owner's board is a
  * bench item.
  *
- * Compiled only by ESP-IDF. */
+ * Compiled only by ESP-IDF, and only into an image whose board profile wires a
+ * knob (firmware/main/CMakeLists.txt defines CHORUS_KNOBS for it): linking the
+ * ADC runs its calibration before app_main on every boot, which the emulator
+ * never finishes. Any other image carries none of it, and the call below is
+ * then nothing. */
 
 #ifndef CHORUS_ESP_KNOBS_H
 #define CHORUS_ESP_KNOBS_H
@@ -19,10 +23,26 @@
 #include "chorus/endpoint_config.h"
 #include "chorus/playout.h"
 
+#if defined(CHORUS_KNOBS)
+
 /* Configure the knobs' ADC1 channels and start the task that reads them into
  * `playout`'s sound chain. Does nothing and returns 0 when the board wires no
  * knob. Returns -1 having said why; the endpoint plays on with the knobs at
  * 0 dB and 0 degrees. */
 int chorus_esp_knobs_start(const chorus_endpoint_config_t *config, chorus_playout_t *playout);
+
+#else
+
+static inline int chorus_esp_knobs_start(const chorus_endpoint_config_t *config,
+                                         chorus_playout_t *playout)
+{
+    /* A board without knobs: nothing to read, and nothing of the ADC is
+     * linked. */
+    (void)config;
+    (void)playout;
+    return 0;
+}
+
+#endif /* CHORUS_KNOBS */
 
 #endif /* CHORUS_ESP_KNOBS_H */

@@ -58,6 +58,20 @@ if(chorus_wireless_profile)
     message(STATUS "chorus: Wi-Fi provisioning is in this image")
 endif()
 
+# The subwoofer's knobs (ADR 0248): esp_knobs.c is compiled only into an image
+# whose board profile wires a knob. Its ADC calls link esp_adc's adc_common.c,
+# whose constructor (adc_hw_calibration, components/esp_adc/adc_common.c:59 in
+# the pinned v6.1) calibrates the SAR ADC before app_main on every boot and
+# waits for each conversion with no timeout (esp_hal_ana_conv/adc_hal_common.c
+# :126). The emulator models no SAR ADC, so its boot stopped there (the nightly
+# qemu-boot and ota-qemu of 2026-10-07). A board without knobs carries none of
+# it, and the call in app_main is then nothing (esp_knobs.h).
+file(STRINGS "${chorus_board_file}" chorus_knobs_profile REGEX "^pin_knob_(level|phase) *= *[0-9]")
+if(chorus_knobs_profile)
+    list(APPEND chorus_profile_srcs "esp_knobs.c")
+    message(STATUS "chorus: the subwoofer's knobs are in this image")
+endif()
+
 idf_component_register(
     SRCS
         "app_main.c"
@@ -65,7 +79,6 @@ idf_component_register(
         "esp_link.c"
         "esp_playout.c"
         "esp_marker.c"
-        "esp_knobs.c"
         "console_esp.c"
         "esp_ota.c"
         "esp_store.c"
@@ -123,7 +136,9 @@ idf_component_register(
     # migration-guides/release-6.x/6.0/peripherals.html, read 2026-09-30); the
     # endpoint names the three it includes: driver/gpio.h, driver/i2c_master.h
     # and driver/i2s_std.h, and driver/gptimer.h for the GPIO marker (goal 9);
-    # esp_adc for the subwoofer's knobs (esp_adc/adc_oneshot.h).
+    # esp_adc for the subwoofer's knobs (esp_adc/adc_oneshot.h), named for
+    # every profile like esp_http_server below; only a profile with knobs
+    # compiles esp_knobs.c, so only its image links the ADC.
     REQUIRES
         esp_adc
         esp_driver_gpio
@@ -172,6 +187,9 @@ idf_component_register(
 target_compile_definitions(${COMPONENT_LIB} PRIVATE CHORUS_TARGET_ESP32S3=1)
 if(chorus_wireless_profile)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE CHORUS_PROVISIONING=1)
+endif()
+if(chorus_knobs_profile)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE CHORUS_KNOBS=1)
 endif()
 # The emulator run's bad image (goal 14, docs/decisions/0111-*): the update
 # unit built never to confirm its trial (firmware/main/esp_ota.c), so the
