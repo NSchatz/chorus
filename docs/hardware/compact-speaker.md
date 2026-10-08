@@ -463,7 +463,8 @@ Read 2026-10-06 unless a line says otherwise.
 - The amplifier: TI, TAS5825M datasheet (SLASEH7H), https://www.ti.com/lit/ds/symlink/tas5825m.pdf,
   pages 1, 6 and 8.
 - The endpoint modules: the devices repository's build plan for chorus-compact-v1 (NSchatz/devices
-  at 6bdbb10, `builds/chorus-compact-v1/log.md`), which read the sellers' pages in the budget;
+  at 6bdbb10, `projects/chorus-compact/v1/log.md`, then under devices' old
+  `builds/` directory), which read the sellers' pages in the budget;
   Espressif's ESP32-S3-DevKitC-1 user guide v1.1,
   https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s3/esp32-s3-devkitc-1/user_guide_v1.1.html;
   the Louder Raspberry Hat Plus's README, https://github.com/sonocotta/raspberry-media-center/blob/3d8a3d7f28bb6956408fb2f7a1ac272632ae7c46/README.md

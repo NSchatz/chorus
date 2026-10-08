@@ -54,7 +54,8 @@ rack's free units and depth (the other Needs item K74 named) are no longer neede
   AVR to size, and no power budget to set.
 
 So no rack amp package is designed (goal 26 item 2 and its done-when line B have nothing to
-build), and `builds/chorus-rackamp-v1/` is not made.
+build), and devices' rack amp build (planned as `projects/chorus-rack/v1/`) is not
+made.
 
 ## The theater front: the soundbar is not designed
 
@@ -66,7 +67,8 @@ mute, eARC and optical) and a separate LCR set with a hidden hub. On the room li
   Both TVs have an optical output, so each hub is a Pi with an S/PDIF receiver and needs no ARC
   extractor (P4, "The house plan"); that is P2's Option A hub, which P2 already named as the LCR
   set's ("For K72: the LCR set's hidden hub is the Option A hub").
-- So the soundbar is not designed and `builds/chorus-soundbar-v1/` is not made. The LCR set's
+- So the soundbar is not designed and devices' theater front build (planned as
+  `projects/chorus-theater/v1/`) is not made. The LCR set's
   own document is the next task, not this proposal.
 
 ## Recommendation
@@ -94,8 +96,9 @@ LCR set alone.
 
 None. The owner's room list answers every input this proposal names.
 
-Owed elsewhere: the owner's devices repo still lists `builds/chorus-rackamp-v1/` and
-`builds/chorus-soundbar-v1/` as waiting on chorus, and P14 still counts them among its builds.
+Owed elsewhere: the owner's devices repo still lists the rack amp and theater front builds
+(planned as `projects/chorus-rack/v1/` and `projects/chorus-theater/v1/`) as waiting on chorus,
+and P14 still counts them among its builds.
 Closing goal 26 (the project's last task) tells devices to drop both.
 
 ## What was read

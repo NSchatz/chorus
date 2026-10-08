@@ -10,7 +10,8 @@
 Goal 25 (the 2026-10 program's section 29, retired with the goal-program files in #141; its
 landing rule is quoted in `docs/proposals/P14-devices-seam.md`) asked for the active two-way and
 the subwoofer: each designed in chorus with its design record, then landed in the owner's
-devices repo as `builds/chorus-<build>/acoustics.md` with the record's export beside it, the
+devices repo as `acoustics.md` in the build's directory (now `projects/chorus-<kind>/v<n>/`) with
+the record's export beside it, the
 same seam the compact speaker used. The old feature's finish line (goals issue #325) is that
 both landed. This record makes it checkable from chorus's main.
 
@@ -23,7 +24,7 @@ Goal 25 is closed. For each build:
 | chorus design doc | `docs/hardware/twoway-speaker.md` | `docs/hardware/subwoofer.md` |
 | chorus design record | `fixtures/design-record/chorus-twoway-v1.json` | `fixtures/design-record/chorus-sub-v1.json` |
 | Landed in devices by | https://github.com/NSchatz/devices/pull/120 (task 55) | https://github.com/NSchatz/devices/pull/121 (task 56) |
-| devices paths | `builds/chorus-twoway-v1/acoustics.md`, `builds/chorus-twoway-v1/chorus-twoway-v1.json` | `builds/chorus-sub-v1/acoustics.md`, `builds/chorus-sub-v1/chorus-sub-v1.json` |
+| devices paths (since devices' restructure) | `projects/chorus-twoway/v1/acoustics.md`, `projects/chorus-twoway/v1/chorus-twoway-v1.json` | `projects/chorus-sub/v1/acoustics.md`, `projects/chorus-sub/v1/chorus-sub-v1.json` |
 | Budget total, good tier (designed) | 203.92 USD (under the proposed 225.00) | 360.69 USD (under the proposed 400.00) |
 
 The totals are re-read from the two docs on chorus main at `e00b730` ("The budget"); both tiers and
@@ -76,5 +77,6 @@ project 7), not chorus's.
   `fixtures/design-record/chorus-twoway-v1.provenance` and `chorus-sub-v1.provenance`,
   `docs/proposals/P14-devices-seam.md`, read 2026-10-06.
 - The owner's devices repo, `origin/main` at `eae8676`: the two exports (hashed) and the log of
-  `builds/chorus-twoway-v1` and `builds/chorus-sub-v1`; its merged pull requests 120 and 121,
+  the chorus-twoway-v1 and chorus-sub-v1 builds (then under devices' old `builds/` directory, now
+  `projects/chorus-twoway/v1` and `projects/chorus-sub/v1`); its merged pull requests 120 and 121,
   read 2026-10-06.

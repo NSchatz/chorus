@@ -20,7 +20,7 @@ speakers back to the rack" (`docs/proposals/P4-bench-purchase.md`; the same list
 ## Decision
 
 1. P13 records zero rack amp zones and zero channels. No rack amp package is designed and
-   `builds/chorus-rackamp-v1/` is not made.
+   devices' `projects/chorus-rack/v1/` is not made.
 2. The soundbar is not designed: no room on the list uses one. The LCR set (three two-ways and the
    hidden TV hub, P2's Option A hub on optical) is the theater front for both TV rooms; its own
    document is the next task.

@@ -1,5 +1,8 @@
 # P14: The devices seam (chorus PRs in devices before devices finishes)
 
+> Note (2026-10-08): devices' `builds/chorus-*` is now `projects/chorus-*/v<n>/` (devices
+> `docs/electronics-restructure.md`). The text below is the dated proposal, unchanged.
+
 - Decisions: K23
 - Status: PROPOSED (chorus goal 1, 2026-09-30); decided at Checkpoint K
 - Outcome: overtaken. The speaker designs landed through the devices repo's own tasks (devices pull requests 120, 121 and 128; `docs/decisions/0233-goal-25-closed-the-twoway-and-sub-landed-in-devices.md`, `0234-goal-26-closed-no-rack-amp-or-soundbar-and-the-lcr-set-landed.md`), so no chorus pull request in devices was needed (recorded 2026-10-06)
