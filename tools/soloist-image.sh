@@ -92,12 +92,22 @@ CARGO_TARGET_DIR="$BD" cargo build --release --locked --target "$TARGET" -p chor
 # --- the pinned inputs ---------------------------------------------------------
 
 FETCHED=0
+# A cache without its index.json is incomplete and is pulled again: with no shared /cache it
+# sits in the cargo target directory, which CI's Rust build cache restores with every file
+# removed and every directory kept (rust-cache v2.9.2, MIT, src/cleanup.ts cleanTargetDir, read
+# 2026-10-09). The stale tree goes first, since `mv` into an existing directory nests the pull
+# inside it (the nightly run of 2026-10-08). `mv -T` fails rather than nest when a concurrent
+# build put a complete cache there first; that one is kept.
 if [ ! -f "$BASE_CACHE/index.json" ]; then
     echo "soloist-image: pulling $BASE_REF:$BASE_TAG@$BASE_DIGEST"
-    rm -rf "$BASE_CACHE.tmp.$$"
+    rm -rf "$BASE_CACHE.tmp.$$" "$BASE_CACHE"
     "${CRANE[@]}" pull --format=oci --platform linux/amd64 "$BASE_REF@$BASE_DIGEST" "$BASE_CACHE.tmp.$$"
-    mv "$BASE_CACHE.tmp.$$" "$BASE_CACHE" 2>/dev/null || rm -rf "$BASE_CACHE.tmp.$$"
+    mv -T "$BASE_CACHE.tmp.$$" "$BASE_CACHE" 2>/dev/null || rm -rf "$BASE_CACHE.tmp.$$"
     FETCHED=1
+fi
+if [ ! -f "$BASE_CACHE/index.json" ] || ! compgen -G "$BASE_CACHE/blobs/sha256/*" > /dev/null; then
+    echo "soloist-image: FAIL: the cached base $BASE_CACHE holds no index.json or no blob; remove it"
+    exit 1
 fi
 for blob in "$BASE_CACHE"/blobs/sha256/*; do
     [ "$(sha256sum "$blob" | cut -d' ' -f1)" = "${blob##*/}" ] ||

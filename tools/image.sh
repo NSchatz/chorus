@@ -78,11 +78,15 @@ CARGO_TARGET_DIR="$BD" cargo build --release --locked --target "$TARGET" -p chor
 echo "image: chorus-hostctl's tests on $TARGET"
 CARGO_TARGET_DIR="$BD" cargo test --release --locked --target "$TARGET" -p chorus-hostctl
 
+# A cache without its index.json is incomplete and is pulled again. CI's Rust build cache
+# restores this directory with every file removed and every directory kept (rust-cache v2.9.2,
+# MIT, src/cleanup.ts cleanTargetDir, read 2026-10-09), so the stale tree goes first: `mv` into
+# an existing directory would nest the pull inside it (the nightly run of 2026-10-08).
 if [ ! -f "$BASE_CACHE/index.json" ]; then
     echo "image: pulling $BASE_REF@$BASE_DIGEST"
-    rm -rf "$BASE_CACHE.tmp"
+    rm -rf "$BASE_CACHE.tmp" "$BASE_CACHE"
     "${CRANE[@]}" pull --format=oci --platform linux/amd64 "$BASE_REF@$BASE_DIGEST" "$BASE_CACHE.tmp"
-    mv "$BASE_CACHE.tmp" "$BASE_CACHE"
+    mv -T "$BASE_CACHE.tmp" "$BASE_CACHE"
 fi
 
 rm -rf "$WORK"
