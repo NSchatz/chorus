@@ -118,3 +118,12 @@ booted on slot 0, ran its trial and gave itself up, and nothing panicked.
   rollback.
 - The emulator's stale-code behaviour is noted here and in the run; a later emulator release
   can be tried without the power cycle.
+- 2026-10-13: the nightly of 2026-10-12 (run 38281257585, commit `310ab1a`, which had passed the
+  night before) stalled GOOD on its trial boot: the console stopped after the
+  `board_audio_output = none` line, before the emulated Ethernet came up, with no panic, so
+  GOOD was never confirmed and the power cycle's bootloader rolled it back; the other four
+  failures followed from that one. It was the in-process reboot into a slot the process had
+  never executed, which this record found clean. The uploaded logs held only the run's last
+  lines, not the consoles or the emulator's own output, so the cause is not known; the gate's
+  logs now carry both for `qemu-boot` and `ota-qemu`, and a failed run prints the emulator's
+  output. A recurrence is read from them before the run is changed.

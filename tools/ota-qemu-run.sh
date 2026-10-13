@@ -331,7 +331,10 @@ ENDED=$(date +%s)
 say ""
 say "ota-qemu: wall-clock $((ENDED - STARTED)) s (three images and the server $((BUILT - STARTED)) s, the emulator $((ENDED - BUILT)) s); logs in $OUT"
 if [ "$FAILURES" -ne 0 ]; then
-    for f in "$OUT/serial.log" "$OUT/serial-2.log" "$OUT/server.log"; do
+    # The emulator's own output too: a guest that stops talking leaves only
+    # what the emulator said about it there.
+    for f in "$OUT/serial.log" "$OUT/serial.log.emulator" "$OUT/serial-2.log" \
+        "$OUT/serial-2.log.emulator" "$OUT/server.log"; do
         [ -f "$f" ] && { say "--- the last lines of $f"; tail -n 30 "$f" | tr -d '\r'; }
     done
     say "ota-qemu: $FAILURES check(s) failed: FAIL"
