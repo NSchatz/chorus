@@ -424,6 +424,11 @@ mod tests {
                 .iter()
                 .any(|l| l.starts_with("cec claimed"))
         });
+        // The TV starts in standby and the role's first poll asks it at the
+        // claim. Its answer is waited for: one heard after the TV's request
+        // below would end System Audio Mode, and nothing would be reported.
+        let power = cec.tv_power();
+        wait("the poll's answer", || power.get() == TvPowerState::Standby);
         // No session: a key is decided and counted unsent.
         tv.send(build::system_audio_mode_request(
             TV,
@@ -488,7 +493,6 @@ mod tests {
             .expect("reported");
         assert_eq!(r.operands, vec![38]);
         // The TV's power reaches the shared state.
-        let power = cec.tv_power();
         tv.power_on(TvKind::RokuLike);
         wait("the TV on", || power.get() == TvPowerState::On);
         tv.standby();

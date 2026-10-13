@@ -135,5 +135,12 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: gate-logs
-          path: target/gate/*.log
+          # The emulator runs keep their consoles, the server's log and the
+          # emulator's own output in a directory each.
+          path: |
+            target/gate/*.log
+            target/gate/qemu-boot/*.log
+            target/gate/qemu-boot/*.emulator
+            target/gate/ota-qemu/*.log
+            target/gate/ota-qemu/*.emulator
           retention-days: 7
