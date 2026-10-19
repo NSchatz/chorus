@@ -92,7 +92,7 @@ pin: the toolchains the jobs use come from mise and rustup, not from the runner.
 | Home Assistant core (hassfest's tag) | `integrations/homeassistant/harness.pin` | 2026.10.2 | 2026.10.2 (re-read 2026-10-19) | current; the harness moves only with the homelab's Home Assistant pin (`docs/home-assistant.md`), which moved to 2026.10.2 at homelab commit 025409f |
 | pytest-homeassistant-custom-component | `integrations/homeassistant/harness.pin` | 0.13.373 | 0.13.373 (2026-10-17, re-read 2026-10-19) | current, and held with Home Assistant above: the target is the release for the homelab's version, not the newest |
 | The Home Assistant components' test imports (hassil, home-assistant-intents, gazetteer-matcher, pymicro-vad, pyspeex-noise, mutagen, ha-ffmpeg) and hassfest's (infrared-protocols) | `integrations/homeassistant/pyproject.toml` | the versions core 2026.10.2 pins | follow core | held with Home Assistant above: each is the version core 2026.10.2 pins, as `pyproject.toml` says |
-| mypy | `integrations/homeassistant/pyproject.toml` | 2.3.1 | 2.4.0 (2026-10-01) | behind 5 days: not yet taken |
+| mypy | `integrations/homeassistant/pyproject.toml` | 2.3.1 | 2.4.0 (2026-10-01, re-read 2026-10-19) | held on purpose: 2.3.1 is the version core 2026.10.2's `requirements_test.txt` pins, which the harness pin's procedure takes (`docs/home-assistant.md`, "Moving the pin") |
 | ruff | `integrations/homeassistant/pyproject.toml` | 0.16.9 | 0.17.1 (2026-10-15, re-read 2026-10-19) | held on purpose: 0.16.9 is the version core 2026.10.2's `requirements_test_pre_commit.txt` pins, which the harness pin's procedure takes (`docs/home-assistant.md`, "Moving the pin") |
 
 ## Totals and the follow-up

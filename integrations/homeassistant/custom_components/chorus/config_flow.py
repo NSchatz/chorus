@@ -29,7 +29,7 @@ def _schema(host: str | None, port: int) -> probatio.Schema:
             probatio.Required(CONF_HOST, default=host)
             if host is not None
             else probatio.Required(CONF_HOST): cv.string,
-            probatio.Required(CONF_PORT, default=port): cv.port,
+            probatio.Required(CONF_PORT, default=port): probatio.Port(),
         }
     )
 

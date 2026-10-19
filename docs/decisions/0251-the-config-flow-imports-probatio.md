@@ -21,8 +21,9 @@ package Home Assistant does not run.
 
 The config flow imports `probatio` by its own name, as core's components do (core's
 `pyproject.toml` bans the alias `vol` for it under
-`[tool.ruff.lint.flake8-import-conventions.banned-aliases]`), and keeps
-`homeassistant.helpers.config_validation`'s `cv.string` and `cv.port`. probatio is a direct
+`[tool.ruff.lint.flake8-import-conventions.banned-aliases]`). The port is `probatio.Port()`,
+which core's ruff configuration names in place of `cv.port` (the same validator:
+`cv.port = probatio.Port()`); `cv.string`, which core does not ban, stays. probatio is a direct
 requirement of the `homeassistant` package the integration runs inside, as core's helpers are,
 so the manifest's `requirements` stays empty.
 
