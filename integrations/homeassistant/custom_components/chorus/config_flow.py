@@ -9,7 +9,7 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
-import voluptuous as vol
+import probatio
 
 from ._aiochorus import (
     ChorusClient,
@@ -23,13 +23,13 @@ from .const import CATALOG_VERSION, DEFAULT_PORT, DOMAIN
 _TITLE = "chorus"
 
 
-def _schema(host: str | None, port: int) -> vol.Schema:
-    return vol.Schema(
+def _schema(host: str | None, port: int) -> probatio.Schema:
+    return probatio.Schema(
         {
-            vol.Required(CONF_HOST, default=host)
+            probatio.Required(CONF_HOST, default=host)
             if host is not None
-            else vol.Required(CONF_HOST): cv.string,
-            vol.Required(CONF_PORT, default=port): cv.port,
+            else probatio.Required(CONF_HOST): cv.string,
+            probatio.Required(CONF_PORT, default=port): cv.port,
         }
     )
 

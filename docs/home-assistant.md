@@ -21,7 +21,7 @@ it is shaped this way is `docs/decisions/0138-the-home-assistant-integration.md`
   location. The manifest's `requirements` is `[]`, so Home Assistant never installs a package
   for chorus.
 - Written to every rule of the Bronze, Silver, Gold and Platinum tiers of Home Assistant's
-  Integration Quality Scale as core 2026.9.3 lists them (54 rules), self-certified in
+  Integration Quality Scale as core 2026.10.2 lists them (54 rules), self-certified in
   `quality_scale.yaml`: 47 done, 7 exempt, each exemption with its reason. A custom
   integration cannot hold a tier; `make ha-hassfest` has Home Assistant's own hassfest grade
   the file.
@@ -678,7 +678,7 @@ any message.
 The voice satellite's platform loads Home Assistant's Assist components, which import
 packages the harness does not bring (`hassil`, `home-assistant-intents`,
 `gazetteer-matcher`, `pymicro-vad`, `pyspeex-noise`, `mutagen`, `ha-ffmpeg`). They are in the
-`dev` group at the versions core 2026.9.3's own manifests pin and locked by hash like the
+`dev` group at the versions core 2026.10.2's own manifests pin and locked by hash like the
 rest, and they move with the pin. They are test-only: on a running Home Assistant they are
 core's requirements, and the integration's manifest still lists none. `tests/conftest.py`
 sets up Home Assistant's own `homeassistant` integration (which `conversation` reads) and

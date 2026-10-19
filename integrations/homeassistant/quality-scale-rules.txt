@@ -1,7 +1,7 @@
-# The Integration Quality Scale rules, by tier, as Home Assistant core 2026.9.3 lists them
+# The Integration Quality Scale rules, by tier, as Home Assistant core 2026.10.2 lists them
 # in script/hassfest/quality_scale.py (ALL_RULES).
-# Source: https://raw.githubusercontent.com/home-assistant/core/2026.9.3/script/hassfest/quality_scale.py
-# Read 2026-10-04 at tag 2026.9.3, commit 6de5eb18cd4502f94af44cfff3a02250d88716ed.
+# Source: https://raw.githubusercontent.com/home-assistant/core/2026.10.2/script/hassfest/quality_scale.py
+# Read 2026-10-19 at tag 2026.10.2, commit 8d7fd8b68677c2585be36ec86043308f403875b8.
 # One "<tier> <rule>" per line. quality_scale.yaml lists exactly these rule names
 # (tools/conventions/check-ha-integration.sh); the list moves with the harness pin.
 bronze action-setup
