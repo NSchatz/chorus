@@ -10,6 +10,9 @@
 # a record the index docs/decisions/README.md does not name.
 # A shallow clone (CI's checkout without history) cannot tell which PR added a record: the PR
 # number part prints SKIPPED there, and everything else is still checked.
+# On a pull request, CI exports its number as CHORUS_GATE_PR and its base as CHORUS_GATE_BASE:
+# every record the PR adds (a rename's new name counts as added, as on main) must carry that
+# number, so a misnumbered record fails before merge instead of in the nightly run on main.
 . "$(dirname "$0")/lib.sh"
 # Before this rule, records were numbered in sequence; from here on a new number is a PR number.
 first_pr_numbered=32
@@ -18,6 +21,21 @@ rc=0
 bad() { fail "Decision records" "$1"; rc=1; }
 shallow=0
 [ "$(git rev-parse --is-shallow-repository)" = true ] && shallow=1
+
+# own_pr <number> <pr>: the PR whose number a record carries when PR <pr> added it. A record
+# whose own PR landed inside another PR's squash keeps its own PR's number; the list names each
+# one with the squash that carried it (goal 17, D8: PR #129's branch was merged into PR #132's
+# and landed with it; #129 was closed with a pointer; goal 18: PR #138's tree landed as PR
+# #139's one commit, a subject of #138's own being too long; PR #253 merged its record as 0251
+# and PR #254 renamed it, the rename being its add).
+own_pr() {
+    case "$1:$2" in
+    0129:132) echo 129 ;;
+    0138:139) echo 138 ;;
+    0253:254) echo 253 ;;
+    *) echo "$2" ;;
+    esac
+}
 
 declare -A seen
 n=0
@@ -39,19 +57,23 @@ while IFS= read -r f; do
     # On main, a record from the rule on must carry the number of the squash-merged PR that added it.
     if [ "$n10" -ge "$first_pr_numbered" ] && [ "$shallow" = 0 ]; then
         pr="$(git log --diff-filter=A --format=%s -- "$f" | sed -n 's/.*(#\([0-9]*\))$/\1/p' | tail -n 1)"
-        # A record whose own PR landed inside another PR's squash keeps its own PR's number; the
-        # list names each one with the squash that carried it (goal 17, D8: PR #129's branch
-        # was merged into PR #132's and landed with it; #129 was closed with a pointer; goal 18:
-        # PR #138's tree landed as PR #139's one commit, a subject of #138's own being too long;
-        # PR #253 merged its record as 0251 and PR #254 renamed it, the rename being its add here).
-        case "$num:$pr" in
-        0129:132) pr=129 ;;
-        0138:139) pr=138 ;;
-        0253:254) pr=253 ;;
-        esac
+        pr="$(own_pr "$num" "$pr")"
         [ -z "$pr" ] || [ "$((10#$num))" = "$pr" ] || bad "$f: numbered $num but added by PR #$pr"
     fi
 done < <(git ls-files 'docs/decisions/[0-9]*.md')
+# On a pull request, the records it adds carry its own number; renames count as adds, as main's
+# check above reads them (git log on the new path alone).
+if [ -n "${CHORUS_GATE_PR:-}" ] && [ -n "${CHORUS_GATE_BASE:-}" ]; then
+    git cat-file -e "$CHORUS_GATE_BASE^{commit}" 2> /dev/null ||
+        bad "CHORUS_GATE_BASE $CHORUS_GATE_BASE is not a commit; the records this pull request adds are unchecked"
+    printf -v want '%04d' "$((10#$CHORUS_GATE_PR))"
+    while IFS= read -r f; do
+        b="$(basename "$f")"
+        num="${b%%-*}"
+        [ "$(own_pr "$num" "$CHORUS_GATE_PR")" = "$((10#$CHORUS_GATE_PR))" ] || continue
+        [ "$num" = "$want" ] || bad "$f: added by this pull request, #$CHORUS_GATE_PR; rename it to $want-${b#*-}"
+    done < <(git diff --no-renames --diff-filter=A --name-only "$CHORUS_GATE_BASE"...HEAD -- 'docs/decisions/[0-9]*.md')
+fi
 # The pre-rule set is closed: every number from 0001 to 0027 is present (once, checked above).
 for ((i = 1; i <= last_pre_rule; i++)); do
     printf -v want '%04d' "$i"
