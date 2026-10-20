@@ -10,6 +10,9 @@
 # a record the index docs/decisions/README.md does not name.
 # A shallow clone (CI's checkout without history) cannot tell which PR added a record: the PR
 # number part prints SKIPPED there, and everything else is still checked.
+# On a pull request, CI exports its number as CHORUS_GATE_PR and its base as CHORUS_GATE_BASE:
+# every record the PR adds (a rename's new name counts as added, as on main) must carry that
+# number, so a misnumbered record fails before merge instead of in the nightly run on main.
 . "$(dirname "$0")/lib.sh"
 # Before this rule, records were numbered in sequence; from here on a new number is a PR number.
 first_pr_numbered=32
@@ -52,6 +55,15 @@ while IFS= read -r f; do
         [ -z "$pr" ] || [ "$((10#$num))" = "$pr" ] || bad "$f: numbered $num but added by PR #$pr"
     fi
 done < <(git ls-files 'docs/decisions/[0-9]*.md')
+# On a pull request, the records it adds carry its own number; renames count as adds, as main's
+# check above reads them (git log on the new path alone).
+if [ -n "${CHORUS_GATE_PR:-}" ] && [ -n "${CHORUS_GATE_BASE:-}" ]; then
+    printf -v want '%04d' "$((10#$CHORUS_GATE_PR))"
+    while IFS= read -r f; do
+        b="$(basename "$f")"
+        [ "${b%%-*}" = "$want" ] || bad "$f: added by this pull request, #$CHORUS_GATE_PR; rename it to $want-${b#*-}"
+    done < <(git diff --no-renames --diff-filter=A --name-only "$CHORUS_GATE_BASE"...HEAD -- 'docs/decisions/[0-9]*.md')
+fi
 # The pre-rule set is closed: every number from 0001 to 0027 is present (once, checked above).
 for ((i = 1; i <= last_pre_rule; i++)); do
     printf -v want '%04d' "$i"

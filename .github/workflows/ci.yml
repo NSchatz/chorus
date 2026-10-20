@@ -51,6 +51,7 @@ jobs:
         env:
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           PUSH_BEFORE: ${{ github.event.before }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           base="${PR_BASE:-$PUSH_BEFORE}"
           if [ -z "$base" ] ||
@@ -58,6 +59,10 @@ jobs:
             base="$(git merge-base origin/main HEAD)"
           fi
           echo "CHORUS_GATE_BASE=$base" >> "$GITHUB_ENV"
+          # check-adrs.sh: a record this pull request adds takes its number.
+          if [ -n "$PR_NUMBER" ]; then
+            echo "CHORUS_GATE_PR=$PR_NUMBER" >> "$GITHUB_ENV"
+          fi
           git diff --name-only "$base"...HEAD | sed 's/^/changed: /'
           tree='^(firmware/|fixtures/|third_party/|config/|[^/]*\.conf$)'
           if git diff --name-only "$base"...HEAD | grep -q -E "$tree"; then

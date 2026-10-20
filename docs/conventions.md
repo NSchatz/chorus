@@ -295,7 +295,9 @@ The records numbered before this rule are a closed set, exactly 0001-0027, each 
 duplicates became 0022-0024 on 2026-09-30 (decided 2026-09-29 by the owner, K48, audit B-19) and
 0025-0027 record three decisions made before the program (audit B-8). A new file numbered below
 0032 fails. `check-adrs.sh` checks all of that, and the PR number of records from 0032 on (on a
-shallow clone that part prints `SKIPPED`). **Review-only (no check):** a record says what it
+shallow clone that part prints `SKIPPED`). On a pull request, CI passes its number
+(`CHORUS_GATE_PR`) and every record the PR adds, a rename's new name included, must carry it,
+so a misnumbered record fails the PR's gate rather than the night on main. **Review-only (no check):** a record says what it
 decides, why, what was not chosen, and its sources with the date read.
 
 ## 16. Clean-room provenance
