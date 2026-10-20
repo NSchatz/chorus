@@ -1,4 +1,4 @@
-# 0251: the config flow imports probatio, Home Assistant's validation engine since 2026.10
+# 0253: the config flow imports probatio, Home Assistant's validation engine since 2026.10
 
 - Status: decided, 2026-10-19 (harness task 1451, the harness pin's move to Home Assistant
   2026.10.2)
