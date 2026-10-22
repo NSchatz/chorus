@@ -34,6 +34,12 @@
 #      reason `not_confirmed`, running GOOD, the image tried BAD;
 #   6. the eFuse file is byte for byte what it was; no panic on either console.
 #
+# Every reset the board asks for (into a new image, or back from one that did
+# not confirm) ends the emulator, which the run starts again on the same flash:
+# a power cycle at each reboot, the serial log kept as one console. In one
+# process, the reboot into a freshly written slot stalled the guest twice in
+# the nightly (docs/decisions/0111-*).
+#
 # Source: simulation. Nothing here is timing evidence; the hardware rollback
 # is the owner's bench session.
 #
@@ -230,9 +236,27 @@ PY
 SERIAL="$OUT/serial.log"
 FW='"%s %s slot=%s state=%s reason=%s image=%s" % (fw.get("version"), fw.get("board"), fw.get("slot"), fw.get("state"), fw.get("reason"), fw.get("image_version"))'
 
+# The board asked for a reset, which ends an emulator started with `exit`:
+# wait for it to end and start it again on the same flash, into the same log.
+# Nothing is started when it is still running after the wait, so a reset that
+# never came shows in the checks that follow.
+power_on_after_reset() {
+    local i
+    for ((i = 0; i < WAIT_SECONDS * 5; i++)); do
+        kill -0 "$QEMU_PID" 2> /dev/null || break
+        sleep 0.2
+    done
+    if kill -0 "$QEMU_PID" 2> /dev/null; then
+        say "chorus: the emulator is still running $WAIT_SECONDS s after the board asked for a reset"
+        return 1
+    fi
+    wait "$QEMU_PID" 2> /dev/null || true
+    qemu_boot "$OUT/flash.bin" "$OUT/efuse.bin" "$SERIAL" "$EMULATOR_SECONDS" exit
+}
+
 say ""
 say "chorus: the board, image A on slot 0 (serial: $SERIAL)"
-qemu_boot "$OUT/flash.bin" "$OUT/efuse.bin" "$SERIAL" "$EMULATOR_SECONDS"
+qemu_boot "$OUT/flash.bin" "$OUT/efuse.bin" "$SERIAL" "$EMULATOR_SECONDS" exit
 IDENTITY_LINE='identity id=chorus-[0-9a-f]{12} key=[^ ]+ id_made_this_boot=[01] key_made_this_boot=[01]'
 wait_for_line "$SERIAL" "$WAIT_SECONDS" "$IDENTITY_LINE" || true
 ID="$({ command grep -a -o -E "$IDENTITY_LINE" "$SERIAL" | head -n 1 | sed -n 's/^identity id=\([^ ]*\) .*/\1/p'; } || true)"
@@ -255,7 +279,7 @@ say ""
 say "chorus: firmware_install good"
 ANSWER="$(command_post "{\"v\":2,\"t\":\"firmware_install\",\"speaker\":\"$ID\",\"image\":\"good\"}")"
 check "the-install-of-good-is-accepted" "$([[ "$ANSWER" == *" 200 "* ]] && echo 1 || echo 0)" "$ANSWER"
-wait_for_line "$SERIAL" "$TRANSFER_SECONDS" 'rebooting into the new image' || true
+wait_for_line "$SERIAL" "$TRANSFER_SECONDS" 'rebooting into the new image' && power_on_after_reset || true
 wait_for_line "$SERIAL" "$WAIT_SECONDS" "running slot=1 state=pending-verify version=$GOOD_VERSION" || true
 check "good-boots-on-slot-1-on-trial" \
     "$(command grep -a -q "running slot=1 state=pending-verify version=$GOOD_VERSION" "$SERIAL" && echo 1 || echo 0)" \
@@ -267,22 +291,22 @@ check "good-is-confirmed" \
 
 # --- 4. the power goes away, and comes back on GOOD ------------------------------
 #
-# Why the emulator is stopped and started here, and not only because a board
-# loses power: in one emulator process, an image written over a slot that
-# process had already executed (image A's slot 0) crashed the moment the
-# bootloader jumped to it, `Guru Meditation Error: Core 0 panic'ed
-# (IllegalInstruction)` with the program counter in the image's read-only data,
-# while the same bytes booted cleanly in a fresh process and an image written
-# to a never-executed slot (GOOD's slot 1) always did. The emulator appears to
-# keep code it translated from the old flash contents. A real chip's cache does
-# not survive its reset. So the bad image is installed into a process that has
-# only ever run GOOD (docs/decisions/0111-*).
+# A board loses power, and GOOD must come back valid. The stop and start here
+# was first made for the emulator: in one process, an image written over a
+# slot that process had already executed (image A's slot 0) crashed the moment
+# the bootloader jumped to it, `Guru Meditation Error: Core 0 panic'ed
+# (IllegalInstruction)` with the program counter in the image's read-only
+# data, while the same bytes booted cleanly in a fresh process. The emulator
+# appears to keep code it translated from the old flash contents; a real
+# chip's cache does not survive its reset. Every reset is now a fresh process
+# (power_on_after_reset), and this power cycle stays a check of its own
+# (docs/decisions/0111-*).
 
 qemu_stop
 SERIAL="$OUT/serial-2.log"
 say ""
 say "chorus: the power goes away and comes back: GOOD on slot 1 (serial: $SERIAL)"
-qemu_boot "$OUT/flash.bin" "$OUT/efuse.bin" "$SERIAL" "$EMULATOR_SECONDS"
+qemu_boot "$OUT/flash.bin" "$OUT/efuse.bin" "$SERIAL" "$EMULATOR_SECONDS" exit
 wait_for_line "$SERIAL" "$WAIT_SECONDS" 'chorus-ota: running slot=' || true
 check "good-is-valid-after-a-power-cycle" \
     "$(command grep -a -q "running slot=1 state=valid version=$GOOD_VERSION" "$SERIAL" && echo 1 || echo 0)" \
@@ -295,14 +319,15 @@ say ""
 say "chorus: firmware_install bad"
 ANSWER="$(command_post "{\"v\":2,\"t\":\"firmware_install\",\"speaker\":\"$ID\",\"image\":\"bad\"}")"
 check "the-install-of-bad-is-accepted" "$([[ "$ANSWER" == *" 200 "* ]] && echo 1 || echo 0)" "$ANSWER"
-wait_for_line "$SERIAL" "$TRANSFER_SECONDS" "running slot=0 state=pending-verify version=$BAD_VERSION" || true
+wait_for_line "$SERIAL" "$TRANSFER_SECONDS" 'rebooting into the new image' && power_on_after_reset || true
+wait_for_line "$SERIAL" "$WAIT_SECONDS" "running slot=0 state=pending-verify version=$BAD_VERSION" || true
 check "bad-boots-on-slot-0-on-trial" \
     "$(command grep -a -q "running slot=0 state=pending-verify version=$BAD_VERSION" "$SERIAL" && echo 1 || echo 0)" \
     "$(command grep -a -o -E "running slot=0 state=[a-z-]+ version=$BAD_VERSION" "$SERIAL" | head -n 1 | tr -d '\r')"
 # The trial is ota_confirm_seconds long (firmware/config/endpoint.conf), and
 # the unit then marks the image invalid and reboots.
 TRIAL="$(endpoint_conf ota_confirm_seconds)"
-wait_for_line "$SERIAL" "$((TRIAL + WAIT_SECONDS))" 'did not confirm in time' || true
+wait_for_line "$SERIAL" "$((TRIAL + WAIT_SECONDS))" 'did not confirm in time' && power_on_after_reset || true
 check "bad-does-not-confirm-and-gives-itself-up" \
     "$(command grep -a -q 'did not confirm in time' "$SERIAL" && echo 1 || echo 0)" \
     "$(command grep -a -o -E 'this image did not confirm in time[^.;]*' "$SERIAL" | head -n 1 | tr -d '\r')"

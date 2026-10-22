@@ -127,3 +127,16 @@ booted on slot 0, ran its trial and gave itself up, and nothing panicked.
   lines, not the consoles or the emulator's own output, so the cause is not known; the gate's
   logs now carry both for `qemu-boot` and `ota-qemu`, and a failed run prints the emulator's
   output. A recurrence is read from them before the run is changed.
+- 2026-10-22: it recurred in the nightly of 2026-10-21 (run 39606025523, commit `742a666`,
+  which had passed the night before), and the kept logs say what they can: GOOD's console
+  stopped after `board_audio_output = none`, before the emulated Ethernet's first line, with
+  no panic and nothing from the emulator but its start line and the run's timeout. Both
+  stalls were the first boot after an in-process reboot into a freshly written slot; no fresh
+  emulator process has stalled there, in this run or in `qemu-boot`. The run now starts the
+  emulator with `-no-reboot` (`tools/qemu/lib.sh`, `qemu_boot ... exit`): every reset the
+  board asks for (into GOOD, into BAD, and BAD's giving up) ends the process, and the run
+  starts it again on the same flash, appending to the same serial log. Decision 2's grading
+  is unchanged; what it no longer exercises is an in-process `esp_restart` into the
+  bootloader, which the owner's bench session (S9) does on a real chip. The emulator's own
+  help names `-no-reboot` ("exit instead of rebooting"); a bootloader with no bootable slot
+  ended a `-no-reboot` process at its reset, tried 2026-10-22.

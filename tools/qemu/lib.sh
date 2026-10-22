@@ -198,16 +198,28 @@ PY
 #     DHCP and reaches the host's loopback through the gateway, and nothing
 #     outside this machine is reachable from the listening side;
 #   - `timeout` over all of it, so a hung guest cannot outlive the run.
+# A fifth argument, `exit`, makes a reset the guest asks for end the emulator
+# (`-no-reboot`) instead of resetting it in the same process, and appends to the
+# serial log rather than starting it empty: the caller starts the emulator
+# again on the same flash, a power cycle, and the log stays one console.
 qemu_boot() {
-    local flash="$1" efuses="$2" serial="$3" seconds="$4"
-    : > "$serial"
+    local flash="$1" efuses="$2" serial="$3" seconds="$4" on_reset="${5:-reboot}"
+    local console=(-serial "file:$serial")
+    if [ "$on_reset" = exit ]; then
+        # The file backend truncates its path; its log file is appended to.
+        console=(-no-reboot -chardev "file,id=console,path=/dev/null,logfile=$serial,logappend=on"
+            -serial chardev:console)
+    else
+        : > "$serial"
+        : > "$serial.emulator"
+    fi
     LD_LIBRARY_PATH="$(qemu_libs)/lib" timeout "$seconds" "$(qemu_program)" -M esp32s3 -m 8M \
         -drive "file=$flash,if=mtd,format=raw" \
         -drive "file=$efuses,if=none,format=raw,id=efuse" \
         -global driver=nvram.esp32s3.efuse,property=drive,value=efuse \
         -global driver=timer.esp32s3.timg,property=wdt_disable,value=true \
         -nic user,model=open_eth \
-        -nographic -monitor none -serial "file:$serial" > "$serial.emulator" 2>&1 &
+        -nographic -monitor none "${console[@]}" >> "$serial.emulator" 2>&1 &
     QEMU_PID=$!
 }
 
