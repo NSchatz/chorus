@@ -201,13 +201,14 @@ PY
 # A fifth argument, `exit`, makes a reset the guest asks for end the emulator
 # (`-no-reboot`) instead of resetting it in the same process, and appends to the
 # serial log rather than starting it empty: the caller starts the emulator
-# again on the same flash, a power cycle, and the log stays one console.
+# again on the same flash, a power cycle, and the log stays one console. The
+# caller starts that log empty (a run's own fresh directory).
 qemu_boot() {
     local flash="$1" efuses="$2" serial="$3" seconds="$4" on_reset="${5:-reboot}"
     local console=(-serial "file:$serial")
     if [ "$on_reset" = exit ]; then
         # The file backend truncates its path; its log file is appended to.
-        console=(-no-reboot -chardev "file,id=console,path=/dev/null,logfile=$serial,logappend=on"
+        console=(-no-reboot -chardev "file,id=console,path=/dev/null,logfile=${serial//,/,,},logappend=on"
             -serial chardev:console)
     else
         : > "$serial"
