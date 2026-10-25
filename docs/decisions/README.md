@@ -156,3 +156,4 @@ the number of the pull request that added it.
 | 0248 | [the subwoofer's board profile is a DevKitC, a PCM5102A line DAC and a WIZ850io, a new line-dac audio output with its filter delay counted, the knobs read by ADC1, and subwoofer.md version 2](0248-the-subwoofer-on-a-line-dac.md) |
 | 0250 | [the knobs' ADC binding is compiled only into an image whose board profile wires a knob](0250-knobs-only-in-a-knobs-image.md) |
 | 0253 | [the config flow imports probatio, Home Assistant's validation engine since 2026.10](0253-the-config-flow-imports-probatio.md) |
+| 0000 | [a workspace test past its limit is ended and fails, named: 60 s by default, 3x its measured time for a longer one](0000-a-test-past-its-limit-is-ended.md) |

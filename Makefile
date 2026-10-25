@@ -192,6 +192,7 @@ verify: tools-executable
 	bash tools/wireless-expectations-check.sh
 	bash tools/bench/e2e-test.sh
 	bash tools/gate-targets-test.sh
+	bash tools/nextest-timeout-test.sh
 
 # The control-plane thread-population checks, run over and over on one build,
 # plus two starved runs that must go red naming the busy-worker refusal. Those
