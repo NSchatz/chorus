@@ -26,9 +26,10 @@ BRIEF.md guides; it recommends, it does not dictate. This repository is public.
 ## The gate
 
 CI is the gate (`docs/decisions/0140-ci-is-the-gate.md`). A pull request runs only what its
-change touches (`make gate-changed`), in 2 minutes or less (a warning when over); the full gate
-(`make gate`) runs nightly on main, and a red main or night gets a fix-forward task.
-`make gate-fast` is the conventions checks alone. Rules and their checks: `docs/conventions.md`.
+change touches (`make gate-quick`, an alias of `make gate-changed`), in 2 minutes or less (a
+warning when over); the full gate (`make gate-full`, an alias of `make gate`) runs nightly on
+main, and a red main or night gets a fix-forward task. `make gate-fast` is the conventions checks
+alone. Rules and their checks: `docs/conventions.md`.
 
 ## Git
 

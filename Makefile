@@ -22,6 +22,16 @@ gate-fast: tools-executable
 gate-changed: tools-executable
 	bash tools/gate.sh changed
 
+# The standard target names the harness and the workflows call (ci.yml, nightly.yml). chorus has no
+# host gate (CI is the gate), so these are aliases: gate-quick is gate-changed against the merge
+# base with HARNESS_BASE (default origin/main), unless CHORUS_GATE_BASE is already set, as ci.yml
+# sets it; gate-full is gate. tools/gate-targets-test.sh holds both.
+gate-quick: tools-executable
+	CHORUS_GATE_BASE="$${CHORUS_GATE_BASE:-$$(git merge-base "$${HARNESS_BASE:-origin/main}" HEAD)}" bash tools/gate.sh changed
+
+gate-full: tools-executable
+	bash tools/gate.sh full
+
 # The gate tiers (the goals program, W15, W36): tier-fast on every PR, tier-full at a goal's
 # end and nightly on main. tier-full is the gate itself; gate and gate-fast keep their meaning.
 # Callers take chorus-heavy.lock for both, as for the gate.
@@ -181,6 +191,7 @@ verify: tools-executable
 	bash tools/measure/capture-refusals.sh
 	bash tools/wireless-expectations-check.sh
 	bash tools/bench/e2e-test.sh
+	bash tools/gate-targets-test.sh
 
 # The control-plane thread-population checks, run over and over on one build,
 # plus two starved runs that must go red naming the busy-worker refusal. Those
@@ -484,7 +495,7 @@ verify-null-device: tools-executable
  \
 	.PHONY: release image endpoint-packages build check discovery-vectors firmware-check firmware-golden-vectors  \
 	firmware-flash firmware-image firmware-image-guard firmware-safety-scans firmware-sync-scenarios  \
-	firmware-wireless gate gate-fast measure-fixture-reports measure-fixtures one  \
+	firmware-wireless gate gate-fast gate-full gate-quick measure-fixture-reports measure-fixtures one  \
 	ota-qemu probe qemu-boot qemu-env sim-house sync-vectors ten-minute-run ten-minute-run-null test tools-executable verify verify-alsa-null verify-control  \
 	verify-control-determinism verify-device verify-discovery-fallback  \
 	verify-endpoint-mdns verify-endpoint-rig verify-host verify-mdns verify-measure-device verify-metrics  \

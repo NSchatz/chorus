@@ -1,14 +1,14 @@
 ---
 name: ci
 
-# The changed-only gate (`make gate-changed`, tools/gate.sh changed; decided by
+# The changed-only gate (`make gate-quick`, tools/gate.sh changed; decided by
 # the owner 2026-10-06), on every pull request, on every push to main and by
 # hand: the conventions checks, then fmt, clippy and the tests of only the
 # crates the change touches and the crates that depend on them
 # (tools/changed.sh, from `cargo metadata`), and the Home Assistant, web and
 # firmware host checks only when their trees changed. A docs-only change builds
 # and tests nothing. Two minutes is the target; a slower run warns and does not
-# fail. The full gate (`make gate`) runs nightly on main from
+# fail. The full gate (`make gate-full`) runs nightly on main from
 # .github/workflows/nightly.yml.
 #
 # A pull request merges when its gate passes and one fresh-context reviewer has
@@ -32,7 +32,7 @@ concurrency:
 
 jobs:
   gate:
-    name: make gate-changed
+    name: make gate-quick
     # No CARGO_*, CMAKE_* or RUST* variable at the job level: rust-cache folds
     # them into its key, and this job restores nightly.yml's cache.
     runs-on: ubuntu-24.04
@@ -131,8 +131,8 @@ jobs:
           done < "$f"
           echo "CHORUS_IDENTITY_TERMS=$f" >> "$GITHUB_ENV"
 
-      - name: make gate-changed
-        run: make gate-changed
+      - name: make gate-quick
+        run: make gate-quick
 
       - name: Gate logs
         if: failure()
