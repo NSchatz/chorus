@@ -10,9 +10,10 @@ retries = 0
 fail-fast = false
 # How many tests run at once. NEXTEST_TEST_THREADS overrides it for one run.
 test-threads = 8
-# Said, never enforced: a test running past a minute is named in the log and
-# left to finish.
-slow-timeout = { period = "60s" }
+# A test past a minute is ended and fails, named (the owner, 2026-10-25: per-test
+# timeouts in every repo); a longer test has its own override below.
+# tools/nextest-timeout-test.sh holds this line and shows the end of a test.
+slow-timeout = { period = "60s", terminate-after = 1 }
 # The slow and failing tests are listed again at the end of the run.
 final-status-level = "slow"
 
@@ -53,3 +54,145 @@ filter = '''
 '''
 test-group = "firmware-build"
 priority = 50
+
+# The tests that take over a third of the minute: each its own limit, 3x its time on the
+# nightly gate (the slower of the runs of 2026-10-21 and 2026-10-25), rounded up to 10 s
+# (docs/measurements/nextest-test-durations-ci.md,
+# docs/decisions/0000-a-test-past-its-limit-is-ended.md). These set only slow-timeout, so the
+# test-group overrides above still apply: nextest takes each setting from the first override
+# that sets it.
+
+# 63.757 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-client-linux) & binary(tv_capture) & test(=a_1_khz_tone_from_a_tv_200_ppm_slow_and_drifting_comes_out_within_1_ppm_of_nominal)'
+slow-timeout = { period = "200s", terminate-after = 1 }
+
+# 59.996 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-client-linux) & binary(tv_capture) & test(=a_1_khz_tone_from_a_tv_1400_ppm_fast_comes_out_within_1_ppm_of_nominal)'
+slow-timeout = { period = "180s", terminate-after = 1 }
+
+# 53.015 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-client-linux) & binary(tv_capture) & test(=a_tv_200_ppm_fast_keeps_its_stamps_on_its_capture_instants_for_ten_minutes)'
+slow-timeout = { period = "160s", terminate-after = 1 }
+
+# 50.518 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-client-linux) & binary(tv_capture) & test(=a_tv_1400_ppm_fast_keeps_its_stamps_on_its_capture_instants_for_ten_minutes)'
+slow-timeout = { period = "160s", terminate-after = 1 }
+
+# 46.231 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-client-linux) & binary(tv_capture) & test(=a_tv_200_ppm_slow_keeps_its_stamps_on_its_capture_instants_for_ten_minutes)'
+slow-timeout = { period = "140s", terminate-after = 1 }
+
+# 45.753 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-client-linux) & binary(tv_capture) & test(=a_tv_1400_ppm_slow_keeps_its_stamps_on_its_capture_instants_for_ten_minutes)'
+slow-timeout = { period = "140s", terminate-after = 1 }
+
+# 48.103 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-protocol) & binary(firmware_session) & test(=a_good_image_installs_and_confirms_and_a_bad_one_is_rolled_back_over_a_real_session)'
+slow-timeout = { period = "150s", terminate-after = 1 }
+
+# 26.008 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-server) & binary(adoption) & test(=a_new_speaker_is_adopted_named_and_assigned_a_room)'
+slow-timeout = { period = "80s", terminate-after = 1 }
+
+# 20.723 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-server) & binary(regress_0031_f1) & test(=serve_forever_still_serves_a_second_client_after_the_first_stream_ends)'
+slow-timeout = { period = "70s", terminate-after = 1 }
+
+# 22.778 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-server) & binary(soloist_receivers) & test(=an_alarm_whose_receiver_never_reports_playing_rings_the_chime_after_the_bound)'
+slow-timeout = { period = "70s", terminate-after = 1 }
+
+# Both of its tests: 41.364 s and 41.223 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-server) & binary(tv_capture_rate_match)'
+slow-timeout = { period = "130s", terminate-after = 1 }
+
+# 26.014 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-server) & binary(tv_low_latency) & test(=loss_on_both_legs_is_repaired_by_the_fec_and_is_lost_without_it)'
+slow-timeout = { period = "80s", terminate-after = 1 }
+
+# 26.860 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-server) & binary(upnp_control_point) & test(=searches_are_answered_by_target_inside_mx_and_never_without_it)'
+slow-timeout = { period = "90s", terminate-after = 1 }
+
+# 55.838 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-sync) & binary(latency_growth) & test(=the_committed_report_is_what_the_generator_writes)'
+slow-timeout = { period = "170s", terminate-after = 1 }
+
+# 55.577 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-sync) & binary(latency_growth) & test(=a_wired_room_joins_and_leaves_without_a_glitch)'
+slow-timeout = { period = "170s", terminate-after = 1 }
+
+# 55.150 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-sync) & binary(latency_growth) & test(=a_run_reproduces)'
+slow-timeout = { period = "170s", terminate-after = 1 }
+
+# 54.592 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-sync) & binary(latency_growth) & test(=the_scenarios_take_each_shared_number_from_its_one_copy)'
+slow-timeout = { period = "170s", terminate-after = 1 }
+
+# 53.749 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-sync) & binary(latency_growth) & test(=the_naive_jump_fails_the_criterion_with_a_gap)'
+slow-timeout = { period = "170s", terminate-after = 1 }
+
+# 47.176 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-sync) & binary(latency_growth) & test(=a_wifi_room_joins_when_the_buffer_is_deep_enough_and_the_playing_room_never_glitches)'
+slow-timeout = { period = "150s", terminate-after = 1 }
+
+# 35.431 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-sync) & binary(lowlat_budget) & test(=below_the_floor_a_repaired_chunk_misses_its_playout_point)'
+slow-timeout = { period = "110s", terminate-after = 1 }
+
+# 35.307 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-sync) & binary(lowlat_budget) & test(=a_run_repeats_exactly)'
+slow-timeout = { period = "110s", terminate-after = 1 }
+
+# 31.315 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-sync) & binary(lowlat_budget) & test(=at_or_above_the_floor_no_chunk_is_ever_late)'
+slow-timeout = { period = "100s", terminate-after = 1 }
+
+# 30.773 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-sync) & binary(lowlat_budget) & test(=every_committed_scenario_is_listed_and_named_after_its_file)'
+slow-timeout = { period = "100s", terminate-after = 1 }
+
+# 29.811 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-sync) & binary(lowlat_budget) & test(=bursts_beat_a_single_parity_and_the_interleave_wins_some_back)'
+slow-timeout = { period = "90s", terminate-after = 1 }
+
+# 29.310 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-sync) & binary(lowlat_budget) & test(=a_clean_wired_link_loses_nothing)'
+slow-timeout = { period = "90s", terminate-after = 1 }
+
+# 28.986 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-sync) & binary(lowlat_budget) & test(=fec_removes_the_independent_loss_its_control_shows)'
+slow-timeout = { period = "90s", terminate-after = 1 }
+
+# 28.189 s.
+[[profile.default.overrides]]
+filter = 'package(chorus-sync) & binary(lowlat_budget) & test(=the_committed_report_is_what_the_generator_writes)'
+slow-timeout = { period = "90s", terminate-after = 1 }
