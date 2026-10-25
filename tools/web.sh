@@ -211,8 +211,9 @@ out="$(mktemp "${TMPDIR:-/tmp}/chorus-$name.XXXXXX")"
 trap 'rm -f "$out"' EXIT
 rc=0
 # Printed as it runs, not once it has ended: a run that is ended from outside (a signal to its
-# process group) has then said which tests it finished.
-node --import "./$tests_dir/setup.js" --test --test-reporter=spec "$tests_glob" 2>&1 | tee "$out" || rc=$?
+# process group) has then said which tests it finished. A test past a minute fails, named (the
+# owner, 2026-10-25: per-test timeouts in every repo); a longer one sets its own `{ timeout }`.
+node --import "./$tests_dir/setup.js" --test --test-reporter=spec --test-timeout=60000 "$tests_glob" 2>&1 | tee "$out" || rc=$?
 count() { sed -n "s/^ℹ $1 \([0-9][0-9]*\)$/\1/p" "$out" | tail -n 1; }
 tests="$(count tests)"
 if [ "$rc" -ne 0 ]; then
