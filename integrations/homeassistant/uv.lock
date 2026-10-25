@@ -747,6 +747,7 @@ dev = [
     { name = "pymicro-vad" },
     { name = "pyspeex-noise" },
     { name = "pytest-homeassistant-custom-component" },
+    { name = "pytest-timeout" },
     { name = "ruff" },
 ]
 hassfest = [
@@ -766,6 +767,7 @@ dev = [
     { name = "pymicro-vad", specifier = "==1.0.1" },
     { name = "pyspeex-noise", specifier = "==1.0.2" },
     { name = "pytest-homeassistant-custom-component", specifier = "==0.13.373" },
+    { name = "pytest-timeout", specifier = "==2.4.0" },
     { name = "ruff", specifier = "==0.16.9" },
 ]
 hassfest = [{ name = "infrared-protocols", specifier = "==10.1.0" }]

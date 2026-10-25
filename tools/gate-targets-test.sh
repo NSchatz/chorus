@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# The standard gate targets (Makefile gate-quick and gate-full) and the workflows that call them.
+# The standard gate targets (Makefile gate-quick and gate-full) and the workflows that call them,
+# and the per-test limit of the web tests' run.
 # chorus has no host gate, so the targets are aliases: this reads what make would run (`make -n`)
 # and what the workflows' run steps call, and builds and runs nothing.
 #
@@ -59,9 +60,23 @@ test_workflows_call_standard_targets() {
     fi
 }
 
+# 4. The web tests' run (tools/web.sh) holds each test to a minute.
+test_web_sh_sets_60_second_limit() {
+    local line
+    line="$(grep -E '^[[:space:]]*node .*--test( |$)' tools/web.sh)"
+    if [ -z "$line" ]; then
+        fail "${FUNCNAME[0]}" "tools/web.sh has no node --test line"
+    elif grep -q -- '--test-timeout=60000 ' <<< "$line"; then
+        pass "${FUNCNAME[0]}"
+    else
+        fail "${FUNCNAME[0]}" "tools/web.sh's node --test line has no --test-timeout=60000: $line"
+    fi
+}
+
 test_gate_quick_keeps_ci_base
 test_gate_full_is_gate
 test_workflows_call_standard_targets
+test_web_sh_sets_60_second_limit
 
 if [ "$fails" -ne 0 ]; then
     echo "gate targets: $fails failed" >&2
