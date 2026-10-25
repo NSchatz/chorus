@@ -1,8 +1,8 @@
 ---
 name: nightly
 
-# The full gate (`make gate`, tools/gate.sh full), nightly on main and by hand.
-# Pull requests and pushes to main run the changed-only gate instead
+# The full gate (`make gate-full`, tools/gate.sh full), nightly on main and by
+# hand. Pull requests and pushes to main run the changed-only gate instead
 # (.github/workflows/ci.yml, decided by the owner 2026-10-06): this workflow is
 # where the long steps (the whole workspace's tests, the determinism run, the
 # firmware images, the emulator runs, the images and packages) run. A red night
@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   gate:
-    name: make gate (nightly)
+    name: make gate-full (nightly)
     runs-on: ubuntu-24.04
     # The build-parallelism variables are on the gate step, not here:
     # rust-cache folds CARGO_* and CMAKE_* into its key, and ci.yml restores
@@ -150,11 +150,11 @@ jobs:
           n="$(grep -c . "$f")"
           echo "identity term list: $n term(s) from the repository secret"
 
-      - name: make gate
+      - name: make gate-full
         env:
           CARGO_BUILD_JOBS: "2"
           CMAKE_BUILD_PARALLEL_LEVEL: "2"
-        run: make gate
+        run: make gate-full
 
       # Nothing gates on a developer's machine, so a red run must explain
       # itself: each step's whole log (the job log shows only its last 15
