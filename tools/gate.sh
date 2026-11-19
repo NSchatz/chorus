@@ -17,8 +17,8 @@
 # which nextest does not run, run after them with `cargo test --doc`.
 # docs/decisions/0112-a-faster-gate-with-the-same-checks.md says why.
 #
-# The gate never takes chorus-heavy.lock itself; callers do (the merge rule in the retired
-# program's brief, section 0.3: https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md).
+# The gate takes no lock: CI runs it (docs/decisions/0140-ci-is-the-gate.md), and a development
+# host runs one crate's focused test or one conventions check instead.
 #
 #   make gate             # everything
 #   make gate-fast        # the conventions checks only, for docs-only changes
@@ -27,9 +27,8 @@
 #                         # two minutes the target; `make gate` runs nightly on main
 #   make tier-fast        # the conventions checks, fmt, clippy, the Home Assistant
 #                         # integration's tests, the web app's tests and rebuild
-#                         # and the workspace tests: the fast
-#                         # tier run on every PR (the goals program's gate tiers, W15, W36);
-#                         # `make tier-full` is `make gate`, run at goal end and nightly on main
+#                         # and the workspace tests, with no separate build, firmware,
+#                         # verify or image step; `make tier-full` is `make gate`
 #
 # Environment:
 #   CHORUS_IDF_ENV            a script that puts ESP-IDF on PATH and sets IDF_PATH,

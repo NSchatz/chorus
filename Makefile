@@ -7,9 +7,9 @@ CHORUS_IDF_ENV ?= /cache/esp/chorus-idf-v6.1-export.sh
 export CHORUS_IDF_ENV
 
 # The gate: every check a change passes before it merges, each step timed
-# (tools/gate.sh says what it runs). Callers take chorus-heavy.lock; the recipe
-# never does. gate-fast is the conventions checks alone (tools/conventions/), for
-# docs-only changes.
+# (tools/gate.sh says what it runs). CI is the gate (ADR 0140): a development host
+# runs one crate's focused test or one conventions check, not this. gate-fast is the
+# conventions checks alone (tools/conventions/), for docs-only changes.
 gate: tools-executable
 	bash tools/gate.sh full
 
@@ -22,19 +22,19 @@ gate-fast: tools-executable
 gate-changed: tools-executable
 	bash tools/gate.sh changed
 
-# The standard target names the harness and the workflows call (ci.yml, nightly.yml). chorus has no
-# host gate (CI is the gate), so these are aliases: gate-quick is gate-changed against the merge
-# base with HARNESS_BASE (default origin/main), unless CHORUS_GATE_BASE is already set, as ci.yml
-# sets it; gate-full is gate. tools/gate-targets-test.sh holds both.
+# The standard target names the workflows call (ci.yml, nightly.yml). chorus has no host gate
+# (CI is the gate), so these are aliases: gate-quick is gate-changed against the merge base with
+# origin/main, unless CHORUS_GATE_BASE is already set, as ci.yml sets it; gate-full is gate.
+# tools/gate-targets-test.sh holds both.
 gate-quick: tools-executable
-	CHORUS_GATE_BASE="$${CHORUS_GATE_BASE:-$$(git merge-base "$${HARNESS_BASE:-origin/main}" HEAD)}" bash tools/gate.sh changed
+	CHORUS_GATE_BASE="$${CHORUS_GATE_BASE:-$$(git merge-base origin/main HEAD)}" bash tools/gate.sh changed
 
 gate-full: tools-executable
 	bash tools/gate.sh full
 
-# The gate tiers (the goals program, W15, W36): tier-fast on every PR, tier-full at a goal's
-# end and nightly on main. tier-full is the gate itself; gate and gate-fast keep their meaning.
-# Callers take chorus-heavy.lock for both, as for the gate.
+# The gate tiers: tier-fast is the conventions checks, fmt, clippy and the test runs, without the
+# separate build, firmware, verify and image steps (tools/gate.sh says which); tier-full is the
+# gate itself. gate and gate-fast keep their meaning.
 tier-fast: tools-executable
 	bash tools/gate.sh tier-fast
 
@@ -193,6 +193,7 @@ verify: tools-executable
 	bash tools/bench/e2e-test.sh
 	bash tools/gate-targets-test.sh
 	bash tools/nextest-timeout-test.sh
+	bash tools/test-goals-retired.sh
 
 # The control-plane thread-population checks, run over and over on one build,
 # plus two starved runs that must go red naming the busy-worker refusal. Those
@@ -246,7 +247,7 @@ verify-soak: tools-executable
 # `null`, a seeded command load for CHORUS_HOUSE_SOAK_SECONDS (default 3600), graded
 # and written to docs/measurements/house-soak-8-rooms.md. A host software soak, not a
 # hardware measurement and not timing evidence; not in `make gate` (an hour). Callers
-# take the heavy lock. See docs/house-soak.md and tools/house-soak-run.sh.
+# run it with nothing else heavy beside it. See docs/house-soak.md and tools/house-soak-run.sh.
 verify-house-soak: tools-executable
 	bash tools/house-soak-run.sh
 
@@ -255,7 +256,7 @@ verify-house-soak: tools-executable
 # scripted control point playing each settled format on K of them, and a /proc sampler.
 # A host measurement that prints its report's inputs
 # (docs/measurements/concurrent-streams-host.md), not a check and not in `make gate`;
-# callers hold the heavy locks. CHORUS_STREAMS_MODE picks formats, idle or decoders.
+# nothing else heavy runs beside it. CHORUS_STREAMS_MODE picks formats, idle or decoders.
 concurrent-streams: tools-executable
 	bash tools/concurrent-streams-run.sh
 
@@ -408,7 +409,7 @@ firmware-image-guard: tools-executable
 # 14, docs/decisions/0109-*): adopted under its stored identity, and the same
 # speaker after a reboot. Source: simulation, never timing evidence. Refuses by
 # name without the pinned emulator (make qemu-env installs it, rootless) and
-# without ESP-IDF; a caller takes chorus-heavy.lock, as for the gate.
+# without ESP-IDF. The full gate runs it in CI.
 qemu-env: tools-executable
 	bash tools/qemu-env.sh install
 
