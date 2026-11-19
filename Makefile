@@ -8,8 +8,8 @@ help:
 	@echo '  cargo test -p <crate> --test <name>     one test target of one crate'
 	@echo '  bash tools/conventions/check-<rule>.sh  one conventions check (make gate-fast runs them all)'
 	@echo 'What CI runs: make gate-quick (pull requests), make gate-full (nightly on main).'
-	@echo 'Every target, each described by the comment above it in the Makefile:'
-	@sed -n 's/^\([a-z][a-z0-9-]*\):.*/\1/p' Makefile | sort -u | paste -sd' ' - | fold -s -w 98 | sed -e 's/ *$$//' -e 's/^/  /'
+	@echo 'Every target (most have a comment above them in the Makefile):'
+	@sed -n 's/^\([a-z][a-z0-9-]*\):.*/\1/p' $(firstword $(MAKEFILE_LIST)) | sort -u | paste -sd' ' - | fold -s -w 98 | sed -e 's/ *$$//' -e 's/^/  /'
 
 .PHONY: help
 
@@ -176,6 +176,8 @@ endpoint-packages: tools-executable
 release: tools-executable
 	bash tools/release.sh $(VERSION)
 
+# check, build and test: the whole workspace's build and tests, which CI runs and a development
+# host does not (CLAUDE.md); `make one ARGS=...` is the host's loop.
 check:
 	cargo build --workspace --all-targets
 	cargo test --workspace
