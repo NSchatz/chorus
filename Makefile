@@ -1,4 +1,17 @@
-.DEFAULT_GOAL := check
+# A bare `make` prints this help and builds nothing: `make check` is the whole workspace's build and
+# tests, which a development host does not run (CLAUDE.md; CI is the gate, ADR 0140).
+.DEFAULT_GOAL := help
+
+help:
+	@echo 'chorus: CI is the gate (docs/decisions/0140-ci-is-the-gate.md). On a development host run'
+	@echo 'one crate'"'"'s focused test or one conventions check:'
+	@echo '  cargo test -p <crate> --test <name>     one test target of one crate'
+	@echo '  bash tools/conventions/check-<rule>.sh  one conventions check (make gate-fast runs them all)'
+	@echo 'What CI runs: make gate-quick (pull requests), make gate-full (nightly on main).'
+	@echo 'Every target, each described by the comment above it in the Makefile:'
+	@sed -n 's/^\([a-z][a-z0-9-]*\):.*/\1/p' Makefile | sort -u | paste -sd' ' - | fold -s -w 98 | sed -e 's/ *$$//' -e 's/^/  /'
+
+.PHONY: help
 
 # The ESP-IDF environment `make gate` sources when IDF_PATH is unset: the
 # rootless install this repository is built with (ESP-IDF v6.1 under /cache,
