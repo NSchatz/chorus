@@ -37,8 +37,8 @@ record" means the section of that name below.
 (R1, decided 2026-09-29 by the owner, K1, K4, K11, K12, K28, K93: the retired
 umbrella's section, its specs, stages and pointers, is removed.)
 
-- Work arrives as tasks from the owner's agent harness, each with a finish line written as
-  runnable checks; the /goal program's remaining goals are such tasks now. Its brief (§0 the
+- The owner's agent harness, which sent the work as tasks, is retired; how work reaches chorus
+  depends on the development setup, which is not decided yet. The /goal program's brief (§0 the
   parameters, §4 the engineering rules), goal files and ledgers are pinned at
   https://github.com/NSchatz/chorus/tree/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals. A phase's acceptance comes from
   BRIEF.md section 8's "success looks like" and the program's done-when lines.
@@ -55,7 +55,8 @@ umbrella's section, its specs, stages and pointers, is removed.)
   `tools/conventions/check-*.sh`. No gate, tier, whole-workspace cargo build or test, or
   image build runs on the development host. A measurement that has to run here (a QEMU
   run, a soak) is the exception; a throwaway build keeps its cargo target directory where `tools/build-dir.sh`
-  says (`/scratch` when it fits, else `/cache/wt/chorus/target/shared`).
+  says (`CHORUS_BUILD_DIR` when set; otherwise, as the host has no `/scratch` or `/cache`,
+  `<repository>/target/<name>`).
 - Flashing, eFuses, deploys to the homelab and OTA installs on installed speakers are the owner's actions (K4, K28, K93); nothing in this repo sets `CHORUS_OWNER_AT_BENCH`. Ask the owner for each one with AskUserQuestion in the session, never in an issue.
 - BRIEF.md is kept current by the work: verified corrections and the owner's
   decisions are written into it, each dated with its decision IDs. Its section

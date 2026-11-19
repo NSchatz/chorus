@@ -47,10 +47,10 @@ correct the brief in the same change.
 ## Before writing code, and across repos
 
 - Before writing new code, search shopkit's index:
-  `git -C /workspace/shopkit show origin/main:docs/INDEX.md | grep -i <word>`; reuse or extend
+  `git -C <shopkit-clone> show origin/main:docs/INDEX.md | grep -i <word>`; reuse or extend
   shopkit instead of writing it again.
 - Work a sibling repo must do goes to that repo as an exact spec; read its card first:
-  `git -C /workspace/<repo> show origin/main:CARD.md`.
+  `git -C <repo-clone> show origin/main:CARD.md`.
 
 ## Details
 
