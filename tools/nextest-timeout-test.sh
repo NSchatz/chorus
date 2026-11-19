@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The per-test limit of the workspace tests (.config/nextest.toml,
-# docs/decisions/0000-a-test-past-its-limit-is-ended.md): a test past its slow-timeout period is
+# docs/decisions/0259-a-test-past-its-limit-is-ended.md): a test past its slow-timeout period is
 # ended and fails, named. This runs a throwaway crate whose one test sleeps 5 s under a copy of
 # the repository's configuration with the period at 1 s, and reads the configuration itself.
 # Builds nothing of the workspace; the throwaway crate goes where tools/build-dir.sh says.
