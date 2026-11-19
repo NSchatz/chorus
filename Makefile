@@ -177,7 +177,7 @@ release: tools-executable
 	bash tools/release.sh $(VERSION)
 
 # check, build and test: the whole workspace's build and tests, which CI runs and a development
-# host does not (CLAUDE.md); `make one ARGS=...` is the host's loop.
+# host does not (CLAUDE.md); the host's loop is `make one ARGS='-p <crate> --test <name>'`.
 check:
 	cargo build --workspace --all-targets
 	cargo test --workspace
