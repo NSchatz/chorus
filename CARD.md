@@ -20,7 +20,7 @@ Multiroom and surround audio: server, sync protocol, speaker firmware. For sibli
 
 ## Hand it work
 
-`harness plan add chorus "<ask>" --details-file <spec>`
+How a spec reaches chorus's session depends on the development setup, which is not decided yet.
 
 A spec for chorus holds, under these headings:
 
@@ -54,4 +54,4 @@ or an install on hardware by an agent.
 - Enclosure models, drawings, print files, PCBs and build logs: devices.
 - Printing and slicing: 3d. Shared Python libraries: shopkit.
 - Part and supplier records: inventory. The homelab's compose and its deploy: homelab.
-- The house record: home. The task tracker: the harness (NSchatz/harness).
+- The house record: home.

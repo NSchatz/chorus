@@ -35,7 +35,7 @@ The point is not just the product. It is owning the whole stack: the sync algori
 Environment facts to assume:
 
 - Gigabit Cat6 to most rooms through conduit; TP-Link Omada PoE+ switch; UniFi Wi-Fi; VLANs.
-- A bare-metal Debian 13 host running Docker Compose stacks (no Proxmox), deployed through PRs in the owner's homelab repo that the owner merges and applies; Home Assistant and an MQTT broker already running (R5, decided 2026-09-29 by the owner, K24, K28, K34).
+- A bare-metal Debian 13 host running Docker Compose stacks (no Proxmox), deployed through PRs in the owner's homelab repo, merged as that repo's CARD.md says and applied by the owner; Home Assistant already running, and no MQTT broker today (R5, decided 2026-09-29 by the owner, K24, K28, K34).
 - Endpoints will be mostly wired Ethernet or PoE. Wi-Fi endpoints are acceptable for casual music zones only.
 - Owner's background: strong Node.js/Python/AWS/Terraform/Docker/CI-CD, ESP32/ESPHome experience, comfortable learning C and Rust, DIY speaker building and woodworking capability.
 
@@ -284,7 +284,7 @@ Ordered to retire risk, with "success looks like" instead of rigid gates. Reorde
 
 ### 8.1 The program's phases (added 2026-09-30, chorus goal 4; K12, K13, K32, K47, decided 2026-09-29 by the owner)
 
-The /goal program in [`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md) was the plan of record until 2026-10-04; its remaining goals are now tasks from the owner's agent harness. Its phases run the ten above in order and then the Sonos-parity work, foundations first (K32); one deliberate reorder puts rooms and groups (phase 11 below) before Fleet, because DSP and the TV path need them (I19). Each phase's acceptance is the "success looks like" line above (phases 1-10) or the line below, refined by that goal's done-when lines; real-hardware steps end as ready-to-run packets for the owner, never as success criteria (K7, K50).
+The /goal program in [`.claude/goals/2026-09-chorus.md`](https://github.com/NSchatz/chorus/blob/535ed2816b5735153ac81c52a235024aa806f2b5/.claude/goals/2026-09-chorus.md) was the plan of record until 2026-10-04; its remaining goals then became tasks of the owner's agent harness, which is retired; how work reaches chorus next depends on the development setup, which is not decided yet. Its phases run the ten above in order and then the Sonos-parity work, foundations first (K32); one deliberate reorder puts rooms and groups (phase 11 below) before Fleet, because DSP and the TV path need them (I19). Each phase's acceptance is the "success looks like" line above (phases 1-10) or the line below, refined by that goal's done-when lines; real-hardware steps end as ready-to-run packets for the owner, never as success criteria (K7, K50).
 
 | Program phase | Goals | Serves | Success looks like |
 |---|---|---|---|
