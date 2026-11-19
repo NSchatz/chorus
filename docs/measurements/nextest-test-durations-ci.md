@@ -4,7 +4,7 @@ Source: host
 Build measured: `f1fe36c0ced3d6393f6e527c3eac49739beba115`
 
 Not timing evidence for the audio path: these are how long the tests take on a CI runner, read
-to size their per-test limits (`docs/decisions/0000-a-test-past-its-limit-is-ended.md`).
+to size their per-test limits (`docs/decisions/0259-a-test-past-its-limit-is-ended.md`).
 
 What ran: the nightly `make gate-full` on GitHub Actions (`ubuntu-latest`, `CARGO_BUILD_JOBS=2`),
 its test step `cargo nextest run --workspace --locked` under cargo-nextest 0.9.146 with

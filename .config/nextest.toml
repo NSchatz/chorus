@@ -58,7 +58,7 @@ priority = 50
 # The tests that take over a third of the minute: each its own limit, 3x its time on the
 # nightly gate (the slower of the runs of 2026-10-21 and 2026-10-25), rounded up to 10 s
 # (docs/measurements/nextest-test-durations-ci.md,
-# docs/decisions/0000-a-test-past-its-limit-is-ended.md). These set only slow-timeout, so the
+# docs/decisions/0259-a-test-past-its-limit-is-ended.md). These set only slow-timeout, so the
 # test-group overrides above still apply: nextest takes each setting from the first override
 # that sets it.
 

@@ -1,4 +1,4 @@
-# 0000: a workspace test past its limit is ended and fails, named: 60 s by default, 3x its measured time for a longer one
+# 0259: a workspace test past its limit is ended and fails, named: 60 s by default, 3x its measured time for a longer one
 
 - Status: decided, 2026-10-25 (harness plan 201, task 206: per-test limits in every repository)
 - Decided by: the owner (2026-10-25: "All three runners", a per-test limit of 60 s with a longer
