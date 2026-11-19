@@ -27,12 +27,14 @@ shallow=0
 # one with the squash that carried it (goal 17, D8: PR #129's branch was merged into PR #132's
 # and landed with it; #129 was closed with a pointer; goal 18: PR #138's tree landed as PR
 # #139's one commit, a subject of #138's own being too long; PR #253 merged its record as 0251
-# and PR #254 renamed it, the rename being its add).
+# and PR #254 renamed it, the rename being its add; PR #259 merged its record as 0000 and PR #263
+# renamed it).
 own_pr() {
     case "$1:$2" in
     0129:132) echo 129 ;;
     0138:139) echo 138 ;;
     0253:254) echo 253 ;;
+    0259:263) echo 259 ;;
     *) echo "$2" ;;
     esac
 }
