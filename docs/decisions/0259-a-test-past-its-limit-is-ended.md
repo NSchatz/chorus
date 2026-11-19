@@ -43,9 +43,7 @@ exactly the line above.
 ## What was read
 
 Recorded 2026-11-19, when #263 gave this record its number: #259 merged it without this section,
-so the list is what #259's own text and files name, not a reconstruction of anything else.
-`.config/nextest.toml`, ADR 0112 and its slow timeout, `tools/nextest-timeout-test.sh`, and the
-per-test times in the logs of nightly runs 40194545229 (f1fe36c, 2026-10-25) and 39606025523
-(742a666, 2026-10-21), as `docs/measurements/nextest-test-durations-ci.md` cites them;
-cargo-nextest's documentation at https://nexte.st on `slow-timeout`, `terminate-after` and
-override precedence (Apache-2.0 OR MIT). No GPL source was opened.
+so the list is only what #259's own text and files name. `.config/nextest.toml`, ADR 0112 and its
+slow timeout, `tools/nextest-timeout-test.sh`, and the per-test times in the logs of nightly runs
+40194545229 (f1fe36c, 2026-10-25) and 39606025523 (742a666, 2026-10-21), as
+`docs/measurements/nextest-test-durations-ci.md` cites them. #259 names no other source.
