@@ -27,9 +27,8 @@
 #                         # two minutes the target; `make gate` runs nightly on main
 #   make tier-fast        # the conventions checks, fmt, clippy, the Home Assistant
 #                         # integration's tests, the web app's tests and rebuild
-#                         # and the workspace tests: the fast
-#                         # tier run on every PR (the goals program's gate tiers, W15, W36);
-#                         # `make tier-full` is `make gate`, run at goal end and nightly on main
+#                         # and the workspace tests, with no separate build, firmware,
+#                         # verify or image step; `make tier-full` is `make gate`
 #
 # Environment:
 #   CHORUS_IDF_ENV            a script that puts ESP-IDF on PATH and sets IDF_PATH,

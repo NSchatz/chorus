@@ -32,9 +32,9 @@ gate-quick: tools-executable
 gate-full: tools-executable
 	bash tools/gate.sh full
 
-# The gate tiers: tier-fast is the conventions checks, fmt, clippy and the test runs without the
-# builds and images (tools/gate.sh says which); tier-full is the gate itself. gate and gate-fast
-# keep their meaning.
+# The gate tiers: tier-fast is the conventions checks, fmt, clippy and the test runs, without the
+# separate build, firmware, verify and image steps (tools/gate.sh says which); tier-full is the
+# gate itself. gate and gate-fast keep their meaning.
 tier-fast: tools-executable
 	bash tools/gate.sh tier-fast
 
