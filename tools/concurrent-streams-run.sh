@@ -67,7 +67,7 @@
 #   REFDEC                   the reference programs' prefix (default /cache/opt/chorus-refdec)
 #   CHORUS_SKIP_BUILD=1      use the release binaries already in target/release
 #
-#   make concurrent-streams          # callers hold the heavy locks, as for the gate
+#   make concurrent-streams          # nothing else heavy runs beside it
 
 source "$(dirname "$0")/lib.sh"
 
