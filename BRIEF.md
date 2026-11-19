@@ -35,7 +35,7 @@ The point is not just the product. It is owning the whole stack: the sync algori
 Environment facts to assume:
 
 - Gigabit Cat6 to most rooms through conduit; TP-Link Omada PoE+ switch; UniFi Wi-Fi; VLANs.
-- A bare-metal Debian 13 host running Docker Compose stacks (no Proxmox), deployed through PRs in the owner's homelab repo, merged as that repo's CARD.md says and applied by the owner; Home Assistant already running, and no MQTT broker today (R5, decided 2026-09-29 by the owner, K24, K28, K34).
+- A bare-metal Debian 13 host running Docker Compose stacks (no Proxmox), deployed through PRs in the owner's homelab repo, merged as that repo's CARD.md says and applied by the owner; Home Assistant already running (R5, decided 2026-09-29 by the owner, K24, K28, K34); no MQTT broker runs today.
 - Endpoints will be mostly wired Ethernet or PoE. Wi-Fi endpoints are acceptable for casual music zones only.
 - Owner's background: strong Node.js/Python/AWS/Terraform/Docker/CI-CD, ESP32/ESPHome experience, comfortable learning C and Rust, DIY speaker building and woodworking capability.
 
