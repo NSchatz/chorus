@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The standard gate targets (Makefile gate-quick and gate-full) and the workflows that call them,
-# the per-test limit of the web tests' run, and the failure lines a red gate step prints.
+# the per-test limit of the web tests' run, the failure lines a red gate step prints, and the
+# default goal (help, not a build).
 # chorus has no host gate, so the targets are aliases: this reads what make would run (`make -n`)
 # and what the workflows' run steps call, and builds and runs nothing.
 #
@@ -97,11 +98,26 @@ test_failure_lines_name_the_failing_tests() {
     rm -f "$log"
 }
 
+# 6. A bare `make` prints help and runs no cargo command (the default goal was once `check`, the
+# whole workspace's build and tests).
+test_bare_make_builds_nothing() {
+    local out
+    out="$(make -s -n)"
+    if grep -qE '^(env [^ ]+ )?cargo ' <<< "$out"; then
+        fail "${FUNCNAME[0]}" "make -n with no target would run cargo: $out"
+    elif ! grep -q 'CI is the gate' <<< "$(make -s)"; then
+        fail "${FUNCNAME[0]}" "a bare make does not print the help"
+    else
+        pass "${FUNCNAME[0]}"
+    fi
+}
+
 test_gate_quick_keeps_ci_base
 test_gate_full_is_gate
 test_workflows_call_standard_targets
 test_web_sh_sets_60_second_limit
 test_failure_lines_name_the_failing_tests
+test_bare_make_builds_nothing
 
 if [ "$fails" -ne 0 ]; then
     echo "gate targets: $fails failed" >&2
