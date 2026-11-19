@@ -105,6 +105,8 @@ step() {
     printf 'gate: %-22s rc=%-3s %7ss\n' "$name" "$rc" "$(elapsed "$s" "$e")" | tee -a "$LOG/summary.txt"
     if [ "$rc" -ne 0 ]; then
         FAILED+=("$name")
+        # What failed, by name, then the tail: a workspace run's tail is its passing doc-tests.
+        bash tools/failure-lines.sh "$LOG/$name.log" | sed "s/^/  $name| /"
         tail -n 15 "$LOG/$name.log" | sed "s/^/  $name| /"
     fi
 }
